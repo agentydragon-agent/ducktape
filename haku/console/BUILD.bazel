@@ -32,7 +32,10 @@ py_library(
 py_library(
     name = "models",
     srcs = ["models.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":chat_models",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -94,9 +97,12 @@ py_test(
     srcs = ["test_deployment_config.py"],
     data = ["//cluster/k8s:haku_console_config"],
     deps = [
+        ":config",
         ":mcp_config",
         "//:conftest",
         "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -351,13 +357,19 @@ py_library(
 )
 
 py_library(
+    name = "agent_bearer",
+    srcs = ["agent_bearer.py"],
+    deps = [":tool_call_actor"],
+)
+
+py_library(
     name = "kubernetes_authorization",
     srcs = ["kubernetes_authorization.py"],
     deps = [
+        ":agent_bearer",
         ":config",
         ":kubernetes_grant_models",
         ":kubernetes_grant_service",
-        ":tool_call_actor",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
@@ -692,6 +704,7 @@ py_library(
     name = "mcp_agent_auth",
     srcs = ["mcp_agent_auth.py"],
     deps = [
+        ":agent_bearer",
         ":chat_models",
         ":config",
         ":database_schema",
@@ -1181,9 +1194,11 @@ py_library(
         "//haku/console/x/channels/matrix:sync",
         "//haku/recall_index:git_tree",
         "//haku/recall_index:openai_embedder",
+        "//haku/runtime/x/bridge:protocol",
         "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
+        "@pypi//more_itertools",
         "@pypi//openai",
         # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous.
         "@pypi//itsdangerous",

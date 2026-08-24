@@ -13,5 +13,6 @@ WebSocket.
 
 **Gotcha:** the provider-neutral image name is `haku-harness-runner`, set explicitly in
 `.github/workflows/push-images.yml` rather than derived from this path. Its one OCI contains the
-bridge, both native CLIs, git, kubectl and CA roots. The Claude SandboxTemplate selects the harness
-at launch; adding another harness must not create another publication alias.
+bridge, both native CLIs, git, kubectl and CA roots. Both runtime-specific SandboxTemplates follow
+that single Flux `ImageRepository`/`ImagePolicy` and select their harness explicitly; their separate
+Agent credentials and network policy do not require duplicate OCI publications.

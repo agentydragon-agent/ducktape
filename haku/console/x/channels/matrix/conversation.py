@@ -96,15 +96,24 @@ class MatrixConversationStore:
         *,
         launch_authorizer: LaunchAuthorizer | None = None,
         default_agent_id: UUID | None = None,
+        default_runtime_kind: RuntimeKind = RuntimeKind.CLAUDE_CODE,
     ):
         self._sessions = sessions
         self._launch_authorizer = launch_authorizer
         self._default_agent_id = default_agent_id
+        self._default_runtime_kind = default_runtime_kind
 
-    def configure_launch_identity(self, authorizer: LaunchAuthorizer, *, default_agent_id: UUID) -> None:
+    def configure_launch_identity(
+        self,
+        authorizer: LaunchAuthorizer,
+        *,
+        default_agent_id: UUID,
+        default_runtime_kind: RuntimeKind = RuntimeKind.CLAUDE_CODE,
+    ) -> None:
         """Configure production first-bind identity selection after app composition."""
         self._launch_authorizer = authorizer
         self._default_agent_id = default_agent_id
+        self._default_runtime_kind = default_runtime_kind
 
     async def attachment(self, room_id: str) -> UUID | None:
         async with self._sessions() as db:
@@ -141,7 +150,7 @@ class MatrixConversationStore:
                 if self._default_agent_id is None:
                     raise RuntimeError("Matrix launch identity is not configured")
                 identity = await self._launch_authorizer(
-                    db, operator_id, self._default_agent_id, RuntimeKind.CLAUDE_CODE
+                    db, operator_id, self._default_agent_id, self._default_runtime_kind
                 )
             conversation_id = uuid4()
             db.add(
@@ -150,7 +159,7 @@ class MatrixConversationStore:
                     operator_id=operator_id,
                     agent_id=None if identity is None else identity.agent_id,
                     access_profile_id=None if identity is None else identity.access_profile_id,
-                    runtime_kind=RuntimeKind.CLAUDE_CODE if identity is None else identity.runtime_kind,
+                    runtime_kind=self._default_runtime_kind if identity is None else identity.runtime_kind,
                     created_at=now,
                 )
             )

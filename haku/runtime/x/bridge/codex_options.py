@@ -7,18 +7,19 @@ binary that answers it. Native messages remain opaque ``HarnessFrame`` payloads 
 
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
+from tomlkit import document, dumps, inline_table
+from tomlkit.items import InlineTable
+
 from haku.runtime.x.bridge.backend import ProcessLaunch, child_environment
 from haku.runtime.x.bridge.protocol import HarnessLaunch
 
 EXECUTABLE_VARIABLE = "HAKU_CODEX_PATH"
-_MCP_OVERRIDE = "mcp_servers="
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +27,17 @@ class HttpMcpServer:
     """A streamable-HTTP MCP server Codex reaches with an inherited bearer variable."""
 
     url: str
-    bearer_token_env_var: str
+    bearer_token_env_var: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CodexModelProvider:
+    """One OpenAI-compatible provider whose secret remains in an inherited variable."""
+
+    provider_id: str
+    name: str
+    base_url: str
+    api_key_env_var: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,21 +47,69 @@ class CodexAppServerSession:
     cwd: Path | None = None
     environment: Mapping[str, str] = field(default_factory=dict)
     mcp_servers: Mapping[str, HttpMcpServer] = field(default_factory=dict)
+    model_provider: CodexModelProvider | None = None
+
+
+def _toml_inline_table(values: Mapping[str, object]) -> InlineTable:
+    """Build an inline TOML table without hand-quoting keys or values."""
+    result = inline_table()
+    for key, value in values.items():
+        if isinstance(value, Mapping):
+            result[key] = _toml_inline_table(value)
+        else:
+            result[key] = value
+    return result
+
+
+def _toml_override(key: str, value: object) -> str:
+    """Render one Codex ``-c`` override as a complete, parseable TOML assignment."""
+    config = document()
+    config[key] = value
+    return dumps(config).strip()
 
 
 def _mcp_config(servers: Mapping[str, tuple[str, str | None]]) -> str:
-    entries = []
+    entries: dict[str, dict[str, str]] = {}
     for name, (url, bearer_token_env_var) in sorted(servers.items()):
-        fields = [f"url = {json.dumps(url)}"]
+        entry = {"url": url}
         if bearer_token_env_var is not None:
-            fields.append(f"bearer_token_env_var = {json.dumps(bearer_token_env_var)}")
-        entries.append(f"{json.dumps(name)} = {{ {', '.join(fields)} }}")
-    return f"{_MCP_OVERRIDE}{{ {', '.join(entries)} }}"
+            entry["bearer_token_env_var"] = bearer_token_env_var
+        entries[name] = entry
+    return _toml_override("mcp_servers", _toml_inline_table(entries))
+
+
+def _model_provider_config(provider: CodexModelProvider) -> str:
+    return _toml_override(
+        "model_providers",
+        _toml_inline_table(
+            {
+                provider.provider_id: {
+                    "name": provider.name,
+                    "base_url": provider.base_url,
+                    "env_key": provider.api_key_env_var,
+                    "wire_api": "responses",
+                }
+            }
+        ),
+    )
 
 
 def build_codex_launch(session: CodexAppServerSession, *, resume_from: int | None = None) -> HarnessLaunch:
     """Launch the pinned Codex binary as one newline-delimited stdio app-server."""
     arguments: list[str] = []
+    if session.model_provider is not None:
+        # app-server intentionally disables first-party OPENAI_API_KEY auth. A named provider's
+        # env_key is the supported programmatic path: only the variable name enters argv while
+        # the SandboxTemplate-owned credential contract (a proxy placeholder in production)
+        # remains in the child environment.
+        arguments.extend(
+            (
+                "-c",
+                _toml_override("model_provider", session.model_provider.provider_id),
+                "-c",
+                _model_provider_config(session.model_provider),
+            )
+        )
     if session.mcp_servers:
         arguments.extend(
             (

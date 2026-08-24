@@ -16,6 +16,8 @@ from websockets.http11 import Request, Response
 from haku.runtime.x.bridge.claude_options import ClaudeSession, HttpMcpServer, build_claude_launch, claude_backend
 from haku.runtime.x.bridge.protocol import (
     FINE_GRAINED_TOOL_STREAMING_ENV,
+    KUBERNETES_PROXY_URL_ENV,
+    RUNNER_SETUP_ENV,
     RUNNER_TO_CONSOLE,
     EndInput,
     HarnessFrame,
@@ -25,6 +27,8 @@ from haku.runtime.x.bridge.protocol import (
 from haku.runtime.x.bridge.runner import (
     Outbound,
     OutboundLog,
+    _launch_setup_path,
+    _materialize_proxy_kubeconfig,
     _narrator,
     _serve_console,
     _shutdown,
@@ -127,6 +131,61 @@ def test_the_backend_names_the_binary_its_own_image_set(monkeypatch: pytest.Monk
 
     assert claude_backend().executable == Path("/opt/claude")
     assert claude_backend(Path("/elsewhere/claude")).executable == Path("/elsewhere/claude")
+
+
+def test_proxy_kubeconfig_uses_token_file_and_never_serializes_bearer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    launch = HarnessLaunch(
+        arguments=(),
+        cwd=str(tmp_path),
+        environment={KUBERNETES_PROXY_URL_ENV: "http://haku-kube-api-proxy.haku-console:8080"},
+    )
+
+    materialized = _materialize_proxy_kubeconfig(launch, "session-secret")
+    config = (tmp_path / ".kube/config").read_text()
+    token = (tmp_path / ".kube/haku-mcp-token").read_text()
+
+    assert materialized.environment["KUBECONFIG"] == str(tmp_path / ".kube/config")
+    assert "http://haku-kube-api-proxy.haku-console:8080" in config
+    assert '"tokenFile":' in config
+    assert "session-secret" not in config
+    assert token == "session-secret"
+    assert (tmp_path / ".kube").stat().st_mode & 0o077 == 0
+    assert (tmp_path / ".kube/haku-mcp-token").stat().st_mode & 0o077 == 0
+    assert (tmp_path / ".kube/config").stat().st_mode & 0o077 == 0
+
+
+def test_proxy_kubeconfig_uses_claim_owned_bearer_not_launch_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    launch = HarnessLaunch(
+        arguments=(),
+        cwd=str(tmp_path),
+        environment={
+            KUBERNETES_PROXY_URL_ENV: "http://haku-kube-api-proxy.haku-console:8080",
+            "HAKU_MCP_BEARER_TOKEN": "launch-selected-secret",
+            "HAKU_AGENT_SDK_RUNNER_TOKEN": "launch-selected-secret",
+        },
+    )
+
+    _materialize_proxy_kubeconfig(launch, "claim-owned-secret")
+
+    assert (tmp_path / ".kube/haku-mcp-token").read_text() == "claim-owned-secret"
+
+
+def test_launch_setup_wins_over_old_image_fallback(tmp_path: Path) -> None:
+    selected = tmp_path / "selected.sh"
+    fallback = tmp_path / "old-image.sh"
+    launch = HarnessLaunch(arguments=(), cwd=".", environment={RUNNER_SETUP_ENV: str(selected)})
+
+    assert _launch_setup_path(launch, fallback) == selected
+    assert _launch_setup_path(HarnessLaunch(arguments=(), cwd=".", environment={}), fallback) == fallback
+    assert (
+        _launch_setup_path(HarnessLaunch(arguments=(), cwd=".", environment={RUNNER_SETUP_ENV: ""}), fallback) is None
+    )
 
 
 async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path) -> None:

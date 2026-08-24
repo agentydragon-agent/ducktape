@@ -1,8 +1,38 @@
 # Non-secret haku-console config. Secret values stay in env/Kubernetes Secrets.
 #
-# Console-owned Claude Agent Sandbox runtime. Every value is explicit deployment
+# Console-owned harness runtime. Every value is explicit deployment
 # wiring; the application deliberately has no topology/path/proxy defaults. The
 # placeholder is non-secret—the real OAuth bearer exists only in iron-proxy.
+settings:
+  # New BaseSettings replicas load this section from HAKU_CONSOLE_CONFIG_FILE. Old replicas parse
+  # the same document as ConsoleConfigFile and ignore this top-level compatibility section, so the
+  # runtime catalog can roll without teaching the old closed chat_runtimes schema about Codex.
+  codex_runtime:
+    agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
+    namespace: haku-runtime-sandbox
+    warm_pool: haku-public-coder-codex
+    cwd: /workspace
+    session_ttl_seconds: 7200
+    model: codex-gpt-5.6-sol
+    provider_id: haku
+    provider_name: Haku OpenAI-compatible
+    # HTTP is confined to the cluster. The sandbox does not bypass its explicit proxy for this
+    # host: iron-proxy replaces its inert OPENAI_API_KEY placeholder with the real virtual key.
+    api_base_url: http://litellm.litellm.svc.cluster.local:4000/v1
+    api_key_env_var: OPENAI_API_KEY
+    https_proxy: http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080
+    ca_bundle: /etc/ssl/certs/ca-certificates.crt
+    # Keep Console/MCP/Kubernetes control-plane traffic direct while deliberately excluding
+    # LiteLLM, whose provider authentication must traverse iron-proxy.
+    no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-console-codex-runner.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
+    github_token_placeholder: proxy-github-placeholder
+    mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
+    system_prompt_template: /etc/haku-console/config/public_coder_system_prompt.md.j2
+  # Console, rather than either native CLI adapter, selects Kubernetes mediation and Haku's
+  # Agent-owned workspace bootstrap for every runner launch.
+  runner_kubernetes_proxy_url: http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080
+  haku_agent_workspace_setup: /usr/local/bin/haku-sandbox-setup.sh
+
 git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
 recall_indexes:
   # `index_id` is the durable search/grant boundary. Source and remote configuration belong in
@@ -28,7 +58,7 @@ recall_indexes:
 
 chat_runtimes:
   claude_code:
-    namespace: haku-claude-sandbox
+    namespace: haku-runtime-sandbox
     warm_pool: haku-claude
     cwd: /workspace
     session_ttl_seconds: 7200
@@ -349,11 +379,12 @@ access_profiles:
       - kubernetes
   - id: public-coder
     auto_approval_policy: public_coder_safe_reads
-    # This deploy allowlists public-coder-agent as a Console-launched chat Agent too. It shares the
-    # same Claude implementation/runtime resources as Haku, while retaining this distinct profile's
-    # tools, Recall scope and approval policy.
+    # This deploy gives public-coder-agent its own Codex runtime and sandbox trust domain. Claude
+    # remains temporarily allowed for rolling compatibility with the previous API image, but the
+    # Web launch catalog exposes Codex for this Agent once the new runtime is registered.
     allowed_chat_runtimes:
       - claude_code
+      - codex_app_server
     can_read_profiles: []
     recall_index_ids:
       - ducktape-public
@@ -372,9 +403,13 @@ default_access_profile_id: manual-review
 kubernetes_authorization:
   subjects_by_access_profile:
     haku:
-      username: haku:access-profile:haku
+      # Canonical Haku compute identity. Console-launched CLI pods do not mount this ServiceAccount;
+      # the proxy asks whether this subject could perform each request, then executes only an
+      # allowed request through its separate ceiling identity.
+      username: system:serviceaccount:haku-sandbox:haku
       groups:
-        - haku:access-profile:haku
+        - system:serviceaccounts
+        - system:serviceaccounts:haku-sandbox
         - system:authenticated
     public-coder:
       username: haku:access-profile:public-coder
@@ -408,7 +443,6 @@ static_agents:
     access_profile_id: public-coder
 launchable_agents:
   - agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
-  - agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
 operator_connection_providers:
   google_mail:
     kind: google

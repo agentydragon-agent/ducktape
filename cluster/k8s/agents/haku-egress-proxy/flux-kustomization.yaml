@@ -15,7 +15,7 @@ spec:
   dependsOn:
     - name: haku-egress-proxy-namespace
       namespace: ducktape-flux
-    - name: haku-claude-namespace
+    - name: haku-runtime-namespace
       namespace: ducktape-flux
     - name: haku-openclaw-spike-namespace
       namespace: ducktape-flux

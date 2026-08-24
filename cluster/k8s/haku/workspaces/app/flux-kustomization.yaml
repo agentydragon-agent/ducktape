@@ -4,7 +4,7 @@ metadata:
   name: haku-workspaces
   namespace: ducktape-flux
   annotations:
-    description: General Haku workspaces in haku-sandbox plus Console-owned Claude runners in the isolated haku-claude-sandbox namespace.
+    description: General Haku workspaces plus isolated Console-owned Claude and public-coder Codex runners.
 spec:
   retryInterval: 1m
   interval: 10m
@@ -21,7 +21,11 @@ spec:
       namespace: ducktape-flux
     - name: haku-rbac # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
       namespace: ducktape-flux
-    - name: haku-claude-namespace # isolated namespace for the OAuth-capable Console runners
+    - name: haku-runtime-namespace # shared namespace for separately-labeled Claude/Codex runners
+      namespace: ducktape-flux
+    - name: public-coder-agent-proxy # Codex proxy ingress + reflected interception trust bundle
+      namespace: ducktape-flux
+    - name: litellm-keys-tf # mints the public-coder key consumed by its trusted iron-proxy
       namespace: ducktape-flux
     - name: haku-egress-proxy # the fence haku-sandbox is opted into
       namespace: ducktape-flux

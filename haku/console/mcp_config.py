@@ -353,12 +353,18 @@ class LoadedStaticAgent(BaseModel):
 
 
 class ConsoleConfigFile(BaseModel):
+    # This document is also the deploy-owned Settings source. Top-level extension sections such as
+    # ``settings`` are intentionally ignored here and validated by their owning model instead of
+    # making every old catalog parser reject a newer independent configuration surface.
+    model_config = ConfigDict(extra="ignore")
+
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
     # libgit2 does not inherit Python/OpenSSL environment variables. Configure its process-wide
     # trust store explicitly before any HTTPS recall source is cloned or fetched.
     git_ca_bundle: Path = Path("/etc/ssl/certs/ca-certificates.crt")
-    # Closed implementation kinds, not deploy-chosen runtime instance ids. The deployment names
-    # Claude under this catalog; absent config preserves the existing console-without-chat mode.
+    # Closed YAML catalog retained for the rolling-compatible Claude deployment. Additional
+    # execution registrations may come from Settings (Codex during this rollout), but launch
+    # authorization always intersects the resulting RuntimeRegistry with the Agent's profile.
     # The real Claude OAuth bearer remains solely in the dedicated iron-proxy.
     chat_runtimes: ChatRuntimesConfig | None = None
     auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)

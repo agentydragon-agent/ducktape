@@ -6,6 +6,8 @@ resources:
   - sandboxwarmpool-haku.yaml
   - sandboxtemplate-haku-claude.yaml
   - sandboxwarmpool-haku-claude.yaml
+  - sandboxtemplate-haku-public-coder-codex.yaml
+  - sandboxwarmpool-haku-public-coder-codex.yaml
   - cleanuppolicy-haku-janitor.yaml
   # No janitor for the Console's Claude sandboxes. The console slides each live session's
   # SandboxClaim shutdownTime on its lease heartbeat (haku/console/x/sandbox_claims.py renew) and
@@ -14,8 +16,8 @@ resources:
   # trade-off (operator, 2026-08-15): no backstop if the controller itself stays broken.
   # Cross-namespace RBAC lives here rather than under a namespace-transforming
   # workload kustomization. The general sandbox MCP bindings remain in haku-sandbox;
-  # Console's Claude claim-only binding lives in haku-claude-sandbox.
+  # Console's claim-only binding for both launched runtimes lives in haku-runtime-sandbox.
   - haku-sandbox-mcp-role.yaml
   - haku-sandbox-mcp-rolebinding.yaml
-  - haku-console-claude-claim-role.yaml
-  - haku-console-claude-claim-rolebinding.yaml
+  - haku-console-runtime-claim-role.yaml
+  - haku-console-runtime-claim-rolebinding.yaml

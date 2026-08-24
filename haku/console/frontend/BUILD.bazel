@@ -90,6 +90,13 @@ ts_library(
 )
 
 ts_library(
+    name = "conversation_launch",
+    srcs = ["conversation_launch.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
     tsconfig = TSCONFIG,
@@ -955,6 +962,27 @@ ts_library(
 )
 
 ts_library(
+    name = "client_test",
+    srcs = ["client.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "conversation_launch_test",
+    srcs = ["conversation_launch.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":conversation_launch",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "code_block_test",
     srcs = ["code_block.test.ts"],
     tsconfig = TSCONFIG,
@@ -1157,8 +1185,10 @@ vitest_bin.vitest_test(
         ":bridge_client_test",
         ":bridge_test_lib",
         ":calendar_client_test",
+        ":client_test",
         ":code_block_test",
         ":console_events_test",
+        ":conversation_launch_test",
         ":geolocation_test",
         ":gmail_client_test",
         ":haku_ui_embed_test",

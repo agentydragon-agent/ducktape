@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import re
 from pathlib import Path, PurePosixPath
+from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 import pytest_bazel
 import yaml
 from more_itertools import one
 
+from haku.runtime.x.bridge.protocol import RUNNER_SETUP_ENV
 from util.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
@@ -38,14 +41,31 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]: peer for peer in peers
     }
     assert set(namespace_by_peer) == {template_namespace}
+    assert namespace_by_peer[template_namespace]["podSelector"] == {
+        "matchLabels": {
+            "app.kubernetes.io/name": "haku-harness-runner",
+            "haku.allegedly.works/access-profile-id": "haku",
+        }
+    }
 
     general_egress = (k8s_dir / "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml").read_text()
     assert "haku-claude-oauth-proxy" not in general_egress
 
-    claude_egress_path = k8s_dir / "agents/haku-egress-proxy/ccnp-haku-claude-sandbox-egress.yaml"
+    claude_egress_path = k8s_dir / "agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml"
     claude_egress_text = claude_egress_path.read_text()
     assert template_namespace in claude_egress_text
     assert "haku-claude-oauth-proxy" in claude_egress_text
+    claude_egress = yaml.safe_load(claude_egress_text)
+    assert claude_egress["spec"]["endpointSelector"] == {
+        "matchLabels": {
+            "app.kubernetes.io/name": "haku-harness-runner",
+            "haku.allegedly.works/access-profile-id": "haku",
+        },
+        "matchExpressions": [
+            {"key": "k8s:io.kubernetes.pod.namespace", "operator": "In", "values": [template_namespace]}
+        ],
+    }
+    assert "public-coder-agent-proxy" not in claude_egress_text
 
     service = yaml.safe_load((k8s_dir / "haku/console/service.yaml").read_text())
     bridge_service_port = next(port for port in service["spec"]["ports"] if port["port"] == 9090)
@@ -65,7 +85,7 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert console_rule["toPorts"][0]["ports"] == [{"port": str(bridge_target_port), "protocol": "TCP"}]
 
     general_injection = (k8s_dir / "kyverno/policies/inject-haku-egress-proxy.yaml").read_text()
-    assert "haku-claude-sandbox" not in general_injection
+    assert "haku-runtime-sandbox" not in general_injection
 
     # The system prompt is read at startup, so a path that names nothing the ConfigMap carries
     # is a pod that never becomes Ready. Tie the three places that must agree — the configured
@@ -82,13 +102,57 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert not any(name.startswith("HAKU_CONSOLE_CLAUDE_RUNTIME__") for name in env_names)
 
 
-def sandbox_env(template: dict[str, object]) -> dict[str, object]:
+def test_harness_runtimes_share_only_the_namespace(k8s_dir: Path) -> None:
+    """Claude and Codex share capacity, but retain separate templates and warm pools."""
+    namespace = yaml.safe_load((k8s_dir / "haku/runtime-namespace/namespace.yaml").read_text())
+    assert namespace["metadata"]["name"] == "haku-runtime-sandbox"
+    assert namespace["metadata"]["annotations"]["description"].startswith("Console-owned")
+
+    quota = yaml.safe_load((k8s_dir / "haku/runtime-namespace/resourcequota.yaml").read_text())
+    assert quota["spec"]["hard"] == {
+        "requests.cpu": "8",
+        "requests.memory": "16Gi",
+        "limits.cpu": "16",
+        "limits.memory": "32Gi",
+        "pods": "20",
+        "configmaps": "20",
+    }
+    limit_range = yaml.safe_load((k8s_dir / "haku/runtime-namespace/limitrange.yaml").read_text())
+    assert len(limit_range["spec"]["limits"]) == 2
+
+    claude_template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
+    codex_template = yaml.safe_load(
+        (k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-public-coder-codex.yaml").read_text()
+    )
+    assert (
+        claude_template["metadata"]["namespace"]
+        == codex_template["metadata"]["namespace"]
+        == namespace["metadata"]["name"]
+    )
+    assert claude_template["metadata"]["name"] != codex_template["metadata"]["name"]
+    claude_labels = claude_template["spec"]["podTemplate"]["metadata"]["labels"]
+    codex_labels = codex_template["spec"]["podTemplate"]["metadata"]["labels"]
+    assert claude_labels["app.kubernetes.io/name"] == codex_labels["app.kubernetes.io/name"] == "haku-harness-runner"
+    assert claude_labels["haku.allegedly.works/access-profile-id"] == "haku"
+    assert codex_labels["haku.allegedly.works/access-profile-id"] == "public-coder"
+    assert claude_template["spec"]["podTemplate"]["spec"]["automountServiceAccountToken"] is False
+    assert codex_template["spec"]["podTemplate"]["spec"]["automountServiceAccountToken"] is False
+
+    claude_pool = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxwarmpool-haku-claude.yaml").read_text())
+    codex_pool = yaml.safe_load(
+        (k8s_dir / "haku/workspaces/app/sandboxwarmpool-haku-public-coder-codex.yaml").read_text()
+    )
+    assert claude_pool["metadata"]["namespace"] == codex_pool["metadata"]["namespace"] == namespace["metadata"]["name"]
+    assert claude_pool["spec"]["sandboxTemplateRef"] != codex_pool["spec"]["sandboxTemplateRef"]
+
+
+def sandbox_env(template: dict[str, object]) -> dict[str, dict[str, Any]]:
     container = template["spec"]["podTemplate"]["spec"]["containers"][0]  # type: ignore[index]
     return {entry["name"]: entry for entry in container.get("env", [])}
 
 
-def test_both_sandbox_images_satisfy_the_shared_bootstrap(k8s_dir: Path) -> None:
-    """One bootstrap script runs in two images, so each must supply what it hard-requires.
+def test_only_haku_launches_satisfy_the_agent_owned_bootstrap(k8s_dir: Path) -> None:
+    """Haku launch targets satisfy its bootstrap; public coder explicitly disables it.
 
     `haku-sandbox-setup.sh` writes ~/.netrc from `${HAKU_GIT_USERNAME:?}` / `${HAKU_GIT_PASSWORD:?}`
     and aborts the whole claim when either is unset. That is the right behaviour and exactly why
@@ -103,9 +167,16 @@ def test_both_sandbox_images_satisfy_the_shared_bootstrap(k8s_dir: Path) -> None
         template = yaml.safe_load((k8s_dir / "haku/workspaces/app" / name).read_text())
         assert required <= set(sandbox_env(template)), f"{name} does not satisfy the bootstrap"
 
+    public_coder = yaml.safe_load(
+        (k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-public-coder-codex.yaml").read_text()
+    )
+    environment = sandbox_env(public_coder)
+    assert environment[RUNNER_SETUP_ENV]["value"] == ""
+    assert not required & environment.keys()
+
 
 def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
-    """The Claude template follows the one provider-neutral image repository and policy."""
+    """Both runtime templates follow one provider-neutral image repository and policy."""
     canonical_name = "haku-harness-runner"
     retired_name = "haku-claude-runner"
     flux_dir = k8s_dir / "flux-image-automation-ghcr"
@@ -120,6 +191,8 @@ def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
     flux_kustomization = yaml.safe_load((flux_dir / "kustomization.yaml").read_text())
     assert f"{canonical_name}-image-repository.yaml" in flux_kustomization["resources"]
     assert f"{canonical_name}-image-policy.yaml" in flux_kustomization["resources"]
+    assert f"{retired_name}-image-repository.yaml" not in flux_kustomization["resources"]
+    assert f"{retired_name}-image-policy.yaml" not in flux_kustomization["resources"]
 
     receiver = yaml.safe_load((k8s_dir / "flux-webhook/github-webhook-receiver.yaml").read_text())
     image_repositories = {
@@ -128,17 +201,22 @@ def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
     assert canonical_name in image_repositories
     assert retired_name not in image_repositories
 
-    template_path = k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml"
-    template_text = template_path.read_text()
-    container = one(yaml.safe_load(template_text)["spec"]["podTemplate"]["spec"]["containers"])
-    image_repository, image_tag = container["image"].rsplit(":", 1)
-    assert image_repository == f"ghcr.io/agentydragon/{canonical_name}"
-    assert re.fullmatch(policy["spec"]["filterTags"]["pattern"], image_tag)
-    assert f'# {{"$imagepolicy": "flux-system:{canonical_name}"}}' in template_text
-    assert container["args"] == ["--harness", "claude"]
+    expected_harnesses = {
+        "sandboxtemplate-haku-claude.yaml": "claude",
+        "sandboxtemplate-haku-public-coder-codex.yaml": "codex-app-server",
+    }
+    for filename, harness in expected_harnesses.items():
+        template_text = (k8s_dir / "haku/workspaces/app" / filename).read_text()
+        container = one(yaml.safe_load(template_text)["spec"]["podTemplate"]["spec"]["containers"])
+        image_repository, image_tag = container["image"].rsplit(":", 1)
+        assert image_repository == f"ghcr.io/agentydragon/{canonical_name}"
+        assert re.fullmatch(policy["spec"]["filterTags"]["pattern"], image_tag)
+        assert f'# {{"$imagepolicy": "flux-system:{canonical_name}"}}' in template_text
+        assert container["args"] == ["--harness", harness]
 
     manifests = "\n".join(path.read_text() for path in k8s_dir.rglob("*.yaml"))
-    assert retired_name not in manifests
+    assert f"ghcr.io/agentydragon/{retired_name}:" not in manifests
+    assert f'"flux-system:{retired_name}"' not in manifests
 
 
 def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir: Path) -> None:
@@ -147,7 +225,7 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
     url = one(re.findall(r"HAKU_STATE_URL:-http://([a-z0-9-]+)\.([a-z0-9-]+):(\d+)/", script))
     _, namespace, port = url
 
-    egress = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/ccnp-haku-claude-sandbox-egress.yaml").read_text())
+    egress = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml").read_text())
     allowed = {
         (rule["toEndpoints"][0]["matchLabels"]["k8s:io.kubernetes.pod.namespace"], ports["port"])
         for rule in egress["spec"]["egress"]
@@ -158,36 +236,33 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
     assert (namespace, port) in allowed
 
 
-def test_haku_runtimes_and_access_profile_share_one_grant(k8s_dir: Path) -> None:
-    """Haku's runtimes and durable Agent profile must have one Kubernetes authority.
-
-    A ServiceAccount is namespaced, so the runtime identity exists twice; the authority must not.
-    Both pods' SAs and Console's synthetic access-profile group are subjects on the single
-    haku-sandbox-admin binding, and neither runtime namespace grants anything of its own — a second
-    binding would be a second answer, free to drift.
-    """
+def test_haku_exec_target_keeps_direct_grant_but_claude_runner_does_not(k8s_dir: Path) -> None:
+    """Only the general Haku exec target retains a directly mounted Kubernetes identity."""
     binding = yaml.safe_load((k8s_dir / "haku/rbac/rolebinding-haku.yaml").read_text())
     role = yaml.safe_load((k8s_dir / "haku/rbac/role.yaml").read_text())
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
     subjects = {(s["kind"], s["name"], s.get("namespace")) for s in binding["subjects"]}
-    assert ("Group", "haku:access-profile:haku", None) in subjects
+    assert subjects == {("ServiceAccount", "haku", "haku-sandbox")}
 
-    for template_name, namespace in (
-        ("sandboxtemplate-haku.yaml", "haku-sandbox"),
-        ("sandboxtemplate-haku-claude.yaml", "haku-claude-sandbox"),
-    ):
-        spec = yaml.safe_load((k8s_dir / "haku/workspaces/app" / template_name).read_text())
-        pod = spec["spec"]["podTemplate"]["spec"]
-        assert pod["automountServiceAccountToken"] is True, template_name
-        assert ("ServiceAccount", pod["serviceAccountName"], namespace) in subjects, template_name
+    general = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku.yaml").read_text())
+    general_pod = general["spec"]["podTemplate"]["spec"]
+    assert general_pod["automountServiceAccountToken"] is True
+    assert ("ServiceAccount", general_pod["serviceAccountName"], "haku-sandbox") in subjects
 
-    # No grant inside the Claude namespace itself: full CRUD there would let a session create
+    claude = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
+    claude_pod = claude["spec"]["podTemplate"]["spec"]
+    assert claude_pod["automountServiceAccountToken"] is False
+    assert "serviceAccountName" not in claude_pod
+
+    # No grant inside the shared runtime namespace itself: full CRUD there would let a session create
     # further pods behind the subscription-token proxy, which is what its isolation is for.
-    claude_ns = k8s_dir / "haku/claude-namespace"
+    runtime_ns = k8s_dir / "haku/runtime-namespace"
     kinds = {
-        yaml.safe_load(path.read_text())["kind"]
-        for path in claude_ns.glob("*.yaml")
+        manifest["kind"]
+        for path in runtime_ns.glob("*.yaml")
         if path.name != "kustomization.yaml"
+        for manifest in yaml.safe_load_all(path.read_text())
+        if manifest is not None
     }
     assert not kinds & {"Role", "RoleBinding", "ClusterRole", "ClusterRoleBinding"}
 
@@ -264,12 +339,7 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
     assert logs_role["metadata"]["name"] == "agent-readable-namespace-logs"
     assert logs_role["rules"] == [{"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]}]
 
-    haku_subjects = {
-        ("Group", "oidc-ksbx-groups:haku", None),
-        ("Group", "haku:access-profile:haku", None),
-        ("ServiceAccount", "haku", "haku-sandbox"),
-        ("ServiceAccount", "haku-claude", "haku-claude-sandbox"),
-    }
+    haku_subjects = {("Group", "oidc-ksbx-groups:haku", None), ("ServiceAccount", "haku", "haku-sandbox")}
     public_coder_subject = ("Group", "haku:access-profile:public-coder", None)
 
     expected_roles = {
@@ -353,6 +423,73 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
     assert public_coder_subject not in bound_haku_subjects
 
 
+def test_launched_cli_sandboxes_reach_only_the_internal_kubernetes_proxy(k8s_dir: Path) -> None:
+    for path in (
+        k8s_dir / "agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml",
+        k8s_dir / "haku/runtime-namespace/networkpolicy.yaml",
+    ):
+        text = path.read_text()
+        assert "haku-kube-api-proxy" in text
+        assert "kube-apiserver" not in text
+
+    runtime_policies = list(yaml.safe_load_all((k8s_dir / "haku/runtime-namespace/networkpolicy.yaml").read_text()))
+    codex_egress = one(obj for obj in runtime_policies if obj["metadata"]["name"] == "public-coder-runner-egress")
+    assert codex_egress["spec"]["endpointSelector"] == {
+        "matchLabels": {
+            "app.kubernetes.io/name": "haku-harness-runner",
+            "haku.allegedly.works/access-profile-id": "public-coder",
+        }
+    }
+    assert "haku-claude-oauth-proxy" not in str(codex_egress)
+
+    proxy_objects = list(yaml.safe_load_all((k8s_dir / "haku/console/kube-api-proxy.yaml").read_text()))
+    proxy = next(obj for obj in proxy_objects if obj["kind"] == "CiliumNetworkPolicy")
+    ingress_text = str(proxy["spec"]["ingress"])
+    assert ingress_text.count("haku-runtime-sandbox") == 2
+    assert "haku-sandbox" not in ingress_text
+    runner_ingress = one(rule for rule in proxy["spec"]["ingress"] if "fromEndpoints" in rule)
+    runner_peers = {frozenset(peer["matchLabels"].items()) for peer in runner_ingress["fromEndpoints"]}
+    assert runner_peers == {
+        frozenset(
+            {
+                "k8s:io.kubernetes.pod.namespace": "haku-runtime-sandbox",
+                "k8s:app.kubernetes.io/name": "haku-harness-runner",
+                "k8s:haku.allegedly.works/access-profile-id": profile,
+            }.items()
+        )
+        for profile in ("haku", "public-coder")
+    }
+    egress = proxy["spec"]["egress"]
+    egress_text = str(egress)
+    assert "codex-runtime" not in egress_text
+    dns_egress = one(rule for rule in egress if "toEndpoints" in rule)
+    assert one(dns_egress["toEndpoints"])["matchLabels"] == {
+        "k8s:io.kubernetes.pod.namespace": "kube-system",
+        "k8s-app": "kube-dns",
+    }
+    dns_ports = one(dns_egress["toPorts"])
+    assert dns_ports["ports"] == [{"port": "53", "protocol": "ANY"}]
+    assert dns_ports["rules"]["dns"] == [{"matchPattern": "**.cluster.local"}, {"matchName": "haku.allegedly.works"}]
+    authority_egress = one(rule for rule in egress if set(rule.get("toEntities", ())) == {"host", "remote-node"})
+    assert one(authority_egress["toPorts"])["ports"] == [{"port": "443", "protocol": "TCP"}]
+
+    deployment = next(obj for obj in proxy_objects if obj["kind"] == "Deployment")
+    environment = {
+        entry["name"]: entry["value"] for entry in one(deployment["spec"]["template"]["spec"]["containers"])["env"]
+    }
+    authority_url = urlsplit(environment["HAKU_KUBE_AUTHORIZATION_URL"])
+    assert authority_url.scheme == "https"
+    assert authority_url.hostname == "haku.allegedly.works"
+    assert authority_url.path == "/api/internal/kubernetes/authorize"
+    assert "HAKU_KUBE_ALLOW_INSECURE_AUTHORITY" not in environment
+
+    public_route = yaml.safe_load((k8s_dir / "haku/console/httproute.yaml").read_text())
+    assert authority_url.hostname in public_route["spec"]["hostnames"]
+    authority_route = one(rule for rule in public_route["spec"]["rules"] if "matches" in rule)
+    assert one(authority_route["matches"])["path"] == {"type": "Exact", "value": authority_url.path}
+    assert authority_route["backendRefs"] == [{"name": "haku-console-codex-runner", "port": 9090}]
+
+
 def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     """Agent traffic, standing SAR policy, and proxy execution authority stay separate."""
     agent_dir = k8s_dir / "agents" / "public-coder-agent"
@@ -370,6 +507,12 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     secrets_by_env = {entry["source"]["var"]: entry for entry in secrets}
     haku_secret = secrets_by_env["HAKU_CONSOLE_TOKEN"]
     assert {rule["host"] for rule in haku_secret["rules"]} == {"haku.allegedly.works", "haku-kubeapi.allegedly.works"}
+    litellm_secret = secrets_by_env["LITELLM_API_KEY"]
+    assert litellm_secret["replace"] == {
+        "proxy_value": "proxy-litellm-public-coder-placeholder",
+        "match_headers": ["Authorization"],
+    }
+    assert litellm_secret["rules"] == [{"host": "litellm.litellm.svc.cluster.local"}]
     assert "KUBERNETES_READER_TOKEN" not in secrets_by_env
 
     ingress_policy = yaml.safe_load((agent_dir / "proxy" / "cnp-ingress.yaml").read_text())
@@ -385,6 +528,13 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
             {
                 "k8s:io.kubernetes.pod.namespace": "public-coder-agent",
                 "k8s:kubevirt.io/domain": "public-coder-devbox",
+            }.items()
+        ),
+        frozenset(
+            {
+                "k8s:io.kubernetes.pod.namespace": "haku-runtime-sandbox",
+                "k8s:app.kubernetes.io/name": "haku-harness-runner",
+                "k8s:haku.allegedly.works/access-profile-id": "public-coder",
             }.items()
         ),
     }
@@ -409,6 +559,17 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         "name": "aiquota-api-bearer-public-coder",
         "key": "bearer-token",
     }
+    assert proxy_env["LITELLM_API_KEY"]["valueFrom"]["secretKeyRef"] == {
+        "name": "litellm-key-public-coder-agent",
+        "key": "api-key",
+    }
+    proxy_policy = yaml.safe_load((agent_dir / "proxy" / "cnp-egress.yaml").read_text())
+    litellm_proxy_egress = one(
+        rule
+        for rule in proxy_policy["spec"]["egress"]
+        if rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("k8s:app.kubernetes.io/name") == "litellm"
+    )
+    assert one(litellm_proxy_egress["toPorts"])["ports"] == [{"port": "4000", "protocol": "TCP"}]
 
     app_deployment = yaml.safe_load((agent_dir / "app" / "deployment.yaml").read_text())
     app_container = one(app_deployment["spec"]["template"]["spec"]["containers"])
@@ -482,12 +643,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         "name": "haku:access-profile:public-coder",
         "apiGroup": "rbac.authorization.k8s.io",
     }
-    haku_standing_subjects = {
-        ("Group", "oidc-ksbx-groups:haku", None),
-        ("Group", "haku:access-profile:haku", None),
-        ("ServiceAccount", "haku", "haku-sandbox"),
-        ("ServiceAccount", "haku-claude", "haku-claude-sandbox"),
-    }
+    haku_standing_subjects = {("Group", "oidc-ksbx-groups:haku", None), ("ServiceAccount", "haku", "haku-sandbox")}
     standing_binding_files = (
         agent_dir / "k8s-reader" / "role.yaml",
         agent_dir / "k8s-reader" / "node-reader.yaml",
@@ -539,9 +695,10 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         cutover_label not in flux["metadata"].get("labels", {}) for flux in (reader_flux, proxy_flux, console_flux)
     )
     dependency_by_name = {entry["name"]: entry for entry in proxy_flux["spec"]["dependsOn"]}
-    for dependency_name in ("public-coder-agent-k8s-reader", "haku-console", "aiquota"):
+    for dependency_name in ("public-coder-agent-k8s-reader", "haku-console", "aiquota", "litellm-keys-tf"):
         assert "readyExpr" not in dependency_by_name[dependency_name]
     assert dependency_by_name["aiquota"]["namespace"] == "ducktape-flux"
+    assert dependency_by_name["litellm-keys-tf"]["namespace"] == "ducktape-flux"
     assert proxy_flux["spec"]["wait"] is True
     assert proxy_flux["spec"]["retryInterval"] == "1m"
     assert proxy_flux["spec"]["healthChecks"] == [
@@ -558,6 +715,120 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
             "namespace": "public-coder-agent",
         },
     ]
+
+
+def test_public_coder_codex_has_a_separate_empty_workspace_and_trust_path(k8s_dir: Path) -> None:
+    """The public-coder launch gets its dedicated empty workspace and trust path."""
+    namespace = "haku-runtime-sandbox"
+    template_path = k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-public-coder-codex.yaml"
+    template_text = template_path.read_text()
+    template = yaml.safe_load(template_text)
+    assert template["metadata"]["namespace"] == namespace
+    pod = template["spec"]["podTemplate"]["spec"]
+    assert pod["automountServiceAccountToken"] is False
+    assert "serviceAccountName" not in pod
+    container = one(pod["containers"])
+    assert container["image"].startswith("ghcr.io/agentydragon/haku-harness-runner:devel-")
+    assert '# {"$imagepolicy": "flux-system:haku-harness-runner"}' in template_text
+    claude_template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
+    claude_container = one(claude_template["spec"]["podTemplate"]["spec"]["containers"])
+    assert container["image"] == claude_container["image"]
+    assert container["args"] == ["--harness", "codex-app-server"]
+    environment = sandbox_env(template)
+    assert environment["HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL"]["value"] == (
+        "ws://haku-console-codex-runner.haku-console.svc.cluster.local:9090/internal/claude/runner"
+    )
+    assert environment["OPENAI_API_KEY"] == {
+        "name": "OPENAI_API_KEY",
+        "value": "proxy-litellm-public-coder-placeholder",
+    }
+    litellm_keys_tf = get_required_path("ducktape/tf/gitops/litellm-keys/main.tf").read_text()
+    assert '"public-coder-agent,haku-runtime-sandbox"' not in litellm_keys_tf
+    assert (
+        litellm_keys_tf.count('"reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "public-coder-agent"')
+        == 1
+    )
+    assert (
+        litellm_keys_tf.count('"reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "public-coder-agent"')
+        == 1
+    )
+    assert environment[RUNNER_SETUP_ENV]["value"] == ""
+    assert not {"HAKU_GIT_USERNAME", "HAKU_GIT_PASSWORD", "HAKU_GITHUB_TOKEN"} & environment.keys()
+    workspace = one(volume for volume in pod["volumes"] if volume["name"] == "workspace")
+    assert workspace == {"name": "workspace", "emptyDir": {"sizeLimit": "10Gi"}}
+    trust_mount = one(mount for mount in container["volumeMounts"] if mount["name"] == "public-coder-proxy-ca")
+    assert trust_mount["mountPath"] == "/etc/ssl/certs/ca-certificates.crt"
+    assert trust_mount["subPath"] == "ca-certificates.crt"
+
+    claims_role = yaml.safe_load((k8s_dir / "haku/workspaces/app/haku-console-runtime-claim-role.yaml").read_text())
+    assert claims_role["metadata"]["namespace"] == namespace
+    assert all("list" not in rule["verbs"] and "watch" not in rule["verbs"] for rule in claims_role["rules"])
+    binding = yaml.safe_load((k8s_dir / "haku/workspaces/app/haku-console-runtime-claim-rolebinding.yaml").read_text())
+    assert binding["subjects"] == [{"kind": "ServiceAccount", "name": "haku-console", "namespace": "haku-console"}]
+
+    policy_objects = list(yaml.safe_load_all((k8s_dir / "haku/runtime-namespace/networkpolicy.yaml").read_text()))
+    egress = one(obj for obj in policy_objects if obj["metadata"]["name"] == "public-coder-runner-egress")
+    assert egress["kind"] == "CiliumNetworkPolicy"
+    destinations = {
+        (
+            one(rule["toEndpoints"])["matchLabels"]["k8s:io.kubernetes.pod.namespace"],
+            int(one(one(rule["toPorts"])["ports"])["port"]),
+        )
+        for rule in egress["spec"]["egress"]
+        if "toEndpoints" in rule and len(one(rule["toPorts"])["ports"]) == 1
+    }
+    assert {("haku-console", 8080), ("public-coder-agent", 8080)} <= destinations
+    assert not any(namespace in {"litellm", "haku-egress-proxy"} for namespace, _port in destinations)
+
+    trust = yaml.safe_load((k8s_dir / "agents/public-coder-agent/proxy/trust-bundle.yaml").read_text())
+    namespace_values = one(trust["spec"]["target"]["namespaceSelector"]["matchExpressions"])["values"]
+    assert namespace in namespace_values
+
+    deployment = yaml.safe_load((k8s_dir / "haku/console/deployment.yaml").read_text())
+    assert deployment["spec"]["template"]["metadata"]["labels"]["haku.allegedly.works/codex-runtime"] == "true"
+    runner_service = yaml.safe_load((k8s_dir / "haku/console/codex-runner-service.yaml").read_text())
+    assert runner_service["spec"]["selector"] == {
+        "app.kubernetes.io/name": "haku-console",
+        "haku.allegedly.works/codex-runtime": "true",
+    }
+    assert runner_service["spec"]["ports"] == [{"name": "runner", "port": 9090, "targetPort": "api", "protocol": "TCP"}]
+    server = next(
+        candidate for candidate in deployment["spec"]["template"]["spec"]["containers"] if candidate["name"] == "server"
+    )
+    env_names = {entry["name"] for entry in server["env"]}
+    assert not any(name.startswith("HAKU_CONSOLE_CODEX_RUNTIME__") for name in env_names)
+    assert "HAKU_CONSOLE_RUNNER_KUBERNETES_PROXY_URL" not in env_names
+    assert "HAKU_CONSOLE_HAKU_AGENT_WORKSPACE_SETUP" not in env_names
+    shared_console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
+    codex_settings = shared_console_config["settings"]["codex_runtime"]
+    assert codex_settings["namespace"] == namespace
+    shared_launchable_agents = {entry["agent_id"] for entry in shared_console_config["launchable_agents"]}
+    assert codex_settings["agent_id"] not in shared_launchable_agents
+    assert codex_settings["provider_id"] == "haku"
+    assert codex_settings["api_key_env_var"] == "OPENAI_API_KEY"
+    assert codex_settings["api_base_url"] == "http://litellm.litellm.svc.cluster.local:4000/v1"
+    assert "litellm.litellm.svc.cluster.local" not in codex_settings["no_proxy"]
+    assert codex_settings["ca_bundle"] == "/etc/ssl/certs/ca-certificates.crt"
+    assert shared_console_config["settings"]["runner_kubernetes_proxy_url"] == (
+        "http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080"
+    )
+    prompt_path = PurePosixPath(codex_settings["system_prompt_template"])
+    generated = one(
+        entry
+        for entry in yaml.safe_load((k8s_dir / "haku/console/kustomization.yaml").read_text())["configMapGenerator"]
+        if entry["name"] == "haku-console-config"
+    )
+    assert prompt_path.name in generated["files"]
+    prompt = (k8s_dir / "haku/console" / prompt_path.name).read_text()
+    assert "public-coder-agent" in prompt
+    assert "public GitHub repositories" in prompt
+    assert "workspace starts empty and ephemeral" in prompt
+    assert "haku-state" not in prompt.lower()
+    assert "not haku" not in prompt.lower()
+
+    workspaces_flux = yaml.safe_load((k8s_dir / "haku/workspaces/app/flux-kustomization.yaml").read_text())
+    workspace_dependencies = {entry["name"] for entry in workspaces_flux["spec"]["dependsOn"]}
+    assert {"haku-runtime-namespace", "public-coder-agent-proxy", "litellm-keys-tf"} <= workspace_dependencies
 
 
 def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
@@ -604,7 +875,8 @@ def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
     static_port = one(static_service["spec"]["ports"])
     assert static_port["targetPort"] in {port["name"] for port in static_container["ports"]}
     route = yaml.safe_load((console_dir / "httproute.yaml").read_text(encoding="utf-8"))
-    route_backend = one(route["spec"]["rules"][0]["backendRefs"])
+    static_route = one(rule for rule in route["spec"]["rules"] if "filters" in rule)
+    route_backend = one(static_route["backendRefs"])
     assert (route_backend["name"], route_backend["port"]) == (static_service["metadata"]["name"], static_port["port"])
     assert static_deployment["spec"]["template"]["spec"]["automountServiceAccountToken"] is False
     static_env = {entry["name"]: entry["value"] for entry in static_container["env"] if "value" in entry}
@@ -707,7 +979,8 @@ def test_haku_console_oauth_edge_contract(k8s_dir: Path) -> None:
     assert route["spec"]["parentRefs"] == [
         {"name": "cluster-gateway", "namespace": "gateway-system", "sectionName": "https-wildcard"}
     ]
-    assert route["spec"]["rules"][0]["filters"] == [
+    static_route = one(rule for rule in route["spec"]["rules"] if "filters" in rule)
+    assert static_route["filters"] == [
         {
             "type": "ResponseHeaderModifier",
             "responseHeaderModifier": {"set": [{"name": "Strict-Transport-Security", "value": "max-age=31536000"}]},

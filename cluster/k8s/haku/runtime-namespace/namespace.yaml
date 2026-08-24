@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: haku-runtime-sandbox
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"
+    name: haku-runtime-sandbox
+    # Console-owned harness runners are a separate trust domain from Haku's general
+    # compute namespace. Per-template pod labels keep Claude's and public-coder's
+    # credential-mediating egress paths separate within this shared namespace.
+    pod-security.kubernetes.io/enforce: baseline
+  annotations:
+    description: Console-owned Claude and public-coder Codex harness runners; no ServiceAccount identity.

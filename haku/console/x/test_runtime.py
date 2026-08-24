@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
@@ -10,8 +11,15 @@ import pytest_bazel
 from haku.console.chat_models import RuntimeKind
 from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.testing.wire import assistant, recorded, text_block
-from haku.console.x.runtime import UnsupportedRuntimeError
+from haku.console.x.runtime import (
+    AgentRuntimeResources,
+    RuntimeKey,
+    RuntimeNotConfiguredError,
+    RuntimeRegistry,
+    UnsupportedRuntimeError,
+)
 from haku.console.x.runtime_catalog import projection_registry
+from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.runtime.x.bridge.protocol import HarnessFrame
 
 
@@ -28,6 +36,45 @@ def test_registry_fails_closed_for_a_runtime_kind_that_is_not_registered() -> No
 
     with pytest.raises(UnsupportedRuntimeError, match="not registered"):
         registry[cast(RuntimeKind, "future_runtime")]
+
+
+def test_execution_resources_are_selected_by_immutable_agent_runtime_and_profile() -> None:
+    adapter = projection_registry()[RuntimeKind.CLAUDE_CODE]
+    first_agent = uuid4()
+    second_agent = uuid4()
+
+    def resource(agent_id, profile, cwd):
+        return AgentRuntimeResources(
+            claims=cast(Any, object()),
+            session_ttl_seconds=300,
+            cwd=cwd,
+            environment={},
+            mcp_server_urls={},
+            system_prompt=SystemPromptTemplate(""),
+            agent_id=agent_id,
+            access_profile_id=profile,
+        )
+
+    registry = RuntimeRegistry(
+        {RuntimeKind.CLAUDE_CODE: adapter},
+        {
+            RuntimeKey(first_agent, RuntimeKind.CLAUDE_CODE): resource(first_agent, "haku", "/haku"),
+            RuntimeKey(second_agent, RuntimeKind.CLAUDE_CODE): resource(second_agent, "coder", "/coder"),
+        },
+    )
+
+    assert (
+        registry.configured(
+            agent_id=first_agent, runtime_kind=RuntimeKind.CLAUDE_CODE, access_profile_id="haku"
+        ).resources.cwd
+        == "/haku"
+    )
+    assert (
+        registry.configured(second_agent, RuntimeKind.CLAUDE_CODE, expected_profile_id="coder").resources.cwd
+        == "/coder"
+    )
+    with pytest.raises(RuntimeNotConfiguredError, match="access profile"):
+        registry.configured(first_agent, RuntimeKind.CLAUDE_CODE, access_profile_id="coder")
 
 
 def test_runtime_adapter_keeps_claude_projection_behavior_unchanged() -> None:

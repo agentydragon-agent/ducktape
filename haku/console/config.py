@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
@@ -31,6 +32,23 @@ MCP_PATH = "/mcp"
 # The console's reserved SPA namespace (frontend/routing.ts's CONSOLE_ROOT_PATH). Trusted console
 # pages live under it; every other path belongs to the framed haku-ui.
 _CONSOLE_ROOT_PATH = "/_console"
+
+# Claim-owned exact-session authority. Keep these names local to the deploy-config layer rather
+# than making schema/export binaries depend on the separately packaged runner implementation.
+_RESERVED_SESSION_CREDENTIAL_ENV_VARS = frozenset({"HAKU_AGENT_SDK_RUNNER_TOKEN", "HAKU_MCP_BEARER_TOKEN"})
+
+
+def _proxy_environment(*, proxy_url: str, no_proxy: str, ca_bundle: str, pip: bool = False) -> dict[str, str]:
+    """Build the common explicit-proxy and CA environment without alias drift."""
+    environment = {
+        **dict.fromkeys(("HTTP_PROXY", "HTTPS_PROXY"), proxy_url),
+        "NO_PROXY": no_proxy,
+        "NODE_USE_ENV_PROXY": "1",
+        **dict.fromkeys(("NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE"), ca_bundle),
+    }
+    if pip:
+        environment["PIP_CERT"] = ca_bundle
+    return environment
 
 
 def tool_call_console_url(console_base_url: str, tool_call_id: str) -> str:
@@ -365,31 +383,56 @@ class ClaudeRuntimeConfig(BaseModel):
     # config rather than code or haku-state.
     system_prompt_template: Path
 
-    @field_validator("mcp_url")
-    @classmethod
-    def _uncredentialed_mcp_url(cls, value: str) -> str:
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.netloc
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.fragment
-        ):
-            raise ValueError("mcp_url must be an HTTP(S) URL without credentials or a fragment")
-        return value
-
     def claude_environment(self) -> dict[str, str]:
         return {
             "CLAUDE_CODE_OAUTH_TOKEN": self.oauth_placeholder,
-            "HTTP_PROXY": self.https_proxy,
-            "HTTPS_PROXY": self.https_proxy,
-            "NO_PROXY": self.no_proxy,
-            "NODE_USE_ENV_PROXY": "1",
-            "NODE_EXTRA_CA_CERTS": self.ca_bundle,
-            "SSL_CERT_FILE": self.ca_bundle,
-            "CURL_CA_BUNDLE": self.ca_bundle,
-            "REQUESTS_CA_BUNDLE": self.ca_bundle,
+            **_proxy_environment(proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle),
+        }
+
+
+class CodexRuntimeConfig(BaseModel):
+    """Explicit deploy-time wiring for the Console-owned Codex chat runtime.
+
+    The provider authentication contract stays in the SandboxTemplate's environment. That value
+    may be an inert placeholder replaced by a trusted egress proxy; Console owns only the
+    non-secret OpenAI-compatible endpoint and model choice, so changing LiteLLM/CLIProxyAPI (or
+    replacing either with another compatible endpoint) does not change the runtime protocol.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    agent_id: UUID
+    namespace: str
+    warm_pool: str
+    cwd: str
+    session_ttl_seconds: int = Field(ge=300, le=86400)
+    model: str
+    provider_id: str = Field(min_length=1)
+    provider_name: str = Field(min_length=1)
+    api_base_url: str
+    api_key_env_var: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    https_proxy: str
+    ca_bundle: str
+    no_proxy: str
+    github_token_placeholder: str
+    mcp_url: str
+    system_prompt_template: Path
+
+    @field_validator("api_key_env_var")
+    @classmethod
+    def _provider_key_must_not_alias_session_authority(cls, value: str) -> str:
+        if value in _RESERVED_SESSION_CREDENTIAL_ENV_VARS:
+            raise ValueError("provider key variable must not alias an exact-session credential")
+        return value
+
+    def codex_environment(self) -> dict[str, str]:
+        """Non-secret child-process settings; the pod supplies the provider credential contract."""
+        return {
+            **_proxy_environment(
+                proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle, pip=True
+            ),
+            "GH_PAT": self.github_token_placeholder,
+            "GITHUB_TOKEN": self.github_token_placeholder,
         }
 
 
@@ -500,6 +543,29 @@ class Settings(BaseSettings):
     # HAKU_CONSOLE_LAUNCH_ROUTINE__{ROUTINE_ID,TOKEN}.
     model_config = SettingsConfigDict(env_prefix="HAKU_CONSOLE_", env_nested_delimiter="__")
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Load non-secret deployment settings from the shared Console YAML below env overrides.
+
+        The ``settings`` section is ignored by old ``ConsoleConfigFile`` parsers, so adding it to
+        the projected ConfigMap is rolling-compatible while new replicas can stop spelling
+        topology and proxy aliases across many pod environment variables.
+        """
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        if config_file := os.environ.get("HAKU_CONSOLE_CONFIG_FILE"):
+            sources.append(
+                YamlConfigSettingsSource(settings_cls, yaml_file=config_file, yaml_config_section="settings")
+            )
+        sources.append(file_secret_settings)
+        return tuple(sources)
+
     # Optional directory holding the built React SPA (index.html + assets), served
     # same-origin by FastAPI for direct local/dev fallback. Production leaves this
     # unset and serves the SPA from the haku-console-static nginx image.
@@ -535,6 +601,21 @@ class Settings(BaseSettings):
     # policies, static machine `agents` (id + env-referenced bearer + operator subject + policy),
     # Claude runtime wiring, and the `hostexec` host map (in-scope machines + exec URLs/audiences).
     config_file: Path
+
+    # Transitional Settings-owned execution registration for Codex. It lives in the top-level
+    # ``settings`` section of the shared YAML, which old ConsoleConfigFile parsers ignore, rather
+    # than under the closed ``chat_runtimes`` schema they would reject during rollback. The runtime
+    # remains a first-class registered RuntimeKind once configured.
+    codex_runtime: CodexRuntimeConfig | None = None
+
+    # Non-secret runner topology selected by Console for every launched Agent. The runner turns
+    # this into an ephemeral tokenFile kubeconfig backed by the exact-session bearer; the sandbox
+    # itself receives no Kubernetes ServiceAccount token. Optional during the rolling cutover so
+    # the new image can still start against an old deployment configuration.
+    runner_kubernetes_proxy_url: str | None = None
+    # Haku's Agent-owned workspace bootstrap inside the shared runner image. Public coder
+    # explicitly selects no setup; this is not a property of Claude versus Codex.
+    haku_agent_workspace_setup: Path | None = None
 
     # Shared haku-console Postgres database. Required: it holds the MCP approval audit/result
     # ledger and the operator OAuth token store — the console does not run without them. Both

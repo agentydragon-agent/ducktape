@@ -23,6 +23,19 @@ spec:
   hostnames:
     - "haku.allegedly.works"
   rules:
+    # The Kubernetes proxy sends exact-session bearers only over the wildcard TLS listener.
+    # Route this one internal authorization path directly to capability-selected Console pods:
+    # the static nginx backend intentionally targets the rolling mixed-version Service instead.
+    - matches:
+        - path:
+            type: Exact
+            value: /api/internal/kubernetes/authorize
+      backendRefs:
+        - name: haku-console-codex-runner
+          port: 9090
+      timeouts:
+        request: "10s"
+        backendRequest: "10s"
     - filters:
         # Set at the TLS-aware edge so both nginx-served SPA responses and FastAPI responses carry
         # the policy; neither same-pod HTTP hop can reliably infer that it terminated HTTPS.

@@ -5,6 +5,7 @@ exports_files(
     visibility = [
         "//cluster/k8s/litellm/app:__pkg__",
         "//cluster/k8s/x/haku/dispatch/litellm:__pkg__",
+        "//cluster/validation:__pkg__",
     ],
 )
 

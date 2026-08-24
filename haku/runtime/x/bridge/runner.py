@@ -7,6 +7,7 @@ was told to and pumps its stdio.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import subprocess
@@ -22,10 +23,12 @@ from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_a
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
-from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, CliBackend
+from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, MCP_CREDENTIAL_VARIABLE, CliBackend
 from haku.runtime.x.bridge.backend_registry import BackendFactory, runner_backends
 from haku.runtime.x.bridge.protocol import (
     CONSOLE_TO_RUNNER,
+    KUBERNETES_PROXY_URL_ENV,
+    RUNNER_SETUP_ENV,
     EndInput,
     HarnessFrame,
     HarnessLaunch,
@@ -207,6 +210,60 @@ async def _start_cli(backend: CliBackend, launch: HarnessLaunch) -> anyio.abc.Pr
     )
 
 
+def _launch_setup_path(launch: HarnessLaunch, fallback: Path | None) -> Path | None:
+    """Select Agent-owned bootstrap from the launch, retaining an old-Console fallback."""
+    if RUNNER_SETUP_ENV not in launch.environment:
+        return fallback
+    selected = launch.environment[RUNNER_SETUP_ENV]
+    return Path(selected) if selected else None
+
+
+def _write_runner_file(path: Path, content: str) -> None:
+    """Write one launch-time runner file with owner-only permissions."""
+    path.touch(mode=0o600)
+    path.chmod(0o600)
+    path.write_text(content)
+
+
+def _materialize_proxy_kubeconfig(launch: HarnessLaunch, bearer_token: str | None) -> HarnessLaunch:
+    """Write a claim-local kubeconfig for Console's selected Kubernetes proxy.
+
+    The bearer is intentionally stored in a mode-0600 tokenFile rather than in argv or kubeconfig
+    YAML. It is already present by design in the ephemeral SandboxClaim environment for bridge and
+    MCP authentication. The proxy URL is launch-selected so the runner does not carry a catalog of
+    Console topology or bypass the authorization boundary.
+    """
+    proxy_url = launch.environment.get(KUBERNETES_PROXY_URL_ENV)
+    if not proxy_url:
+        return launch
+    # The claim-owned credential always wins. Launch-selected environment is topology/options,
+    # never authority, and must not be able to replace the bearer inherited by this runner Pod.
+    token = bearer_token or os.environ.get(BRIDGE_CREDENTIAL_VARIABLE) or os.environ.get(MCP_CREDENTIAL_VARIABLE)
+    if not token:
+        raise RuntimeError(f"{KUBERNETES_PROXY_URL_ENV} requires a bridge bearer")
+
+    home = Path(os.environ.get("HOME", "/home/runner"))
+    kube_dir = home / ".kube"
+    kube_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    kube_dir.chmod(0o700)
+    token_path = kube_dir / "haku-mcp-token"
+    config_path = kube_dir / "config"
+    # JSON is valid kubeconfig YAML and avoids treating deploy-configured URL/path bytes as YAML.
+    config = json.dumps(
+        {
+            "apiVersion": "v1",
+            "kind": "Config",
+            "clusters": [{"name": "haku-console-proxy", "cluster": {"server": proxy_url}}],
+            "users": [{"name": "haku-mcp", "user": {"tokenFile": str(token_path)}}],
+            "contexts": [{"name": "haku-mcp", "context": {"cluster": "haku-console-proxy", "user": "haku-mcp"}}],
+            "current-context": "haku-mcp",
+        }
+    )
+    _write_runner_file(token_path, token)
+    _write_runner_file(config_path, config)
+    return launch.model_copy(update={"environment": {**launch.environment, "KUBECONFIG": str(config_path)}})
+
+
 async def _shutdown(process: anyio.abc.Process) -> int | None:
     """Stop the CLI, reporting the status it chose for itself — or None if we chose for it.
 
@@ -307,6 +364,7 @@ async def bridge_websocket_to_cli(websocket: TextWebSocket, *, backend: CliBacke
 
     `run` composes the same pieces with a process that outlives the socket.
     """
+    launch = _materialize_proxy_kubeconfig(launch, os.environ.get(BRIDGE_CREDENTIAL_VARIABLE))
     outbound_sender, outbound_receiver = anyio.create_memory_object_stream[Outbound](OUTBOUND_BUFFER)
     process = await _start_cli(backend, launch)
     try:
@@ -457,8 +515,12 @@ async def run(
                     # console that already holds frames must not be sent one below its cursor.
                     log.seed(launch.resume_from)
                     if process is None:
-                        if setup_path is not None:
-                            await prepare_workspace(setup_path, cwd=launch.cwd, narrate=_narrator(websocket, log))
+                        # Materialize launch-owned Kubernetes configuration exactly once, before
+                        # any bootstrap or harness code has had an opportunity to modify HOME.
+                        launch = _materialize_proxy_kubeconfig(launch, bearer_token)
+                        selected_setup = _launch_setup_path(launch, setup_path)
+                        if selected_setup is not None:
+                            await prepare_workspace(selected_setup, cwd=launch.cwd, narrate=_narrator(websocket, log))
                         process = await _start_cli(backend, launch)
                         # Long-lived, so nothing the CLI writes is lost to a closed socket: the
                         # pipes drain into the buffer either way, whose backpressure pauses the CLI
@@ -502,7 +564,7 @@ def parse_args(backends: Mapping[str, BackendFactory]) -> argparse.Namespace:
     parser.add_argument("--cli-path", type=Path)
     # Unset means "no bootstrap", which is what tests and a bare local run want; the image sets it.
     # The bootstrap checks haku-state out and knows nothing about which CLI follows it.
-    parser.add_argument("--setup-path", type=Path, default=_optional_path(os.environ.get("HAKU_RUNNER_SETUP")))
+    parser.add_argument("--setup-path", type=Path, default=_optional_path(os.environ.get(RUNNER_SETUP_ENV)))
     args = parser.parse_args()
     if not args.harness:
         parser.error("--harness or HAKU_HARNESS is required")

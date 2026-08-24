@@ -129,12 +129,12 @@ class SessionPromptRequest(BaseModel):
 
 
 class ConversationCreateRequest(BaseModel):
-    """Optional launch selectors; access profile is always derived server-side."""
+    """Explicit Web launch selectors; access profile is always derived server-side."""
 
     model_config = ConfigDict(extra="forbid")
 
-    agent_id: UUID | None = None
-    runtime: RuntimeKind | None = None
+    agent_id: UUID
+    runtime: RuntimeKind
 
 
 class PromptAccepted(BaseModel):
@@ -249,6 +249,7 @@ class SessionService:
         conversation_history: ConversationHistory | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
         default_agent_id: UUID | None = None,
+        default_runtime_kind: RuntimeKind = RuntimeKind.CLAUDE_CODE,
     ):
         self._runtimes = runtimes
         self._store = store
@@ -256,6 +257,7 @@ class SessionService:
         self._conversation_history = conversation_history
         self._launch_authorizer = launch_authorizer
         self._default_agent_id = default_agent_id
+        self._default_runtime_kind = default_runtime_kind
         # Per session, the last view read off the cluster; `_observed` drops entries older than
         # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, SandboxProvisioningView] = {}
@@ -264,7 +266,15 @@ class SessionService:
         return self._runtimes[await self._store.runtime_kind_of(session_id)]
 
     async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
-        return self._runtimes.configured(await self._store.runtime_kind_of(session_id))
+        identity = await self._store.session_identity(session_id)
+        if identity.agent_id is None:
+            # Nullable identity rows are retained during rolling migration.  They can still be
+            # inspected/projected by runtime kind, but execution uses the legacy registration only
+            # until the row is replaced by a pinned conversation.
+            return self._runtimes.configured(identity.runtime_kind)
+        return self._runtimes.configured(
+            identity.agent_id, identity.runtime_kind, access_profile_id=identity.access_profile_id
+        )
 
     async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
         """Interrupt this session's turn, or answer False when it has none.
@@ -294,7 +304,7 @@ class SessionService:
                 operator_id,
                 conversation_id=conversation_id,
                 agent_id=selected_agent if conversation_id is None else None,
-                runtime_kind=runtime_kind,
+                runtime_kind=runtime_kind or self._default_runtime_kind,
                 launch_authorizer=self._launch_authorizer,
             )
         else:
@@ -983,18 +993,15 @@ async def list_conversations(
 
 @router.post("/api/conversations", status_code=201)
 async def create_conversation(
-    actor: OperatorActorDep, service: SessionServiceDep, body: ConversationCreateRequest | None = None
+    body: ConversationCreateRequest, actor: OperatorActorDep, service: SessionServiceDep
 ) -> ConversationView:
     """Open a new thread and the first session to run it.
 
-    One call, because a conversation with no session is a thread nothing can be said to.
+    One call, because a conversation with no session is a thread nothing can be said to. Agent and
+    runtime are an atomic required pair; there is no server-default launch endpoint.
     """
     try:
-        return await service.create_conversation(
-            actor.operator_id,
-            agent_id=None if body is None else body.agent_id,
-            runtime_kind=None if body is None else body.runtime,
-        )
+        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, runtime_kind=body.runtime)
     except LaunchAgentRejectedError:
         raise HTTPException(status_code=403, detail="chat launch is not authorized")
     except KeyError as error:

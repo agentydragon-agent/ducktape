@@ -153,7 +153,7 @@ Worth rebuilding as a deliberate scheduled check if that trade turns out to bite
 not come back as a Job that re-runs whenever an unrelated image tag moves.
 
 The one-shot `haku-agent-sdk-smoke` Job from PR #3632 completed successfully in
-`haku-claude-sandbox` against source commit `da578377`. The pod exited 0 with no restart, and the Job reached
+`haku-runtime-sandbox` against source commit `da578377`. The pod exited 0 with no restart, and the Job reached
 `Complete` in 11 seconds. It ran Agent SDK 0.1.48 with its bundled Claude CLI 2.1.71; transcript
 inspection showed the CLI selected `claude-sonnet-4-6` under the subscription credential.
 

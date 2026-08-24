@@ -8,7 +8,10 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "protocol",
     srcs = ["protocol.py"],
-    visibility = ["//haku:__subpackages__"],
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//haku:__subpackages__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 
@@ -37,6 +40,7 @@ py_library(
     deps = [
         ":backend",
         ":protocol",
+        "@pypi//tomlkit",
     ],
 )
 
@@ -208,6 +212,8 @@ oci_image(
         extra_env = {
             "HAKU_CLAUDE_PATH": "/usr/local/bin/claude",
             "HAKU_CODEX_PATH": "/opt/codex/bin/codex",
+            # Compatibility for old Claude pods only. New launches select setup in the
+            # HarnessLaunch environment; Codex explicitly ignores this fallback.
             "HAKU_RUNNER_SETUP": "/usr/local/bin/haku-sandbox-setup.sh",
             "HOME": "/home/runner",
             "CLAUDE_CONFIG_DIR": "/claude-config",
@@ -262,6 +268,27 @@ py_test(
         ":backend_registry",
         ":codex_options",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_codex_layer",
+    srcs = ["test_codex_layer.py"],
+    data = [":codex_layer"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_codex_native_provider",
+    srcs = ["test_codex_native_provider.py"],
+    data = ["@codex_cli_linux_x64//:files"],
+    deps = [
+        ":codex_options",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

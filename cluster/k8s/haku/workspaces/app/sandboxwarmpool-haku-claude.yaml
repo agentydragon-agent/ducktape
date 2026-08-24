@@ -2,7 +2,7 @@ apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxWarmPool
 metadata:
   name: haku-claude
-  namespace: haku-claude-sandbox
+  namespace: haku-runtime-sandbox
 spec:
   # Claim-specific env forces a cold start in Agent Sandbox v0.5.1. Keep the pool
   # as the stable claim routing object without paying for an idle pod; a future

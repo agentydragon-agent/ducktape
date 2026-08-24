@@ -257,10 +257,10 @@ it then opens its **own** upstream connection, so the cache sees only the iron
 pod's address. What reaches an `external_acl_type` helper via `%>a` is
 therefore _which fence_, not which workload:
 
-| Fence                                        | Distinguishable at the cache?                                         |
-| -------------------------------------------- | --------------------------------------------------------------------- |
-| `haku-claude-sandbox` / spike / public-coder | Yes — separate iron pods, separate source IPs                         |
-| Inside `haku-sandbox`                        | **No** — every sandbox pod, haku-ci runner and haku-ui share one iron |
+| Fence                                         | Distinguishable at the cache?                                         |
+| --------------------------------------------- | --------------------------------------------------------------------- |
+| `haku-runtime-sandbox` / spike / public-coder | Yes — separate iron pods, separate source IPs                         |
+| Inside `haku-sandbox`                         | **No** — every sandbox pod, haku-ci runner and haku-ui share one iron |
 
 So the granularity is worst exactly where it matters most: the busiest fence,
 the one with many distinct agents behind a single proxy.

@@ -74,7 +74,7 @@ def sandbox_claims(custom_objects_api, core_v1_api) -> KubernetesSandboxClaims:
     """The real claim builder with only the Kubernetes API objects recorded."""
     return KubernetesSandboxClaims(
         SandboxClaimSpec(
-            namespace="haku-claude-sandbox",
+            namespace="haku-runtime-sandbox",
             warm_pool="haku-claude",
             claim_prefix="claude",
             runtime_label="claude-chat",
@@ -97,7 +97,7 @@ async def test_claim_injects_the_session_credential(sandbox_claims, custom_objec
 
     assert custom_objects_api.created is not None
     args, _ = custom_objects_api.created
-    assert args[:4] == ("extensions.agents.x-k8s.io", "v1beta1", "haku-claude-sandbox", "sandboxclaims")
+    assert args[:4] == ("extensions.agents.x-k8s.io", "v1beta1", "haku-runtime-sandbox", "sandboxclaims")
     body = args[4]
     assert body["metadata"]["name"] == "claude-10000000000040008000000000000001"
     assert body["spec"]["warmPoolRef"] == {"name": "haku-claude"}

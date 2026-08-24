@@ -66,6 +66,7 @@ py_library(
         "//haku/console:operator_identity_store",
         "//haku/console/x:conversation_history",
         "//haku/console/x:conversation_runtime",
+        "//haku/console/x:runtime_catalog",
         "//haku/console/x:sandbox_allocation",
         "//haku/console/x:sandbox_claims",
         "//haku/console/x:session_notifications",

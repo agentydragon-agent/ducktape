@@ -44,8 +44,10 @@ spec:
         - name: proxy
           image: ghcr.io/agentydragon/haku-kube-api-proxy:devel-20260823213022-1d648af # {"$imagepolicy": "flux-system:haku-kube-api-proxy"}
           env:
-            # Public TLS keeps the original Agent bearer encrypted on the proxy-to-Console hop.
-            # Redirects are rejected and any timeout/malformed response fails the request closed.
+            # Route exact-session authority only to replicas carrying the new runtime/auth
+            # capability label. The wildcard Gateway terminates TLS, then the exact-path HTTPRoute
+            # selects haku-console-codex-runner; the ordinary Service deliberately contains old
+            # replicas during a roll, and those replicas cannot validate session bearers.
             - name: HAKU_KUBE_AUTHORIZATION_URL
               value: https://haku.allegedly.works/api/internal/kubernetes/authorize
             - name: HAKU_KUBE_AUTHORIZATION_TIMEOUT
@@ -132,9 +134,10 @@ spec:
         request: 3600s
         backendRequest: 3600s
 ---
-# Selecting the proxy makes both directions default-deny. The only ingress is the Cilium Gateway;
-# egress is DNS, kube-apiserver, and the public-TLS Console authorization endpoint. It receives no
-# general cluster or internet reachability.
+# Selecting the proxy makes both directions default-deny. Ingress is the Cilium Gateway plus the
+# two launched-runner namespaces; egress is kube-apiserver plus DNS and the exact TLS authority
+# hostname. The Gateway route then selects only capability-selected Console replicas. It receives
+# no general cluster or internet reachability.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -151,7 +154,24 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    # In-cluster runner clients use the same authorization boundary as the public route. The
+    # shared namespace is capacity, not authority: admit only the two configured access profiles.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-runtime-sandbox
+            k8s:app.kubernetes.io/name: haku-harness-runner
+            k8s:haku.allegedly.works/access-profile-id: haku
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-runtime-sandbox
+            k8s:app.kubernetes.io/name: haku-harness-runner
+            k8s:haku.allegedly.works/access-profile-id: public-coder
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
   egress:
+    # Cilium's FQDN allowlist requires DNS proxy visibility. Admit only cluster search-path probes
+    # and the one TLS authority name; no general resolver or DNS exfiltration path is opened.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
@@ -162,6 +182,7 @@ spec:
               protocol: ANY
           rules:
             dns:
+              - matchPattern: "**.cluster.local"
               - matchName: haku.allegedly.works
     - toEntities:
         - kube-apiserver
@@ -171,12 +192,12 @@ spec:
               protocol: TCP
             - port: "6443"
               protocol: TCP
-    # `*.allegedly.works` resolves to Gateway hostNetwork/node addresses, which Cilium labels as
-    # remote-node or host rather than world. This is port-scoped to HTTPS; the process itself is
-    # configured with exactly one authorization URL and rejects redirects.
+    # haku.allegedly.works resolves to the ingress nodes. Cilium identifies those destination
+    # IPs as reserved host/remote-node endpoints, so an FQDN selector alone does not match them.
+    # TLS hostname verification and the exact HTTPRoute path retain the application boundary.
     - toEntities:
-        - remote-node
         - host
+        - remote-node
       toPorts:
         - ports:
             - port: "443"

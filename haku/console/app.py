@@ -25,6 +25,7 @@ from uuid import UUID
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
+from more_itertools import one
 from openai import AsyncOpenAI
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -56,6 +57,7 @@ from haku.console import (
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
@@ -74,12 +76,11 @@ from haku.console.mcp_config import (
     load_static_agents,
     validate_in_process_server_bindings,
 )
-from haku.console.models import ConfigResponse
+from haku.console.models import ChatLaunchOption, ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
-from haku.console.tool_call_actor import AgentActor
 from haku.console.tools import gmail as gmail_tools, kubernetes as kubernetes_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import (
@@ -111,6 +112,7 @@ from haku.console.x.session_store import SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.recall_index.git_tree import configure_ca_trust
 from haku.recall_index.openai_embedder import OpenAIEmbedder
+from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
@@ -213,6 +215,8 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.chat_runtimes.claude_code if console_config.chat_runtimes is not None else None
+    codex_runtime = settings.codex_runtime
+    static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
     session_notifications = SessionNotifications(database_url)
     # Session changes reach open tabs over the console socket the shell already holds, coalesced
     # per session. Constructed unconditionally: it listens on the session channel and sends on the
@@ -294,26 +298,100 @@ def create_app(
         )
 
     runtime_registry: console_runtime.RuntimeRegistry
+    registrations: list[runtime_catalog.RuntimeRegistration] = []
+    runner_environment = (
+        {}
+        if settings.runner_kubernetes_proxy_url is None
+        else {KUBERNETES_PROXY_URL_ENV: settings.runner_kubernetes_proxy_url}
+    )
     if claude_runtime is not None:
-        runtime_registry = runtime_catalog.claude_registry(
-            claude_runtime,
-            sandbox_claims.KubernetesSandboxClaims(
-                sandbox_claims.SandboxClaimSpec(
-                    namespace=claude_runtime.namespace,
-                    warm_pool=claude_runtime.warm_pool,
-                    claim_prefix="claude",
-                    runtime_label="claude-chat",
-                    runner_environment={},
-                )
-            ),
-            # Parsed at construction, so a broken deploy template prevents readiness rather than
-            # failing the first attached chat session hours later.
-            system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
+        try:
+            claude_profile_id = static_by_id[claude_runtime.mcp_static_agent_id].access_profile_id
+        except KeyError as error:
+            raise ValueError("configured Claude Agent must be a static Agent") from error
+        registrations.append(
+            runtime_catalog.claude_registration(
+                claude_runtime,
+                sandbox_claims.KubernetesSandboxClaims(
+                    sandbox_claims.SandboxClaimSpec(
+                        namespace=claude_runtime.namespace,
+                        warm_pool=claude_runtime.warm_pool,
+                        claim_prefix="claude",
+                        runtime_label="claude-chat",
+                        runner_environment={},
+                    )
+                ),
+                # Parsed at construction, so a broken deploy template prevents readiness rather
+                # than failing the first attached chat session hours later.
+                system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
+                agent_id=claude_runtime.mcp_static_agent_id,
+                access_profile_id=claude_profile_id,
+                execution_environment={
+                    **runner_environment,
+                    **(
+                        {}
+                        if settings.haku_agent_workspace_setup is None
+                        else {RUNNER_SETUP_ENV: str(settings.haku_agent_workspace_setup)}
+                    ),
+                },
+            )
         )
+    if codex_runtime is not None:
+        try:
+            codex_profile_id = static_by_id[codex_runtime.agent_id].access_profile_id
+        except KeyError as error:
+            raise ValueError("configured Codex Agent must be a static Agent") from error
+        registrations.append(
+            runtime_catalog.codex_registration(
+                codex_runtime,
+                sandbox_claims.KubernetesSandboxClaims(
+                    sandbox_claims.SandboxClaimSpec(
+                        namespace=codex_runtime.namespace,
+                        warm_pool=codex_runtime.warm_pool,
+                        claim_prefix="codex",
+                        runtime_label="codex-chat",
+                        runner_environment={},
+                    )
+                ),
+                system_prompt=SystemPromptTemplate.from_path(codex_runtime.system_prompt_template),
+                agent_id=codex_runtime.agent_id,
+                access_profile_id=codex_profile_id,
+                # An explicit empty value disables the shared image's old-Console fallback. The
+                # public-coder workspace policy belongs to the Agent, not to Codex.
+                execution_environment={**runner_environment, RUNNER_SETUP_ENV: ""},
+            )
+        )
+    if registrations:
+        runtime_registry = runtime_catalog.execution_registry(*registrations)
     else:
         # Runtime-disabled replicas can still inspect every linked durable runtime kind. This
         # registry has projection only: no claims, credentials, or launcher.
         runtime_registry = runtime_catalog.projection_registry()
+    profile_runtime_kinds = {
+        profile.id: set(profile.allowed_chat_runtimes) for profile in console_config.access_profiles
+    }
+    # Shared YAML lists only identities every replica in the rolling set can launch. A runtime
+    # registered by this image may add its pinned static Agent here; an older replica therefore
+    # sees the Agent for MCP attribution but cannot launch it through a different backend.
+    launchable_agent_ids = set(console_config.effective_launchable_agent_ids)
+    if codex_runtime is not None:
+        try:
+            codex_profile_id = static_by_id[codex_runtime.agent_id].access_profile_id
+        except KeyError as error:
+            raise ValueError("configured Codex Agent must be a static Agent") from error
+        profile_launchers = {
+            agent_id
+            for agent_id in launchable_agent_ids | {codex_runtime.agent_id}
+            if static_by_id[agent_id].access_profile_id == codex_profile_id
+        }
+        if profile_launchers != {codex_runtime.agent_id}:
+            raise ValueError("configured Codex Agent must have a dedicated access profile")
+        # The shared YAML keeps Claude in this profile solely so the previous image can parse and
+        # roll back against the same ConfigMap. This image narrows the dedicated profile to Codex
+        # at the actual launch boundary, preventing public-coder from entering Haku's stateful
+        # Claude sandbox despite that compatibility allowance.
+        profile_runtime_kinds[codex_profile_id] = {RuntimeKind.CODEX_APP_SERVER}
+        launchable_agent_ids.add(codex_runtime.agent_id)
     # All read and write paths share one registry. Projection-only composition may link dormant
     # adapters, while launch-capable production composition includes only deliberately supported
     # adapters and resources; no hidden Claude fallback can reinterpret another runtime's rows.
@@ -379,13 +457,13 @@ def create_app(
         )
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
-    if claude_runtime is not None:
-        profiles = {profile.id: profile.allowed_chat_runtimes for profile in console_config.access_profiles}
+    default_runtime_kind: RuntimeKind | None = None
+    if runtime_registry.configured_kinds:
         authorize_chat_launch = ChatLaunchAuthorizer(
             agent_authority,
-            launchable_agent_ids=console_config.effective_launchable_agent_ids,
+            launchable_agent_ids=launchable_agent_ids,
             registered_runtime_kinds=runtime_registry.configured_kinds,
-            profile_runtime_kinds=profiles,
+            profile_runtime_kinds=profile_runtime_kinds,
         )
 
         # `mcp_static_agent_id` is the old ConfigMap's durable Haku Agent selector. During the
@@ -394,6 +472,16 @@ def create_app(
         # deployment-wide selector explicit without making old replicas reject the shared file.
         default_chat_agent_id = console_config.effective_default_chat_agent_id
         assert default_chat_agent_id is not None
+        default_profile_id = static_by_id[default_chat_agent_id].access_profile_id
+        default_candidates = runtime_registry.configured_kinds.intersection(profile_runtime_kinds[default_profile_id])
+        if RuntimeKind.CLAUDE_CODE in default_candidates:
+            # Preserve the old no-body API meaning wherever Claude remains authorized.
+            default_runtime_kind = RuntimeKind.CLAUDE_CODE
+        else:
+            try:
+                default_runtime_kind = one(default_candidates)
+            except ValueError:
+                raise ValueError("default chat Agent must select one configured runtime") from None
 
         session_service = session_runtime.SessionService(
             runtime_registry,
@@ -402,10 +490,11 @@ def create_app(
             conversation_history=ConversationHistory(db_sessions),
             launch_authorizer=authorize_chat_launch,
             default_agent_id=default_chat_agent_id,
+            default_runtime_kind=default_runtime_kind,
         )
         if matrix_conversation_store is not None:
             matrix_conversation_store.configure_launch_identity(
-                authorize_chat_launch, default_agent_id=default_chat_agent_id
+                authorize_chat_launch, default_agent_id=default_chat_agent_id, default_runtime_kind=default_runtime_kind
             )
     else:
         session_service = None
@@ -435,7 +524,6 @@ def create_app(
             fingerprint_static_token(agent.token.get_secret_value()) for agent in loaded_static_agents
         )
     static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(fingerprints=static_agent_fingerprints)
-
     mcp_auth = mcp_agent_auth.build_auth(
         settings,
         agent_authority=agent_authority,
@@ -447,17 +535,7 @@ def create_app(
         session_tokens=db_sessions,
     )
     actor_resolver = HakuMcpActorResolver(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
-    kubernetes_agent_resolver = mcp_agent_auth.McpBearerAgentResolver(provider=mcp_auth.provider, actors=actor_resolver)
-
-    async def resolve_kubernetes_agent(token: str) -> AgentActor | None:
-        """Resolve static, session, or OAuth MCP bearers to an Agent.
-
-        This shares MCP's bearer verification and canonical actor resolution,
-        while deliberately excluding the browser-session principal that MCP
-        accepts only through its exact-Origin-gated cookie path.
-        """
-
-        return await kubernetes_agent_resolver.resolve_agent(token)
+    agent_bearer_resolver = mcp_agent_auth.McpBearerAgentResolver(provider=mcp_auth.provider, actors=actor_resolver)
 
     kubernetes_grants = KubernetesGrantService(
         PostgresKubernetesGrantRepository(db_sessions),
@@ -466,7 +544,7 @@ def create_app(
     kubernetes_authorization = (
         KubernetesAuthorizationService(
             config=console_config.kubernetes_authorization,
-            resolve_agent=resolve_kubernetes_agent,
+            resolve_agent=agent_bearer_resolver,
             grants=kubernetes_grants,
             sar_client=KubernetesSubjectAccessReviewClient(),
         )
@@ -548,7 +626,7 @@ def create_app(
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
                 # Only when the Claude runtime is configured: without it nothing writes sessions,
                 # so the read tools would reflect an always-empty corpus.
-                conversations=session_store if claude_runtime is not None else None,
+                conversations=session_store if runtime_registry.configured_kinds else None,
                 kubernetes=(
                     kubernetes_tools.KubernetesToolsService(
                         grants=kubernetes_grants, authorization=kubernetes_authorization
@@ -773,7 +851,26 @@ def create_app(
     async def config() -> ConfigResponse:
         """Static config for the SPA: launch-routine URL and Haku UI URL."""
         launch = settings.launch_routine
-        return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
+        static_agents = {agent.agent_id: agent for agent in console_config.static_agents}
+        default_agent_id = console_config.effective_default_chat_agent_id
+        launch_options = [
+            ChatLaunchOption(
+                agent_id=agent_id,
+                agent_display_name=static_agents[agent_id].display_name,
+                runtime=kind,
+                runtime_display_name=runtime_registry[kind].display_name,
+                is_default=agent_id == default_agent_id and kind is default_runtime_kind,
+            )
+            for agent_id in launchable_agent_ids
+            for kind in sorted(runtime_registry.configured_kinds, key=lambda value: value.value)
+            if kind in profile_runtime_kinds[static_agents[agent_id].access_profile_id]
+        ]
+        launch_options.sort(key=lambda option: (not option.is_default, option.agent_display_name, option.runtime.value))
+        return ConfigResponse(
+            launch_routine_url=launch.page_url if launch else None,
+            haku_ui_url=settings.haku_ui_url,
+            chat_launch_options=launch_options,
+        )
 
     # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
     # router guards read; https_only follows the canonical public origin.

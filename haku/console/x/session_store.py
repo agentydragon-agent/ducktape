@@ -2058,6 +2058,33 @@ class SessionStore:
                 raise KeyError(session_id)
             return kind
 
+    async def session_identity(self, session_id: UUID) -> OperatorSessionIdentity:
+        """Look up the pinned Agent/profile/runtime for internal execution paths.
+
+        This is intentionally not an Operator-scoped projection read.  Claim lifecycle, prompt
+        rendering and runner admission already hold a session id minted by the store; they need the
+        immutable identity to select resources, while projection readers only need
+        ``runtime_kind_of`` and must remain runtime-only.
+        """
+        async with self._sessions() as db:
+            row = (
+                await db.execute(
+                    select(
+                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind
+                    )
+                    .join(Conversation, Conversation.conversation_id == Session.conversation_id)
+                    .where(Session.session_id == session_id)
+                )
+            ).one_or_none()
+            if row is None:
+                raise KeyError(session_id)
+            return OperatorSessionIdentity(
+                status=row.status,
+                agent_id=row.agent_id,
+                access_profile_id=row.access_profile_id,
+                runtime_kind=row.runtime_kind,
+            )
+
     async def conversation_identity(self, conversation_id: UUID, operator_id: UUID) -> OperatorSessionIdentity:
         """Read a conversation's pinned identity for replacement-session authorization."""
         async with self._sessions() as db:

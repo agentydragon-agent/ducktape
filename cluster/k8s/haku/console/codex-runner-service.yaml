@@ -1,0 +1,22 @@
+# Codex runners and the Kubernetes proxy's exact-session authorization calls must never be
+# load-balanced onto a previous Console replica that cannot adopt codex_app_server sessions or
+# validate session bearers. This selector is added only by the image that registers that runtime;
+# during a roll, the ordinary haku-console Service still serves old/new HTTP traffic while this
+# internal endpoint contains new replicas exclusively.
+apiVersion: v1
+kind: Service
+metadata:
+  name: haku-console-codex-runner
+  namespace: haku-console
+  labels:
+    app.kubernetes.io/name: haku-console
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: haku-console
+    haku.allegedly.works/codex-runtime: "true"
+  ports:
+    - name: runner
+      port: 9090
+      targetPort: api
+      protocol: TCP

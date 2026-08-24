@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import hmac
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -14,12 +15,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.requests import HTTPConnection
 
-from haku.console.agents.authorization import (
-    PostgresAgentAuthority,
-    StaticAgentAuthorization,
-    StaticAgentRejectedError,
-    fingerprint_static_token,
-)
+from haku.console.agent_bearer import AgentBearerResolver
+from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentRejectedError, fingerprint_static_token
 from haku.console.chat_models import SessionStatus
 from haku.console.config import MCP_PATH, Settings
 from haku.console.database_schema import Conversation, Session
@@ -62,55 +59,6 @@ class StaticAgentCredentialRegistry:
         )
 
 
-class _AuthorityStaticTokenVerifier(TokenVerifier, StaticAgentActorResolver):
-    """Verify and resolve a static bearer through the canonical binding aggregate."""
-
-    def __init__(self, authority: PostgresAgentAuthority, credentials: StaticAgentCredentialRegistry) -> None:
-        super().__init__()
-        self._authority = authority
-        self._credentials = credentials
-
-    async def verify_token(self, token: str) -> AccessToken | None:
-        authorization = await self._authorization(token, verification=True)
-        if authorization is None:
-            return None
-        return AccessToken(
-            token=token,
-            client_id=f"{_STATIC_BINDING_CLIENT_ID_PREFIX}{authorization.binding_id}",
-            scopes=[],
-            expires_at=None,
-            claims={},
-        )
-
-    async def resolve_static_actor(self, access_token: AccessToken) -> AgentActor | None:
-        authorization = await self._authorization(access_token.token, verification=False)
-        if authorization is None:
-            return None
-        if access_token.client_id != f"{_STATIC_BINDING_CLIENT_ID_PREFIX}{authorization.binding_id}":
-            return None
-        return AgentActor(
-            agent_id=authorization.agent_id,
-            operator_id=authorization.operator_id,
-            binding_id=authorization.binding_id,
-            access_profile_id=authorization.access_profile_id,
-        )
-
-    async def _authorization(self, token: str, *, verification: bool) -> StaticAgentAuthorization | None:
-        try:
-            fingerprint = self._credentials.configured_fingerprint(token)
-            if fingerprint is None:
-                return None
-            return await self._authority.static_authorization_for_fingerprint(
-                fingerprint=fingerprint, record_seen=not verification
-            )
-        except (StaticAgentRejectedError, ValueError):
-            return None
-        except AgentGrantAuthorityUnavailableError as error:
-            if verification:
-                raise BearerVerificationUnavailableError("Agent authorization is temporarily unavailable") from error
-            raise
-
-
 @dataclass(frozen=True, slots=True)
 class _SessionAgentAuthorization:
     session_id: UUID
@@ -120,43 +68,43 @@ class _SessionAgentAuthorization:
     access_profile_id: str
 
 
-class _AuthoritySessionTokenVerifier(TokenVerifier, StaticAgentActorResolver):
-    """Resolve a Console-minted sandbox bearer to its immutable session identity."""
+@dataclass(frozen=True, slots=True)
+class _ResolvedAgentBearer:
+    actor: AgentActor
+    client_id: str
+
+
+class _StaticAgentBearerSource:
+    def __init__(self, authority: PostgresAgentAuthority, credentials: StaticAgentCredentialRegistry) -> None:
+        self._authority = authority
+        self._credentials = credentials
+
+    async def resolve(self, token: str, *, record_seen: bool = False) -> _ResolvedAgentBearer | None:
+        fingerprint = self._credentials.configured_fingerprint(token)
+        if fingerprint is None:
+            return None
+        authorization = await self._authority.static_authorization_for_fingerprint(
+            fingerprint=fingerprint, record_seen=record_seen
+        )
+        return _ResolvedAgentBearer(
+            actor=AgentActor(
+                agent_id=authorization.agent_id,
+                operator_id=authorization.operator_id,
+                binding_id=authorization.binding_id,
+                access_profile_id=authorization.access_profile_id,
+            ),
+            client_id=f"{_STATIC_BINDING_CLIENT_ID_PREFIX}{authorization.binding_id}",
+        )
+
+
+class _SessionAgentBearerSource:
+    """Resolve a live Console session bearer through the canonical launch authority."""
 
     def __init__(self, authority: PostgresAgentAuthority, sessions: async_sessionmaker[AsyncSession]) -> None:
-        super().__init__()
         self._authority = authority
         self._sessions = sessions
 
-    async def verify_token(self, token: str) -> AccessToken | None:
-        authorization = await self._authorization(token)
-        if authorization is None:
-            return None
-        return AccessToken(
-            token=token,
-            client_id=f"{_CHAT_SESSION_CLIENT_ID_PREFIX}{authorization.session_id}",
-            scopes=[],
-            expires_at=None,
-            claims={},
-        )
-
-    async def resolve_static_actor(self, access_token: AccessToken) -> AgentActor | None:
-        if not access_token.client_id.startswith(_CHAT_SESSION_CLIENT_ID_PREFIX):
-            return None
-        authorization = await self._authorization(access_token.token)
-        if authorization is None:
-            return None
-        if access_token.client_id != f"{_CHAT_SESSION_CLIENT_ID_PREFIX}{authorization.session_id}":
-            return None
-        return AgentActor(
-            agent_id=authorization.agent_id,
-            operator_id=authorization.operator_id,
-            binding_id=authorization.binding_id,
-            access_profile_id=authorization.access_profile_id,
-            session_id=authorization.session_id,
-        )
-
-    async def _authorization(self, token: str) -> _SessionAgentAuthorization | None:
+    async def resolve(self, token: str, *, record_seen: bool = False) -> _ResolvedAgentBearer | None:
         try:
             fingerprint = fingerprint_static_token(token)
         except ValueError:
@@ -172,6 +120,7 @@ class _AuthoritySessionTokenVerifier(TokenVerifier, StaticAgentActorResolver):
                             Session.agent_binding_id,
                             Conversation.agent_id,
                             Conversation.access_profile_id,
+                            Conversation.runtime_kind,
                         )
                         .join(Conversation, Conversation.conversation_id == Session.conversation_id)
                         .where(
@@ -183,7 +132,13 @@ class _AuthoritySessionTokenVerifier(TokenVerifier, StaticAgentActorResolver):
                         )
                     )
                 ).one_or_none()
-                if row is None or row.agent_binding_id is None or row.agent_id is None or row.access_profile_id is None:
+                if (
+                    row is None
+                    or row.agent_binding_id is None
+                    or row.agent_id is None
+                    or row.access_profile_id is None
+                    or row.runtime_kind is None
+                ):
                     return None
                 active = await self._authority.launch_authorization(
                     db,
@@ -192,36 +147,93 @@ class _AuthoritySessionTokenVerifier(TokenVerifier, StaticAgentActorResolver):
                     access_profile_id=row.access_profile_id,
                     binding_id=row.agent_binding_id,
                 )
-                return _SessionAgentAuthorization(
+                authorization = _SessionAgentAuthorization(
                     session_id=row.session_id,
                     agent_id=active.agent_id,
                     binding_id=active.binding_id,
                     operator_id=active.operator_id,
                     access_profile_id=row.access_profile_id,
                 )
+                return _ResolvedAgentBearer(
+                    actor=AgentActor(
+                        agent_id=authorization.agent_id,
+                        operator_id=authorization.operator_id,
+                        binding_id=authorization.binding_id,
+                        access_profile_id=authorization.access_profile_id,
+                        session_id=authorization.session_id,
+                    ),
+                    client_id=f"{_CHAT_SESSION_CLIENT_ID_PREFIX}{authorization.session_id}",
+                )
         except (LaunchAgentRejectedError, ValueError):
             return None
+        except (AgentGrantAuthorityUnavailableError, SQLAlchemyError):
+            raise AgentGrantAuthorityUnavailableError from None
+
+
+class _CompositeAgentBearerResolver(TokenVerifier, StaticAgentActorResolver):
+    """One canonical static/session bearer authority shared by MCP and the kube proxy."""
+
+    def __init__(self, sources: tuple[Callable[..., Awaitable[_ResolvedAgentBearer | None]], ...]) -> None:
+        super().__init__()
+        self._sources = sources
+
+    async def _resolve(self, token: str, *, record_seen: bool = False) -> _ResolvedAgentBearer | None:
+        unavailable = False
+        for source in self._sources:
+            try:
+                resolved = await source(token, record_seen=record_seen)
+            except AgentGrantAuthorityUnavailableError:
+                unavailable = True
+                continue
+            except (StaticAgentRejectedError, ValueError):
+                continue
+            if resolved is not None:
+                return resolved
+        if unavailable:
+            raise AgentGrantAuthorityUnavailableError
+        return None
+
+    async def resolve_agent(self, token: str) -> AgentActor | None:
+        resolved = await self._resolve(token)
+        return None if resolved is None else resolved.actor
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        try:
+            resolved = await self._resolve(token)
         except AgentGrantAuthorityUnavailableError as error:
             raise BearerVerificationUnavailableError("Agent authorization is temporarily unavailable") from error
-        except SQLAlchemyError as error:
-            raise BearerVerificationUnavailableError("session authorization is temporarily unavailable") from error
-
-
-class _CompositeAgentActorResolver(StaticAgentActorResolver):
-    def __init__(self, resolvers: tuple[StaticAgentActorResolver, ...]) -> None:
-        self._resolvers = resolvers
+        if resolved is None:
+            return None
+        return AccessToken(token=token, client_id=resolved.client_id, scopes=[], expires_at=None, claims={})
 
     async def resolve_static_actor(self, access_token: AccessToken) -> AgentActor | None:
-        for resolver in self._resolvers:
-            if (actor := await resolver.resolve_static_actor(access_token)) is not None:
-                return actor
-        return None
+        resolved = await self._resolve(access_token.token, record_seen=True)
+        if resolved is None or resolved.client_id != access_token.client_id:
+            return None
+        return resolved.actor
+
+
+def build_agent_bearer_resolver(
+    *,
+    agent_authority: PostgresAgentAuthority,
+    static_credentials: StaticAgentCredentialRegistry,
+    session_tokens: async_sessionmaker[AsyncSession] | None = None,
+) -> _CompositeAgentBearerResolver:
+    """Compose configured static and exact-session bearer authorities."""
+
+    sources: list[Callable[..., Awaitable[_ResolvedAgentBearer | None]]] = []
+    if static_credentials.fingerprints:
+        sources.append(_StaticAgentBearerSource(agent_authority, static_credentials).resolve)
+    if session_tokens is not None:
+        sources.append(_SessionAgentBearerSource(agent_authority, session_tokens).resolve)
+    return _CompositeAgentBearerResolver(tuple(sources))
 
 
 @dataclass(frozen=True)
 class StaticMcpAuth:
     provider: AuthProvider
     static_actor_resolver: StaticAgentActorResolver
+    agent_bearer_resolver: AgentBearerResolver
 
 
 @dataclass(frozen=True)
@@ -229,6 +241,7 @@ class OAuthMcpAuth:
     provider: AuthProvider
     storage: OAuthClientStorage
     static_actor_resolver: StaticAgentActorResolver | None
+    agent_bearer_resolver: AgentBearerResolver
 
 
 type McpAuth = StaticMcpAuth | OAuthMcpAuth
@@ -284,6 +297,7 @@ def build_auth(
     static_credentials: StaticAgentCredentialRegistry,
     operator_identity_store: PostgresOperatorIdentityStore,
     session_tokens: async_sessionmaker[AsyncSession] | None = None,
+    agent_bearer_resolver: _CompositeAgentBearerResolver | None = None,
 ) -> McpAuth:
     """Compose FastMCP protocol auth with Haku's canonical Agent authority.
 
@@ -292,19 +306,10 @@ def build_auth(
     the same authority and are accepted only when their exact fingerprint-backed binding is active.
     """
     assert_fastmcp_adapter_compatibility()
-    static = (
-        _AuthorityStaticTokenVerifier(agent_authority, static_credentials) if static_credentials.fingerprints else None
+    agent_bearer_resolver = agent_bearer_resolver or build_agent_bearer_resolver(
+        agent_authority=agent_authority, static_credentials=static_credentials, session_tokens=session_tokens
     )
-    session = _AuthoritySessionTokenVerifier(agent_authority, session_tokens) if session_tokens is not None else None
-    token_verifiers: tuple[TokenVerifier, ...] = tuple(
-        verifier for verifier in (static, session) if verifier is not None
-    )
-    actor_resolvers: tuple[StaticAgentActorResolver, ...] = tuple(
-        resolver for resolver in (static, session) if resolver is not None
-    )
-    actor_resolver: StaticAgentActorResolver | None = (
-        _CompositeAgentActorResolver(actor_resolvers) if actor_resolvers else None
-    )
+    has_bearer = bool(static_credentials.fingerprints or session_tokens is not None)
     operator_session_authenticator = _OperatorMcpSessionAuthenticator(settings, operator_identity_store)
     if settings.mcp_oauth is not None:
         storage = build_shared_client_storage(settings.mcp_oauth.persistence)
@@ -323,22 +328,22 @@ def build_auth(
         return OAuthMcpAuth(
             provider=HakuFailurePreservingMultiAuth(
                 server=proxy,
-                verifiers=list(token_verifiers),
+                verifiers=[agent_bearer_resolver],
                 operator_session_authenticator=operator_session_authenticator,
             ),
             storage=storage,
-            static_actor_resolver=actor_resolver,
+            static_actor_resolver=agent_bearer_resolver if has_bearer else None,
+            agent_bearer_resolver=agent_bearer_resolver,
         )
-    if not token_verifiers:
+    if not has_bearer:
         raise ValueError(
             "haku-console /mcp has no configured credential: set at least one static Agent "
             "(config_file `static_agents`) or `mcp_oauth`"
         )
-    assert actor_resolver is not None
-    primary, *additional = token_verifiers
     return StaticMcpAuth(
         provider=HakuFailurePreservingMultiAuth(
-            server=primary, verifiers=additional, operator_session_authenticator=operator_session_authenticator
+            server=agent_bearer_resolver, verifiers=[], operator_session_authenticator=operator_session_authenticator
         ),
-        static_actor_resolver=actor_resolver,
+        static_actor_resolver=agent_bearer_resolver,
+        agent_bearer_resolver=agent_bearer_resolver,
     )

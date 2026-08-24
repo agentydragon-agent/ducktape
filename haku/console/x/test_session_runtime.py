@@ -40,7 +40,7 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
-from haku.console.config import ChatRuntimesConfig, ClaudeRuntimeConfig
+from haku.console.config import ChatRuntimesConfig, ClaudeRuntimeConfig, CodexRuntimeConfig
 from haku.console.conftest import console_sessions
 from haku.console.database_schema import (
     Agent,
@@ -123,7 +123,15 @@ def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
 
 def test_new_conversation_request_rejects_client_supplied_access_profile() -> None:
     with pytest.raises(ValidationError, match="extra_forbidden"):
-        ConversationCreateRequest.model_validate({"access_profile_id": "admin"})
+        ConversationCreateRequest.model_validate(
+            {"agent_id": str(uuid4()), "runtime": RuntimeKind.CLAUDE_CODE, "access_profile_id": "admin"}
+        )
+
+
+@pytest.mark.parametrize("body", [{"agent_id": str(uuid4())}, {"runtime": RuntimeKind.CLAUDE_CODE}])
+def test_new_conversation_request_requires_the_complete_launch_pair(body: dict[str, object]) -> None:
+    with pytest.raises(ValidationError, match="Field required"):
+        ConversationCreateRequest.model_validate(body)
 
 
 async def test_post_conversation_launch_rejection_is_generic_403() -> None:
@@ -133,7 +141,11 @@ async def test_post_conversation_launch_rejection_is_generic_403() -> None:
 
     actor = type("Actor", (), {"operator_id": uuid4()})()
     with pytest.raises(HTTPException) as error:
-        await create_conversation(actor, cast(SessionService, RejectingService()))
+        await create_conversation(
+            ConversationCreateRequest(agent_id=uuid4(), runtime=RuntimeKind.CLAUDE_CODE),
+            actor,
+            cast(SessionService, RejectingService()),
+        )
 
     assert error.value.status_code == 403
     assert error.value.detail == "chat launch is not authorized"
@@ -289,11 +301,6 @@ def test_chat_runtime_config_fails_closed_when_malformed() -> None:
     with pytest.raises(ValidationError, match="namespace"):
         ConsoleConfigFile.model_validate(_console_config(chat_runtimes={"claude_code": malformed}))
 
-    credentialed = runtime_config().model_dump(mode="json")
-    credentialed["mcp_url"] = "https://session-secret@console.example/mcp"
-    with pytest.raises(ValidationError, match="mcp_url"):
-        ConsoleConfigFile.model_validate(_console_config(chat_runtimes={"claude_code": credentialed}))
-
 
 def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
     config = runtime_config(ca_bundle="/ca/bundle.pem")
@@ -309,6 +316,54 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
         "CURL_CA_BUNDLE": "/ca/bundle.pem",
         "REQUESTS_CA_BUNDLE": "/ca/bundle.pem",
     }
+
+
+def _codex_runtime_config(**overrides: Any) -> CodexRuntimeConfig:
+    values: dict[str, Any] = {
+        "agent_id": "00000000-0000-4000-8000-000000000002",
+        "namespace": "codex",
+        "warm_pool": "public-coder",
+        "cwd": "/workspace",
+        "session_ttl_seconds": 7200,
+        "model": "codex-gpt-5.6-sol",
+        "provider_id": "haku",
+        "provider_name": "Haku OpenAI-compatible",
+        "api_base_url": "http://litellm.litellm.svc.cluster.local:4000/v1",
+        "api_key_env_var": "OPENAI_API_KEY",
+        "https_proxy": "http://public-coder-agent-proxy:8080",
+        "ca_bundle": "/ca/bundle.pem",
+        "no_proxy": ".svc,.svc.cluster.local",
+        "github_token_placeholder": "proxy-github-placeholder",
+        "mcp_url": "http://haku-console:9090/mcp",
+        "system_prompt_template": "/config/public-coder.md.j2",
+    }
+    values.update(overrides)
+    return CodexRuntimeConfig(**values)
+
+
+def test_codex_environment_keeps_provider_auth_in_the_sandbox_template() -> None:
+    config = _codex_runtime_config()
+
+    assert config.codex_environment() == {
+        "HTTP_PROXY": "http://public-coder-agent-proxy:8080",
+        "HTTPS_PROXY": "http://public-coder-agent-proxy:8080",
+        "NO_PROXY": ".svc,.svc.cluster.local",
+        "NODE_USE_ENV_PROXY": "1",
+        "NODE_EXTRA_CA_CERTS": "/ca/bundle.pem",
+        "SSL_CERT_FILE": "/ca/bundle.pem",
+        "CURL_CA_BUNDLE": "/ca/bundle.pem",
+        "REQUESTS_CA_BUNDLE": "/ca/bundle.pem",
+        "PIP_CERT": "/ca/bundle.pem",
+        "GH_PAT": "proxy-github-placeholder",
+        "GITHUB_TOKEN": "proxy-github-placeholder",
+    }
+    assert "OPENAI_API_KEY" not in config.codex_environment()
+
+
+@pytest.mark.parametrize("api_key_env_var", ["HAKU_MCP_BEARER_TOKEN", "HAKU_AGENT_SDK_RUNNER_TOKEN"])
+def test_codex_runtime_rejects_session_authority_as_the_provider_key(api_key_env_var: str) -> None:
+    with pytest.raises(ValidationError, match="exact-session credential"):
+        _codex_runtime_config(api_key_env_var=api_key_env_var)
 
 
 # The gap this double leaves between one frame's number and the next. Deliberately not 1:

@@ -63,6 +63,17 @@ spec:
               protocol: TCP
             - port: "80"
               protocol: TCP
+    # Console-launched Codex provider traffic reaches the in-cluster LiteLLM Service only through
+    # this proxy. The sandbox itself has no direct LiteLLM egress and carries only a placeholder;
+    # iron.yaml attaches the real virtual key for this exact destination.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: litellm
+            k8s:app.kubernetes.io/name: litellm
+      toPorts:
+        - ports:
+            - port: "4000"
+              protocol: TCP
     # The confined configuration, kept verbatim for restoration:
     #
     # # GitHub — clone, push to forks, and open pull requests via the REST API.

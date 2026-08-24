@@ -306,6 +306,13 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
         access_profile_id="pinned",
         session_id=session_id,
     )
+    assert await auth.agent_bearer_resolver.resolve_agent(session_token) == AgentActor(
+        agent_id=agent_id,
+        operator_id=resolved_operator_id,
+        binding_id=authorization.binding_id,
+        access_profile_id="pinned",
+        session_id=session_id,
+    )
 
     # The bearer is a live-session credential, not merely a durable fingerprint lookup. It is
     # unusable before runner attachment, while the runner lease is expired, or after durable Agent
@@ -317,6 +324,7 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
         assert row is not None
         row.status = SessionStatus.PROVISIONING
     assert await auth.provider.verify_token(session_token) is None
+    assert await auth.agent_bearer_resolver.resolve_agent(session_token) is None
 
     async with migrated_sessions.begin() as db:
         row = await db.get(Session, session_id)
@@ -377,6 +385,7 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
         ]
     )
     assert await auth.provider.verify_token(session_token) is None
+    assert await auth.agent_bearer_resolver.resolve_agent(session_token) is None
 
 
 async def test_session_bearer_is_rejected_after_its_session_ends(

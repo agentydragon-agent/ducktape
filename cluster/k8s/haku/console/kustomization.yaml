@@ -16,6 +16,7 @@ resources:
   - kubernetes-authorization-rbac.yaml
   - routine-launch-token.sops.yaml
   - service.yaml
+  - codex-runner-service.yaml
   - static-deployment.yaml
   - static-metadata.yaml
   - static-service.yaml
@@ -26,3 +27,4 @@ configMapGenerator:
     files:
       - config.yaml
       - chat_system_prompt.md.j2
+      - public_coder_system_prompt.md.j2

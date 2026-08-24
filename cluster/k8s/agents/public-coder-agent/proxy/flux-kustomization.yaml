@@ -18,6 +18,9 @@ spec:
   timeout: 5m
   dependsOn:
     - name: public-coder-agent-namespace
+    # The Codex runner shares this namespace but is admitted by its pod label only.
+    - name: haku-runtime-namespace
+      namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: cert-manager-trust
@@ -41,6 +44,10 @@ spec:
     # aiquota creates the sole bearer, then reflects its constrained mirror to
     # this namespace for the proxy-only substitution rule.
     - name: aiquota
+      namespace: ducktape-flux
+    # Mints and reflects the public-coder LiteLLM virtual key held only by OpenClaw and this
+    # trusted proxy; Console-launched Codex receives an inert placeholder instead.
+    - name: litellm-keys-tf
       namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1

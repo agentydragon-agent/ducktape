@@ -20,6 +20,7 @@ api.use({
 });
 
 export type ConfigResponse = components["schemas"]["ConfigResponse"];
+export type ChatLaunchOption = components["schemas"]["ChatLaunchOption"];
 export type OperatorResponse = components["schemas"]["OperatorResponse"];
 export type DeploymentInfo = components["schemas"]["DeploymentInfo"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
@@ -91,9 +92,12 @@ export async function fetchOperator(): Promise<OperatorResponse> {
   return data;
 }
 
-/** Mint a conversation and the first session to run it. */
-export async function createConversation(): Promise<Conversation> {
-  const { data, error } = await api.POST("/api/conversations");
+/** Mint a Web conversation with its explicit deploy-authorized Agent/runtime pair. */
+export async function createConversation(selection: ChatLaunchOption): Promise<Conversation> {
+  const response = await api.POST("/api/conversations", {
+    body: { agent_id: selection.agent_id, runtime: selection.runtime },
+  });
+  const { data, error } = response;
   if (error || !data) throw new Error(errorDetail(error, "Failed to start a conversation"));
   return data;
 }

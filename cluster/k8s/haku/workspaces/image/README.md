@@ -122,3 +122,12 @@ which the same image-push job writes together with the first immutable tag. Ther
 post-merge pull gap before that job completes, but there is no permanently unpublished seed tag and
 no second compatibility publication. Once the new ImageRepository observes the immutable tag, the
 ordinary Flux setter replaces `latest` with the normal `devel-YYYYMMDDHHMMSS-sha` pin.
+
+The runner reads Agent-owned `HAKU_RUNNER_SETUP` from the received Console launch. An explicit
+empty value selects an ordinary empty workspace; the image-level value remains only as a rolling
+fallback for old Console replicas that launch Haku without the field.
+
+When Console includes `HAKU_KUBERNETES_PROXY_URL` in a launch, the runner writes an ephemeral
+`tokenFile` kubeconfig under `$HOME/.kube` using the exact-session bridge/MCP bearer. This is the
+only Kubernetes path available to the launched runner pods: both runtime templates disable
+ServiceAccount token automount, and Cilium permits only the internal `haku-kube-api-proxy` Service.

@@ -2,8 +2,8 @@
 
 The runner is deliberately thin. It launches the immutable harness selected by `--harness`, copies
 native newline-delimited JSON between the harness stdio and the Console WebSocket, and retains an
-ordered replay window. Claude is the only deploy-configured harness; Codex implements the same
-seams but has no production runtime resources yet.
+ordered replay window. Claude and Codex share this runner OCI; harness selection remains explicit
+and provider-specific behavior stays behind the backend seam.
 
 | file                  | role                                              |
 | --------------------- | ------------------------------------------------- |
@@ -46,8 +46,9 @@ retains and replays every frame above that cursor; no backend-specific `replayab
 involved. The Console deduplicates by `(session_id, runner_seq)` and stores the original native frame,
 direction, and timestamps.
 
-`--harness claude` is required by the deployed Claude SandboxTemplate. The selected harness is
-resolved once at runner startup and cannot change for the lifetime of the process. The claim gives
+`--harness claude` (or `codex-app-server`) is required by the deployed SandboxTemplate. The
+selected harness is resolved once at runner startup and cannot change for the lifetime of the process.
+The claim gives
 the sandbox one exact-session bearer. The runner uses it for the bridge and the Agent intentionally
 inherits it for Console MCP, so native MCP support and ordinary HTTP clients such as `curl` exercise
 the same pinned Agent/profile/binding authority. It is not the Claude OAuth credential, which never
@@ -55,3 +56,16 @@ enters the sandbox. Claims expose the same bearer as both `HAKU_AGENT_SDK_RUNNER
 rolling-compatible `HAKU_MCP_BEARER_TOKEN` alias: the previous runner strips only the first name,
 while the new runner preserves both, so either rollout direction leaves Claude's MCP configuration
 usable without creating a second credential.
+
+When the Console launch environment contains `HAKU_KUBERNETES_PROXY_URL`, the runner creates
+`$HOME/.kube/config` and a mode-0600 `$HOME/.kube/haku-mcp-token`. The config points only at that
+URL and references the token via client-go's `tokenFile`; bearer bytes never occur in argv,
+or kubeconfig YAML. They are intentionally present in the ephemeral SandboxClaim environment for
+bridge/MCP authentication. The proxy is therefore Console-selected and authorization-aware, while
+the runner has no direct ServiceAccount token. The Console must add
+this launch variable when a session is permitted Kubernetes access; the runner intentionally has
+no hard-coded proxy hostname.
+
+`HAKU_RUNNER_SETUP` is likewise selected in the received launch environment. An explicit empty
+value disables setup for an Agent whose workspace starts empty. The process-level image value
+remains only as a rolling fallback for old Console replicas that launch Haku without this field.

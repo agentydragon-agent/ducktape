@@ -1,8 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: haku-console-claude-claims
-  namespace: haku-claude-sandbox
+  name: haku-console-runtime-claims
+  namespace: haku-runtime-sandbox
 rules:
   # `patch` so the console can slide a live session's `shutdownTime` forward on its lease
   # heartbeat (haku/console/x/sandbox_claims.py `renew`) — the sandbox is a renewed lease, not a

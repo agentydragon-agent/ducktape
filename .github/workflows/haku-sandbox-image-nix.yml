@@ -78,6 +78,11 @@ jobs:
       # push would roll the live sandbox.
       - name: Push to Forgejo
         run: |
+          if [[ -z "${FORGEJO_IMAGES_USERNAME:-}" || -z "${FORGEJO_IMAGES_PASSWORD:-}" ]]; then
+            echo "image built; registry push skipped because fork pull requests receive no Forgejo credentials" \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
           skopeo copy --insecure-policy \
             --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \

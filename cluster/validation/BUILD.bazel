@@ -390,8 +390,10 @@ py_test(
     data = [
         "//cluster/k8s:haku_manifest_contract_files",
         "//cluster/k8s/cli-proxy-api:manifests",
+        "//tf/gitops/litellm-keys:main.tf",
     ],
     deps = [
+        "//haku/runtime/x/bridge:protocol",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",

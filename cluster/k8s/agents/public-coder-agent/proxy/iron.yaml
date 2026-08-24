@@ -92,6 +92,17 @@ transforms:
             - host: "haku-kubeapi.allegedly.works"
         - source:
             type: env
+            var: LITELLM_API_KEY
+          replace:
+            # Console-launched Codex presents the inert value from its SandboxTemplate. Keep the
+            # real virtual key in this trusted proxy and scope replacement to LiteLLM's exact
+            # cluster DNS name and Authorization header.
+            proxy_value: "proxy-litellm-public-coder-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "litellm.litellm.svc.cluster.local"
+        - source:
+            type: env
             var: AIQUOTA_API_BEARER_TOKEN
           replace:
             # The API deliberately has one bearer for its normalized and raw
