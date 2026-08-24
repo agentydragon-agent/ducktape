@@ -373,6 +373,144 @@ def _financed_property_fixture() -> dict[str, Any]:
     return fixture
 
 
+def _property_cashflow_fixture() -> dict[str, Any]:
+    fixture = _financed_property_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 12
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 30_000_000},
+        {"account": {"agent_id": "seller", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "bank", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "county", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "tenant", "account_id": "checking"}, "opening_balance": 6_000_000},
+        {"account": {"agent_id": "manager", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["scheduled_property_cashflows"] = [
+        {
+            "month": 0,
+            "property_id": "home",
+            "cause_id": "leasing-fee",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "manager", "account_id": "checking"},
+            "amount": 100_000,
+            "deduction_category": "ordinary",
+        }
+    ]
+    scenario["recurring_property_cashflows"] = [
+        {
+            "start_month": 0,
+            "end_month": 11,
+            "property_id": "home",
+            "cause_id": "rent",
+            "from": {"agent_id": "tenant", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": 500_000,
+            "income_category": "ordinary",
+        },
+        {
+            "start_month": 0,
+            "end_month": 11,
+            "property_id": "home",
+            "cause_id": "management-fee",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "manager", "account_id": "checking"},
+            "amount": 50_000,
+            "deduction_category": "ordinary",
+        },
+    ]
+    federal_profile = _tax_fixture()["scenario"]["tax_profiles"][0]
+    federal_profile["jurisdictions"] = federal_profile["jurisdictions"][:1]
+    scenario["tax_profiles"] = [federal_profile]
+    return fixture
+
+
+def _property_cashflow_gating_fixture() -> dict[str, Any]:
+    fixture = _failure_fixture()
+    fixture["rollout_count"] = 1
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 4
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 1_000},
+        {"account": {"agent_id": "seller", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "vendor", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "creditor", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["scheduled_transfers"] = []
+    scenario["recurring_transfers"] = []
+    scenario["obligations"] = [
+        {
+            "month": 2,
+            "obligation_id": "unaffordable",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "creditor", "account_id": "checking"},
+            "amount_due": 876,
+        }
+    ]
+    scenario["recurring_obligations"] = []
+    scenario["locations"] = [
+        {
+            "location_id": "test",
+            "display_name": "Test",
+            "jurisdiction_ids": [],
+            "annual_property_tax_rate_ppb": 0,
+            "annual_special_assessment": 0,
+        }
+    ]
+    scenario["scheduled_property_purchases"] = [
+        {
+            "month": 1,
+            "cause_id": "buy-home",
+            "property_id": "home",
+            "location_id": "test",
+            "buyer_agent_id": "alice",
+            "buyer_account_id": "checking",
+            "seller_agent_id": "seller",
+            "seller_account_id": "checking",
+            "purchase_price": 100,
+            "down_payment": 100,
+            "buyer_closing_cost": 0,
+            "mortgage": None,
+        }
+    ]
+    scenario["property_tax_policies"] = []
+    scenario["scheduled_property_cashflows"] = [
+        {
+            "month": 0,
+            "property_id": "home",
+            "cause_id": "before-purchase",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "vendor", "account_id": "checking"},
+            "amount": 3,
+        },
+        {
+            "month": 1,
+            "property_id": "home",
+            "cause_id": "purchase-month",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "vendor", "account_id": "checking"},
+            "amount": 5,
+        },
+    ]
+    scenario["recurring_property_cashflows"] = [
+        {
+            "start_month": 0,
+            "end_month": 3,
+            "property_id": "home",
+            "cause_id": "property-carry",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "vendor", "account_id": "checking"},
+            "amount": 10,
+        }
+    ]
+    scenario["initial_lots"] = []
+    scenario["scheduled_sales"] = []
+    scenario["tax_profiles"] = []
+    scenario["distributions"] = []
+    fixture["series"] = []
+    return fixture
+
+
 def _rust_run(fixture: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
     fixture_path = tmp_path / "fixture.json"
     output_path = tmp_path / "rust-output.json"
@@ -692,6 +830,81 @@ def test_rust_and_jax_match_financed_property_purchase_and_first_carry_month(tmp
     assert rust_payment["interest"] == legacy_payment["interest_quanta"] == 200_000
     assert rust_payment["principal"] == legacy_payment["principal_quanta"] == 39_820
     assert rust_payment["total_payment"] == legacy_payment["total_payment_quanta"] == 239_820
+
+
+def test_rust_and_jax_match_property_cashflows_and_tax_tagging(tmp_path: Path) -> None:
+    fixture = _property_cashflow_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_cash = (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+    )
+    assert _rust_cash(rust).to_dicts() == legacy_cash.to_dicts()
+
+    legacy_transfers = (
+        legacy.events_log.transfers.filter(pl.col("cause_id").is_in(["leasing-fee", "rent", "management-fee"]))
+        .group_by("cause_id")
+        .agg(pl.len().alias("count"), pl.col("amount_quanta").sum().alias("amount_quanta"))
+        .sort("cause_id")
+        .to_dicts()
+    )
+    assert legacy_transfers == [
+        {"cause_id": "leasing-fee", "count": 1, "amount_quanta": 100_000},
+        {"cause_id": "management-fee", "count": 12, "amount_quanta": 600_000},
+        {"cause_id": "rent", "count": 12, "amount_quanta": 6_000_000},
+    ]
+    rust_causes = [entry["cause_id"] for entry in rust["rollouts"][0]["journal"]]
+    assert rust_causes.count("leasing-fee") == 1
+    assert rust_causes.count("management-fee") == 12
+    assert rust_causes.count("rent") == 12
+
+    legacy_tax = legacy.events_log.tax_breakdowns.row(0, named=True)
+    rust_tax = rust["rollouts"][0]["tax_accruals"][0]
+    assert rust_tax["ordinary_income"] == legacy_tax["ordinary_income_quanta"] == 5_300_000
+    assert rust_tax["total_tax"] == legacy_tax["total_tax_quanta"] == 437_600
+
+
+def test_rust_and_jax_match_property_cashflow_purchase_and_failure_gates(tmp_path: Path) -> None:
+    fixture = _property_cashflow_gating_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_cash = (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+    )
+    assert _rust_cash(rust).to_dicts() == legacy_cash.to_dicts()
+    assert rollout_status(legacy).to_dicts() == [
+        {"rollout_index": 0, "status": "failed_insufficient_cash", "failed_month": 2}
+    ]
+    assert rust["rollouts"][0]["failed_month"] == 2
+
+    legacy_property_cashflows = (
+        legacy.events_log.transfers.filter(
+            pl.col("cause_id").is_in(["before-purchase", "purchase-month", "property-carry"])
+        )
+        .select("month_index", "cause_id")
+        .sort("month_index", "cause_id")
+        .to_dicts()
+    )
+    assert legacy_property_cashflows == [
+        {"month_index": 1, "cause_id": "property-carry"},
+        {"month_index": 1, "cause_id": "purchase-month"},
+        {"month_index": 2, "cause_id": "property-carry"},
+    ]
+    rust_property_cashflows = sorted(
+        [
+            {"month_index": entry["month"], "cause_id": entry["cause_id"]}
+            for entry in rust["rollouts"][0]["journal"]
+            if entry["cause_id"] in {"before-purchase", "purchase-month", "property-carry"}
+        ],
+        key=lambda row: (row["month_index"], row["cause_id"]),
+    )
+    assert rust_property_cashflows == legacy_property_cashflows
 
 
 @pytest.mark.parametrize("rollout_count", [1, 17])

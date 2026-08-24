@@ -19,10 +19,12 @@ from finance.augur.sim.scenario import (
     MortgageFinancing,
     PropertyTaxPolicy,
     RecurringObligation,
+    RecurringPropertyCashflow,
     RecurringTransfer,
     Scenario,
     ScheduledAssetSale,
     ScheduledObligation,
+    ScheduledPropertyCashflow,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SecurityDistribution,
@@ -108,6 +110,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 to_account_id=spec["to"]["account_id"],
                 amount=_money(spec["amount"], quantum),
                 income_category=ORDINARY_INCOME if spec.get("income_category") == "ordinary" else None,
+                deduction_category="ordinary" if spec.get("deduction_category") == "ordinary" else None,
             )
             for spec in scenario_spec["scheduled_transfers"]
         ],
@@ -122,8 +125,40 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 to_account_id=spec["to"]["account_id"],
                 amount=_money(spec["amount"], quantum),
                 income_category=ORDINARY_INCOME if spec.get("income_category") == "ordinary" else None,
+                deduction_category="ordinary" if spec.get("deduction_category") == "ordinary" else None,
             )
             for spec in scenario_spec["recurring_transfers"]
+        ],
+        scheduled_property_cashflows=[
+            ScheduledPropertyCashflow(
+                month=spec["month"],
+                property_id=spec["property_id"],
+                cause_id=spec["cause_id"],
+                from_agent_id=spec["from"]["agent_id"],
+                from_account_id=spec["from"]["account_id"],
+                to_agent_id=spec["to"]["agent_id"],
+                to_account_id=spec["to"]["account_id"],
+                amount=_money(spec["amount"], quantum),
+                income_category=ORDINARY_INCOME if spec.get("income_category") == "ordinary" else None,
+                deduction_category="ordinary" if spec.get("deduction_category") == "ordinary" else None,
+            )
+            for spec in scenario_spec.get("scheduled_property_cashflows", [])
+        ],
+        recurring_property_cashflows=[
+            RecurringPropertyCashflow(
+                start_month=spec["start_month"],
+                end_month=spec["end_month"],
+                property_id=spec["property_id"],
+                cause_id=spec["cause_id"],
+                from_agent_id=spec["from"]["agent_id"],
+                from_account_id=spec["from"]["account_id"],
+                to_agent_id=spec["to"]["agent_id"],
+                to_account_id=spec["to"]["account_id"],
+                amount=_money(spec["amount"], quantum),
+                income_category=ORDINARY_INCOME if spec.get("income_category") == "ordinary" else None,
+                deduction_category="ordinary" if spec.get("deduction_category") == "ordinary" else None,
+            )
+            for spec in scenario_spec.get("recurring_property_cashflows", [])
         ],
         scheduled_obligations=[
             ScheduledObligation(

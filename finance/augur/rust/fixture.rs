@@ -32,6 +32,10 @@ pub struct ScenarioSpec {
     #[serde(default)]
     pub recurring_transfers: Vec<RecurringTransferSpec>,
     #[serde(default)]
+    pub scheduled_property_cashflows: Vec<ScheduledPropertyCashflowSpec>,
+    #[serde(default)]
+    pub recurring_property_cashflows: Vec<RecurringPropertyCashflowSpec>,
+    #[serde(default)]
     pub obligations: Vec<ObligationSpec>,
     #[serde(default)]
     pub recurring_obligations: Vec<RecurringObligationSpec>,
@@ -78,6 +82,8 @@ pub struct ScheduledTransferSpec {
     pub amount: Money,
     #[serde(default)]
     pub income_category: Option<String>,
+    #[serde(default)]
+    pub deduction_category: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -91,6 +97,39 @@ pub struct RecurringTransferSpec {
     pub amount: Money,
     #[serde(default)]
     pub income_category: Option<String>,
+    #[serde(default)]
+    pub deduction_category: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduledPropertyCashflowSpec {
+    pub month: u32,
+    pub property_id: String,
+    pub cause_id: String,
+    pub from: AccountRef,
+    pub to: AccountRef,
+    pub amount: Money,
+    #[serde(default)]
+    pub income_category: Option<String>,
+    #[serde(default)]
+    pub deduction_category: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecurringPropertyCashflowSpec {
+    pub start_month: u32,
+    pub end_month: Option<u32>,
+    pub property_id: String,
+    pub cause_id: String,
+    pub from: AccountRef,
+    pub to: AccountRef,
+    pub amount: Money,
+    #[serde(default)]
+    pub income_category: Option<String>,
+    #[serde(default)]
+    pub deduction_category: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

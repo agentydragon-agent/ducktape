@@ -104,8 +104,9 @@ pub enum SimulationError {
         month: u32,
         horizon: u32,
     },
-    #[error("recurring transfer {cause_id:?} ends at {end_month} before starting at {start_month}")]
+    #[error("{kind} {cause_id:?} ends at {end_month} before starting at {start_month}")]
     InvalidRecurringRange {
+        kind: &'static str,
         cause_id: String,
         start_month: u32,
         end_month: u32,
@@ -161,6 +162,11 @@ pub enum SimulationError {
     InvalidMortgageTerms { liability_id: String },
     #[error("property tax policy references unknown property {property_id:?}")]
     UnknownPropertyTaxProperty { property_id: String },
+    #[error("property cashflow {cause_id:?} references unknown property {property_id:?}")]
+    UnknownPropertyCashflow {
+        cause_id: String,
+        property_id: String,
+    },
     #[error("property tax policy for {property_id:?} has invalid rate or range")]
     InvalidPropertyTaxPolicy { property_id: String },
     #[error(transparent)]
@@ -544,6 +550,7 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
         )?;
         validate_positive_amount("scheduled transfer", &transfer.cause_id, transfer.amount)?;
         validate_income_category(transfer.income_category.as_deref())?;
+        validate_income_category(transfer.deduction_category.as_deref())?;
         validate_account(&accounts, &transfer.from, &transfer.cause_id)?;
         validate_account(&accounts, &transfer.to, &transfer.cause_id)?;
     }
@@ -559,6 +566,7 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             && end_month < transfer.start_month
         {
             return Err(SimulationError::InvalidRecurringRange {
+                kind: "recurring transfer",
                 cause_id: transfer.cause_id.clone(),
                 start_month: transfer.start_month,
                 end_month,
@@ -566,6 +574,7 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
         }
         validate_positive_amount("recurring transfer", &transfer.cause_id, transfer.amount)?;
         validate_income_category(transfer.income_category.as_deref())?;
+        validate_income_category(transfer.deduction_category.as_deref())?;
         validate_account(&accounts, &transfer.from, &transfer.cause_id)?;
         validate_account(&accounts, &transfer.to, &transfer.cause_id)?;
     }
@@ -599,6 +608,7 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             && end_month < obligation.start_month
         {
             return Err(SimulationError::InvalidRecurringRange {
+                kind: "recurring obligation",
                 cause_id: obligation.obligation_id.clone(),
                 start_month: obligation.start_month,
                 end_month,
@@ -896,6 +906,64 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             }
         }
     }
+    for cashflow in &fixture.scenario.scheduled_property_cashflows {
+        validate_identifier("scheduled property cashflow", &cashflow.cause_id)?;
+        validate_event_month(
+            "scheduled property cashflow",
+            &cashflow.cause_id,
+            cashflow.month,
+            fixture.scenario.horizon_months,
+        )?;
+        validate_positive_amount(
+            "scheduled property cashflow",
+            &cashflow.cause_id,
+            cashflow.amount,
+        )?;
+        validate_income_category(cashflow.income_category.as_deref())?;
+        validate_income_category(cashflow.deduction_category.as_deref())?;
+        validate_account(&accounts, &cashflow.from, &cashflow.cause_id)?;
+        validate_account(&accounts, &cashflow.to, &cashflow.cause_id)?;
+        if !properties.contains_key(&cashflow.property_id) {
+            return Err(SimulationError::UnknownPropertyCashflow {
+                cause_id: cashflow.cause_id.clone(),
+                property_id: cashflow.property_id.clone(),
+            });
+        }
+    }
+    for cashflow in &fixture.scenario.recurring_property_cashflows {
+        validate_identifier("recurring property cashflow", &cashflow.cause_id)?;
+        validate_event_month(
+            "recurring property cashflow",
+            &cashflow.cause_id,
+            cashflow.start_month,
+            fixture.scenario.horizon_months,
+        )?;
+        if let Some(end_month) = cashflow.end_month
+            && end_month < cashflow.start_month
+        {
+            return Err(SimulationError::InvalidRecurringRange {
+                kind: "recurring property cashflow",
+                cause_id: cashflow.cause_id.clone(),
+                start_month: cashflow.start_month,
+                end_month,
+            });
+        }
+        validate_positive_amount(
+            "recurring property cashflow",
+            &cashflow.cause_id,
+            cashflow.amount,
+        )?;
+        validate_income_category(cashflow.income_category.as_deref())?;
+        validate_income_category(cashflow.deduction_category.as_deref())?;
+        validate_account(&accounts, &cashflow.from, &cashflow.cause_id)?;
+        validate_account(&accounts, &cashflow.to, &cashflow.cause_id)?;
+        if !properties.contains_key(&cashflow.property_id) {
+            return Err(SimulationError::UnknownPropertyCashflow {
+                cause_id: cashflow.cause_id.clone(),
+                property_id: cashflow.property_id.clone(),
+            });
+        }
+    }
     Ok(())
 }
 
@@ -1140,52 +1208,6 @@ fn simulate_rollout(
             }
             continue;
         }
-        for transfer in fixture
-            .scenario
-            .scheduled_transfers
-            .iter()
-            .filter(|transfer| transfer.month == month)
-        {
-            transfer_money(
-                &mut ledger,
-                &mut recorder,
-                month,
-                &transfer.cause_id,
-                &transfer.from,
-                &transfer.to,
-                transfer.amount,
-            )?;
-            record_transfer_income(
-                &mut tax_facts,
-                &transfer.to.agent_id,
-                transfer.income_category.as_deref(),
-                transfer.amount,
-            )?;
-        }
-        for transfer in fixture
-            .scenario
-            .recurring_transfers
-            .iter()
-            .filter(|transfer| {
-                transfer.start_month <= month && transfer.end_month.is_none_or(|end| month <= end)
-            })
-        {
-            transfer_money(
-                &mut ledger,
-                &mut recorder,
-                month,
-                &transfer.cause_id,
-                &transfer.from,
-                &transfer.to,
-                transfer.amount,
-            )?;
-            record_transfer_income(
-                &mut tax_facts,
-                &transfer.to.agent_id,
-                transfer.income_category.as_deref(),
-                transfer.amount,
-            )?;
-        }
         execute_distributions(
             fixture,
             rollout_id,
@@ -1200,6 +1222,14 @@ fn simulate_rollout(
             &mut recorder,
             &mut properties,
             &mut mortgages,
+            month,
+        )?;
+        execute_cashflows(
+            fixture,
+            &mut ledger,
+            &mut recorder,
+            &mut tax_facts,
+            &properties,
             month,
         )?;
         for sale in fixture
@@ -1505,6 +1535,125 @@ fn execute_property_purchases(
     Ok(())
 }
 
+fn execute_cashflows(
+    fixture: &Fixture,
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    properties: &[PropertyState],
+    month: u32,
+) -> Result<(), SimulationError> {
+    for cashflow in fixture
+        .scenario
+        .scheduled_transfers
+        .iter()
+        .filter(|cashflow| cashflow.month == month)
+    {
+        apply_cashflow(
+            ledger,
+            recorder,
+            tax_facts,
+            month,
+            &cashflow.cause_id,
+            &cashflow.from,
+            &cashflow.to,
+            cashflow.amount,
+            cashflow.income_category.as_deref(),
+            cashflow.deduction_category.as_deref(),
+        )?;
+    }
+    for cashflow in fixture
+        .scenario
+        .recurring_transfers
+        .iter()
+        .filter(|cashflow| {
+            cashflow.start_month <= month && cashflow.end_month.is_none_or(|end| month <= end)
+        })
+    {
+        apply_cashflow(
+            ledger,
+            recorder,
+            tax_facts,
+            month,
+            &cashflow.cause_id,
+            &cashflow.from,
+            &cashflow.to,
+            cashflow.amount,
+            cashflow.income_category.as_deref(),
+            cashflow.deduction_category.as_deref(),
+        )?;
+    }
+    for cashflow in fixture
+        .scenario
+        .scheduled_property_cashflows
+        .iter()
+        .filter(|cashflow| cashflow.month == month)
+    {
+        if properties
+            .iter()
+            .any(|property| property.property_id == cashflow.property_id && property.active)
+        {
+            apply_cashflow(
+                ledger,
+                recorder,
+                tax_facts,
+                month,
+                &cashflow.cause_id,
+                &cashflow.from,
+                &cashflow.to,
+                cashflow.amount,
+                cashflow.income_category.as_deref(),
+                cashflow.deduction_category.as_deref(),
+            )?;
+        }
+    }
+    for cashflow in fixture
+        .scenario
+        .recurring_property_cashflows
+        .iter()
+        .filter(|cashflow| {
+            cashflow.start_month <= month && cashflow.end_month.is_none_or(|end| month <= end)
+        })
+    {
+        if properties
+            .iter()
+            .any(|property| property.property_id == cashflow.property_id && property.active)
+        {
+            apply_cashflow(
+                ledger,
+                recorder,
+                tax_facts,
+                month,
+                &cashflow.cause_id,
+                &cashflow.from,
+                &cashflow.to,
+                cashflow.amount,
+                cashflow.income_category.as_deref(),
+                cashflow.deduction_category.as_deref(),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_cashflow(
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    month: u32,
+    cause_id: &str,
+    from: &AccountRef,
+    to: &AccountRef,
+    amount: Money,
+    income_category: Option<&str>,
+    deduction_category: Option<&str>,
+) -> Result<(), SimulationError> {
+    transfer_money(ledger, recorder, month, cause_id, from, to, amount)?;
+    record_transfer_income(tax_facts, &to.agent_id, income_category, amount)?;
+    record_transfer_deduction(tax_facts, &from.agent_id, deduction_category, amount)
+}
+
 fn property_obligations(
     fixture: &Fixture,
     properties: &[PropertyState],
@@ -1672,6 +1821,23 @@ fn record_transfer_income(
     for ((agent_id, _), facts) in tax_facts {
         if agent_id == recipient_agent_id {
             facts.ordinary_income = facts.ordinary_income.checked_add(amount)?;
+        }
+    }
+    Ok(())
+}
+
+fn record_transfer_deduction(
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    payer_agent_id: &str,
+    deduction_category: Option<&str>,
+    amount: Money,
+) -> Result<(), SimulationError> {
+    if deduction_category != Some("ordinary") {
+        return Ok(());
+    }
+    for ((agent_id, _), facts) in tax_facts {
+        if agent_id == payer_agent_id {
+            facts.ordinary_income = facts.ordinary_income.checked_sub(amount)?;
         }
     }
     Ok(())
@@ -2214,6 +2380,8 @@ mod tests {
                 locations: vec![],
                 scheduled_transfers: vec![],
                 recurring_transfers: vec![],
+                scheduled_property_cashflows: vec![],
+                recurring_property_cashflows: vec![],
                 obligations: vec![],
                 recurring_obligations: vec![],
                 initial_lots: vec![],
@@ -2271,6 +2439,7 @@ mod tests {
                 to: AccountRef::new("alice", "checking"),
                 amount: Money(1),
                 income_category: None,
+                deduction_category: None,
             });
         assert!(matches!(
             simulate(&fixture),
@@ -2393,8 +2562,11 @@ mod tests {
                     to: alice_cash,
                     amount: Money(500),
                     income_category: None,
+                    deduction_category: None,
                 }],
                 recurring_transfers: vec![],
+                scheduled_property_cashflows: vec![],
+                recurring_property_cashflows: vec![],
                 obligations: vec![],
                 recurring_obligations: vec![],
                 initial_lots: vec![InitialLotSpec {
@@ -2594,6 +2766,8 @@ mod tests {
                 locations: vec![],
                 scheduled_transfers: vec![],
                 recurring_transfers: vec![],
+                scheduled_property_cashflows: vec![],
+                recurring_property_cashflows: vec![],
                 obligations: vec![],
                 recurring_obligations: vec![],
                 initial_lots: vec![InitialLotSpec {
@@ -2665,8 +2839,11 @@ mod tests {
                     to: bob_cash.clone(),
                     amount: Money(1),
                     income_category: None,
+                    deduction_category: None,
                 }],
                 recurring_transfers: vec![],
+                scheduled_property_cashflows: vec![],
+                recurring_property_cashflows: vec![],
                 obligations: vec![ObligationSpec {
                     month: 0,
                     obligation_id: "too-large".into(),
@@ -2733,6 +2910,8 @@ mod tests {
                 locations: vec![],
                 scheduled_transfers: vec![],
                 recurring_transfers: vec![],
+                scheduled_property_cashflows: vec![],
+                recurring_property_cashflows: vec![],
                 obligations: vec![],
                 recurring_obligations: vec![
                     RecurringObligationSpec {
