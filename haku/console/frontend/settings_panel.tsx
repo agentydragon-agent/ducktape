@@ -1,7 +1,8 @@
 import { Badge, Button, Group, Loader, Select, Stack, Tabs, Text } from "@mantine/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { shortDate } from "./approval_state";
+import { useAsyncResource, type AsyncResource, type AsyncResourceLoader } from "./async_resource";
 import {
   connectMcpOperatorAuth,
   connectOperatorConnection,
@@ -26,7 +27,6 @@ import {
   listMcpServers,
   type DaemonStatus,
   type IndexState,
-  type IndexStatus,
   type McpOperatorAuthDegraded,
   type McpOperatorAuthStatus,
   type McpServerConnection,
@@ -73,7 +73,6 @@ function VersionLink({ version }: { version: DeploymentVersion }) {
   );
 }
 
-// A plain (un-boxed) section label + blurb over the boxed cards it introduces.
 function SectionHeading({ title, description }: { title: string; description: string }) {
   return (
     <div>
@@ -82,6 +81,62 @@ function SectionHeading({ title, description }: { title: string; description: st
         {description}
       </Text>
     </div>
+  );
+}
+
+function ResourcePanel<T>({
+  title,
+  description,
+  resource,
+  label,
+  emptyMessage,
+  isEmpty,
+  children,
+}: {
+  title?: string;
+  description?: string;
+  resource: AsyncResource<T>;
+  label: string;
+  emptyMessage?: string;
+  isEmpty?: (data: T) => boolean;
+  children: (data: T) => ReactNode;
+}) {
+  const { data, error } = resource;
+  const errorNotice =
+    error && data ? (
+      <Text c="red" size="sm">
+        Failed to refresh {label}: {error}
+      </Text>
+    ) : null;
+  const body =
+    !data && error ? (
+      <Text c="red" size="sm">
+        Failed to load {label}: {error}
+      </Text>
+    ) : !data ? (
+      <Group justify="center" p="xl">
+        <Loader aria-label={`Loading ${label}`} />
+      </Group>
+    ) : emptyMessage && (isEmpty ? isEmpty(data) : Array.isArray(data) && data.length === 0) ? (
+      <section className="haku-shell-card">
+        <Text size="sm" c="dimmed">
+          {emptyMessage}
+        </Text>
+      </section>
+    ) : (
+      children(data)
+    );
+  return title ? (
+    <Stack gap="xs" className="haku-page-list">
+      <SectionHeading title={title} description={description ?? ""} />
+      {errorNotice}
+      {body}
+    </Stack>
+  ) : (
+    <>
+      {errorNotice}
+      {body}
+    </>
   );
 }
 
@@ -117,9 +172,6 @@ function connectionSummary(server: McpServerConnection): string {
       ? `${backend} · Console-managed credential`
       : `${backend} · no operator-linked account`;
   }
-  // Both unions below are switched exhaustively with no `default`, so a new status is a compile
-  // error rather than a silent fall-through to the connected wording — which would summarise a
-  // connection whose token refresh is failing as plainly connected.
   if (isMcpOperatorAuthStatus(connection)) {
     const linkedUntil = shortDate(
       typeof connection.state.token_expires_at === "string" ? connection.state.token_expires_at : null
@@ -332,9 +384,6 @@ function AgentCard({
   );
 }
 
-// Each state says what is true *and*, where the operator can change it, what to do about it.
-// "Blocked" in particular has to name the browser as the place to fix it — the console cannot
-// re-prompt for a permission the browser has already refused.
 const PUSH_STATE_DISPLAY: Record<PushState["status"], { label: string; color: string; description: string }> = {
   on: { label: "On", color: "teal", description: "This browser will be notified about pending tool calls." },
   off: { label: "Off", color: "gray", description: "This browser will not be notified." },
@@ -362,8 +411,6 @@ function PushNotificationCard() {
   const display = PUSH_STATE_DISPLAY[state.status];
   const actionable = state.status === "on" || state.status === "off" || state.status === "failed";
   const thisEndpoint = state.status === "on" ? state.endpoint : null;
-  // Everything except this browser. Notifications fan out to every enrolled device, so a laptop
-  // left registered at an old desk keeps lighting up with tool calls until it is forgotten here.
   const others = devices.filter((device) => device.endpoint !== thisEndpoint);
   return (
     <>
@@ -543,210 +590,79 @@ function IndexStatusCard({ index }: { index: IndexState }) {
   );
 }
 
-// Operator settings are split by operational scope: service connectivity, callers, browser-local
-// preferences, execution workers, and the Console deployment itself.
 export function SettingsPanel() {
   const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTabFromLocation);
-  const [agents, setAgents] = useState<AgentView[] | null>(null);
-  const [agentAccessProfiles, setAgentAccessProfiles] = useState<string[]>([]);
   const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
-  const [mcpServers, setMcpServers] = useState<McpServerView[] | null>(null);
-  const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
-  const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
-  const [daemons, setDaemons] = useState<DaemonStatus[] | null>(null);
-  const [mcpError, setMcpError] = useState<string | null>(null);
-  const [agentsError, setAgentsError] = useState<string | null>(null);
-  const [deploymentError, setDeploymentError] = useState<string | null>(null);
-  const [indexStatusError, setIndexStatusError] = useState<string | null>(null);
-  const [daemonsError, setDaemonsError] = useState<string | null>(null);
-  const [mcpLoading, setMcpLoading] = useState(false);
-  const [agentsLoading, setAgentsLoading] = useState(false);
-  const [deploymentLoading, setDeploymentLoading] = useState(false);
-  const [indexStatusLoading, setIndexStatusLoading] = useState(false);
-  const [daemonsLoading, setDaemonsLoading] = useState(false);
-  const mcpGeneration = useRef(0);
-  const agentsGeneration = useRef(0);
-  const deploymentGeneration = useRef(0);
-  const indexStatusGeneration = useRef(0);
-  const daemonGeneration = useRef(0);
-
-  const loadMcpServers = useCallback(() => {
-    const generation = ++mcpGeneration.current;
-    setMcpLoading(true);
-    void listMcpServers().then(
-      async (connections) => {
-        if (generation !== mcpGeneration.current) return;
-        setMcpError(null);
-        setMcpServers((current) => {
-          const previous = new Map(current?.map((view) => [view.connection.server_id, view]));
-          return connections.map((connection) => ({
-            connection,
-            probe: previous.get(connection.server_id)?.probe ?? null,
-            checking: true,
-            error: null,
-          }));
-        });
-        await Promise.all(
-          connections.map(async (connection) => {
-            try {
-              const probe = await getMcpServerStatus(connection.server_id);
-              if (generation !== mcpGeneration.current) return;
-              setMcpServers(
-                (current) =>
-                  current?.map((view) =>
-                    view.connection.server_id === connection.server_id
-                      ? { connection: probe.connection, probe, checking: false, error: null }
-                      : view
-                  ) ?? null
-              );
-            } catch (e) {
-              if (generation !== mcpGeneration.current) return;
-              const error = e instanceof Error ? e.message : String(e);
-              setMcpServers(
-                (current) =>
-                  current?.map((view) =>
-                    view.connection.server_id === connection.server_id ? { ...view, checking: false, error } : view
-                  ) ?? null
-              );
-            }
-          })
-        );
-        if (generation === mcpGeneration.current) setMcpLoading(false);
-      },
-      (e: unknown) => {
-        if (generation !== mcpGeneration.current) return;
-        setMcpError(displayableError(e));
-        setMcpLoading(false);
-      }
+  const loadMcpServers = useCallback<AsyncResourceLoader<McpServerView[]>>(async (emit, previous) => {
+    const connections = await listMcpServers();
+    const previousViews = new Map(previous?.map((view) => [view.connection.server_id, view]));
+    let views: McpServerView[] = connections.map((connection) => ({
+      connection,
+      probe: previousViews.get(connection.server_id)?.probe ?? null,
+      checking: true,
+      error: null,
+    }));
+    emit(views);
+    await Promise.all(
+      connections.map(async (connection) => {
+        try {
+          const probe = await getMcpServerStatus(connection.server_id);
+          views = views.map((view) =>
+            view.connection.server_id === connection.server_id
+              ? { connection: probe.connection, probe, checking: false, error: null }
+              : view
+          );
+        } catch (e) {
+          const error = e instanceof Error ? e.message : String(e);
+          views = views.map((view) =>
+            view.connection.server_id === connection.server_id ? { ...view, checking: false, error } : view
+          );
+        }
+        emit(views);
+      })
     );
+    return views;
   }, []);
-
-  const loadAgents = useCallback(() => {
-    const generation = ++agentsGeneration.current;
-    setAgentsLoading(true);
-    void listAgents().then(
-      (response) => {
-        if (generation !== agentsGeneration.current) return;
-        setAgents(response.agents);
-        setAgentAccessProfiles(response.access_profiles);
-        setAgentsError(null);
-        setAgentsLoading(false);
-      },
-      (e: unknown) => {
-        if (generation !== agentsGeneration.current) return;
-        setAgentsError(displayableError(e));
-        setAgentsLoading(false);
-      }
-    );
-  }, []);
-
-  const loadDeployment = useCallback(() => {
-    const generation = ++deploymentGeneration.current;
-    setDeploymentLoading(true);
-    void fetchDeploymentInfo().then(
-      (nextDeployment) => {
-        if (generation !== deploymentGeneration.current) return;
-        setDeployment(nextDeployment);
-        setDeploymentError(null);
-        setDeploymentLoading(false);
-      },
-      (e: unknown) => {
-        if (generation !== deploymentGeneration.current) return;
-        setDeploymentError(displayableError(e));
-        setDeploymentLoading(false);
-      }
-    );
-  }, []);
-
-  const loadIndexStatus = useCallback(() => {
-    const generation = ++indexStatusGeneration.current;
-    setIndexStatusLoading(true);
-    void getIndexStatus().then(
-      (nextStatus) => {
-        if (generation !== indexStatusGeneration.current) return;
-        setIndexStatus(nextStatus);
-        setIndexStatusError(null);
-        setIndexStatusLoading(false);
-      },
-      (e: unknown) => {
-        if (generation !== indexStatusGeneration.current) return;
-        setIndexStatusError(displayableError(e));
-        setIndexStatusLoading(false);
-      }
-    );
-  }, []);
-
-  const loadDaemons = useCallback(() => {
-    const generation = ++daemonGeneration.current;
-    setDaemonsLoading(true);
-    void listNodeDaemons().then(
-      (nextDaemons) => {
-        if (generation !== daemonGeneration.current) return;
-        setDaemons(nextDaemons);
-        setDaemonsError(null);
-        setDaemonsLoading(false);
-      },
-      (e: unknown) => {
-        if (generation !== daemonGeneration.current) return;
-        setDaemonsError(displayableError(e));
-        setDaemonsLoading(false);
-      }
-    );
-  }, []);
-
+  const resourceOptions = (tab: SettingsTab, pollMs?: number) => ({
+    enabled: activeTab === tab,
+    pollMs,
+    formatError: displayableError,
+  });
+  const mcpResource = useAsyncResource(loadMcpServers, resourceOptions("mcp"));
+  const agentsResource = useAsyncResource(listAgents, resourceOptions("agents"));
+  const deploymentResource = useAsyncResource(fetchDeploymentInfo, resourceOptions("system"));
+  const indexStatusResource = useAsyncResource(getIndexStatus, resourceOptions("system"));
+  const daemonsResource = useAsyncResource(listNodeDaemons, resourceOptions("nodes", 10_000));
+  const refreshMcp = mcpResource.refresh;
+  const refreshAgents = agentsResource.refresh;
+  const refreshDeployment = deploymentResource.refresh;
+  const refreshIndexStatus = indexStatusResource.refresh;
+  const refreshDaemons = daemonsResource.refresh;
+  const agentAccessProfiles = agentsResource.data?.access_profiles ?? [];
   const refreshActiveTab = useCallback(() => {
-    switch (activeTab) {
-      case "mcp":
-        loadMcpServers();
-        break;
-      case "agents":
-        loadAgents();
-        break;
-      case "kubernetes":
-      case "notifications":
-        break;
-      case "nodes":
-        loadDaemons();
-        break;
-      case "system":
-        loadDeployment();
-        loadIndexStatus();
-        break;
+    if (activeTab === "mcp") return refreshMcp();
+    if (activeTab === "agents") return refreshAgents();
+    if (activeTab === "nodes") return refreshDaemons();
+    if (activeTab === "system") {
+      refreshDeployment();
+      refreshIndexStatus();
     }
-  }, [activeTab, loadAgents, loadDaemons, loadDeployment, loadIndexStatus, loadMcpServers]);
-
-  useEffect(() => {
-    refreshActiveTab();
-  }, [refreshActiveTab]);
-
-  useEffect(() => {
-    if (activeTab !== "nodes") return;
-    const interval = window.setInterval(loadDaemons, 10_000);
-    return () => window.clearInterval(interval);
-  }, [activeTab, loadDaemons]);
-
+  }, [activeTab, refreshAgents, refreshDaemons, refreshDeployment, refreshIndexStatus, refreshMcp]);
   useEffect(() => {
     const restoreTab = () => setActiveTab(settingsTabFromLocation());
     window.addEventListener("popstate", restoreTab);
     return () => {
       window.removeEventListener("popstate", restoreTab);
-      mcpGeneration.current += 1;
-      agentsGeneration.current += 1;
-      deploymentGeneration.current += 1;
-      indexStatusGeneration.current += 1;
-      daemonGeneration.current += 1;
     };
   }, []);
-
   useConsoleEvents((event) => {
     if (event.event_type === "sync") refreshActiveTab();
     if (
       activeTab === "mcp" &&
       (event.event_type === "mcp_operator_auth_changed" || event.event_type === "operator_connection_changed")
     )
-      loadMcpServers();
+      refreshMcp();
   });
-
   function selectTab(value: string | null) {
     if (!value || !SETTINGS_TABS.includes(value as SettingsTab)) return;
     const tab = value as SettingsTab;
@@ -756,7 +672,6 @@ export function SettingsPanel() {
     else url.searchParams.set("tab", tab);
     window.history.replaceState(null, "", url);
   }
-
   function connect(serverId: string) {
     connectMcpOperatorAuth(serverId).then(
       (started) => {
@@ -769,17 +684,15 @@ export function SettingsPanel() {
       (e: unknown) => toastError("Couldn't start MCP account link", e)
     );
   }
-
   function disconnect(serverId: string) {
     disconnectMcpOperatorAuth(serverId).then(
       () => {
         toastSuccess("MCP account disconnected", serverId);
-        loadMcpServers();
+        refreshMcp();
       },
       (e: unknown) => toastError("Couldn't disconnect MCP account", e)
     );
   }
-
   function connectProvider(connection: OperatorConnectionName) {
     connectOperatorConnection(connection).then(
       (started) => {
@@ -792,22 +705,27 @@ export function SettingsPanel() {
       (e: unknown) => toastError("Couldn't start account connection", e)
     );
   }
-
   function disconnectProvider(connection: OperatorConnectionName) {
     disconnectOperatorConnection(connection).then(
       (status) => {
         toastSuccess("Account disconnected", status.display_name);
-        loadMcpServers();
+        refreshMcp();
       },
       (e: unknown) => toastError("Couldn't disconnect account", e)
     );
   }
-
   function changeAgentAccessProfile(agent: AgentView, accessProfileId: string) {
     setSavingAgentId(agent.agent_id);
     updateAgentAccessProfile(agent.agent_id, accessProfileId).then(
       (updated) => {
-        setAgents((current) => current?.map((item) => (item.agent_id === updated.agent_id ? updated : item)) ?? null);
+        agentsResource.update((current) =>
+          current
+            ? {
+                ...current,
+                agents: current.agents.map((item) => (item.agent_id === updated.agent_id ? updated : item)),
+              }
+            : null
+        );
         setSavingAgentId(null);
         toastSuccess(
           "Agent access profile updated",
@@ -823,13 +741,13 @@ export function SettingsPanel() {
 
   const loading =
     activeTab === "mcp"
-      ? mcpLoading
+      ? mcpResource.loading
       : activeTab === "agents"
-        ? agentsLoading
+        ? agentsResource.loading
         : activeTab === "nodes"
-          ? daemonsLoading
+          ? daemonsResource.loading
           : activeTab === "system"
-            ? deploymentLoading || indexStatusLoading
+            ? deploymentResource.loading || indexStatusResource.loading
             : false;
 
   return (
@@ -870,73 +788,48 @@ export function SettingsPanel() {
       </header>
       <div className="haku-page-scroll">
         <Tabs.Panel value="mcp">
-          <Stack gap="xs" className="haku-page-list">
-            <SectionHeading
-              title="MCP servers"
-              description="Live availability and account linkage for the tools Haku exposes. Status refreshes automatically and may verify linked credentials."
-            />
-            {mcpError && (
-              <Text c="red" size="sm">
-                Failed to load MCP servers: {mcpError}
-              </Text>
-            )}
-            {!mcpServers && !mcpError && (
-              <Group justify="center" p="xl">
-                <Loader aria-label="Loading MCP servers" />
-              </Group>
-            )}
-            {mcpServers && mcpServers.length === 0 && (
-              <section className="haku-shell-card">
-                <Text size="sm" c="dimmed">
-                  No MCP servers are configured.
-                </Text>
-              </section>
-            )}
-            {mcpServers?.map((view) => (
-              <McpServerCard
-                key={view.connection.server_id}
-                view={view}
-                onConnectMcp={connect}
-                onDisconnectMcp={disconnect}
-                onConnectProvider={connectProvider}
-                onDisconnectProvider={disconnectProvider}
-              />
-            ))}
-          </Stack>
+          <ResourcePanel
+            title="MCP servers"
+            description="Live availability and account linkage for the tools Haku exposes. Status refreshes automatically and may verify linked credentials."
+            resource={mcpResource}
+            label="MCP servers"
+            emptyMessage="No MCP servers are configured."
+          >
+            {(views) =>
+              views.map((view) => (
+                <McpServerCard
+                  key={view.connection.server_id}
+                  view={view}
+                  onConnectMcp={connect}
+                  onDisconnectMcp={disconnect}
+                  onConnectProvider={connectProvider}
+                  onDisconnectProvider={disconnectProvider}
+                />
+              ))
+            }
+          </ResourcePanel>
         </Tabs.Panel>
         <Tabs.Panel value="agents">
-          <Stack gap="xs" className="haku-page-list">
-            <SectionHeading
-              title="Agents"
-              description="Clients authorized to use Haku. Activity is historical and does not indicate that a client is currently online."
-            />
-            {agentsError && (
-              <Text c="red" size="sm">
-                Failed to load Agents: {agentsError}
-              </Text>
-            )}
-            {!agents && !agentsError && (
-              <Group justify="center" p="xl">
-                <Loader aria-label="Loading Agents" />
-              </Group>
-            )}
-            {agents && agents.length === 0 && (
-              <section className="haku-shell-card">
-                <Text size="sm" c="dimmed">
-                  No Agents have been authorized.
-                </Text>
-              </section>
-            )}
-            {agents?.map((agent) => (
-              <AgentCard
-                key={agent.agent_id}
-                agent={agent}
-                accessProfiles={agentAccessProfiles}
-                saving={savingAgentId !== null}
-                onAccessProfileChange={changeAgentAccessProfile}
-              />
-            ))}
-          </Stack>
+          <ResourcePanel
+            title="Agents"
+            description="Clients authorized to use Haku. Activity is historical and does not indicate that a client is currently online."
+            resource={agentsResource}
+            label="Agents"
+            emptyMessage="No Agents have been authorized."
+            isEmpty={(response) => response.agents.length === 0}
+          >
+            {(items) =>
+              items.agents.map((agent) => (
+                <AgentCard
+                  key={agent.agent_id}
+                  agent={agent}
+                  accessProfiles={agentAccessProfiles}
+                  saving={savingAgentId !== null}
+                  onAccessProfileChange={changeAgentAccessProfile}
+                />
+              ))
+            }
+          </ResourcePanel>
         </Tabs.Panel>
         <Tabs.Panel value="kubernetes">
           <KubernetesGrantsPanel />
@@ -951,32 +844,15 @@ export function SettingsPanel() {
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="nodes">
-          <Stack gap="xs" className="haku-page-list">
-            <SectionHeading
-              title="Node daemons"
-              description="Outbound execution workers. Heartbeats determine whether approved node work can currently be dispatched."
-            />
-            {daemonsError && (
-              <Text c="red" size="sm">
-                Failed to load node daemons: {daemonsError}
-              </Text>
-            )}
-            {!daemons && !daemonsError && (
-              <Group justify="center" p="xl">
-                <Loader aria-label="Loading node daemons" />
-              </Group>
-            )}
-            {daemons && daemons.length === 0 && (
-              <section className="haku-shell-card">
-                <Text size="sm" c="dimmed">
-                  No node daemons are configured.
-                </Text>
-              </section>
-            )}
-            {daemons?.map((daemon) => (
-              <DaemonCard key={daemon.daemon_id} daemon={daemon} />
-            ))}
-          </Stack>
+          <ResourcePanel
+            title="Node daemons"
+            description="Outbound execution workers. Heartbeats determine whether approved node work can currently be dispatched."
+            resource={daemonsResource}
+            label="node daemons"
+            emptyMessage="No node daemons are configured."
+          >
+            {(items) => items.map((daemon) => <DaemonCard key={daemon.daemon_id} daemon={daemon} />)}
+          </ResourcePanel>
         </Tabs.Panel>
         <Tabs.Panel value="system">
           <Stack gap="xs" className="haku-page-list">
@@ -984,38 +860,18 @@ export function SettingsPanel() {
               title="System"
               description="Deployment status for the Console server and web application, plus semantic recall indexes."
             />
-            {deploymentError && (
-              <Text c="red" size="sm">
-                Failed to load system status: {deploymentError}
-              </Text>
-            )}
-            {!deployment && !deploymentError && (
-              <Group justify="center" p="xl">
-                <Loader aria-label="Loading system status" />
-              </Group>
-            )}
-            {deployment && <SystemStatusCard deployment={deployment} />}
+            <ResourcePanel resource={deploymentResource} label="system status">
+              {(value) => <SystemStatusCard deployment={value} />}
+            </ResourcePanel>
             <SectionHeading title="Indexes" description="How current each configured semantic recall corpus is." />
-            {indexStatusError && (
-              <Text c="red" size="sm">
-                Failed to load index status: {indexStatusError}
-              </Text>
-            )}
-            {!indexStatus && !indexStatusError && (
-              <Group justify="center" p="xl">
-                <Loader aria-label="Loading index status" />
-              </Group>
-            )}
-            {indexStatus && indexStatus.indexes.length === 0 && (
-              <section className="haku-shell-card">
-                <Text size="sm" c="dimmed">
-                  No semantic recall indexes are configured.
-                </Text>
-              </section>
-            )}
-            {indexStatus?.indexes.map((index) => (
-              <IndexStatusCard key={index.index_id} index={index} />
-            ))}
+            <ResourcePanel
+              resource={indexStatusResource}
+              label="index status"
+              emptyMessage="No semantic recall indexes are configured."
+              isEmpty={(value) => value.indexes.length === 0}
+            >
+              {(value) => value.indexes.map((index) => <IndexStatusCard key={index.index_id} index={index} />)}
+            </ResourcePanel>
           </Stack>
         </Tabs.Panel>
       </div>
