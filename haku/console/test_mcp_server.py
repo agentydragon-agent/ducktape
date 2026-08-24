@@ -50,6 +50,7 @@ from haku.console.tool_calls import (
     MCP_TOOL_META_KEY,
     AgentToolCallCaller,
     SubmitToolCallRequest,
+    ToolCallPayloadField,
     ToolCallRecord,
     ToolCallStatus,
 )
@@ -362,6 +363,12 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     assert "actor" not in tools["list_mcp_servers"].inputSchema.get("properties", {})
     assert "actor" not in tools["get_mcp_server_status"].inputSchema.get("properties", {})
     assert tools["get_mcp_server_status"].inputSchema["properties"]["include_tool_schemas"]["default"] is False
+    get_fields = tools["get_tool_call"].inputSchema["properties"]["fields"]
+    list_fields = tools["list_tool_calls"].inputSchema["properties"]["fields"]
+    assert get_fields["items"]["enum"] == [field.value for field in ToolCallPayloadField]
+    assert get_fields["default"] == [ToolCallPayloadField.RESULT]
+    assert list_fields["items"]["enum"] == [field.value for field in ToolCallPayloadField]
+    assert list_fields["default"] == []
     assert daemon_status.structured_content == {"daemons": []}
     # Native read tools advertise read-only + closed-world so clients (claude.ai) treat them as
     # passive reads and skip approvals. See mcp_infra/docs/tool_annotations.md.
@@ -483,7 +490,7 @@ async def test_list_tool_calls_tool_filters_by_auto_approved(agent_client: Clien
 
     def call_ids(result: Any) -> list[str]:
         assert result.structured_content is not None
-        return [view["call"]["tool_call_id"] for view in result.structured_content["result"]]
+        return [view["tool_call_id"] for view in result.structured_content["result"]]
 
     hidden_ids = call_ids(hidden)
     shown_ids = call_ids(shown_only)
@@ -491,6 +498,46 @@ async def test_list_tool_calls_tool_filters_by_auto_approved(agent_client: Clien
     assert len(shown_ids) == 1
     assert shown_ids != [manual_id]
     assert set(call_ids(unfiltered)) == {manual_id, *shown_ids}
+
+
+async def test_tool_call_payload_fields_project_and_omit_nullable_values(agent_client: Client) -> None:
+    result = await agent_client.call_tool("gmail__labels_list", {})
+    assert result.meta is not None
+    assert result.structured_content is not None
+    tool_call_id = result.meta[MCP_TOOL_CALL_META_KEY]["tool_call_id"]
+
+    listed = await agent_client.call_tool("list_tool_calls", {})
+    assert listed.structured_content is not None
+    listed_call = listed.structured_content["result"][0]
+    assert {"arguments", "rationale", "result"}.isdisjoint(listed_call)
+
+    default = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
+    assert default.structured_content is not None
+    default_call = default.structured_content
+    assert default_call["result"]["structuredContent"] == result.structured_content
+    assert {"arguments", "rationale"}.isdisjoint(default_call)
+
+    compact = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id, "fields": []})
+    assert compact.structured_content is not None
+    assert {"arguments", "rationale", "result"}.isdisjoint(compact.structured_content)
+
+    selected = await agent_client.call_tool(
+        "get_tool_call", {"tool_call_id": tool_call_id, "fields": ["arguments", "rationale", "result"]}
+    )
+    assert selected.structured_content is not None
+    selected_call = selected.structured_content
+    assert {"arguments", "rationale", "result"} <= selected_call.keys()
+
+    pending = await agent_client.call_tool(
+        "gmail__drafts_create",
+        {"input": {"to": ["a@b.test"], "subject": "s", "body": "b"}, "rationale": "test", "wait_for_result_ms": 0},
+    )
+    assert pending.structured_content is not None
+    pending_id = pending.structured_content["tool_call_id"]
+    selected_null = await agent_client.call_tool("get_tool_call", {"tool_call_id": pending_id, "fields": ["result"]})
+    assert selected_null.structured_content is not None
+    assert "result" in selected_null.structured_content
+    assert selected_null.structured_content["result"] is None
 
 
 async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness, agent_client: Client) -> None:
@@ -545,8 +592,8 @@ async def test_request_tool_returns_pending_stub_with_deep_link(agent_client: Cl
     got = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
     view = got.structured_content
     assert view is not None
-    assert view["call"]["status"] == ToolCallStatus.PENDING_APPROVAL
-    assert view["call"]["tool_name"] == "drafts_create"
+    assert view["status"] == ToolCallStatus.PENDING_APPROVAL
+    assert view["tool_name"] == "drafts_create"
     assert view["url"] == f"https://haku.test/_console/tool-calls/{tool_call_id}"
 
 
@@ -601,10 +648,10 @@ async def test_two_operator_two_agent_mcp_read_matrix(harness: _Harness) -> None
         async with Client(f"{harness.base}/mcp", auth=token) as client:
             listed = await client.call_tool("list_tool_calls", {})
             assert listed.structured_content is not None
-            assert [view["call"]["tool_call_id"] for view in listed.structured_content["result"]] == [own_call_id]
+            assert [view["tool_call_id"] for view in listed.structured_content["result"]] == [own_call_id]
             own = await client.call_tool("get_tool_call", {"tool_call_id": own_call_id})
             assert own.structured_content is not None
-            assert own.structured_content["call"]["tool_call_id"] == own_call_id
+            assert own.structured_content["tool_call_id"] == own_call_id
             for foreign_call_id in set(call_ids) - {own_call_id}:
                 with pytest.raises(ToolError, match="not found"):
                     await client.call_tool("get_tool_call", {"tool_call_id": foreign_call_id})
@@ -642,7 +689,7 @@ async def test_withdraw_tool_call_retracts_a_pending_stub(agent_client: Client) 
     # The durable row is what the agent re-reads, so the retraction has to be visible there too.
     got = await agent_client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
     assert got.structured_content is not None
-    assert got.structured_content["call"]["status"] == ToolCallStatus.WITHDRAWN
+    assert got.structured_content["status"] == ToolCallStatus.WITHDRAWN
 
 
 async def test_withdraw_tool_call_is_advertised_as_a_mutation(agent_client: Client) -> None:
@@ -1027,11 +1074,11 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
                 for _ in range(100):
                     got = await client.call_tool("get_tool_call", {"tool_call_id": tool_call_id})
                     assert got.structured_content is not None
-                    if got.structured_content["call"]["status"] in terminal:
+                    if got.structured_content["status"] in terminal:
                         break
                     await asyncio.sleep(0.02)
-            assert got.structured_content["call"]["status"] == ToolCallStatus.OK
-            assert "echo:hi" in str(got.structured_content["call"]["result"])
+            assert got.structured_content["status"] == ToolCallStatus.OK
+            assert "echo:hi" in str(got.structured_content["result"])
 
 
 async def test_tool_surface_tracks_each_operators_connected_servers(

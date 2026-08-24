@@ -89,7 +89,9 @@ from haku.console.tool_calls import (
     MCP_TOOL_META_KEY,
     McpProxyToolMetadata,
     McpToolCallMetadata,
+    McpToolCallRecord,
     SubmitToolCallRequest,
+    ToolCallPayloadField,
     ToolCallRecord,
     ToolCallStatus,
 )
@@ -101,6 +103,8 @@ SERVER_NAME = "haku-console"
 DEFAULT_WAIT_MS = 5000
 MAX_WAIT_MS = 60_000
 TOOL_NAME_SEPARATOR = "__"
+_DEFAULT_GET_TOOL_CALL_FIELDS = [ToolCallPayloadField.RESULT]
+_DEFAULT_LIST_TOOL_CALL_FIELDS: list[ToolCallPayloadField] = []
 
 INSTRUCTIONS = (
     "haku-console tool proxy. Every proxied tool is named `<server>__<tool>`. Tools whose schema "
@@ -182,6 +186,18 @@ class ToolCallView(BaseModel):
 
     call: ToolCallRecord
     url: str
+
+
+class McpToolCallResponse(McpToolCallRecord):
+    """A projected tool-call response with its operator-facing deep link."""
+
+    url: str
+
+
+def _mcp_tool_call_response(record: McpToolCallRecord, settings: Settings) -> McpToolCallResponse:
+    return McpToolCallResponse.model_validate(
+        {**record.model_dump(), "url": _tool_call_url(settings, record.tool_call_id)}
+    )
 
 
 class StaticBearerAuthStatus(BaseModel):
@@ -871,13 +887,31 @@ def build_console_mcp(
             ) from error
 
     @mcp.tool(annotations=_READ_ONLY_META)
-    async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:
-        """Read one tool call (resolve a non-terminal stub): status, result/error, and approval link."""
+    async def get_tool_call(
+        tool_call_id: str,
+        fields: Annotated[
+            list[ToolCallPayloadField],
+            Field(
+                description=(
+                    "Whole payloads to include. Allowed values are `arguments`, `rationale`, and `result`. "
+                    "Defaults to [`result`]; pass [] for a compact status poll."
+                ),
+                json_schema_extra={"default": [ToolCallPayloadField.RESULT]},
+            ),
+        ] = _DEFAULT_GET_TOOL_CALL_FIELDS,
+        actor: ToolCallActor = current_actor_dependency,
+    ) -> McpToolCallResponse:
+        """Read one tool call: status, selected payloads, terminal reason, and approval link.
+
+        By default this returns the downstream ``result`` but not the submitted arguments or
+        rationale. Pass ``fields=[]`` for a compact status poll. Payload fields are opaque whole
+        blobs; nested selectors are not supported.
+        """
         try:
-            record = await context.tool_calls.get(tool_call_id, actor=actor)
+            record = await context.tool_calls.get_mcp_tool_call(tool_call_id, actor=actor, fields=frozenset(fields))
         except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
             raise ToolError(str(error)) from error
-        return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
+        return _mcp_tool_call_response(record, context.settings)
 
     @mcp.tool(annotations=_LEDGER_MUTATION_META)
     async def withdraw_tool_call(
@@ -910,21 +944,37 @@ def build_console_mcp(
         status: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
         auto_approved: bool | None = None,
+        fields: Annotated[
+            list[ToolCallPayloadField],
+            Field(
+                description=(
+                    "Whole payloads to include. Allowed values are `arguments`, `rationale`, and `result`. "
+                    "Defaults to [] for compact status summaries."
+                ),
+                json_schema_extra={"default": []},
+            ),
+        ] = _DEFAULT_LIST_TOOL_CALL_FIELDS,
         limit: int = 100,
         newest_first: bool = True,
         actor: ToolCallActor = current_actor_dependency,
-    ) -> list[ToolCallView]:
+    ) -> list[McpToolCallResponse]:
         """List recent tool calls (newest first by default), optionally filtered by status/since/
         auto_approved (true: only calls the reviewed policy auto-approved; false: only calls that
-        went through manual or no approval; omitted: no filter)."""
-        records = await context.tool_calls.list_tool_calls(
+        went through manual or no approval; omitted: no filter).
+
+        The default response contains compact status summaries only. Request ``fields`` to include
+        whole opaque ``arguments``, ``rationale``, or ``result`` payloads; nested selectors are not
+        supported.
+        """
+        records = await context.tool_calls.list_mcp_tool_calls(
             actor=actor,
+            fields=frozenset(fields),
             statuses=status,
             since=since,
             auto_approved=auto_approved,
             limit=limit,
             newest_first=newest_first,
         )
-        return [ToolCallView(call=r, url=_tool_call_url(context.settings, r.tool_call_id)) for r in records]
+        return [_mcp_tool_call_response(record, context.settings) for record in records]
 
     return mcp
