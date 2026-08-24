@@ -189,19 +189,15 @@ Remaining:
   `scale_prior.current_market_cap_usd`. Design + rationale (structure vs fit, identifiability,
   the primary/secondary + stale-FMV likelihood caveats) is the **M2.2 section** of
   `augur/plans/prediction_market_calibration.md`. Staged:
-  - [ ] **M2.2-A — per-rollout stochastic dilution rate (sampler + fit landed).**
+  - [x] **M2.2-A — per-rollout stochastic dilution rate (sampler landed).**
         Each rollout draws `r = annual_dilution_rate · exp(annual_dilution_rate_log_sigma · z)`,
         `z ~ N(0,1)` (median-anchored LogNormal), off its own `:pe_risk_dilution` seed stream
         via ONE unified path — σ=0 (default) degenerates naturally to the M2 deterministic
         factor, byte-identical, no special-case. New config `annual_dilution_rate_log_sigma`.
-        Fit landed too: `augur/fit/dilution_prior.py` + `derive_dilution_prior` binary
-        (implied-shares = valuation/price log-linear OLS → rate + honestly-wide σ_r).
         Independent of `V(t)` for now (conservatively over-states per-share spread; the hedge
-        is M2.2-B). No new bundle event kind. **Follow-up — BLOCKED on M2.2-D:** wiring
-        `derive_dilution_prior` on the gaffer evidence into `config.yaml` was attempted
-        (gaffer `claude/magical-cannon-USFo4`, committed as a NOT-deployable record) and
-        FAILS the `sample_sanity` gate — the OLS fit's ~244%/yr valuation drift compounds to
-        an ~8000× median 10y mark. Deployment waits on M2.2-D (NUTS + decaying drift).
+        is M2.2-B). No new bundle event kind. The superseded implied-shares OLS prototype
+        failed the `sample_sanity` gate — its ~244%/yr valuation drift compounded to an
+        ~8000× median 10y mark — and was retired after the M2.2-D Bayesian fit replaced it.
   - [ ] **M2.2-B — V↔dilution correlation.** Joint per-rollout `(V log-drift, r)` draw with
         fitted ρ (good-company worlds dilute more → per-share partly hedged; independence
         over-states per-share spread). Makes `V(t)`'s drift per-rollout — a change to the V

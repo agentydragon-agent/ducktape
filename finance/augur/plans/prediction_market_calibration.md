@@ -65,16 +65,14 @@ byte-identical.
 
 The first M2 dilution factor was deterministic, so all per-share spread came
 from valuation. The code now supports per-rollout stochastic dilution via
-`annual_dilution_rate_log_sigma`, plus evidence-fit helpers:
+`annual_dilution_rate_log_sigma`. `augur/fit/bayes_dilution.py` fits the active
+Bayesian latent valuation and share path with uncertainty-aware observations.
+An earlier OLS implied-share diagnostic was retired because its valuation trend
+over-extrapolated the OpenAI evidence and was not deployable.
 
-- `augur/fit/dilution_prior.py` and `derive_dilution_prior` fit a quick OLS
-  implied-share trend. This is useful diagnostically but not deployable for the
-  OpenAI evidence because the valuation trend over-extrapolates.
-- `augur/fit/bayes_dilution.py` fits a Bayesian latent valuation and share path
-  with uncertainty-aware observations.
-- The forward sampler supports scale-dependent mean-reverting valuation drift,
-  where young/small companies can have high drift that decays toward mature
-  drift as valuation scale grows.
+The forward sampler supports scale-dependent mean-reverting valuation drift,
+where young/small companies can have high drift that decays toward the mature
+rate as valuation scale grows.
 
 The key finding is identifiability: one issuer observed in one size regime
 cannot identify the whole scale-reversion shape. The production direction is to
