@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+import yaml
 
 from cluster.validation.checks import (
     check_duplicate_external_secrets,
@@ -131,6 +132,36 @@ def test_image_policy_markers_resolve(cluster: ParsedCluster, k8s_dir: Path) -> 
     """Every `$imagepolicy` marker names a defined ImagePolicy, so no image silently stops rolling."""
     errors = check_image_policy_markers(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
+
+
+def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
+    cluster: ParsedCluster, k8s_dir: Path
+) -> None:
+    """A Namespace opt-in for Kubernetes pod logs must also permit its Loki logs.
+
+    The proxy remains static and network-isolated; this CI contract makes the
+    GitOps-owned logs label the review point for extending that static policy.
+    """
+    deployment = yaml.safe_load((k8s_dir / "agents/loki-read-proxy/deployment.yaml").read_text())
+    container = next(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "proxy")
+    env = {entry["name"]: entry["value"] for entry in container["env"]}
+    loki_allowlist = frozenset(namespace for namespace in env["NAMESPACE_ALLOWLIST"].split(",") if namespace)
+    log_label = "rbac.ducktape.io/agent-readable-logs"
+    labeled_namespaces = {
+        resource.name
+        for build in cluster.build_results
+        for resource in build.resources
+        if resource.kind == "Namespace" and resource.metadata.labels.get(log_label) == "true"
+    }
+
+    # flux-system applies this label through its bootstrap overlay rather than
+    # a literal Namespace manifest, so retain the explicit assertion here.
+    flux_system_kustomization = (k8s_dir / "flux-system/kustomization.yaml").read_text()
+    assert "path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs" in flux_system_kustomization
+    labeled_namespaces.add("flux-system")
+
+    missing = sorted(labeled_namespaces - loki_allowlist)
+    assert not missing, f"agent-readable log namespaces missing from Loki proxy allowlist: {missing}"
 
 
 def test_files_flux_rewrites_use_block_style(k8s_dir: Path) -> None:

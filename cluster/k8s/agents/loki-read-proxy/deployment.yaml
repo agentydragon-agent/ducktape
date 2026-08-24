@@ -38,13 +38,14 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
-            # Namespaces Haku may read logs from. The first ten mirror the
-            # infrastructure set Haku already has logs/configmaps RBAC for
-            # (agent-rbac `logs-configmaps-reader` bindings); cpap-sync and
-            # plaid-mcp deliberately go beyond that set (operator-reviewed:
-            # Haku operates both services and needs their logs to debug them).
+            # Namespaces agents may query through this network-isolated proxy.
+            # cluster/validation:test_cluster_integration asserts every
+            # Namespace with rbac.ducktape.io/agent-readable-logs=true is
+            # included here, so the GitOps label and Loki policy cannot drift.
+            # csi-proxmox and cpap-sync are separately reviewed Haku-only
+            # exceptions retained from the original proxy policy.
             - name: NAMESPACE_ALLOWLIST
-              value: "flux-system,monitoring,kube-system,cnpg-system,cert-manager,local-path-storage,openebs,csi-proxmox,node-feature-discovery,nvidia-device-plugin,cpap-sync,plaid-mcp"
+              value: "airlock,analytics,authentik,cert-manager,cli-proxy-api,cnpg-system,cpap-sync,csi-proxmox,docker-ci,flux-system,gatus,grocy-sf,grocy-vallejo,haku-ci,kube-system,litellm,local-path-storage,monitoring,node-feature-discovery,nvidia-device-plugin,oci-cache,openebs,osm-mcp,plaid-mcp,proxmox-proxy,props,study-casino,tana-mcp"
             # Must stay in sync with the egress CiliumNetworkPolicy in this
             # directory, which only allows the Loki gateway.
             - name: UPSTREAM_URL
