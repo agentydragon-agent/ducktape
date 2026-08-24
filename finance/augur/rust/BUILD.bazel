@@ -1,0 +1,108 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "simulator",
+    srcs = [
+        "engine.rs",
+        "fixture.rs",
+        "ledger.rs",
+        "lib.rs",
+        "money.rs",
+        "tax.rs",
+    ],
+    crate_name = "augur_rust_simulator",
+    edition = "2024",
+    deps = [
+        "@crates//:rayon",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_binary(
+    name = "simulator_cli",
+    srcs = ["main.rs"],
+    edition = "2024",
+    deps = [
+        ":simulator",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_binary(
+    name = "simulator_bench",
+    srcs = ["benchmark.rs"],
+    edition = "2024",
+    deps = [
+        ":simulator",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "simulator_test",
+    crate = ":simulator",
+)
+
+py_binary(
+    name = "benchmark_fixture",
+    srcs = ["benchmark_fixture.py"],
+)
+
+py_library(
+    name = "benchmark_fixture_lib",
+    srcs = ["benchmark_fixture.py"],
+)
+
+py_library(
+    name = "fixture_adapter",
+    srcs = ["fixture_adapter.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:simulate",
+        "@pypi//numpy",
+    ],
+)
+
+py_binary(
+    name = "benchmark_driver",
+    srcs = ["benchmark_driver.py"],
+    data = [":simulator_bench"],
+    deps = [
+        ":benchmark_fixture_lib",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_binary(
+    name = "jax_benchmark_driver",
+    srcs = ["jax_benchmark_driver.py"],
+    deps = [
+        ":benchmark_fixture_lib",
+        ":fixture_adapter",
+        "//finance/augur/sim:simulate",
+        "@pypi//jax",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "differential_test",
+    srcs = ["differential_test.py"],
+    data = [":simulator_cli"],
+    deps = [
+        ":benchmark_fixture_lib",
+        ":fixture_adapter",
+        "//finance/augur/sim:test_state_helpers",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
