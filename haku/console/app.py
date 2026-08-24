@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import (
+    agent_bearer_authority,
     capabilities,
     connection_metrics,
     console_events,
@@ -79,7 +80,6 @@ from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
-from haku.console.tool_call_actor import AgentActor
 from haku.console.tools import gmail as gmail_tools, kubernetes as kubernetes_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import (
@@ -434,30 +434,21 @@ def create_app(
         static_agent_fingerprints = tuple(
             fingerprint_static_token(agent.token.get_secret_value()) for agent in loaded_static_agents
         )
-    static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(fingerprints=static_agent_fingerprints)
+    static_credential_registry = agent_bearer_authority.StaticAgentCredentialRegistry(
+        fingerprints=static_agent_fingerprints
+    )
+    bearer_authority = agent_bearer_authority.build_agent_bearer_authority(
+        agent_authority=agent_authority, static_credentials=static_credential_registry, session_tokens=db_sessions
+    )
 
     mcp_auth = mcp_agent_auth.build_auth(
         settings,
         agent_authority=agent_authority,
         static_credentials=static_credential_registry,
         operator_identity_store=operator_identity_store,
-        # Bridge-token validation is a durable Postgres read. It does not require this
-        # replica to launch or supervise a chat runtime, so every Console composition
-        # can reject expired/revoked session bearers consistently.
-        session_tokens=db_sessions,
+        agent_bearer_authority=bearer_authority,
     )
     actor_resolver = HakuMcpActorResolver(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
-    kubernetes_agent_resolver = mcp_agent_auth.McpBearerAgentResolver(provider=mcp_auth.provider, actors=actor_resolver)
-
-    async def resolve_kubernetes_agent(token: str) -> AgentActor | None:
-        """Resolve static, session, or OAuth MCP bearers to an Agent.
-
-        This shares MCP's bearer verification and canonical actor resolution,
-        while deliberately excluding the browser-session principal that MCP
-        accepts only through its exact-Origin-gated cookie path.
-        """
-
-        return await kubernetes_agent_resolver.resolve_agent(token)
 
     kubernetes_grants = KubernetesGrantService(
         PostgresKubernetesGrantRepository(db_sessions),
@@ -466,7 +457,7 @@ def create_app(
     kubernetes_authorization = (
         KubernetesAuthorizationService(
             config=console_config.kubernetes_authorization,
-            resolve_agent=resolve_kubernetes_agent,
+            agent_bearer_authority=bearer_authority,
             grants=kubernetes_grants,
             sar_client=KubernetesSubjectAccessReviewClient(),
         )
