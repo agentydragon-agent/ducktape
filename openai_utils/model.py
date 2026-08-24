@@ -29,6 +29,10 @@ class InputTokensDetails(BaseModel):
     """Token usage details for input (wrapped from OpenAI SDK)."""
 
     cached_tokens: int
+    # OpenAI's Responses API requires this even when no tokens were written to
+    # its prompt cache. Keeping a default preserves compatibility with
+    # OpenAI-compatible upstreams that omit it.
+    cache_write_tokens: int = 0
     model_config = ConfigDict(extra="allow")
 
 
@@ -68,7 +72,10 @@ class ResponseUsage(BaseModel):
             input_tokens=sdk_usage.input_tokens,
             output_tokens=sdk_usage.output_tokens,
             total_tokens=sdk_usage.total_tokens,
-            input_tokens_details=InputTokensDetails(cached_tokens=input_details.cached_tokens if input_details else 0),
+            input_tokens_details=InputTokensDetails(
+                cached_tokens=input_details.cached_tokens if input_details else 0,
+                cache_write_tokens=getattr(input_details, "cache_write_tokens", 0) if input_details else 0,
+            ),
             output_tokens_details=OutputTokensDetails(
                 reasoning_tokens=output_details.reasoning_tokens if output_details else 0
             ),

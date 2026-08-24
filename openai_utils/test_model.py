@@ -11,11 +11,40 @@ from pydantic import ValidationError
 from openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
+    InputTokensDetails,
+    OutputTokensDetails,
     ReasoningContentItem,
     ReasoningItem,
     ReasoningOutputTextItem,
     ResponsesResult,
+    ResponseUsage,
 )
+
+
+def test_response_usage_serializes_required_cache_write_tokens() -> None:
+    usage = ResponseUsage(
+        input_tokens=0,
+        output_tokens=1,
+        total_tokens=1,
+        input_tokens_details=InputTokensDetails(cached_tokens=0),
+        output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+    )
+
+    response = Response(
+        id="resp_usage",
+        object="response",
+        created_at=0,
+        model="test-model",
+        status="completed",
+        output=[],
+        parallel_tool_calls=True,
+        tool_choice="auto",
+        tools=[],
+        usage=usage.model_dump(),
+    )
+
+    assert response.usage is not None
+    assert response.usage.input_tokens_details.cache_write_tokens == 0
 
 
 def test_reasoning_content_item_stays_strict() -> None:
