@@ -33,7 +33,7 @@ spec:
                     operator: DoesNotExist
       containers:
         - name: llm-proxy
-          image: ghcr.io/agentydragon/props-llm-proxy:devel-20260820160508-9259fc4 # {"$imagepolicy": "flux-system:props-llm-proxy"}
+          image: ghcr.io/agentydragon/props-llm-proxy:devel-20260824085435-e09f586 # {"$imagepolicy": "flux-system:props-llm-proxy"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
