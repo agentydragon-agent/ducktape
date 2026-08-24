@@ -74,7 +74,7 @@ class ResponseUsage(BaseModel):
             total_tokens=sdk_usage.total_tokens,
             input_tokens_details=InputTokensDetails(
                 cached_tokens=input_details.cached_tokens if input_details else 0,
-                cache_write_tokens=getattr(input_details, "cache_write_tokens", 0) if input_details else 0,
+                cache_write_tokens=input_details.cache_write_tokens if input_details else 0,
             ),
             output_tokens_details=OutputTokensDetails(
                 reasoning_tokens=output_details.reasoning_tokens if output_details else 0
