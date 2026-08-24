@@ -3,15 +3,6 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "state",
-    srcs = ["state.py"],
-    deps = [
-        "//finance/augur:frames",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
     name = "test_state_helpers",
     srcs = ["test_state_helpers.py"],
     deps = [
@@ -99,6 +90,7 @@ py_library(
     name = "tlh_harvest",
     srcs = ["tlh_harvest.py"],
     deps = [
+        "@pypi//jax",
         "@pypi//jaxtyping",
         "@pypi//numpy",
         "@pypi//pydantic",
@@ -551,7 +543,6 @@ py_library(
         ":external_series",
         ":fixed_point",
         ":output",
-        ":state",
         "//finance/augur:frames",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
@@ -581,6 +572,7 @@ py_library(
         ":runtime",
         ":scenario",
         ":target_allocation",
+        ":tlh_harvest",
         "//finance/augur/model:series",
         "//finance/augur/product:metric_composition",
         "//finance/augur/product:quantiles",

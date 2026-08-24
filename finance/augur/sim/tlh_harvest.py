@@ -37,10 +37,31 @@ from __future__ import annotations
 
 # ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 import numpy as np
-from jaxtyping import Float64
+from jaxtyping import Array, Float64
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _MONTHS_PER_YEAR = 12.0
+
+
+def harvest_fraction_curve(
+    embedded_gain_fraction: Float64[np.ndarray, " rollout"] | Float64[Array, " rollout"],
+    drawdown: Float64[np.ndarray, " rollout"] | Float64[Array, " rollout"],
+    *,
+    peak_annual_yield: float,
+    floor_annual_yield: float,
+    maturity_decay_exponent: float,
+    drawdown_sensitivity: float,
+) -> Float64[np.ndarray, " rollout"] | Float64[Array, " rollout"]:
+    """Evaluate the shared monthly harvest-yield curve on bounded array inputs.
+
+    ``embedded_gain_fraction`` must be clipped to ``[0, 1]`` and ``drawdown`` must be
+    non-negative. The arithmetic is deliberately array-library-neutral so the eager NumPy
+    calibration helper and traced JAX engine execute one formula.
+    """
+
+    maturity = (1.0 - embedded_gain_fraction) ** maturity_decay_exponent
+    base_monthly = (floor_annual_yield + (peak_annual_yield - floor_annual_yield) * maturity) / _MONTHS_PER_YEAR
+    return base_monthly * (1.0 + drawdown_sensitivity * drawdown)
 
 
 class HarvestYieldParams(BaseModel):
@@ -92,11 +113,16 @@ def monthly_harvest_fraction(
 
     # e -> [0, 1]: 0 = fresh (basis == MV, peak harvest), 1 = fully ossified (floor).
     e = np.clip(embedded_gain_fraction, 0.0, 1.0)
-    # Front-loaded decay: (1 - e)**gamma falls from 1 (fresh) to 0 (ossified) [VANGUARD-2024].
-    maturity = (1.0 - e) ** params.maturity_decay_exponent
-    base_monthly = (
-        params.floor_annual_yield + (params.peak_annual_yield - params.floor_annual_yield) * maturity
-    ) / _MONTHS_PER_YEAR
     # Drawdowns surface more lots below basis; up months get no kicker (drawdown == 0).
     drawdown = np.maximum(0.0, -period_return)
-    return np.asarray(base_monthly * (1.0 + params.drawdown_sensitivity * drawdown), dtype=np.float64)
+    return np.asarray(
+        harvest_fraction_curve(
+            e,
+            drawdown,
+            peak_annual_yield=params.peak_annual_yield,
+            floor_annual_yield=params.floor_annual_yield,
+            maturity_decay_exponent=params.maturity_decay_exponent,
+            drawdown_sensitivity=params.drawdown_sensitivity,
+        ),
+        dtype=np.float64,
+    )

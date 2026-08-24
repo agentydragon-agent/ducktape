@@ -2,8 +2,8 @@
 
 The capability surface of the shipped `augur/sim` financial simulator —
 what scenarios it must be able to model — framed as natural-language
-scenarios free of API choices. Companion to `DESIGN.md`, which records
-the structural decisions that realize these requirements. Originally
+scenarios free of API choices. Companion to `DESIGN.md`, which describes
+the current architecture that realizes these requirements. Originally
 authored as a clean-rewrite target for the (now-deleted) legacy core;
 kept in the same shape because the layered scenarios remain the right
 acceptance surface for the shipped engine.
