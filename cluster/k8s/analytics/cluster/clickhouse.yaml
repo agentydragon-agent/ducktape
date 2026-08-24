@@ -41,7 +41,9 @@ spec:
       aiquota_ingest/quota: ingest
       aiquota_ingest/grants/query:
         - GRANT INSERT ON aiquota.raw_http_observations
-        - GRANT INSERT ON aiquota.aiquota_windows
+        # The materialized view executes under the inserting identity, so it
+        # needs only these source columns to normalize a raw observation.
+        - GRANT SELECT(event_id, observed_at, source, quota_windows) ON aiquota.raw_http_observations
       grafana/password:
         valueFrom:
           secretKeyRef:
@@ -81,7 +83,6 @@ spec:
       prometheus/status_info: "true"
     clusters:
       - name: analytics
-        secure: "true"
         secret:
           valueFrom:
             secretKeyRef:
@@ -91,10 +92,8 @@ spec:
           shardsCount: 1
           replicasCount: 2
   defaults:
-    # The operator's short per-replica aliases are intentionally mapped to
-    # loopback inside each Pod. ClickHouse's DDLWorker does not consider that
-    # a local member of the distributed-DDL host list, so ON CLUSTER DDL waits
-    # forever. Stable Pod FQDNs resolve to the real Pod address instead.
+    # Each replica Service FQDN resolves to its Pod address, allowing
+    # ClickHouse to recognize its own member in the distributed-DDL host list.
     replicasUseFQDN: "yes"
     templates:
       podTemplate: clickhouse
@@ -106,12 +105,6 @@ spec:
           labels:
             app.kubernetes.io/name: clickhouse
             app.kubernetes.io/instance: analytics
-          annotations:
-            # Force one ordinary operator-managed rematerialization so the
-            # new FQDN remote-server and interserver identities take effect.
-            # The generation is deliberately bumped only for explicit config
-            # rollouts; it must not become a reconcile-time restart trigger.
-            analytics.allegedly.works/scheduling-policy-generation: "3"
         spec:
           nodeSelector:
             topology.kubernetes.io/zone: hil-ovh
@@ -155,9 +148,8 @@ spec:
                   type: RuntimeDefault
               volumeMounts:
                 # The operator also injects its generated common-config
-                # directory mount at this path. Tenant schema migrations must
-                # therefore use the versioned Job instead of depending on the
-                # ordering of these overlapping mounts.
+                # directory at this path. Tenant schema is owned exclusively
+                # by the versioned schema Job, not startup scripts.
                 - name: config-volume
                   mountPath: /etc/clickhouse-server/config.d
                   readOnly: true

@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: clickhouse-aiquota-schema-v4
+  name: clickhouse-aiquota-schema-v5
   namespace: analytics
   labels:
     app.kubernetes.io/name: clickhouse-schema
     app.kubernetes.io/instance: analytics
     app.kubernetes.io/component: schema
   annotations:
-    description: Applies the first AIQuota schema revision directly to each ClickHouse replica.
+    description: Applies the first AIQuota schema revision with ClickHouse distributed DDL.
 spec:
   activeDeadlineSeconds: 1200
   backoffLimit: 60
@@ -32,21 +32,14 @@ spec:
         - name: schema
           image: clickhouse/clickhouse-server:26.3.20.7@sha256:c22a4aba84a1ea83e320a6f8620b87100649e04995b61d7dde160fc1ca33bc76
           imagePullPolicy: IfNotPresent
-          command: [sh, -ec]
+          command: [clickhouse-client]
           args:
-            - |
-              for host in \
-                chi-analytics-analytics-0-0.analytics.svc.cluster.local \
-                chi-analytics-analytics-0-1.analytics.svc.cluster.local
-              do
-                clickhouse-client \
-                  --host="$host" \
-                  --port=9000 \
-                  --connect_timeout=10 \
-                  --receive_timeout=60 \
-                  --multiquery \
-                  --queries-file=/schema/schema.sql
-              done
+            - --host=clickhouse-analytics.analytics.svc.cluster.local
+            - --port=9000
+            - --connect_timeout=10
+            - --receive_timeout=60
+            - --multiquery
+            - --queries-file=/schema/schema.sql
           env:
             - name: CLICKHOUSE_USER
               valueFrom:
