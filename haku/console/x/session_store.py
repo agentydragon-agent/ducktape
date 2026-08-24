@@ -447,26 +447,6 @@ class SessionStore:
         chat.error = error
         chat.updated_at = now
 
-    async def create(
-        self,
-        operator_id: UUID,
-        *,
-        conversation_id: UUID | None = None,
-        agent_id: UUID | None = None,
-        access_profile_id: str | None = None,
-        runtime_kind: RuntimeKind | None = None,
-        launch_authorizer: LaunchAuthorizer | None = None,
-    ) -> tuple[SessionView, str]:
-        """Open the idle session used by every production caller."""
-        return await self.create_idle(
-            operator_id,
-            conversation_id=conversation_id,
-            agent_id=agent_id,
-            access_profile_id=access_profile_id,
-            runtime_kind=runtime_kind,
-            launch_authorizer=launch_authorizer,
-        )
-
     async def create_idle(
         self,
         operator_id: UUID,
@@ -1756,7 +1736,7 @@ class SessionStore:
         native frame is handed to the selected integration intact; only that integration decides
         which are deltas, durable facts, protocol noise, or unknown evidence.
         """
-        runtime_kind = await self.runtime_kind_of(session_id)
+        runtime_kind = (await self.session_identity(session_id)).runtime_kind
         query = _harness_frames(select(SessionFrame).where(SessionFrame.session_id == session_id))
         async with self._sessions() as db:
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq))).all()
@@ -2046,36 +2026,23 @@ class SessionStore:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
 
-    async def runtime_kind_of(self, session_id: UUID) -> RuntimeKind:
-        """Return the immutable runtime discriminator of a session's conversation."""
-        async with self._sessions() as db:
-            kind = await db.scalar(
-                select(Conversation.runtime_kind)
-                .join(Session, Session.conversation_id == Conversation.conversation_id)
-                .where(Session.session_id == session_id)
-            )
-            if kind is None:
-                raise KeyError(session_id)
-            return kind
-
-    async def session_identity(self, session_id: UUID) -> OperatorSessionIdentity:
+    async def session_identity(self, session_id: UUID, *, operator_id: UUID | None = None) -> OperatorSessionIdentity:
         """Look up the pinned Agent/profile/runtime for internal execution paths.
 
         This is intentionally not an Operator-scoped projection read.  Claim lifecycle, prompt
         rendering and runner admission already hold a session id minted by the store; they need the
         immutable identity to select resources, while projection readers only need
-        ``runtime_kind_of`` and must remain runtime-only.
+        the runtime discriminator without making callers repeat a second identity query.
         """
         async with self._sessions() as db:
-            row = (
-                await db.execute(
-                    select(
-                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind
-                    )
-                    .join(Conversation, Conversation.conversation_id == Session.conversation_id)
-                    .where(Session.session_id == session_id)
-                )
-            ).one_or_none()
+            query = (
+                select(Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind)
+                .join(Conversation, Conversation.conversation_id == Session.conversation_id)
+                .where(Session.session_id == session_id)
+            )
+            if operator_id is not None:
+                query = query.where(Session.operator_id == operator_id)
+            row = (await db.execute(query)).one_or_none()
             if row is None:
                 raise KeyError(session_id)
             return OperatorSessionIdentity(
@@ -2099,27 +2066,6 @@ class SessionStore:
                 raise KeyError(conversation_id)
             return OperatorSessionIdentity(
                 status=SessionStatus.READY,
-                agent_id=row.agent_id,
-                access_profile_id=row.access_profile_id,
-                runtime_kind=row.runtime_kind,
-            )
-
-    async def operator_session_identity(self, operator_id: UUID, session_id: UUID) -> OperatorSessionIdentity:
-        """The immutable conversation identity behind one Operator-owned session."""
-        async with self._sessions() as db:
-            row = (
-                await db.execute(
-                    select(
-                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind
-                    )
-                    .join(Conversation, Conversation.conversation_id == Session.conversation_id)
-                    .where(Session.session_id == session_id, Session.operator_id == operator_id)
-                )
-            ).one_or_none()
-            if row is None:
-                raise KeyError(session_id)
-            return OperatorSessionIdentity(
-                status=row.status,
                 agent_id=row.agent_id,
                 access_profile_id=row.access_profile_id,
                 runtime_kind=row.runtime_kind,
@@ -2197,17 +2143,6 @@ class SessionStore:
                 now = datetime.now(UTC)
                 await self._end_session(db, chat, status=SessionStatus.CLOSED, error=None, now=now)
                 await notify(db, SessionEventKind.UPDATE, session_id)
-
-    async def session_exists(self, operator_id: UUID, session_id: UUID) -> bool:
-        async with self._sessions() as db:
-            return (
-                await db.scalar(
-                    select(Session.session_id).where(
-                        Session.session_id == session_id, Session.operator_id == operator_id
-                    )
-                )
-                is not None
-            )
 
     async def request_abort(self, session_id: UUID) -> bool:
         """Ask whichever replica is running this session's turn to interrupt it.

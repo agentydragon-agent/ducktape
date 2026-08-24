@@ -93,7 +93,7 @@ class _ProvisioningTestStore(SessionStore):
         launch_authorizer: LaunchAuthorizer | None = None,
     ) -> tuple[SessionView, str]:
         if launch_authorizer is not None:
-            return await super().create(
+            return await super().create_idle(
                 operator_id,
                 conversation_id=conversation_id,
                 agent_id=agent_id,

@@ -136,7 +136,7 @@ def test_new_conversation_request_requires_the_complete_launch_pair(body: dict[s
 
 async def test_post_conversation_launch_rejection_is_generic_403() -> None:
     class RejectingService:
-        async def create_conversation(self, *_args: Any, **_kwargs: Any) -> None:
+        async def create(self, *_args: Any, **_kwargs: Any) -> None:
             raise LaunchAgentRejectedError("durable internal reason")
 
     actor = type("Actor", (), {"operator_id": uuid4()})()
@@ -145,6 +145,7 @@ async def test_post_conversation_launch_rejection_is_generic_403() -> None:
             ConversationCreateRequest(agent_id=uuid4(), runtime=RuntimeKind.CLAUDE_CODE),
             actor,
             cast(SessionService, RejectingService()),
+            cast(SessionStore, object()),
         )
 
     assert error.value.status_code == 403
@@ -546,7 +547,14 @@ async def test_generic_turn_loop_is_opaque_to_a_discriminator_free_harness(
         frame_seqs=[frame.frame_seq for frame in recorded],
         prompt_frame_seq=prompt_frame_seq,
     )
-    await service._run_turn(client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event())
+    await service._run_turn(
+        client,
+        service._runtimes[RuntimeKind.CLAUDE_CODE],
+        client.frames().__aiter__(),
+        view.session_id,
+        turn,
+        abort_event=asyncio.Event(),
+    )
 
     assert await answers(migrated_sessions, view.session_id) == ["你好!"]
     raw = await chat_store.read_frames(view.session_id, cursor=None, limit=25)
@@ -580,7 +588,12 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
 
     client = _FakeCli(_TOOL_USE_SCRIPT)
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
+        client,
+        chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
+        client.frames().__aiter__(),
+        view.session_id,
+        turn,
+        abort_event=asyncio.Event(),
     )
 
     items = [
@@ -623,7 +636,12 @@ async def test_run_turn_accepts_a_stream_only_tool_call_before_its_result(
         ]
     )
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
+        client,
+        chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
+        client.frames().__aiter__(),
+        view.session_id,
+        turn,
+        abort_event=asyncio.Event(),
     )
 
     call = one(
@@ -686,7 +704,12 @@ async def test_projected_assistant_message_points_to_the_frames_that_built_it(
 
     client = _FakeCli(script, frame_seqs=frame_seqs, prompt_frame_seq=prompt_frame_seq)
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
+        client,
+        chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
+        client.frames().__aiter__(),
+        view.session_id,
+        turn,
+        abort_event=asyncio.Event(),
     )
 
     items = (await chat_store.get(operator_id, view.session_id)).items
@@ -795,7 +818,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     session = await chat_service.create(operator_id)
     session_id = session.session_id
     assert recording_claims.created == [], "an empty session owns no sandbox"
-    await chat_service.enqueue_prompt(operator_id, session_id, "start", SPA_ORIGIN)
+    await chat_store.enqueue_prompt(operator_id, session_id, "start", SPA_ORIGIN)
     await allocator.allocate_once()
     _ClosingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
     await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
@@ -852,7 +875,7 @@ async def test_the_first_idle_prompt_creates_the_claim_once(
     assert await chat_store.status(session.session_id) == SessionStatus.IDLE
     assert recording_claims.created == []
 
-    item_id = await chat_service.enqueue_prompt(operator_id, session.session_id, "start now", SPA_ORIGIN)
+    item_id = await chat_store.enqueue_prompt(operator_id, session.session_id, "start now", SPA_ORIGIN)
     assert await chat_store.status(session.session_id) == SessionStatus.IDLE
     assert recording_claims.created == []
 
@@ -1001,7 +1024,12 @@ async def test_adoption_deduplicates_a_completed_copy_of_a_streamed_tool_call(
     client.replay()
     async with asyncio.timeout(30):
         await chat_service._run_turn(
-            cast(Any, client), client.frames().__aiter__(), session_id, resumed, abort_event=asyncio.Event()
+            cast(Any, client),
+            chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
+            client.frames().__aiter__(),
+            session_id,
+            resumed,
+            abort_event=asyncio.Event(),
         )
 
     calls = [
@@ -1113,6 +1141,7 @@ async def test_adoption_replays_a_tool_call_composition_from_its_start(
     async with asyncio.timeout(30):
         await chat_service._run_turn(
             cast(Any, client),
+            chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
             _replaying(resumed.replay, client.frames().__aiter__()),
             session_id,
             resumed,
@@ -1161,7 +1190,12 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
     client.replay()
     async with asyncio.timeout(30):
         await chat_service._run_turn(
-            cast(Any, client), client.frames().__aiter__(), session_id, resumed, abort_event=asyncio.Event()
+            cast(Any, client),
+            chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
+            client.frames().__aiter__(),
+            session_id,
+            resumed,
+            abort_event=asyncio.Event(),
         )
 
     spoken = [
@@ -1198,6 +1232,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
     async with asyncio.timeout(30):
         await chat_service._run_turn(
             cast(Any, client),
+            chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
             _replaying(resumed.replay, client.frames().__aiter__()),
             session_id,
             resumed,
@@ -1236,6 +1271,7 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
         async with asyncio.timeout(30):
             await chat_service._run_turn(
                 cast(Any, client),
+                chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
                 _replaying(resumed.replay, client.frames().__aiter__()),
                 session_id,
                 resumed,
@@ -1440,7 +1476,7 @@ class _CliFinishingItsMessage(_InterruptedCli):
 
 
 async def _turn_into_a_room(
-    chat_store: SessionStore,
+    chat_store,
     migrated_sessions: async_sessionmaker[AsyncSession],
     recording_claims: RecordingClaims,
     notifications: SessionNotifications,
@@ -1460,7 +1496,12 @@ async def _turn_into_a_room(
     assert turn is not None
     async with asyncio.timeout(30):
         await service._run_turn(
-            client, client.frames().__aiter__(), view.session_id, turn, abort_event=abort_event or asyncio.Event()
+            client,
+            service._runtimes[RuntimeKind.CLAUDE_CODE],
+            client.frames().__aiter__(),
+            view.session_id,
+            turn,
+            abort_event=abort_event or asyncio.Event(),
         )
     return await answers(migrated_sessions, view.session_id)
 
@@ -1522,6 +1563,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     async with asyncio.timeout(30):
         await service._run_turn(
             client,
+            service._runtimes[RuntimeKind.CLAUDE_CODE],
             _replaying(resumed.replay, client.frames().__aiter__()),
             session_id,
             resumed,
@@ -1577,6 +1619,7 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     async with asyncio.timeout(30):
         await service._run_turn(
             client,
+            service._runtimes[RuntimeKind.CLAUDE_CODE],
             _replaying(resumed.replay, client.frames().__aiter__()),
             session_id,
             resumed,
@@ -1630,7 +1673,12 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     with pytest.raises(RuntimeError):
         async with asyncio.timeout(30):
             await service._run_turn(
-                client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
+                client,
+                service._runtimes[RuntimeKind.CLAUDE_CODE],
+                client.frames().__aiter__(),
+                view.session_id,
+                turn,
+                abort_event=asyncio.Event(),
             )
 
     assert await answers(migrated_sessions, view.session_id) == ["Looking at the logs now.", "Found it: a bad config."]
@@ -1652,7 +1700,12 @@ async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did
 
     with pytest.raises(RuntimeError, match="error_max_turns"):
         await chat_service._run_turn(
-            client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
+            client,
+            chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
+            client.frames().__aiter__(),
+            view.session_id,
+            turn,
+            abort_event=asyncio.Event(),
         )
 
     [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5)
@@ -1784,7 +1837,12 @@ async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, 
     client = _FakeCli([answer, ending], frame_seqs=[recorded_answer.frame_seq, recorded_ending.frame_seq])
 
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
+        client,
+        chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
+        client.frames().__aiter__(),
+        view.session_id,
+        turn,
+        abort_event=asyncio.Event(),
     )
 
     [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
@@ -1815,7 +1873,12 @@ async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_af
     client = _FakeCli([ending], frame_seqs=[recorded.frame_seq])
 
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
+        client,
+        chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
+        client.frames().__aiter__(),
+        view.session_id,
+        turn,
+        abort_event=asyncio.Event(),
     )
 
     [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
@@ -1841,7 +1904,12 @@ async def test_the_transcript_carries_what_each_tool_answered(chat_store, chat_s
         ]
     )
     await chat_service._run_turn(
-        client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
+        client,
+        chat_service._runtimes[RuntimeKind.CLAUDE_CODE],
+        client.frames().__aiter__(),
+        view.session_id,
+        turn,
+        abort_event=asyncio.Event(),
     )
 
     calls = {
@@ -2420,7 +2488,7 @@ async def test_a_harness_initiated_exchange_becomes_an_ordinary_turn(
     chat_service = SessionService(runtimes, chat_store, notifications)
     session = await chat_service.create(operator_id)
     session_id = session.session_id
-    await chat_service.enqueue_prompt(operator_id, session_id, "start the fetch", SPA_ORIGIN)
+    await chat_store.enqueue_prompt(operator_id, session_id, "start the fetch", SPA_ORIGIN)
     await allocator.allocate_once()
     runner = asyncio.ensure_future(
         chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])

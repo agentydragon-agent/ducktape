@@ -26,7 +26,6 @@ from haku.console.chat_models import (
     BridgeFrameKind,
     FrameDirection,
     ItemType,
-    PromptOrigin,
     RuntimeKind,
     SessionStatus,
     TurnOutcome,
@@ -53,7 +52,6 @@ from haku.console.x.session_notifications import SessionEventKind, SessionNotifi
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
     BridgeAuthentication,
-    PromptRecords,
     PromptRefusedError,
     ResumedTurn,
     SandboxDemand,
@@ -262,9 +260,6 @@ class SessionService:
         # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, SandboxProvisioningView] = {}
 
-    async def _runtime(self, session_id: UUID) -> RuntimeAdapter:
-        return self._runtimes[await self._store.runtime_kind_of(session_id)]
-
     async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
         identity = await self._store.session_identity(session_id)
         if identity.agent_id is None:
@@ -275,15 +270,6 @@ class SessionService:
         return self._runtimes.configured(
             identity.agent_id, identity.runtime_kind, access_profile_id=identity.access_profile_id
         )
-
-    async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
-        """Interrupt this session's turn, or answer False when it has none.
-
-        Raises `KeyError` for a session this Operator does not own.
-        """
-        if not await self._store.session_exists(operator_id, session_id):
-            raise KeyError(session_id)
-        return await self._store.request_abort(session_id)
 
     async def create(
         self,
@@ -324,28 +310,6 @@ class SessionService:
             operator_id, conversation_id, launch_authorizer=self._launch_authorizer
         )
 
-    async def enqueue_prompt(
-        self,
-        operator_id: UUID,
-        session_id: UUID,
-        prompt_text: str,
-        origin: PromptOrigin,
-        records: PromptRecords | None = None,
-    ) -> UUID:
-        """Accept a prompt; the channel-neutral allocator reconciles its durable demand."""
-        return await self._store.enqueue_prompt(operator_id, session_id, prompt_text, origin, records)
-
-    async def enqueue_conversation_prompt(
-        self,
-        operator_id: UUID,
-        conversation_id: UUID,
-        prompt_text: str,
-        origin: PromptOrigin,
-        records: PromptRecords | None = None,
-    ) -> UUID:
-        """Accept conversation-owned work without requiring a session to exist first."""
-        return await self._store.enqueue_conversation_prompt(operator_id, conversation_id, prompt_text, origin, records)
-
     async def allocate(self, operator_id: UUID, session_id: UUID) -> bool:
         """Create the SandboxClaim for queued work exactly once across competing replicas."""
         allocation = await self._store.allocate(operator_id, session_id)
@@ -371,13 +335,6 @@ class SessionService:
             await self._cleanup_terminal_claim(session_id)
             raise
 
-    async def create_conversation(
-        self, operator_id: UUID, *, agent_id: UUID | None = None, runtime_kind: RuntimeKind | None = None
-    ) -> ConversationView:
-        """Open a thread and the session that runs it, and read the thread back."""
-        view = await self.create(operator_id, agent_id=agent_id, runtime_kind=runtime_kind)
-        return await self.conversation(operator_id, await self._store.conversation_of(view.session_id))
-
     async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
         view = await self._store.get_operator_conversation(operator_id, conversation_id)
         sandbox = await self.provisioning_of(view.session.session_id, view.session.status)
@@ -396,7 +353,7 @@ class SessionService:
 
         Raises `KeyError` for a session this Operator does not own.
         """
-        identity = await self._store.operator_session_identity(operator_id, session_id)
+        identity = await self._store.session_identity(session_id, operator_id=operator_id)
         return SessionProvisioningView(
             session_id=session_id,
             runtime_kind=identity.runtime_kind,
@@ -680,7 +637,13 @@ class SessionService:
                             handed_frame, pending_frame = pending_frame, None
                             try:
                                 await self._run_turn(
-                                    client, frames, session_id, turn, abort_event=abort_event, pending=handed_frame
+                                    client,
+                                    runtime,
+                                    frames,
+                                    session_id,
+                                    turn,
+                                    abort_event=abort_event,
+                                    pending=handed_frame,
                                 )
                             except Exception as error:
                                 if _transient_database_error(error):
@@ -797,6 +760,7 @@ class SessionService:
     async def _run_turn(
         self,
         client: RuntimeClient,
+        runtime: RuntimeAdapter,
         frames: AsyncIterator[ReceivedFrame],
         session_id: UUID,
         turn: TurnStart | ResumedTurn | WakeTurn,
@@ -825,7 +789,6 @@ class SessionService:
         the session saying which frame it got through — what makes adoption a replay from a durable
         position and its effects exactly-once (<README.md> § The cursor).
         """
-        runtime = await self._runtime(session_id)
         turn_id = turn.turn_id
         if isinstance(turn, TurnStart):
             # A resumed turn's question was asked by a process that is gone, and a wake turn's was
@@ -993,7 +956,7 @@ async def list_conversations(
 
 @router.post("/api/conversations", status_code=201)
 async def create_conversation(
-    body: ConversationCreateRequest, actor: OperatorActorDep, service: SessionServiceDep
+    body: ConversationCreateRequest, actor: OperatorActorDep, service: SessionServiceDep, store: SessionStoreDep
 ) -> ConversationView:
     """Open a new thread and the first session to run it.
 
@@ -1001,7 +964,8 @@ async def create_conversation(
     runtime are an atomic required pair; there is no server-default launch endpoint.
     """
     try:
-        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, runtime_kind=body.runtime)
+        session = await service.create(actor.operator_id, agent_id=body.agent_id, runtime_kind=body.runtime)
+        return await service.conversation(actor.operator_id, await store.conversation_of(session.session_id))
     except LaunchAgentRejectedError:
         raise HTTPException(status_code=403, detail="chat launch is not authorized")
     except KeyError as error:
@@ -1068,9 +1032,10 @@ async def read_session_provisioning(
 
 
 @router.post("/api/sessions/{session_id}/abort", status_code=202)
-async def abort_session(session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep) -> dict[str, str]:
+async def abort_session(session_id: UUID, actor: OperatorActorDep, store: SessionStoreDep) -> dict[str, str]:
     try:
-        aborted = await service.request_abort(actor.operator_id, session_id)
+        await store.session_identity(session_id, operator_id=actor.operator_id)
+        aborted = await store.request_abort(session_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
     if not aborted:
@@ -1080,14 +1045,12 @@ async def abort_session(session_id: UUID, actor: OperatorActorDep, service: Sess
 
 @router.post("/api/sessions/{session_id}/messages")
 async def send_message(
-    session_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, service: SessionServiceDep
+    session_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, store: SessionStoreDep
 ) -> PromptAccepted:
     try:
         # Named rather than left to the default: the console's own surface is a channel like any
         # other, and a prompt typed here is one every attached room is owed a copy of.
-        return PromptAccepted(
-            item_id=await service.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN)
-        )
+        return PromptAccepted(item_id=await store.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN))
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
     except PromptRefusedError as error:
@@ -1098,7 +1061,7 @@ async def send_message(
 
 @router.post("/api/conversations/{conversation_id}/messages")
 async def send_conversation_message(
-    conversation_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, service: SessionServiceDep
+    conversation_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, store: SessionStoreDep
 ) -> PromptAccepted:
     """Offer a prompt to a conversation even while no session is serving it.
 
@@ -1108,7 +1071,7 @@ async def send_conversation_message(
     """
     try:
         return PromptAccepted(
-            item_id=await service.enqueue_conversation_prompt(actor.operator_id, conversation_id, body.text, SPA_ORIGIN)
+            item_id=await store.enqueue_conversation_prompt(actor.operator_id, conversation_id, body.text, SPA_ORIGIN)
         )
     except KeyError as error:
         raise HTTPException(status_code=404, detail="conversation not found") from error
