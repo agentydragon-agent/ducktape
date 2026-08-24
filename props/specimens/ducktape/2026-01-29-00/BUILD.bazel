@@ -9,5 +9,4 @@ specimen_targets(
     code_srcs = glob(["code/**/*"]),
     slug = "ducktape/2026-01-29-00",
     split = "train",
-    test_size = "medium",
 )

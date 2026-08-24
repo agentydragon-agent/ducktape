@@ -5,5 +5,4 @@ specimen_targets(
     code_srcs = glob(["code/**/*"]),
     slug = "misc/2025-08-29-pyright_watch_report",
     split = "train",
-    test_size = "medium",
 )
