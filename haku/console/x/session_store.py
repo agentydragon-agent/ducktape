@@ -238,6 +238,24 @@ async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUI
     }
 
 
+async def _last_ended_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, SessionStatus]:
+    """How each of *conversations*' newest session ended.
+
+    Asked only about conversations no session is holding, so every answer is a terminal status —
+    what lets the inventory tell a thread whose runner failed from one that closed cleanly.
+    """
+    return dict(
+        (
+            await db.execute(
+                select(Session.conversation_id, Session.status)
+                .where(Session.conversation_id.in_(conversations))
+                .distinct(Session.conversation_id)
+                .order_by(Session.conversation_id, Session.created_at.desc())
+            )
+        ).tuples()
+    )
+
+
 class BridgeAuthentication(StrEnum):
     """What admission has to say to a redialling runner.
 
@@ -872,6 +890,7 @@ class SessionStore:
             attachments = await _live_attachments(db, threads)
             counts = await _item_counts(db, threads)
             live = await _live_sessions(db, threads)
+            ended = await _last_ended_sessions(db, threads - live.keys())
         return ConversationPage(
             conversations=[
                 ConversationSummary(
@@ -883,6 +902,7 @@ class SessionStore:
                     last_activity_at=row.last_activity_at,
                     attachments=attachments[row.conversation_id],
                     live_session=live.get(row.conversation_id),
+                    last_session_status=ended.get(row.conversation_id),
                     item_count=counts[row.conversation_id],
                 )
                 for row in rows[:limit]
