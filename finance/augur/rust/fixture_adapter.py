@@ -10,6 +10,7 @@ import numpy as np
 from finance.augur.model.series import LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import (
+    ORDINARY_INCOME,
     Agent,
     InitialAccountBalance,
     InitialLot,
@@ -19,6 +20,7 @@ from finance.augur.sim.scenario import (
     ScheduledAssetSale,
     ScheduledObligation,
     ScheduledTransfer,
+    TaxProfile,
 )
 from finance.augur.sim.simulate import simulate_with_external_series
 
@@ -93,6 +95,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 to_agent_id=spec["to"]["agent_id"],
                 to_account_id=spec["to"]["account_id"],
                 amount=_money(spec["amount"], quantum),
+                income_category=ORDINARY_INCOME if spec.get("income_category") == "ordinary" else None,
             )
             for spec in scenario_spec["scheduled_transfers"]
         ],
@@ -106,6 +109,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 to_agent_id=spec["to"]["agent_id"],
                 to_account_id=spec["to"]["account_id"],
                 amount=_money(spec["amount"], quantum),
+                income_category=ORDINARY_INCOME if spec.get("income_category") == "ordinary" else None,
             )
             for spec in scenario_spec["recurring_transfers"]
         ],
@@ -161,7 +165,16 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
             )
             for spec in sales
         ],
-        tax_profiles=[],
+        tax_profiles=[
+            TaxProfile(
+                agent_id=spec["agent_id"],
+                jurisdiction_ids=[rules["jurisdiction_id"] for rules in spec["jurisdictions"]],
+                tax_authority_agent_id=spec["tax_authority_agent_id"],
+                payment_account_id=spec.get("payment_account_id", "checking"),
+                tax_authority_account_id=spec.get("tax_authority_account_id", "checking"),
+            )
+            for spec in scenario_spec.get("tax_profiles", [])
+        ],
         horizon_months=scenario_spec["horizon_months"],
     )
     external = ExternalSeriesContext.from_level_blocks(

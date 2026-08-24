@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ledger::{AccountRef, JournalEntry},
     money::{Money, Quantity},
+    tax::TaxRules,
 };
 
 pub const FIXTURE_SCHEMA_VERSION: u32 = 1;
@@ -36,6 +37,8 @@ pub struct ScenarioSpec {
     pub initial_lots: Vec<InitialLotSpec>,
     #[serde(default)]
     pub scheduled_sales: Vec<ScheduledSaleSpec>,
+    #[serde(default)]
+    pub tax_profiles: Vec<TaxProfileSpec>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -53,6 +56,8 @@ pub struct ScheduledTransferSpec {
     pub from: AccountRef,
     pub to: AccountRef,
     pub amount: Money,
+    #[serde(default)]
+    pub income_category: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -64,6 +69,8 @@ pub struct RecurringTransferSpec {
     pub from: AccountRef,
     pub to: AccountRef,
     pub amount: Money,
+    #[serde(default)]
+    pub income_category: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -118,6 +125,22 @@ pub struct ScheduledSaleSpec {
     pub asset_id: String,
     pub units: Quantity,
     pub proceeds_account_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaxProfileSpec {
+    pub agent_id: String,
+    pub tax_authority_agent_id: String,
+    #[serde(default = "default_account_id")]
+    pub payment_account_id: String,
+    #[serde(default = "default_account_id")]
+    pub tax_authority_account_id: String,
+    pub jurisdictions: Vec<TaxRules>,
+}
+
+fn default_account_id() -> String {
+    "checking".into()
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -179,12 +202,29 @@ pub struct ObligationOutcome {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TaxAccrual {
+    pub month: u32,
+    pub agent_id: String,
+    pub jurisdiction_id: String,
+    pub ordinary_income: Money,
+    pub short_term_gain: Money,
+    pub long_term_gain: Money,
+    pub ordinary_taxable: Money,
+    pub long_term_capital_gain_taxable: Money,
+    pub ordinary_tax: Money,
+    pub capital_gain_tax: Money,
+    pub total_tax: Money,
+    pub capital_loss_carryforward: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RolloutOutput {
     pub rollout_id: u32,
     pub months: Vec<MonthOutput>,
     pub journal: Vec<JournalEntry>,
     pub dispositions: Vec<LotDisposition>,
     pub obligations: Vec<ObligationOutcome>,
+    pub tax_accruals: Vec<TaxAccrual>,
     pub failed_month: Option<u32>,
 }
 
@@ -200,6 +240,7 @@ pub struct RolloutSummary {
     pub ending_balances: Vec<AccountBalance>,
     pub journal_entry_count: u64,
     pub disposition_count: u64,
+    pub tax_accrual_count: u64,
     pub failed_month: Option<u32>,
 }
 

@@ -7,10 +7,11 @@ use crate::{
     fixture::{
         AccountBalance, FIXTURE_SCHEMA_VERSION, Fixture, InitialLotSpec, LotDisposition,
         MonthOutput, ObligationOutcome, PopulationOutput, RolloutOutput, RolloutSummary,
-        SeriesSpec, SimulationOutput,
+        SeriesSpec, SimulationOutput, TaxAccrual,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_round_half_up},
+    tax::{TaxError, TaxFacts, assess, validate_rules},
 };
 
 const EXTERNAL_AGENT: &str = "__external__";
@@ -108,6 +109,13 @@ pub enum SimulationError {
     },
     #[error("{kind} identifier must not be empty")]
     EmptyIdentifier { kind: &'static str },
+    #[error("unsupported income category {category:?}; only ordinary is implemented")]
+    UnsupportedIncomeCategory { category: String },
+    #[error("duplicate tax profile jurisdiction {agent_id}:{jurisdiction_id}")]
+    DuplicateTaxJurisdiction {
+        agent_id: String,
+        jurisdiction_id: String,
+    },
     #[error("sale {cause_id:?} references no lots for {agent_id}:{account_id}:{asset_id}")]
     MissingSalePool {
         cause_id: String,
@@ -125,6 +133,8 @@ pub enum SimulationError {
     Ledger(#[from] LedgerError),
     #[error(transparent)]
     Arithmetic(#[from] ArithmeticError),
+    #[error(transparent)]
+    Tax(#[from] TaxError),
 }
 
 #[derive(Clone, Debug)]
@@ -159,8 +169,10 @@ struct Recorder {
     journal: Vec<JournalEntry>,
     dispositions: Vec<LotDisposition>,
     obligations: Vec<ObligationOutcome>,
+    tax_accruals: Vec<TaxAccrual>,
     journal_entry_count: u64,
     disposition_count: u64,
+    tax_accrual_count: u64,
 }
 
 impl Recorder {
@@ -171,8 +183,10 @@ impl Recorder {
             journal: Vec::new(),
             dispositions: Vec::new(),
             obligations: Vec::new(),
+            tax_accruals: Vec::new(),
             journal_entry_count: 0,
             disposition_count: 0,
+            tax_accrual_count: 0,
         }
     }
 
@@ -213,6 +227,19 @@ impl Recorder {
         }
     }
 
+    fn record_tax_accrual(&mut self, accrual: TaxAccrual) -> Result<(), SimulationError> {
+        self.tax_accrual_count =
+            self.tax_accrual_count
+                .checked_add(1)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "tax accrual count",
+                })?;
+        if self.capture_trace {
+            self.tax_accruals.push(accrual);
+        }
+        Ok(())
+    }
+
     fn record_month(&mut self, month: MonthOutput) {
         if self.capture_trace {
             self.months.push(month);
@@ -236,6 +263,7 @@ impl RolloutComputation {
             journal: self.recorder.journal,
             dispositions: self.recorder.dispositions,
             obligations: self.recorder.obligations,
+            tax_accruals: self.recorder.tax_accruals,
             failed_month: self.failed_month,
         }
     }
@@ -246,6 +274,7 @@ impl RolloutComputation {
             ending_balances: self.ending_balances,
             journal_entry_count: self.recorder.journal_entry_count,
             disposition_count: self.recorder.disposition_count,
+            tax_accrual_count: self.recorder.tax_accrual_count,
             failed_month: self.failed_month,
         }
     }
@@ -391,6 +420,7 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             fixture.scenario.horizon_months,
         )?;
         validate_positive_amount("scheduled transfer", &transfer.cause_id, transfer.amount)?;
+        validate_income_category(transfer.income_category.as_deref())?;
         validate_account(&accounts, &transfer.from, &transfer.cause_id)?;
         validate_account(&accounts, &transfer.to, &transfer.cause_id)?;
     }
@@ -412,6 +442,7 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             });
         }
         validate_positive_amount("recurring transfer", &transfer.cause_id, transfer.amount)?;
+        validate_income_category(transfer.income_category.as_deref())?;
         validate_account(&accounts, &transfer.from, &transfer.cause_id)?;
         validate_account(&accounts, &transfer.to, &transfer.cause_id)?;
     }
@@ -543,6 +574,41 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             return Err(SimulationError::MissingSeries { series_id });
         }
     }
+    let mut tax_jurisdictions = BTreeSet::new();
+    for profile in &fixture.scenario.tax_profiles {
+        validate_identifier("tax profile agent", &profile.agent_id)?;
+        if !agents.contains(&profile.agent_id) {
+            return Err(SimulationError::UnknownAccountReference {
+                context: "tax profile".into(),
+                agent_id: profile.agent_id.clone(),
+                account_id: "checking".into(),
+            });
+        }
+        validate_account(
+            &accounts,
+            &AccountRef::new(&profile.agent_id, &profile.payment_account_id),
+            "tax profile payment account",
+        )?;
+        validate_account(
+            &accounts,
+            &AccountRef::new(
+                &profile.tax_authority_agent_id,
+                &profile.tax_authority_account_id,
+            ),
+            "tax profile authority account",
+        )?;
+        for rules in &profile.jurisdictions {
+            validate_identifier("tax jurisdiction", &rules.jurisdiction_id)?;
+            validate_rules(rules)?;
+            if !tax_jurisdictions.insert((profile.agent_id.clone(), rules.jurisdiction_id.clone()))
+            {
+                return Err(SimulationError::DuplicateTaxJurisdiction {
+                    agent_id: profile.agent_id.clone(),
+                    jurisdiction_id: rules.jurisdiction_id.clone(),
+                });
+            }
+        }
+    }
     Ok(())
 }
 
@@ -606,6 +672,17 @@ fn validate_positive_amount(
     Ok(())
 }
 
+fn validate_income_category(category: Option<&str>) -> Result<(), SimulationError> {
+    if let Some(category) = category
+        && category != "ordinary"
+    {
+        return Err(SimulationError::UnsupportedIncomeCategory {
+            category: category.into(),
+        });
+    }
+    Ok(())
+}
+
 fn validate_account(
     accounts: &BTreeSet<AccountRef>,
     account: &AccountRef,
@@ -641,10 +718,35 @@ fn simulate_rollout(
         accounts.push(realized_gain_account(&lot.agent_id));
         accounts.push(AccountRef::new(&lot.agent_id, OPENING_EQUITY));
     }
+    for profile in &fixture.scenario.tax_profiles {
+        for rules in &profile.jurisdictions {
+            accounts.push(tax_expense_account(
+                &profile.agent_id,
+                &rules.jurisdiction_id,
+            ));
+            accounts.push(tax_liability_account(
+                &profile.agent_id,
+                &rules.jurisdiction_id,
+            ));
+        }
+    }
     accounts.sort();
     accounts.dedup();
     let mut ledger = Ledger::with_accounts(accounts);
     let mut recorder = Recorder::new(capture_trace);
+    let mut tax_facts: BTreeMap<(String, String), TaxFacts> = fixture
+        .scenario
+        .tax_profiles
+        .iter()
+        .flat_map(|profile| {
+            profile.jurisdictions.iter().map(|rules| {
+                (
+                    (profile.agent_id.clone(), rules.jurisdiction_id.clone()),
+                    TaxFacts::default(),
+                )
+            })
+        })
+        .collect();
 
     for spec in &fixture.scenario.accounts {
         if spec.opening_balance != Money(0) {
@@ -721,6 +823,12 @@ fn simulate_rollout(
                 &transfer.to,
                 transfer.amount,
             )?;
+            record_transfer_income(
+                &mut tax_facts,
+                &transfer.to.agent_id,
+                transfer.income_category.as_deref(),
+                transfer.amount,
+            )?;
         }
         for transfer in fixture
             .scenario
@@ -739,6 +847,12 @@ fn simulate_rollout(
                 &transfer.to,
                 transfer.amount,
             )?;
+            record_transfer_income(
+                &mut tax_facts,
+                &transfer.to.agent_id,
+                transfer.income_category.as_deref(),
+                transfer.amount,
+            )?;
         }
         for sale in fixture
             .scenario
@@ -752,6 +866,7 @@ fn simulate_rollout(
                 &mut ledger,
                 &mut recorder,
                 &mut lots,
+                &mut tax_facts,
                 sale,
             )?;
         }
@@ -788,6 +903,9 @@ fn simulate_rollout(
         if settle_obligations(&mut ledger, &mut recorder, month, &active_obligations)? {
             failed_month = Some(month);
         }
+        if failed_month.is_none() && (month + 1) % 12 == 0 {
+            accrue_year_end_taxes(fixture, &mut ledger, &mut recorder, &mut tax_facts, month)?;
+        }
         recorder.record_month(month_output(month + 1, &ledger, failed_month.is_some()));
     }
     debug_assert_eq!(ledger.trial_balance(), 0);
@@ -797,6 +915,110 @@ fn simulate_rollout(
         recorder,
         failed_month,
     })
+}
+
+fn record_transfer_income(
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    recipient_agent_id: &str,
+    income_category: Option<&str>,
+    amount: Money,
+) -> Result<(), SimulationError> {
+    if income_category != Some("ordinary") {
+        return Ok(());
+    }
+    for ((agent_id, _), facts) in tax_facts {
+        if agent_id == recipient_agent_id {
+            facts.ordinary_income = facts.ordinary_income.checked_add(amount)?;
+        }
+    }
+    Ok(())
+}
+
+fn record_capital_gain(
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    agent_id: &str,
+    gain: Money,
+    long_term: bool,
+) -> Result<(), SimulationError> {
+    for ((taxpayer, _), facts) in tax_facts {
+        if taxpayer != agent_id {
+            continue;
+        }
+        if long_term {
+            facts.long_term_gain = facts.long_term_gain.checked_add(gain)?;
+        } else {
+            facts.short_term_gain = facts.short_term_gain.checked_add(gain)?;
+        }
+    }
+    Ok(())
+}
+
+fn accrue_year_end_taxes(
+    fixture: &Fixture,
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    month: u32,
+) -> Result<(), SimulationError> {
+    for profile in &fixture.scenario.tax_profiles {
+        for rules in &profile.jurisdictions {
+            let key = (profile.agent_id.clone(), rules.jurisdiction_id.clone());
+            let facts = *tax_facts
+                .get(&key)
+                .expect("validated tax profile has initialized facts");
+            let assessment = assess(facts, rules)?;
+            if assessment.total_tax != Money(0) {
+                recorder.apply_entry(
+                    ledger,
+                    JournalEntry {
+                        month,
+                        cause_id: format!(
+                            "tax-accrual:{}:{}:{month}",
+                            profile.agent_id, rules.jurisdiction_id
+                        ),
+                        postings: vec![
+                            Posting {
+                                account: tax_expense_account(
+                                    &profile.agent_id,
+                                    &rules.jurisdiction_id,
+                                ),
+                                amount: assessment.total_tax,
+                            },
+                            Posting {
+                                account: tax_liability_account(
+                                    &profile.agent_id,
+                                    &rules.jurisdiction_id,
+                                ),
+                                amount: assessment.total_tax.checked_neg()?,
+                            },
+                        ],
+                    },
+                )?;
+            }
+            recorder.record_tax_accrual(TaxAccrual {
+                month,
+                agent_id: profile.agent_id.clone(),
+                jurisdiction_id: rules.jurisdiction_id.clone(),
+                ordinary_income: facts.ordinary_income,
+                short_term_gain: facts.short_term_gain,
+                long_term_gain: facts.long_term_gain,
+                ordinary_taxable: assessment.ordinary_taxable,
+                long_term_capital_gain_taxable: assessment.long_term_capital_gain_taxable,
+                ordinary_tax: assessment.ordinary_tax,
+                capital_gain_tax: assessment.capital_gain_tax,
+                total_tax: assessment.total_tax,
+                capital_loss_carryforward: assessment.capital_loss_carryforward,
+            })?;
+            tax_facts.insert(
+                key,
+                TaxFacts {
+                    capital_loss_carryforward: assessment.capital_loss_carryforward,
+                    ..TaxFacts::default()
+                },
+            );
+        }
+    }
+    Ok(())
 }
 
 fn settle_obligations(
@@ -892,6 +1114,7 @@ fn execute_sale(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     lots: &mut [LotState],
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
     sale: &crate::fixture::ScheduledSaleSpec,
 ) -> Result<(), SimulationError> {
     let mut candidates: Vec<usize> = lots
@@ -997,8 +1220,10 @@ fn execute_sale(
 
     for item in planned {
         let lot = &mut lots[item.lot_index];
+        let long_term = i64::from(sale.month) - i64::from(lot.spec.purchase_month) >= 12;
         lot.units_remaining.0 -= item.units.0;
         lot.basis_remaining = lot.basis_remaining.checked_sub(item.basis)?;
+        record_capital_gain(tax_facts, &sale.agent_id, item.realized_gain, long_term)?;
         recorder.record_disposition(LotDisposition {
             month: sale.month,
             cause_id: sale.cause_id.clone(),
@@ -1043,6 +1268,14 @@ fn asset_basis_account(lot: &InitialLotSpec) -> AccountRef {
 
 fn realized_gain_account(agent_id: &str) -> AccountRef {
     AccountRef::new(agent_id, "income:realized-gain")
+}
+
+fn tax_expense_account(agent_id: &str, jurisdiction_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, format!("expense:tax:{jurisdiction_id}"))
+}
+
+fn tax_liability_account(agent_id: &str, jurisdiction_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, format!("liability:tax:{jurisdiction_id}"))
 }
 
 fn month_output(month: u32, ledger: &Ledger, failed: bool) -> MonthOutput {
@@ -1091,6 +1324,7 @@ mod tests {
                 recurring_obligations: vec![],
                 initial_lots: vec![],
                 scheduled_sales: vec![],
+                tax_profiles: vec![],
             },
             series: vec![],
         }
@@ -1139,6 +1373,7 @@ mod tests {
                 from: AccountRef::new("missing", "checking"),
                 to: AccountRef::new("alice", "checking"),
                 amount: Money(1),
+                income_category: None,
             });
         assert!(matches!(
             simulate(&fixture),
@@ -1219,6 +1454,7 @@ mod tests {
                     from: bob_cash,
                     to: alice_cash,
                     amount: Money(500),
+                    income_category: None,
                 }],
                 recurring_transfers: vec![],
                 obligations: vec![],
@@ -1242,6 +1478,7 @@ mod tests {
                     units: Quantity(1_000_000),
                     proceeds_account_id: "checking".into(),
                 }],
+                tax_profiles: vec![],
             },
             series: vec![SeriesSpec {
                 series_id: "security:vti".into(),
@@ -1263,6 +1500,7 @@ mod tests {
             );
             assert_eq!(summary.journal_entry_count, rollout.journal.len() as u64);
             assert_eq!(summary.disposition_count, rollout.dispositions.len() as u64);
+            assert_eq!(summary.tax_accrual_count, rollout.tax_accruals.len() as u64);
             assert_eq!(summary.failed_month, rollout.failed_month);
         }
         for rollout in output.rollouts {
@@ -1316,6 +1554,7 @@ mod tests {
                     units: Quantity(1_000_001),
                     proceeds_account_id: "checking".into(),
                 }],
+                tax_profiles: vec![],
             },
             series: vec![SeriesSpec {
                 series_id: "security:vti".into(),
@@ -1360,6 +1599,7 @@ mod tests {
                     from: alice_cash.clone(),
                     to: bob_cash.clone(),
                     amount: Money(1),
+                    income_category: None,
                 }],
                 recurring_transfers: vec![],
                 obligations: vec![ObligationSpec {
@@ -1373,6 +1613,7 @@ mod tests {
                 recurring_obligations: vec![],
                 initial_lots: vec![],
                 scheduled_sales: vec![],
+                tax_profiles: vec![],
             },
             series: vec![],
         };
@@ -1446,6 +1687,7 @@ mod tests {
                 ],
                 initial_lots: vec![],
                 scheduled_sales: vec![],
+                tax_profiles: vec![],
             },
             series: vec![],
         };

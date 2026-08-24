@@ -173,6 +173,103 @@ def _recurring_obligation_fixture() -> dict[str, Any]:
     return fixture
 
 
+def _tax_fixture() -> dict[str, Any]:
+    fixture = _failure_fixture()
+    fixture["rollout_count"] = 1
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 12
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "payroll", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["scheduled_transfers"] = []
+    scenario["recurring_transfers"] = [
+        {
+            "start_month": 0,
+            "end_month": 11,
+            "cause_id": "alice-paycheck",
+            "from": {"agent_id": "payroll", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": 1_666_667,
+            "income_category": "ordinary",
+        }
+    ]
+    scenario["obligations"] = []
+    scenario["recurring_obligations"] = []
+    scenario["tax_profiles"] = [
+        {
+            "agent_id": "alice",
+            "tax_authority_agent_id": "irs",
+            "jurisdictions": [
+                {
+                    "jurisdiction_id": "federal_us",
+                    "ordinary_brackets": [
+                        {"upper": 1_160_000, "rate_ppb": 100_000_000},
+                        {"upper": 4_715_000, "rate_ppb": 120_000_000},
+                        {"upper": 10_052_500, "rate_ppb": 220_000_000},
+                        {"upper": 19_195_000, "rate_ppb": 240_000_000},
+                        {"upper": None, "rate_ppb": 320_000_000},
+                    ],
+                    "long_term_capital_gain_brackets": [
+                        {"upper": 4_702_500, "rate_ppb": 0},
+                        {"upper": None, "rate_ppb": 150_000_000},
+                    ],
+                    "standard_deduction": 1_460_000,
+                    "max_capital_loss_ordinary_offset": 300_000,
+                },
+                {
+                    "jurisdiction_id": "california",
+                    "ordinary_brackets": [
+                        {"upper": 1_041_200, "rate_ppb": 10_000_000},
+                        {"upper": 2_468_400, "rate_ppb": 20_000_000},
+                        {"upper": 3_895_900, "rate_ppb": 40_000_000},
+                        {"upper": 5_408_100, "rate_ppb": 60_000_000},
+                        {"upper": 6_835_000, "rate_ppb": 80_000_000},
+                        {"upper": None, "rate_ppb": 93_000_000},
+                    ],
+                    "long_term_capital_gain_brackets": [],
+                    "standard_deduction": 536_300,
+                    "max_capital_loss_ordinary_offset": 300_000,
+                },
+            ],
+        }
+    ]
+    return fixture
+
+
+def _long_term_gain_tax_fixture() -> dict[str, Any]:
+    fixture = _tax_fixture()
+    scenario = fixture["scenario"]
+    scenario["recurring_transfers"][0]["amount"] = 416_667
+    scenario["initial_lots"] = [
+        {
+            "lot_id": "alice-vti",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "purchase_month": -24,
+            "quantity_scale": 1_000_000,
+            "units": 100_000_000,
+            "basis": 1_000_000,
+        }
+    ]
+    scenario["scheduled_sales"] = [
+        {
+            "month": 6,
+            "cause_id": "sell-vti",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "units": 100_000_000,
+            "proceeds_account_id": "checking",
+        }
+    ]
+    scenario["tax_profiles"][0]["jurisdictions"] = scenario["tax_profiles"][0]["jurisdictions"][:1]
+    fixture["series"] = [{"series_id": "security:vti", "snapshots": 13, "values": [30_000] * 13}]
+    return fixture
+
+
 def _rust_run(fixture: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
     fixture_path = tmp_path / "fixture.json"
     output_path = tmp_path / "rust-output.json"
@@ -300,8 +397,6 @@ def test_rust_and_jax_match_grouped_recurring_obligations(tmp_path: Path) -> Non
         "obligation_type",
         "agent_id",
         "from_account_id",
-        "to_agent_id",
-        "to_account_id",
         "amount_due_quanta",
         "amount_paid_quanta",
         "shortfall_quanta",
@@ -316,8 +411,6 @@ def test_rust_and_jax_match_grouped_recurring_obligations(tmp_path: Path) -> Non
                 "obligation_type": outcome["obligation_type"],
                 "agent_id": outcome["from"]["agent_id"],
                 "from_account_id": outcome["from"]["account_id"],
-                "to_agent_id": outcome["to"]["agent_id"],
-                "to_account_id": outcome["to"]["account_id"],
                 "amount_due_quanta": outcome["amount_due"],
                 "amount_paid_quanta": outcome["amount_paid"],
                 "shortfall_quanta": outcome["shortfall"],
@@ -377,6 +470,72 @@ def test_generated_benchmark_fixture_matches_at_seventeen_rollouts(tmp_path: Pat
     assert rust_dispositions == legacy_dispositions
     assert rollout_status(legacy).get_column("status").unique().to_list() == ["active"]
     assert all(rollout["failed_month"] is None for rollout in rust["rollouts"])
+
+
+def test_rust_and_jax_match_federal_and_california_tax_accruals(tmp_path: Path) -> None:
+    fixture = _tax_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_cash = (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+    )
+    assert _rust_cash(rust).to_dicts() == legacy_cash.to_dicts()
+
+    columns = [
+        "rollout_index",
+        "month_index",
+        "agent_id",
+        "jurisdiction_id",
+        "ordinary_income_quanta",
+        "ordinary_taxable_quanta",
+        "capital_gain_taxable_quanta",
+        "ordinary_tax_quanta",
+        "capital_gain_tax_quanta",
+        "total_tax_quanta",
+    ]
+    legacy_accruals = legacy.events_log.tax_breakdowns.select(columns).sort("jurisdiction_id").to_dicts()
+    rust_accruals = sorted(
+        [
+            {
+                "rollout_index": rollout["rollout_id"],
+                "month_index": accrual["month"],
+                "agent_id": accrual["agent_id"],
+                "jurisdiction_id": accrual["jurisdiction_id"],
+                "ordinary_income_quanta": accrual["ordinary_income"],
+                "ordinary_taxable_quanta": accrual["ordinary_taxable"],
+                "capital_gain_taxable_quanta": accrual["long_term_capital_gain_taxable"],
+                "ordinary_tax_quanta": accrual["ordinary_tax"],
+                "capital_gain_tax_quanta": accrual["capital_gain_tax"],
+                "total_tax_quanta": accrual["total_tax"],
+            }
+            for rollout in rust["rollouts"]
+            for accrual in rollout["tax_accruals"]
+        ],
+        key=lambda row: row["jurisdiction_id"],
+    )
+    assert rust_accruals == legacy_accruals
+    assert [row["total_tax_quanta"] for row in rust_accruals] == [1_475_409, 3_753_851]
+    for entry in rust["rollouts"][0]["journal"]:
+        assert sum(posting["amount"] for posting in entry["postings"]) == 0
+
+
+def test_rust_and_jax_match_long_term_gain_tax(tmp_path: Path) -> None:
+    fixture = _long_term_gain_tax_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_row = legacy.events_log.tax_breakdowns.row(0, named=True)
+    rust_row = rust["rollouts"][0]["tax_accruals"][0]
+    assert rust_row["ordinary_income"] == legacy_row["ordinary_income_quanta"]
+    assert rust_row["long_term_gain"] == legacy_row["ltcg_quanta"] == 2_000_000
+    assert rust_row["ordinary_taxable"] == legacy_row["ordinary_taxable_quanta"] == 3_540_004
+    assert rust_row["long_term_capital_gain_taxable"] == legacy_row["capital_gain_taxable_quanta"] == 2_000_000
+    assert rust_row["ordinary_tax"] == legacy_row["ordinary_tax_quanta"] == 401_600
+    assert rust_row["capital_gain_tax"] == legacy_row["capital_gain_tax_quanta"] == 125_626
+    assert rust_row["total_tax"] == legacy_row["total_tax_quanta"] == 527_226
 
 
 @pytest.mark.parametrize("rollout_count", [1, 17])

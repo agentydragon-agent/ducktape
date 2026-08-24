@@ -16,6 +16,7 @@ struct BenchmarkReport {
     rollout_months_per_second: f64,
     journal_entry_count: u64,
     disposition_count: u64,
+    tax_accrual_count: u64,
     failure_count: u64,
     checksum: u64,
 }
@@ -89,6 +90,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|rollout| rollout.disposition_count)
             .sum(),
+        tax_accrual_count: output
+            .rollouts
+            .iter()
+            .map(|rollout| rollout.tax_accrual_count)
+            .sum(),
         failure_count: output
             .rollouts
             .iter()
@@ -108,6 +114,7 @@ fn checksum(output: &PopulationOutput) -> u64 {
         hash_u64(&mut hash, rollout.failed_month.map_or(u64::MAX, u64::from));
         hash_u64(&mut hash, rollout.journal_entry_count);
         hash_u64(&mut hash, rollout.disposition_count);
+        hash_u64(&mut hash, rollout.tax_accrual_count);
         for balance in &rollout.ending_balances {
             hash_bytes(&mut hash, balance.account.agent_id.as_bytes());
             hash_bytes(&mut hash, balance.account.account_id.as_bytes());

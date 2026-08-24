@@ -1,9 +1,9 @@
 # Augur Rust prototype benchmark
 
-This benchmark covers only the behavior currently shared by the prototype and
-the existing simulator: opening balances, scheduled and recurring transfers,
-grouped recurring obligations, FIFO lots, and scheduled sales. It does not yet
-cover mortgages, property, tax execution, allocation, TLH, or private equity.
+This benchmark fixture covers opening balances, scheduled and recurring
+transfers, grouped recurring obligations, FIFO lots, and scheduled sales. It
+does not exercise the prototype's tax-accrual path, and the prototype does not
+yet implement mortgages, property, allocation, TLH, or private equity.
 
 The canonical generated fixture uses exact integer money and quantity values:
 
@@ -34,16 +34,17 @@ bbr run -c opt //finance/augur/rust:benchmark_driver -- \
 
 Result:
 
-- median: **2.4089 s**;
-- runs: 2.4089, 2.4063, 2.5577, 2.3845, 2.4103 s;
-- throughput: **41,513 rollouts/s**;
-- throughput: **2,490,756 rollout-months/s**;
-- peak child RSS: **294,828 KiB**;
+- median: **2.4242 s**;
+- runs: 2.4342, 2.4242, 2.5672, 2.4009, 2.4077 s;
+- throughput: **41,250 rollouts/s**;
+- throughput: **2,475,018 rollout-months/s**;
+- peak child RSS: **290,708 KiB**;
 - counted journal entries: 12,500,000;
 - counted dispositions: 200,000;
+- counted tax accruals: 0;
 - failed rollouts: 0;
-- checksum: `1717986382561574629`;
-- BuildBuddy invocation: `d5a1e889-22af-4396-99e0-2f6347bfb586`.
+- checksum: `16007642079227779301`;
+- BuildBuddy invocation: `a01f399a-14d4-4583-bcdd-c70e2e99a80b`.
 
 This path retains fixed-size final summaries for every rollout and does not
 allocate monthly snapshots, journals, or event traces. The same state-machine
@@ -80,7 +81,7 @@ Result:
 
 ## Interpretation
 
-The measured Rust summary path is about 6.9× the rollout-month throughput of
+The measured Rust summary path is about 6.8× the rollout-month throughput of
 the batched JAX run on this narrow fixture. That is encouraging but not yet a
 full-simulator result: Rust retains compact final summaries, while the JAX path
 retains its complete dense monthly output for each 10,000-rollout batch. The
