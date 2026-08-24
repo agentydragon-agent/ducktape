@@ -975,7 +975,7 @@ class Conversation(Base):
             name="ck_conversation_access_profile_id_nonempty",
         ),
         CheckConstraint("(agent_id IS NULL) = (access_profile_id IS NULL)", name="ck_conversation_agent_profile_pair"),
-        CheckConstraint("runtime_kind IN ('claude_code')", name="ck_conversation_runtime_kind"),
+        CheckConstraint("runtime_kind IN ('claude_code', 'codex_app_server')", name="ck_conversation_runtime_kind"),
         CheckConstraint("next_event_seq > 0", name="ck_conversation_next_event_seq"),
         Index("idx_conversation_operator", "operator_id", "created_at"),
     )
