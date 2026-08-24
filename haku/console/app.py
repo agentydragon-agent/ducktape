@@ -25,6 +25,7 @@ from uuid import UUID
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
+from more_itertools import one
 from openai import AsyncOpenAI
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -57,6 +58,7 @@ from haku.console import (
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
@@ -295,7 +297,12 @@ def create_app(
 
     runtime_registry: console_runtime.RuntimeRegistry
     if claude_runtime is not None:
-        runtime_registry = runtime_catalog.claude_registry(
+        static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
+        try:
+            claude_profile_id = static_by_id[claude_runtime.mcp_static_agent_id].access_profile_id
+        except KeyError as error:
+            raise ValueError("configured Claude Agent must be a static Agent") from error
+        registration = runtime_catalog.claude_registration(
             claude_runtime,
             sandbox_claims.KubernetesSandboxClaims(
                 sandbox_claims.SandboxClaimSpec(
@@ -309,7 +316,10 @@ def create_app(
             # Parsed at construction, so a broken deploy template prevents readiness rather than
             # failing the first attached chat session hours later.
             system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
+            agent_id=claude_runtime.mcp_static_agent_id,
+            access_profile_id=claude_profile_id,
         )
+        runtime_registry = runtime_catalog.execution_registry(registration)
     else:
         # Runtime-disabled replicas can still inspect every linked durable runtime kind. This
         # registry has projection only: no claims, credentials, or launcher.
@@ -381,19 +391,28 @@ def create_app(
     # the same registry in their store above but expose no session-creation runtime service.
     if claude_runtime is not None:
         profiles = {profile.id: profile.allowed_chat_runtimes for profile in console_config.access_profiles}
+        launchable_agent_ids = console_config.effective_launchable_agent_ids
         authorize_chat_launch = ChatLaunchAuthorizer(
             agent_authority,
-            launchable_agent_ids=console_config.effective_launchable_agent_ids,
+            launchable_agent_ids=launchable_agent_ids,
             registered_runtime_kinds=runtime_registry.configured_kinds,
             profile_runtime_kinds=profiles,
         )
 
         # `mcp_static_agent_id` is the old ConfigMap's durable Haku Agent selector. During the
         # schema roll it remains the default identity only; its static credential is no longer
-        # loaded into or passed to the runtime. A later coordinated config cutover can make the
-        # deployment-wide selector explicit without making old replicas reject the shared file.
+        # loaded into or passed to the runtime.
         default_chat_agent_id = console_config.effective_default_chat_agent_id
         assert default_chat_agent_id is not None
+        default_profile_id = static_by_id[default_chat_agent_id].access_profile_id
+        default_candidates = runtime_registry.configured_kinds.intersection(profiles[default_profile_id])
+        if RuntimeKind.CLAUDE_CODE in default_candidates:
+            default_runtime_kind = RuntimeKind.CLAUDE_CODE
+        else:
+            try:
+                default_runtime_kind = one(default_candidates)
+            except ValueError:
+                raise ValueError("default chat Agent must select one configured runtime") from None
 
         session_service = session_runtime.SessionService(
             runtime_registry,
@@ -402,10 +421,11 @@ def create_app(
             conversation_history=ConversationHistory(db_sessions),
             launch_authorizer=authorize_chat_launch,
             default_agent_id=default_chat_agent_id,
+            default_runtime_kind=default_runtime_kind,
         )
         if matrix_conversation_store is not None:
             matrix_conversation_store.configure_launch_identity(
-                authorize_chat_launch, default_agent_id=default_chat_agent_id
+                authorize_chat_launch, default_agent_id=default_chat_agent_id, default_runtime_kind=default_runtime_kind
             )
     else:
         session_service = None

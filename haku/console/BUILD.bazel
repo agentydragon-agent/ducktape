@@ -1171,6 +1171,7 @@ py_library(
         ":web_push",
         "//haku/console/agents:authorization",
         "//haku/console/agents:enrollment_routes",
+        "//haku/console:chat_models",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
         "//haku/console/tools:kubernetes",
@@ -1198,6 +1199,7 @@ py_library(
         "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
+        "@pypi//more_itertools",
         "@pypi//openai",
         # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous.
         "@pypi//itsdangerous",

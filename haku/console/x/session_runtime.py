@@ -249,6 +249,7 @@ class SessionService:
         conversation_history: ConversationHistory | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
         default_agent_id: UUID | None = None,
+        default_runtime_kind: RuntimeKind = RuntimeKind.CLAUDE_CODE,
     ):
         self._runtimes = runtimes
         self._store = store
@@ -256,6 +257,7 @@ class SessionService:
         self._conversation_history = conversation_history
         self._launch_authorizer = launch_authorizer
         self._default_agent_id = default_agent_id
+        self._default_runtime_kind = default_runtime_kind
         # Per session, the last view read off the cluster; `_observed` drops entries older than
         # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, SandboxProvisioningView] = {}
@@ -264,7 +266,13 @@ class SessionService:
         return self._runtimes[await self._store.runtime_kind_of(session_id)]
 
     async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
-        return self._runtimes.configured(await self._store.runtime_kind_of(session_id))
+        identity = await self._store.session_identity(session_id)
+        if identity.agent_id is None:
+            # Legacy rows remain inspectable but cannot select Agent-owned launch resources.
+            return self._runtimes.configured(identity.runtime_kind)
+        return self._runtimes.configured(
+            identity.agent_id, identity.runtime_kind, access_profile_id=identity.access_profile_id
+        )
 
     async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
         """Interrupt this session's turn, or answer False when it has none.
@@ -294,7 +302,7 @@ class SessionService:
                 operator_id,
                 conversation_id=conversation_id,
                 agent_id=selected_agent if conversation_id is None else None,
-                runtime_kind=runtime_kind,
+                runtime_kind=runtime_kind or self._default_runtime_kind,
                 launch_authorizer=self._launch_authorizer,
             )
         else:
