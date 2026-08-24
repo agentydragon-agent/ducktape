@@ -10,7 +10,6 @@ from typing import NamedTuple
 import jax
 from jaxtyping import Array, Bool, Int32, Int64
 
-from finance.augur.sim.compiler.obligations import ObligationMetadataExecution
 from finance.augur.sim.compiler.plan import SlotPlan
 from finance.augur.sim.output import DenseFinalOutput
 
@@ -44,14 +43,6 @@ class _AssetSaleProgram:
     ordered_lots: tuple[tuple[int, ...], ...]
 
 
-class _PaymentBatch(NamedTuple):
-    """Common source output consumed by the shared funding/settlement phase."""
-
-    active: Bool[Array, " obligation rollout"]
-    due: Int64[Array, " obligation rollout"]
-    metadata: ObligationMetadataExecution[jax.Array]
-
-
 class _PurchaseInputs(NamedTuple):
     """Scheduled purchase columns, kept on the full property axis."""
 
@@ -76,13 +67,6 @@ class _DenseProductTailOutput(NamedTuple):
 
 
 @dataclass(frozen=True)
-class _SalePool:
-    """One (asset, source-account) FIFO pool a sleeve can sell from."""
-
-    ordered_lots: tuple[int, ...]
-
-
-@dataclass(frozen=True)
 class _FoldedSleeve:
     """One sleeve of a target allocation, resolved host-side.
 
@@ -99,7 +83,8 @@ class _FoldedSleeve:
 
     sleeve_idx: int
     view_lot_rows: tuple[int, ...]
-    pools: tuple[_SalePool, ...]
+    # One tuple of plan lot indices per (asset, source-account) FIFO pool.
+    pools: tuple[tuple[int, ...], ...]
     # Quanta per unit, from the compiler rather than from this sleeve's lots: a sleeve holding
     # nothing still has to be priceable, which is what the buy side needs.
     quantity_scale: int

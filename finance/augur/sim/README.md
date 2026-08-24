@@ -64,7 +64,7 @@ absence of explicit borrowing — see the Borrowing facilities entry in
 ## See also
 
 - <REQUIREMENTS.md>: simulator capability surface.
-- <DESIGN.md>: structural decisions.
+- <DESIGN.md>: current implementation architecture and invariants.
 - <docs/tensorized_simulator.md>: rollout-axis tensorization design.
 - <docs/tax_engine_evaluation.md>: tax engine build-vs-adopt evaluation.
 - <TODO.md>: forward-looking sim/product follow-ups.

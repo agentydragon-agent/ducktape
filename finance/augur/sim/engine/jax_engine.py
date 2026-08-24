@@ -87,10 +87,8 @@ from finance.augur.sim.engine.jax_types import (
     _FoldedSleeve,
     _FoldedTargetAllocation,
     _LinkTaxStatic,
-    _PaymentBatch,
     _ProductTailOutput,
     _PurchaseInputs,
-    _SalePool,
     _Static,
 )
 from finance.augur.sim.output import (
@@ -120,6 +118,7 @@ from finance.augur.sim.enums import (
 )
 from finance.augur.sim.payment_policy import PayActions, PaymentView, decide as decide_payments
 from finance.augur.sim.target_allocation import SleeveUniverse, decide
+from finance.augur.sim.tlh_harvest import harvest_fraction_curve
 
 # Opt-in JAX persistent on-disk compilation cache: when the env var is set, compiled executables
 # survive across processes so the ~6400-instruction scan program need not recompile each run. A no-op
@@ -1153,7 +1152,7 @@ def _build_program(
             series_index = int(ta_policies.sleeve_series[policy, sleeve_idx])
             if asset_code < 0:
                 continue  # padded sleeve column
-            sleeve_pools: list[_SalePool] = []
+            sleeve_pools: list[tuple[int, ...]] = []
             view_rows: list[int] = []
             # A sleeve with no price series stays in the universe with no pools: it holds value
             # the policy cannot mark, so it must not be sold — and it must still occupy its
@@ -1175,7 +1174,7 @@ def _build_program(
                     )
                     if not ordered.size:
                         continue
-                    sleeve_pools.append(_SalePool(ordered_lots=tuple(int(x) for x in ordered)))
+                    sleeve_pools.append(tuple(int(x) for x in ordered))
                     # Pools are disjoint by construction — a sleeve is one asset and its pools are
                     # distinct accounts — so appending never repeats a plan lot on the view axis.
                     view_rows.extend(range(len(lot_slots), len(lot_slots) + int(ordered.size)))
@@ -2042,7 +2041,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             sale_oversell = sale_oversell | oversell.any()
 
         month_obligations = jax.tree.map(lambda value: value[month], obligation_inputs)
-        payment_batch = _obligation_accruals_jit(
+        slot_active, accrual_due = _obligation_accruals_jit(
             month_obligations,
             property_active,
             liab_principal,
@@ -2054,9 +2053,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             external_values,
             month,
         )
-        slot_active = payment_batch.active
-        accrual_due = payment_batch.due
-        payment_metadata = payment_batch.metadata
+        payment_metadata = month_obligations.metadata
 
         # Obligations are environment facts. The current clock policy turns every due invoice
         # into a concrete, full `Pay` action; its compile-time slot already fixes the actor and
@@ -2144,7 +2141,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 remaining = jnp.where(active, orders.sell_quanta[si], 0)
                 unit_price = sleeve_prices[si]
                 for pool in sleeve.pools:
-                    pool_lots = np.asarray(pool.ordered_lots, dtype=np.int64)
+                    pool_lots = np.asarray(pool, dtype=np.int64)
                     available = lot_remaining[pool_lots].sum(axis=0)
                     target = jnp.where(active, jnp.minimum(jnp.maximum(remaining, 0), available), 0)
                     sold_units, proceeds, basis = _fifo_sell(
@@ -3237,8 +3234,8 @@ def _obligation_accruals_jit(
     active: Bool[Array, " rollout"],
     external_values: Float64[Array, " series rollout snapshot"],
     month: Int[Array, ""],
-) -> _PaymentBatch:
-    """Compute one typed payment batch per source, then merge the disjoint slot rows."""
+) -> tuple[Bool[Array, " obligation rollout"], Int64[Array, " obligation rollout"]]:
+    """Compute each obligation source, then merge their disjoint active and due rows."""
 
     rollout_count = active.shape[0]
 
@@ -3246,9 +3243,9 @@ def _obligation_accruals_jit(
         source_active: Bool[Array, " obligation"],
         due: Int64[Array, " obligation rollout"],
         source_mask: Bool[Array, " obligation rollout"],
-    ) -> _PaymentBatch:
+    ) -> tuple[Bool[Array, " obligation rollout"], Int64[Array, " obligation rollout"]]:
         payment_active = source_active[:, None] & active[None, :] & source_mask & (due > 0)
-        return _PaymentBatch(active=payment_active, due=jnp.where(payment_active, due, 0), metadata=inputs.metadata)
+        return payment_active, jnp.where(payment_active, due, 0)
 
     configured = inputs.configured
     configured_due = _amount_values_vec(
@@ -3307,10 +3304,9 @@ def _obligation_accruals_jit(
     true_up_batch = batch(true_up.active, true_up_due, jnp.ones_like(true_up_due, dtype=bool))
 
     batches = (configured_batch, property_tax_batch, mortgage_batch, estimated_batch, q4_batch, true_up_batch)
-    return _PaymentBatch(
-        active=jnp.stack([source.active for source in batches]).any(axis=0),
-        due=jnp.stack([source.due for source in batches]).sum(axis=0),
-        metadata=inputs.metadata,
+    return (
+        jnp.stack([source_active for source_active, _ in batches]).any(axis=0),
+        jnp.stack([source_due for _, source_due in batches]).sum(axis=0),
     )
 
 
@@ -3475,8 +3471,17 @@ def _tlh_harvest_policy_jit(
         period_return = jnp.where(prior_price_level > 0.0, (price_level - prior_price_level) / safe_prior, 0.0)
     else:
         period_return = jnp.zeros_like(price_level)  # month 0: no prior price, treat as flat
-    base_monthly = (floor + (peak - floor) * (1.0 - embedded_gain) ** gamma) / 12.0
-    fraction = base_monthly * (1.0 + drawdown_sensitivity * jnp.maximum(0.0, -period_return))
+    fraction = cast(
+        Float64[Array, " rollout"],
+        harvest_fraction_curve(
+            embedded_gain,
+            jnp.maximum(0.0, -period_return),
+            peak_annual_yield=peak,
+            floor_annual_yield=floor,
+            maturity_decay_exponent=gamma,
+            drawdown_sensitivity=drawdown_sensitivity,
+        ),
+    )
     ceiling = jnp.maximum(0, original_basis - cumulative)  # never harvest past available below-basis room
     gross = jnp.where(active, jnp.minimum(_scale_money(market_value, fraction), ceiling), 0)
     stf = min(max(short_term_fraction, 0.0), 1.0)
