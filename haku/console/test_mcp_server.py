@@ -8,6 +8,7 @@ import datetime
 import hashlib
 import re
 import secrets
+import warnings
 from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -538,6 +539,29 @@ async def test_tool_call_payload_fields_project_and_omit_nullable_values(agent_c
     assert selected_null.structured_content is not None
     assert "result" in selected_null.structured_content
     assert selected_null.structured_content["result"] is None
+
+
+def test_mcp_tool_call_response_preserves_the_typed_caller() -> None:
+    caller = AgentToolCallCaller(agent_id=uuid4(), display_name="Agent")
+    now = datetime.datetime.now(datetime.UTC)
+    response = mcp_server_module._mcp_tool_call_response(
+        ToolCallRecord(
+            tool_call_id="tc_typed_caller",
+            server_id="gmail",
+            tool_name="labels_list",
+            caller=caller,
+            status=ToolCallStatus.OK,
+            created_at=now,
+            updated_at=now,
+            arguments={},
+        ),
+        console_settings("postgresql://unused/typed-caller"),
+    )
+    assert isinstance(response.caller, AgentToolCallCaller)
+    assert response.caller == caller
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert response.model_dump()["caller"]["agent_id"] == caller.agent_id
 
 
 async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness, agent_client: Client) -> None:
