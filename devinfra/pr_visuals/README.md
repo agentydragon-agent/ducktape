@@ -2,8 +2,9 @@
 
 Trusted publisher for PR visual reviews. The "Publish PR visuals" workflow
 (`.github/workflows/pr-visuals-publish.yml`) runs `publisher.py` after
-every PR Bazel CI run, including failed runs. It scans the run's test invocations for targets
-whose undeclared outputs contain a `visual-review.json` manifest (schema:
+every PR and `devel` Bazel CI run, including failed runs. It scans the run's
+test invocations for targets whose undeclared outputs contain a
+`visual-review.json` manifest (schema:
 `util/visual_review.py`), downloads the referenced PNGs, publishes an immutable
 bundle to `s3.allegedly.works/pr-visuals`, and upserts a review comment on the
 PR. Cache-hit test targets don't republish artifacts, so each bundle carries
@@ -33,12 +34,15 @@ per target:
 2. otherwise the mutable pointer `baselines/<slug>.json`, naming the newest
    devel commit whose immutable bundle carries the target.
 
-Devel pushes only publish targets Bazel actually re-executed (cache hits
-publish nothing), so base-commit bundles routinely lack untouched targets —
-the pointer bridges those gaps. Devel-push publishes advance the pointers
-after the commit bundle upload completes; targets resolved through a pointer
-are marked `baseline_fallback` in the bundle metadata. If neither source
-carries the target, every asset classifies as `new`.
+Devel pushes publish every visual artifact emitted by the completed Bazel
+run, including cached tests, even when an unrelated target fails. A failed
+visual target that produces no manifest cannot advance its pointer. This keeps
+an otherwise-valid visual result from being dropped solely because CI has a
+flake elsewhere. Devel-push publications advance the pointers after the commit
+bundle upload completes; targets resolved through a pointer are marked
+`baseline_fallback` in the bundle metadata and the PR comment warns that those
+differences may predate the PR. If neither source carries the target, every
+asset classifies as `new`.
 
 ## Check-runs
 
