@@ -79,7 +79,18 @@ async def test_clickhouse_sink_batches_raw_and_typed_rows() -> None:
     assert raw_row["raw_body_size_bytes"] == 35
     assert raw_row["normalized_body"]
     assert raw_row["quota_windows"] == [
-        ["", 45.0, 55.0, "2026-08-22T02:00:00+00:00", 3600, 18000, None, None, None, None]
+        {
+            "window_name": "",
+            "used_percent": 45.0,
+            "remaining_percent": 55.0,
+            "reset_at": "2026-08-22T02:00:00+00:00",
+            "reset_seconds": 3600,
+            "window_seconds": 18000,
+            "extra_spend_enabled": None,
+            "extra_spend_limit_usd": None,
+            "extra_spend_used_usd": None,
+            "extra_spend_utilization": None,
+        }
     ]
 
 

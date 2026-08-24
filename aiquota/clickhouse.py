@@ -117,24 +117,24 @@ def _raw_row(snapshot: QuotaSnapshot, provider_name: str) -> dict[str, object]:
     }
 
 
-def _window_values(provider: ProviderQuota) -> list[list[object]]:
+def _window_values(provider: ProviderQuota) -> list[dict[str, object]]:
     result = provider.last_output.result
     if not isinstance(result, FetchSuccess):
         return []
     extra = result.extra_spend
     return [
-        [
-            window.name or "",
-            window.used_percent,
-            max(0.0, 100.0 - window.used_percent),
-            window.reset_at.isoformat() if window.reset_at else None,
-            window.reset_seconds,
-            window.window_seconds,
-            extra.is_enabled if extra else None,
-            extra.monthly_limit_usd if extra else None,
-            extra.used_usd if extra else None,
-            extra.utilization if extra else None,
-        ]
+        {
+            "window_name": window.name or "",
+            "used_percent": window.used_percent,
+            "remaining_percent": max(0.0, 100.0 - window.used_percent),
+            "reset_at": window.reset_at.isoformat() if window.reset_at else None,
+            "reset_seconds": window.reset_seconds,
+            "window_seconds": window.window_seconds,
+            "extra_spend_enabled": extra.is_enabled if extra else None,
+            "extra_spend_limit_usd": extra.monthly_limit_usd if extra else None,
+            "extra_spend_used_usd": extra.used_usd if extra else None,
+            "extra_spend_utilization": extra.utilization if extra else None,
+        }
         for window in result.windows
     ]
 
