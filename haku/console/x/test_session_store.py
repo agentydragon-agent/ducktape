@@ -1280,7 +1280,7 @@ async def test_a_lease_that_lapsed_names_the_replica_that_held_it(chat_store, mi
 
 
 @pytest.fixture
-async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
+async def accepted_prompt(chat_store, operator_id: UUID) -> tuple[UUID, UUID]:
     """A ready session with one prompt it has accepted, and no turn yet claiming it.
 
     Room-backed because the tests using it are about what a channel reads back — but a room is an
