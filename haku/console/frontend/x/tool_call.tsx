@@ -1,4 +1,5 @@
-import { Badge, Code, Group, Paper, Stack, Text } from "@mantine/core";
+import { Badge, Code, Stack, Text } from "@mantine/core";
+import type { ReactNode } from "react";
 import type { ConversationItem } from "../client";
 
 import { CodeBlock } from "../code_block";
@@ -123,26 +124,100 @@ function ToolPayload({
   );
 }
 
+const SUMMARY_CHARACTERS = 110;
+
+function snippet(value: string): string {
+  const line = value.trim().split("\n")[0];
+  return line.length <= SUMMARY_CHARACTERS ? line : `${line.slice(0, SUMMARY_CHARACTERS - 1)}…`;
+}
+
+/** A code-valued fragment of a folded line: a command, a path, a pattern. */
+function mono(value: unknown): ReactNode | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return <span className="haku-chat-tool-call-snippet-mono">{snippet(value)}</span>;
+}
+
+/** A prose-valued fragment of a folded line: a description, a query. */
+function prose(value: unknown): ReactNode | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return <>{snippet(value)}</>;
+}
+
+/** Per-tool folded lines, the transcript counterpart of `tool_rendering/`'s per-server widgets.
+ *
+ * `tool_rendering/` keys on the console's MCP servers; a transcript's calls are the CLI harness's
+ * own tools, so they get their own registry. Each renderer says how *its* arguments identify the
+ * call — Bash by its description (falling back to the command itself), a file tool by its path —
+ * rather than one heuristic guessing across all of them. A tool without an entry falls back to the
+ * first meaningful line of its raw arguments.
+ */
+function registeredSummary(toolName: string, args: Record<string, unknown>): ReactNode | null {
+  // A switch, not a callable looked up by name: the tool name is wire data, and dynamic dispatch
+  // on it — object keys and Map.get alike — is what CodeQL's unvalidated-dynamic-method-call
+  // query rejects.
+  switch (toolName) {
+    case "Bash":
+      return prose(args.description) ?? mono(args.command);
+    case "BashOutput":
+      return mono(args.bash_id);
+    case "Write":
+    case "Edit":
+    case "MultiEdit":
+    case "Read":
+      return mono(args.file_path);
+    case "NotebookEdit":
+      return mono(args.notebook_path);
+    case "Grep":
+    case "Glob":
+      return mono(args.pattern);
+    case "WebFetch":
+      return mono(args.url);
+    case "WebSearch":
+      return prose(args.query);
+    case "Task":
+      return prose(args.description);
+    default:
+      return null;
+  }
+}
+
+function toolCallSummary(item: ConversationItem): ReactNode {
+  const args = item.arguments;
+  if (args !== null && typeof args === "object" && !Array.isArray(args) && item.tool_name != null) {
+    const rendered = registeredSummary(item.tool_name, args as Record<string, unknown>);
+    if (rendered !== null) return rendered;
+  }
+  return mono(previewText(toolPayloadText(args)));
+}
+
 /** One call, whole: what was asked, what it printed, and what it produced that no string carries.
  *
  * A call is an item, so its ask and its answer are the same row — `status` is what says whether the
  * answer has arrived, rather than a nested result being present or absent.
+ *
+ * **Folded to one line by default.** In a transcript the calls are the agent's working, not its
+ * answer, and an open card per call buried the prose between them. The folded line carries the
+ * name, the argument that identifies the call, and its state; everything else — full arguments,
+ * output, structured result — is behind the fold.
  */
 export function ToolCallView({ item }: { item: ConversationItem }) {
   return (
-    <Paper withBorder p="sm" radius="sm" className="haku-claude-tool-use">
-      <Group gap="xs" mb="xs">
-        <Badge variant="light" color="gray">
-          Tool
-        </Badge>
-        <Code style={{ overflowWrap: "anywhere" }}>{item.tool_name}</Code>
+    <details className="haku-chat-tool-call">
+      <summary className="haku-chat-tool-call-summary">
+        <span className="haku-chat-tool-call-name">{item.tool_name}</span>
+        <span className="haku-chat-tool-call-snippet">{toolCallSummary(item)}</span>
         {item.outcome === "failed" && (
           <Badge variant="light" color="red">
             failed
           </Badge>
         )}
-      </Group>
-      <Stack gap="xs">
+        {item.status !== "complete" && (
+          <Badge variant="light" color="blue">
+            running
+          </Badge>
+        )}
+      </summary>
+      <Stack gap="xs" className="haku-chat-tool-call-body">
         <ToolPayload label="Arguments" value={item.arguments} emptyLabel="No arguments." emptyWhenNoKeys />
         {item.status === "complete" ? (
           <>
@@ -159,6 +234,6 @@ export function ToolCallView({ item }: { item: ConversationItem }) {
           </Text>
         )}
       </Stack>
-    </Paper>
+    </details>
   );
 }
