@@ -186,6 +186,7 @@ py_test(
 
 py_test(
     name = "test_tp_occurrence_credits",
+    size = "medium",
     srcs = [
         "test_tp_occurrence_credits.py",
     ],
