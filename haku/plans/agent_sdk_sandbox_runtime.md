@@ -248,7 +248,7 @@ described above.
    Job. Headless OAuth, intercepted egress, streaming, multi-turn state, same-pod disk resume,
    transcript creation, and Python hooks passed. OTel configuration passthrough passed; backend
    arrival remains to be checked.
-2. **Image + `SandboxTemplate` — done.** `haku-claude-runner`, the `haku-claude` template and its
+2. **Image + `SandboxTemplate` — done.** `haku-harness-runner`, the `haku-claude` template and its
    warm pool, in `cluster/k8s/haku/workspaces/app/`.
 3. **Proxy body capture**, which is a config change to already-deployed mitmproxy. **Not verified
    here** — nothing in this repo records it landing.

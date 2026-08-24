@@ -104,6 +104,41 @@ def test_both_sandbox_images_satisfy_the_shared_bootstrap(k8s_dir: Path) -> None
         assert required <= set(sandbox_env(template)), f"{name} does not satisfy the bootstrap"
 
 
+def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
+    """The Claude template follows the one provider-neutral image repository and policy."""
+    canonical_name = "haku-harness-runner"
+    retired_name = "haku-claude-runner"
+    flux_dir = k8s_dir / "flux-image-automation-ghcr"
+
+    repository = yaml.safe_load((flux_dir / f"{canonical_name}-image-repository.yaml").read_text())
+    policy = yaml.safe_load((flux_dir / f"{canonical_name}-image-policy.yaml").read_text())
+    assert repository["metadata"]["name"] == canonical_name
+    assert repository["spec"]["image"] == f"ghcr.io/agentydragon/{canonical_name}"
+    assert policy["metadata"]["name"] == canonical_name
+    assert policy["spec"]["imageRepositoryRef"]["name"] == canonical_name
+
+    flux_kustomization = yaml.safe_load((flux_dir / "kustomization.yaml").read_text())
+    assert f"{canonical_name}-image-repository.yaml" in flux_kustomization["resources"]
+    assert f"{canonical_name}-image-policy.yaml" in flux_kustomization["resources"]
+
+    receiver = yaml.safe_load((k8s_dir / "flux-webhook/github-webhook-receiver.yaml").read_text())
+    image_repositories = {
+        resource["name"] for resource in receiver["spec"]["resources"] if resource["kind"] == "ImageRepository"
+    }
+    assert canonical_name in image_repositories
+    assert retired_name not in image_repositories
+
+    template_path = k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml"
+    template_text = template_path.read_text()
+    container = one(yaml.safe_load(template_text)["spec"]["podTemplate"]["spec"]["containers"])
+    assert container["image"] == f"ghcr.io/agentydragon/{canonical_name}:latest"
+    assert f'# {{"$imagepolicy": "flux-system:{canonical_name}"}}' in template_text
+    assert container["args"] == ["--harness", "claude"]
+
+    manifests = "\n".join(path.read_text() for path in k8s_dir.rglob("*.yaml"))
+    assert retired_name not in manifests
+
+
 def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir: Path) -> None:
     """The clone target and the egress policy that permits it must not drift apart."""
     script = (k8s_dir / "haku/workspaces/image/haku-sandbox-setup.sh").read_text()

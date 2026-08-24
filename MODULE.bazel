@@ -408,14 +408,14 @@ apt.install(
     manifest = "//loom/wayback/cache:trixie_wayback_cache.yaml",
 )
 
-# haku-claude-runner image: git on debian:trixie-slim, so the sandbox runner can
-# check out haku-state into /workspace before it launches Claude Code.
+# Haku harness runner image: git and CA roots on debian:trixie-slim, so a sandbox runner can
+# check out haku-state into /workspace before it launches its selected native harness.
 apt.install(
-    name = "trixie_haku_claude_runner",
-    lock = "//haku/runtime/x/bridge:trixie_haku_claude_runner.lock.json",
-    manifest = "//haku/runtime/x/bridge:trixie_haku_claude_runner.yaml",
+    name = "trixie_haku_harness_runner",
+    lock = "//haku/runtime/x/bridge:trixie_haku_harness_runner.lock.json",
+    manifest = "//haku/runtime/x/bridge:trixie_haku_harness_runner.yaml",
 )
-use_repo(apt, "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_haku_claude_runner", "trixie_wayback_cache")
+use_repo(apt, "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_haku_harness_runner", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -706,6 +706,28 @@ http_archive(
     sha256 = "6e84a59661aab07686061da4e8f37b9bb828ac3ecf2ea5e69ee482fcc72fed13",
     strip_prefix = "codex-9e552e9d15ba52bed7077d5357f3e18e330f8f38",
     urls = ["https://github.com/openai/codex/archive/9e552e9d15ba52bed7077d5357f3e18e330f8f38.tar.gz"],
+)
+
+# Native Codex CLI distribution used by Haku's provider-neutral bridge runner. Keep the whole
+# target subtree: the executable locates its bundled rg/zsh/bwrap resources relative to itself.
+# This is the platform package behind @openai/codex 0.144.1's optional dependency, pinned by
+# archive digest rather than downloaded by a lifecycle hook during an image build.
+http_archive(
+    name = "codex_cli_linux_x64",
+    build_file_content = """
+filegroup(
+    name = "files",
+    srcs = glob([
+        "bin/**",
+        "codex-path/**",
+        "codex-resources/**",
+    ]) + ["codex-package.json"],
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "e2a64d421c10aaf0b7e3c0e8bd71b71e497d75823003318b674a278d71add0c7",
+    strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
+    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.144.1-linux-x64.tgz"],
 )
 
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so

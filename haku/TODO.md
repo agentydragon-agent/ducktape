@@ -18,7 +18,7 @@ component checklist rather than being copied here: haku-console's tool/API backl
   authority cutover is the regression case: new config restarted the old incompatible server and
   caused an outage until image automation caught up.
 - **Surface console/runner skew, and give the operator a way to cycle runners.** A session's runner
-  pod is created when the session is provisioned and pinned to whatever `haku-claude-runner` tag was
+  pod is created when the session is provisioned and pinned to whatever `haku-harness-runner` tag was
   current at that moment, so a long-lived session drifts arbitrarily far behind the console with
   nothing anywhere reporting it. Measured 2026-08-16: the single live session's runner had been up
   since 2026-08-15T07:12 on `devel-20260815044840-88846f1` while the `SandboxTemplate` was already
