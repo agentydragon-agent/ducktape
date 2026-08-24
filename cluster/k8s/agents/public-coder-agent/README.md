@@ -78,6 +78,20 @@ Two layers, and the split matters:
 The model path never leaves the cluster: LiteLLM is reached directly, bypassing
 the proxy, via `NO_PROXY`.
 
+## Analytics reader
+
+The Haku Console `public-coder-agent` account has a dedicated native
+ClickHouse account, `public_coder_analytics`, for normalized and raw AIQuota
+history. The agent receives `CLICKHOUSE_PUBLIC_CODER_USER` and
+`CLICKHOUSE_PUBLIC_CODER_PASSWORD`, but the password is a non-secret Iron
+placeholder. A request to the private ClusterIP HTTP endpoint through the
+existing `HTTP_PROXY` causes Iron to replace it in Basic authentication; the
+agent never receives the actual password. The account is restricted to
+`SELECT` on `aiquota.aiquota_windows` and `aiquota.raw_http_observations`, the
+read-only ClickHouse profile/quota, and the proxy Pod is the only public-coder
+Pod allowed to reach ClickHouse on 8123. `NO_PROXY` deliberately names LiteLLM
+only, rather than all Service addresses, so ClickHouse cannot bypass Iron.
+
 The GitHub credential stays in the proxy pod. The agent sees only
 `proxy-github-placeholder`; iron-proxy replaces it in the authentication header
 and only on scoped GitHub hosts. Brave Search follows the same mediation model:
