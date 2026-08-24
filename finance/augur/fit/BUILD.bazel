@@ -254,12 +254,6 @@ py_test(
 )
 
 py_library(
-    name = "dilution_prior",
-    srcs = ["dilution_prior.py"],
-    deps = [":private_equity"],
-)
-
-py_library(
     name = "bayes_dilution",
     srcs = ["bayes_dilution.py"],
     deps = [
@@ -290,35 +284,6 @@ py_binary(
     ],
 )
 
-py_library(
-    name = "derive_dilution_prior_lib",
-    srcs = ["derive_dilution_prior.py"],
-    deps = [
-        ":dilution_prior",
-        ":private_equity",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
-    ],
-)
-
-py_binary(
-    name = "derive_dilution_prior",
-    main_module = "finance.augur.fit.derive_dilution_prior",
-    deps = [":derive_dilution_prior_lib"],
-)
-
-py_test(
-    name = "test_dilution_prior",
-    size = "medium",
-    srcs = ["test_dilution_prior.py"],
-    deps = [
-        ":dilution_prior",
-        ":private_equity",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_test(
     name = "test_bayes_dilution",
     size = "large",
@@ -340,19 +305,6 @@ py_test(
         ":private_equity",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_derive_dilution_prior",
-    size = "medium",
-    srcs = ["test_derive_dilution_prior.py"],
-    deps = [
-        ":derive_dilution_prior_lib",
-        ":dilution_prior",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

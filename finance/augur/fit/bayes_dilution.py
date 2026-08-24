@@ -1,10 +1,10 @@
 """Full-Bayesian (NUTS) dilution + decaying-valuation-drift fit (M2.2-D).
 
-The OLS fit in `augur.fit.dilution_prior` is a log-linear regression on the ~4 in-window
-(price, valuation) pairs. With so few points it extrapolates the observed boom as a *forward*
-rate: on the openai evidence it returns `annual_dilution_rate ~ 0.48` and a ~244%/yr valuation
-drift, which compounds (a constant-drift random walk) to an absurd ~8000x median 10-year mark
-and fails the deployed `sample_sanity` bands.
+The retired OLS prototype used a log-linear regression on the ~4 in-window (price, valuation)
+pairs. With so few points it extrapolated the observed boom as a *forward* rate: on the openai
+evidence it returned `annual_dilution_rate ~ 0.48` and a ~244%/yr valuation drift, which
+compounded (a constant-drift random walk) to an absurd ~8000x median 10-year mark and failed the
+deployed `sample_sanity` bands.
 
 This module fixes that in two coupled ways, both validated to bring the openai fit back inside
 the deploy bands:
@@ -14,7 +14,7 @@ the deploy bands:
     a deterministic log-share path. Each observation contributes through its own
     `uncertainty_log_sigma`. Informative priors regularize the few-point extrapolation, and the
     posterior gives an honest `annual_dilution_rate_log_sigma` (the posterior SD of `log(1+r)`)
-    rather than the delta-method approximation the OLS admits is "weakly identified".
+    rather than the retired OLS prototype's weakly identified delta-method approximation.
 
 2.  **Scale-dependent mean-reverting valuation drift.** The latent `V(t)` drift declines from a
     hot `mu_young` (when the company is small) toward a mature `mu_mature` as the realized log
