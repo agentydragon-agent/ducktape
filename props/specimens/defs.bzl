@@ -89,7 +89,7 @@ create_data_blob = rule(
     },
 )
 
-def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = "", test_size = "small"):
+def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = "", test_size = "medium"):
     """Generate bundle artifacts and test target for a specimen.
 
     Args:
@@ -100,7 +100,8 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = "", test_
             For remote-VCS specimens, pass the http_archive filegroup label.
         code_strip_prefix: Override strip prefix for code tar. If empty, uses
             "{package}/code" for local or auto-detects for external repos.
-        test_size: Bazel test size for the generated validation test.
+        test_size: Bazel test size for the generated validation test. Defaults to
+            "medium" because specimen validation requires Docker setup and teardown.
 
     Generates:
         - {name}_code_tar: Deterministic uncompressed tar of code/ with BUILD.bazel restored
