@@ -28,3 +28,5 @@ occurrences:
           - 49
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/notifications/types.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/notifications/types.py

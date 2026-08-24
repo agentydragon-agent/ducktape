@@ -33,3 +33,5 @@ occurrences:
           - 100
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/persist/events.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/events.py
