@@ -131,7 +131,9 @@ def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
     template_path = k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml"
     template_text = template_path.read_text()
     container = one(yaml.safe_load(template_text)["spec"]["podTemplate"]["spec"]["containers"])
-    assert container["image"] == f"ghcr.io/agentydragon/{canonical_name}:latest"
+    image_repository, image_tag = container["image"].rsplit(":", 1)
+    assert image_repository == f"ghcr.io/agentydragon/{canonical_name}"
+    assert re.fullmatch(policy["spec"]["filterTags"]["pattern"], image_tag)
     assert f'# {{"$imagepolicy": "flux-system:{canonical_name}"}}' in template_text
     assert container["args"] == ["--harness", "claude"]
 

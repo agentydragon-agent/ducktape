@@ -164,6 +164,54 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
     assert not missing, f"agent-readable log namespaces missing from Loki proxy allowlist: {missing}"
 
 
+def test_analytics_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
+    """Analytics uses one plaintext native port consistently for ON CLUSTER DDL.
+
+    The Altinity operator generates 9440 secure remote-server entries when
+    ``secure: true`` is set, but ClickHouse has no TLS listener unless one is
+    configured separately. A 9440 remote entry therefore cannot be recognized
+    as local by DDLWorker. Keep the manifest, schema Job, and Flux health check
+    pinned to the working port-9000 configuration.
+    """
+    analytics_dir = k8s_dir / "analytics"
+    installation = yaml.safe_load((analytics_dir / "cluster/clickhouse.yaml").read_text())
+    configuration = installation["spec"]["configuration"]
+    cluster_spec = next(item for item in configuration["clusters"] if item["name"] == "analytics")
+    assert "secure" not in cluster_spec
+    assert installation["spec"]["defaults"]["replicasUseFQDN"] == "yes"
+
+    grants = configuration["users"]["aiquota_ingest/grants/query"]
+    assert grants == [
+        "GRANT INSERT ON aiquota.raw_http_observations",
+        "GRANT SELECT(event_id, observed_at, source, quota_windows) ON aiquota.raw_http_observations",
+    ]
+
+    cluster_kustomization = yaml.safe_load((analytics_dir / "cluster/kustomization.yaml").read_text())
+    generated_files = cluster_kustomization["configMapGenerator"][0]["files"]
+    assert generated_files == ["system_logs.xml"]
+
+    schema_sql = (analytics_dir / "schema/schema.sql").read_text()
+    for statement in (
+        "CREATE DATABASE IF NOT EXISTS aiquota ON CLUSTER analytics;",
+        "CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER analytics",
+        "CREATE TABLE IF NOT EXISTS aiquota.aiquota_windows ON CLUSTER analytics",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.aiquota_windows_mv ON CLUSTER analytics",
+    ):
+        assert statement in schema_sql
+
+    schema_job = yaml.safe_load((analytics_dir / "schema/schema-job.yaml").read_text())
+    assert schema_job["metadata"]["name"] == "clickhouse-aiquota-schema-v5"
+    schema_args = schema_job["spec"]["template"]["spec"]["containers"][0]["args"]
+    assert "--host=clickhouse-analytics.analytics.svc.cluster.local" in schema_args
+    assert "--port=9000" in schema_args
+    assert not any(item.startswith("chi-analytics-analytics-") for item in schema_args)
+
+    schema_flux = yaml.safe_load((analytics_dir / "schema/flux-kustomization.yaml").read_text())
+    assert schema_flux["spec"]["healthChecks"] == [
+        {"apiVersion": "batch/v1", "kind": "Job", "name": "clickhouse-aiquota-schema-v5", "namespace": "analytics"}
+    ]
+
+
 def test_files_flux_rewrites_use_block_style(k8s_dir: Path) -> None:
     """A flow mapping in a file Flux rewrites fails prettier on every open PR at once.
 

@@ -17,24 +17,20 @@ The first tenant is `aiquota`:
   two independently retried writes.
 
 `replicasUseFQDN: "yes"` makes the operator generate per-replica host entries
-that resolve to each Pod's actual address rather than the operator's loopback
-short aliases. This preserves correct inter-replica connectivity, but the
-ClickHouse DDLWorker still does not accept the generated Service addresses as
-local distributed-DDL members.
+that resolve to each Pod's actual address. The cluster intentionally does not
+set `secure: "true"`: that operator setting generates secure native-port 9440
+members, which requires ClickHouse TLS listener and certificate configuration.
+Without that listener, those members cannot be local DDLWorker targets. The
+internal native cluster therefore consistently uses port 9000; TLS must be
+configured end-to-end before enabling the operator's secure-cluster setting.
 
-The Pod-template generation annotation advances only for an intentional
-operator-managed rematerialization; it is not a persistent restart switch.
-
-ClickHouse's DDLWorker does not accept the operator's per-replica Service
-addresses as local distributed-DDL members, even when they are FQDNs. The
-versioned `clickhouse-aiquota-schema-v4` Job therefore applies the idempotent
-tenant DDL directly to each headless replica Service in sequence. The tables
-remain ReplicatedMergeTree tables using the same Keeper paths, while every
-replica receives the database, tables, and materialized view without depending
-on ClickHouse startup configuration mount ordering. Schema Jobs are retained
-after completion as rollout evidence.
-A future schema revision must use a new Job name (for example `v2`) so
-Kubernetes never has to mutate a completed Job template.
+The versioned `clickhouse-aiquota-schema-v5` Job applies idempotent tenant DDL
+once through the cluster Service with `ON CLUSTER analytics`. Tables remain
+ReplicatedMergeTree tables using the same Keeper paths. Tenant schema belongs
+only to these Jobs: ClickHouse startup scripts do not create application
+tables. Completed Jobs are retained as rollout evidence; a later schema
+revision needs a new immutable Job name because Kubernetes cannot mutate a
+completed Job template.
 
 Each tenant gets its own database, least-privilege users, credentials, quotas,
 and query profile. A later Langfuse migration can therefore add a separate
