@@ -39,6 +39,8 @@ pub struct ScenarioSpec {
     pub scheduled_sales: Vec<ScheduledSaleSpec>,
     #[serde(default)]
     pub tax_profiles: Vec<TaxProfileSpec>,
+    #[serde(default)]
+    pub distributions: Vec<DistributionSpec>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -139,6 +141,15 @@ pub struct TaxProfileSpec {
     pub jurisdictions: Vec<TaxRules>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DistributionSpec {
+    pub agent_id: String,
+    pub holding_account_id: String,
+    pub asset_id: String,
+    pub to_account_id: String,
+}
+
 fn default_account_id() -> String {
     "checking".into()
 }
@@ -218,6 +229,16 @@ pub struct TaxAccrual {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DistributionOutcome {
+    pub month: u32,
+    pub agent_id: String,
+    pub holding_account_id: String,
+    pub asset_id: String,
+    pub units: Quantity,
+    pub amount: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RolloutOutput {
     pub rollout_id: u32,
     pub months: Vec<MonthOutput>,
@@ -225,6 +246,7 @@ pub struct RolloutOutput {
     pub dispositions: Vec<LotDisposition>,
     pub obligations: Vec<ObligationOutcome>,
     pub tax_accruals: Vec<TaxAccrual>,
+    pub distributions: Vec<DistributionOutcome>,
     pub failed_month: Option<u32>,
 }
 
@@ -241,6 +263,7 @@ pub struct RolloutSummary {
     pub journal_entry_count: u64,
     pub disposition_count: u64,
     pub tax_accrual_count: u64,
+    pub distribution_count: u64,
     pub failed_month: Option<u32>,
 }
 

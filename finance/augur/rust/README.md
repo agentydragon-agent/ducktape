@@ -30,6 +30,7 @@ The differential suite currently proves exact integer agreement for:
 - opening balances and opening equity;
 - scheduled and recurring transfers;
 - initial tax lots and FIFO scheduled sales;
+- monthly security distributions based on currently held units;
 - grouped scheduled and recurring obligations;
 - insufficient-cash failure month and state freezing;
 - federal and California ordinary-income year-end tax accruals;
@@ -42,7 +43,7 @@ capital-loss carryforward between tax years.
 Still missing before replacement is plausible:
 
 - tax payment/safe-harbor/true-up scheduling and broader modeled tax facts;
-- distributions and policy-driven purchases;
+- policy-driven purchases and taxable distribution character;
 - mortgages and other supported contracts;
 - property purchase, occupancy, improvements, depreciation, expenses, and sale;
 - target allocation, liquidity funding, TLH, and private equity;

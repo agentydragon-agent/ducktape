@@ -34,17 +34,18 @@ bbr run -c opt //finance/augur/rust:benchmark_driver -- \
 
 Result:
 
-- median: **2.4242 s**;
-- runs: 2.4342, 2.4242, 2.5672, 2.4009, 2.4077 s;
-- throughput: **41,250 rollouts/s**;
-- throughput: **2,475,018 rollout-months/s**;
-- peak child RSS: **290,708 KiB**;
+- median: **2.4451 s**;
+- runs: 2.4994, 2.4451, 2.6450, 2.4204, 2.4049 s;
+- throughput: **40,899 rollouts/s**;
+- throughput: **2,453,925 rollout-months/s**;
+- peak child RSS: **295,500 KiB**;
 - counted journal entries: 12,500,000;
 - counted dispositions: 200,000;
 - counted tax accruals: 0;
+- counted security distributions: 0;
 - failed rollouts: 0;
-- checksum: `16007642079227779301`;
-- BuildBuddy invocation: `a01f399a-14d4-4583-bcdd-c70e2e99a80b`.
+- checksum: `761150667387225061`;
+- BuildBuddy invocation: `1bed9b46-4086-4276-9b82-5b1918baf985`.
 
 This path retains fixed-size final summaries for every rollout and does not
 allocate monthly snapshots, journals, or event traces. The same state-machine

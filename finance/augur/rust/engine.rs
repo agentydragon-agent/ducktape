@@ -5,9 +5,9 @@ use thiserror::Error;
 
 use crate::{
     fixture::{
-        AccountBalance, FIXTURE_SCHEMA_VERSION, Fixture, InitialLotSpec, LotDisposition,
-        MonthOutput, ObligationOutcome, PopulationOutput, RolloutOutput, RolloutSummary,
-        SeriesSpec, SimulationOutput, TaxAccrual,
+        AccountBalance, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture, InitialLotSpec,
+        LotDisposition, MonthOutput, ObligationOutcome, PopulationOutput, RolloutOutput,
+        RolloutSummary, SeriesSpec, SimulationOutput, TaxAccrual,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_round_half_up},
@@ -129,6 +129,18 @@ pub enum SimulationError {
         requested: i64,
         available: i64,
     },
+    #[error("distribution references no lots for {agent_id}:{account_id}:{asset_id}")]
+    MissingDistributionPool {
+        agent_id: String,
+        account_id: String,
+        asset_id: String,
+    },
+    #[error("duplicate distribution for {agent_id}:{account_id}:{asset_id}")]
+    DuplicateDistribution {
+        agent_id: String,
+        account_id: String,
+        asset_id: String,
+    },
     #[error(transparent)]
     Ledger(#[from] LedgerError),
     #[error(transparent)]
@@ -170,9 +182,11 @@ struct Recorder {
     dispositions: Vec<LotDisposition>,
     obligations: Vec<ObligationOutcome>,
     tax_accruals: Vec<TaxAccrual>,
+    distributions: Vec<DistributionOutcome>,
     journal_entry_count: u64,
     disposition_count: u64,
     tax_accrual_count: u64,
+    distribution_count: u64,
 }
 
 impl Recorder {
@@ -184,9 +198,11 @@ impl Recorder {
             dispositions: Vec::new(),
             obligations: Vec::new(),
             tax_accruals: Vec::new(),
+            distributions: Vec::new(),
             journal_entry_count: 0,
             disposition_count: 0,
             tax_accrual_count: 0,
+            distribution_count: 0,
         }
     }
 
@@ -240,6 +256,22 @@ impl Recorder {
         Ok(())
     }
 
+    fn record_distribution(
+        &mut self,
+        distribution: DistributionOutcome,
+    ) -> Result<(), SimulationError> {
+        self.distribution_count =
+            self.distribution_count
+                .checked_add(1)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "distribution count",
+                })?;
+        if self.capture_trace {
+            self.distributions.push(distribution);
+        }
+        Ok(())
+    }
+
     fn record_month(&mut self, month: MonthOutput) {
         if self.capture_trace {
             self.months.push(month);
@@ -264,6 +296,7 @@ impl RolloutComputation {
             dispositions: self.recorder.dispositions,
             obligations: self.recorder.obligations,
             tax_accruals: self.recorder.tax_accruals,
+            distributions: self.recorder.distributions,
             failed_month: self.failed_month,
         }
     }
@@ -275,6 +308,7 @@ impl RolloutComputation {
             journal_entry_count: self.recorder.journal_entry_count,
             disposition_count: self.recorder.disposition_count,
             tax_accrual_count: self.recorder.tax_accrual_count,
+            distribution_count: self.recorder.distribution_count,
             failed_month: self.failed_month,
         }
     }
@@ -384,7 +418,8 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                 expected,
             });
         }
-        if series.series_id.starts_with("security:")
+        if (series.series_id.starts_with("security:")
+            || series.series_id.starts_with("security_distribution:"))
             && let Some((index, value)) = series
                 .values
                 .iter()
@@ -570,6 +605,38 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             });
         }
         let series_id = format!("security:{}", sale.asset_id);
+        if !series_ids.contains(&series_id) {
+            return Err(SimulationError::MissingSeries { series_id });
+        }
+    }
+    let mut distributions = BTreeSet::new();
+    for distribution in &fixture.scenario.distributions {
+        validate_identifier("distribution asset", &distribution.asset_id)?;
+        let pool = (
+            distribution.agent_id.clone(),
+            distribution.holding_account_id.clone(),
+            distribution.asset_id.clone(),
+        );
+        if !distributions.insert(pool.clone()) {
+            return Err(SimulationError::DuplicateDistribution {
+                agent_id: pool.0,
+                account_id: pool.1,
+                asset_id: pool.2,
+            });
+        }
+        if !pool_scales.contains_key(&pool) {
+            return Err(SimulationError::MissingDistributionPool {
+                agent_id: pool.0,
+                account_id: pool.1,
+                asset_id: pool.2,
+            });
+        }
+        validate_account(
+            &accounts,
+            &AccountRef::new(&distribution.agent_id, &distribution.to_account_id),
+            "distribution destination",
+        )?;
+        let series_id = format!("security_distribution:{}", distribution.asset_id);
         if !series_ids.contains(&series_id) {
             return Err(SimulationError::MissingSeries { series_id });
         }
@@ -854,6 +921,14 @@ fn simulate_rollout(
                 transfer.amount,
             )?;
         }
+        execute_distributions(
+            fixture,
+            rollout_id,
+            &mut ledger,
+            &mut recorder,
+            &lots,
+            month,
+        )?;
         for sale in fixture
             .scenario
             .scheduled_sales
@@ -915,6 +990,68 @@ fn simulate_rollout(
         recorder,
         failed_month,
     })
+}
+
+fn execute_distributions(
+    fixture: &Fixture,
+    rollout_id: u32,
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    lots: &[LotState],
+    month: u32,
+) -> Result<(), SimulationError> {
+    for distribution in &fixture.scenario.distributions {
+        let pool_lots: Vec<_> = lots
+            .iter()
+            .filter(|lot| {
+                lot.spec.agent_id == distribution.agent_id
+                    && lot.spec.account_id == distribution.holding_account_id
+                    && lot.spec.asset_id == distribution.asset_id
+            })
+            .collect();
+        let scale = pool_lots[0].spec.quantity_scale;
+        let units = pool_lots.iter().try_fold(0_i64, |total, lot| {
+            total
+                .checked_add(lot.units_remaining.0)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "distribution pool quantity",
+                })
+        })?;
+        let per_unit = series_value(
+            fixture,
+            &format!("security_distribution:{}", distribution.asset_id),
+            rollout_id,
+            month,
+        )?;
+        let amount = Money(mul_div_round_half_up(
+            per_unit,
+            units,
+            scale,
+            "security distribution",
+        )?);
+        let cause_id = format!(
+            "distribution:{}:{}:m{month}",
+            distribution.agent_id, distribution.asset_id
+        );
+        transfer_money(
+            ledger,
+            recorder,
+            month,
+            &cause_id,
+            &AccountRef::new(EXTERNAL_AGENT, "boundary"),
+            &AccountRef::new(&distribution.agent_id, &distribution.to_account_id),
+            amount,
+        )?;
+        recorder.record_distribution(DistributionOutcome {
+            month,
+            agent_id: distribution.agent_id.clone(),
+            holding_account_id: distribution.holding_account_id.clone(),
+            asset_id: distribution.asset_id.clone(),
+            units: Quantity(units),
+            amount,
+        })?;
+    }
+    Ok(())
 }
 
 fn record_transfer_income(
@@ -1325,6 +1462,7 @@ mod tests {
                 initial_lots: vec![],
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
+                distributions: vec![],
             },
             series: vec![],
         }
@@ -1479,6 +1617,7 @@ mod tests {
                     proceeds_account_id: "checking".into(),
                 }],
                 tax_profiles: vec![],
+                distributions: vec![],
             },
             series: vec![SeriesSpec {
                 series_id: "security:vti".into(),
@@ -1501,6 +1640,10 @@ mod tests {
             assert_eq!(summary.journal_entry_count, rollout.journal.len() as u64);
             assert_eq!(summary.disposition_count, rollout.dispositions.len() as u64);
             assert_eq!(summary.tax_accrual_count, rollout.tax_accruals.len() as u64);
+            assert_eq!(
+                summary.distribution_count,
+                rollout.distributions.len() as u64
+            );
             assert_eq!(summary.failed_month, rollout.failed_month);
         }
         for rollout in output.rollouts {
@@ -1555,6 +1698,7 @@ mod tests {
                     proceeds_account_id: "checking".into(),
                 }],
                 tax_profiles: vec![],
+                distributions: vec![],
             },
             series: vec![SeriesSpec {
                 series_id: "security:vti".into(),
@@ -1614,6 +1758,7 @@ mod tests {
                 initial_lots: vec![],
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
+                distributions: vec![],
             },
             series: vec![],
         };
@@ -1688,6 +1833,7 @@ mod tests {
                 initial_lots: vec![],
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
+                distributions: vec![],
             },
             series: vec![],
         };

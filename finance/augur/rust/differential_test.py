@@ -270,6 +270,37 @@ def _long_term_gain_tax_fixture() -> dict[str, Any]:
     return fixture
 
 
+def _distribution_fixture() -> dict[str, Any]:
+    fixture = _fixture()
+    scenario = fixture["scenario"]
+    scenario["accounts"] = [{"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0}]
+    scenario["scheduled_transfers"] = []
+    scenario["recurring_transfers"] = []
+    scenario["obligations"] = []
+    scenario["recurring_obligations"] = []
+    scenario["initial_lots"] = [
+        {
+            "lot_id": "alice-vti",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "purchase_month": -12,
+            "quantity_scale": 1_000_000,
+            "units": 2_000_000,
+            "basis": 20_000,
+        }
+    ]
+    scenario["scheduled_sales"] = []
+    scenario["distributions"] = [
+        {"agent_id": "alice", "holding_account_id": "brokerage", "asset_id": "vti", "to_account_id": "checking"}
+    ]
+    fixture["series"] = [
+        {"series_id": "security:vti", "snapshots": 4, "values": [10_000] * 8},
+        {"series_id": "security_distribution:vti", "snapshots": 4, "values": [100, 100, 100, 100, 200, 300, 400, 500]},
+    ]
+    return fixture
+
+
 def _rust_run(fixture: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
     fixture_path = tmp_path / "fixture.json"
     output_path = tmp_path / "rust-output.json"
@@ -536,6 +567,23 @@ def test_rust_and_jax_match_long_term_gain_tax(tmp_path: Path) -> None:
     assert rust_row["ordinary_tax"] == legacy_row["ordinary_tax_quanta"] == 401_600
     assert rust_row["capital_gain_tax"] == legacy_row["capital_gain_tax_quanta"] == 125_626
     assert rust_row["total_tax"] == legacy_row["total_tax_quanta"] == 527_226
+
+
+def test_rust_and_jax_match_monthly_security_distributions(tmp_path: Path) -> None:
+    fixture = _distribution_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_cash = (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+    )
+    assert _rust_cash(rust).to_dicts() == legacy_cash.to_dicts()
+    assert [[outcome["amount"] for outcome in rollout["distributions"]] for rollout in rust["rollouts"]] == [
+        [200, 200, 200],
+        [400, 600, 800],
+    ]
 
 
 @pytest.mark.parametrize("rollout_count", [1, 17])

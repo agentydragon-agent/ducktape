@@ -7,11 +7,12 @@ from typing import Any, cast
 
 import numpy as np
 
-from finance.augur.model.series import LevelSeriesKey, SecurityKey, SecuritySymbol
+from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
+    DistributionTaxSlice,
     InitialAccountBalance,
     InitialLot,
     RecurringObligation,
@@ -20,6 +21,7 @@ from finance.augur.sim.scenario import (
     ScheduledAssetSale,
     ScheduledObligation,
     ScheduledTransfer,
+    SecurityDistribution,
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate_with_external_series
@@ -49,14 +51,20 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
     price_matrices: dict[str, np.ndarray[Any, np.dtype[np.int64]]] = {}
     for series in fixture["series"]:
         series_id = cast(str, series["series_id"])
-        if not series_id.startswith("security:"):
+        if series_id.startswith("security:"):
+            asset_id = series_id.removeprefix("security:")
+            key: LevelSeriesKey = SecurityKey(symbol=SecuritySymbol(asset_id))
+        elif series_id.startswith("security_distribution:"):
+            asset_id = series_id.removeprefix("security_distribution:")
+            key = SecurityDistributionKey(symbol=SecuritySymbol(asset_id))
+        else:
             continue
-        asset_id = series_id.removeprefix("security:")
         snapshots = cast(int, series["snapshots"])
         price_matrix_quanta = np.asarray(series["values"], dtype=np.int64).reshape(rollout_count, snapshots)
         price_matrix = price_matrix_quanta.astype(np.float64) * float(Decimal(quantum))
-        price_matrices[asset_id] = price_matrix_quanta
-        level_blocks.append((SecurityKey(symbol=SecuritySymbol(asset_id)), price_matrix))
+        if isinstance(key, SecurityKey):
+            price_matrices[asset_id] = price_matrix_quanta
+        level_blocks.append((key, price_matrix))
 
     pool_scales: dict[tuple[str, str, str], int] = {}
     for lot in lots:
@@ -164,6 +172,16 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 price_per_unit=sale_price(spec),
             )
             for spec in sales
+        ],
+        security_distributions=[
+            SecurityDistribution(
+                asset=SecurityKey(symbol=SecuritySymbol(spec["asset_id"])),
+                agent_id=spec["agent_id"],
+                holding_account_id=spec["holding_account_id"],
+                to_account_id=spec["to_account_id"],
+                tax_character=(DistributionTaxSlice(fraction=1.0),),
+            )
+            for spec in scenario_spec.get("distributions", [])
         ],
         tax_profiles=[
             TaxProfile(
