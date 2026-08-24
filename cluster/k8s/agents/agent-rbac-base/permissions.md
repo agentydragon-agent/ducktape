@@ -18,7 +18,14 @@ The common generated grants are exceptions to the file matrix. A GitOps-owned Na
 one of two data-classification labels:
 
 - `rbac.ducktape.io/agent-readable-metadata: "true"` binds the secret-free, log-free
-  `agent-readable-namespace-metadata` baseline.
+  `agent-readable-namespace-metadata` baseline. Alongside core workload state, it covers
+  safe operational metadata for autoscaling, disruption, standard/Gateway API networking, and
+  Flux image automation. It deliberately excludes Secrets, ExternalSecret/SecretStore resources,
+  Terraform controller objects, Helm/source/Kustomization values, Prometheus rules, pod logs,
+  exec-like subresources, and all writes. The Namespace label is the required GitOps data
+  classification for the non-secret controller configuration this makes readable. The existing
+  `flux-system` Namespace is opted in by the `flux-system/kustomization.yaml` patch, so its
+  image automation objects are covered without a cluster-wide grant.
 - `rbac.ducktape.io/agent-readable-logs: "true"` binds that metadata baseline plus the additive
   `agent-readable-namespace-logs` role, which grants only `get` on `pods/log`.
 

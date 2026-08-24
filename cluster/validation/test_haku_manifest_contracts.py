@@ -183,13 +183,43 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
             not {agent_readable_metadata_label, agent_readable_logs_label} & namespace["metadata"]["labels"].keys()
         ), path
 
+    flux_system_kustomization = (k8s_dir / "flux-system/kustomization.yaml").read_text()
+    assert "path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs" in flux_system_kustomization
+    assert 'value: "true"' in flux_system_kustomization
+
     metadata_role = yaml.safe_load(
         (k8s_dir / "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml").read_text()
     )
     metadata_resources = set().union(*(set(rule["resources"]) for rule in metadata_role["rules"]))
     assert metadata_role["metadata"]["name"] == "agent-readable-namespace-metadata"
     assert all(rule["verbs"] == ["get", "list", "watch"] for rule in metadata_role["rules"])
-    assert not {"secrets", "pods/log", "pods/exec", "pods/attach", "pods/portforward"} & metadata_resources
+    assert (
+        not {
+            "secrets",
+            "externalsecrets",
+            "secretstores",
+            "clustersecretstores",
+            "pushsecrets",
+            "clusterpushsecrets",
+            "pods/log",
+            "pods/exec",
+            "pods/attach",
+            "pods/portforward",
+        }
+        & metadata_resources
+    )
+    metadata_rules = {one(rule["apiGroups"]): set(rule["resources"]) for rule in metadata_role["rules"]}
+    assert metadata_rules == {
+        "": {"pods", "services", "configmaps", "persistentvolumeclaims", "events"},
+        "apps": {"deployments", "replicasets", "statefulsets", "daemonsets"},
+        "batch": {"jobs", "cronjobs"},
+        "autoscaling": {"horizontalpodautoscalers"},
+        "autoscaling.k8s.io": {"verticalpodautoscalers"},
+        "policy": {"poddisruptionbudgets"},
+        "networking.k8s.io": {"ingresses", "networkpolicies"},
+        "gateway.networking.k8s.io": {"gateways", "httproutes", "tlsroutes", "grpcroutes"},
+        "image.toolkit.fluxcd.io": {"imagerepositories", "imagepolicies", "imageupdateautomations"},
+    }
 
     logs_role = yaml.safe_load(
         (k8s_dir / "agents/agent-rbac-base/clusterrole-agent-readable-namespace-logs.yaml").read_text()

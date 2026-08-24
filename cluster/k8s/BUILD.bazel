@@ -90,6 +90,7 @@ filegroup(
         "analytics/cluster/agent-diagnostics-rbac.yaml",
         "analytics/cluster/kustomization.yaml",
         "ducktape-flux/ducktape-flux-reader.yaml",
+        "flux-system/kustomization.yaml",
         "grocy/sf/app/namespace.yaml",
         "grocy/vallejo/app/namespace.yaml",
         "haku-ci/namespace.yaml",
