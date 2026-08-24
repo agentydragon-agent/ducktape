@@ -34,7 +34,7 @@ spec:
         - name: migrate
           # This must remain image-coupled with the API Deployment. A versioned Job name
           # would instead bind rollout state to repository HEAD and duplicate alembic_version.
-          image: ghcr.io/agentydragon/haku-console:devel-20260823172239-0361a18 # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260824011156-ea14bcd # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           args: ["migrate"]
           terminationMessagePolicy: FallbackToLogsOnError
