@@ -12,6 +12,8 @@ from typing import Any
 import jsonschema
 from fastmcp import FastMCP
 
+from haku.console.kubectl_passthrough_policy import map_kubectl_passthrough_request
+from haku.console.kubernetes_authorization import KubernetesAuthorizationService
 from haku.console.mcp_config import (
     AnyOfAutoApprovalPolicy,
     AutoApprovalPolicy,
@@ -19,6 +21,7 @@ from haku.console.mcp_config import (
     ExactToolsAutoApprovalPolicy,
     GitHubRepositoryAutoApprovalPolicy,
     GmailLabelNamespaceAutoApprovalPolicy,
+    KubernetesPassthroughAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
@@ -56,11 +59,17 @@ class ToolAutoApprovalMode(IntEnum):
 
 
 @dataclass(frozen=True)
-class SchemaDenial:
-    """Arguments failed an owned in-process tool's schema and can never execute."""
+class PolicyDenial:
+    """A policy or schema check explicitly auto-denies the tool call."""
 
     reason: str
-    evaluation: str = SCHEMA_AUTO_DENIAL_EVALUATION
+    evaluation: str
+
+
+@dataclass(frozen=True, slots=True)
+class AutoDenied:
+    reason: str
+    evaluation: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +82,7 @@ class NotAutoApproved:
     reason: str
 
 
-type AutoApprovalDecision = AutoApproved | NotAutoApproved
+type AutoApprovalDecision = AutoApproved | NotAutoApproved | AutoDenied
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,17 +110,25 @@ class AutoApprovalEvaluation:
     def rejections(self) -> tuple[AutoApprovalEvaluationStep, ...]:
         return tuple(step for step in self.steps if isinstance(step.decision, NotAutoApproved))
 
+    @property
+    def denials(self) -> tuple[AutoApprovalEvaluationStep, ...]:
+        return tuple(step for step in self.steps if isinstance(step.decision, AutoDenied))
+
 
 class AutoApprovalPolicyRegistry:
     """Validated policy graph selected through durable, config-defined Agent access profiles."""
 
-    def __init__(self, config: ConsoleConfigFile) -> None:
-        self._policies: dict[str, AutoApprovalPolicy] = {policy.id: policy for policy in config.auto_approval_policies}
+    def __init__(
+        self, config: ConsoleConfigFile, *, kubernetes_authorization: KubernetesAuthorizationService | None = None
+    ) -> None:
+        self._config = config
         self._profiles = {profile.id: profile for profile in config.access_profiles}
+        self._policies: dict[str, AutoApprovalPolicy] = {policy.id: policy for policy in config.auto_approval_policies}
         # Operators bypass the Agent approval lifecycle, but they share the reflected MCP catalog.
         # Preserve the useful transparent schema for any tool that an assigned Agent policy always
         # auto-approves; this affects presentation only, never Operator authorization.
         self._assigned_roots = tuple(dict.fromkeys(profile.auto_approval_policy for profile in self._profiles.values()))
+        self._kubernetes_authorization = kubernetes_authorization
 
     def _actor_root(self, actor: AgentActor) -> str | None:
         profile = self._profiles.get(actor.access_profile_id) if actor.access_profile_id is not None else None
@@ -150,6 +167,8 @@ class AutoApprovalPolicyRegistry:
                     if server_id == server and tool_name in tools
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
+            case KubernetesPassthroughAutoApprovalPolicy():
+                return ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
             case AnyOfAutoApprovalPolicy(policies=members):
                 return max(
                     (self._policy_mode(member, server_id, tool_name) for member in members),
@@ -166,9 +185,10 @@ class AutoApprovalPolicyRegistry:
         tool_name: str,
         arguments: dict[str, Any],
         gmail: GmailToolsClient | None,
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[str | None, str | None] | PolicyDenial:
         if not isinstance(actor, AgentActor):
             return None, None
+
         root = self._actor_root(actor)
         if root is None:
             return None, f"manual: Agent has no configured access profile for {server_id}/{tool_name}"
@@ -176,6 +196,7 @@ class AutoApprovalPolicyRegistry:
         evaluation = AutoApprovalEvaluation()
         await self._evaluate_policy(
             root,
+            actor=actor,
             policy_path=(),
             server_id=server_id,
             tool_name=tool_name,
@@ -183,6 +204,10 @@ class AutoApprovalPolicyRegistry:
             gmail=gmail,
             evaluation=evaluation,
         )
+        if evaluation.denials:
+            step = evaluation.denials[0]
+            assert isinstance(step.decision, AutoDenied)
+            return PolicyDenial(reason=step.decision.reason, evaluation=step.decision.evaluation)
         if evaluation.approvals:
             rendered = "; ".join(
                 f"{' -> '.join(step.policy_path)}: {step.decision.explanation}"
@@ -202,6 +227,7 @@ class AutoApprovalPolicyRegistry:
         self,
         policy_id: str,
         *,
+        actor: ToolCallActor,
         policy_path: tuple[str, ...],
         server_id: str,
         tool_name: str,
@@ -225,10 +251,45 @@ class AutoApprovalPolicyRegistry:
                 if server_id != server or tool_name not in tools:
                     return
                 evaluation.record(current_path, _evaluate_github_repository(tool_name, arguments, owner, repository))
+            case KubernetesPassthroughAutoApprovalPolicy(server=server):
+                if server_id != server:
+                    return
+                if (
+                    isinstance(actor, AgentActor)
+                    and actor.access_profile_id is not None
+                    and self._kubernetes_authorization is not None
+                    and (auth_requests := map_kubectl_passthrough_request(tool_name, arguments)) is not None
+                ):
+                    try:
+                        decisions = await asyncio.gather(
+                            *[
+                                self._kubernetes_authorization.evaluate(
+                                    agent_id=actor.agent_id, access_profile_id=actor.access_profile_id, request=auth_req
+                                )
+                                for auth_req in auth_requests
+                            ]
+                        )
+                        if all(d.allowed for d in decisions):
+                            evaluation.record(
+                                current_path,
+                                AutoDenied(
+                                    reason=(
+                                        "Covered by your direct Kubernetes permissions. Use your direct Haku "
+                                        "Kubernetes proxy or local kubectl instead of kubectl-passthrough-mcp."
+                                    ),
+                                    evaluation="denied: covered by direct agent access",
+                                ),
+                            )
+                    except Exception:
+                        logger.warning(
+                            "Kubernetes authorization evaluation failed during kubectl-passthrough policy check",
+                            exc_info=True,
+                        )
             case AnyOfAutoApprovalPolicy(policies=members):
                 for member in members:
                     await self._evaluate_policy(
                         member,
+                        actor=actor,
                         policy_path=current_path,
                         server_id=server_id,
                         tool_name=tool_name,
@@ -284,7 +345,7 @@ def _evaluate_github_code_search(arguments: dict[str, Any], owner: str, reposito
     return AutoApproved(f"reviewed code search targets repository {expected_repository}")
 
 
-async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> SchemaDenial | str | None:
+async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> PolicyDenial | str | None:
     """Validate arguments against an owned in-process tool's generated schema."""
     try:
         tool = await mcp.get_tool(tool_name)
@@ -297,7 +358,10 @@ async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str,
         jsonschema.validate(instance=arguments, schema=tool.to_mcp_tool().inputSchema)
     except jsonschema.ValidationError as exc:
         logger.warning("auto-denied invalid MCP arguments tool=%s: %s", tool_name, exc)
-        return SchemaDenial(reason=f"arguments failed the registered tool schema: {exc.message}")
+        return PolicyDenial(
+            reason=f"arguments failed the registered tool schema: {exc.message}",
+            evaluation=SCHEMA_AUTO_DENIAL_EVALUATION,
+        )
     except jsonschema.SchemaError:
         logger.exception("auto-approval tool schema is invalid tool=%s", tool_name)
         return "error: registered tool schema is invalid"
@@ -313,14 +377,14 @@ async def auto_approve_tool_call(
     arguments: dict[str, Any],
     gmail: GmailToolsClient | None,
     mcp: FastMCP | None,
-) -> tuple[str | None, str | None] | SchemaDenial:
+) -> tuple[str | None, str | None] | PolicyDenial:
     """Evaluate one call under the authenticated Agent's configured policy graph."""
     if not isinstance(actor, AgentActor):
         return None, None
     mode = policies.tool_mode(actor, server_id, tool_name)
     if mode is not ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED and mcp is not None:
         error = await _validate_arguments(mcp, tool_name, arguments)
-        if isinstance(error, SchemaDenial):
+        if isinstance(error, PolicyDenial):
             return error
         if error is not None:
             return None, error

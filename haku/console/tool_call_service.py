@@ -17,8 +17,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
-from haku.console.auto_approval import AutoApprovalPolicyRegistry, SchemaDenial, auto_approve_tool_call
+from haku.console.auto_approval import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
 from haku.console.config import Settings
+from haku.console.kubernetes_authorization import KubernetesAuthorizationService
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessServers,
@@ -297,6 +298,7 @@ class ToolCallApplicationService:
         authentik_token_store: AuthentikOperatorTokenStore,
         approval_notifier: PendingApprovalNotifier,
         gmail_client_provider: GmailClientProvider = _no_gmail_client,
+        kubernetes_authorization: KubernetesAuthorizationService | None = None,
     ) -> None:
         self._settings = settings
         self._repository = repository
@@ -308,7 +310,10 @@ class ToolCallApplicationService:
         self._provider_store = provider_store
         self._authentik_token_store = authentik_token_store
         self._gmail_client_provider = gmail_client_provider
-        self._auto_approval_policies = AutoApprovalPolicyRegistry(load_console_config(settings))
+        self._kubernetes_authorization = kubernetes_authorization
+        self._auto_approval_policies = AutoApprovalPolicyRegistry(
+            load_console_config(settings), kubernetes_authorization=self._kubernetes_authorization
+        )
         # In-flight background execution tasks dispatched by `decide`. Held so they aren't GC'd
         # mid-run, and drained/cancelled at shutdown (`aclose`).
         self._execution_tasks: set[asyncio.Task[ToolCallRecord]] = set()
@@ -357,10 +362,9 @@ class ToolCallApplicationService:
             gmail=gmail,
             mcp=server_builder.builder(None) if server_builder is not None else None,
         )
-        if isinstance(decision, SchemaDenial):
-            # Arguments failed an owned in-process schema: the call can never execute, so it is
-            # persisted born-denied (full audit row, never pending) and the validation error goes
-            # straight back to the caller to self-correct (operator directive 2026-07-16).
+        if isinstance(decision, PolicyDenial):
+            # Schema failure or policy auto-denial: the call can never execute, so it is
+            # persisted born-denied (full audit row, never pending).
             record = await self._repository.submit(
                 server=server,
                 req=req,
@@ -369,7 +373,7 @@ class ToolCallApplicationService:
                 auto_denial_reason=decision.reason,
             )
             logger.info(
-                "tool call %s auto-denied (schema) server=%s tool=%s caller=%s reason=%r",
+                "tool call %s auto-denied (policy/schema) server=%s tool=%s caller=%s reason=%r",
                 record.tool_call_id,
                 record.server_id,
                 record.tool_name,

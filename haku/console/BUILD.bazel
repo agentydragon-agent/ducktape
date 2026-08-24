@@ -364,6 +364,16 @@ py_library(
 )
 
 py_library(
+    name = "kubectl_passthrough_policy",
+    srcs = ["kubectl_passthrough_policy.py"],
+    deps = [
+        ":kubernetes_authorization",
+        ":kubernetes_grant_models",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "kube_proxy_authorization",
     srcs = ["kube_proxy_authorization.py"],
     deps = [
@@ -709,6 +719,8 @@ py_library(
     name = "auto_approval",
     srcs = ["auto_approval.py"],
     deps = [
+        ":kubectl_passthrough_policy",
+        ":kubernetes_authorization",
         ":mcp_config",
         ":tool_call_actor",
         "//haku/console/tools:gmail_client",
@@ -723,6 +735,8 @@ py_library(
     deps = [
         ":auto_approval",
         ":config",
+        ":kubectl_passthrough_policy",
+        ":kubernetes_authorization",
         ":mcp_config",
         ":mcp_execution",
         ":provider_connection_registry",
@@ -1820,6 +1834,22 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx2",
         "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_kubectl_passthrough_policy",
+    srcs = ["test_kubectl_passthrough_policy.py"],
+    deps = [
+        ":conftest",
+        ":kubectl_passthrough_policy",
+        ":kubernetes_authorization",
+        ":tool_call_actor",
+        ":tool_call_service",
+        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
