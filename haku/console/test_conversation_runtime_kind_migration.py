@@ -46,9 +46,18 @@ def test_existing_conversations_are_backfilled_without_losing_chat_data(db_url: 
                 {"attachment_id": attachment_id, "conversation_id": conversation_id, "now": _NOW},
             )
 
+        apply_migrations(db_url, "0087")
+        with engine.connect() as conn:
+            with pytest.raises(DBAPIError):
+                conn.execute(
+                    text("UPDATE conversation SET runtime_kind = 'codex_app_server' WHERE conversation_id = :id"),
+                    {"id": conversation_id},
+                )
+            conn.rollback()
+
         apply_migrations(db_url)
 
-        with engine.connect() as conn:
+        with engine.begin() as conn:
             assert (
                 conn.execute(
                     text("SELECT runtime_kind FROM conversation WHERE conversation_id = :conversation_id"),
@@ -75,11 +84,32 @@ def test_existing_conversations_are_backfilled_without_losing_chat_data(db_url: 
                 )
             ).one() == ("text", "NO")
 
-            with pytest.raises(DBAPIError):
+            agent_id, access_profile_id = conn.execute(
+                text("SELECT agent_id, access_profile_id FROM conversation WHERE conversation_id = :id"),
+                {"id": conversation_id},
+            ).one()
+            codex_conversation_id = uuid4()
+            conn.execute(
+                text(
+                    "INSERT INTO conversation ("
+                    "conversation_id, operator_id, agent_id, access_profile_id, runtime_kind, created_at"
+                    ") VALUES (:id, :operator_id, :agent_id, :profile_id, 'codex_app_server', :now)"
+                ),
+                {
+                    "id": codex_conversation_id,
+                    "operator_id": operator_id,
+                    "agent_id": agent_id,
+                    "profile_id": access_profile_id,
+                    "now": _NOW,
+                },
+            )
+            assert (
                 conn.execute(
-                    text("UPDATE conversation SET runtime_kind = 'codex_app_server' WHERE conversation_id = :id"),
-                    {"id": conversation_id},
-                )
+                    text("SELECT runtime_kind FROM conversation WHERE conversation_id = :id"),
+                    {"id": codex_conversation_id},
+                ).scalar_one()
+                == "codex_app_server"
+            )
     finally:
         engine.dispose()
 
