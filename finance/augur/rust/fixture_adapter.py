@@ -7,7 +7,14 @@ from typing import Any, cast
 
 import numpy as np
 
-from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey, SecurityKey, SecuritySymbol
+from finance.augur.model.series import (
+    HomeValueKey,
+    LevelSeriesKey,
+    LocationId,
+    SecurityDistributionKey,
+    SecurityKey,
+    SecuritySymbol,
+)
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
@@ -17,6 +24,7 @@ from finance.augur.sim.scenario import (
     InitialAccountBalance,
     InitialLot,
     MortgageFinancing,
+    PropertySaleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
     RecurringPropertyCashflow,
@@ -63,6 +71,9 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
         elif series_id.startswith("security_distribution:"):
             asset_id = series_id.removeprefix("security_distribution:")
             key = SecurityDistributionKey(symbol=SecuritySymbol(asset_id))
+        elif series_id.startswith("home_value:"):
+            location_id = series_id.removeprefix("home_value:")
+            key = HomeValueKey(location_id=LocationId(location_id))
         else:
             continue
         snapshots = cast(int, series["snapshots"])
@@ -249,6 +260,12 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 ),
             )
             for spec in scenario_spec.get("scheduled_property_purchases", [])
+        ],
+        property_lifecycle_events=[
+            PropertySaleEvent(
+                month=spec["month"], property_id=spec["property_id"], closing_cost_pct=spec["closing_cost_bps"] / 100
+            )
+            for spec in scenario_spec.get("property_sales", [])
         ],
         property_tax_policies=[
             PropertyTaxPolicy(

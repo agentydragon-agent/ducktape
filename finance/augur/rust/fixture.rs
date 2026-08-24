@@ -50,6 +50,8 @@ pub struct ScenarioSpec {
     #[serde(default)]
     pub scheduled_property_purchases: Vec<ScheduledPropertyPurchaseSpec>,
     #[serde(default)]
+    pub property_sales: Vec<PropertySaleSpec>,
+    #[serde(default)]
     pub property_tax_policies: Vec<PropertyTaxPolicySpec>,
 }
 
@@ -241,6 +243,15 @@ pub struct ScheduledPropertyPurchaseSpec {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct PropertySaleSpec {
+    pub month: u32,
+    pub property_id: String,
+    /// Seller closing costs in basis points, where 10_000 is 100%.
+    pub closing_cost_bps: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct PropertyTaxPolicySpec {
     pub property_id: String,
     pub owner_agent_id: String,
@@ -392,6 +403,19 @@ pub struct PropertyPurchaseOutcome {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PropertySaleOutcome {
+    pub month: u32,
+    pub property_id: String,
+    pub gross_proceeds: Money,
+    pub mortgage_payoff: Money,
+    pub net_cash_to_owner: Money,
+    pub realized_gain: Money,
+    pub depreciation_recapture: Money,
+    pub section_121_exclusion: Money,
+    pub long_term_capital_gain: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MortgageOriginationOutcome {
     pub month: u32,
     pub cause_id: String,
@@ -432,6 +456,7 @@ pub struct RolloutOutput {
     pub tax_accruals: Vec<TaxAccrual>,
     pub distributions: Vec<DistributionOutcome>,
     pub property_purchases: Vec<PropertyPurchaseOutcome>,
+    pub property_sales: Vec<PropertySaleOutcome>,
     pub mortgage_originations: Vec<MortgageOriginationOutcome>,
     pub mortgage_payments: Vec<MortgagePaymentOutcome>,
     pub failed_month: Option<u32>,
@@ -454,6 +479,7 @@ pub struct RolloutSummary {
     pub tax_accrual_count: u64,
     pub distribution_count: u64,
     pub property_purchase_count: u64,
+    pub property_sale_count: u64,
     pub mortgage_payment_count: u64,
     pub failed_month: Option<u32>,
 }

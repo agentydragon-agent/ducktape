@@ -511,6 +511,59 @@ def _property_cashflow_gating_fixture() -> dict[str, Any]:
     return fixture
 
 
+def _property_sale_fixture() -> dict[str, Any]:
+    fixture = _financed_property_fixture()
+    fixture["rollout_count"] = 2
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 4
+    scenario["accounts"].extend(
+        [
+            {"account": {"agent_id": "tenant", "account_id": "checking"}, "opening_balance": 10_000},
+            {"account": {"agent_id": "gift", "account_id": "checking"}, "opening_balance": 1_000},
+        ]
+    )
+    scenario["scheduled_transfers"] = [
+        {
+            "month": 2,
+            "cause_id": "sale-month-generic-transfer",
+            "from": {"agent_id": "gift", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": 7,
+        }
+    ]
+    scenario["recurring_property_cashflows"] = [
+        {
+            "start_month": 0,
+            "end_month": 3,
+            "property_id": "home",
+            "cause_id": "rent",
+            "from": {"agent_id": "tenant", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": 1_000,
+        }
+    ]
+    scenario["property_sales"] = [{"month": 2, "property_id": "home", "closing_cost_bps": 600}]
+    fixture["series"] = [
+        {
+            "series_id": "home_value:sf",
+            "snapshots": 5,
+            "values": [
+                50_000_000,
+                50_000_000,
+                60_000_000,
+                60_000_000,
+                60_000_000,
+                50_000_000,
+                50_000_000,
+                55_000_000,
+                55_000_000,
+                55_000_000,
+            ],
+        }
+    ]
+    return fixture
+
+
 def _rust_run(fixture: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
     fixture_path = tmp_path / "fixture.json"
     output_path = tmp_path / "rust-output.json"
@@ -905,6 +958,73 @@ def test_rust_and_jax_match_property_cashflow_purchase_and_failure_gates(tmp_pat
         key=lambda row: (row["month_index"], row["cause_id"]),
     )
     assert rust_property_cashflows == legacy_property_cashflows
+
+
+def test_rust_and_jax_match_property_sale_lifecycle_and_rollout_values(tmp_path: Path) -> None:
+    fixture = _property_sale_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_cash = (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+    )
+    assert _rust_cash(rust).to_dicts() == legacy_cash.to_dicts()
+
+    legacy_sales = (
+        legacy.events_log.property_sale_events.select(
+            "rollout_index",
+            "month_index",
+            "property_id",
+            "gross_proceeds_quanta",
+            "mortgage_payoff_quanta",
+            "net_cash_to_owner_quanta",
+            "realized_gain_quanta",
+            "depreciation_recapture_quanta",
+            "section_121_exclusion_quanta",
+            "long_term_capital_gain_quanta",
+        )
+        .sort("rollout_index")
+        .to_dicts()
+    )
+    rust_sales = sorted(
+        [
+            {
+                "rollout_index": rollout["rollout_id"],
+                "month_index": sale["month"],
+                "property_id": sale["property_id"],
+                "gross_proceeds_quanta": sale["gross_proceeds"],
+                "mortgage_payoff_quanta": sale["mortgage_payoff"],
+                "net_cash_to_owner_quanta": sale["net_cash_to_owner"],
+                "realized_gain_quanta": sale["realized_gain"],
+                "depreciation_recapture_quanta": sale["depreciation_recapture"],
+                "section_121_exclusion_quanta": sale["section_121_exclusion"],
+                "long_term_capital_gain_quanta": sale["long_term_capital_gain"],
+            }
+            for rollout in rust["rollouts"]
+            for sale in rollout["property_sales"]
+        ],
+        key=lambda row: row["rollout_index"],
+    )
+    assert rust_sales == legacy_sales
+    assert [row["gross_proceeds_quanta"] for row in rust_sales] == [56_400_000, 51_700_000]
+
+    assert property_state(legacy).filter(pl.col("month_index") >= 3).is_empty()
+    assert liabilities(legacy).filter(pl.col("month_index") >= 3).is_empty()
+    for rollout in rust["rollouts"]:
+        post_sale = rollout["months"][3]
+        assert post_sale["properties"][0]["active"] is False
+        assert post_sale["mortgages"][0]["active"] is False
+        assert post_sale["mortgages"][0]["principal"] == 0
+        sale_month_causes = [entry["cause_id"] for entry in rollout["journal"] if entry["month"] == 2]
+        assert "property-sale:home" in sale_month_causes
+        assert "sale-month-generic-transfer" in sale_month_causes
+        assert "rent" not in sale_month_causes
+        assert "home-mortgage_payment_m2" not in sale_month_causes
+        assert "home_property_tax_m2" not in sale_month_causes
+        for entry in rollout["journal"]:
+            assert sum(posting["amount"] for posting in entry["postings"]) == 0
 
 
 @pytest.mark.parametrize("rollout_count", [1, 17])

@@ -7,8 +7,9 @@ use crate::{
     fixture::{
         AccountBalance, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture, InitialLotSpec,
         LotDisposition, MonthOutput, MortgageOriginationOutcome, MortgagePaymentOutcome,
-        MortgageState, ObligationOutcome, PopulationOutput, PropertyPurchaseOutcome, PropertyState,
-        RolloutOutput, RolloutSummary, SeriesSpec, SimulationOutput, TaxAccrual,
+        MortgageState, ObligationOutcome, PopulationOutput, PropertyPurchaseOutcome,
+        PropertySaleOutcome, PropertySaleSpec, PropertyState, RolloutOutput, RolloutSummary,
+        SeriesSpec, SimulationOutput, TaxAccrual,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
@@ -167,6 +168,12 @@ pub enum SimulationError {
         cause_id: String,
         property_id: String,
     },
+    #[error("property sale references unknown property {property_id:?}")]
+    UnknownPropertySale { property_id: String },
+    #[error("property {property_id:?} has multiple sale events")]
+    DuplicatePropertySale { property_id: String },
+    #[error("property sale for {property_id:?} has invalid month or closing costs")]
+    InvalidPropertySale { property_id: String },
     #[error("property tax policy for {property_id:?} has invalid rate or range")]
     InvalidPropertyTaxPolicy { property_id: String },
     #[error(transparent)]
@@ -223,6 +230,7 @@ struct Recorder {
     tax_accruals: Vec<TaxAccrual>,
     distributions: Vec<DistributionOutcome>,
     property_purchases: Vec<PropertyPurchaseOutcome>,
+    property_sales: Vec<PropertySaleOutcome>,
     mortgage_originations: Vec<MortgageOriginationOutcome>,
     mortgage_payments: Vec<MortgagePaymentOutcome>,
     journal_entry_count: u64,
@@ -230,6 +238,7 @@ struct Recorder {
     tax_accrual_count: u64,
     distribution_count: u64,
     property_purchase_count: u64,
+    property_sale_count: u64,
     mortgage_payment_count: u64,
 }
 
@@ -244,6 +253,7 @@ impl Recorder {
             tax_accruals: Vec::new(),
             distributions: Vec::new(),
             property_purchases: Vec::new(),
+            property_sales: Vec::new(),
             mortgage_originations: Vec::new(),
             mortgage_payments: Vec::new(),
             journal_entry_count: 0,
@@ -251,6 +261,7 @@ impl Recorder {
             tax_accrual_count: 0,
             distribution_count: 0,
             property_purchase_count: 0,
+            property_sale_count: 0,
             mortgage_payment_count: 0,
         }
     }
@@ -341,6 +352,19 @@ impl Recorder {
         Ok(())
     }
 
+    fn record_property_sale(&mut self, sale: PropertySaleOutcome) -> Result<(), SimulationError> {
+        self.property_sale_count =
+            self.property_sale_count
+                .checked_add(1)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "property sale count",
+                })?;
+        if self.capture_trace {
+            self.property_sales.push(sale);
+        }
+        Ok(())
+    }
+
     fn record_mortgage_payment(
         &mut self,
         payment: MortgagePaymentOutcome,
@@ -385,6 +409,7 @@ impl RolloutComputation {
             tax_accruals: self.recorder.tax_accruals,
             distributions: self.recorder.distributions,
             property_purchases: self.recorder.property_purchases,
+            property_sales: self.recorder.property_sales,
             mortgage_originations: self.recorder.mortgage_originations,
             mortgage_payments: self.recorder.mortgage_payments,
             failed_month: self.failed_month,
@@ -402,6 +427,7 @@ impl RolloutComputation {
             tax_accrual_count: self.recorder.tax_accrual_count,
             distribution_count: self.recorder.distribution_count,
             property_purchase_count: self.recorder.property_purchase_count,
+            property_sale_count: self.recorder.property_sale_count,
             mortgage_payment_count: self.recorder.mortgage_payment_count,
             failed_month: self.failed_month,
         }
@@ -513,7 +539,8 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             });
         }
         if (series.series_id.starts_with("security:")
-            || series.series_id.starts_with("security_distribution:"))
+            || series.series_id.starts_with("security_distribution:")
+            || series.series_id.starts_with("home_value:"))
             && let Some((index, value)) = series
                 .values
                 .iter()
@@ -864,6 +891,35 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             )?;
         }
     }
+    let mut property_sales = BTreeSet::new();
+    for sale in &fixture.scenario.property_sales {
+        validate_identifier("property sale", &sale.property_id)?;
+        validate_event_month(
+            "property sale",
+            &sale.property_id,
+            sale.month,
+            fixture.scenario.horizon_months,
+        )?;
+        let Some(purchase) = properties.get(&sale.property_id) else {
+            return Err(SimulationError::UnknownPropertySale {
+                property_id: sale.property_id.clone(),
+            });
+        };
+        if !property_sales.insert(sale.property_id.clone()) {
+            return Err(SimulationError::DuplicatePropertySale {
+                property_id: sale.property_id.clone(),
+            });
+        }
+        if sale.month <= purchase.month || sale.closing_cost_bps > 10_000 {
+            return Err(SimulationError::InvalidPropertySale {
+                property_id: sale.property_id.clone(),
+            });
+        }
+        let series_id = format!("home_value:{}", purchase.location_id);
+        if !series_ids.contains(&series_id) {
+            return Err(SimulationError::MissingSeries { series_id });
+        }
+    }
     let mut property_tax_months = BTreeSet::new();
     for policy in &fixture.scenario.property_tax_policies {
         let Some(purchase) = properties.get(&policy.property_id) else {
@@ -1090,6 +1146,11 @@ fn simulate_rollout(
             &purchase.buyer_agent_id,
             &purchase.property_id,
         ));
+        accounts.push(realized_gain_account(&purchase.buyer_agent_id));
+        accounts.push(property_basis_writeoff_account(
+            &purchase.buyer_agent_id,
+            &purchase.property_id,
+        ));
         accounts.push(property_sale_clearing_account(
             &purchase.seller_agent_id,
             &purchase.property_id,
@@ -1208,6 +1269,16 @@ fn simulate_rollout(
             }
             continue;
         }
+        execute_property_sales(
+            fixture,
+            rollout_id,
+            &mut ledger,
+            &mut recorder,
+            &mut tax_facts,
+            &mut properties,
+            &mut mortgages,
+            month,
+        )?;
         execute_distributions(
             fixture,
             rollout_id,
@@ -1376,6 +1447,146 @@ fn execute_distributions(
             asset_id: distribution.asset_id.clone(),
             units: Quantity(units),
             amount,
+        })?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_property_sales(
+    fixture: &Fixture,
+    rollout_id: u32,
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    properties: &mut [PropertyState],
+    mortgages: &mut [MortgageState],
+    month: u32,
+) -> Result<(), SimulationError> {
+    let mut sales: Vec<&PropertySaleSpec> = fixture
+        .scenario
+        .property_sales
+        .iter()
+        .filter(|sale| sale.month == month)
+        .collect();
+    sales.sort_by_key(|sale| &sale.property_id);
+    for sale in sales {
+        let Some(property_index) = properties
+            .iter()
+            .position(|property| property.property_id == sale.property_id && property.active)
+        else {
+            continue;
+        };
+        let property = &properties[property_index];
+        let purchase = fixture
+            .scenario
+            .scheduled_property_purchases
+            .iter()
+            .find(|purchase| purchase.property_id == sale.property_id)
+            .expect("validated property sale has a purchase");
+        let series_id = format!("home_value:{}", purchase.location_id);
+        let base_value = series_value(fixture, &series_id, rollout_id, 0)?;
+        let sale_value = series_value(fixture, &series_id, rollout_id, month)?;
+        let market_value = Money(mul_div_round_half_up(
+            purchase.purchase_price.0,
+            sale_value,
+            base_value,
+            "property market value",
+        )?);
+        let gross_proceeds = Money(mul_div_round_half_up(
+            market_value.0,
+            i64::from(10_000 - sale.closing_cost_bps),
+            10_000,
+            "property sale proceeds",
+        )?);
+        let mortgage_indices: Vec<_> = mortgages
+            .iter()
+            .enumerate()
+            .filter(|(_, mortgage)| mortgage.property_id == sale.property_id && mortgage.active)
+            .map(|(index, _)| index)
+            .collect();
+        let mortgage_payoff = mortgage_indices.iter().try_fold(Money(0), |total, index| {
+            total.checked_add(mortgages[*index].principal)
+        })?;
+        let net_cash = gross_proceeds.checked_sub(mortgage_payoff)?;
+        let realized_gain = gross_proceeds.checked_sub(purchase.purchase_price)?;
+        let long_term_capital_gain = Money(realized_gain.0.max(0));
+        let basis_writeoff = property
+            .adjusted_basis
+            .checked_sub(purchase.purchase_price)?;
+        let mut postings = vec![
+            Posting {
+                account: AccountRef::new(&purchase.buyer_agent_id, &purchase.buyer_account_id),
+                amount: net_cash,
+            },
+            Posting {
+                account: property_asset_account(&purchase.buyer_agent_id, &purchase.property_id),
+                amount: property.adjusted_basis.checked_neg()?,
+            },
+            Posting {
+                account: property_basis_writeoff_account(
+                    &purchase.buyer_agent_id,
+                    &purchase.property_id,
+                ),
+                amount: basis_writeoff,
+            },
+            Posting {
+                account: realized_gain_account(&purchase.buyer_agent_id),
+                amount: realized_gain.checked_neg()?,
+            },
+        ];
+        for index in &mortgage_indices {
+            let mortgage = &mortgages[*index];
+            postings.extend([
+                Posting {
+                    account: mortgage_liability_account(&mortgage.agent_id, &mortgage.liability_id),
+                    amount: mortgage.principal,
+                },
+                Posting {
+                    account: mortgage_receivable_account(
+                        &mortgage.counterparty_agent_id,
+                        &mortgage.liability_id,
+                    ),
+                    amount: mortgage.principal.checked_neg()?,
+                },
+                Posting {
+                    account: mortgage_funding_account(
+                        &mortgage.counterparty_agent_id,
+                        &mortgage.liability_id,
+                    ),
+                    amount: mortgage.principal,
+                },
+            ]);
+        }
+        recorder.apply_entry(
+            ledger,
+            JournalEntry {
+                month,
+                cause_id: format!("property-sale:{}", sale.property_id),
+                postings,
+            },
+        )?;
+        properties[property_index].active = false;
+        for index in mortgage_indices {
+            mortgages[index].principal = Money(0);
+            mortgages[index].active = false;
+        }
+        record_capital_gain(
+            tax_facts,
+            &purchase.buyer_agent_id,
+            long_term_capital_gain,
+            true,
+        )?;
+        recorder.record_property_sale(PropertySaleOutcome {
+            month,
+            property_id: sale.property_id.clone(),
+            gross_proceeds,
+            mortgage_payoff,
+            net_cash_to_owner: net_cash,
+            realized_gain,
+            depreciation_recapture: Money(0),
+            section_121_exclusion: Money(0),
+            long_term_capital_gain,
         })?;
     }
     Ok(())
@@ -2255,6 +2466,10 @@ fn realized_gain_account(agent_id: &str) -> AccountRef {
     AccountRef::new(agent_id, "income:realized-gain")
 }
 
+fn property_basis_writeoff_account(agent_id: &str, property_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, format!("expense:property-basis:{property_id}"))
+}
+
 fn tax_expense_account(agent_id: &str, jurisdiction_id: &str) -> AccountRef {
     AccountRef::new(agent_id, format!("expense:tax:{jurisdiction_id}"))
 }
@@ -2389,6 +2604,7 @@ mod tests {
                 tax_profiles: vec![],
                 distributions: vec![],
                 scheduled_property_purchases: vec![],
+                property_sales: vec![],
                 property_tax_policies: vec![],
             },
             series: vec![],
@@ -2591,6 +2807,7 @@ mod tests {
                 tax_profiles: vec![],
                 distributions: vec![],
                 scheduled_property_purchases: vec![],
+                property_sales: vec![],
                 property_tax_policies: vec![],
             },
             series: vec![SeriesSpec {
@@ -2792,6 +3009,7 @@ mod tests {
                 tax_profiles: vec![],
                 distributions: vec![],
                 scheduled_property_purchases: vec![],
+                property_sales: vec![],
                 property_tax_policies: vec![],
             },
             series: vec![SeriesSpec {
@@ -2858,6 +3076,7 @@ mod tests {
                 tax_profiles: vec![],
                 distributions: vec![],
                 scheduled_property_purchases: vec![],
+                property_sales: vec![],
                 property_tax_policies: vec![],
             },
             series: vec![],
@@ -2938,6 +3157,7 @@ mod tests {
                 tax_profiles: vec![],
                 distributions: vec![],
                 scheduled_property_purchases: vec![],
+                property_sales: vec![],
                 property_tax_policies: vec![],
             },
             series: vec![],
