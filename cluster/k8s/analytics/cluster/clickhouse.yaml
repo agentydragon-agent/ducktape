@@ -56,6 +56,24 @@ spec:
       grafana/quota: readonly
       grafana/grants/query:
         - GRANT SELECT ON aiquota.*
+      # The public-coder agent receives a non-secret placeholder only. Its
+      # dedicated Iron proxy replaces that placeholder in Basic auth before
+      # forwarding to the private ClusterIP service. Keep the account scoped
+      # to the AIQuota tenant tables: ClickHouse system metadata remains
+      # unavailable to the agent.
+      public_coder_analytics/password:
+        valueFrom:
+          secretKeyRef:
+            name: clickhouse-public-coder-credentials
+            key: password
+      public_coder_analytics/networks/ip:
+        - 0.0.0.0/0
+        - ::/0
+      public_coder_analytics/profile: readonly
+      public_coder_analytics/quota: readonly
+      public_coder_analytics/grants/query:
+        - GRANT SELECT ON aiquota.aiquota_windows
+        - GRANT SELECT ON aiquota.raw_http_observations
     profiles:
       readonly/readonly: 1
       readonly/max_memory_usage: 1073741824

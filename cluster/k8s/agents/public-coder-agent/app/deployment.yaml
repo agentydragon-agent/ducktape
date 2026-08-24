@@ -119,6 +119,14 @@ spec:
             # Authorization headers sent to the exact haku.allegedly.works host.
             - name: HAKU_CONSOLE_TOKEN
               value: "proxy-haku-console-placeholder"
+            # Native ClickHouse reader credentials for normalized and raw
+            # AIQuota history. This is deliberately a non-secret placeholder: the
+            # sibling Iron proxy swaps it only inside Authorization for the
+            # private ClickHouse ClusterIP host. See ../proxy/iron.yaml.
+            - name: CLICKHOUSE_PUBLIC_CODER_USER
+              value: "public_coder_analytics"
+            - name: CLICKHOUSE_PUBLIC_CODER_PASSWORD
+              value: "proxy-clickhouse-public-coder-password"
             # This placeholder grants access only when iron-proxy substitutes
             # it for aiquota.allegedly.works' two read-only API paths. The
             # actual shared bearer is mounted only into the proxy container.
@@ -172,9 +180,12 @@ spec:
               value: "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080"
             - name: HTTPS_PROXY
               value: "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080"
-            # LiteLLM is in-cluster and must not go through the proxy.
+            # LiteLLM is in-cluster and must not go through the proxy. Do not
+            # bypass every Service DNS name or the cluster Service CIDR:
+            # ClickHouse is intentionally sent through Iron so its password
+            # placeholder cannot reach the ClusterIP service unchanged.
             - name: NO_PROXY
-              value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
+              value: "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
             # The proxy terminates TLS, so its root must be trusted. The bundle
             # from ../proxy/trust-bundle.yaml is mounted over the system trust
             # store below, which covers every OpenSSL and GnuTLS client at once —

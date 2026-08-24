@@ -63,6 +63,18 @@ spec:
               protocol: TCP
             - port: "80"
               protocol: TCP
+    # The agent's normalized analytics reads leave the app through this Iron
+    # proxy, then use the private ClickHouse HTTP ClusterIP service. Do not
+    # grant this egress to the app Pod itself.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: analytics
+            k8s:app.kubernetes.io/name: clickhouse
+            k8s:app.kubernetes.io/instance: analytics
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP
     # The confined configuration, kept verbatim for restoration:
     #
     # # GitHub — clone, push to forks, and open pull requests via the REST API.

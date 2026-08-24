@@ -5,6 +5,7 @@ resources:
   - admin-credentials.sops.yaml
   - aiquota-credentials.sops.yaml
   - grafana-credentials.sops.yaml
+  - public-coder-credentials.sops.yaml
   - keeper.yaml
   - clickhouse.yaml
   - networkpolicy.yaml

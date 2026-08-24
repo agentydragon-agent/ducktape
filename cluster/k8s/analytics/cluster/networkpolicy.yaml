@@ -31,6 +31,19 @@ spec:
       ports:
         - port: 8123
           protocol: TCP
+    # The agent app itself cannot reach ClickHouse. Its credential-bearing
+    # egress proxy is the only cross-namespace client admitted for the native
+    # read-only public_coder_analytics account.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: public-coder-agent
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: public-coder-agent-proxy
+      ports:
+        - port: 8123
+          protocol: TCP
     - from:
         - namespaceSelector:
             matchLabels:

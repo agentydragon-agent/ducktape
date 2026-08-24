@@ -81,6 +81,30 @@ curl --fail-with-body \
 The actual bearer is reflected only into the trusted egress proxy, never into the OpenClaw
 container. Requests to other hosts, methods, or paths retain the useless placeholder.
 
+### ClickHouse analytics reader
+
+`CLICKHOUSE_PUBLIC_CODER_USER=public_coder_analytics` and
+`CLICKHOUSE_PUBLIC_CODER_PASSWORD` are the native ClickHouse reader identity for
+normalized and raw AIQuota history. The password value in the OpenClaw runner is a
+non-secret placeholder; Iron replaces it inside the HTTP Basic-auth header only
+for the private ClusterIP host
+`clickhouse-analytics.analytics.svc.cluster.local`. Do not print either value.
+
+Use the existing HTTP proxy and ClickHouse's HTTP endpoint normally, for
+example:
+
+```sh
+curl --fail-with-body --user "$CLICKHOUSE_PUBLIC_CODER_USER:$CLICKHOUSE_PUBLIC_CODER_PASSWORD" \
+  --data-binary 'SELECT provider, max(observed_at), count() FROM aiquota.aiquota_windows GROUP BY provider FORMAT JSON' \
+  http://clickhouse-analytics.analytics.svc.cluster.local:8123/
+```
+
+The native account has `SELECT` only on `aiquota.aiquota_windows` and
+`aiquota.raw_http_observations`, under the bounded ClickHouse `readonly` profile
+and quota. It has no `system.*`, DDL, or write access. `NO_PROXY` intentionally excludes the
+ClickHouse Service, so bypassing Iron would send the useless placeholder and
+fail; do not add `.svc.cluster.local` or the Service CIDR to it.
+
 ### Kubernetes RBAC
 
 Use the mounted kubeconfig and direct `kubectl`. Check uncertain operations with, for example:

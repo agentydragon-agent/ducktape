@@ -92,6 +92,18 @@ transforms:
             - host: "haku-kubeapi.allegedly.works"
         - source:
             type: env
+            var: CLICKHOUSE_PUBLIC_CODER_PASSWORD
+          replace:
+            # ClickHouse HTTP accepts Basic authentication. iron-proxy also
+            # replaces proxy_value within its base64 user:password payload, so
+            # the runner can use curl/clickhouse-client normally without ever
+            # receiving this dedicated account password.
+            proxy_value: "proxy-clickhouse-public-coder-password"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "clickhouse-analytics.analytics.svc.cluster.local"
+        - source:
+            type: env
             var: AIQUOTA_API_BEARER_TOKEN
           replace:
             # The API deliberately has one bearer for its normalized and raw
