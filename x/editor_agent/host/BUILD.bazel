@@ -30,6 +30,7 @@ py_binary(
 
 py_test(
     name = "test_runner_session",
+    size = "medium",
     srcs = ["test_runner_session.py"],
     data = ["//x/editor_agent/runtime:image_info"],
     requires_docker = True,
