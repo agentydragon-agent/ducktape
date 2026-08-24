@@ -655,6 +655,31 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
     assert "50.0% changed" in body
 
 
+def test_success_comment_body_warns_when_comparison_uses_fallback_baseline() -> None:
+    body = success_comment_body(
+        repository="r",
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        url="https://v/commits/sha/",
+        review_tests=[
+            ReviewTest(
+                target_label="//ex:visuals",
+                slug="ex-visuals-abcdef",
+                title="Example UI",
+                base_sha="fedcba9876543210fedcba9876543210fedcba98",
+                baseline_fallback=True,
+                summary=ClassificationCounts(modified=1),
+                assets=[],
+            )
+        ],
+        base_sha="f" * 40,
+    )
+
+    assert "[!WARNING]" in body
+    assert "exact PR-base visual baseline was unavailable" in body
+    assert "`fedcba98`" in body
+    assert "not attributable solely to this PR" in body
+
+
 def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
     review_tests = [
         ReviewTest(

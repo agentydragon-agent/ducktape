@@ -619,6 +619,29 @@ def _ci_failure_summary(ci_conclusion: str, ci_failures: list[str]) -> str:
     return f" Bazel CI concluded {ci_conclusion}; failed target details were unavailable."
 
 
+def _fallback_baseline_notice(review_tests: list[ReviewTest]) -> list[str]:
+    """Explain when a PR comparison could not use its exact base commit.
+
+    A per-target devel pointer is useful for showing a newly introduced visual
+    target, but it can lag the PR base.  Its differences must not be presented
+    as changes attributable solely to the PR.
+    """
+    fallbacks = [test for test in review_tests if test.baseline_fallback]
+    if not fallbacks:
+        return []
+    baselines = sorted({test.base_sha[:8] for test in fallbacks if test.base_sha})
+    target_count = len(fallbacks)
+    target_word = "target" if target_count == 1 else "targets"
+    baseline_word = "baseline" if len(baselines) == 1 else "baselines"
+    baseline_list = ", ".join(f"`{baseline}`" for baseline in baselines) or "an unavailable commit"
+    return [
+        "> [!WARNING]",
+        "> The exact PR-base visual baseline was unavailable. "
+        f"{target_count} {target_word} used the latest published devel {baseline_word} ({baseline_list}) instead.",
+        "> These differences may include visual changes already present on devel and are not attributable solely to this PR.",
+    ]
+
+
 def success_comment_body(
     *,
     repository: str,
@@ -636,6 +659,8 @@ def success_comment_body(
     plural = "" if target_count == 1 else "s"
     lines = [COMMENT_MARKER, f"## Visual review for [`{commit_sha[:8]}`]({commit_url})", ""]
     if notice := _ci_failure_notice(ci_conclusion, ci_failures):
+        lines += [*notice, ""]
+    if notice := _fallback_baseline_notice(review_tests):
         lines += [*notice, ""]
     if base_sha is None:
         lines += [
