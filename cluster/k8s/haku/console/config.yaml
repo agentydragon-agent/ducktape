@@ -34,7 +34,7 @@ recall_indexes:
 
 chat_runtimes:
   claude_code:
-    namespace: haku-claude-sandbox
+    namespace: haku-runtime-sandbox
     warm_pool: haku-claude
     cwd: /workspace
     session_ttl_seconds: 7200

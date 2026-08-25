@@ -55,6 +55,3 @@ subjects:
   - kind: ServiceAccount
     name: haku
     namespace: haku-sandbox
-  - kind: ServiceAccount
-    name: haku-claude
-    namespace: haku-claude-sandbox

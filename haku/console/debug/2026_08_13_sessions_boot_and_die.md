@@ -111,8 +111,8 @@ GROUP BY error ORDER BY count(*) DESC;
 
 ```bash
 # 2. Whether the pods are crashlooping, and what the runner said before it died.
-kubectl -n haku-claude-sandbox get pods -o wide          # RESTARTS is the tell
-kubectl -n haku-claude-sandbox logs <pod> --previous     # bootstrap output lives here
+kubectl -n haku-runtime-sandbox get pods -o wide          # RESTARTS is the tell
+kubectl -n haku-runtime-sandbox logs <pod> --previous     # bootstrap output lives here
 ```
 
 ```sql
@@ -222,7 +222,7 @@ ORDER BY created_at DESC;
 ```
 
 ```bash
-kubectl -n haku-claude-sandbox get pods       # note RESTARTS: this is the number that used to climb
+kubectl -n haku-runtime-sandbox get pods       # note RESTARTS: this is the number that used to climb
 kubectl -n haku-console delete pod <lease_holder>
 ```
 

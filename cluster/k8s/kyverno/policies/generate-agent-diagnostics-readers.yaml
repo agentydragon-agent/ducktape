@@ -59,9 +59,6 @@ spec:
             - kind: ServiceAccount
               name: haku
               namespace: haku-sandbox
-            - kind: ServiceAccount
-              name: haku-claude
-              namespace: haku-claude-sandbox
             - kind: Group
               name: oidc-ksbx-groups:kubectl-sandbox-users
               apiGroup: rbac.authorization.k8s.io
@@ -104,9 +101,6 @@ spec:
             - kind: ServiceAccount
               name: haku
               namespace: haku-sandbox
-            - kind: ServiceAccount
-              name: haku-claude
-              namespace: haku-claude-sandbox
             - kind: Group
               name: oidc-ksbx-groups:kubectl-sandbox-users
               apiGroup: rbac.authorization.k8s.io

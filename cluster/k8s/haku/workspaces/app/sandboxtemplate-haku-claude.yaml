@@ -6,7 +6,7 @@ apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
   name: haku-claude
-  namespace: haku-claude-sandbox
+  namespace: haku-runtime-sandbox
 spec:
   networkPolicyManagement: Unmanaged
   # Claims inject the session id and exact-session bearer under the runner name plus an MCP alias
@@ -17,17 +17,16 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: haku-harness-runner
+        haku.allegedly.works/access-profile-id: haku
     spec:
       dnsPolicy: ClusterFirst
-      # Haku's own Kubernetes identity, so `kubectl` works from the session the way it does
-      # from a haku-sandbox exec target. A second SA object only because a ServiceAccount is
-      # namespaced; the permissions are the haku SA's own binding, shared
-      # (cluster/k8s/haku/rbac/rolebinding-haku.yaml).
-      serviceAccountName: haku-claude
-      automountServiceAccountToken: true
+      # Console maps the exact-session bearer to Haku's pinned profile and SARs Haku's canonical
+      # compute identity before the separate proxy executes a request. No Kubernetes credential is
+      # mounted into this pod.
+      automountServiceAccountToken: false
       # Deliberately outside haku-sandbox: Haku's general compute authority must not inherit access
-      # to the Claude OAuth-substituting proxy — the CCNP that admits this namespace to it keys on
-      # the namespace, so the split is the fence.
+      # to the Claude OAuth-substituting proxy — the CCNP admits only this template's
+      # Haku access-profile label within the shared runtime namespace.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

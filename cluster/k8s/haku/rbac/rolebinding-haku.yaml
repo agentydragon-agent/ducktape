@@ -1,11 +1,7 @@
 # Bind Haku's shared compute identity to haku-sandbox-admin — full CRUD in haku-sandbox.
-# Used by the sandbox exec-target pods, the managed-agent worker, and the Console-owned
-# Claude runner alike.
-#
-# THREE SUBJECTS, ONE GRANT. A ServiceAccount is namespaced, so Haku's runtime identity exists once
-# per namespace it runs a pod in; its *permissions* do not. Both runtime subjects and Console's
-# deploy-owned access-profile group sit on this binding rather than parallel roles, so "what can
-# Haku do to the cluster" has one answer and one place to change.
+# The direct Haku ServiceAccount serves ordinary pods that carry Kubernetes credentials. Console-
+# launched CLI runners carry none; Console authorizes their exact-session Agent bearer by SARing the
+# deploy-owned access-profile group before the separate proxy executes an allowed request.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -19,10 +15,6 @@ subjects:
   - kind: ServiceAccount
     name: haku
     namespace: haku-sandbox
-  # cluster/k8s/haku/claude-namespace/serviceaccount.yaml — same agent, Console-owned runtime.
-  - kind: ServiceAccount
-    name: haku-claude
-    namespace: haku-claude-sandbox
   - kind: Group
     name: haku:access-profile:haku
     apiGroup: rbac.authorization.k8s.io

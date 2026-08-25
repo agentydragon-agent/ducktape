@@ -11,7 +11,11 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: haku-claude-sandbox
+              kubernetes.io/metadata.name: haku-runtime-sandbox
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: haku-harness-runner
+              haku.allegedly.works/access-profile-id: haku
       ports:
         - port: 8180
           protocol: TCP

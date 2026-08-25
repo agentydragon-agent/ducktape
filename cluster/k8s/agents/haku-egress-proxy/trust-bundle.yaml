@@ -26,6 +26,6 @@ spec:
           operator: In
           values:
             - haku-sandbox
-            - haku-claude-sandbox
+            - haku-runtime-sandbox
             - haku-openclaw-spike
             - haku-ci
