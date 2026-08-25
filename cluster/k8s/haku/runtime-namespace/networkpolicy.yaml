@@ -1,0 +1,11 @@
+# Console-owned harness runners accept no inbound connections. Their egress is selected by
+# access-profile pod labels in profile-owned CiliumClusterwideNetworkPolicies, so co-tenancy in
+# this namespace is capacity rather than authority.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-runtime-sandbox-ingress
+  namespace: haku-runtime-sandbox
+spec:
+  endpointSelector: {}
+  ingress: []

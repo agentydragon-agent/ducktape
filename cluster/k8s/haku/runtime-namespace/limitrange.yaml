@@ -1,8 +1,8 @@
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: haku-claude-sandbox-limits
-  namespace: haku-claude-sandbox
+  name: haku-runtime-sandbox-limits
+  namespace: haku-runtime-sandbox
 spec:
   limits:
     - max:

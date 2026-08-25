@@ -275,7 +275,7 @@ ALLOWLISTS: dict[str, Confined | IronConfined | Unconfined] = {
         | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
         dns_manifest="agents/haku-egress-proxy/openclaw-spike-cnp-egress.yaml",
     ),
-    # The console-owned Claude runner pool (`haku-claude-sandbox`). Still among the
+    # The console-owned Claude runner pool (`haku-runtime-sandbox`). Still among the
     # tightest fences in the cluster — no registries, because it builds nothing — but no
     # longer one host: it reaches GitHub as `agentydragon-agent`, with the PAT substituted
     # at the proxy so the sandbox never holds it. That is a write grant to every repo the

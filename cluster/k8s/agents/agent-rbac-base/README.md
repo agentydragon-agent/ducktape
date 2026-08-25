@@ -75,10 +75,12 @@ grants stay deliberately secret-free.
 
 Haku's durable Console Agent profile is represented to SubjectAccessReview as the synthetic,
 non-login group `haku:access-profile:haku`. The existing OIDC group
-`oidc-ksbx-groups:haku` and in-cluster `haku`/`haku-claude` ServiceAccounts remain the direct
-login/runtime identities. All four are co-subjected onto the same roles: full CRUD in
-`haku-sandbox`, plus general cluster diagnostics and safe log reading. The transport or runtime
-that authenticated Haku therefore does not select a different permission set:
+`oidc-ksbx-groups:haku` and in-cluster `haku` ServiceAccount remain the direct login/runtime
+identities for callers that carry Kubernetes credentials. All three are co-subjected onto the same
+roles: full CRUD in `haku-sandbox`, plus general cluster diagnostics and safe log reading. The
+transport or runtime that authenticated Haku therefore does not select a different permission set;
+Console-launched CLI runners carry no ServiceAccount token and use the synthetic group through the
+authorization proxy:
 
 - **`cluster-diagnostics-reader`, cluster-wide** (added as a subject on the shared-rbac
   ClusterRoleBinding). Secret-free: no `secrets`/`pods/log`/`configmaps`, so it grants Haku no
@@ -86,7 +88,7 @@ that authenticated Haku therefore does not select a different permission set:
   exfiltrate.
 - **Metadata and logs in explicitly classified namespaces**. GitOps-owned Namespace labels
   are the source of truth. The `generate-agent-diagnostics-readers` Kyverno policy generates
-  namespaced RoleBindings for both Haku groups, both Haku ServiceAccounts,
+  namespaced RoleBindings for both Haku groups, the direct Haku ServiceAccount,
   `kubectl-sandbox-users`, and the deploy-owned synthetic public-coder group.
 
 The labels are namespace-level access grants for the approved agent identities; the

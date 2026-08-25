@@ -30,7 +30,7 @@ resources:
   - cnp-haku-cloud-api-egress.yaml
   - cnp-haku-claude-egress.yaml
   - ccnp-haku-proxy-egress.yaml
-  - ccnp-haku-claude-sandbox-egress.yaml
+  - ccnp-haku-agent-egress.yaml
 
 configMapGenerator:
   - name: haku-claude-oauth-proxy-config

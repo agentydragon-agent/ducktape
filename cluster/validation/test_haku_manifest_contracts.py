@@ -26,9 +26,13 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     template_namespace = template["metadata"]["namespace"]
     console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
     runtime = console_config["chat_runtimes"]["claude_code"]
-    assert runtime["namespace"] == template_namespace
+    assert runtime["namespace"] == template_namespace == "haku-runtime-sandbox"
+    pod_template = template["spec"]["podTemplate"]
+    assert pod_template["metadata"]["labels"]["haku.allegedly.works/access-profile-id"] == "haku"
+    assert pod_template["spec"]["automountServiceAccountToken"] is False
+    assert "serviceAccountName" not in pod_template["spec"]
 
-    mounts = template["spec"]["podTemplate"]["spec"]["containers"][0]["volumeMounts"]
+    mounts = pod_template["spec"]["containers"][0]["volumeMounts"]
     ca_mount = one(mount for mount in mounts if mount["name"] == "egress-proxy-ca")
     assert str(PurePosixPath(runtime["ca_bundle"]).parent) == ca_mount["mountPath"]
 
@@ -38,14 +42,20 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]: peer for peer in peers
     }
     assert set(namespace_by_peer) == {template_namespace}
+    assert namespace_by_peer[template_namespace]["podSelector"]["matchLabels"] == {
+        "app.kubernetes.io/name": "haku-harness-runner",
+        "haku.allegedly.works/access-profile-id": "haku",
+    }
 
     general_egress = (k8s_dir / "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml").read_text()
     assert "haku-claude-oauth-proxy" not in general_egress
 
-    claude_egress_path = k8s_dir / "agents/haku-egress-proxy/ccnp-haku-claude-sandbox-egress.yaml"
-    claude_egress_text = claude_egress_path.read_text()
-    assert template_namespace in claude_egress_text
-    assert "haku-claude-oauth-proxy" in claude_egress_text
+    agent_egress_path = k8s_dir / "agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml"
+    agent_egress_text = agent_egress_path.read_text()
+    assert template_namespace in agent_egress_text
+    assert "haku.allegedly.works/access-profile-id: haku" in agent_egress_text
+    assert "haku-claude-oauth-proxy" in agent_egress_text
+    assert "kube-apiserver" not in agent_egress_text
 
     service = yaml.safe_load((k8s_dir / "haku/console/service.yaml").read_text())
     bridge_service_port = next(port for port in service["spec"]["ports"] if port["port"] == 9090)
@@ -56,17 +66,17 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     bridge_target_port = next(
         port["containerPort"] for port in server["ports"] if port["name"] == bridge_service_port["targetPort"]
     )
-    claude_egress = yaml.safe_load(claude_egress_text)
+    agent_egress = yaml.safe_load(agent_egress_text)
     console_rule = next(
         rule
-        for rule in claude_egress["spec"]["egress"]
+        for rule in agent_egress["spec"]["egress"]
         if rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("k8s:app.kubernetes.io/name") == "haku-console"
     )
     assert console_rule["toPorts"][0]["ports"] == [{"port": str(bridge_target_port), "protocol": "TCP"}]
 
     kube_proxy_rule = next(
         rule
-        for rule in claude_egress["spec"]["egress"]
+        for rule in agent_egress["spec"]["egress"]
         if rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("k8s:app.kubernetes.io/name")
         == "haku-kube-api-proxy"
     )
@@ -80,10 +90,17 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
             "matchLabels": {
                 "k8s:io.kubernetes.pod.namespace": template_namespace,
                 "k8s:app.kubernetes.io/name": "haku-harness-runner",
+                "k8s:haku.allegedly.works/access-profile-id": "haku",
             }
         }
     ]
     assert runner_ingress["toPorts"][0]["ports"] == [{"port": "8080", "protocol": "TCP"}]
+
+    haku_binding = yaml.safe_load((k8s_dir / "haku/rbac/rolebinding-haku.yaml").read_text())
+    assert haku_binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "haku", "namespace": "haku-sandbox"},
+        {"kind": "Group", "name": "haku:access-profile:haku", "apiGroup": "rbac.authorization.k8s.io"},
+    ]
 
     general_injection = (k8s_dir / "kyverno/policies/inject-haku-egress-proxy.yaml").read_text()
     assert "haku-claude-sandbox" not in general_injection
@@ -168,7 +185,7 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
     url = one(re.findall(r"HAKU_STATE_URL:-http://([a-z0-9-]+)\.([a-z0-9-]+):(\d+)/", script))
     _, namespace, port = url
 
-    egress = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/ccnp-haku-claude-sandbox-egress.yaml").read_text())
+    egress = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/ccnp-haku-agent-egress.yaml").read_text())
     allowed = {
         (rule["toEndpoints"][0]["matchLabels"]["k8s:io.kubernetes.pod.namespace"], ports["port"])
         for rule in egress["spec"]["egress"]
@@ -180,34 +197,30 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
 
 
 def test_haku_runtimes_and_access_profile_share_one_grant(k8s_dir: Path) -> None:
-    """Haku's runtimes and durable Agent profile must have one Kubernetes authority.
-
-    A ServiceAccount is namespaced, so the runtime identity exists twice; the authority must not.
-    Both pods' SAs and Console's synthetic access-profile group are subjects on the single
-    haku-sandbox-admin binding, and neither runtime namespace grants anything of its own — a second
-    binding would be a second answer, free to drift.
-    """
+    """Direct Haku pods and proxied runner sessions must have one Kubernetes authority."""
     binding = yaml.safe_load((k8s_dir / "haku/rbac/rolebinding-haku.yaml").read_text())
     role = yaml.safe_load((k8s_dir / "haku/rbac/role.yaml").read_text())
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
     subjects = {(s["kind"], s["name"], s.get("namespace")) for s in binding["subjects"]}
-    assert ("Group", "haku:access-profile:haku", None) in subjects
+    assert subjects == {("ServiceAccount", "haku", "haku-sandbox"), ("Group", "haku:access-profile:haku", None)}
 
-    for template_name, namespace in (
-        ("sandboxtemplate-haku.yaml", "haku-sandbox"),
-        ("sandboxtemplate-haku-claude.yaml", "haku-claude-sandbox"),
-    ):
-        spec = yaml.safe_load((k8s_dir / "haku/workspaces/app" / template_name).read_text())
-        pod = spec["spec"]["podTemplate"]["spec"]
-        assert pod["automountServiceAccountToken"] is True, template_name
-        assert ("ServiceAccount", pod["serviceAccountName"], namespace) in subjects, template_name
+    direct_template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku.yaml").read_text())
+    direct_pod = direct_template["spec"]["podTemplate"]["spec"]
+    assert direct_pod["automountServiceAccountToken"] is True
+    assert ("ServiceAccount", direct_pod["serviceAccountName"], "haku-sandbox") in subjects
 
-    # No grant inside the Claude namespace itself: full CRUD there would let a session create
-    # further pods behind the subscription-token proxy, which is what its isolation is for.
-    claude_ns = k8s_dir / "haku/claude-namespace"
+    runner_template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
+    runner_pod = runner_template["spec"]["podTemplate"]["spec"]
+    assert runner_template["metadata"]["namespace"] == "haku-runtime-sandbox"
+    assert runner_pod["automountServiceAccountToken"] is False
+    assert "serviceAccountName" not in runner_pod
+
+    # No grant inside the runtime namespace itself: full CRUD there would let a session create
+    # further pods behind a credential-mediating proxy, which is what its isolation is for.
+    runtime_ns = k8s_dir / "haku/runtime-namespace"
     kinds = {
         yaml.safe_load(path.read_text())["kind"]
-        for path in claude_ns.glob("*.yaml")
+        for path in runtime_ns.glob("*.yaml")
         if path.name != "kustomization.yaml"
     }
     assert not kinds & {"Role", "RoleBinding", "ClusterRole", "ClusterRoleBinding"}
@@ -289,7 +302,6 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
         ("Group", "oidc-ksbx-groups:haku", None),
         ("Group", "haku:access-profile:haku", None),
         ("ServiceAccount", "haku", "haku-sandbox"),
-        ("ServiceAccount", "haku-claude", "haku-claude-sandbox"),
     }
     public_coder_subject = ("Group", "haku:access-profile:public-coder", None)
 
@@ -507,7 +519,6 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         ("Group", "oidc-ksbx-groups:haku", None),
         ("Group", "haku:access-profile:haku", None),
         ("ServiceAccount", "haku", "haku-sandbox"),
-        ("ServiceAccount", "haku-claude", "haku-claude-sandbox"),
     }
     standing_binding_files = (
         agent_dir / "k8s-reader" / "role.yaml",

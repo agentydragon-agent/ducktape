@@ -5,7 +5,7 @@ Investigated 2026-08-10, alongside <auto_mode_classifier.md>.
 ## The path today — neither
 
 ```text
-Claude binary (haku-claude-sandbox pod)
+Claude binary (haku-runtime-sandbox pod)
   CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-proxy-haku-claude-placeholder"   ← a placeholder
   HTTPS_PROXY = haku-egress-proxy:8180
         │
