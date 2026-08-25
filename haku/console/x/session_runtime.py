@@ -43,10 +43,12 @@ from haku.console.x.runtime import (
     RuntimeClient,
     RuntimeLaunch,
     RuntimeMcpServer,
+    RuntimeNotConfiguredError,
     RuntimeRegistry,
     RuntimeWakeWatcher,
     TurnCompletion,
     TurnProjectionSeed,
+    UnsupportedRuntimeError,
 )
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
@@ -510,6 +512,24 @@ class SessionService:
         return report
 
     async def handle_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
+        # Resolve execution resources before bridge authentication takes the session lease. During
+        # a rolling update an older replica can read the new immutable session identity but cannot
+        # execute its runtime. A retryable denial lets the runner find a capable replica without
+        # the old one first marking the session Ready and holding its lease until expiry.
+        try:
+            configured = await self._configured(session_id)
+        except (RuntimeNotConfiguredError, UnsupportedRuntimeError):
+            logger.info(
+                "session %s targets a runtime this replica cannot execute; telling the runner to retry", session_id
+            )
+            await websocket.send_denial_response(
+                Response(status_code=503, content=b"session runtime is not configured on this replica")
+            )
+            return
+        except KeyError:
+            await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
+            return
+
         authentication = await self._store.authenticate_bridge(session_id, bearer)
         if authentication == BridgeAuthentication.HELD:
             # **A denial response, not a close.** uvicorn renders any pre-`accept()` close as
@@ -535,7 +555,6 @@ class SessionService:
         # **Read before the socket is accepted**, which is what stops a frame being both replayed
         # here and delivered fresh: `RolloutRecorder.received` records a frame at the moment
         # the runtime client's reader routes it, and nothing is being read on this connection yet.
-        configured = await self._configured(session_id)
         runtime = configured.adapter
         resources = configured.resources
         resumed = await self._store.adopt_open_turn(session_id)
