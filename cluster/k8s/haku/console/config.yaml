@@ -3,6 +3,12 @@
 # Console-owned Claude Agent Sandbox runtime. Every value is explicit deployment
 # wiring; the application deliberately has no topology/path/proxy defaults. The
 # placeholder is non-secret—the real OAuth bearer exists only in iron-proxy.
+settings:
+  # New BaseSettings replicas load this section from HAKU_CONSOLE_CONFIG_FILE. Old
+  # ConsoleConfigFile parsers ignore the independent top-level section during rolling deployment.
+  runner_kubernetes_proxy_url: http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080
+  haku_agent_workspace_setup: /usr/local/bin/haku-sandbox-setup.sh
+
 git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
 recall_indexes:
   # `index_id` is the durable search/grant boundary. Source and remote configuration belong in

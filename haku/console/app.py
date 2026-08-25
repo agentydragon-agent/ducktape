@@ -113,6 +113,7 @@ from haku.console.x.session_store import SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.recall_index.git_tree import configure_ca_trust
 from haku.recall_index.openai_embedder import OpenAIEmbedder
+from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
@@ -301,6 +302,11 @@ def create_app(
         )
 
     runtime_registry: console_runtime.RuntimeRegistry
+    runner_environment = (
+        {}
+        if settings.runner_kubernetes_proxy_url is None
+        else {KUBERNETES_PROXY_URL_ENV: settings.runner_kubernetes_proxy_url}
+    )
     if claude_runtime is not None:
         try:
             claude_profile_id = static_by_id[claude_runtime.mcp_static_agent_id].access_profile_id
@@ -322,6 +328,14 @@ def create_app(
             system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
             agent_id=claude_runtime.mcp_static_agent_id,
             access_profile_id=claude_profile_id,
+            execution_environment={
+                **runner_environment,
+                **(
+                    {}
+                    if settings.haku_agent_workspace_setup is None
+                    else {RUNNER_SETUP_ENV: str(settings.haku_agent_workspace_setup)}
+                ),
+            },
         )
         runtime_registry = runtime_catalog.execution_registry(registration)
     else:

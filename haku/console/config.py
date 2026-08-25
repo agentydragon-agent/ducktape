@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
@@ -500,6 +501,24 @@ class Settings(BaseSettings):
     # HAKU_CONSOLE_LAUNCH_ROUTINE__{ROUTINE_ID,TOKEN}.
     model_config = SettingsConfigDict(env_prefix="HAKU_CONSOLE_", env_nested_delimiter="__")
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Load non-secret deployment settings from shared Console YAML below env overrides."""
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        if config_file := os.environ.get("HAKU_CONSOLE_CONFIG_FILE"):
+            sources.append(
+                YamlConfigSettingsSource(settings_cls, yaml_file=config_file, yaml_config_section="settings")
+            )
+        sources.append(file_secret_settings)
+        return tuple(sources)
+
     # Optional directory holding the built React SPA (index.html + assets), served
     # same-origin by FastAPI for direct local/dev fallback. Production leaves this
     # unset and serves the SPA from the haku-console-static nginx image.
@@ -535,6 +554,12 @@ class Settings(BaseSettings):
     # policies, static machine `agents` (id + env-referenced bearer + operator subject + policy),
     # Claude runtime wiring, and the `hostexec` host map (in-scope machines + exec URLs/audiences).
     config_file: Path
+
+    # Non-secret runner topology selected by Console for every launched Agent. The runner turns
+    # this into an ephemeral tokenFile kubeconfig backed by the exact-session bearer.
+    runner_kubernetes_proxy_url: str | None = None
+    # Haku's Agent-owned workspace bootstrap inside the shared runner image.
+    haku_agent_workspace_setup: Path | None = None
 
     # Shared haku-console Postgres database. Required: it holds the MCP approval audit/result
     # ledger and the operator OAuth token store — the console does not run without them. Both

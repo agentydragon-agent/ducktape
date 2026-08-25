@@ -151,6 +151,17 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    # Console-launched Claude runners use the same exact-session authorization boundary through
+    # the in-cluster Service. Namespace scope is retained until the neutral runtime-namespace
+    # follow-up introduces access-profile labels.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-claude-sandbox
+            k8s:app.kubernetes.io/name: haku-harness-runner
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

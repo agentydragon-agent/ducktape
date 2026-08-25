@@ -16,6 +16,8 @@ from typing import Annotated, Any, Final, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 FINE_GRAINED_TOOL_STREAMING_ENV = "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING"
+KUBERNETES_PROXY_URL_ENV = "HAKU_KUBERNETES_PROXY_URL"
+RUNNER_SETUP_ENV = "HAKU_RUNNER_SETUP"
 
 # Carried on the ``start`` frame only: the version is a property of the connection that its first
 # frame settles.
