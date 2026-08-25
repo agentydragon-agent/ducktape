@@ -211,6 +211,21 @@ pub enum SimulationError {
         account_id: String,
         asset_id: String,
     },
+    #[error("distribution {agent_id}:{account_id}:{asset_id} has invalid tax-character fractions")]
+    InvalidDistributionTaxCharacter {
+        agent_id: String,
+        account_id: String,
+        asset_id: String,
+    },
+    #[error(
+        "distribution {agent_id}:{account_id}:{asset_id} references unknown issuer jurisdiction {jurisdiction_id:?}"
+    )]
+    UnknownDistributionIssuer {
+        agent_id: String,
+        account_id: String,
+        asset_id: String,
+        jurisdiction_id: String,
+    },
     #[error("duplicate location id {location_id:?}")]
     DuplicateLocation { location_id: String },
     #[error("property purchase {cause_id:?} references unknown location {location_id:?}")]
@@ -1085,6 +1100,38 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                 asset_id: pool.2,
             });
         }
+        let fraction_total = distribution
+            .tax_character
+            .iter()
+            .map(|slice| i128::from(slice.fraction_ppb))
+            .sum::<i128>();
+        if distribution.tax_character.is_empty()
+            || distribution.tax_character.iter().any(|slice| {
+                let reconstructed = ((slice.fraction_ppb as f64 / RATE_SCALE as f64)
+                    * RATE_SCALE as f64)
+                    .round() as i64;
+                slice.fraction_ppb <= 0 || reconstructed != slice.fraction_ppb
+            })
+            || fraction_total != i128::from(RATE_SCALE)
+        {
+            return Err(SimulationError::InvalidDistributionTaxCharacter {
+                agent_id: distribution.agent_id.clone(),
+                account_id: distribution.holding_account_id.clone(),
+                asset_id: distribution.asset_id.clone(),
+            });
+        }
+        for slice in &distribution.tax_character {
+            if let Some(issuer) = &slice.issuer_jurisdiction_id
+                && !jurisdiction_levels.contains_key(issuer)
+            {
+                return Err(SimulationError::UnknownDistributionIssuer {
+                    agent_id: distribution.agent_id.clone(),
+                    account_id: distribution.holding_account_id.clone(),
+                    asset_id: distribution.asset_id.clone(),
+                    jurisdiction_id: issuer.clone(),
+                });
+            }
+        }
         validate_account(
             &accounts,
             &AccountRef::new(&distribution.agent_id, &distribution.to_account_id),
@@ -1820,6 +1867,7 @@ fn simulate_rollout(
             &mut ledger,
             &mut recorder,
             &lots,
+            &mut tax_facts,
             month,
         )?;
         execute_property_purchases(
@@ -1960,6 +2008,7 @@ fn execute_distributions(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     lots: &[LotState],
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
     month: u32,
 ) -> Result<(), SimulationError> {
     for distribution in &fixture.scenario.distributions {
@@ -1985,33 +2034,54 @@ fn execute_distributions(
             rollout_id,
             month,
         )?;
-        let amount = Money(mul_div_round_half_up(
+        let total_amount = Money(mul_div_round_half_up(
             per_unit,
             units,
             scale,
             "security distribution",
         )?);
-        let cause_id = format!(
-            "distribution:{}:{}:m{month}",
-            distribution.agent_id, distribution.asset_id
-        );
-        transfer_money(
-            ledger,
-            recorder,
-            month,
-            &cause_id,
-            &AccountRef::new(EXTERNAL_AGENT, "boundary"),
-            &AccountRef::new(&distribution.agent_id, &distribution.to_account_id),
-            amount,
-        )?;
-        recorder.record_distribution(DistributionOutcome {
-            month,
-            agent_id: distribution.agent_id.clone(),
-            holding_account_id: distribution.holding_account_id.clone(),
-            asset_id: distribution.asset_id.clone(),
-            units: Quantity(units),
-            amount,
-        })?;
+        for (slice_index, slice) in distribution.tax_character.iter().enumerate() {
+            let amount = Money(mul_div_round_half_up(
+                total_amount.0,
+                slice.fraction_ppb,
+                RATE_SCALE,
+                "security distribution tax slice",
+            )?);
+            let cause_id = format!(
+                "distribution:{}:{}:s{slice_index}:m{month}",
+                distribution.agent_id, distribution.asset_id
+            );
+            transfer_money(
+                ledger,
+                recorder,
+                month,
+                &cause_id,
+                &AccountRef::new(EXTERNAL_AGENT, "boundary"),
+                &AccountRef::new(&distribution.agent_id, &distribution.to_account_id),
+                amount,
+            )?;
+            record_interest_income(
+                fixture,
+                tax_facts,
+                &distribution.agent_id,
+                slice.issuer_jurisdiction_id.as_deref(),
+                jurisdiction_level(fixture, slice.issuer_jurisdiction_id.as_deref()),
+                amount,
+            )?;
+            recorder.record_distribution(DistributionOutcome {
+                month,
+                agent_id: distribution.agent_id.clone(),
+                holding_account_id: distribution.holding_account_id.clone(),
+                asset_id: distribution.asset_id.clone(),
+                slice_index: u32::try_from(slice_index).map_err(|_| ArithmeticError::Overflow {
+                    operation: "distribution slice index",
+                })?,
+                fraction_ppb: slice.fraction_ppb,
+                issuer_jurisdiction_id: slice.issuer_jurisdiction_id.clone(),
+                units: Quantity(units),
+                amount,
+            })?;
+        }
     }
     Ok(())
 }
@@ -3708,21 +3778,22 @@ fn bond_states(
         .collect()
 }
 
-fn record_bond_interest(
+fn record_interest_income(
     fixture: &Fixture,
     tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
-    bond: &BondSpec,
+    recipient_agent_id: &str,
+    issuer_jurisdiction_id: Option<&str>,
+    issuer_level: Option<JurisdictionLevel>,
     amount: Money,
 ) -> Result<(), SimulationError> {
-    let issuer_level = bond_issuer_level(fixture, bond);
     for profile in fixture
         .scenario
         .tax_profiles
         .iter()
-        .filter(|profile| profile.agent_id == bond.agent_id)
+        .filter(|profile| profile.agent_id == recipient_agent_id)
     {
         for rules in &profile.jurisdictions {
-            if rules.taxes_interest_from(bond.issuer_jurisdiction_id.as_deref(), issuer_level) {
+            if rules.taxes_interest_from(issuer_jurisdiction_id, issuer_level) {
                 let facts = tax_facts
                     .get_mut(&(profile.agent_id.clone(), rules.jurisdiction_id.clone()))
                     .expect("validated tax facts must exist for every profile jurisdiction");
@@ -3733,8 +3804,11 @@ fn record_bond_interest(
     Ok(())
 }
 
-fn bond_issuer_level(fixture: &Fixture, bond: &BondSpec) -> Option<JurisdictionLevel> {
-    let issuer = bond.issuer_jurisdiction_id.as_deref()?;
+fn jurisdiction_level(
+    fixture: &Fixture,
+    issuer_jurisdiction_id: Option<&str>,
+) -> Option<JurisdictionLevel> {
+    let issuer = issuer_jurisdiction_id?;
     fixture
         .scenario
         .jurisdictions
@@ -3787,7 +3861,14 @@ fn execute_bonds(
         }
         let income = coupon.checked_add(accretion)?;
         if income != Money(0) {
-            record_bond_interest(fixture, tax_facts, bond, income)?;
+            record_interest_income(
+                fixture,
+                tax_facts,
+                &bond.agent_id,
+                bond.issuer_jurisdiction_id.as_deref(),
+                jurisdiction_level(fixture, bond.issuer_jurisdiction_id.as_deref()),
+                income,
+            )?;
         }
         if coupon != Money(0) || accretion != Money(0) || redemption != Money(0) {
             recorder.record_bond_cashflow(BondCashflowOutcome {
@@ -3955,9 +4036,10 @@ fn account_balances(ledger: &Ledger, failed: bool) -> Vec<AccountBalance> {
 #[cfg(test)]
 mod tests {
     use crate::fixture::{
-        AccountSpec, BondSpec, InitialLotSpec, JurisdictionIdentitySpec, LocationSpec,
-        MortgageFinancingSpec, ObligationSpec, PropertyTaxPolicySpec, RecurringObligationSpec,
-        ScenarioSpec, ScheduledPropertyPurchaseSpec, ScheduledSaleSpec, ScheduledTransferSpec,
+        AccountSpec, BondSpec, DistributionSpec, DistributionTaxSliceSpec, InitialLotSpec,
+        JurisdictionIdentitySpec, LocationSpec, MortgageFinancingSpec, ObligationSpec,
+        PropertyTaxPolicySpec, RecurringObligationSpec, ScenarioSpec,
+        ScheduledPropertyPurchaseSpec, ScheduledSaleSpec, ScheduledTransferSpec,
         SeriesIndexedAmountKind, SeriesIndexedAmountSpec, SeriesSpec,
     };
 
@@ -4362,6 +4444,49 @@ mod tests {
         assert!(matches!(
             simulate(&fixture),
             Err(SimulationError::UnknownAccountReference { .. })
+        ));
+    }
+
+    #[test]
+    fn distribution_tax_character_requires_a_complete_known_issuer_split() {
+        let mut fixture = minimal_fixture();
+        fixture.scenario.initial_lots = vec![InitialLotSpec {
+            lot_id: "bnd".into(),
+            agent_id: "alice".into(),
+            account_id: "brokerage".into(),
+            asset_id: "bnd".into(),
+            purchase_month: -1,
+            quantity_scale: 1_000_000,
+            units: Quantity(1_000_000),
+            basis: Money(1),
+        }];
+        fixture.scenario.distributions = vec![DistributionSpec {
+            agent_id: "alice".into(),
+            holding_account_id: "brokerage".into(),
+            asset_id: "bnd".into(),
+            to_account_id: "checking".into(),
+            tax_character: vec![DistributionTaxSliceSpec {
+                fraction_ppb: 400_000_000,
+                issuer_jurisdiction_id: None,
+            }],
+        }];
+        fixture.series = vec![SeriesSpec {
+            series_id: "security_distribution:bnd".into(),
+            snapshots: 2,
+            values: vec![1, 1],
+        }];
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::InvalidDistributionTaxCharacter { .. })
+        ));
+
+        fixture.scenario.distributions[0].tax_character = vec![DistributionTaxSliceSpec {
+            fraction_ppb: RATE_SCALE,
+            issuer_jurisdiction_id: Some("federal_us".into()),
+        }];
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::UnknownDistributionIssuer { .. })
         ));
     }
 

@@ -33,7 +33,9 @@ The differential suite currently proves exact integer agreement for:
   transfers, property cashflows, and obligations, including rollout-specific
   monthly or periodic reset boundaries and exact half-up ratio scaling;
 - initial tax lots and FIFO scheduled sales;
-- monthly security distributions based on currently held units;
+- monthly security distributions based on currently held units, including
+  independently rounded issuer tax-character slices for Treasury, municipal,
+  corporate, and mixed funds;
 - par-only held-to-maturity nominal bonds and TIPS, including finite coupon
   schedules, par redemption, CPI-indexed principal, deflation-floor redemption,
   phantom accretion income, and federal/state/own-issue interest exemptions;
@@ -81,10 +83,16 @@ legacy engine's indexed-principal and fixed-point period-rate path. Government
 issuer levels come from one scenario-level jurisdiction identity registry,
 rather than duplicated caller-supplied metadata on each bond.
 
+Distribution tax-character fractions use exact PPB weights that must be
+positive, sum to one, and preserve the same issuer identity contract as bond
+interest. Each slice is paid, journaled, attributed, and routed through the
+jurisdiction's interest-exemption policy independently; the slice sum is the
+fund's cash payout.
+
 Still missing before replacement is plausible:
 
 - broader modeled tax facts and complete deduction policy;
-- policy-driven purchases and taxable distribution character;
+- policy-driven purchases;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax/SALT mixed-use splitting, mortgage principal-cap policies, and
   §121 primary-residence exclusion;

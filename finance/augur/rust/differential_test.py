@@ -24,6 +24,7 @@ from finance.augur.sim.test_state_helpers import (
     asset_lots,
     cash_balances,
     liabilities,
+    ordinary_income_ytd,
     property_stakes,
     property_state,
     rollout_status,
@@ -326,6 +327,54 @@ def _distribution_fixture() -> dict[str, Any]:
     fixture["series"] = [
         {"series_id": "security:vti", "snapshots": 4, "values": [10_000] * 8},
         {"series_id": "security_distribution:vti", "snapshots": 4, "values": [100, 100, 100, 100, 200, 300, 400, 500]},
+    ]
+    return fixture
+
+
+def _distribution_tax_fixture() -> dict[str, Any]:
+    fixture = _distribution_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 12
+    scenario["jurisdictions"] = [
+        {"jurisdiction_id": "federal_us", "level": "federal"},
+        {"jurisdiction_id": "california", "level": "state"},
+    ]
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["initial_lots"] = [
+        {
+            "lot_id": "alice-bnd",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "bnd",
+            "purchase_month": -24,
+            "quantity_scale": 1_000_000,
+            "units": 10_000_000_000,
+            "basis": 73_000_000,
+        }
+    ]
+    scenario["distributions"] = [
+        {
+            "agent_id": "alice",
+            "holding_account_id": "brokerage",
+            "asset_id": "bnd",
+            "to_account_id": "checking",
+            "tax_character": [
+                {"fraction_ppb": 400_000_000, "issuer_jurisdiction_id": "federal_us"},
+                {"fraction_ppb": 600_000_000},
+            ],
+        }
+    ]
+    tax_profile = _tax_fixture()["scenario"]["tax_profiles"][0]
+    federal, california = tax_profile["jurisdictions"]
+    federal.update({"exempt_interest_from_levels": ["state"], "exempts_own_issue": False})
+    california.update({"exempt_interest_from_levels": ["federal"], "exempts_own_issue": True})
+    scenario["tax_profiles"] = [tax_profile]
+    fixture["series"] = [
+        {"series_id": "security:bnd", "snapshots": 13, "values": [7_300] * 26},
+        {"series_id": "security_distribution:bnd", "snapshots": 13, "values": [20] * 13 + [30] * 13},
     ]
     return fixture
 
@@ -1408,6 +1457,81 @@ def test_rust_and_jax_match_monthly_security_distributions(tmp_path: Path) -> No
         [200, 200, 200],
         [400, 600, 800],
     ]
+
+
+def test_rust_and_jax_match_distribution_tax_character_slices(tmp_path: Path) -> None:
+    fixture = _distribution_tax_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    assert _rust_cash(rust).to_dicts() == (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+        .to_dicts()
+    )
+
+    legacy_tax = (
+        legacy.events_log.tax_breakdowns.select(
+            "rollout_index",
+            "month_index",
+            "agent_id",
+            "jurisdiction_id",
+            "ordinary_income_quanta",
+            "ordinary_taxable_quanta",
+            "ordinary_tax_quanta",
+            "total_tax_quanta",
+        )
+        .sort("rollout_index", "jurisdiction_id")
+        .to_dicts()
+    )
+    rust_tax = sorted(
+        [
+            {
+                "rollout_index": rollout["rollout_id"],
+                "month_index": accrual["month"],
+                "agent_id": accrual["agent_id"],
+                "jurisdiction_id": accrual["jurisdiction_id"],
+                "ordinary_income_quanta": accrual["ordinary_income"],
+                "ordinary_taxable_quanta": accrual["ordinary_taxable"],
+                "ordinary_tax_quanta": accrual["ordinary_tax"],
+                "total_tax_quanta": accrual["total_tax"],
+            }
+            for rollout in rust["rollouts"]
+            for accrual in rollout["tax_accruals"]
+        ],
+        key=lambda row: (row["rollout_index"], row["jurisdiction_id"]),
+    )
+    assert rust_tax == legacy_tax
+
+    legacy_sources = (
+        ordinary_income_ytd(legacy)
+        .filter((pl.col("month_index") == 11) & (pl.col("ordinary_income_quanta") != 0))
+        .select("rollout_index", "income_source", "ordinary_income_quanta")
+        .sort("rollout_index", "income_source")
+        .to_dicts()
+    )
+    rust_sources: list[dict[str, Any]] = []
+    for rollout in rust["rollouts"]:
+        by_source: dict[str, int] = {}
+        for outcome in rollout["distributions"]:
+            if outcome["month"] >= 11:
+                continue
+            issuer = outcome["issuer_jurisdiction_id"]
+            source = f"interest:{issuer}" if issuer is not None else "interest:corporate"
+            by_source[source] = by_source.get(source, 0) + outcome["amount"]
+        rust_sources.extend(
+            {"rollout_index": rollout["rollout_id"], "income_source": source, "ordinary_income_quanta": amount}
+            for source, amount in sorted(by_source.items())
+        )
+    assert rust_sources == legacy_sources
+    assert [outcome["amount"] for outcome in rust["rollouts"][0]["distributions"][:2]] == [80_000, 120_000]
+    assert [outcome["amount"] for outcome in rust["rollouts"][1]["distributions"][:2]] == [120_000, 180_000]
+    assert all(
+        sum(posting["amount"] for posting in entry["postings"]) == 0
+        for rollout in rust["rollouts"]
+        for entry in rollout["journal"]
+    )
 
 
 def test_rust_and_jax_match_nominal_bonds_tips_and_issuer_tax_routing(tmp_path: Path) -> None:

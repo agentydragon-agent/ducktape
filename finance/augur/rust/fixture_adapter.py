@@ -333,7 +333,21 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 agent_id=spec["agent_id"],
                 holding_account_id=spec["holding_account_id"],
                 to_account_id=spec["to_account_id"],
-                tax_character=(DistributionTaxSlice(fraction=1.0),),
+                tax_character=tuple(
+                    DistributionTaxSlice(
+                        fraction=_ppb_float(
+                            tax_slice["fraction_ppb"],
+                            context=(
+                                f"distribution {spec['agent_id']}/{spec['holding_account_id']}/"
+                                f"{spec['asset_id']} tax fraction"
+                            ),
+                        ),
+                        issuer_jurisdiction_id=tax_slice.get("issuer_jurisdiction_id"),
+                    )
+                    for tax_slice in spec.get(
+                        "tax_character", [{"fraction_ppb": 1_000_000_000, "issuer_jurisdiction_id": None}]
+                    )
+                ),
             )
             for spec in scenario_spec.get("distributions", [])
         ],

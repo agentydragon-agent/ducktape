@@ -308,6 +308,23 @@ pub struct DistributionSpec {
     pub holding_account_id: String,
     pub asset_id: String,
     pub to_account_id: String,
+    #[serde(default = "default_distribution_tax_character")]
+    pub tax_character: Vec<DistributionTaxSliceSpec>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DistributionTaxSliceSpec {
+    pub fraction_ppb: i64,
+    #[serde(default)]
+    pub issuer_jurisdiction_id: Option<String>,
+}
+
+fn default_distribution_tax_character() -> Vec<DistributionTaxSliceSpec> {
+    vec![DistributionTaxSliceSpec {
+        fraction_ppb: 1_000_000_000,
+        issuer_jurisdiction_id: None,
+    }]
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -570,6 +587,9 @@ pub struct DistributionOutcome {
     pub agent_id: String,
     pub holding_account_id: String,
     pub asset_id: String,
+    pub slice_index: u32,
+    pub fraction_ppb: i64,
+    pub issuer_jurisdiction_id: Option<String>,
     pub units: Quantity,
     pub amount: Money,
 }
