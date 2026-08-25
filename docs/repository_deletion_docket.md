@@ -1,459 +1,450 @@
-# Repository simplification docket
+# General repository-cleanup docket
 
-This is a living, ranked list of changes that could make Ducktape cheaper to
-understand, edit, debug, and review.
+This is a fresh, ranked cleanup audit of Ducktape. It covers stale production
+code, complete experimental subsystems, broken feature surfaces, obsolete CI and
+test machinery, compatibility shims, and misleading documentation.
 
-The first version of this docket over-weighted bytes and raw line counts. That
-made isolated archives and generated bulk look more important than frequently
-edited production paths with duplicated state machines, parallel contracts, or
-large change surfaces. This revision uses a different cost model:
+The ranking is by **expected maintainer value**, not raw bytes:
 
-1. recurring programmer time and cognitive load,
-2. breadth of files/contracts touched by one behavior change,
-3. likelihood of deleting a complete representation or plumbing stage,
-4. conservative whole-tree net LOC payoff,
-5. estimated probability that the recommendation will be accepted.
+1. recurring edit, review, test, dependency, and operational cost removed;
+2. probability that the maintainer will accept the change, based on prior
+   decisions;
+3. whether the patch deletes a complete stage or ownership surface;
+4. conservative whole-tree net reduction after replacement code and tests;
+5. semantic, security, compatibility, and rollout risk.
 
-Storage-only wins are now separated from the active engineering queue. A giant
-archive that costs one harmless line in `ls` ranks below an ugly live path that
-costs hours every month.
+Prior cleanup decisions strongly favor complete, behavior-preserving stage
+removal and roughly 100+ whole-tree-line payoff. They reject micro-refactors,
+complexity moved into new helpers, exact-config test churn disguised as
+coverage, and changes that weaken durable compatibility or independent
+security oracles.
 
-Baseline inspected: [`50f75a500`](https://github.com/agentydragon/ducktape/commit/50f75a5000d963715ca2e4afc4e1242404c96f56).
+Baseline inspected:
+[`c50eb5f56`](https://github.com/agentydragon/ducktape/commit/c50eb5f56702160a0f14552577497b2ea2cbb8bf)
+(2026-08-25). The audit included repository-wide references, BUILD/package
+wiring, recent history, current open PRs, explicit cleanup tombstones, and
+current Flux status where it materially changed the recommendation.
 
-## How to review this
+## How to review this docket
 
 Terse decisions are enough:
 
 ```text
-D01 yes
-D03 prototype first
-D07 no, keep the explicit security mirror
-Q01 delete the remainder
-D09 prototype only after numerical evidence
+C01 yes after #4043 provenance closure
+C02 preserve the two generic MCP research notes, delete the rest
+C06 fix instead of delete
+C10 no, keep the compatibility aliases
+H02 bundle with the next cluster-validation cleanup
 ```
 
-For accepted implementation candidates, the PR must report the actual
-whole-tree diff and stay net negative. A refactor that merely moves a giant
-function into more files does not satisfy this docket.
+Approval of one item does not approve adjacent items. Implementation PRs should
+be focused, independently reversible, and report the actual whole-tree diff.
 
-## Already decided or completed
+## Ranked queue
 
-These results are no longer active recommendations:
+The order reflects expected value, so a smaller live operational cleanup can
+rank above a larger inert archive. Acceptance probabilities are estimates, not
+claims of prior approval.
 
-| Result                                    | Decision / evidence                                                                                                                                                                                                                                                              |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Accidental TensorBoard notebook cache     | Removed in [#4613](https://github.com/agentydragon/ducktape/pull/4613): 47,958,742 bytes deleted while preserving notebook cells, authored source, normal outputs, and the rerunnable TensorBoard command.                                                                       |
-| Unrelated May Props specimen website      | Removed in [#4614](https://github.com/agentydragon/ducktape/pull/4614): 110 files, 12,217 lines, and 13.1 MB. The specimen integration test passed.                                                                                                                              |
-| Local Props match scopes                  | Nine occurrences were narrowed to their labeled files in [#4619](https://github.com/agentydragon/ducktape/pull/4619).                                                                                                                                                            |
-| Generated Props matchability tracker      | Removed in [#4621](https://github.com/agentydragon/ducktape/pull/4621); the accidental ignore rule was corrected in [#4622](https://github.com/agentydragon/ducktape/pull/4622). The generator remains available on demand.                                                      |
-| Two obsolete live Claude prompts          | `codereview.md` and `til.md` were removed in [#4623](https://github.com/agentydragon/ducktape/pull/4623).                                                                                                                                                                        |
-| Copied May-specimen Claude prompt archive | The whole copied directory and stale `.prettierignore` entry were removed in [#4627](https://github.com/agentydragon/ducktape/pull/4627); the specimen test passed.                                                                                                              |
-| Obsolete Grocy “ideal API” contract       | The stale 644-line parallel contract was removed in [#4642](https://github.com/agentydragon/ducktape/pull/4642).                                                                                                                                                                 |
-| Grocy batch orchestration                 | D05 merged in [#4645](https://github.com/agentydragon/ducktape/pull/4645): repeated ordered-batch/retry/enrichment control flow was consolidated for **114 fewer whole-tree lines**.                                                                                             |
-| Settings-panel async resources            | D06 merged in [#4648](https://github.com/agentydragon/ducktape/pull/4648): five loader state machines became one typed resource primitive for **24 fewer whole-tree lines** and about **70 fewer production lines**.                                                             |
-| Haku tool-call projections                | D02 merged in [#4643](https://github.com/agentydragon/ducktape/pull/4643): the duplicate MCP record/projection stage was removed for **128 fewer whole-tree lines**. Typed-caller correctness follow-up [#4652](https://github.com/agentydragon/ducktape/pull/4652) also merged. |
-| Grocy instruction ownership               | D08 merged in [#4657](https://github.com/agentydragon/ducktape/pull/4657): client-critical conventions moved into owning tool/schema descriptions while an 11-line compatibility preamble retained the two genuinely global rules, for **174 fewer whole-tree lines**.           |
-| Haku Console knowledge gardening          | D10 merged in [#4658](https://github.com/agentydragon/ducktape/pull/4658): the README became a concise component map, rollout and Agent-authority details moved to canonical owners, and an unreferenced archive was deleted, for **460 fewer whole-tree lines**.                |
-| Haku manifest change-detector prototype   | **Rejected after security review.** The strongest D07 version saved only 15 whole-tree lines and still weakened independent RBAC, namespace-label, proxy, credential, and migration release-gate oracles. No PR was opened.                                                      |
-| Augur amount-reducer prototype            | **Rejected after numerical/performance review.** D09 saved only 30 lines, deleted no complete execution stage, and added an unnecessary fan-only terminal-vector transfer. No PR was opened.                                                                                     |
-| Raw inference `.eval` archives            | **Deferred by decision.** Keep the 11 files for now; do not pursue without renewed approval.                                                                                                                                                                                     |
-| LiteLLM exact-config mirror tests         | Do not duplicate [open PR #4472](https://github.com/agentydragon/ducktape/pull/4472). The broader invariant cleanup in [#4469](https://github.com/agentydragon/ducktape/pull/4469) is already merged.                                                                            |
-
-## Parked prototype
-
-| ID  | Status                                                                                                                                                                                                                                                                                      | Actual payoff                                                 |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| D03 | [Parked draft PR #10](https://github.com/agentydragon-agent/ducktape/pull/10) is a cleanup patch based on feature PR #4584 because it touches that feature branch's session-lifecycle code. #4584 belongs to a separate feature track; do not modify or manage it from this cleanup docket. | **34 fewer whole-tree lines**; **102 fewer production lines** |
-
-## Remaining programmer-cost queue
-
-The queue is ordered by estimated acceptance probability, with larger complete
-stage deletions first when probabilities are similar. Estimates are deliberately
-conservative and include replacement code and test changes.
-
-| ID  | P(agree) | Recommendation                                                         | Estimated whole-tree payoff | Risk              |
-| --- | -------: | ---------------------------------------------------------------------- | --------------------------: | ----------------- |
-| D04 |      84% | Share neutral Claude/Codex projection mechanics                        |             **180–320 LOC** | medium–high       |
-| D11 |      68% | Consolidate duplicate Gmail/Calendar façade and client input contracts |               **40–90 LOC** | medium API-schema |
-
-## Prototype sequence outcome
-
-The approved D03 → D02 → D05 → D06 → D07 → D09 sequence has been executed, and the
-independent D08 and D10 follow-ups also merged. D02, D05, D06, D08, and D10 merged;
-D03 is a parked cleanup patch on the separate #4584 feature track; D07 and D09 were
-rejected after independent review. The rejected prototypes remain local and unpushed.
-
-The results reinforce the docket's acceptance rule: a prototype must delete a real
-representation or orchestration stage, remain whole-tree net negative, and preserve
-independent semantic/security oracles. Passing focused tests is not enough when the
-result merely reshuffles a reducer or weakens a manifest contract.
+| Rank | ID  | P(accept) | Recommendation                                                    |        Conservative net payoff | Main risk                             |
+| ---: | --- | --------: | ----------------------------------------------------------------- | -----------------------------: | ------------------------------------- |
+|    1 | C02 |       93% | Retire `x/agent_server` while preserving generic research         |          **17,000–17,600 LOC** | deleting reusable lifecycle research  |
+|    2 | C03 |       96% | Retire orphaned `x/inop` instruction optimizer                    |     **7,400–7,600 LOC** + deps | undocumented manual use               |
+|    3 | C04 |       95% | Retire superseded `x/claude_linter_v2`                            |      **6,700–6,900 LOC** + dep | confusing it with the active hook     |
+|    4 | C05 |       91% | Delete the orphaned release-decision stage                        |                **370–410 LOC** | undocumented manual invocation        |
+|    5 | C06 |       89% | Delete or deliberately repair the broken Props GEPA surface       |      **1,000–1,200 LOC** + dep | abandoning intended optimization work |
+|    6 | C07 |       92% | Retire `x/editor_agent`                                           |            **1,150–1,300 LOC** | overlooked personal workflow          |
+|    7 | C01 |       70% | After #4043, retire the Squid spike and stale decision plan       | **2,500–2,800 LOC** + workload | active PR depends on its provenance   |
+|    8 | C08 |       82% | Retire the answered, mid-WIP EOB-matching experiment              |            **1,450–1,550 LOC** | one-off personal utility still wanted |
+|    9 | C09 |       84% | Remove three unwired generated-policy mirror tests                |                **330–360 LOC** | unknown manual test workflow          |
+|   10 | C10 |       72% | Remove deprecated Debundle CLI aliases after a compatibility call |                **150–250 LOC** | external scripts using old commands   |
+|   11 | C11 |       87% | Delete the superseded April cluster redesign archive              |            **about 1,005 LOC** | losing option/cost rationale          |
+|   12 | C12 |       92% | Delete the obsolete February bootstrap analysis                   |                    **331 LOC** | losing historical bootstrap reasoning |
+|   13 | C13 |       90% | Delete the stale SRE best-practices review                        |                    **448 LOC** | one remaining action not migrated     |
+|   14 | C14 |       88% | Compress the superseded Haku instruction-ownership note           |                  **85–95 LOC** | dropping a still-open drift question  |
+|   15 | C15 |       83% | Delete retired Kagent IaC snapshots, retain explanatory records   |              **about 916 LOC** | reducing exact revival archaeology    |
 
 ## Detailed recommendations
 
-### D02 — canonicalize the Haku tool-call path
+### C01 — retire the completed Squid egress spike and stale decision plan
 
-**Targets and change surface:**
+**Delete or edit:**
 
-- [`haku/console/mcp_approval.py`](../haku/console/mcp_approval.py) —
-  `PostgresToolCallLedger`, its record/MCP projections, and `McpServerDispatcher`
-- [`haku/console/tool_call_service.py`](../haku/console/tool_call_service.py) —
-  `ToolCallRepository`, `ToolCallApplicationService`, duplicated list/get/execute paths
-- [`haku/console/mcp_server.py`](../haku/console/mcp_server.py) —
-  `McpToolCallResponse`, `_record_to_result`, `_direct_to_result`, `_dispatch`
+- [`cluster/k8s/x/squid-egress-spike/`](../cluster/k8s/x/squid-egress-spike/)
+- [`cluster/images/squid-ssl/`](../cluster/images/squid-ssl/)
+- [`.github/workflows/squid-ssl-image.yml`](../.github/workflows/squid-ssl-image.yml)
+- the `squid-ssl` Flux image repository and policy under
+  [`cluster/k8s/flux-image-automation-forgejo/`](../cluster/k8s/flux-image-automation-forgejo/)
+- the two Flux registrations in
+  [`cluster/k8s/kustomization.yaml`](../cluster/k8s/kustomization.yaml)
+- the `squid-egress-spike` registry-credential reflection entries
+- most of
+  [`cluster/docs/plans/agent_egress_proxy_options.md`](../cluster/docs/plans/agent_egress_proxy_options.md)
 
-Together these files are about 2,830 lines and have changed in roughly 30 commits
-in the last 180 days. One tool call is repeatedly represented as database rows,
-general records, MCP-specific records, response models, approval stubs, and final
-`ToolResult` values. The application service also exposes parallel general/MCP
-list and get methods.
+The spike calls itself throwaway infrastructure and says to delete it after its
+questions are answered. The README records those answers. Git still registers
+both Flux Kustomizations, and a direct Flux query on 2026-08-25 reported both
+`Ready` at the audited `devel` revision. This is therefore not merely archived
+source: the cluster still reconciles a completed experiment, image automation,
+credentials, an ICAP stub, an echo origin, and a proxy workload. Re-check live
+Flux state immediately before implementation rather than treating this dated
+observation as permanent.
 
-**Safe replacement:** keep one durable row, one domain record carrying the full
-terminal/approval state, and transport-specific renderers at the HTTP/MCP edge.
-Build listing projections from one statement shape rather than maintaining
-parallel `_record_projection_stmt` / `_mcp_projection_stmt` and conversion paths.
-Preserve the operator/Agent authorization checks and terminal-state transitions.
+The 1,711-line plan still presents “one Squid per fence” as the current route,
+while the shipped agent fences use Iron Proxy. Two open PRs also matter:
 
-The implementation should delete a representation boundary; merely renaming or
-moving the same adapters is not a win.
+- old draft [#2798](https://github.com/agentydragon/ducktape/pull/2798)
+  preserves the abandoned Squid migration;
+- [#4043](https://github.com/agentydragon/ducktape/pull/4043) actively ports the
+  measured Squid 7.6 ICAP wire behavior from this spike and links both the spike
+  and plan as protocol provenance.
 
-**Validation:**
+C01 is **blocked while #4043 remains unresolved**. Its acceptance probability
+returns to roughly 97% after #4043 merges or closes and its required provenance
+has a canonical owner. Deleting first would break an active review's historical
+references.
 
-- `bbr test //haku/console:test_mcp_approval //haku/console:test_tool_call_service //haku/console:test_mcp_server`
-- approval, denial, withdrawal, timeout, direct execution, and degraded-server integration tests
-- API/MCP schema snapshots or generated client checks
+**Safe replacement:** keep a concise decision record with the empirical facts
+that remain useful: TLS bump viability, destination-scoped substitution,
+`Basic` rewriting, the measured ICAP framing/preview behavior used by #4043,
+cache treatment for authenticated responses, and why the shipped architecture
+chose differently. Point operational readers to the current Iron Proxy manifests
+and security documentation. Do not delete the security finding preserved in
+[`cluster/docs/archive/2026_08_iron_proxy_consolidation.md`](../cluster/docs/archive/2026_08_iron_proxy_consolidation.md).
+Update #4043's links or retained documentation owner, and explicitly decide the
+status of #2798 rather than silently leaving it looking current.
 
-**Risk:** medium–high. Approval authorization and audit history are security
-contracts; preserve fail-closed actor scoping and exact terminal semantics.
+**Validation:** resolve #4043's provenance first. Then remove the Flux
+registrations in Git, validate cluster integration and image-policy references,
+merge, and verify:
 
-### D03 — collapse duplicate session lifecycle and query paths
+1. the two root Flux Kustomization objects are gone;
+2. the app resources are pruned (`squid-egress-spike-app` has `prune: true`);
+3. image-policy, registry-reflection, Secret, and build references are gone;
+4. the namespace is empty and then explicitly deleted—the namespace
+   Kustomization has `prune: false`, so Flux will not delete it automatically.
 
-**Targets:**
+### C02 — retire `x/agent_server`
 
-- [`haku/console/x/session_store.py`](../haku/console/x/session_store.py) — 2,477 lines,
-  62 commits in 180 days
-- [`haku/console/x/session_runtime.py`](../haku/console/x/session_runtime.py) — 1,130 lines,
-  57 commits in 180 days
+[`x/agent_server/`](../x/agent_server/) is 165 files and about 17,800 lines of
+FastAPI, Svelte, persistence, container runtime, approval policy, MCP routing,
+Matrix, and E2E machinery. No production runtime imports it and no external
+Python BUILD target depends on it. The frontend is still intentionally wired
+into shared build tooling: `MODULE.bazel`, the pnpm workspace/lockfile, ESLint,
+pre-commit comments, Copilot instructions, and research documents all name it.
+Those are deletion-scope updates, not evidence of a live runtime consumer.
 
-`SessionStore` owns allocation, leases, prompt queues, turn state, frames,
-projection, conversation reads, close/abort/failure, and cleanup. `SessionService`
-then wraps several of those operations while also owning claims, runner handling,
-provisioning views, renewal, abort watching, finalization, and route adapters.
-Lifecycle status and query concerns cross both classes, so a new session state or
-runtime behavior routinely changes database code, service wrappers, and views.
+More importantly, the current personal-agent survey explicitly records the
+maintainer decision that `x/agent_server`, `agent_core`, and `x/editor_agent`
+are **not** reuse candidates for future personal-agent work. The deployed
+public coder and Haku Console now provide the relevant live architecture.
+Keeping the executable stack causes dependency, lint, package-lock, and test
+maintenance without preserving an accepted product direction.
 
-**Safe replacement:** define one explicit lifecycle-transition component for
-allocation/lease/terminal state, one read-model/query component for conversation
-and transcript views, and keep runner orchestration in `SessionService`. Delete
-pass-through service methods and parallel status/provisioning branches once all
-callers use the owning component.
+**Safe replacement:** delete the executable stack, web package, Bazel npm-lock
+input, pnpm workspace/lockfile section, ESLint source set, stale pre-commit and
+Copilot guidance, and obsolete command examples. Before deletion, move only
+genuinely reusable research—especially the async-cancellation analysis already
+linked from `mcp_infra`—to its canonical owning documentation. Replace “do not
+revive this stack” links with a dated decision or Git-history reference. Leave
+frozen Props specimen snapshots unchanged unless their own specimen-pruning
+rules independently authorize removal.
 
-This candidate is accepted only if a prototype demonstrates a whole-tree deletion
-of at least one complete query/lifecycle path. Splitting the 2,477-line class into
-more files without deleting logic is not the goal.
+Do **not** include [`agent_core/`](../agent_core/) in this deletion. It still has
+live consumers in `git_commit_ai`, `mcp_infra`, Props test fixtures, and other
+code.
 
-**Validation:**
+**Validation:** repository reference scan, pnpm lock regeneration, all affected
+Python/TypeScript package checks, and a full BUILD/query check for surviving
+references.
 
-- `bbr test //haku/console/x/...`
-- Matrix homeserver/full-stack E2E tests
-- lease expiry, prompt replay, resumed turn, abort, failure, cleanup, and reprojection tests
+### C03 — retire orphaned `x/inop`
 
-**Risk:** high. The store implements exactly-once and recovery behavior around a
-real database; preserve transactional locking and replay invariants.
+[`x/inop/`](../x/inop/) contains about 7,600 lines across 42 files. It defines an
+instruction optimizer, runners, grading, plots, datasets, and Docker tests, but
+it has no registered/package binary target and no caller outside its own
+subtree. `engine/optimizer.py` does have a direct `main()` path, so an
+undocumented manual `python …/optimizer.py` workflow remains possible and must
+be checked. External references are limited to old inventory/documentation and
+Ruff configuration. Its last changes are repository-wide mechanical maintenance
+rather than feature work.
 
-### D04 — share neutral Claude/Codex projection mechanics
+The subtree also appears to be the only code consumer of the heavyweight
+`plotnine` and `claude-code-sdk` dependencies. Deleting the experiment therefore
+removes more recurring dependency and CI cost than its source-line count alone
+suggests.
 
-**Targets:**
+**Safe replacement:** delete the subtree, Ruff entry, and stale references in
+`docs/flat_tool_convertible.md` and `docs/gazelle_python_status.md`; remove
+dependencies only after a fresh whole-tree import and BUILD scan. Git history is
+the right owner for the abandoned implementation.
 
-- [`haku/console/x/claude_code/projection.py`](../haku/console/x/claude_code/projection.py)
-- [`haku/console/x/codex_app_server/projection.py`](../haku/console/x/codex_app_server/projection.py)
+**Validation:** dependency lock regeneration, affected Python checks, and an
+explicit proof that no binary, CI job, prompt, or developer script invokes the
+optimizer.
 
-Both modules independently define `OpenItem`, `ProjectionState`, `RecordedFrame`,
-`project`, `finish`, `project_log`, and a mutable `_Projector`. Provider-specific
-frame interpretation is legitimately different, but item lifecycle, ordered
-emission, open-item bookkeeping, finish semantics, and projection result assembly
-are parallel machinery.
+### C04 — retire superseded `x/claude_linter_v2`
 
-**Safe replacement:** extract a small neutral projection accumulator and item
-lifecycle API. Keep Claude and Codex pattern matching/fold decisions in their own
-modules. Do not force both providers through a giant union of frame types.
+[`x/claude_linter_v2/`](../x/claude_linter_v2/) is about 6,900 lines with its own
+CLI, policy language, session state, hooks, notifications, examples, and tests.
+It has no repository caller or packaging entry. The active Claude hook is the
+Rust implementation under
+[`devinfra/claude/claude_hook/`](../devinfra/claude/claude_hook/), installed by
+current Nix and Web setup paths.
 
-**Validation:**
+The old linter still claims commands such as `cl2 check` and carries a large
+`_factored_out.md` code dump, so search results can mislead maintainers toward a
+non-shipped implementation. It is the only source import of `pytimeparse`,
+although that dependency is still listed in root/Nix package metadata and needs
+an explicit packaging audit before removal.
 
-- both projection suites and recorded-frame fixtures
-- transcript/reprojection tests
-- equivalence checks over all existing captured logs
+**Safe replacement:** delete the subtree and its Ruff/build references. Remove
+`pytimeparse` from package metadata only if the packaging audit confirms no
+surviving runtime needs it. Preserve the active Rust hook, Python statusline, and
+current configuration profiles; this item is not permission to simplify those
+contracts.
 
-**Risk:** medium–high. Ordering, partial items, and terminal flush behavior are
-user-visible transcript contracts.
+**Validation:** active Claude hook tests and container E2E, dependency lock
+regeneration, and exact proof that no current settings/profile invokes `cl2` or
+the old Python modules.
 
-### D05 — remove repeated Grocy batch orchestration
-
-**Target:**
-[`grocy_mcp/batch_tools.py::register_batch_tools`](../grocy_mcp/batch_tools.py)
-
-The file is now 1,620 lines; almost all tools are nested inside one registrar.
-Useful helpers already exist (`_retry`, `_retry_mutation`, `_stock_mutate`,
-`_simple_batch_create`, enrichment maps), but individual tool bodies still repeat
-batch-size checks, name/ID resolution, client acquisition, ordered per-item
-result/error conversion, and best-effort post-mutation reads.
-
-**Safe replacement:** introduce one typed ordered-batch executor with explicit
-read-only, idempotent-mutation, and uncertain-mutation policies; use domain-specific
-resolvers/enrichers around it. Keep tool registration near each owning model, but
-count success only if repeated control flow disappears. A mechanical file split is
-not enough.
-
-**Validation:**
-
-- `bbr test //grocy_mcp/...`
-- retry-safety and uncertain-mutation tests
-- E2E coverage for stock, products, shopping lists, entities, and volatile stock
-- compare exposed tool schemas/descriptions before and after
-
-**Risk:** medium. Error ordering and “mutation may have applied” behavior must not
-be generalized away.
-
-### D06 — use one async-resource primitive in the settings panel
-
-**Target:**
-[`haku/console/frontend/settings_panel.tsx`](../haku/console/frontend/settings_panel.tsx)
-
-The 1,024-line component separately implements `loadMcpServers`, `loadAgents`,
-`loadDeployment`, `loadIndexStatus`, and `loadDaemons`, each with similar loading,
-error, refresh, and stale-response handling. Tab activation, polling, reconnect,
-and mutation callbacks must know which subset to reload.
-
-**Safe replacement:** one typed `useAsyncResource`/query primitive should own
-loading state, error state, cancellation/generation, refresh, and optional polling.
-Cards remain domain-specific. Avoid adding a heavyweight state library for this
-single page.
-
-**Validation:** frontend typecheck/tests, settings navigation, reconnect/polling,
-OAuth connection, Agent changes, and MCP refresh browser tests.
-
-**Risk:** low–medium; guard against stale responses replacing newer data.
-
-### D07 — delete pure Haku manifest change-detector tests
-
-**Targets:**
-
-- `test_public_coder_and_haku_standing_diagnostics_are_secret_free`
-- `test_public_coder_kubernetes_proxy_contract`
-- exact-shape portions of `test_haku_console_migration_release_gate`
-
-in [`cluster/validation/test_haku_manifest_contracts.py`](../cluster/validation/test_haku_manifest_contracts.py),
-plus the repeated subject roster in
-[`cluster/validation/kyverno/test_agent_diagnostics_readers.py`](../cluster/validation/kyverno/test_agent_diagnostics_readers.py).
-
-The main contract file is 750 lines and changed in 31 commits over 180 days.
-Large expected role/resource/subject dictionaries and fixed name/port/health-check
-objects reproduce checked-in manifests in Python. They fail on any desired-state
-edit, but copying the new desired state into the test does not distinguish a correct
-change from an incorrect one.
-
-This is the pattern rejected by [`STYLE.md`](../STYLE.md):
-
-> No pure change-detector tests: don't assert a checked-in literal equals itself
-> copied into the test. Test semantics — invalid values rejected, invariants hold,
-> behavior differs by mode.
-
-**Prototype objective:** delete the copied dictionaries and exact-shape assertions,
-not merely derive or restate them differently. Retain a test only where it has an
-independent semantic oracle and can distinguish invalid behavior, for example:
-
-- standing verbs remain read-only,
-- Secrets and pod exec/attach/port-forward remain forbidden,
-- public-coder never receives the cluster-admin ceiling,
-- the sandbox reaches Kubernetes only through the proxy,
-- proxy Service/route/port/Secret references resolve,
-- Flux dependencies and health checks reference real resources,
-- migration and server images remain coupled, and the migration gate stays
-  unprivileged and release-blocking.
-
-If an assertion only says the rendered configuration equals another checked-in
-literal, delete it. Do not preserve it solely because the mirrored configuration is
-security-sensitive. The egress allowlist matrix remains a separate case because it
-can encode independently reviewed policy rather than merely copying one manifest.
-
-**Validation:**
-
-- `bbr test //cluster/validation:test_haku_manifest_contracts`
-- `bbr test //cluster/validation/kyverno:test_agent_diagnostics_readers`
-- `bbr test //cluster/validation:test_cluster_integration`
-
-**Risk:** medium–high. The prototype must make the semantic-oracle distinction
-explicit so useful negative authorization checks are not confused with literal
-mirrors.
-
-### D08 — fold Grocy conventions into owning tool descriptions
-
-**Outcome:** merged in [#4657](https://github.com/agentydragon/ducktape/pull/4657) for
-**174 fewer whole-tree lines**. The implementation retained the two global rules in an
-11-line compatibility preamble and moved the remaining client-critical guidance to its
-owning tool/schema descriptions; all seven Grocy suites passed.
+### C05 — delete the orphaned release-decision stage
 
 **Targets:**
 
-- [`grocy_mcp/server_instructions.md`](../grocy_mcp/server_instructions.md) — 197 lines
-- `_load_server_instructions` in [`grocy_mcp/server.py`](../grocy_mcp/server.py)
-- eval-only prompt concatenation
+- [`devinfra/ci/check_release.py`](../devinfra/ci/check_release.py)
+- [`devinfra/ci/diff_utils.py`](../devinfra/ci/diff_utils.py)
+- [`devinfra/ci/github_actions.py`](../devinfra/ci/github_actions.py)
+- their `check_release`, `diff_utils`, `github_actions`, and
+  `check_release_bin` BUILD targets
 
-[`grocy_mcp/TODO.md`](../grocy_mcp/TODO.md) records the architectural problem:
-Claude.ai does not expose MCP `initialize.instructions` to the model. The same
-quantity-unit, stock mutation, expiry, typed-vs-generic, and shopping-list rules
-are partly repeated in `mcp_types.py`, `batch_tools.py`, and `tool_metadata.py`.
+Commit `93fc945c7` replaced the CI decision engine with native GitHub triggers.
+The current release path is content-addressed in
+[`.github/actions/release-artifact/action.yml`](../.github/actions/release-artifact/action.yml).
+No workflow invokes `check_release.py`, `check_release_bin`, or
+`compute_release_decision`; the remaining three modules reference only one
+another. `diff_utils.py` even describes a `check_release_lib.py` that no longer
+exists.
 
-**Safe replacement:** move client-critical guidance to the Pydantic field or tool
-that owns it. Retain a short compatibility introduction for clients that do consume
-`initialize.instructions` until tools-list and eval coverage proves the long file
-unnecessary.
+This is a complete obsolete control stage rather than a speculative refactor.
+Delete its now-stale comment in `bazel_ci.sh` too, but leave the active
+`bazel-diff` CI implementation alone.
 
-**Validation:** tools-list description assertions, Grocy E2E tests, and eval cases
-covering units, expiry, stock correction, opening, and shopping lists.
+**Validation:** repository reference scan, `devinfra/ci` tests, and inspection of
+all release workflow calls. The only meaningful risk is an undocumented manual
+`uv run devinfra/ci/check_release.py` workflow.
 
-**Risk:** medium. Do not silently remove guidance from clients that currently use it.
+### C06 — delete or deliberately repair the broken Props GEPA surface
 
-### D09 — delete parallel Augur amount/reduction adapters
+[`props/core/gepa/`](../props/core/gepa/) and
+[`props/cli/cmd_gepa.py`](../props/cli/cmd_gepa.py) expose a `props gepa` command
+and carry the repository's sole `gepa` dependency. The adapter deliberately
+raises `NotImplementedError` from its constructor, evaluation paths, and
+`optimize_with_gepa()` because `run_critic_legacy()` was removed. The warm-start
+tests also state that the implementation is temporarily broken.
 
-**Target:**
-[`finance/augur/sim/engine/jax_engine.py`](../finance/augur/sim/engine/jax_engine.py),
-especially `run_jax_product_summary`, `run_jax_product_summaries`,
-`_amount_values`, `_amount_values_tuple`, and `_amount_values_vec`.
+An advertised CLI that cannot enter its core path is worse than an absent
+feature: it retains 1,100+ lines of adapters, database queries, logging,
+checkpointing, tests, documentation, and a third-party dependency while giving
+users a dead command.
 
-The 3,769-line engine changed in 48 commits over 180 days. The remaining promising
-large-scale simplification is not decomposing the single financial scan; it is
-removing parallel tuple/vector/scalar amount materialization and reduction plumbing
-around it.
+**Recommended decision:** delete the CLI, adapter, warm-start path, GEPA
+dependency, and README references unless there is a concrete owner and near-term
+migration to definition-based `run_critic()`. Preserve the general prompt-
+optimization research under the critic documentation.
 
-**Safe replacement:** preserve one canonical structured amount/result path through
-JIT boundaries and derive summaries directly from it. Preserve all financial
-formulas, exact lot-marking/tax arithmetic, and the single `lax.scan`. Reject a
-prototype that expands call sites or tests and fails to produce a whole-tree
-reduction.
+**Validation:** all Props CLI and critic/grader tests, dependency lock
+regeneration, and help-output/schema checks proving the dead command is gone.
 
-**Validation:** all `//finance/augur/sim:all` and product tests, deterministic
-rollout equality, tax/lot golden cases, failed-rollout behavior, and performance
-comparison at production-relevant rollout counts.
+### C07 — retire `x/editor_agent`
 
-**Risk:** high numerical and performance risk. Prototype and measure before making
-this an implementation PR.
+[`x/editor_agent/`](../x/editor_agent/) is about 1,300 lines of host/runtime code
+and Docker-backed tests. It has no live external consumer, and the same current
+personal-agent survey that rules out `x/agent_server` also rules out this stack
+as a reuse candidate. The recent timeout commit was repository-wide test
+maintenance, not renewed product work.
 
-### D10 — make the Haku Console README an index
+Delete it as a separate PR from C02 so failures and dependency cleanup remain
+attributable. Do not delete `agent_core` or shared MCP display helpers merely
+because this consumer disappears; evaluate any newly orphaned shared code in a
+follow-up reference audit.
 
-**Outcome:** merged in [#4658](https://github.com/agentydragon/ducktape/pull/4658) for
-**460 fewer whole-tree lines**. The final patch preserved live anchors and unique
-security/rollout/tool-call contracts, moved detailed rollout and AccessProfile authority
-rules to their canonical owners, and deleted one unreferenced archive. A focused semantic
-review and 146 Haku Console/cluster validation tests passed.
+### C08 — retire the answered EOB-matching experiment
 
-**Target:**
-[`haku/console/README.md`](../haku/console/README.md)
+[`x/eob_matching/`](../x/eob_matching/) is about 1,550 lines. Its README says the
+matching algorithm is mid-WIP and that the question which motivated it was
+answered by PDF data extraction without needing the full matcher. There are no
+external repository references.
 
-The 695-line README changed in 34 commits over 180 days and restates detailed live
-contracts for MCP admission/approval, Agent authority, OAuth browser ownership,
-chat/session/channel semantics, and schema generation. Those subjects already have
-canonical specialist documents under [`haku/console/docs/`](../haku/console/docs/),
-including `agent_authority.md`, `oauth_browser_surfaces.md`, `chat_layers.md`,
-`conversation_schema.md`, and `chat_runtime_facts.md`.
+This is a strong deletion candidate, but lower ranked because it is a personal,
+one-off utility and the maintainer may still value rerunning its extraction
+code. Confirm that workflow is finished; then delete the whole experiment rather
+than completing an algorithm the recorded task no longer needs.
 
-**Safe replacement:** keep architecture, entrypoints, local operation, and a short
-summary/link per subsystem. Each detailed contract should have one owner.
+### C09 — remove three unwired generated-policy mirror tests
 
-**Validation:** link/anchor scan, console tests, and review of any docs or code that
-links directly to a README heading.
+**Delete after confirming no manual workflow:**
 
-**Risk:** medium discoverability risk; the replacement must remain a useful start page.
+- [`nix/home/tests/claude-code-permissions.nix`](../nix/home/tests/claude-code-permissions.nix)
+- [`nix/home/tests/codex-execpolicy-rules.nix`](../nix/home/tests/codex-execpolicy-rules.nix)
+- [`nix/home/tests/gemini-cli-integration.nix`](../nix/home/tests/gemini-cli-integration.nix)
 
-### D11 — consolidate duplicate Google MCP input contracts
+These 362 lines are not wired into the flake, CI, BUILD, or documentation. They
+mostly reconstruct exact generated permission/rule values from the same shared
+source, so they are unwired change detectors rather than independent consumer
+oracles.
 
-**Targets:**
+Keep
+[`nix/home/tests/codex-execpolicy-evaluation.nix`](../nix/home/tests/codex-execpolicy-evaluation.nix):
+it invokes the real Codex CLI and is an independent external-consumer/security
+test. If Claude or Gemini needs equivalent coverage, add one real parser/client
+evaluation instead of preserving copied expected strings.
 
-- Gmail façade signatures in [`haku/console/tools/gmail.py`](../haku/console/tools/gmail.py)
-  versus `CreateGmailDraftArgs`, `UpdateGmailDraftArgs`, and label/thread models in
-  [`gmail_client.py`](../haku/console/tools/gmail_client.py)
-- Calendar façade signatures in
-  [`google_calendar.py`](../haku/console/tools/google_calendar.py) versus
-  `CreateCalendarEventArgs`, `ListCalendarEventsArgs`,
-  `ListCalendarEventInstancesArgs`, `EventDateTime`, and reminder models in
-  [`google_calendar_client.py`](../haku/console/tools/google_calendar_client.py)
+**Validation:** normal flake checks plus the surviving Codex evaluation check.
 
-Defaults, descriptions, optionality, and validation are represented once in the
-flat public FastMCP function signature and again in internal Pydantic argument
-models. A change can update one contract but not the other.
+### C10 — remove deprecated Debundle CLI aliases
 
-**Safe replacement:** keep the current flat public MCP schema. Add narrow conversion
-constructors or shared annotated field definitions so validation/default ownership
-is not duplicated. Do not expose nested internal request models merely to reduce
-source lines.
+[`devinfra/js/debundle/cli/mod.rs`](../devinfra/js/debundle/cli/mod.rs) still
+supports six `debundle peel …` aliases and the singular
+`debundle module merge`. Current documentation and repository callers use the
+top-level commands and `debundle modules merge`; no in-repository script uses
+the deprecated forms.
 
-**Validation:** exact tools-list schema comparison, Gmail/Calendar unit tests, and
-live mocked client request-body tests.
+The cleanup would remove alias structs/dispatch, deprecation output, parser
+tests, and compatibility prose while keeping the current command implementations
+unchanged.
 
-**Risk:** medium. Tool schema changes affect every Agent client even when runtime
-behavior is unchanged.
+**Why this ranks lower:** absence of repository callers is not proof that the
+maintainer has no shell history or external scripts using a CLI. Make an
+explicit compatibility decision first. If durable compatibility is preferred,
+leave the aliases; a tiny LOC win does not justify surprising a real user.
 
-## Small follow-ups, not roadmap drivers
+## Documentation and archive cleanup
 
-These are likely acceptable but too small to drive the active simplification roadmap.
-Bundle them with related work rather than opening a stream of micro-PRs.
+These are valid but rank below live-code and tooling deletions because Git already
+contains their history and most have little recurring execution cost.
 
-| ID  | P(agree) | Follow-up                                                                                                                                                  |        Payoff | Validation                             |
-| --- | -------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------: | -------------------------------------- |
-| S01 |      93% | Centralize the repeated Claude runtime test/config payload across `haku/console/x/conftest.py`, the Matrix console replica, and runtime/profile tests.     | **25–40 LOC** | targeted Haku runtime/config tests     |
-| S02 |      90% | Move duplicate Matrix Synapse/operator/password fixtures from the two E2E suites into `haku/console/x/channels/matrix/conftest.py`.                        | **30–45 LOC** | both Matrix E2E suites and sync tests  |
-| S03 |      80% | Trim pure current-shape assertions from the Haku migration release gate while retaining rollout, privilege, image, dependency, and health-gate invariants. | **20–30 LOC** | manifest and cluster integration tests |
+### C11 — delete `cluster/archive/2026_04_architecture_redesign/`
 
-## High-confidence deletions with low recurring programmer cost
+The four files total about 1,005 lines and have no external inbound references.
+One still says “Draft / In Progress”; the others say the decisions are resolved.
+Current architecture, storage, and SSO ownership lives in
+[`cluster/docs/plan.md`](../cluster/docs/plan.md) and
+[`cluster/docs/sso.md`](../cluster/docs/sso.md).
 
-These are valid cleanup opportunities, but their main benefit is repository hygiene,
-not recurring engineering time. They should not outrank the live-code candidates above.
+Before deletion, compare the old cost/options rationale with the current
+architecture-decision section. Preserve a short ADR only for unique reasoning
+that still changes future choices.
 
-### Q01 — delete the remainder of `x/claude_commands_old/`
+### C12 — delete `cluster/docs/archive/2026_02_bootstrap_analysis.md`
 
-**P(agree): 95%. Payoff: 919 lines. Risk: very low.**
+This 331-line, unreferenced analysis describes an obsolete Proxmox/Talos
+nine-stage flow and old gaps. Current OVH/Kimsufi bootstrap ownership lives in
+[`cluster/docs/bootstrap.md`](../cluster/docs/bootstrap.md) and
+[`cluster/docs/bootstrap_dependencies.md`](../cluster/docs/bootstrap_dependencies.md).
+Verify that any still-open gap was migrated, then delete the historical analysis.
 
-The remaining five prompt files are explicitly archived and superseded by
-[`.claude/commands/`](../.claude/commands/) and [`skills/`](../skills/). Two files
-were already removed in #4623; the full copied specimen archive was removed in
-#4627. Delete the remaining live archive and its README after one final inbound
-reference scan. Git history preserves the wording.
+### C13 — delete `cluster/archive/2026_05_sre_best_practices_review.md`
 
-### Q02 — consolidate overlapping useless-documentation scans
+The unreferenced 448-line review retains obsolete Vault assumptions, completed
+ingress work, and an old P0–P3 action list. Current owners include
+[`cluster/docs/plan.md`](../cluster/docs/plan.md),
+[`cluster/docs/sso.md`](../cluster/docs/sso.md), and operational
+lessons/postmortems. Confirm every still-open action has a current owner before
+deletion.
 
-**P(agree): 88%. Payoff: roughly 400–550 net LOC. Risk: low.**
+### C14 — compress `haku/archive/2026_08_instructions_ownership.md`
 
-`prompts/scans/useless_documentation.md` and
-`prompts/scans/useless_comments_and_docs.md` encode substantially the same policy.
-Keep one prompt and the short canonical standard; merge only genuinely distinct
-examples before deletion.
+The 116-line note says it was superseded, but most of the old proposal remains
+below the outcome and references removed paths. Keep a 20–30-line decision
+record: the manual moved to `haku-state`, `agent_shared.yaml` remains protected
+configuration, and self-drift remains unresolved. Canonical ownership is in
+[`haku/base/README.md`](../haku/base/README.md) and
+[`haku/docs/security.md`](../haku/docs/security.md).
 
-### Q03 — delete stale generated/manual inventories
+### C15 — delete retired Kagent IaC snapshots, retain explanatory records
 
-**P(agree): 85%. Payoff: hundreds of lines. Risk: low.**
+Delete `cluster/archive/2026_07_kagent/k8s/**` and
+`cluster/archive/2026_07_kagent/terraform/provider_kagent.tf` (about 916 lines),
+but retain the README and analytical/operational documents. The archive already
+says these workloads, CRDs, namespace resources, and `devbot` were removed and
+must not be restored directly. Rewrite links in the retained README and
+operational documents to prose or the historical commit, then run a full
+post-deletion link-closure check.
 
-Examples include `mcp_infra/docs/mcp_tool_name_violations.md` and the unreferenced
-aggregate `props/prompts/code_health_audit_fullprops.md`. Confirm no manual workflow
-copies the exact aggregate prompt, then generate such reports as CI artifacts or
-compose them from canonical standards.
+## Small, high-confidence follow-ups
 
-## Parked or deprioritized candidates
+These are too small or too storage-oriented to drive the cleanup roadmap. Bundle
+them with related work or take them only when a maintainer explicitly wants a
+housekeeping pass.
 
-These may be reasonable deletions, but current evidence does not show enough recurring
-programmer cost to prioritize them:
+| ID  | P(accept) | Follow-up                                                                       |              Payoff |
+| --- | --------: | ------------------------------------------------------------------------------- | ------------------: |
+| H01 |       96% | Delete stale `mcp_infra/docs/mcp_tool_name_violations.md`                       |         **271 LOC** |
+| H02 |       94% | Delete unused `cluster/validation:kustomize_build_all` binary/target            |    **about 78 LOC** |
+| H03 |       97% | Delete dated `cluster/archive/2026_05_raw_pvc_inventory.md`                     |          **45 LOC** |
+| H04 |       95% | Delete the remainder of `x/claude_commands_old/`                                |   **about 919 LOC** |
+| H05 |       86% | Consolidate the two overlapping useless-comments/documentation scan prompts     | **350–500 net LOC** |
+| H06 |       80% | Delete/compress unreferenced `archive/2026_04_sops_nix_container_activation.md` |   **up to 316 LOC** |
 
-- raw machine diagnostics, generated experiment traces, and old architecture surveys;
-- inactive Props snapshots or copied subtrees not yet proven outside their import and
-  evidence closure;
-- retired deployment/IaC snapshots whose only cost is storage;
-- exact renderer snapshots that protect intentional presentation behavior;
-- migrations and schema acceptance tests that preserve durable compatibility;
-- the Tana workspace fixture and reverse-engineering reference trees consumed by real
-  workflows.
+H04 remains low priority despite its size: the files are explicitly archived and
+cost little recurring programmer time. H05 requires preserving the genuinely
+distinct detection examples rather than blindly choosing the shorter prompt.
 
-For Props snapshots, prune only after import tracing, issue-path closure checks, and the
-production specimen integration test. Do not treat absence from one active image list as
-proof that prepared training/evaluation data is abandoned.
+## Explicitly parked, excluded, or preserved
 
-Every candidate remains independently reviewable and reversible. The recorded sequence
-above is not permission to combine unrelated cleanups into one PR or to trade behavior
-coverage for smaller source files.
+Do not turn the following into cleanup PRs from this docket without a changed
+precondition:
+
+- **Haku launch-routine capability:** eventual 450–650-line duplicate privilege
+  path deletion, but only after haku-ui submits `haku_routine.launch_routine`
+  through the standard approval queue. It currently overlaps the separate Web /
+  Codex feature track and PR #4584.
+- **Haku runner credential/setup compatibility and duplicate setup narration:**
+  real future cleanups, but they require rollout proof or reader migration and
+  overlap current runtime work.
+- **Haku session lifecycle D03:** independently reviewed cleanup remains parked
+  at [draft PR #10](https://github.com/agentydragon-agent/ducktape/pull/10)
+  because its ancestry includes #4584. Do not manage #4584 from cleanup work.
+- **`agent_core`:** explicitly ruled out for new personal-agent design, but still
+  a live dependency of `git_commit_ai`, `mcp_infra`, Props test helpers, and other
+  code. It is not presently a deletion candidate.
+- **Compositor public pinning:** likely simplifies after C02/C03/C07 remove nearly
+  every application `pinned=True` caller. Re-audit then; do not refactor around
+  consumers already proposed for deletion.
+- **Claude/Codex transcript projection sharing:** overlaps active Codex/runtime
+  work; revisit only after the feature stabilizes.
+- **LiteLLM exact-config mirror tests:** already owned by
+  [open PR #4472](https://github.com/agentydragon/ducktape/pull/4472).
+- **Rejected Haku manifest and Augur reducer prototypes:** prior versions removed
+  no worthwhile stage or weakened independent security/performance oracles.
+- **Raw inference `.eval` archives:** explicitly deferred.
+- **Props specimen inputs:** dated captured trees are frozen unless a reference
+  audit and specimen integration test prove an unrelated copied subtree can be
+  pruned.
+- **`haku/console/plans/conversation_layers.md`:** still referenced and tracks
+  remaining work; it is not stale documentation.
+- **Migrations, schema compatibility tests, negative authorization tests, exact
+  approval/audit semantics, renderer snapshots, postmortems, security records,
+  and operational lessons:** preserve unless the replacement has an independent
+  semantic owner.
+- **Kagent explanatory retirement docs, the OpenClaw namespace-retirement record,
+  Iron Proxy hardening record, and Haku multi-agent trust findings:** preserve
+  their unique operational/security evidence even when exact retired manifests
+  are deleted.
+
+## Implementation standard
+
+For every accepted item:
+
+1. rebase onto current `devel` and re-run the inbound-reference audit;
+2. preserve user-visible behavior and every independent semantic/security oracle;
+3. report raw deletions, replacement additions, and **whole-tree net** payoff;
+4. remove BUILD/package/lock/config/documentation references in the same PR;
+5. run the owning unit/integration/e2e checks and changed-file pre-commit hooks;
+6. obtain independent semantic review before opening or marking a PR ready;
+7. keep unrelated candidates in separate PRs unless one deletion genuinely
+   orphans the next.
+
+This docket is a decision aid and historical scratchpad. It is intentionally a
+draft and is not itself a merge deliverable.
