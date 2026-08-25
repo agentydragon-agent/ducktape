@@ -7,8 +7,11 @@ test_capabilities.py). There is no git-write path left to exercise here.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest_bazel
+
+from haku.console.conftest import write_config
 
 
 def test_healthz(client) -> None:
@@ -51,6 +54,64 @@ def test_config_haku_ui_url_surfaced_and_csp_allows_framing_it(make_operator_cli
         # Geolocation and screen capture are scoped to the shell origin — never delegated to the
         # framed haku-ui.
         assert resp.headers["permissions-policy"] == "geolocation=(self), display-capture=(self)"
+
+
+def test_config_advertises_the_authorized_claude_launch_pair(make_operator_client, monkeypatch, tmp_path: Path) -> None:
+    agent_id = "00000000-0000-4000-8000-000000000001"
+    monkeypatch.setenv("TEST_HAKU_TOKEN", "haku-token")
+    monkeypatch.setenv("TEST_HAKU_OPERATOR", "operator-sub")
+    prompt = tmp_path / "claude.md.j2"
+    prompt.write_text("Haku session {{ session_id }} in {{ workspace }}", encoding="utf-8")
+    config: dict[str, Any] = {
+        "chat_runtimes": {
+            "claude_code": {
+                "namespace": "claude",
+                "warm_pool": "claude",
+                "cwd": "/workspace",
+                "session_ttl_seconds": 300,
+                "oauth_placeholder": "placeholder",
+                "https_proxy": "http://claude-proxy.test:8080",
+                "ca_bundle": "/claude-ca.pem",
+                "no_proxy": "localhost",
+                "mcp_url": "https://console.test/mcp",
+                "mcp_static_agent_id": agent_id,
+                "system_prompt_template": str(prompt),
+            }
+        },
+        "auto_approval_policies": [{"id": "manual", "type": "never"}],
+        "access_profiles": [{"id": "haku", "auto_approval_policy": "manual", "allowed_chat_runtimes": ["claude_code"]}],
+        "default_access_profile_id": "haku",
+        "static_agents": [
+            {
+                "agent_id": agent_id,
+                "display_name": "Haku",
+                "token_env_var": "TEST_HAKU_TOKEN",
+                "operator_subject_env": "TEST_HAKU_OPERATOR",
+                "access_profile_id": "haku",
+            }
+        ],
+        "launchable_agents": [{"agent_id": agent_id}],
+        "default_chat_agent_id": agent_id,
+    }
+    config_file = write_config(tmp_path / "console.yaml", config)
+
+    with make_operator_client(config_file=config_file) as client:
+        assert client.get("/api/config").json()["chat_launch_options"] == [
+            {
+                "agent_id": agent_id,
+                "agent_display_name": "Haku",
+                "runtime": "claude_code",
+                "runtime_display_name": "Claude",
+                "is_default": True,
+            }
+        ]
+        created = client.post("/api/conversations", json={"agent_id": agent_id, "runtime": "claude_code"})
+        assert created.status_code == 201
+        assert created.json()["agent_id"] == agent_id
+        assert created.json()["runtime_kind"] == "claude_code"
+        assert client.post("/api/conversations").status_code == 422
+        assert client.post("/api/conversations", json={"agent_id": agent_id}).status_code == 422
+        assert client.post("/api/conversations", json={"runtime": "claude_code"}).status_code == 422
 
 
 def test_deployment_metadata_comes_from_runtime_image_tags(make_operator_client, monkeypatch) -> None:

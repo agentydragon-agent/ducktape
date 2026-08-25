@@ -1,11 +1,13 @@
-import { Badge, Box, Button, Code, Divider, Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
+import { Badge, Box, Button, Code, Divider, Group, Loader, Paper, Select, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import {
   closeSession,
   createConversation,
   displayableError,
+  fetchConfig,
   fetchConversations,
+  type ChatLaunchOption,
   type ConversationItem,
   type Conversation,
   type ConversationCursor,
@@ -13,6 +15,12 @@ import {
   type ConversationSummary,
 } from "../client";
 import { useCoalescedRefresh } from "../coalesced_refresh";
+import {
+  conversationLaunchOptions,
+  defaultLaunchKey,
+  launchKey,
+  shouldShowLaunchSelector,
+} from "../conversation_launch";
 import { changedSessionId, useConsoleEvents } from "../console_events";
 import { useFollowedConversation } from "./conversation_follow";
 import { conversationPath, CONVERSATIONS_PATH, navigateToConsolePath, sessionFramesPath } from "../routing";
@@ -207,6 +215,28 @@ function ConversationListPage() {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [launchOptions, setLaunchOptions] = useState<ChatLaunchOption[]>([]);
+  const [selectedLaunch, setSelectedLaunch] = useState<string | null>(null);
+  const [launchCatalogLoaded, setLaunchCatalogLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchConfig().then(
+      (config) => {
+        if (!alive) return;
+        const options = conversationLaunchOptions(config);
+        setLaunchOptions(options);
+        setSelectedLaunch(defaultLaunchKey(options));
+        setLaunchCatalogLoaded(true);
+      },
+      (reason: unknown) => {
+        if (alive) setError(displayableError(reason));
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const { refresh } = useCoalescedRefresh(async () => {
     try {
@@ -253,7 +283,9 @@ function ConversationListPage() {
     setStarting(true);
     setError(null);
     try {
-      openConversation((await createConversation()).conversation_id);
+      const selection = launchOptions.find((option) => launchKey(option) === selectedLaunch);
+      if (!selection) throw new Error("No authorized Agent/runtime launch is available");
+      openConversation((await createConversation(selection)).conversation_id);
     } catch (reason: unknown) {
       setError(displayableError(reason));
     } finally {
@@ -271,9 +303,28 @@ function ConversationListPage() {
               Every thread you have with Haku, wherever it is being held.
             </Text>
           </div>
-          <Button onClick={() => void start()} loading={starting}>
-            New conversation
-          </Button>
+          <Group gap="xs" wrap="nowrap">
+            {shouldShowLaunchSelector(launchOptions) && (
+              <Select
+                aria-label="Conversation Agent and runtime"
+                value={selectedLaunch}
+                onChange={setSelectedLaunch}
+                data={launchOptions.map((option) => ({
+                  value: launchKey(option),
+                  label: `${option.agent_display_name} · ${option.runtime_display_name}`,
+                }))}
+                allowDeselect={false}
+                w={260}
+              />
+            )}
+            <Button
+              onClick={() => void start()}
+              loading={starting}
+              disabled={!launchCatalogLoaded || selectedLaunch === null}
+            >
+              New conversation
+            </Button>
+          </Group>
         </div>
       </header>
       <div className="haku-page-scroll">

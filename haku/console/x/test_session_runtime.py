@@ -123,7 +123,15 @@ def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
 
 def test_new_conversation_request_rejects_client_supplied_access_profile() -> None:
     with pytest.raises(ValidationError, match="extra_forbidden"):
-        ConversationCreateRequest.model_validate({"access_profile_id": "admin"})
+        ConversationCreateRequest.model_validate(
+            {"agent_id": str(uuid4()), "runtime": RuntimeKind.CLAUDE_CODE, "access_profile_id": "admin"}
+        )
+
+
+@pytest.mark.parametrize("body", [{"agent_id": str(uuid4())}, {"runtime": RuntimeKind.CLAUDE_CODE}])
+def test_new_conversation_request_requires_the_complete_launch_pair(body: dict[str, object]) -> None:
+    with pytest.raises(ValidationError, match="Field required"):
+        ConversationCreateRequest.model_validate(body)
 
 
 async def test_post_conversation_launch_rejection_is_generic_403() -> None:
@@ -133,7 +141,11 @@ async def test_post_conversation_launch_rejection_is_generic_403() -> None:
 
     actor = type("Actor", (), {"operator_id": uuid4()})()
     with pytest.raises(HTTPException) as error:
-        await create_conversation(actor, cast(SessionService, RejectingService()))
+        await create_conversation(
+            ConversationCreateRequest(agent_id=uuid4(), runtime=RuntimeKind.CLAUDE_CODE),
+            actor,
+            cast(SessionService, RejectingService()),
+        )
 
     assert error.value.status_code == 403
     assert error.value.detail == "chat launch is not authorized"
