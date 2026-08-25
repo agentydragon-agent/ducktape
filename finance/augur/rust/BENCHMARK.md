@@ -2,10 +2,10 @@
 
 This benchmark fixture covers opening balances, scheduled and recurring
 transfers, grouped recurring obligations, FIFO lots, and scheduled sales. It
-does not exercise the prototype's tax-accrual path, and the prototype does not
-exercise its basic financed-property path. Property lifecycle behavior beyond
-purchase, mortgage carrying cost, and property tax is not implemented;
-allocation, TLH, and private equity are also still absent.
+does not exercise the prototype's tax-accrual, security-distribution, financed
+property, or property-lifecycle paths. Those paths are differentially tested as
+described in [README.md](README.md), but are intentionally outside this narrow
+throughput baseline. Allocation, TLH, and private equity are also still absent.
 
 The canonical generated fixture uses exact integer money and quantity values:
 
