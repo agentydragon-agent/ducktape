@@ -27,7 +27,7 @@ from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.launch_identity import LaunchAuthorizer
 from haku.console.x.runtime import RuntimeClientFactory, RuntimeRegistry
-from haku.console.x.runtime_catalog import claude_registry, projection_registry
+from haku.console.x.runtime_catalog import claude_registration, execution_registry, projection_registry
 from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
@@ -64,11 +64,13 @@ def configured_runtimes(
     system_prompt: SystemPromptTemplate | None = None,
     client_factory: RuntimeClientFactory = cli_over_websocket,
 ) -> RuntimeRegistry:
-    return claude_registry(
-        config or runtime_config(),
-        claims,
-        system_prompt=system_prompt or SystemPromptTemplate(""),
-        client_factory=client_factory,
+    return execution_registry(
+        claude_registration(
+            config or runtime_config(),
+            claims,
+            system_prompt=system_prompt or SystemPromptTemplate(""),
+            client_factory=client_factory,
+        )
     )
 
 

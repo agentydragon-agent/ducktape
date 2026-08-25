@@ -33,6 +33,7 @@ py_library(
         ":runtime",
         ":sandbox_claims",
         ":system_prompt",
+        "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console/x/claude_code:client",
         "//haku/console/x/claude_code:runtime",

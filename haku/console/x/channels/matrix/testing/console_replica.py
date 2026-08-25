@@ -50,7 +50,7 @@ from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.conversation_runtime import ConversationRuntime
-from haku.console.x.runtime_catalog import claude_registry
+from haku.console.x.runtime_catalog import claude_registration, execution_registry
 from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
@@ -159,8 +159,10 @@ async def _serve() -> None:
     notifications = SessionNotifications(database_url)
     await notifications.start()
     claims = FileSandboxClaims(Path(_environment("HAKU_E2E_CLAIMS_DIR")))
-    runtimes = claude_registry(
-        runtime, claims, system_prompt=SystemPromptTemplate.from_path(runtime.system_prompt_template)
+    runtimes = execution_registry(
+        claude_registration(
+            runtime, claims, system_prompt=SystemPromptTemplate.from_path(runtime.system_prompt_template)
+        )
     )
     store = SessionStore(sessions, runtimes)
     conversations = MatrixConversationStore(sessions)
