@@ -1271,6 +1271,33 @@ async def test_a_turn_that_asked_its_prompt_keeps_it(chat_store, chat_service, r
     assert await chat_store.next_prompt(session_id) is None, "the queue has nothing; the turn has it"
 
 
+async def test_an_incapable_rolling_replica_retries_before_taking_the_lease(
+    chat_store, recording_claims, notifications, operator_id
+) -> None:
+    """A new runtime row can reach an old replica while its replacement rolls out.
+
+    Capability is checked before bridge authentication because authentication is also lease
+    acquisition. The old replica must not mark the session Ready or make every capable replica
+    wait for its lease to expire; a 503 leaves the first attachment untouched and the runner's
+    existing redial loop finds a replica with the execution resources.
+    """
+    capable = SessionService(configured_runtimes(recording_claims), chat_store, notifications)
+    session = await _allocated_session(capable, recording_claims, operator_id)
+    token = recording_claims.tokens[session.session_id]
+    incapable = SessionService(
+        RuntimeRegistry({RuntimeKind.CLAUDE_CODE: ClaudeRuntimeAdapter()}), chat_store, notifications
+    )
+    websocket = _LifecycleWebSocket()
+
+    await incapable.handle_runner(cast(Any, websocket), session.session_id, token)
+
+    assert websocket.denied == 503
+    assert websocket.closed is None
+    assert not websocket.accepted
+    assert await chat_store.status(session.session_id) == SessionStatus.PROVISIONING
+    assert await chat_store.authenticate_bridge(session.session_id, token) == BridgeAuthentication.ACCEPTED
+
+
 async def test_a_held_session_tells_the_runner_to_retry_rather_than_refusing_it(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
