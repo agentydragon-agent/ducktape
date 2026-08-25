@@ -34,6 +34,19 @@ MCP_PATH = "/mcp"
 _CONSOLE_ROOT_PATH = "/_console"
 
 
+def _proxy_environment(*, proxy_url: str, no_proxy: str, ca_bundle: str, pip: bool = False) -> dict[str, str]:
+    """Build the common explicit-proxy and CA environment without alias drift."""
+    environment = {
+        **dict.fromkeys(("HTTP_PROXY", "HTTPS_PROXY"), proxy_url),
+        "NO_PROXY": no_proxy,
+        "NODE_USE_ENV_PROXY": "1",
+        **dict.fromkeys(("NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE"), ca_bundle),
+    }
+    if pip:
+        environment["PIP_CERT"] = ca_bundle
+    return environment
+
+
 def tool_call_console_url(console_base_url: str, tool_call_id: str) -> str:
     """The console URL that opens one tool call: the approvals drawer, that call expanded.
 
@@ -383,14 +396,7 @@ class ClaudeRuntimeConfig(BaseModel):
     def claude_environment(self) -> dict[str, str]:
         return {
             "CLAUDE_CODE_OAUTH_TOKEN": self.oauth_placeholder,
-            "HTTP_PROXY": self.https_proxy,
-            "HTTPS_PROXY": self.https_proxy,
-            "NO_PROXY": self.no_proxy,
-            "NODE_USE_ENV_PROXY": "1",
-            "NODE_EXTRA_CA_CERTS": self.ca_bundle,
-            "SSL_CERT_FILE": self.ca_bundle,
-            "CURL_CA_BUNDLE": self.ca_bundle,
-            "REQUESTS_CA_BUNDLE": self.ca_bundle,
+            **_proxy_environment(proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle),
         }
 
 
