@@ -15,6 +15,11 @@ from fastmcp.server.auth.auth import AccessToken
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.agent_bearer_authority import (
+    AgentBearerAuthority,
+    StaticAgentCredentialRegistry,
+    build_agent_bearer_authority,
+)
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
     StaticAgentAuthorization,
@@ -26,24 +31,16 @@ from haku.console.chat_models import RuntimeKind, SessionStatus
 from haku.console.config import McpOAuthConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.conftest import console_sessions, operator_id
 from haku.console.database_schema import Agent, Conversation, Operator, Session
-from haku.console.mcp_agent_auth import (
-    McpBearerAgentResolver,
-    OAuthMcpAuth,
-    StaticAgentCredentialRegistry,
-    StaticMcpAuth,
-    build_auth,
-)
+from haku.console.mcp_agent_auth import OAuthMcpAuth, StaticMcpAuth, build_auth
 from haku.console.mcp_auth.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
     BearerVerificationUnavailableError,
-    GrantAuthorization,
     HakuAgentOAuthProxy,
     HakuFailurePreservingMultiAuth,
-    HakuMcpActorResolver,
 )
 from haku.console.operator_identity import OperatorStatus
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.tool_call_actor import AgentActor, OperatorActor
+from haku.console.tool_call_actor import AgentActor
 from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES
 from mcp_infra.persistence import PostgresPersistence
 
@@ -97,12 +94,16 @@ def _oauth_proxy() -> Mock:
     return proxy
 
 
-def _static_auth(authority: PostgresAgentAuthority | None = None) -> StaticMcpAuth:
+def _static_auth(
+    authority: PostgresAgentAuthority | None = None, bearer_authority: AgentBearerAuthority | None = None
+) -> StaticMcpAuth:
+    authority = authority or _authority()
     auth = build_auth(
         _settings(),
-        agent_authority=authority or _authority(),
+        agent_authority=authority,
         static_credentials=_credentials(_TOKEN),
         operator_identity_store=_identity_store(),
+        agent_bearer_authority=bearer_authority,
     )
     assert isinstance(auth, StaticMcpAuth)
     return auth
@@ -121,6 +122,7 @@ def _mcp_oauth_config() -> McpOAuthConfig:
 class _OAuthAuthHarness:
     auth: OAuthMcpAuth
     authority: PostgresAgentAuthority
+    bearer_authority: AgentBearerAuthority
     storage: Mock
     proxy: Mock
     proxy_class: Mock
@@ -128,6 +130,8 @@ class _OAuthAuthHarness:
 
 def _oauth_auth(*static_tokens: str) -> _OAuthAuthHarness:
     authority = _authority()
+    credentials = _credentials(*static_tokens)
+    bearer_authority = build_agent_bearer_authority(agent_authority=authority, static_credentials=credentials)
     storage = Mock()
     proxy = _oauth_proxy()
     with (
@@ -137,22 +141,34 @@ def _oauth_auth(*static_tokens: str) -> _OAuthAuthHarness:
         auth = build_auth(
             _settings(mcp_oauth=_mcp_oauth_config()),
             agent_authority=authority,
-            static_credentials=_credentials(*static_tokens),
+            static_credentials=credentials,
             operator_identity_store=_identity_store(),
+            agent_bearer_authority=bearer_authority,
         )
     assert isinstance(auth, OAuthMcpAuth)
-    return _OAuthAuthHarness(auth=auth, authority=authority, storage=storage, proxy=proxy, proxy_class=proxy_class)
+    return _OAuthAuthHarness(
+        auth=auth,
+        authority=authority,
+        bearer_authority=bearer_authority,
+        storage=storage,
+        proxy=proxy,
+        proxy_class=proxy_class,
+    )
 
 
 async def test_static_auth_resolves_the_exact_active_binding_actor() -> None:
     authority = _authority()
-    auth = _static_auth(authority)
+    bearer_authority = build_agent_bearer_authority(agent_authority=authority, static_credentials=_credentials(_TOKEN))
+    auth = _static_auth(authority, bearer_authority)
 
     assert isinstance(auth.provider, HakuFailurePreservingMultiAuth)
     access = await auth.provider.verify_token(_TOKEN)
     assert access is not None
     assert access.client_id == f"haku-static-binding:{_BINDING_ID}"
     assert await auth.static_actor_resolver.resolve_static_actor(access) == AgentActor(
+        agent_id=_AGENT_ID, operator_id=_OPERATOR_ID, binding_id=_BINDING_ID
+    )
+    assert await bearer_authority.authenticate(_TOKEN) == AgentActor(
         agent_id=_AGENT_ID, operator_id=_OPERATOR_ID, binding_id=_BINDING_ID
     )
     cast(AsyncMock, authority.static_authorization_for_fingerprint).assert_has_awaits(
@@ -163,17 +179,15 @@ async def test_static_auth_resolves_the_exact_active_binding_actor() -> None:
     )
 
 
-async def test_kubernetes_bearer_resolver_reuses_static_mcp_bearer_verification() -> None:
+async def test_kubernetes_bearer_resolver_uses_canonical_static_agent_authority() -> None:
     authority = _authority()
-    auth = _static_auth(authority)
-    resolver = McpBearerAgentResolver(
-        provider=auth.provider, actors=HakuMcpActorResolver(authority, static_actor_resolver=auth.static_actor_resolver)
-    )
+    bearer_authority = build_agent_bearer_authority(agent_authority=authority, static_credentials=_credentials(_TOKEN))
+    _static_auth(authority, bearer_authority)
 
-    assert await resolver.resolve_agent(_TOKEN) == AgentActor(
+    assert await bearer_authority.authenticate(_TOKEN) == AgentActor(
         agent_id=_AGENT_ID, operator_id=_OPERATOR_ID, binding_id=_BINDING_ID
     )
-    assert await resolver.resolve_agent("not-configured") is None
+    assert await bearer_authority.authenticate("not-configured") is None
 
 
 async def test_static_auth_rejects_unconfigured_and_inactive_credentials() -> None:
@@ -278,17 +292,17 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
             )
         )
 
+    bearer_authority = build_agent_bearer_authority(
+        agent_authority=authority, static_credentials=_credentials(binding_token), session_tokens=migrated_sessions
+    )
     auth = build_auth(
         _settings(),
         agent_authority=authority,
         static_credentials=_credentials(binding_token),
         operator_identity_store=_identity_store(),
-        session_tokens=migrated_sessions,
+        agent_bearer_authority=bearer_authority,
     )
     assert isinstance(auth, StaticMcpAuth)
-    resolver = McpBearerAgentResolver(
-        provider=auth.provider, actors=HakuMcpActorResolver(authority, static_actor_resolver=auth.static_actor_resolver)
-    )
     access = await auth.provider.verify_token(session_token)
     assert access is not None
     assert access.client_id == f"haku-chat-session:{session_id}"
@@ -299,14 +313,13 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
         access_profile_id="pinned",
         session_id=session_id,
     )
-    assert await resolver.resolve_agent(session_token) == AgentActor(
+    assert await bearer_authority.authenticate(session_token) == AgentActor(
         agent_id=agent_id,
         operator_id=resolved_operator_id,
         binding_id=authorization.binding_id,
         access_profile_id="pinned",
         session_id=session_id,
     )
-
     # The bearer is a live-session credential, not merely a durable fingerprint lookup. It is
     # unusable before runner attachment, while the runner lease is expired, or after durable Agent
     # authority failure. The conversation's access profile is an immutable launch snapshot, so a
@@ -317,6 +330,7 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
         assert row is not None
         row.status = SessionStatus.PROVISIONING
     assert await auth.provider.verify_token(session_token) is None
+    assert await bearer_authority.authenticate(session_token) is None
 
     async with migrated_sessions.begin() as db:
         row = await db.get(Session, session_id)
@@ -324,6 +338,7 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
         row.status = SessionStatus.READY
         row.bridge_connected_at = None
     assert await auth.provider.verify_token(session_token) is None
+    assert await bearer_authority.authenticate(session_token) is None
 
     async with migrated_sessions.begin() as db:
         row = await db.get(Session, session_id)
@@ -331,6 +346,7 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
         row.bridge_connected_at = now
         row.lease_expires_at = now - datetime.timedelta(seconds=1)
     assert await auth.provider.verify_token(session_token) is None
+    assert await bearer_authority.authenticate(session_token) is None
 
     async with migrated_sessions.begin() as db:
         row = await db.get(Session, session_id)
@@ -470,45 +486,10 @@ async def test_oauth_auth_composes_one_authority_storage_and_optional_static_ver
     assert access.client_id == f"haku-static-binding:{_BINDING_ID}"
 
 
-async def test_kubernetes_bearer_resolver_accepts_verified_mcp_oauth_bearers() -> None:
+async def test_kubernetes_bearer_resolver_does_not_route_through_mcp_oauth() -> None:
     harness = _oauth_auth()
-    grant_id = uuid4()
-    oauth_actor = AgentActor(agent_id=_AGENT_ID, operator_id=_OPERATOR_ID, binding_id=_BINDING_ID)
-    access = AccessToken(
-        token="mcp-oauth-token",
-        client_id="interactive-client",
-        scopes=["mcp"],
-        expires_at=None,
-        claims={"upstream_claims": {"grant_id": str(grant_id)}},
-    )
-    cast(AsyncMock, harness.proxy.verify_token).return_value = access
-    cast(AsyncMock, harness.authority.activate_for_tool_call).return_value = GrantAuthorization(
-        grant_id=grant_id, actor=oauth_actor, client_id="interactive-client", allowed_scopes=frozenset({"mcp"})
-    )
-    resolver = McpBearerAgentResolver(
-        provider=harness.auth.provider,
-        actors=HakuMcpActorResolver(harness.authority, static_actor_resolver=harness.auth.static_actor_resolver),
-    )
-
-    assert await resolver.resolve_agent("mcp-oauth-token") == oauth_actor
-    cast(AsyncMock, harness.authority.activate_for_tool_call).assert_awaited_once_with(
-        grant_id=grant_id, client_id="interactive-client", token_scopes=frozenset({"mcp"})
-    )
-
-
-async def test_kubernetes_bearer_resolver_rejects_operator_principals() -> None:
-    provider = Mock(spec=HakuFailurePreservingMultiAuth)
-    operator = OperatorActor(operator_id=_OPERATOR_ID)
-    cast(AsyncMock, provider.verify_token).return_value = AccessToken(
-        token="operator-session",
-        client_id="operator",
-        scopes=[],
-        expires_at=None,
-        claims={"haku.operator_actor": operator},
-    )
-    resolver = McpBearerAgentResolver(provider=provider, actors=HakuMcpActorResolver(_authority()))
-
-    assert await resolver.resolve_agent("operator-session") is None
+    assert await harness.bearer_authority.authenticate("mcp-oauth-token") is None
+    cast(AsyncMock, harness.proxy.verify_token).assert_not_awaited()
 
 
 def test_oauth_auth_does_not_invent_a_static_resolver_without_static_credentials() -> None:

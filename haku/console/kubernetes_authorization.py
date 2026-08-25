@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -27,6 +26,7 @@ from kubernetes_asyncio.client import ApiClient, AuthorizationV1Api
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from haku.console.agent_bearer_authority import AgentBearerAuthority
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.kubernetes_grant_models import (
     KubernetesAllNamespacesGrantScope,
@@ -39,7 +39,6 @@ from haku.console.kubernetes_grant_models import (
     validate_grant_scope_rules,
 )
 from haku.console.kubernetes_grant_service import KubernetesGrantService
-from haku.console.tool_call_actor import AgentActor
 
 logger = logging.getLogger(__name__)
 
@@ -226,12 +225,12 @@ class KubernetesAuthorizationService:
         self,
         *,
         config: KubernetesAuthorizationConfig,
-        resolve_agent: Callable[[str], Awaitable[AgentActor | None]],
+        agent_bearer_authority: AgentBearerAuthority,
         grants: KubernetesGrantService,
         sar_client: SubjectAccessReviewClient,
     ) -> None:
         self._config = config
-        self._resolve_agent = resolve_agent
+        self._agent_bearer_authority = agent_bearer_authority
         self._grants = grants
         self._sar_client = sar_client
 
@@ -240,7 +239,7 @@ class KubernetesAuthorizationService:
         if token is None:
             raise KubernetesBearerRejectedError("Bearer authorization is required")
         try:
-            actor = await self._resolve_agent(token)
+            actor = await self._agent_bearer_authority.authenticate(token)
         except KubernetesAuthorizationUnavailableError:
             raise
         except Exception as error:

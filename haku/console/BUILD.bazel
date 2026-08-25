@@ -351,13 +351,27 @@ py_library(
 )
 
 py_library(
+    name = "agent_bearer_authority",
+    srcs = ["agent_bearer_authority.py"],
+    deps = [
+        ":chat_models",
+        ":database_schema",
+        ":tool_call_actor",
+        "//haku/console/agents:authorization",
+        "//haku/console/mcp_auth:fastmcp_adapter",
+        "//haku/console/x:launch_identity",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "kubernetes_authorization",
     srcs = ["kubernetes_authorization.py"],
     deps = [
+        ":agent_bearer_authority",
         ":config",
         ":kubernetes_grant_models",
         ":kubernetes_grant_service",
-        ":tool_call_actor",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
@@ -692,15 +706,13 @@ py_library(
     name = "mcp_agent_auth",
     srcs = ["mcp_agent_auth.py"],
     deps = [
-        ":chat_models",
+        ":agent_bearer_authority",
         ":config",
-        ":database_schema",
         ":operator_auth",
         ":operator_identity_store",
         ":tool_call_actor",
         "//haku/console/agents:authorization",
         "//haku/console/mcp_auth:fastmcp_adapter",
-        "//haku/console/x:launch_identity",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:provider",
         "@pypi//fastmcp_slim",
@@ -1061,6 +1073,7 @@ py_test(
     size = "medium",
     srcs = ["test_mcp_agent_auth.py"],
     deps = [
+        ":agent_bearer_authority",
         ":chat_models",
         ":config",
         ":conftest",
@@ -1121,6 +1134,7 @@ py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
+        ":agent_bearer_authority",
         ":authentik_operator_token",
         ":capabilities",
         ":config",

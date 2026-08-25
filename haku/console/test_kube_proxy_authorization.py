@@ -123,7 +123,26 @@ def _agent() -> AgentActor:
     )
 
 
-def _service(sar: FakeSarClient, resolver=None, grants=None) -> KubernetesAuthorizationService:
+class FakeAgentBearerAuthority:
+    def __init__(self, actor: AgentActor | None = None) -> None:
+        self.actor = _agent() if actor is None else actor
+
+    async def authenticate(self, token: str) -> AgentActor | None:
+        del token
+        return self.actor
+
+
+class RejectingAgentBearerAuthority:
+    async def authenticate(self, token: str) -> None:
+        del token
+
+
+def _service(
+    sar: FakeSarClient,
+    bearer_authority: FakeAgentBearerAuthority | RejectingAgentBearerAuthority | None = None,
+    grants: Any = None,
+) -> KubernetesAuthorizationService:
+    bearer_authority = bearer_authority or FakeAgentBearerAuthority()
     if grants is None:
         grants = AsyncMock()
         grants.match_request.return_value = KubernetesGrantDecision(allowed=False)
@@ -135,14 +154,10 @@ def _service(sar: FakeSarClient, resolver=None, grants=None) -> KubernetesAuthor
                 )
             }
         ),
-        resolve_agent=resolver or (lambda _token: _async_agent()),
+        agent_bearer_authority=cast(Any, bearer_authority),
         sar_client=sar,
         grants=grants,
     )
-
-
-async def _async_agent() -> AgentActor:
-    return _agent()
 
 
 class EmptyGrantRepository:
@@ -169,13 +184,14 @@ async def test_service_uses_fixed_configured_subject_and_request_attributes() ->
 async def test_service_fails_closed_when_agent_profile_has_no_configured_subject() -> None:
     sar = FakeSarClient()
 
-    async def unconfigured_profile(_token: str) -> AgentActor:
-        return AgentActor(
+    unconfigured_profile = FakeAgentBearerAuthority(
+        AgentActor(
             agent_id=UUID("00000000-0000-4000-8000-000000000011"),
             operator_id=UUID("00000000-0000-4000-8000-000000000012"),
             binding_id=UUID("00000000-0000-4000-8000-000000000013"),
             access_profile_id="unconfigured",
         )
+    )
 
     with pytest.raises(KubernetesAuthorizationUnavailableError, match="Agent access profile"):
         await _service(sar, unconfigured_profile).authorize(
@@ -234,11 +250,8 @@ def test_endpoint_rejects_noncanonical_scope_or_rules(field: str, value: object)
 async def test_service_rejects_unknown_bearer_before_sar() -> None:
     sar = FakeSarClient()
 
-    async def reject(_token: str) -> AgentActor | None:
-        return None
-
     with pytest.raises(KubernetesBearerRejectedError):
-        await _service(sar, reject).authorize(
+        await _service(sar, RejectingAgentBearerAuthority()).authorize(
             bearer="Bearer unknown", request=AuthorizationRequest.model_validate(REQUEST)
         )
     assert sar.calls == []
@@ -298,7 +311,7 @@ async def test_service_fails_closed_when_sar_times_out() -> None:
             subjects_by_access_profile={"public-diagnostics": KubernetesAuthorizationSubject(username="proxy")},
             timeout_seconds=0.001,
         ),
-        resolve_agent=lambda _token: _async_agent(),
+        agent_bearer_authority=cast(Any, FakeAgentBearerAuthority()),
         grants=AsyncMock(),
         sar_client=HangingSar(),
     )
