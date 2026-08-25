@@ -23,6 +23,7 @@ from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
+    BondHolding,
     CapitalImprovementEvent,
     DistributionTaxSlice,
     FixedAmount,
@@ -75,6 +76,30 @@ def _amount(spec: int | dict[str, Any], quantum: str) -> Decimal | FixedAmount |
             )
         case kind:
             raise ValueError(f"unsupported amount kind {kind!r}")
+
+
+def _ppb_float(value: int, *, context: str) -> float:
+    factor = value / 1_000_000_000
+    reconstructed = math.floor(abs(factor) * 1_000_000_000 + 0.5)
+    reconstructed = reconstructed if value >= 0 else -reconstructed
+    if abs(value) > 1 << 53 or reconstructed != value:
+        raise ValueError(f"{context} {value} ppb cannot round-trip exactly through the Python/JAX float boundary")
+    return factor
+
+
+def _bond_coupon_rate(spec: dict[str, Any]) -> float:
+    rate_ppb = cast(int, spec["annual_coupon_rate_ppb"])
+    rate = _ppb_float(rate_ppb, context=f"bond {spec['bond_id']!r} coupon rate")
+    if spec.get("inflation_indexed", False):
+        period = cast(int, spec.get("coupon_period_months", 6))
+        numerator = rate_ppb * period
+        exact_period_rate_ppb = (2 * numerator + 12) // 24
+        legacy_period_rate_ppb = math.floor(rate * period / 12 * 1_000_000_000 + 0.5)
+        if exact_period_rate_ppb != legacy_period_rate_ppb:
+            raise ValueError(
+                f"indexed bond {spec['bond_id']!r} period rate cannot match the Python/JAX float boundary exactly"
+            )
+    return rate
 
 
 def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSeriesContext, dict[str, Location]]:
@@ -272,6 +297,22 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 cost_basis_per_unit=_money(spec["basis"] * spec["quantity_scale"] // spec["units"], quantum),
             )
             for spec in lots
+        ],
+        initial_bonds=[
+            BondHolding(
+                bond_id=spec["bond_id"],
+                agent_id=spec["agent_id"],
+                account_id=spec["account_id"],
+                issuer_jurisdiction_id=spec.get("issuer_jurisdiction_id"),
+                face_value=_money(spec["face_value"], quantum),
+                purchase_price=_money(spec["purchase_price"], quantum),
+                annual_coupon_rate=_bond_coupon_rate(spec),
+                coupon_period_months=spec.get("coupon_period_months", 6),
+                inflation_indexed=spec.get("inflation_indexed", False),
+                purchase_month_index=spec["purchase_month_index"],
+                maturity_month_index=spec["maturity_month_index"],
+            )
+            for spec in scenario_spec.get("initial_bonds", [])
         ],
         scheduled_asset_sales=[
             ScheduledAssetSale(

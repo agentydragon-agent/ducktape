@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ledger::{AccountRef, JournalEntry},
     money::{Money, Quantity},
-    tax::TaxRules,
+    tax::{JurisdictionLevel, TaxRules},
 };
 
 pub const FIXTURE_SCHEMA_VERSION: u32 = 1;
@@ -26,6 +26,8 @@ pub struct ScenarioSpec {
     pub horizon_months: u32,
     pub accounts: Vec<AccountSpec>,
     #[serde(default)]
+    pub jurisdictions: Vec<JurisdictionIdentitySpec>,
+    #[serde(default)]
     pub locations: Vec<LocationSpec>,
     #[serde(default)]
     pub scheduled_transfers: Vec<ScheduledTransferSpec>,
@@ -41,6 +43,8 @@ pub struct ScenarioSpec {
     pub recurring_obligations: Vec<RecurringObligationSpec>,
     #[serde(default)]
     pub initial_lots: Vec<InitialLotSpec>,
+    #[serde(default)]
+    pub initial_bonds: Vec<BondSpec>,
     #[serde(default)]
     pub scheduled_sales: Vec<ScheduledSaleSpec>,
     #[serde(default)]
@@ -59,6 +63,13 @@ pub struct ScenarioSpec {
     pub mortgage_interest_deduction_policies: Vec<MortgageInterestDeductionSpec>,
     #[serde(default)]
     pub property_tax_policies: Vec<PropertyTaxPolicySpec>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct JurisdictionIdentitySpec {
+    pub jurisdiction_id: String,
+    pub level: JurisdictionLevel,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -243,6 +254,29 @@ pub struct InitialLotSpec {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct BondSpec {
+    pub bond_id: String,
+    pub agent_id: String,
+    pub account_id: String,
+    #[serde(default)]
+    pub issuer_jurisdiction_id: Option<String>,
+    pub face_value: Money,
+    pub purchase_price: Money,
+    pub annual_coupon_rate_ppb: i64,
+    #[serde(default = "default_coupon_period_months")]
+    pub coupon_period_months: u32,
+    #[serde(default)]
+    pub inflation_indexed: bool,
+    pub purchase_month_index: i32,
+    pub maturity_month_index: i32,
+}
+
+fn default_coupon_period_months() -> u32 {
+    6
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScheduledSaleSpec {
     pub month: u32,
     pub cause_id: String,
@@ -403,10 +437,20 @@ pub struct AccountBalance {
 pub struct MonthOutput {
     pub month: u32,
     pub balances: Vec<AccountBalance>,
+    pub bonds: Vec<BondState>,
     pub properties: Vec<PropertyState>,
     pub mortgages: Vec<MortgageState>,
     pub tax_liabilities: Vec<TaxLiabilityState>,
     pub failed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BondState {
+    pub bond_id: String,
+    pub agent_id: String,
+    pub account_id: String,
+    pub principal: Money,
+    pub active: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -531,6 +575,20 @@ pub struct DistributionOutcome {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BondCashflowOutcome {
+    pub month: u32,
+    pub cause_id: String,
+    pub bond_id: String,
+    pub agent_id: String,
+    pub account_id: String,
+    pub issuer_jurisdiction_id: Option<String>,
+    pub coupon: Money,
+    pub accretion: Money,
+    pub redemption: Money,
+    pub principal: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PropertyPurchaseOutcome {
     pub month: u32,
     pub cause_id: String,
@@ -613,6 +671,7 @@ pub struct RolloutOutput {
     pub tax_accruals: Vec<TaxAccrual>,
     pub tax_payments: Vec<TaxPaymentOutcome>,
     pub tax_settlements: Vec<TaxSettlementOutcome>,
+    pub bond_cashflows: Vec<BondCashflowOutcome>,
     pub distributions: Vec<DistributionOutcome>,
     pub property_purchases: Vec<PropertyPurchaseOutcome>,
     pub property_rented_fraction_events: Vec<PropertyRentedFractionOutcome>,
@@ -633,6 +692,7 @@ pub struct SimulationOutput {
 pub struct RolloutSummary {
     pub rollout_id: u32,
     pub ending_balances: Vec<AccountBalance>,
+    pub ending_bonds: Vec<BondState>,
     pub ending_properties: Vec<PropertyState>,
     pub ending_mortgages: Vec<MortgageState>,
     pub ending_tax_liabilities: Vec<TaxLiabilityState>,
@@ -641,6 +701,7 @@ pub struct RolloutSummary {
     pub tax_accrual_count: u64,
     pub tax_payment_count: u64,
     pub tax_settlement_count: u64,
+    pub bond_cashflow_count: u64,
     pub distribution_count: u64,
     pub property_purchase_count: u64,
     pub property_rented_fraction_event_count: u64,

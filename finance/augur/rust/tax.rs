@@ -5,9 +5,17 @@ use crate::money::{ArithmeticError, Money};
 
 pub const RATE_SCALE: i64 = 1_000_000_000;
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JurisdictionLevel {
+    Federal,
+    State,
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaxFacts {
     pub ordinary_income: Money,
+    pub interest_income: Money,
     pub short_term_gain: Money,
     pub long_term_gain: Money,
     pub section_1250_recapture: Money,
@@ -31,6 +39,10 @@ pub struct TaxBracket {
 #[serde(deny_unknown_fields)]
 pub struct TaxRules {
     pub jurisdiction_id: String,
+    #[serde(default)]
+    pub exempt_interest_from_levels: Vec<JurisdictionLevel>,
+    #[serde(default)]
+    pub exempts_own_issue: bool,
     pub ordinary_brackets: Vec<TaxBracket>,
     #[serde(default)]
     pub long_term_capital_gain_brackets: Vec<TaxBracket>,
@@ -40,6 +52,24 @@ pub struct TaxRules {
     /// through ordinary brackets.
     #[serde(default)]
     pub section_1250_rate_ppb: i64,
+}
+
+impl TaxRules {
+    pub fn taxes_interest_from(
+        &self,
+        issuer_jurisdiction_id: Option<&str>,
+        issuer_level: Option<JurisdictionLevel>,
+    ) -> bool {
+        let (Some(issuer_jurisdiction_id), Some(issuer_level)) =
+            (issuer_jurisdiction_id, issuer_level)
+        else {
+            return true;
+        };
+        if issuer_jurisdiction_id == self.jurisdiction_id {
+            return !self.exempts_own_issue;
+        }
+        !self.exempt_interest_from_levels.contains(&issuer_level)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -103,12 +133,11 @@ pub fn assess(facts: TaxFacts, rules: &TaxRules) -> Result<TaxAssessment, TaxErr
     )?;
     let deduction = facts.itemized_deduction.max(rules.standard_deduction);
     let federal_style_recapture = rules.section_1250_rate_ppb > 0;
+    let taxable_ordinary_income = facts.ordinary_income.checked_add(facts.interest_income)?;
     let ordinary_for_brackets = if federal_style_recapture {
-        facts.ordinary_income
+        taxable_ordinary_income
     } else {
-        facts
-            .ordinary_income
-            .checked_add(facts.section_1250_recapture)?
+        taxable_ordinary_income.checked_add(facts.section_1250_recapture)?
     };
     if rules.long_term_capital_gain_brackets.is_empty() {
         let taxable = nonnegative(
@@ -350,6 +379,8 @@ mod tests {
     fn federal() -> TaxRules {
         TaxRules {
             jurisdiction_id: "federal_us".into(),
+            exempt_interest_from_levels: vec![JurisdictionLevel::State],
+            exempts_own_issue: false,
             ordinary_brackets: vec![
                 TaxBracket {
                     upper: Some(Money(1_160_000)),

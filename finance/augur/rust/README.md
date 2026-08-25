@@ -34,6 +34,9 @@ The differential suite currently proves exact integer agreement for:
   monthly or periodic reset boundaries and exact half-up ratio scaling;
 - initial tax lots and FIFO scheduled sales;
 - monthly security distributions based on currently held units;
+- par-only held-to-maturity nominal bonds and TIPS, including finite coupon
+  schedules, par redemption, CPI-indexed principal, deflation-floor redemption,
+  phantom accretion income, and federal/state/own-issue interest exemptions;
 - financed or cash property purchases with explicit property, mortgage,
   receivable, and counterparty ledger postings;
 - property-gated scheduled and recurring cashflows, including ordinary-income
@@ -60,7 +63,8 @@ The differential suite currently proves exact integer agreement for:
 The Rust ledger also records tax expense/liability accrual entries, tax
 prepayments and settlement, and preserves capital-loss carryforward between tax
 years. Monthly and terminal output retain jurisdiction-level tax-liability
-state; selected traces expose tax-payment and tax-settlement records.
+state and held bond principal; selected traces expose tax-payment,
+tax-settlement, and issuer-attributed bond cashflow/accretion records.
 
 The strict fixture stores monetary series (security prices, distributions, and
 home values) as currency quanta. Inflation and rent index levels instead use a
@@ -70,10 +74,16 @@ boundary; the Rust validator and Python adapter reject fixtures that would lose
 an integer level during that conversion. Series coverage is deliberately dense:
 every series supplies every rollout and snapshot in the fixture.
 
+Bond coupon rates use the same parts-per-billion contract and must round-trip
+exactly through the legacy Python/JAX `float64` boundary. Nominal coupons round
+the full `face × annual rate × period / 12` rational once; TIPS preserve the
+legacy engine's indexed-principal and fixed-point period-rate path. Government
+issuer levels come from one scenario-level jurisdiction identity registry,
+rather than duplicated caller-supplied metadata on each bond.
+
 Still missing before replacement is plausible:
 
-- broader modeled tax facts, issuer-jurisdiction routing, and complete
-  deduction policy;
+- broader modeled tax facts and complete deduction policy;
 - policy-driven purchases and taxable distribution character;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax/SALT mixed-use splitting, mortgage principal-cap policies, and

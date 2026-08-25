@@ -5,17 +5,17 @@ use thiserror::Error;
 
 use crate::{
     fixture::{
-        AccountBalance, AmountSpec, CapitalImprovementOutcome, DistributionOutcome,
-        FIXTURE_SCHEMA_VERSION, Fixture, InitialLotSpec, LotDisposition, MonthOutput,
-        MortgageOriginationOutcome, MortgagePaymentOutcome, MortgageState, ObligationOutcome,
-        PopulationOutput, PropertyPurchaseOutcome, PropertyRentedFractionOutcome,
-        PropertySaleOutcome, PropertySaleSpec, PropertyState, RolloutOutput, RolloutSummary,
-        SeriesSpec, SimulationOutput, TaxAccrual, TaxLiabilityState, TaxPaymentOutcome,
-        TaxSettlementOutcome,
+        AccountBalance, AmountSpec, BondCashflowOutcome, BondSpec, BondState,
+        CapitalImprovementOutcome, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture,
+        InitialLotSpec, LotDisposition, MonthOutput, MortgageOriginationOutcome,
+        MortgagePaymentOutcome, MortgageState, ObligationOutcome, PopulationOutput,
+        PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
+        PropertySaleSpec, PropertyState, RolloutOutput, RolloutSummary, SeriesSpec,
+        SimulationOutput, TaxAccrual, TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
-    tax::{TaxError, TaxFacts, assess, validate_rules},
+    tax::{JurisdictionLevel, RATE_SCALE, TaxError, TaxFacts, assess, validate_rules},
 };
 
 const EXTERNAL_AGENT: &str = "__external__";
@@ -94,6 +94,27 @@ pub enum SimulationError {
     },
     #[error("duplicate lot id {lot_id:?}")]
     DuplicateLot { lot_id: String },
+    #[error("duplicate bond id {bond_id:?}")]
+    DuplicateBond { bond_id: String },
+    #[error("bond {bond_id:?} has invalid par-only held-to-maturity terms")]
+    InvalidBondTerms { bond_id: String },
+    #[error("duplicate jurisdiction identity {jurisdiction_id:?}")]
+    DuplicateJurisdictionIdentity { jurisdiction_id: String },
+    #[error("bond {bond_id:?} references unknown issuer jurisdiction {jurisdiction_id:?}")]
+    UnknownBondIssuer {
+        bond_id: String,
+        jurisdiction_id: String,
+    },
+    #[error("inflation-indexed bond {bond_id:?} requires an inflation series")]
+    MissingBondInflationSeries { bond_id: String },
+    #[error(
+        "bond {bond_id:?} coupon rate {rate_ppb} ppb cannot round-trip through the Python/JAX float boundary"
+    )]
+    InexactBondCouponRate { bond_id: String, rate_ppb: i64 },
+    #[error(
+        "indexed bond {bond_id:?} period rate cannot match the Python/JAX float boundary exactly"
+    )]
+    InexactBondPeriodRate { bond_id: String },
     #[error("sale {cause_id:?} has non-positive units {units}")]
     InvalidSaleUnits { cause_id: String, units: i64 },
     #[error("{kind} {cause_id:?} has non-positive amount {amount}")]
@@ -291,6 +312,7 @@ struct Recorder {
     tax_accruals: Vec<TaxAccrual>,
     tax_payments: Vec<TaxPaymentOutcome>,
     tax_settlements: Vec<TaxSettlementOutcome>,
+    bond_cashflows: Vec<BondCashflowOutcome>,
     distributions: Vec<DistributionOutcome>,
     property_purchases: Vec<PropertyPurchaseOutcome>,
     property_rented_fraction_events: Vec<PropertyRentedFractionOutcome>,
@@ -303,6 +325,7 @@ struct Recorder {
     tax_accrual_count: u64,
     tax_payment_count: u64,
     tax_settlement_count: u64,
+    bond_cashflow_count: u64,
     distribution_count: u64,
     property_purchase_count: u64,
     property_rented_fraction_event_count: u64,
@@ -322,6 +345,7 @@ impl Recorder {
             tax_accruals: Vec::new(),
             tax_payments: Vec::new(),
             tax_settlements: Vec::new(),
+            bond_cashflows: Vec::new(),
             distributions: Vec::new(),
             property_purchases: Vec::new(),
             property_rented_fraction_events: Vec::new(),
@@ -334,6 +358,7 @@ impl Recorder {
             tax_accrual_count: 0,
             tax_payment_count: 0,
             tax_settlement_count: 0,
+            bond_cashflow_count: 0,
             distribution_count: 0,
             property_purchase_count: 0,
             property_rented_fraction_event_count: 0,
@@ -438,6 +463,22 @@ impl Recorder {
         Ok(())
     }
 
+    fn record_bond_cashflow(
+        &mut self,
+        cashflow: BondCashflowOutcome,
+    ) -> Result<(), SimulationError> {
+        self.bond_cashflow_count =
+            self.bond_cashflow_count
+                .checked_add(1)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "bond cashflow count",
+                })?;
+        if self.capture_trace {
+            self.bond_cashflows.push(cashflow);
+        }
+        Ok(())
+    }
+
     fn record_property_purchase(
         &mut self,
         purchase: PropertyPurchaseOutcome,
@@ -530,6 +571,7 @@ impl Recorder {
 struct RolloutComputation {
     rollout_id: u32,
     ending_balances: Vec<AccountBalance>,
+    ending_bonds: Vec<BondState>,
     ending_properties: Vec<PropertyState>,
     ending_mortgages: Vec<MortgageState>,
     ending_tax_liabilities: Vec<TaxLiabilityState>,
@@ -548,6 +590,7 @@ impl RolloutComputation {
             tax_accruals: self.recorder.tax_accruals,
             tax_payments: self.recorder.tax_payments,
             tax_settlements: self.recorder.tax_settlements,
+            bond_cashflows: self.recorder.bond_cashflows,
             distributions: self.recorder.distributions,
             property_purchases: self.recorder.property_purchases,
             property_rented_fraction_events: self.recorder.property_rented_fraction_events,
@@ -563,6 +606,7 @@ impl RolloutComputation {
         RolloutSummary {
             rollout_id: self.rollout_id,
             ending_balances: self.ending_balances,
+            ending_bonds: self.ending_bonds,
             ending_properties: self.ending_properties,
             ending_mortgages: self.ending_mortgages,
             ending_tax_liabilities: self.ending_tax_liabilities,
@@ -571,6 +615,7 @@ impl RolloutComputation {
             tax_accrual_count: self.recorder.tax_accrual_count,
             tax_payment_count: self.recorder.tax_payment_count,
             tax_settlement_count: self.recorder.tax_settlement_count,
+            bond_cashflow_count: self.recorder.bond_cashflow_count,
             distribution_count: self.recorder.distribution_count,
             property_purchase_count: self.recorder.property_purchase_count,
             property_rented_fraction_event_count: self
@@ -714,6 +759,18 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             return Err(SimulationError::DuplicateAccount {
                 agent_id: account.account.agent_id.clone(),
                 account_id: account.account.account_id.clone(),
+            });
+        }
+    }
+    let mut jurisdiction_levels = BTreeMap::new();
+    for jurisdiction in &fixture.scenario.jurisdictions {
+        validate_identifier("jurisdiction", &jurisdiction.jurisdiction_id)?;
+        if jurisdiction_levels
+            .insert(jurisdiction.jurisdiction_id.clone(), jurisdiction.level)
+            .is_some()
+        {
+            return Err(SimulationError::DuplicateJurisdictionIdentity {
+                jurisdiction_id: jurisdiction.jurisdiction_id.clone(),
             });
         }
     }
@@ -869,6 +926,104 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                 agent_id: lot.agent_id.clone(),
                 account_id: lot.account_id.clone(),
             });
+        }
+    }
+    let mut bonds = BTreeSet::new();
+    for bond in &fixture.scenario.initial_bonds {
+        validate_identifier("bond", &bond.bond_id)?;
+        if !bonds.insert(bond.bond_id.clone()) {
+            return Err(SimulationError::DuplicateBond {
+                bond_id: bond.bond_id.clone(),
+            });
+        }
+        validate_account(
+            &accounts,
+            &AccountRef::new(&bond.agent_id, &bond.account_id),
+            &format!("bond {:?}", bond.bond_id),
+        )?;
+        if let Some(issuer) = &bond.issuer_jurisdiction_id
+            && !jurisdiction_levels.contains_key(issuer)
+        {
+            return Err(SimulationError::UnknownBondIssuer {
+                bond_id: bond.bond_id.clone(),
+                jurisdiction_id: issuer.clone(),
+            });
+        }
+        let Some(term_months) = bond
+            .maturity_month_index
+            .checked_sub(bond.purchase_month_index)
+        else {
+            return Err(SimulationError::InvalidBondTerms {
+                bond_id: bond.bond_id.clone(),
+            });
+        };
+        if bond.face_value.0 <= 0
+            || bond.purchase_price != bond.face_value
+            || bond.annual_coupon_rate_ppb < 0
+            || bond.coupon_period_months == 0
+            || term_months <= 0
+            || i64::from(term_months) % i64::from(bond.coupon_period_months) != 0
+        {
+            return Err(SimulationError::InvalidBondTerms {
+                bond_id: bond.bond_id.clone(),
+            });
+        }
+        let reconstructed_rate = ((bond.annual_coupon_rate_ppb as f64 / RATE_SCALE as f64)
+            * RATE_SCALE as f64)
+            .round() as i64;
+        if bond.annual_coupon_rate_ppb > MAX_EXACT_F64_INTEGER
+            || reconstructed_rate != bond.annual_coupon_rate_ppb
+        {
+            return Err(SimulationError::InexactBondCouponRate {
+                bond_id: bond.bond_id.clone(),
+                rate_ppb: bond.annual_coupon_rate_ppb,
+            });
+        }
+        if bond.inflation_indexed {
+            let exact_period_rate = bond_period_rate_ppb(bond)?;
+            let legacy_period_rate = (((bond.annual_coupon_rate_ppb as f64 / RATE_SCALE as f64)
+                * f64::from(bond.coupon_period_months)
+                / 12.0
+                * RATE_SCALE as f64)
+                + 0.5)
+                .floor() as i64;
+            if exact_period_rate != legacy_period_rate {
+                return Err(SimulationError::InexactBondPeriodRate {
+                    bond_id: bond.bond_id.clone(),
+                });
+            }
+            if !series_ids.contains("inflation") {
+                return Err(SimulationError::MissingBondInflationSeries {
+                    bond_id: bond.bond_id.clone(),
+                });
+            }
+            let base_month = bond.purchase_month_index.max(0) as u32;
+            if base_month > fixture.scenario.horizon_months {
+                return Err(SimulationError::InvalidBondTerms {
+                    bond_id: bond.bond_id.clone(),
+                });
+            }
+            for rollout in 0..fixture.rollout_count {
+                for snapshot in 0..=fixture.scenario.horizon_months {
+                    let level = fixture
+                        .series
+                        .iter()
+                        .find(|series| series.series_id == "inflation")
+                        .and_then(|series| series.value(rollout, snapshot))
+                        .ok_or_else(|| SimulationError::MissingSeriesValue {
+                            series_id: "inflation".into(),
+                            rollout,
+                            snapshot,
+                        })?;
+                    validate_amount_index_level(
+                        &bond.bond_id,
+                        "inflation",
+                        rollout,
+                        snapshot,
+                        level,
+                    )?;
+                }
+            }
         }
     }
     for sale in &fixture.scenario.scheduled_sales {
@@ -1608,7 +1763,6 @@ fn simulate_rollout(
             basis_remaining: spec.basis,
         });
     }
-
     let mut properties = Vec::<PropertyState>::new();
     let mut mortgages = Vec::<MortgageState>::new();
     let mut tax_liabilities = Vec::<TaxLiabilityState>::new();
@@ -1616,25 +1770,29 @@ fn simulate_rollout(
     let mut failed_month = None;
     if recorder.capture_trace {
         recorder.record_month(month_output(
+            fixture,
+            rollout_id,
             0,
             &ledger,
             &properties,
             &mortgages,
             &tax_liabilities,
             false,
-        ));
+        )?);
     }
     for month in 0..fixture.scenario.horizon_months {
         if failed_month.is_some() {
             if recorder.capture_trace {
                 recorder.record_month(month_output(
+                    fixture,
+                    rollout_id,
                     month + 1,
                     &ledger,
                     &properties,
                     &mortgages,
                     &tax_liabilities,
                     true,
-                ));
+                )?);
             }
             continue;
         }
@@ -1646,6 +1804,14 @@ fn simulate_rollout(
             &mut tax_facts,
             &mut properties,
             &mut mortgages,
+            month,
+        )?;
+        execute_bonds(
+            fixture,
+            rollout_id,
+            &mut ledger,
+            &mut recorder,
+            &mut tax_facts,
             month,
         )?;
         execute_distributions(
@@ -1759,19 +1925,27 @@ fn simulate_rollout(
         }
         if recorder.capture_trace {
             recorder.record_month(month_output(
+                fixture,
+                rollout_id,
                 month + 1,
                 &ledger,
                 &properties,
                 &mortgages,
                 &tax_liabilities,
                 failed_month.is_some(),
-            ));
+            )?);
         }
     }
     debug_assert_eq!(ledger.trial_balance(), 0);
     Ok(RolloutComputation {
         rollout_id,
         ending_balances: account_balances(&ledger, failed_month.is_some()),
+        ending_bonds: bond_states(
+            fixture,
+            rollout_id,
+            fixture.scenario.horizon_months,
+            failed_month.is_some(),
+        )?,
         ending_properties: property_states(&properties, failed_month.is_some()),
         ending_mortgages: mortgage_states(&mortgages, failed_month.is_some()),
         ending_tax_liabilities: tax_liability_states(&tax_liabilities, failed_month.is_some()),
@@ -3437,6 +3611,202 @@ fn amount_value(
     }
 }
 
+fn bond_is_active(bond: &BondSpec, snapshot_month: u32) -> bool {
+    i64::from(bond.purchase_month_index) <= i64::from(snapshot_month)
+        && i64::from(snapshot_month) < i64::from(bond.maturity_month_index)
+}
+
+fn bond_pays(bond: &BondSpec, month: u32) -> bool {
+    let elapsed = i64::from(month) - i64::from(bond.purchase_month_index);
+    elapsed > 0
+        && i64::from(month) <= i64::from(bond.maturity_month_index)
+        && elapsed % i64::from(bond.coupon_period_months) == 0
+}
+
+fn bond_principal(
+    fixture: &Fixture,
+    rollout_id: u32,
+    bond: &BondSpec,
+    snapshot_month: u32,
+) -> Result<Money, SimulationError> {
+    if !bond.inflation_indexed {
+        return Ok(bond.face_value);
+    }
+    let base_month = bond.purchase_month_index.max(0) as u32;
+    let base_level = series_value(fixture, "inflation", rollout_id, base_month)?;
+    let level = series_value(fixture, "inflation", rollout_id, snapshot_month)?;
+    Ok(Money(mul_div_round_half_up(
+        bond.face_value.0,
+        level,
+        base_level,
+        "bond indexed principal",
+    )?))
+}
+
+fn bond_period_rate_ppb(bond: &BondSpec) -> Result<i64, SimulationError> {
+    mul_div_round_half_up(
+        bond.annual_coupon_rate_ppb,
+        i64::from(bond.coupon_period_months),
+        12,
+        "bond period rate",
+    )
+    .map_err(Into::into)
+}
+
+fn bond_coupon(principal: Money, bond: &BondSpec) -> Result<Money, SimulationError> {
+    let coupon = if bond.inflation_indexed {
+        i128::from(mul_div_round_half_up(
+            principal.0,
+            bond_period_rate_ppb(bond)?,
+            RATE_SCALE,
+            "indexed bond coupon",
+        )?)
+    } else {
+        let rate_times_period = i128::from(bond.annual_coupon_rate_ppb)
+            .checked_mul(i128::from(bond.coupon_period_months))
+            .ok_or(ArithmeticError::Overflow {
+                operation: "nominal bond coupon rate",
+            })?;
+        mul_div_i128_round_half_up(
+            i128::from(principal.0),
+            rate_times_period,
+            i128::from(RATE_SCALE) * 12,
+            "nominal bond coupon",
+        )?
+    };
+    Ok(Money(i64::try_from(coupon).map_err(|_| {
+        ArithmeticError::Overflow {
+            operation: "bond coupon",
+        }
+    })?))
+}
+
+fn bond_states(
+    fixture: &Fixture,
+    rollout_id: u32,
+    snapshot_month: u32,
+    failed: bool,
+) -> Result<Vec<BondState>, SimulationError> {
+    fixture
+        .scenario
+        .initial_bonds
+        .iter()
+        .map(|bond| {
+            let active = !failed && bond_is_active(bond, snapshot_month);
+            Ok(BondState {
+                bond_id: bond.bond_id.clone(),
+                agent_id: bond.agent_id.clone(),
+                account_id: bond.account_id.clone(),
+                principal: if active {
+                    bond_principal(fixture, rollout_id, bond, snapshot_month)?
+                } else {
+                    Money(0)
+                },
+                active,
+            })
+        })
+        .collect()
+}
+
+fn record_bond_interest(
+    fixture: &Fixture,
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    bond: &BondSpec,
+    amount: Money,
+) -> Result<(), SimulationError> {
+    let issuer_level = bond_issuer_level(fixture, bond);
+    for profile in fixture
+        .scenario
+        .tax_profiles
+        .iter()
+        .filter(|profile| profile.agent_id == bond.agent_id)
+    {
+        for rules in &profile.jurisdictions {
+            if rules.taxes_interest_from(bond.issuer_jurisdiction_id.as_deref(), issuer_level) {
+                let facts = tax_facts
+                    .get_mut(&(profile.agent_id.clone(), rules.jurisdiction_id.clone()))
+                    .expect("validated tax facts must exist for every profile jurisdiction");
+                facts.interest_income = facts.interest_income.checked_add(amount)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn bond_issuer_level(fixture: &Fixture, bond: &BondSpec) -> Option<JurisdictionLevel> {
+    let issuer = bond.issuer_jurisdiction_id.as_deref()?;
+    fixture
+        .scenario
+        .jurisdictions
+        .iter()
+        .find(|jurisdiction| jurisdiction.jurisdiction_id == issuer)
+        .map(|jurisdiction| jurisdiction.level)
+}
+
+fn execute_bonds(
+    fixture: &Fixture,
+    rollout_id: u32,
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    month: u32,
+) -> Result<(), SimulationError> {
+    for bond in &fixture.scenario.initial_bonds {
+        let principal = bond_principal(fixture, rollout_id, bond, month)?;
+        let coupon = if bond_pays(bond, month) {
+            bond_coupon(principal, bond)?
+        } else {
+            Money(0)
+        };
+        let redemption = if i64::from(month) == i64::from(bond.maturity_month_index) {
+            if bond.inflation_indexed {
+                Money(principal.0.max(bond.face_value.0))
+            } else {
+                bond.face_value
+            }
+        } else {
+            Money(0)
+        };
+        let accretion = if bond.inflation_indexed && month > 0 && bond_is_active(bond, month) {
+            principal.checked_sub(bond_principal(fixture, rollout_id, bond, month - 1)?)?
+        } else {
+            Money(0)
+        };
+        let paid = coupon.checked_add(redemption)?;
+        if paid != Money(0) {
+            let cause_id = format!("bond:{}:m{month}", bond.bond_id);
+            transfer_money(
+                ledger,
+                recorder,
+                month,
+                &cause_id,
+                &AccountRef::new(EXTERNAL_AGENT, "boundary"),
+                &AccountRef::new(&bond.agent_id, &bond.account_id),
+                paid,
+            )?;
+        }
+        let income = coupon.checked_add(accretion)?;
+        if income != Money(0) {
+            record_bond_interest(fixture, tax_facts, bond, income)?;
+        }
+        if coupon != Money(0) || accretion != Money(0) || redemption != Money(0) {
+            recorder.record_bond_cashflow(BondCashflowOutcome {
+                month,
+                cause_id: format!("bond:{}:m{month}", bond.bond_id),
+                bond_id: bond.bond_id.clone(),
+                agent_id: bond.agent_id.clone(),
+                account_id: bond.account_id.clone(),
+                issuer_jurisdiction_id: bond.issuer_jurisdiction_id.clone(),
+                coupon,
+                accretion,
+                redemption,
+                principal,
+            })?;
+        }
+    }
+    Ok(())
+}
+
 fn asset_basis_account(lot: &InitialLotSpec) -> AccountRef {
     AccountRef::new(
         &lot.agent_id,
@@ -3502,22 +3872,26 @@ fn mortgage_funding_account(agent_id: &str, liability_id: &str) -> AccountRef {
     AccountRef::new(agent_id, format!("equity:mortgage-funding:{liability_id}"))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn month_output(
+    fixture: &Fixture,
+    rollout_id: u32,
     month: u32,
     ledger: &Ledger,
     properties: &[PropertyState],
     mortgages: &[MortgageState],
     tax_liabilities: &[TaxLiabilityState],
     failed: bool,
-) -> MonthOutput {
-    MonthOutput {
+) -> Result<MonthOutput, SimulationError> {
+    Ok(MonthOutput {
         month,
         balances: account_balances(ledger, failed),
+        bonds: bond_states(fixture, rollout_id, month, failed)?,
         properties: property_states(properties, failed),
         mortgages: mortgage_states(mortgages, failed),
         tax_liabilities: tax_liability_states(tax_liabilities, failed),
         failed,
-    }
+    })
 }
 
 fn tax_liability_states(
@@ -3581,9 +3955,9 @@ fn account_balances(ledger: &Ledger, failed: bool) -> Vec<AccountBalance> {
 #[cfg(test)]
 mod tests {
     use crate::fixture::{
-        AccountSpec, InitialLotSpec, LocationSpec, MortgageFinancingSpec, ObligationSpec,
-        PropertyTaxPolicySpec, RecurringObligationSpec, ScenarioSpec,
-        ScheduledPropertyPurchaseSpec, ScheduledSaleSpec, ScheduledTransferSpec,
+        AccountSpec, BondSpec, InitialLotSpec, JurisdictionIdentitySpec, LocationSpec,
+        MortgageFinancingSpec, ObligationSpec, PropertyTaxPolicySpec, RecurringObligationSpec,
+        ScenarioSpec, ScheduledPropertyPurchaseSpec, ScheduledSaleSpec, ScheduledTransferSpec,
         SeriesIndexedAmountKind, SeriesIndexedAmountSpec, SeriesSpec,
     };
 
@@ -3601,6 +3975,7 @@ mod tests {
                     account: AccountRef::new("alice", "checking"),
                     opening_balance: Money(0),
                 }],
+                jurisdictions: vec![],
                 locations: vec![],
                 scheduled_transfers: vec![],
                 recurring_transfers: vec![],
@@ -3609,6 +3984,7 @@ mod tests {
                 obligations: vec![],
                 recurring_obligations: vec![],
                 initial_lots: vec![],
+                initial_bonds: vec![],
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
                 distributions: vec![],
@@ -3781,6 +4157,194 @@ mod tests {
     }
 
     #[test]
+    fn nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts() {
+        let mut fixture = minimal_fixture();
+        fixture.rollout_count = 2;
+        fixture.scenario.horizon_months = 13;
+        fixture.scenario.jurisdictions = vec![JurisdictionIdentitySpec {
+            jurisdiction_id: "federal_us".into(),
+            level: JurisdictionLevel::Federal,
+        }];
+        fixture.scenario.initial_bonds = vec![
+            BondSpec {
+                bond_id: "treasury".into(),
+                agent_id: "alice".into(),
+                account_id: "checking".into(),
+                issuer_jurisdiction_id: Some("federal_us".into()),
+                face_value: Money(100_000_000),
+                purchase_price: Money(100_000_000),
+                annual_coupon_rate_ppb: 50_000_000,
+                coupon_period_months: 6,
+                inflation_indexed: false,
+                purchase_month_index: -1,
+                maturity_month_index: 11,
+            },
+            BondSpec {
+                bond_id: "tips".into(),
+                agent_id: "alice".into(),
+                account_id: "checking".into(),
+                issuer_jurisdiction_id: Some("federal_us".into()),
+                face_value: Money(100_000_000),
+                purchase_price: Money(100_000_000),
+                annual_coupon_rate_ppb: 40_000_000,
+                coupon_period_months: 6,
+                inflation_indexed: true,
+                purchase_month_index: -1,
+                maturity_month_index: 11,
+            },
+            BondSpec {
+                bond_id: "expired".into(),
+                agent_id: "alice".into(),
+                account_id: "checking".into(),
+                issuer_jurisdiction_id: Some("federal_us".into()),
+                face_value: Money(100_000_000),
+                purchase_price: Money(100_000_000),
+                annual_coupon_rate_ppb: 50_000_000,
+                coupon_period_months: 6,
+                inflation_indexed: false,
+                purchase_month_index: -13,
+                maturity_month_index: -1,
+            },
+        ];
+        fixture.series = vec![SeriesSpec {
+            series_id: "inflation".into(),
+            snapshots: 14,
+            values: [
+                vec![1_000_000_000; 6],
+                vec![2_000_000_000; 8],
+                vec![1_000_000_000; 6],
+                vec![1_500_000_000; 8],
+            ]
+            .concat(),
+        }];
+
+        let output = simulate(&fixture).unwrap();
+        let first = &output.rollouts[0];
+        let first_by_bond_month: BTreeMap<_, _> = first
+            .bond_cashflows
+            .iter()
+            .map(|flow| ((flow.bond_id.as_str(), flow.month), flow))
+            .collect();
+        assert_eq!(
+            first_by_bond_month[&("treasury", 5)].coupon,
+            Money(2_500_000)
+        );
+        assert_eq!(
+            first_by_bond_month[&("treasury", 11)].redemption,
+            Money(100_000_000)
+        );
+        assert_eq!(first_by_bond_month[&("tips", 5)].coupon, Money(2_000_000));
+        assert_eq!(
+            first_by_bond_month[&("tips", 6)].accretion,
+            Money(100_000_000)
+        );
+        assert_eq!(first_by_bond_month[&("tips", 11)].coupon, Money(4_000_000));
+        assert_eq!(
+            first_by_bond_month[&("tips", 11)].redemption,
+            Money(200_000_000)
+        );
+        assert_eq!(first.months[5].bonds[1].principal, Money(100_000_000));
+        assert_eq!(first.months[6].bonds[1].principal, Money(200_000_000));
+        assert!(!first.months[12].bonds[1].active);
+        assert_eq!(first.months[12].bonds[1].principal, Money(0));
+        assert!(first.bond_cashflows.iter().all(|flow| flow.month <= 11));
+        assert!(
+            first
+                .bond_cashflows
+                .iter()
+                .all(|flow| flow.bond_id != "expired")
+        );
+
+        let second = &output.rollouts[1];
+        let second_tips = second
+            .bond_cashflows
+            .iter()
+            .filter(|flow| flow.bond_id == "tips")
+            .collect::<Vec<_>>();
+        assert_eq!(second_tips[1].accretion, Money(50_000_000));
+        assert_eq!(second_tips.last().unwrap().redemption, Money(150_000_000));
+        assert!(
+            output
+                .rollouts
+                .iter()
+                .all(|rollout| rollout.journal.iter().all(|entry| {
+                    entry
+                        .postings
+                        .iter()
+                        .map(|posting| i128::from(posting.amount.0))
+                        .sum::<i128>()
+                        == 0
+                }))
+        );
+    }
+
+    #[test]
+    fn bond_validation_rejects_non_par_and_missing_index_paths() {
+        let mut fixture = minimal_fixture();
+        fixture.scenario.initial_bonds = vec![BondSpec {
+            bond_id: "bad".into(),
+            agent_id: "alice".into(),
+            account_id: "checking".into(),
+            issuer_jurisdiction_id: None,
+            face_value: Money(100),
+            purchase_price: Money(99),
+            annual_coupon_rate_ppb: 50_000_000,
+            coupon_period_months: 6,
+            inflation_indexed: false,
+            purchase_month_index: -6,
+            maturity_month_index: 6,
+        }];
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::InvalidBondTerms { .. })
+        ));
+
+        fixture.scenario.initial_bonds[0].purchase_price = Money(100);
+        fixture.scenario.initial_bonds[0].inflation_indexed = true;
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::MissingBondInflationSeries { .. })
+        ));
+
+        fixture.scenario.initial_bonds[0].inflation_indexed = false;
+        fixture.scenario.initial_bonds[0].issuer_jurisdiction_id = Some("federal_us".into());
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::UnknownBondIssuer { .. })
+        ));
+    }
+
+    #[test]
+    fn nominal_bond_coupon_rounds_the_full_rational_once() {
+        let mut bond = BondSpec {
+            bond_id: "rounding".into(),
+            agent_id: "alice".into(),
+            account_id: "checking".into(),
+            issuer_jurisdiction_id: None,
+            face_value: Money(600),
+            purchase_price: Money(600),
+            annual_coupon_rate_ppb: 10_000_000,
+            coupon_period_months: 1,
+            inflation_indexed: false,
+            purchase_month_index: 0,
+            maturity_month_index: 12,
+        };
+        assert_eq!(bond_coupon(bond.face_value, &bond).unwrap(), Money(1));
+
+        bond.face_value = Money(180);
+        bond.purchase_price = Money(180);
+        bond.annual_coupon_rate_ppb = 33_333_333;
+        assert_eq!(bond_coupon(bond.face_value, &bond).unwrap(), Money(0));
+
+        bond.face_value = Money(1_250_627);
+        bond.purchase_price = Money(1_250_627);
+        bond.annual_coupon_rate_ppb = 37_000_000;
+        bond.coupon_period_months = 5;
+        bond.maturity_month_index = 60;
+        assert_eq!(bond_coupon(bond.face_value, &bond).unwrap(), Money(19_280));
+    }
+
+    #[test]
     fn rejects_invalid_references_before_rollout_execution() {
         let mut fixture = minimal_fixture();
         fixture
@@ -3910,6 +4474,7 @@ mod tests {
                         opening_balance: Money(2_000),
                     },
                 ],
+                jurisdictions: vec![],
                 locations: vec![],
                 scheduled_transfers: vec![ScheduledTransferSpec {
                     month: 0,
@@ -3935,6 +4500,7 @@ mod tests {
                     units: Quantity(2_000_000),
                     basis: Money(20_000),
                 }],
+                initial_bonds: vec![],
                 scheduled_sales: vec![ScheduledSaleSpec {
                     month: 1,
                     cause_id: "sell-vti".into(),
@@ -3975,6 +4541,7 @@ mod tests {
                 summary.ending_properties,
                 rollout.months.last().unwrap().properties
             );
+            assert_eq!(summary.ending_bonds, rollout.months.last().unwrap().bonds);
             assert_eq!(
                 summary.ending_mortgages,
                 rollout.months.last().unwrap().mortgages
@@ -3982,6 +4549,10 @@ mod tests {
             assert_eq!(summary.journal_entry_count, rollout.journal.len() as u64);
             assert_eq!(summary.disposition_count, rollout.dispositions.len() as u64);
             assert_eq!(summary.tax_accrual_count, rollout.tax_accruals.len() as u64);
+            assert_eq!(
+                summary.bond_cashflow_count,
+                rollout.bond_cashflows.len() as u64
+            );
             assert_eq!(
                 summary.distribution_count,
                 rollout.distributions.len() as u64
@@ -4125,6 +4696,7 @@ mod tests {
                     account: alice_cash,
                     opening_balance: Money(0),
                 }],
+                jurisdictions: vec![],
                 locations: vec![],
                 scheduled_transfers: vec![],
                 recurring_transfers: vec![],
@@ -4142,6 +4714,7 @@ mod tests {
                     units: Quantity(1_000_000),
                     basis: Money(10_000),
                 }],
+                initial_bonds: vec![],
                 scheduled_sales: vec![ScheduledSaleSpec {
                     month: 0,
                     cause_id: "oversell".into(),
@@ -4197,6 +4770,7 @@ mod tests {
                         opening_balance: Money(0),
                     },
                 ],
+                jurisdictions: vec![],
                 locations: vec![],
                 scheduled_transfers: vec![ScheduledTransferSpec {
                     month: 1,
@@ -4220,6 +4794,7 @@ mod tests {
                 }],
                 recurring_obligations: vec![],
                 initial_lots: vec![],
+                initial_bonds: vec![],
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
                 distributions: vec![],
@@ -4277,6 +4852,7 @@ mod tests {
                         opening_balance: Money(0),
                     },
                 ],
+                jurisdictions: vec![],
                 locations: vec![],
                 scheduled_transfers: vec![],
                 recurring_transfers: vec![],
@@ -4304,6 +4880,7 @@ mod tests {
                     },
                 ],
                 initial_lots: vec![],
+                initial_bonds: vec![],
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
                 distributions: vec![],
