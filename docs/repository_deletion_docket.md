@@ -52,6 +52,8 @@ These results are no longer active recommendations:
 | Grocy batch orchestration                 | D05 merged in [#4645](https://github.com/agentydragon/ducktape/pull/4645): repeated ordered-batch/retry/enrichment control flow was consolidated for **114 fewer whole-tree lines**.                                                                                             |
 | Settings-panel async resources            | D06 merged in [#4648](https://github.com/agentydragon/ducktape/pull/4648): five loader state machines became one typed resource primitive for **24 fewer whole-tree lines** and about **70 fewer production lines**.                                                             |
 | Haku tool-call projections                | D02 merged in [#4643](https://github.com/agentydragon/ducktape/pull/4643): the duplicate MCP record/projection stage was removed for **128 fewer whole-tree lines**. Typed-caller correctness follow-up [#4652](https://github.com/agentydragon/ducktape/pull/4652) also merged. |
+| Grocy instruction ownership               | D08 merged in [#4657](https://github.com/agentydragon/ducktape/pull/4657): client-critical conventions moved into owning tool/schema descriptions while an 11-line compatibility preamble retained the two genuinely global rules, for **174 fewer whole-tree lines**.           |
+| Haku Console knowledge gardening          | D10 merged in [#4658](https://github.com/agentydragon/ducktape/pull/4658): the README became a concise component map, rollout and Agent-authority details moved to canonical owners, and an unreferenced archive was deleted, for **460 fewer whole-tree lines**.                |
 | Haku manifest change-detector prototype   | **Rejected after security review.** The strongest D07 version saved only 15 whole-tree lines and still weakened independent RBAC, namespace-label, proxy, credential, and migration release-gate oracles. No PR was opened.                                                      |
 | Augur amount-reducer prototype            | **Rejected after numerical/performance review.** D09 saved only 30 lines, deleted no complete execution stage, and added an unnecessary fan-only terminal-vector transfer. No PR was opened.                                                                                     |
 | Raw inference `.eval` archives            | **Deferred by decision.** Keep the 11 files for now; do not pursue without renewed approval.                                                                                                                                                                                     |
@@ -63,12 +65,6 @@ These results are no longer active recommendations:
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | D03 | [Parked draft PR #10](https://github.com/agentydragon-agent/ducktape/pull/10) is a cleanup patch based on feature PR #4584 because it touches that feature branch's session-lifecycle code. #4584 belongs to a separate feature track; do not modify or manage it from this cleanup docket. | **34 fewer whole-tree lines**; **102 fewer production lines** |
 
-## Active prototype
-
-| ID  | Status                                                                                                                                                                                                                              | Actual payoff                  |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| D08 | [PR #4657](https://github.com/agentydragon/ducktape/pull/4657) moves Grocy's client-critical conventions into owning tool/schema descriptions while retaining an 11-line compatibility preamble for the two genuinely global rules. | **174 fewer whole-tree lines** |
-
 ## Remaining programmer-cost queue
 
 The queue is ordered by estimated acceptance probability, with larger complete
@@ -78,15 +74,14 @@ conservative and include replacement code and test changes.
 | ID  | P(agree) | Recommendation                                                         | Estimated whole-tree payoff | Risk              |
 | --- | -------: | ---------------------------------------------------------------------- | --------------------------: | ----------------- |
 | D04 |      84% | Share neutral Claude/Codex projection mechanics                        |             **180–320 LOC** | medium–high       |
-| D10 |      70% | Shrink the Haku Console README to a canonical-doc index                |             **190–290 LOC** | medium docs       |
 | D11 |      68% | Consolidate duplicate Gmail/Calendar façade and client input contracts |               **40–90 LOC** | medium API-schema |
 
 ## Prototype sequence outcome
 
-The approved D03 → D02 → D05 → D06 → D07 → D09 sequence has been executed. D02,
-D05, and D06 merged; D03 is a parked cleanup patch on the separate
-#4584 feature track; D07 and D09 were rejected after independent review. The rejected
-prototypes remain local and unpushed.
+The approved D03 → D02 → D05 → D06 → D07 → D09 sequence has been executed, and the
+independent D08 and D10 follow-ups also merged. D02, D05, D06, D08, and D10 merged;
+D03 is a parked cleanup patch on the separate #4584 feature track; D07 and D09 were
+rejected after independent review. The rejected prototypes remain local and unpushed.
 
 The results reinforce the docket's acceptance rule: a prototype must delete a real
 representation or orchestration stage, remain whole-tree net negative, and preserve
@@ -292,6 +287,11 @@ mirrors.
 
 ### D08 — fold Grocy conventions into owning tool descriptions
 
+**Outcome:** merged in [#4657](https://github.com/agentydragon/ducktape/pull/4657) for
+**174 fewer whole-tree lines**. The implementation retained the two global rules in an
+11-line compatibility preamble and moved the remaining client-critical guidance to its
+owning tool/schema descriptions; all seven Grocy suites passed.
+
 **Targets:**
 
 - [`grocy_mcp/server_instructions.md`](../grocy_mcp/server_instructions.md) — 197 lines
@@ -339,6 +339,12 @@ comparison at production-relevant rollout counts.
 this an implementation PR.
 
 ### D10 — make the Haku Console README an index
+
+**Outcome:** merged in [#4658](https://github.com/agentydragon/ducktape/pull/4658) for
+**460 fewer whole-tree lines**. The final patch preserved live anchors and unique
+security/rollout/tool-call contracts, moved detailed rollout and AccessProfile authority
+rules to their canonical owners, and deleted one unreferenced archive. A focused semantic
+review and 146 Haku Console/cluster validation tests passed.
 
 **Target:**
 [`haku/console/README.md`](../haku/console/README.md)
