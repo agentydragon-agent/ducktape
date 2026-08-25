@@ -52,6 +52,8 @@ pub struct ScenarioSpec {
     #[serde(default)]
     pub distributions: Vec<DistributionSpec>,
     #[serde(default)]
+    pub target_allocation_policies: Vec<TargetAllocationPolicySpec>,
+    #[serde(default)]
     pub scheduled_property_purchases: Vec<ScheduledPropertyPurchaseSpec>,
     #[serde(default)]
     pub property_rented_fraction_events: Vec<PropertyRentedFractionSpec>,
@@ -329,6 +331,40 @@ fn default_distribution_tax_character() -> Vec<DistributionTaxSliceSpec> {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct TargetAllocationPolicySpec {
+    pub agent_id: String,
+    pub account_id: String,
+    #[serde(default)]
+    pub source_account_ids: Vec<String>,
+    pub sleeves: Vec<SleeveTargetSpec>,
+    #[serde(default = "default_zero_amount")]
+    pub cash_floor: AmountSpec,
+    pub cash_ceiling: AmountSpec,
+    #[serde(default = "default_allocation_cause_id_prefix")]
+    pub cause_id_prefix: String,
+    #[serde(default)]
+    pub purchase_slots_per_sleeve: u32,
+    #[serde(default)]
+    pub rebalance_tolerance_ppb: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SleeveTargetSpec {
+    pub asset_id: String,
+    pub weight: i64,
+}
+
+fn default_allocation_cause_id_prefix() -> String {
+    "allocation_sale".into()
+}
+
+fn default_zero_amount() -> AmountSpec {
+    AmountSpec::Fixed(Money(0))
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct MortgageFinancingSpec {
     pub liability_id: String,
     pub lender_agent_id: String,
@@ -519,16 +555,22 @@ pub struct MortgageState {
 pub struct LotDisposition {
     pub month: u32,
     pub cause_id: String,
+    pub agent_id: String,
+    pub source_account_id: String,
+    pub asset_id: String,
     pub lot_id: String,
+    pub purchase_month: i32,
     pub units: Quantity,
     pub basis: Money,
     pub proceeds: Money,
+    pub proceeds_account_id: String,
     pub realized_gain: Money,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ObligationOutcome {
     pub month: u32,
+    pub cause_id: String,
     pub obligation_id: String,
     pub obligation_type: String,
     pub from: AccountRef,
@@ -536,7 +578,22 @@ pub struct ObligationOutcome {
     pub amount_due: Money,
     pub amount_paid: Money,
     pub shortfall: Money,
+    pub attempted_funding_sources: String,
     pub failure_active: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RolloutFailureOutcome {
+    pub month: u32,
+    pub cause_id: String,
+    pub agent_id: String,
+    pub deficit: Money,
+    pub obligation_id: String,
+    pub obligation_type: String,
+    pub amount_due: Money,
+    pub amount_paid: Money,
+    pub shortfall: Money,
+    pub attempted_funding_sources: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -688,6 +745,7 @@ pub struct RolloutOutput {
     pub journal: Vec<JournalEntry>,
     pub dispositions: Vec<LotDisposition>,
     pub obligations: Vec<ObligationOutcome>,
+    pub rollout_failures: Vec<RolloutFailureOutcome>,
     pub tax_accruals: Vec<TaxAccrual>,
     pub tax_payments: Vec<TaxPaymentOutcome>,
     pub tax_settlements: Vec<TaxSettlementOutcome>,

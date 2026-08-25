@@ -6,6 +6,7 @@ package(default_visibility = ["//visibility:public"])
 rust_library(
     name = "simulator",
     srcs = [
+        "allocation.rs",
         "engine.rs",
         "fixture.rs",
         "ledger.rs",

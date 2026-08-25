@@ -379,6 +379,124 @@ def _distribution_tax_fixture() -> dict[str, Any]:
     return fixture
 
 
+def _target_allocation_fixture() -> dict[str, Any]:
+    tax_profile = _tax_fixture()["scenario"]["tax_profiles"][0]
+    return {
+        "schema_version": 1,
+        "currency_code": "USD",
+        "currency_quantum": "0.01",
+        "rollout_count": 1,
+        "scenario": {
+            "horizon_months": 12,
+            "accounts": [
+                {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 1_200_000},
+                {"account": {"agent_id": "landlord", "account_id": "checking"}, "opening_balance": 0},
+                {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+            ],
+            "scheduled_transfers": [],
+            "recurring_transfers": [],
+            "obligations": [],
+            "recurring_obligations": [
+                {
+                    "start_month": 1,
+                    "end_month": 3,
+                    "obligation_id": "rent",
+                    "obligation_type": "rent",
+                    "from": {"agent_id": "alice", "account_id": "checking"},
+                    "to": {"agent_id": "landlord", "account_id": "checking"},
+                    "amount_due": 500_000,
+                }
+            ],
+            "initial_lots": [
+                {
+                    "lot_id": "a-source-second",
+                    "agent_id": "alice",
+                    "account_id": "brokerage-b",
+                    "asset_id": "vti",
+                    "purchase_month": 0,
+                    "quantity_scale": 1_000_000,
+                    "units": 800_000_000,
+                    "basis": 6_400_000,
+                },
+                {
+                    "lot_id": "z-source-first",
+                    "agent_id": "alice",
+                    "account_id": "brokerage-a",
+                    "asset_id": "vti",
+                    "purchase_month": -24,
+                    "quantity_scale": 1_000_000,
+                    "units": 100_000_000,
+                    "basis": 500_000,
+                },
+                {
+                    "lot_id": "bond",
+                    "agent_id": "alice",
+                    "account_id": "brokerage-b",
+                    "asset_id": "bnd",
+                    "purchase_month": -24,
+                    "quantity_scale": 1_000_000,
+                    "units": 100_000_000,
+                    "basis": 1_000_000,
+                },
+            ],
+            "scheduled_sales": [],
+            "tax_profiles": [tax_profile],
+            "distributions": [],
+            "target_allocation_policies": [
+                {
+                    "agent_id": "alice",
+                    "account_id": "checking",
+                    "source_account_ids": ["brokerage-a", "brokerage-b"],
+                    "sleeves": [{"asset_id": "vti", "weight": 1}, {"asset_id": "bnd", "weight": 1}],
+                    "cash_floor": 1_000_000,
+                    "cash_ceiling": 3_000_000,
+                }
+            ],
+        },
+        "series": [
+            {"series_id": "security:vti", "snapshots": 13, "values": [10_000] * 13},
+            {"series_id": "security:bnd", "snapshots": 13, "values": [10_000] * 13},
+        ],
+    }
+
+
+def _target_allocation_failure_fixture() -> dict[str, Any]:
+    fixture = _target_allocation_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 2
+    scenario["accounts"][0]["opening_balance"] = 0
+    scenario["recurring_obligations"][0]["end_month"] = 1
+    scenario["recurring_obligations"][0]["amount_due"] = 5_000_000
+    scenario["initial_lots"] = [
+        {
+            "lot_id": "vti",
+            "agent_id": "alice",
+            "account_id": "brokerage-a",
+            "asset_id": "vti",
+            "purchase_month": -24,
+            "quantity_scale": 1_000_000,
+            "units": 100_000_000,
+            "basis": 500_000,
+        },
+        {
+            "lot_id": "bnd",
+            "agent_id": "alice",
+            "account_id": "brokerage-b",
+            "asset_id": "bnd",
+            "purchase_month": -24,
+            "quantity_scale": 1_000_000,
+            "units": 100_000_000,
+            "basis": 1_000_000,
+        },
+    ]
+    scenario["tax_profiles"] = []
+    fixture["series"] = [
+        {"series_id": "security:vti", "snapshots": 3, "values": [10_000] * 3},
+        {"series_id": "security:bnd", "snapshots": 3, "values": [10_000] * 3},
+    ]
+    return fixture
+
+
 def _bond_fixture() -> dict[str, Any]:
     fixture = _tax_fixture()
     fixture["rollout_count"] = 3
@@ -1085,6 +1203,256 @@ def test_rust_and_jax_match_failure_freeze_semantics(tmp_path: Path) -> None:
         for rollout in rust["rollouts"]
         for snapshot in rollout["months"][1:]
     )
+
+
+def test_fixture_rejects_inexact_per_unit_lot_basis_in_both_engines(tmp_path: Path) -> None:
+    fixture = _fixture()
+    lot = fixture["scenario"]["initial_lots"][0]
+    lot["units"] = 3
+    lot["basis"] = 1
+
+    with pytest.raises(ValueError, match="does not encode an exact integer-quantum per-unit basis"):
+        run_legacy_fixture(fixture)
+
+    fixture_path = tmp_path / "inexact-lot-basis.json"
+    output_path = tmp_path / "unused.json"
+    fixture_path.write_text(json.dumps(fixture, separators=(",", ":")))
+    completed = subprocess.run([_binary(), fixture_path, output_path], check=False, capture_output=True, text=True)
+    assert completed.returncode == 1
+    assert "total basis does not encode an exact per-unit basis" in completed.stderr
+
+
+def test_rust_and_jax_match_liquidity_sales_before_obligation_funding(tmp_path: Path) -> None:
+    fixture = _target_allocation_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_cash = (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+        .to_dicts()
+    )
+    assert _rust_cash(rust).to_dicts() == legacy_cash
+
+    legacy_dispositions = (
+        legacy.events_log.lot_dispositions.with_columns(
+            (pl.col("units_sold") * 1_000_000).round().cast(pl.Int64).alias("units_sold_quanta"),
+            (pl.col("proceeds_quanta") - pl.col("cost_basis_consumed_quanta")).alias("realized_gain_quanta"),
+        )
+        .select(
+            "rollout_index",
+            "month_index",
+            "cause_id",
+            "agent_id",
+            "source_account_id",
+            "asset_id",
+            "lot_id",
+            "purchase_month_index",
+            "units_sold_quanta",
+            "cost_basis_consumed_quanta",
+            "proceeds_quanta",
+            "proceeds_account_id",
+            "realized_gain_quanta",
+        )
+        .sort("rollout_index", "month_index", "source_account_id")
+        .to_dicts()
+    )
+    rust_dispositions_in_execution_order = [
+        {
+            "rollout_index": rollout["rollout_id"],
+            "month_index": disposition["month"],
+            "cause_id": disposition["cause_id"],
+            "agent_id": disposition["agent_id"],
+            "source_account_id": disposition["source_account_id"],
+            "asset_id": disposition["asset_id"],
+            "lot_id": disposition["lot_id"],
+            "purchase_month_index": disposition["purchase_month"],
+            "units_sold_quanta": disposition["units"],
+            "cost_basis_consumed_quanta": disposition["basis"],
+            "proceeds_quanta": disposition["proceeds"],
+            "proceeds_account_id": disposition["proceeds_account_id"],
+            "realized_gain_quanta": disposition["realized_gain"],
+        }
+        for rollout in rust["rollouts"]
+        for disposition in rollout["dispositions"]
+    ]
+    assert [row["source_account_id"] for row in rust_dispositions_in_execution_order] == ["brokerage-a", "brokerage-b"]
+    rust_dispositions = sorted(
+        rust_dispositions_in_execution_order,
+        key=lambda row: (row["rollout_index"], row["month_index"], row["source_account_id"]),
+    )
+    assert rust_dispositions == legacy_dispositions
+    assert rust_dispositions == [
+        {
+            "rollout_index": 0,
+            "month_index": 1,
+            "cause_id": "allocation_sale_m1_security:vti",
+            "agent_id": "alice",
+            "source_account_id": "brokerage-a",
+            "asset_id": "security:vti",
+            "lot_id": "z-source-first",
+            "purchase_month_index": -24,
+            "units_sold_quanta": 100_000_000,
+            "cost_basis_consumed_quanta": 500_000,
+            "proceeds_quanta": 1_000_000,
+            "proceeds_account_id": "checking",
+            "realized_gain_quanta": 500_000,
+        },
+        {
+            "rollout_index": 0,
+            "month_index": 1,
+            "cause_id": "allocation_sale_m1_security:vti",
+            "agent_id": "alice",
+            "source_account_id": "brokerage-b",
+            "asset_id": "security:vti",
+            "lot_id": "a-source-second",
+            "purchase_month_index": 0,
+            "units_sold_quanta": 130_000_000,
+            "cost_basis_consumed_quanta": 1_040_000,
+            "proceeds_quanta": 1_300_000,
+            "proceeds_account_id": "checking",
+            "realized_gain_quanta": 260_000,
+        },
+    ]
+
+    obligation_columns = [
+        "rollout_index",
+        "month_index",
+        "cause_id",
+        "obligation_id",
+        "amount_due_quanta",
+        "amount_paid_quanta",
+        "shortfall_quanta",
+        "attempted_funding_sources",
+    ]
+    legacy_obligations = legacy.events_log.obligation_settlements.select(obligation_columns).sort(
+        ["month_index", "obligation_id"]
+    )
+    rust_obligations = pl.DataFrame(
+        [
+            {
+                "rollout_index": rollout["rollout_id"],
+                "month_index": outcome["month"],
+                "cause_id": outcome["cause_id"],
+                "obligation_id": outcome["obligation_id"],
+                "amount_due_quanta": outcome["amount_due"],
+                "amount_paid_quanta": outcome["amount_paid"],
+                "shortfall_quanta": outcome["shortfall"],
+                "attempted_funding_sources": outcome["attempted_funding_sources"],
+            }
+            for rollout in rust["rollouts"]
+            for outcome in rollout["obligations"]
+        ]
+    ).sort(["month_index", "obligation_id"])
+    assert rust_obligations.to_dicts() == legacy_obligations.to_dicts()
+    assert rust_obligations.get_column("attempted_funding_sources").unique().to_list() == ["security:vti,security:bnd"]
+
+    legacy_tax = (
+        legacy.events_log.tax_breakdowns.select(
+            "rollout_index", "month_index", "jurisdiction_id", "stcg_quanta", "ltcg_quanta"
+        )
+        .sort("jurisdiction_id")
+        .to_dicts()
+    )
+    rust_tax = sorted(
+        [
+            {
+                "rollout_index": rollout["rollout_id"],
+                "month_index": accrual["month"],
+                "jurisdiction_id": accrual["jurisdiction_id"],
+                "stcg_quanta": accrual["short_term_gain"],
+                "ltcg_quanta": accrual["long_term_gain"],
+            }
+            for rollout in rust["rollouts"]
+            for accrual in rollout["tax_accruals"]
+        ],
+        key=lambda row: row["jurisdiction_id"],
+    )
+    assert rust_tax == legacy_tax
+    assert {(row["stcg_quanta"], row["ltcg_quanta"]) for row in rust_tax} == {(260_000, 500_000)}
+    assert rollout_status(legacy).to_dicts() == [{"rollout_index": 0, "status": "active", "failed_month": None}]
+    assert rust["rollouts"][0]["failed_month"] is None
+    assert all(sum(posting["amount"] for posting in entry["postings"]) == 0 for entry in rust["rollouts"][0]["journal"])
+
+
+def test_rust_and_jax_match_insufficient_target_allocation_failure_metadata(tmp_path: Path) -> None:
+    fixture = _target_allocation_failure_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    columns = [
+        "rollout_index",
+        "month_index",
+        "cause_id",
+        "agent_id",
+        "deficit_quanta",
+        "obligation_id",
+        "obligation_type",
+        "amount_due_quanta",
+        "amount_paid_quanta",
+        "shortfall_quanta",
+        "attempted_funding_sources",
+    ]
+    legacy_failures = legacy.events_log.rollout_failures.select(columns).to_dicts()
+    rust_failures = [
+        {
+            "rollout_index": rollout["rollout_id"],
+            "month_index": failure["month"],
+            "cause_id": failure["cause_id"],
+            "agent_id": failure["agent_id"],
+            "deficit_quanta": failure["deficit"],
+            "obligation_id": failure["obligation_id"],
+            "obligation_type": failure["obligation_type"],
+            "amount_due_quanta": failure["amount_due"],
+            "amount_paid_quanta": failure["amount_paid"],
+            "shortfall_quanta": failure["shortfall"],
+            "attempted_funding_sources": failure["attempted_funding_sources"],
+        }
+        for rollout in rust["rollouts"]
+        for failure in rollout["rollout_failures"]
+    ]
+    assert rust_failures == legacy_failures
+    assert rust_failures == [
+        {
+            "rollout_index": 0,
+            "month_index": 1,
+            "cause_id": "rent_m1_failure",
+            "agent_id": "alice",
+            "deficit_quanta": 5_000_000,
+            "obligation_id": "rent_m1",
+            "obligation_type": "rent",
+            "amount_due_quanta": 5_000_000,
+            "amount_paid_quanta": 0,
+            "shortfall_quanta": 5_000_000,
+            "attempted_funding_sources": "security:vti,security:bnd",
+        }
+    ]
+    assert rollout_status(legacy).to_dicts() == [
+        {"rollout_index": 0, "status": "failed_insufficient_cash", "failed_month": 1}
+    ]
+    assert rust["rollouts"][0]["failed_month"] == 1
+    assert all(sum(posting["amount"] for posting in entry["postings"]) == 0 for entry in rust["rollouts"][0]["journal"])
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("purchase_slots_per_sleeve", 1, "configures purchases"),
+        ("rebalance_tolerance_ppb", 0, "configures drift rebalancing"),
+    ],
+)
+def test_rust_names_deferred_target_allocation_features(tmp_path: Path, field: str, value: int, message: str) -> None:
+    fixture = _target_allocation_fixture()
+    fixture["scenario"]["target_allocation_policies"][0][field] = value
+    fixture_path = tmp_path / f"unsupported-{field}.json"
+    output_path = tmp_path / "unused.json"
+    fixture_path.write_text(json.dumps(fixture, separators=(",", ":")))
+
+    completed = subprocess.run([_binary(), fixture_path, output_path], check=False, capture_output=True, text=True)
+
+    assert completed.returncode == 1
+    assert message in completed.stderr
 
 
 def test_rust_and_jax_match_grouped_recurring_obligations(tmp_path: Path) -> None:

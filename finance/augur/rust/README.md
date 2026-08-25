@@ -54,6 +54,10 @@ The differential suite currently proves exact integer agreement for:
 - fixed-payment mortgage origination, monthly interest/principal splitting,
   same-source funding-group settlement, and property-tax carrying costs;
 - grouped scheduled and recurring obligations;
+- target-allocation cash-band raises before obligation funding, including
+  projected end-of-month demand, exact integer water-filling, source-account
+  order, FIFO lot dispositions, immutable sleeve weights, realized gains,
+  attempted-funding attribution, and canonical obligation-failure metadata;
 - insufficient-cash failure month and state freezing;
 - federal and California ordinary-income year-end tax accruals;
 - federal long-term-capital-gain stacking and tax accrual;
@@ -76,6 +80,12 @@ boundary; the Rust validator and Python adapter reject fixtures that would lose
 an integer level during that conversion. Series coverage is deliberately dense:
 every series supplies every rollout and snapshot in the fixture.
 
+Initial lots store total basis, but that total must imply an exact
+integer-currency-quantum basis per whole unit:
+`basis × quantity_scale` must divide evenly by `units`. Both the Rust validator
+and Python adapter reject an inexact lot rather than letting the legacy adapter
+floor a different basis.
+
 Bond coupon rates use the same parts-per-billion contract and must round-trip
 exactly through the legacy Python/JAX `float64` boundary. Nominal coupons round
 the full `face × annual rate × period / 12` rational once; TIPS preserve the
@@ -89,6 +99,16 @@ interest. Each slice is paid, journaled, attributed, and routed through the
 jurisdiction's interest-exemption policy independently; the slice sum is the
 fund's cash payout.
 
+The current target-allocation boundary deliberately accepts sell-only policies:
+`purchase_slots_per_sleeve` must be zero and drift-triggered rebalancing must be
+unset; each unsupported field has a specific validation error. It evaluates the
+band after all monthly obligations have accrued, sells before the grouped
+funding check, and therefore makes an unpaid obligation mean the configured
+portfolio genuinely could not fund it. Selected traces expose the source and
+proceeds accounts on every lot disposition and the ordered sleeve identities
+attempted for every matching obligation. Buy slots and the post-settlement
+purchase leg are the next slice rather than silently ignored.
+
 Still missing before replacement is plausible:
 
 - broader modeled tax facts and complete deduction policy;
@@ -96,7 +116,8 @@ Still missing before replacement is plausible:
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax/SALT mixed-use splitting, mortgage principal-cap policies, and
   §121 primary-residence exclusion;
-- target allocation, liquidity funding, TLH, and private equity;
+- target-allocation purchases/rebalancing, broader liquidity policy, TLH, and
+  private equity;
 - complete selected-rollout causal trace parity for those domains;
 - Python extension/Arrow output integration.
 

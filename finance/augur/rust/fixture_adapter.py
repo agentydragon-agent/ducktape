@@ -45,6 +45,8 @@ from finance.augur.sim.scenario import (
     SecurityDistribution,
     SeriesIndexedAmount,
     SetRentedFractionEvent,
+    SleeveTarget,
+    TargetAllocationPolicy,
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate_with_external_series
@@ -168,7 +170,9 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
         if previous != scale:
             raise ValueError(f"mixed quantity scales for FIFO pool {pool!r}")
         if cast(int, lot["basis"]) * scale % cast(int, lot["units"]):
-            raise ValueError(f"lot {lot['lot_id']!r} has non-integral legacy per-unit basis")
+            raise ValueError(
+                f"lot {lot['lot_id']!r} total basis does not encode an exact integer-quantum per-unit basis"
+            )
 
     def sale_price(spec: dict[str, Any]) -> Decimal:
         prices = price_matrices[cast(str, spec["asset_id"])][:, cast(int, spec["month"])]
@@ -350,6 +354,30 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 ),
             )
             for spec in scenario_spec.get("distributions", [])
+        ],
+        target_allocation_policies=[
+            TargetAllocationPolicy(
+                agent_id=spec["agent_id"],
+                account_id=spec["account_id"],
+                source_account_ids=tuple(spec.get("source_account_ids", [])),
+                sleeves=[
+                    SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol(sleeve["asset_id"])), weight=sleeve["weight"])
+                    for sleeve in spec["sleeves"]
+                ],
+                cash_floor=_amount(spec.get("cash_floor", 0), quantum),
+                cash_ceiling=_amount(spec["cash_ceiling"], quantum),
+                cause_id_prefix=spec.get("cause_id_prefix", "allocation_sale"),
+                purchase_slots_per_sleeve=spec.get("purchase_slots_per_sleeve", 0),
+                rebalance_tolerance=(
+                    None
+                    if spec.get("rebalance_tolerance_ppb") is None
+                    else _ppb_float(
+                        spec["rebalance_tolerance_ppb"],
+                        context=f"target-allocation {spec['agent_id']}/{spec['account_id']} tolerance",
+                    )
+                ),
+            )
+            for spec in scenario_spec.get("target_allocation_policies", [])
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(

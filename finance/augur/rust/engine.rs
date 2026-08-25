@@ -4,14 +4,16 @@ use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::{
+    allocation::{AllocationError, quantity_for_value, withdrawal_by_sleeve},
     fixture::{
         AccountBalance, AmountSpec, BondCashflowOutcome, BondSpec, BondState,
         CapitalImprovementOutcome, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture,
         InitialLotSpec, LotDisposition, MonthOutput, MortgageOriginationOutcome,
         MortgagePaymentOutcome, MortgageState, ObligationOutcome, PopulationOutput,
         PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
-        PropertySaleSpec, PropertyState, RolloutOutput, RolloutSummary, SeriesSpec,
-        SimulationOutput, TaxAccrual, TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome,
+        PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput, RolloutSummary,
+        SeriesSpec, SimulationOutput, TaxAccrual, TaxLiabilityState, TaxPaymentOutcome,
+        TaxSettlementOutcome,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
@@ -82,6 +84,8 @@ pub enum SimulationError {
         units: i64,
         basis: i64,
     },
+    #[error("lot {lot_id:?} total basis does not encode an exact per-unit basis")]
+    InexactLotBasis { lot_id: String },
     #[error(
         "FIFO pool {agent_id}:{account_id}:{asset_id} mixes quantity scales {first_scale} and {second_scale}"
     )]
@@ -266,6 +270,40 @@ pub enum SimulationError {
     InvalidMortgageInterestPolicy { liability_id: String },
     #[error("property tax policy for {property_id:?} has invalid rate or range")]
     InvalidPropertyTaxPolicy { property_id: String },
+    #[error("duplicate target-allocation policy for {agent_id}:{account_id}")]
+    DuplicateTargetAllocationPolicy {
+        agent_id: String,
+        account_id: String,
+    },
+    #[error("target-allocation policy for {agent_id}:{account_id} has invalid configuration")]
+    InvalidTargetAllocationPolicy {
+        agent_id: String,
+        account_id: String,
+    },
+    #[error(
+        "target-allocation policy for {agent_id}:{account_id} configures purchases, which the Rust sell-side slice does not yet support"
+    )]
+    UnsupportedTargetAllocationPurchases {
+        agent_id: String,
+        account_id: String,
+    },
+    #[error(
+        "target-allocation policy for {agent_id}:{account_id} configures drift rebalancing, which the Rust sell-side slice does not yet support"
+    )]
+    UnsupportedTargetAllocationRebalance {
+        agent_id: String,
+        account_id: String,
+    },
+    #[error(
+        "target-allocation policy for {agent_id}:{account_id} names duplicate asset {asset_id:?}"
+    )]
+    DuplicateTargetAllocationSleeve {
+        agent_id: String,
+        account_id: String,
+        asset_id: String,
+    },
+    #[error(transparent)]
+    Allocation(#[from] AllocationError),
     #[error(transparent)]
     Ledger(#[from] LedgerError),
     #[error(transparent)]
@@ -279,6 +317,7 @@ struct LotState {
     spec: InitialLotSpec,
     units_remaining: Quantity,
     basis_remaining: Money,
+    basis_per_unit: Money,
 }
 
 #[derive(Clone, Debug)]
@@ -324,6 +363,7 @@ struct Recorder {
     journal: Vec<JournalEntry>,
     dispositions: Vec<LotDisposition>,
     obligations: Vec<ObligationOutcome>,
+    rollout_failures: Vec<RolloutFailureOutcome>,
     tax_accruals: Vec<TaxAccrual>,
     tax_payments: Vec<TaxPaymentOutcome>,
     tax_settlements: Vec<TaxSettlementOutcome>,
@@ -357,6 +397,7 @@ impl Recorder {
             journal: Vec::new(),
             dispositions: Vec::new(),
             obligations: Vec::new(),
+            rollout_failures: Vec::new(),
             tax_accruals: Vec::new(),
             tax_payments: Vec::new(),
             tax_settlements: Vec::new(),
@@ -417,6 +458,12 @@ impl Recorder {
     fn record_obligation(&mut self, obligation: ObligationOutcome) {
         if self.capture_trace {
             self.obligations.push(obligation);
+        }
+    }
+
+    fn record_rollout_failure(&mut self, failure: RolloutFailureOutcome) {
+        if self.capture_trace {
+            self.rollout_failures.push(failure);
         }
     }
 
@@ -602,6 +649,7 @@ impl RolloutComputation {
             journal: self.recorder.journal,
             dispositions: self.recorder.dispositions,
             obligations: self.recorder.obligations,
+            rollout_failures: self.recorder.rollout_failures,
             tax_accruals: self.recorder.tax_accruals,
             tax_payments: self.recorder.tax_payments,
             tax_settlements: self.recorder.tax_settlements,
@@ -914,6 +962,11 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                 basis: lot.basis.0,
             });
         }
+        if i128::from(lot.basis.0) * i128::from(lot.quantity_scale) % i128::from(lot.units.0) != 0 {
+            return Err(SimulationError::InexactLotBasis {
+                lot_id: lot.lot_id.clone(),
+            });
+        }
         if !lots.insert(lot.lot_id.clone()) {
             return Err(SimulationError::DuplicateLot {
                 lot_id: lot.lot_id.clone(),
@@ -1140,6 +1193,107 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
         let series_id = format!("security_distribution:{}", distribution.asset_id);
         if !series_ids.contains(&series_id) {
             return Err(SimulationError::MissingSeries { series_id });
+        }
+    }
+    let mut target_allocation_accounts = BTreeSet::new();
+    for policy in &fixture.scenario.target_allocation_policies {
+        validate_identifier("target-allocation cause", &policy.cause_id_prefix)?;
+        validate_account(
+            &accounts,
+            &AccountRef::new(&policy.agent_id, &policy.account_id),
+            &policy.cause_id_prefix,
+        )?;
+        if !target_allocation_accounts.insert((policy.agent_id.clone(), policy.account_id.clone()))
+        {
+            return Err(SimulationError::DuplicateTargetAllocationPolicy {
+                agent_id: policy.agent_id.clone(),
+                account_id: policy.account_id.clone(),
+            });
+        }
+        if policy.purchase_slots_per_sleeve != 0 {
+            return Err(SimulationError::UnsupportedTargetAllocationPurchases {
+                agent_id: policy.agent_id.clone(),
+                account_id: policy.account_id.clone(),
+            });
+        }
+        if policy.rebalance_tolerance_ppb.is_some() {
+            return Err(SimulationError::UnsupportedTargetAllocationRebalance {
+                agent_id: policy.agent_id.clone(),
+                account_id: policy.account_id.clone(),
+            });
+        }
+        if policy.sleeves.is_empty()
+            || policy.cash_floor.base_amount().0 < 0
+            || policy.cash_floor.base_amount().0 > policy.cash_ceiling.base_amount().0
+        {
+            return Err(SimulationError::InvalidTargetAllocationPolicy {
+                agent_id: policy.agent_id.clone(),
+                account_id: policy.account_id.clone(),
+            });
+        }
+        validate_amount_spec(
+            fixture,
+            "target-allocation floor",
+            &policy.cause_id_prefix,
+            &policy.cash_floor,
+            0..fixture.scenario.horizon_months,
+        )?;
+        validate_amount_spec(
+            fixture,
+            "target-allocation ceiling",
+            &policy.cause_id_prefix,
+            &policy.cash_ceiling,
+            0..fixture.scenario.horizon_months,
+        )?;
+        let sources = if policy.source_account_ids.is_empty() {
+            vec![policy.account_id.as_str()]
+        } else {
+            policy
+                .source_account_ids
+                .iter()
+                .map(String::as_str)
+                .collect()
+        };
+        if sources.iter().copied().collect::<BTreeSet<_>>().len() != sources.len() {
+            return Err(SimulationError::InvalidTargetAllocationPolicy {
+                agent_id: policy.agent_id.clone(),
+                account_id: policy.account_id.clone(),
+            });
+        }
+        let mut assets = BTreeSet::new();
+        for sleeve in &policy.sleeves {
+            validate_identifier("target-allocation asset", &sleeve.asset_id)?;
+            if sleeve.weight <= 0 {
+                return Err(SimulationError::InvalidTargetAllocationPolicy {
+                    agent_id: policy.agent_id.clone(),
+                    account_id: policy.account_id.clone(),
+                });
+            }
+            if !assets.insert(sleeve.asset_id.clone()) {
+                return Err(SimulationError::DuplicateTargetAllocationSleeve {
+                    agent_id: policy.agent_id.clone(),
+                    account_id: policy.account_id.clone(),
+                    asset_id: sleeve.asset_id.clone(),
+                });
+            }
+            let scales: BTreeSet<_> = sources
+                .iter()
+                .filter_map(|source| {
+                    pool_scales
+                        .get(&(
+                            policy.agent_id.clone(),
+                            (*source).to_owned(),
+                            sleeve.asset_id.clone(),
+                        ))
+                        .copied()
+                })
+                .collect();
+            if scales.len() > 1 {
+                return Err(SimulationError::InvalidTargetAllocationPolicy {
+                    agent_id: policy.agent_id.clone(),
+                    account_id: policy.account_id.clone(),
+                });
+            }
         }
     }
     let mut tax_jurisdictions = BTreeSet::new();
@@ -1808,6 +1962,15 @@ fn simulate_rollout(
             spec: spec.clone(),
             units_remaining: spec.units,
             basis_remaining: spec.basis,
+            basis_per_unit: Money(
+                i64::try_from(
+                    i128::from(spec.basis.0) * i128::from(spec.quantity_scale)
+                        / i128::from(spec.units.0),
+                )
+                .map_err(|_| ArithmeticError::Overflow {
+                    operation: "initial lot per-unit basis",
+                })?,
+            ),
         });
     }
     let mut properties = Vec::<PropertyState>::new();
@@ -1944,6 +2107,16 @@ fn simulate_rollout(
             month,
         )?);
         active_obligations.extend(tax_obligations(fixture, &tax_liabilities, month)?);
+        execute_target_allocation_sales(
+            fixture,
+            rollout_id,
+            &mut ledger,
+            &mut recorder,
+            &mut lots,
+            &mut tax_facts,
+            month,
+            &active_obligations,
+        )?;
         if settle_obligations(
             fixture,
             &mut ledger,
@@ -3179,6 +3352,8 @@ fn settle_obligations(
     for obligation in obligations {
         let funded = funded_by_source[&obligation.from];
         let firing_id = obligation.cause_id.clone();
+        let attempted_funding_sources =
+            target_allocation_attempted_sources(fixture, &obligation.from);
         let is_tax_payment = matches!(
             obligation.effect,
             ObligationEffect::TaxPayment { .. } | ObligationEffect::TaxTrueUp { .. }
@@ -3363,8 +3538,23 @@ fn settle_obligations(
                 shortfall,
             })?;
         }
+        if !funded {
+            recorder.record_rollout_failure(RolloutFailureOutcome {
+                month,
+                cause_id: format!("{firing_id}_failure"),
+                agent_id: obligation.from.agent_id.clone(),
+                deficit: shortfall,
+                obligation_id: firing_id.clone(),
+                obligation_type: obligation.obligation_type.clone(),
+                amount_due: obligation.amount_due,
+                amount_paid,
+                shortfall,
+                attempted_funding_sources: attempted_funding_sources.clone(),
+            });
+        }
         recorder.record_obligation(ObligationOutcome {
             month,
+            cause_id: firing_id.clone(),
             obligation_id: firing_id,
             obligation_type: obligation.obligation_type.clone(),
             from: obligation.from.clone(),
@@ -3372,10 +3562,30 @@ fn settle_obligations(
             amount_due: obligation.amount_due,
             amount_paid,
             shortfall,
+            attempted_funding_sources,
             failure_active: !funded,
         });
     }
     Ok(any_failure)
+}
+
+fn target_allocation_attempted_sources(fixture: &Fixture, account: &AccountRef) -> String {
+    fixture
+        .scenario
+        .target_allocation_policies
+        .iter()
+        .find(|policy| {
+            policy.agent_id == account.agent_id && policy.account_id == account.account_id
+        })
+        .map(|policy| {
+            policy
+                .sleeves
+                .iter()
+                .map(|sleeve| format!("security:{}", sleeve.asset_id))
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .unwrap_or_default()
 }
 
 fn book_tax_payment(
@@ -3565,9 +3775,9 @@ fn execute_sale(
         let lot = &lots[index];
         let units = remaining.min(lot.units_remaining.0);
         let basis = Money(mul_div_round_half_up(
-            lot.basis_remaining.0,
+            lot.basis_per_unit.0,
             units,
-            lot.units_remaining.0,
+            lot.spec.quantity_scale,
             "FIFO basis allocation",
         )?);
         let proceeds = Money(mul_div_round_half_up(
@@ -3623,10 +3833,271 @@ fn execute_sale(
         recorder.record_disposition(LotDisposition {
             month: sale.month,
             cause_id: sale.cause_id.clone(),
+            agent_id: lot.spec.agent_id.clone(),
+            source_account_id: lot.spec.account_id.clone(),
+            asset_id: format!("security:{}", lot.spec.asset_id),
             lot_id: lot.spec.lot_id.clone(),
+            purchase_month: lot.spec.purchase_month,
             units: item.units,
             basis: item.basis,
             proceeds: item.proceeds,
+            proceeds_account_id: sale.proceeds_account_id.clone(),
+            realized_gain: item.realized_gain,
+        })?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_target_allocation_sales(
+    fixture: &Fixture,
+    rollout_id: u32,
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    lots: &mut [LotState],
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    month: u32,
+    obligations: &[ActiveObligation],
+) -> Result<(), SimulationError> {
+    for policy in &fixture.scenario.target_allocation_policies {
+        let cash_account = AccountRef::new(&policy.agent_id, &policy.account_id);
+        let hard_demand = obligations
+            .iter()
+            .filter(|obligation| obligation.from == cash_account)
+            .try_fold(Money(0), |sum, obligation| {
+                sum.checked_add(obligation.amount_due)
+            })?;
+        let current_cash = ledger.balance(&cash_account)?;
+        let floor = amount_value(fixture, rollout_id, month, &policy.cash_floor)?;
+        let ceiling = amount_value(fixture, rollout_id, month, &policy.cash_ceiling)?;
+        let projected = current_cash.checked_sub(hard_demand)?;
+        let raise = if projected.0 < floor.0 {
+            ceiling.checked_sub(projected)?
+        } else {
+            Money(0)
+        };
+        if raise.0 <= 0 {
+            continue;
+        }
+
+        let source_accounts: Vec<&str> = if policy.source_account_ids.is_empty() {
+            vec![policy.account_id.as_str()]
+        } else {
+            policy
+                .source_account_ids
+                .iter()
+                .map(String::as_str)
+                .collect()
+        };
+        let mut values = Vec::with_capacity(policy.sleeves.len());
+        let mut prices = Vec::with_capacity(policy.sleeves.len());
+        let mut scales = Vec::with_capacity(policy.sleeves.len());
+        let mut available_units = Vec::with_capacity(policy.sleeves.len());
+        for sleeve in &policy.sleeves {
+            let series_id = format!("security:{}", sleeve.asset_id);
+            let price = fixture
+                .series
+                .iter()
+                .find(|series| series.series_id == series_id)
+                .and_then(|series| series.value(rollout_id, month))
+                .unwrap_or(0);
+            let sleeve_lots: Vec<_> = lots
+                .iter()
+                .filter(|lot| {
+                    lot.spec.agent_id == policy.agent_id
+                        && lot.spec.asset_id == sleeve.asset_id
+                        && source_accounts.contains(&lot.spec.account_id.as_str())
+                })
+                .collect();
+            let scale = sleeve_lots.first().map_or(1, |lot| lot.spec.quantity_scale);
+            let units = sleeve_lots.iter().try_fold(0_i64, |sum, lot| {
+                sum.checked_add(lot.units_remaining.0)
+                    .ok_or(ArithmeticError::Overflow {
+                        operation: "target-allocation sleeve quantity",
+                    })
+            })?;
+            let value = if price > 0 {
+                sleeve_lots.iter().try_fold(0_i64, |sum, lot| {
+                    let lot_value = mul_div_round_half_up(
+                        lot.units_remaining.0,
+                        price,
+                        lot.spec.quantity_scale,
+                        "target-allocation sleeve value",
+                    )?;
+                    sum.checked_add(lot_value)
+                        .ok_or(ArithmeticError::Overflow {
+                            operation: "target-allocation sleeve value total",
+                        })
+                        .map_err(SimulationError::from)
+                })?
+            } else {
+                0
+            };
+            prices.push(price);
+            scales.push(scale);
+            available_units.push(units);
+            values.push(value);
+        }
+        let weights: Vec<_> = policy.sleeves.iter().map(|sleeve| sleeve.weight).collect();
+        let sleeve_withdrawals = withdrawal_by_sleeve(&values, &weights, raise.0)?;
+        for (sleeve_index, sleeve) in policy.sleeves.iter().enumerate() {
+            let requested = quantity_for_value(
+                sleeve_withdrawals[sleeve_index],
+                prices[sleeve_index],
+                scales[sleeve_index],
+                true,
+            )?
+            .min(available_units[sleeve_index]);
+            if requested <= 0 {
+                continue;
+            }
+            let cause_id = format!(
+                "{}_m{month}_security:{}",
+                policy.cause_id_prefix, sleeve.asset_id
+            );
+            let mut remaining = requested;
+            for source_account in &source_accounts {
+                if remaining == 0 {
+                    break;
+                }
+                let mut candidates: Vec<_> = lots
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, lot)| {
+                        lot.spec.agent_id == policy.agent_id
+                            && lot.spec.account_id == *source_account
+                            && lot.spec.asset_id == sleeve.asset_id
+                            && lot.units_remaining.0 > 0
+                    })
+                    .map(|(index, _)| index)
+                    .collect();
+                candidates.sort_by_key(|index| {
+                    (
+                        lots[*index].spec.purchase_month,
+                        lots[*index].spec.lot_id.clone(),
+                    )
+                });
+                let available = candidates.iter().try_fold(0_i64, |sum, index| {
+                    sum.checked_add(lots[*index].units_remaining.0).ok_or(
+                        ArithmeticError::Overflow {
+                            operation: "target-allocation pool quantity",
+                        },
+                    )
+                })?;
+                let target = remaining.min(available);
+                if target == 0 {
+                    continue;
+                }
+                execute_target_allocation_pool_sale(
+                    ledger,
+                    recorder,
+                    lots,
+                    tax_facts,
+                    month,
+                    &cause_id,
+                    &policy.agent_id,
+                    &policy.account_id,
+                    prices[sleeve_index],
+                    target,
+                    &candidates,
+                )?;
+                remaining -= target;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_target_allocation_pool_sale(
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    lots: &mut [LotState],
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    month: u32,
+    cause_id: &str,
+    agent_id: &str,
+    proceeds_account_id: &str,
+    price: i64,
+    target: i64,
+    candidates: &[usize],
+) -> Result<(), SimulationError> {
+    let mut remaining = target;
+    let mut planned = Vec::new();
+    let mut total_proceeds = Money(0);
+    let mut total_gain = Money(0);
+    for index in candidates.iter().copied() {
+        if remaining == 0 {
+            break;
+        }
+        let lot = &lots[index];
+        let units = remaining.min(lot.units_remaining.0);
+        let basis = Money(mul_div_round_half_up(
+            lot.basis_per_unit.0,
+            units,
+            lot.spec.quantity_scale,
+            "target-allocation FIFO basis",
+        )?);
+        let proceeds = Money(mul_div_round_half_up(
+            units,
+            price,
+            lot.spec.quantity_scale,
+            "target-allocation sale proceeds",
+        )?);
+        let realized_gain = proceeds.checked_sub(basis)?;
+        total_proceeds = total_proceeds.checked_add(proceeds)?;
+        total_gain = total_gain.checked_add(realized_gain)?;
+        planned.push(PlannedDisposition {
+            lot_index: index,
+            units: Quantity(units),
+            basis,
+            proceeds,
+            realized_gain,
+        });
+        remaining -= units;
+    }
+    debug_assert_eq!(remaining, 0);
+    let mut postings = Vec::with_capacity(planned.len() + 2);
+    postings.push(Posting {
+        account: AccountRef::new(agent_id, proceeds_account_id),
+        amount: total_proceeds,
+    });
+    for item in &planned {
+        postings.push(Posting {
+            account: asset_basis_account(&lots[item.lot_index].spec),
+            amount: item.basis.checked_neg()?,
+        });
+    }
+    postings.push(Posting {
+        account: realized_gain_account(agent_id),
+        amount: total_gain.checked_neg()?,
+    });
+    recorder.apply_entry(
+        ledger,
+        JournalEntry {
+            month,
+            cause_id: cause_id.into(),
+            postings,
+        },
+    )?;
+    for item in planned {
+        let lot = &mut lots[item.lot_index];
+        let long_term = i64::from(month) - i64::from(lot.spec.purchase_month) >= 12;
+        lot.units_remaining.0 -= item.units.0;
+        lot.basis_remaining = lot.basis_remaining.checked_sub(item.basis)?;
+        record_capital_gain(tax_facts, agent_id, item.realized_gain, long_term)?;
+        recorder.record_disposition(LotDisposition {
+            month,
+            cause_id: cause_id.into(),
+            agent_id: lot.spec.agent_id.clone(),
+            source_account_id: lot.spec.account_id.clone(),
+            asset_id: format!("security:{}", lot.spec.asset_id),
+            lot_id: lot.spec.lot_id.clone(),
+            purchase_month: lot.spec.purchase_month,
+            units: item.units,
+            basis: item.basis,
+            proceeds: item.proceeds,
+            proceeds_account_id: proceeds_account_id.into(),
             realized_gain: item.realized_gain,
         })?;
     }
@@ -4070,6 +4541,7 @@ mod tests {
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
                 distributions: vec![],
+                target_allocation_policies: vec![],
                 scheduled_property_purchases: vec![],
                 property_rented_fraction_events: vec![],
                 capital_improvement_events: vec![],
@@ -4637,6 +5109,7 @@ mod tests {
                 }],
                 tax_profiles: vec![],
                 distributions: vec![],
+                target_allocation_policies: vec![],
                 scheduled_property_purchases: vec![],
                 property_rented_fraction_events: vec![],
                 capital_improvement_events: vec![],
@@ -4851,6 +5324,7 @@ mod tests {
                 }],
                 tax_profiles: vec![],
                 distributions: vec![],
+                target_allocation_policies: vec![],
                 scheduled_property_purchases: vec![],
                 property_rented_fraction_events: vec![],
                 capital_improvement_events: vec![],
@@ -4923,6 +5397,7 @@ mod tests {
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
                 distributions: vec![],
+                target_allocation_policies: vec![],
                 scheduled_property_purchases: vec![],
                 property_rented_fraction_events: vec![],
                 capital_improvement_events: vec![],
@@ -5009,6 +5484,7 @@ mod tests {
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
                 distributions: vec![],
+                target_allocation_policies: vec![],
                 scheduled_property_purchases: vec![],
                 property_rented_fraction_events: vec![],
                 capital_improvement_events: vec![],
