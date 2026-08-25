@@ -503,7 +503,6 @@ manifest:
     python_multipart: python_multipart
     python_socks: python_socks
     pythonjsonlogger: python_json_logger
-    pytimeparse: pytimeparse
     pytz: pytz
     pywebpush: pywebpush
     qrcode: qrcode
@@ -677,4 +676,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 347afa1b577711dffe7c59ab9839d7d6ad6a5827f73c6976e29a41e88fded590
+integrity: 29141986904dd2d3093cfce100f7082c232a945e6d9bce82de856378de2a3a9f

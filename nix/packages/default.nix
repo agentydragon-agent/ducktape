@@ -217,7 +217,6 @@ rec {
       click
       unidiff
       humanize
-      pytimeparse
       tabulate
       beautifulsoup4
       google-api-python-client

@@ -368,7 +368,6 @@ py_wheel(
         # workspace-gc deps
         "humanize>=4.0.0",
         "pygithub>=1.77",
-        "pytimeparse>=1.1.8",
         "tabulate>=0.9",
     ],
     version = "0.1.0",
