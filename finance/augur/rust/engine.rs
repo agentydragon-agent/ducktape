@@ -4,7 +4,10 @@ use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::{
-    allocation::{AllocationError, deposit_by_sleeve, quantity_for_value, withdrawal_by_sleeve},
+    allocation::{
+        AllocationError, deposit_by_sleeve, quantity_for_value, rebalance_by_sleeve,
+        withdrawal_by_sleeve,
+    },
     fixture::{
         AccountBalance, AmountSpec, BondCashflowOutcome, BondSpec, BondState,
         CapitalImprovementOutcome, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture,
@@ -288,13 +291,6 @@ pub enum SimulationError {
         sleeve_index: usize,
         configured: u32,
         needed: u32,
-    },
-    #[error(
-        "target-allocation policy for {agent_id}:{account_id} configures drift rebalancing, which the Rust sell-side slice does not yet support"
-    )]
-    UnsupportedTargetAllocationRebalance {
-        agent_id: String,
-        account_id: String,
     },
     #[error(
         "target-allocation policy for {agent_id}:{account_id} names duplicate asset {asset_id:?}"
@@ -1253,11 +1249,18 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                 account_id: policy.account_id.clone(),
             });
         }
-        if policy.rebalance_tolerance_ppb.is_some() {
-            return Err(SimulationError::UnsupportedTargetAllocationRebalance {
-                agent_id: policy.agent_id.clone(),
-                account_id: policy.account_id.clone(),
-            });
+        if let Some(tolerance) = policy.rebalance_tolerance_ppb {
+            let reconstructed =
+                ((tolerance as f64 / RATE_SCALE as f64) * RATE_SCALE as f64).round() as i64;
+            if !(0..=MAX_EXACT_F64_INTEGER).contains(&tolerance)
+                || reconstructed != tolerance
+                || policy.purchase_slots_per_sleeve == 0
+            {
+                return Err(SimulationError::InvalidTargetAllocationPolicy {
+                    agent_id: policy.agent_id.clone(),
+                    account_id: policy.account_id.clone(),
+                });
+            }
         }
         if policy.sleeves.is_empty()
             || policy.cash_floor.base_amount().0 < 0
@@ -4110,14 +4113,35 @@ fn execute_target_allocation_sales(
         let weights: Vec<_> = policy.sleeves.iter().map(|sleeve| sleeve.weight).collect();
         let sleeve_withdrawals = withdrawal_by_sleeve(&values, &weights, raise.0)?;
         let sleeve_deposits = deposit_by_sleeve(&values, &weights, invest.0)?;
+        let (rebalance_sales, rebalance_buys) = if raise == Money(0) && invest == Money(0) {
+            if let Some(tolerance) = policy.rebalance_tolerance_ppb {
+                rebalance_by_sleeve(&values, &weights, tolerance)?
+            } else {
+                (vec![0; values.len()], vec![0; values.len()])
+            }
+        } else {
+            (vec![0; values.len()], vec![0; values.len()])
+        };
         for (sleeve_index, sleeve) in policy.sleeves.iter().enumerate() {
             if policy.purchase_slots_per_sleeve > 0 {
-                let wanted_units = quantity_for_value(
+                let band_units = quantity_for_value(
                     sleeve_deposits[sleeve_index],
                     prices[sleeve_index],
                     sleeve.quantity_scale,
                     false,
                 )?;
+                let rebalance_units = quantity_for_value(
+                    rebalance_buys[sleeve_index],
+                    prices[sleeve_index],
+                    sleeve.quantity_scale,
+                    false,
+                )?;
+                let wanted_units =
+                    band_units
+                        .checked_add(rebalance_units)
+                        .ok_or(ArithmeticError::Overflow {
+                            operation: "target-allocation purchase quantity",
+                        })?;
                 if wanted_units > 0 {
                     pending_buys.push(PendingAllocationBuy {
                         policy_index,
@@ -4127,13 +4151,24 @@ fn execute_target_allocation_sales(
                     });
                 }
             }
-            let requested = quantity_for_value(
+            let band_units = quantity_for_value(
                 sleeve_withdrawals[sleeve_index],
                 prices[sleeve_index],
                 scales[sleeve_index],
                 true,
-            )?
-            .min(available_units[sleeve_index]);
+            )?;
+            let rebalance_units = quantity_for_value(
+                rebalance_sales[sleeve_index],
+                prices[sleeve_index],
+                scales[sleeve_index],
+                false,
+            )?;
+            let requested = band_units
+                .checked_add(rebalance_units)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "target-allocation sale quantity",
+                })?
+                .min(available_units[sleeve_index]);
             if requested <= 0 {
                 continue;
             }

@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use thiserror::Error;
 
 use crate::money::ArithmeticError;
+use crate::tax::RATE_SCALE;
 
 #[derive(Debug, Error)]
 pub enum AllocationError {
@@ -10,6 +11,8 @@ pub enum AllocationError {
     Shape,
     #[error("allocation weights must all be positive")]
     InvalidWeight,
+    #[error("allocation rebalance tolerance must not be negative")]
+    InvalidTolerance,
     #[error(transparent)]
     Arithmetic(#[from] ArithmeticError),
 }
@@ -173,6 +176,61 @@ pub fn deposit_by_sleeve(
     Ok(given)
 }
 
+pub fn rebalance_by_sleeve(
+    values: &[i64],
+    weights: &[i64],
+    tolerance_ppb: i64,
+) -> Result<(Vec<i64>, Vec<i64>), AllocationError> {
+    validate(values, weights)?;
+    if tolerance_ppb < 0 {
+        return Err(AllocationError::InvalidTolerance);
+    }
+    let total = values.iter().try_fold(0_i64, |sum, value| {
+        sum.checked_add(*value).ok_or(ArithmeticError::Overflow {
+            operation: "allocation rebalance total",
+        })
+    })?;
+    let weight_total = weights.iter().try_fold(0_i128, |sum, weight| {
+        sum.checked_add(i128::from(*weight))
+            .ok_or(ArithmeticError::Overflow {
+                operation: "allocation rebalance weight total",
+            })
+    })?;
+    let targets = weights
+        .iter()
+        .map(|weight| {
+            i64::try_from(i128::from(total) * i128::from(*weight) / weight_total).map_err(|_| {
+                AllocationError::Arithmetic(ArithmeticError::Overflow {
+                    operation: "allocation rebalance target",
+                })
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let drifts = values
+        .iter()
+        .zip(&targets)
+        .map(|(value, target)| {
+            value.checked_sub(*target).ok_or({
+                AllocationError::Arithmetic(ArithmeticError::Overflow {
+                    operation: "allocation rebalance drift",
+                })
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let fires = drifts.iter().zip(&targets).any(|(drift, target)| {
+        *target > 0
+            && i128::from(*drift).abs() * i128::from(RATE_SCALE)
+                >= i128::from(tolerance_ppb) * i128::from(*target)
+    });
+    if !fires {
+        return Ok((vec![0; values.len()], vec![0; values.len()]));
+    }
+    Ok((
+        drifts.iter().map(|drift| (*drift).max(0)).collect(),
+        drifts.iter().map(|drift| (-*drift).max(0)).collect(),
+    ))
+}
+
 pub fn quantity_for_value(
     value: i64,
     price: i64,
@@ -275,7 +333,7 @@ fn round_half_up_nonnegative(
 
 #[cfg(test)]
 mod tests {
-    use super::{deposit_by_sleeve, quantity_for_value, withdrawal_by_sleeve};
+    use super::{deposit_by_sleeve, quantity_for_value, rebalance_by_sleeve, withdrawal_by_sleeve};
 
     #[test]
     fn withdrawal_drains_the_overweight_sleeve_first() {
@@ -347,5 +405,29 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn rebalance_is_all_or_nothing_and_returns_to_target() {
+        assert_eq!(
+            rebalance_by_sleeve(&[900, 100], &[1, 1], 250_000_000).unwrap(),
+            (vec![400, 0], vec![0, 400])
+        );
+        assert_eq!(
+            rebalance_by_sleeve(&[600, 400], &[1, 1], 250_000_000).unwrap(),
+            (vec![0, 0], vec![0, 0])
+        );
+        assert_eq!(
+            rebalance_by_sleeve(&[1_600, 1_100, 300], &[1, 1, 1], 250_000_000).unwrap(),
+            (vec![600, 100, 0], vec![0, 0, 700])
+        );
+        assert_eq!(
+            rebalance_by_sleeve(&[501, 499], &[1, 1], 0).unwrap(),
+            (vec![1, 0], vec![0, 1])
+        );
+        assert_eq!(
+            rebalance_by_sleeve(&[1, 0], &[1, 1], 0).unwrap(),
+            (vec![0, 0], vec![0, 0])
+        );
     }
 }

@@ -548,6 +548,17 @@ def _target_allocation_purchase_distribution_fixture() -> dict[str, Any]:
     return fixture
 
 
+def _target_allocation_rebalance_fixture(*, tolerance_ppb: int = 250_000_000) -> dict[str, Any]:
+    fixture = _target_allocation_purchase_fixture()
+    scenario = fixture["scenario"]
+    scenario["accounts"][0]["opening_balance"] = 5_000_000
+    policy = scenario["target_allocation_policies"][0]
+    policy["cash_floor"] = 1_000_000
+    policy["cash_ceiling"] = 9_000_000
+    policy["rebalance_tolerance_ppb"] = tolerance_ppb
+    return fixture
+
+
 def _bond_fixture() -> dict[str, Any]:
     fixture = _tax_fixture()
     fixture["rollout_count"] = 3
@@ -1560,6 +1571,49 @@ def test_rust_and_jax_match_post_settlement_target_allocation_purchases(tmp_path
     assert all(sum(posting["amount"] for posting in entry["postings"]) == 0 for entry in rust["rollouts"][0]["journal"])
 
 
+def test_rust_and_jax_match_quiet_band_drift_rebalancing(tmp_path: Path) -> None:
+    fixture = _target_allocation_rebalance_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    assert _rust_cash(rust).to_dicts() == (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+        .to_dicts()
+    )
+    columns = [
+        "lot_id",
+        "account_id",
+        "purchase_month_index",
+        "cost_basis_per_unit_quanta",
+        "remaining_quantity_quanta",
+    ]
+    legacy_lots = asset_lots(legacy).filter(pl.col("month_index") == 1).select(columns).sort("lot_id").to_dicts()
+    rust_lots = _rust_lots(rust).filter(pl.col("month_index") == 1).select(columns).sort("lot_id").to_dicts()
+    assert rust_lots == legacy_lots
+    remaining = {row["lot_id"]: row["remaining_quantity_quanta"] for row in rust_lots}
+    assert remaining == {
+        "a-source-second": 500_000_000,
+        "allocation_sale_buy_p0_s0_0": 0,
+        "allocation_sale_buy_p0_s1_0": 400_000_000,
+        "bond": 100_000_000,
+        "z-source-first": 0,
+    }
+    assert (
+        next(
+            account["balance"]
+            for account in rust["rollouts"][0]["months"][1]["balances"]
+            if account["account"]["agent_id"] == "alice" and account["account"]["account_id"] == "checking"
+        )
+        == 5_000_000
+    )
+    assert [(row["lot_id"], row["units"]) for row in rust["rollouts"][0]["dispositions"]] == [
+        ("z-source-first", 100_000_000),
+        ("a-source-second", 300_000_000),
+    ]
+
+
 def test_purchased_lots_join_the_source_pool_after_real_lots_in_fifo_order(tmp_path: Path) -> None:
     fixture = _target_allocation_purchase_then_sale_fixture()
     legacy = run_legacy_fixture(fixture)
@@ -1817,20 +1871,19 @@ def test_rust_and_jax_match_insufficient_target_allocation_failure_metadata(tmp_
     assert all(sum(posting["amount"] for posting in entry["postings"]) == 0 for entry in rust["rollouts"][0]["journal"])
 
 
-@pytest.mark.parametrize(
-    ("field", "value", "message"), [("rebalance_tolerance_ppb", 0, "configures drift rebalancing")]
-)
-def test_rust_names_deferred_target_allocation_features(tmp_path: Path, field: str, value: int, message: str) -> None:
+def test_rebalancing_without_purchase_slots_is_rejected(tmp_path: Path) -> None:
     fixture = _target_allocation_fixture()
-    fixture["scenario"]["target_allocation_policies"][0][field] = value
-    fixture_path = tmp_path / f"unsupported-{field}.json"
+    fixture["scenario"]["target_allocation_policies"][0]["rebalance_tolerance_ppb"] = 250_000_000
+
+    with pytest.raises(ValueError, match="no purchase slots"):
+        run_legacy_fixture(fixture)
+
+    fixture_path = tmp_path / "rebalance-without-purchase-slots.json"
     output_path = tmp_path / "unused.json"
     fixture_path.write_text(json.dumps(fixture, separators=(",", ":")))
-
     completed = subprocess.run([_binary(), fixture_path, output_path], check=False, capture_output=True, text=True)
-
     assert completed.returncode == 1
-    assert message in completed.stderr
+    assert "invalid configuration" in completed.stderr
 
 
 def test_rust_and_jax_match_grouped_recurring_obligations(tmp_path: Path) -> None:

@@ -109,19 +109,20 @@ rollout's observed price and acquisition month, and aborts the run rather than
 silently dropping a purchase when capacity is exhausted. Purchased lots join
 the first configured source-account pool for later FIFO sales. Selected traces
 expose the source and proceeds accounts on every lot disposition and the ordered
-sleeve identities attempted for every matching obligation. Drift-triggered
-rebalancing remains explicitly unsupported. Sleeve quantity scales are explicit
-fixture integers and the adapter verifies that each one matches the canonical
-Python asset scale before differential execution.
+sleeve identities attempted for every matching obligation. Optional quiet-band
+drift rebalancing is all-or-nothing, returns every sleeve to its floored target,
+and suppresses itself whenever the cash band is already raising or investing.
+Sleeve quantity scales are explicit fixture integers and the adapter verifies
+that each one matches the canonical Python asset scale before differential
+execution.
 
 Still missing before replacement is plausible:
 
 - broader modeled tax facts and complete deduction policy;
-- optional drift-triggered rebalancing;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax/SALT mixed-use splitting, mortgage principal-cap policies, and
   §121 primary-residence exclusion;
-- optional target-allocation rebalancing, broader liquidity policy, TLH, and
+- broader liquidity policy, TLH, and
   private equity;
 - complete selected-rollout causal trace parity for those domains;
 - Python extension/Arrow output integration.
