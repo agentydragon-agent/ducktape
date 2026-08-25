@@ -16,7 +16,7 @@ use crate::{
         PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
         PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput, RolloutSummary,
         SecurityLotState, SeriesSpec, SimulationOutput, TaxAccrual, TaxLiabilityState,
-        TaxPaymentOutcome, TaxSettlementOutcome,
+        TaxPaymentOutcome, TaxSettlementOutcome, TransferOutcome,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
@@ -368,6 +368,7 @@ struct Recorder {
     capture_trace: bool,
     months: Vec<MonthOutput>,
     journal: Vec<JournalEntry>,
+    transfers: Vec<TransferOutcome>,
     dispositions: Vec<LotDisposition>,
     obligations: Vec<ObligationOutcome>,
     rollout_failures: Vec<RolloutFailureOutcome>,
@@ -402,6 +403,7 @@ impl Recorder {
             capture_trace,
             months: Vec::new(),
             journal: Vec::new(),
+            transfers: Vec::new(),
             dispositions: Vec::new(),
             obligations: Vec::new(),
             rollout_failures: Vec::new(),
@@ -460,6 +462,12 @@ impl Recorder {
             self.dispositions.push(disposition);
         }
         Ok(())
+    }
+
+    fn record_transfer(&mut self, transfer: TransferOutcome) {
+        if self.capture_trace {
+            self.transfers.push(transfer);
+        }
     }
 
     fn record_obligation(&mut self, obligation: ObligationOutcome) {
@@ -654,6 +662,7 @@ impl RolloutComputation {
             rollout_id: self.rollout_id,
             months: self.recorder.months,
             journal: self.recorder.journal,
+            transfers: self.recorder.transfers,
             dispositions: self.recorder.dispositions,
             obligations: self.recorder.obligations,
             rollout_failures: self.recorder.rollout_failures,
@@ -2815,7 +2824,7 @@ fn execute_property_purchases(
             });
             origination = Some(MortgageOriginationOutcome {
                 month,
-                cause_id: purchase.cause_id.clone(),
+                cause_id: format!("{}_mortgage_origination", purchase.cause_id),
                 liability_id: mortgage.liability_id.clone(),
                 agent_id: purchase.buyer_agent_id.clone(),
                 payment_account_id: purchase.buyer_account_id.clone(),
@@ -2844,6 +2853,16 @@ fn execute_property_purchases(
                 postings,
             },
         )?;
+        if stake.0 > 0 {
+            recorder.record_transfer(TransferOutcome {
+                month,
+                cause_id: format!("{}_buyer_cash", purchase.cause_id),
+                from: AccountRef::new(&purchase.buyer_agent_id, &purchase.buyer_account_id),
+                to: AccountRef::new(&purchase.seller_agent_id, &purchase.seller_account_id),
+                amount: stake,
+                income_category: None,
+            });
+        }
         properties.push(PropertyState {
             property_id: purchase.property_id.clone(),
             location_id: purchase.location_id.clone(),
@@ -2994,6 +3013,19 @@ fn apply_cashflow(
     deduction_category: Option<&str>,
 ) -> Result<(), SimulationError> {
     transfer_money(ledger, recorder, month, cause_id, from, to, amount)?;
+    let recorded_income_category = (income_category == Some("ordinary")
+        && tax_facts
+            .keys()
+            .any(|(agent_id, _)| agent_id == &to.agent_id))
+    .then(|| "ordinary".to_owned());
+    recorder.record_transfer(TransferOutcome {
+        month,
+        cause_id: cause_id.into(),
+        from: from.clone(),
+        to: to.clone(),
+        amount,
+        income_category: recorded_income_category,
+    });
     record_transfer_income(tax_facts, &to.agent_id, income_category, amount)?;
     record_transfer_deduction(tax_facts, &from.agent_id, deduction_category, amount)
 }
@@ -3707,6 +3739,16 @@ fn settle_obligations(
                 shortfall,
             })?;
         }
+        if amount_paid.0 > 0 {
+            recorder.record_transfer(TransferOutcome {
+                month,
+                cause_id: firing_id.clone(),
+                from: obligation.from.clone(),
+                to: obligation.to.clone(),
+                amount: amount_paid,
+                income_category: None,
+            });
+        }
         if !funded {
             recorder.record_rollout_failure(RolloutFailureOutcome {
                 month,
@@ -4002,6 +4044,7 @@ fn execute_sale(
             asset_id: format!("security:{}", lot.spec.asset_id),
             lot_id: lot.spec.lot_id.clone(),
             purchase_month: lot.spec.purchase_month,
+            quantity_scale: lot.spec.quantity_scale,
             units: item.units,
             basis: item.basis,
             proceeds: item.proceeds,
@@ -4396,6 +4439,7 @@ fn execute_target_allocation_pool_sale(
             asset_id: format!("security:{}", lot.spec.asset_id),
             lot_id: lot.spec.lot_id.clone(),
             purchase_month: lot.spec.purchase_month,
+            quantity_scale: lot.spec.quantity_scale,
             units: item.units,
             basis: item.basis,
             proceeds: item.proceeds,

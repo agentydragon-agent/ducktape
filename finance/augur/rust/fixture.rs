@@ -6,7 +6,7 @@ use crate::{
     tax::{JurisdictionLevel, TaxRules},
 };
 
-pub const FIXTURE_SCHEMA_VERSION: u32 = 2;
+pub const FIXTURE_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -513,6 +513,16 @@ pub struct SecurityLotState {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TransferOutcome {
+    pub month: u32,
+    pub cause_id: String,
+    pub from: AccountRef,
+    pub to: AccountRef,
+    pub amount: Money,
+    pub income_category: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BondState {
     pub bond_id: String,
     pub agent_id: String,
@@ -575,6 +585,7 @@ pub struct LotDisposition {
     pub asset_id: String,
     pub lot_id: String,
     pub purchase_month: i32,
+    pub quantity_scale: i64,
     pub units: Quantity,
     pub basis: Money,
     pub proceeds: Money,
@@ -758,6 +769,7 @@ pub struct RolloutOutput {
     pub rollout_id: u32,
     pub months: Vec<MonthOutput>,
     pub journal: Vec<JournalEntry>,
+    pub transfers: Vec<TransferOutcome>,
     pub dispositions: Vec<LotDisposition>,
     pub obligations: Vec<ObligationOutcome>,
     pub rollout_failures: Vec<RolloutFailureOutcome>,

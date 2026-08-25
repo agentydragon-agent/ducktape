@@ -19,6 +19,7 @@ import pytest_bazel
 
 from finance.augur.rust.benchmark_fixture import write_fixture
 from finance.augur.rust.fixture_adapter import run_legacy_fixture
+from finance.augur.rust.output_adapter import decode_rust_event_log
 from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
 from finance.augur.sim.test_state_helpers import (
     asset_lots,
@@ -44,7 +45,7 @@ def _fixture() -> dict[str, Any]:
     # sale, while sharing the sale-month value supported by the legacy fixed
     # sale-price surface.
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "currency_code": "USD",
         "currency_quantum": "0.01",
         "rollout_count": 2,
@@ -71,6 +72,7 @@ def _fixture() -> dict[str, Any]:
                     "from": {"agent_id": "bob", "account_id": "checking"},
                     "to": {"agent_id": "alice", "account_id": "checking"},
                     "amount": 100,
+                    "income_category": "ordinary",
                 }
             ],
             "obligations": [
@@ -382,7 +384,7 @@ def _distribution_tax_fixture() -> dict[str, Any]:
 def _target_allocation_fixture() -> dict[str, Any]:
     tax_profile = _tax_fixture()["scenario"]["tax_profiles"][0]
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "currency_code": "USD",
         "currency_quantum": "0.01",
         "rollout_count": 1,
@@ -1264,6 +1266,42 @@ def test_rust_and_jax_match_on_shared_integer_fixture(tmp_path: Path) -> None:
         for entry in rollout["journal"]:
             assert sum(posting["amount"] for posting in entry["postings"]) == 0
 
+    rust_events = decode_rust_event_log(rust)
+    legacy_events = legacy.events_log
+    comparisons = (
+        (
+            legacy_events.transfers,
+            rust_events.transfers,
+            [
+                "rollout_index",
+                "month_index",
+                "cause_id",
+                "from_agent_id",
+                "from_account_id",
+                "to_agent_id",
+                "to_account_id",
+            ],
+        ),
+        (
+            legacy_events.lot_dispositions,
+            rust_events.lot_dispositions,
+            ["rollout_index", "month_index", "cause_id", "lot_id"],
+        ),
+        (
+            legacy_events.obligation_accruals,
+            rust_events.obligation_accruals,
+            ["rollout_index", "month_index", "cause_id", "obligation_id"],
+        ),
+        (
+            legacy_events.obligation_settlements,
+            rust_events.obligation_settlements,
+            ["rollout_index", "month_index", "cause_id", "obligation_id"],
+        ),
+    )
+    for legacy_frame, rust_frame, sort_columns in comparisons:
+        assert rust_frame.schema == legacy_frame.schema
+        assert rust_frame.sort(sort_columns).to_dicts() == legacy_frame.sort(sort_columns).to_dicts()
+
 
 def test_rust_and_jax_match_failure_freeze_semantics(tmp_path: Path) -> None:
     fixture = _failure_fixture()
@@ -1287,6 +1325,11 @@ def test_rust_and_jax_match_failure_freeze_semantics(tmp_path: Path) -> None:
         for rollout in rust["rollouts"]
         for snapshot in rollout["months"][1:]
     )
+    rust_failures = decode_rust_event_log(rust).rollout_failures
+    legacy_failures = legacy.events_log.rollout_failures
+    sort_columns = ["rollout_index", "month_index", "cause_id", "obligation_id"]
+    assert rust_failures.schema == legacy_failures.schema
+    assert rust_failures.sort(sort_columns).to_dicts() == legacy_failures.sort(sort_columns).to_dicts()
 
 
 def test_fixture_rejects_inexact_per_unit_lot_basis_in_both_engines(tmp_path: Path) -> None:
@@ -1961,32 +2004,13 @@ def test_rust_and_jax_match_fixed_and_series_indexed_amounts(tmp_path: Path) -> 
         .sort("rollout_index", "month_index", "cause_id")
         .to_dicts()
     )
-    destinations = {
-        spec["cause_id"]: spec["to"]
-        for key in (
-            "scheduled_transfers",
-            "recurring_transfers",
-            "scheduled_property_cashflows",
-            "recurring_property_cashflows",
-        )
-        for spec in fixture["scenario"][key]
-    }
-    rust_transfers = []
-    for rollout in rust["rollouts"]:
-        for entry in rollout["journal"]:
-            if entry["cause_id"] not in transfer_causes:
-                continue
-            destination = destinations[entry["cause_id"]]
-            amount = next(posting["amount"] for posting in entry["postings"] if posting["account"] == destination)
-            rust_transfers.append(
-                {
-                    "rollout_index": rollout["rollout_id"],
-                    "month_index": entry["month"],
-                    "cause_id": entry["cause_id"],
-                    "amount_quanta": amount,
-                }
-            )
-    rust_transfers.sort(key=lambda row: (row["rollout_index"], row["month_index"], row["cause_id"]))
+    rust_transfers = (
+        decode_rust_event_log(rust)
+        .transfers.filter(pl.col("cause_id").is_in(transfer_causes))
+        .select("rollout_index", "month_index", "cause_id", "amount_quanta")
+        .sort("rollout_index", "month_index", "cause_id")
+        .to_dicts()
+    )
     assert rust_transfers == legacy_transfers
 
     columns = [
@@ -2651,6 +2675,57 @@ def test_rust_and_jax_match_depreciation_recapture_and_jurisdiction_tax(tmp_path
     fixture = _property_depreciation_fixture(sale=True)
     legacy = run_legacy_fixture(fixture)
     rust = _rust_run(fixture, tmp_path)
+
+    legacy_events = legacy.events_log
+    rust_events = decode_rust_event_log(rust)
+    event_comparisons = (
+        (
+            legacy_events.transfers,
+            rust_events.transfers,
+            [
+                "rollout_index",
+                "month_index",
+                "cause_id",
+                "from_agent_id",
+                "from_account_id",
+                "to_agent_id",
+                "to_account_id",
+            ],
+        ),
+        (
+            legacy_events.property_purchases,
+            rust_events.property_purchases,
+            ["rollout_index", "month_index", "cause_id", "property_id"],
+        ),
+        (
+            legacy_events.mortgage_originations,
+            rust_events.mortgage_originations,
+            ["rollout_index", "month_index", "cause_id", "liability_id"],
+        ),
+        (
+            legacy_events.mortgage_payments,
+            rust_events.mortgage_payments,
+            ["rollout_index", "month_index", "cause_id", "liability_id"],
+        ),
+        (
+            legacy_events.set_rented_fraction_events,
+            rust_events.set_rented_fraction_events,
+            ["rollout_index", "month_index", "property_id"],
+        ),
+        (
+            legacy_events.capital_improvement_events,
+            rust_events.capital_improvement_events,
+            ["rollout_index", "month_index", "property_id"],
+        ),
+        (
+            legacy_events.property_sale_events,
+            rust_events.property_sale_events,
+            ["rollout_index", "month_index", "property_id"],
+        ),
+    )
+    for legacy_frame, rust_frame, sort_columns in event_comparisons:
+        assert rust_frame.schema == legacy_frame.schema
+        assert rust_frame.sort(sort_columns).to_dicts() == legacy_frame.sort(sort_columns).to_dicts()
 
     legacy_sales = legacy.events_log.property_sale_events.select(
         "month_index",

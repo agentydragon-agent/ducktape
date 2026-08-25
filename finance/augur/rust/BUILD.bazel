@@ -74,6 +74,16 @@ py_library(
     ],
 )
 
+py_library(
+    name = "output_adapter",
+    srcs = ["output_adapter.py"],
+    deps = [
+        "//finance/augur:frames",
+        "//finance/augur/sim:events",
+        "@pypi//polars",
+    ],
+)
+
 py_binary(
     name = "benchmark_driver",
     srcs = ["benchmark_driver.py"],
@@ -98,11 +108,13 @@ py_binary(
 
 py_test(
     name = "differential_test",
+    size = "medium",
     srcs = ["differential_test.py"],
     data = [":simulator_cli"],
     deps = [
         ":benchmark_fixture_lib",
         ":fixture_adapter",
+        ":output_adapter",
         "//finance/augur/sim:test_state_helpers",
         "@pypi//polars",
         "@pypi//pytest",

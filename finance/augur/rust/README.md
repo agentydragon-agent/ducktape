@@ -71,6 +71,14 @@ prepayments and settlement, and preserves capital-loss carryforward between tax
 years. Monthly and terminal output retain jurisdiction-level tax-liability
 state and held bond principal; selected traces expose tax-payment,
 tax-settlement, and issuer-attributed bond cashflow/accretion records.
+`output_adapter.py` lifts integer-native Rust transfer, lot-disposition,
+obligation-accrual, obligation-settlement, and rollout-failure rows into the
+same canonical `EventLog` frame schemas exposed by Python/JAX. It also
+normalizes the currently supported property-purchase, mortgage-origination,
+mortgage-payment, rented-fraction, capital-improvement, and property-sale
+frames, including exact frame dtypes and cause identities. The adapter is an
+explanatory-output boundary only; snapshots remain authoritative state and
+events are not replayed to reconstruct them.
 
 The strict fixture stores monetary series (security prices, distributions, and
 home values) as currency quanta. Inflation and rent index levels instead use a
