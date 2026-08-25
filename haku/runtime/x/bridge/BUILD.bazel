@@ -37,6 +37,7 @@ py_library(
     deps = [
         ":backend",
         ":protocol",
+        "@pypi//tomlkit",
     ],
 )
 
@@ -264,6 +265,17 @@ py_test(
         ":backend_registry",
         ":codex_options",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_codex_native_provider",
+    srcs = ["test_codex_native_provider.py"],
+    data = ["@codex_cli_linux_x64//:files"],
+    deps = [
+        ":codex_options",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

@@ -132,6 +132,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
+        "//haku/runtime/x/bridge:codex_options",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//pydantic",
         "@pypi//pytest",
