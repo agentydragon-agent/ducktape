@@ -100,7 +100,6 @@ cluster/.claude/
 !**/nix/home/config/nvim/lua/config
 !cluster/k8s/**/config
 !props/specimens/**/claude_linter_v2/config
-!x/claude_linter_v2/config
 !augur/fit/config
 !augur/model/config
 !**/claude_hooks/config
@@ -114,7 +113,6 @@ cluster/.claude/
 !/props/specimens/hooks
 !/props/specimens/**/gitea_pr_gate/hooks
 !/props/specimens/**/claude_linter_v2/hooks
-!x/claude_linter_v2/hooks
 !x/gitea/pr_gate/hooks
 !/devinfra/claude/claude_api/hooks
 

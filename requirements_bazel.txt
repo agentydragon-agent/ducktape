@@ -6062,10 +6062,6 @@ python-ulid==4.0.1 \
     --hash=sha256:6f1d69ceb97e99fe542df8476ebcd7a668284bf53ee14b3106bcc6a341a95ed9 \
     --hash=sha256:bbeec02556190bb9dc3401faa7268696acbfbe7b6db9908c155dc3548629f20c
     # via redisvl
-pytimeparse==1.1.8 \
-    --hash=sha256:04b7be6cc8bd9f5647a6325444926c3ac34ee6bc7e69da4367ba282f076036bd \
-    --hash=sha256:e86136477be924d7e670646a98561957e8ca7308d44841e21f5ddea757556a0a
-    # via ducktape (pyproject.toml)
 pytz==2026.1.post1 \
     --hash=sha256:3378dde6a0c3d26719182142c56e60c7f9af7e968076f31aae569d72a0358ee1 \
     --hash=sha256:f2fd16142fda348286a75e1a524be810bb05d444e5a081f37f7affc635035f7a
