@@ -207,6 +207,7 @@ py_test(
 
 py_test(
     name = "test_pydantic_column_null",
+    size = "medium",
     srcs = [
         "test_pydantic_column_null.py",
     ],
