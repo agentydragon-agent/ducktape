@@ -43,7 +43,15 @@ from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
 from mcp import types as mcp_types
-from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, ValidationError, model_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    SerializerFunctionWrapHandler,
+    ValidationError,
+    model_serializer,
+)
 
 from haku.console.auto_approval import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.config import Settings, tool_call_console_url
@@ -191,22 +199,25 @@ class McpToolCallResponse(ToolCallRecord):
     """A compact MCP edge rendering of the shared domain record with its deep link."""
 
     url: str
+    _selected_payload_fields: frozenset[ToolCallPayloadField] = PrivateAttr()
 
     @model_serializer(mode="wrap")
     def _serialize(self, serializer: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = serializer(self)
         for field in ToolCallPayloadField:
-            if field.value not in self.model_fields_set:
+            if field not in self._selected_payload_fields:
                 data.pop(field.value, None)
         return data
 
 
 def _mcp_tool_call_response(record: ToolCallRecord, settings: Settings) -> McpToolCallResponse:
-    return McpToolCallResponse.model_construct(
-        _fields_set=record.model_fields_set | {"url"},
-        **record.model_dump(),
-        url=_tool_call_url(settings, record.tool_call_id),
+    response = McpToolCallResponse.model_validate(
+        record.model_dump() | {"url": _tool_call_url(settings, record.tool_call_id)}
     )
+    response._selected_payload_fields = frozenset(
+        field for field in ToolCallPayloadField if field.value in record.model_fields_set
+    )
+    return response
 
 
 class StaticBearerAuthStatus(BaseModel):
