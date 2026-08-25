@@ -33,9 +33,14 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
 - An Agent-originated tool call persists only its exact binding provenance. Agent, owning Operator,
   and display name derive through canonical joins, and approval/execution revalidate that binding
   so queued work cannot transfer to a replacement credential.
-- An Agent stores only a nullable `access_profile_id`, naming a reviewed deployment-config entry.
-  The profile owns its auto-approval policy and permitted logical Recall-index IDs. Credential
-  bindings authenticate an Agent; they do not independently select either capability. A null or
+- An Agent stores only a nullable `access_profile_id`, naming one reviewed deployment-config
+  capability bundle. Its authority dimensions are independent and default-deny: an auto-approval
+  policy decides whether a permitted call skips review; `recall_index_ids` grants particular
+  logical indexes; `in_process_server_ids` grants credential-free Console-held servers;
+  `allowed_chat_runtimes` grants launchable runtime kinds. A server grant is not Recall access and
+  neither is auto-approval. `can_read_profiles` is the reviewed, acyclic shape reserved for future
+  cross-profile reads; this release validates and stores it, but no read path consults it yet.
+  Credential bindings authenticate an Agent and never select any of these capabilities. A null or
   removed profile is fail-closed.
 
 ## Interactive enrollment

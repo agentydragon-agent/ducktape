@@ -53,6 +53,30 @@ Kustomization”. It temporarily uses the existing CNPG application-owner creden
 DDL ownership from runtime DML must first migrate the externally managed `mcp_oauth_kv` table and
 make a deliberate ownership/grant handoff for the live database.
 
+## Rolling release compatibility
+
+The API and static shell are separate Deployments and roll independently. The API uses
+`maxUnavailable: 0`: a replacement that never becomes Ready leaves the running version serving,
+but old and new replicas overlap while a healthy release converges.
+
+Each static image contains only its own fingerprinted assets. During a static roll, a browser can
+load a shell from one replica and request its chunk from another replica that does not have it. The
+window lasts only for the roll and a refresh afterwards repairs the page. Session persistence could
+close the gap, but Service `sessionAffinity` is not known to survive the Cilium Gateway API/Envoy
+path; verify that path before configuring it. Until then, API/static compatibility must remain
+additive across their independent rolls.
+
+The migration Job runs before the new API workload, while previous API replicas may still be
+serving. Database changes therefore use expand/contract. Dropping or renaming an ORM-mapped column
+requires three releases: add the replacement, stop mapping the old column, then drop it only after
+the unmapping release has converged. SQLAlchemy names every mapped column in ordinary model
+`SELECT`s even when application code does not read the attribute. `database_schema.py` records
+unmapped tables, columns, and indexes waiting for their final drop so schema drift checks preserve
+that release boundary.
+
+Stored values and cross-replica payloads have the analogous adjacent-release rule; the reader/writer
+vocabulary policy remains in <../../../../haku/console/README.md> § Vocabularies across a roll.
+
 ## One-time bootstrap: the in-process `gmail` + `google_calendar` MCP servers
 
 The console's two Google-backed in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail
