@@ -1,45 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# === Base modules (no internal deps) ===
-
-py_library(
-    name = "github_actions",
-    srcs = ["github_actions.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//util:env",
-        "@pypi//pydantic",
-    ],
-)
-
-# === Library modules ===
-
-py_library(
-    name = "diff_utils",
-    srcs = ["diff_utils.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":github_actions",
-        "//util/bazel:workspace",
-        "@pypi//pygit2",
-    ],
-)
-
-# === Exec stubs ===
-
-py_library(
-    name = "check_release",
-    srcs = ["check_release.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":diff_utils",
-        ":github_actions",
-        "//util:env",
-        "//util/bazel:workspace",
-        "@pypi//pydantic",
-        "@pypi//pygit2",
-    ],
-)
+# === Libraries ===
 
 py_library(
     name = "artifacts",
@@ -124,12 +85,6 @@ py_binary(
     name = "sync_pins_bin",
     main_module = "devinfra.ci.sync_pins",
     deps = [":sync_pins"],
-)
-
-py_binary(
-    name = "check_release_bin",
-    main_module = "devinfra.ci.check_release",
-    deps = [":check_release"],
 )
 
 py_binary(

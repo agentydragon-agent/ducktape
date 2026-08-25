@@ -4,8 +4,8 @@
 
 Bazel CI uses two caching layers:
 
-1. **BuildBuddy remote cache** — caches action results (build outputs, test results) across all runs. 98%+ hit rate in practice. Configured via `setup-bazel` action.
-2. **GHA repository cache** — caches Bazel's `repository_cache` (compressed downloads of external deps). Uses the unified `actions/cache@v4` action for restore+save.
+1. **BuildBuddy remote cache** — caches action results (build outputs, test results) across runs. Hosted builds use `.github/actions/bb-remote`; workflows that run Bazel directly configure the same remote cache after `.github/actions/setup-bazel`.
+2. **GHA repository cache** — caches Bazel's `repository_cache` (compressed downloads of external dependencies) for workflows that run Bazel directly on GitHub-hosted runners. It uses unified `actions/cache@v6` restore and save behavior.
 
 ## Why repository_cache only?
 
@@ -34,26 +34,22 @@ bazel-repo-cache-<hash of MODULE.bazel + MODULE.bazel.lock>
 
 ## Cache flow
 
-```
-compute-targets job
-  ├── restore repository_cache (setup-bazel action)
-  ├── bazel-diff queries (fetches external repos into repository_cache)
-  └── post step: save repository_cache (automatic, only on exact-key miss)
+Workflows that run Bazel directly on a GitHub Actions runner call
+`.github/actions/setup-bazel`. Each job restores the exact cache key, falling
+back to the newest `bazel-repo-cache-` entry after dependency changes. Bazel
+and Bazelisk populate the restored directories as the job runs.
 
-  downstream jobs (bazel-check, bazel-test, ...)
-    └── restore repository_cache (setup-bazel → bazel-repo-cache)
-        post step: save skipped (exact-key hit from compute-targets)
-```
-
-The `setup-bazel` action uses the unified `actions/cache@v4`, which saves the cache as a post step on job success. The unified action only saves when the exact key was NOT found during restore, avoiding duplicate entries.
-
-There is **no prewarm step**. The `compute-targets` job runs `bazel query` via `bazel-diff`, which fetches all external repos during analysis. Downstream jobs benefit from the cache saved by `compute-targets`.
+The action uses unified `actions/cache@v6`, which saves the populated cache as
+a post step only when the exact key was absent during restore. There is no
+dedicated prewarm or `compute-targets` job. BuildBuddy-hosted `bb remote` runs
+execute in separate runner VMs and use BuildBuddy's cache rather than this
+GitHub-runner filesystem cache.
 
 ## Duplicate-key problem (historical)
 
 The former `bazel-repo-cache-save` action used `actions/cache/save@v4`, which creates a new cache entry even when the same key already exists. Multiple CI runs created conflicting entries per key. The GHA cache service responded with HTTP 400 on all restore attempts, making the cache useless across all jobs.
 
-The fix was to switch to the unified `actions/cache@v4` action, which only saves when the exact key was not found during restore. This prevents duplicate entries by design.
+The fix was to switch to the unified `actions/cache` action (currently v6), which only saves when the exact key was not found during restore. This prevents duplicate entries by design.
 
 ## Cached paths
 
@@ -71,4 +67,4 @@ The `_bazel_runner` segment assumes the GHA runner username is `runner` (standar
 | Cache `repository_cache` only (current)    | ~2GB   | Simple, within limit | Extraction cost on miss      |
 | `bazel-contrib/setup-bazel` external-cache | Varies | Per-repo granularity | LLVM still 8.2GB             |
 | No GHA cache, BuildBuddy only              | 0      | Simplest             | ~5 min repo fetching per-job |
-| Prewarm in compute-targets + save          | ~2GB   | Seeds cache once     | +4.5 min critical path       |
+| Dedicated prewarm job + save               | ~2GB   | Seeds cache once     | Adds to the critical path    |
