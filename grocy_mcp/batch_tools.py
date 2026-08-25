@@ -490,7 +490,9 @@ def register_batch_tools(
         `stock_consume` / `stock_set` to find which `location` to pass
         when the same product lives in more than one. For per-stock-entry
         detail (line items, prices, dates), use `stock_entries_list`
-        instead.
+        instead. In each result, `amount` is total on-hand and already
+        includes `amount_opened`; the opened amount is a subset, not an
+        additional bucket.
         """
         stock_r, qu_names, location_names = await asyncio.gather(
             _retry(lambda: client.get("/stock")),
@@ -1141,7 +1143,9 @@ def register_batch_tools(
         **Freezer warning**: transferring to/from a freezer location
         silently changes the best-before date (using the product's
         `default_best_before_days_after_freezing` /
-        `default_best_before_days_after_thawing`). The result's
+        `default_best_before_days_after_thawing`). Both settings default
+        to 0 (= today); use -1 when frozen/thawed stock should never
+        expire. The result's
         `amount_delta` and `new_amount` are null for transfers — Grocy
         doesn't return them. The `transaction_id` works with
         `transaction_undo` to revert. See also `stock_add`,
