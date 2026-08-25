@@ -74,6 +74,9 @@ impl TaxRules {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaxAssessment {
+    pub short_term_gain: Money,
+    pub long_term_gain: Money,
+    pub ordinary_loss_offset: Money,
     pub ordinary_taxable: Money,
     pub long_term_capital_gain_taxable: Money,
     pub ordinary_tax: Money,
@@ -154,6 +157,9 @@ pub fn assess(facts: TaxFacts, rules: &TaxRules) -> Result<TaxAssessment, TaxErr
             Money(0)
         };
         return Ok(TaxAssessment {
+            short_term_gain: short_term,
+            long_term_gain: long_term,
+            ordinary_loss_offset: ordinary_offset,
             ordinary_taxable: taxable,
             long_term_capital_gain_taxable: Money(0),
             ordinary_tax,
@@ -192,6 +198,9 @@ pub fn assess(facts: TaxFacts, rules: &TaxRules) -> Result<TaxAssessment, TaxErr
     };
     let capital_gain_tax = long_term_capital_gain_tax.checked_add(section_1250_tax)?;
     Ok(TaxAssessment {
+        short_term_gain: short_term,
+        long_term_gain: long_term,
+        ordinary_loss_offset: ordinary_offset,
         ordinary_taxable,
         long_term_capital_gain_taxable: capital_taxable,
         ordinary_tax,
@@ -455,6 +464,21 @@ mod tests {
             (short, long, offset, carry),
             (Money(0), Money(0), Money(300_000), Money(500_000))
         );
+
+        let assessment = assess(
+            TaxFacts {
+                ordinary_income: Money(1_000_000),
+                short_term_gain: Money(-1_000_000),
+                long_term_gain: Money(200_000),
+                ..TaxFacts::default()
+            },
+            &federal(),
+        )
+        .unwrap();
+        assert_eq!(assessment.short_term_gain, Money(0));
+        assert_eq!(assessment.long_term_gain, Money(0));
+        assert_eq!(assessment.ordinary_loss_offset, Money(300_000));
+        assert_eq!(assessment.capital_loss_carryforward, Money(500_000));
     }
 
     #[test]

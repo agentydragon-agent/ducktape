@@ -3451,15 +3451,16 @@ fn accrue_year_end_taxes(
                 .get(&key)
                 .expect("validated tax profile has initialized facts");
             let assessment = assess(facts, rules)?;
+            let cause_id = format!(
+                "{}_{}_year_end_accrual_m{month}",
+                profile.agent_id, rules.jurisdiction_id
+            );
             if assessment.total_tax != Money(0) {
                 recorder.apply_entry(
                     ledger,
                     JournalEntry {
                         month,
-                        cause_id: format!(
-                            "{}_{}_year_end_accrual_m{month}",
-                            profile.agent_id, rules.jurisdiction_id
-                        ),
+                        cause_id: cause_id.clone(),
                         postings: vec![
                             Posting {
                                 account: tax_expense_account(
@@ -3488,15 +3489,21 @@ fn accrue_year_end_taxes(
             });
             recorder.record_tax_accrual(TaxAccrual {
                 month,
+                cause_id,
                 agent_id: profile.agent_id.clone(),
                 jurisdiction_id: rules.jurisdiction_id.clone(),
-                ordinary_income: facts.ordinary_income,
-                short_term_gain: facts.short_term_gain,
-                long_term_gain: facts.long_term_gain,
+                tax_year_end_month: month,
+                ordinary_income: facts
+                    .ordinary_income
+                    .checked_sub(assessment.ordinary_loss_offset)?,
+                short_term_gain: assessment.short_term_gain,
+                long_term_gain: assessment.long_term_gain,
                 section_1250_recapture: facts.section_1250_recapture,
                 rental_interest_deduction: facts.rental_interest_deduction,
                 depreciation_deduction: facts.depreciation_deduction,
+                standard_deduction: rules.standard_deduction,
                 mortgage_interest_deduction: facts.mortgage_interest_deduction,
+                salt_deduction: Money(0),
                 itemized_deduction: facts.itemized_deduction,
                 ordinary_taxable: assessment.ordinary_taxable,
                 long_term_capital_gain_taxable: assessment.long_term_capital_gain_taxable,

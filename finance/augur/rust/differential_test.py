@@ -45,7 +45,7 @@ def _fixture() -> dict[str, Any]:
     # sale, while sharing the sale-month value supported by the legacy fixed
     # sale-price surface.
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "currency_code": "USD",
         "currency_quantum": "0.01",
         "rollout_count": 2,
@@ -384,7 +384,7 @@ def _distribution_tax_fixture() -> dict[str, Any]:
 def _target_allocation_fixture() -> dict[str, Any]:
     tax_profile = _tax_fixture()["scenario"]["tax_profiles"][0]
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "currency_code": "USD",
         "currency_quantum": "0.01",
         "rollout_count": 1,
@@ -2147,6 +2147,16 @@ def test_rust_and_jax_match_federal_and_california_tax_accruals(tmp_path: Path) 
     )
     assert rust_accruals == legacy_accruals
     assert [row["total_tax_quanta"] for row in rust_accruals] == [1_475_409, 3_753_851]
+
+    legacy_events = legacy.events_log
+    rust_events = decode_rust_event_log(rust)
+    for legacy_frame, rust_frame in (
+        (legacy_events.tax_accruals, rust_events.tax_accruals),
+        (legacy_events.tax_breakdowns, rust_events.tax_breakdowns),
+    ):
+        sort_columns = ["rollout_index", "month_index", "cause_id", "jurisdiction_id"]
+        assert rust_frame.schema == legacy_frame.schema
+        assert rust_frame.sort(sort_columns).to_dicts() == legacy_frame.sort(sort_columns).to_dicts()
     for entry in rust["rollouts"][0]["journal"]:
         assert sum(posting["amount"] for posting in entry["postings"]) == 0
 
@@ -2222,6 +2232,22 @@ def test_rust_and_jax_match_estimated_tax_true_up_and_liability_settlement(tmp_p
         key=lambda row: (row["month_index"], row["cause_id"]),
     )
     assert rust_settlements == legacy_settlements
+
+    rust_events = decode_rust_event_log(rust)
+    legacy_events = legacy.events_log
+    settlement_sort = ["rollout_index", "month_index", "cause_id", "tax_year_end_month"]
+    assert rust_events.tax_settlements.schema == legacy_events.tax_settlements.schema
+    assert (
+        rust_events.tax_settlements.sort(settlement_sort).to_dicts()
+        == legacy_events.tax_settlements.sort(settlement_sort).to_dicts()
+    )
+
+    tax_causes = {payment["cause_id"] for payment in rust["rollouts"][0]["tax_payments"]}
+    transfer_sort = ["rollout_index", "month_index", "cause_id"]
+    rust_tax_transfers = rust_events.transfers.filter(pl.col("cause_id").is_in(tax_causes)).sort(transfer_sort)
+    legacy_tax_transfers = legacy_events.transfers.filter(pl.col("cause_id").is_in(tax_causes)).sort(transfer_sort)
+    assert rust_tax_transfers.schema == legacy_tax_transfers.schema
+    assert rust_tax_transfers.to_dicts() == legacy_tax_transfers.to_dicts()
     for entry in rust["rollouts"][0]["journal"]:
         assert sum(posting["amount"] for posting in entry["postings"]) == 0
 

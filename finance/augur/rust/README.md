@@ -76,6 +76,7 @@ obligation-accrual, obligation-settlement, and rollout-failure rows into the
 same canonical `EventLog` frame schemas exposed by Python/JAX. It also
 normalizes the currently supported property-purchase, mortgage-origination,
 mortgage-payment, rented-fraction, capital-improvement, and property-sale
+frames, plus year-end tax accrual/breakdown and tax-liability settlement
 frames, including exact frame dtypes and cause identities. The adapter is an
 explanatory-output boundary only; snapshots remain authoritative state and
 events are not replayed to reconstruct them.

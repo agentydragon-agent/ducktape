@@ -6,7 +6,7 @@ use crate::{
     tax::{JurisdictionLevel, TaxRules},
 };
 
-pub const FIXTURE_SCHEMA_VERSION: u32 = 3;
+pub const FIXTURE_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -625,15 +625,19 @@ pub struct RolloutFailureOutcome {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaxAccrual {
     pub month: u32,
+    pub cause_id: String,
     pub agent_id: String,
     pub jurisdiction_id: String,
+    pub tax_year_end_month: u32,
     pub ordinary_income: Money,
     pub short_term_gain: Money,
     pub long_term_gain: Money,
     pub section_1250_recapture: Money,
     pub rental_interest_deduction: Money,
     pub depreciation_deduction: Money,
+    pub standard_deduction: Money,
     pub mortgage_interest_deduction: Money,
+    pub salt_deduction: Money,
     pub itemized_deduction: Money,
     pub ordinary_taxable: Money,
     pub long_term_capital_gain_taxable: Money,

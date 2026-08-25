@@ -34,6 +34,9 @@ def decode_rust_event_log(output: Mapping[str, Any]) -> EventLog:
     rented_fraction_events: list[dict[str, object]] = []
     capital_improvements: list[dict[str, object]] = []
     property_sales: list[dict[str, object]] = []
+    tax_accruals: list[dict[str, object]] = []
+    tax_breakdowns: list[dict[str, object]] = []
+    tax_settlements: list[dict[str, object]] = []
 
     for rollout in output["rollouts"]:
         rollout_index = int(rollout["rollout_id"])
@@ -55,6 +58,10 @@ def decode_rust_event_log(output: Mapping[str, Any]) -> EventLog:
             _capital_improvement_row(rollout_index, row) for row in rollout["capital_improvements"]
         )
         property_sales.extend(_property_sale_row(rollout_index, row) for row in rollout["property_sales"])
+        for row in rollout["tax_accruals"]:
+            tax_accruals.append(_tax_accrual_row(rollout_index, row))
+            tax_breakdowns.append(_tax_breakdown_row(rollout_index, row))
+        tax_settlements.extend(_tax_settlement_row(rollout_index, row) for row in rollout["tax_settlements"])
 
     return EventLog.from_frames(
         {
@@ -69,6 +76,9 @@ def decode_rust_event_log(output: Mapping[str, Any]) -> EventLog:
             "set_rented_fraction_events": _frame(EVENT_FRAMES.set_rented_fraction_events, rented_fraction_events),
             "capital_improvement_events": _frame(EVENT_FRAMES.capital_improvement_events, capital_improvements),
             "property_sale_events": _frame(EVENT_FRAMES.property_sale_events, property_sales),
+            "tax_accruals": _frame(EVENT_FRAMES.tax_accruals, tax_accruals),
+            "tax_breakdowns": _frame(EVENT_FRAMES.tax_breakdowns, tax_breakdowns),
+            "tax_settlements": _frame(EVENT_FRAMES.tax_settlements, tax_settlements),
         }
     )
 
@@ -242,4 +252,50 @@ def _property_sale_row(rollout_index: int, row: Mapping[str, Any]) -> dict[str, 
         "depreciation_recapture_quanta": int(row["depreciation_recapture"]),
         "section_121_exclusion_quanta": int(row["section_121_exclusion"]),
         "long_term_capital_gain_quanta": int(row["long_term_capital_gain"]),
+    }
+
+
+def _tax_accrual_row(rollout_index: int, row: Mapping[str, Any]) -> dict[str, object]:
+    return {
+        "rollout_index": rollout_index,
+        "month_index": int(row["month"]),
+        "cause_id": str(row["cause_id"]),
+        "agent_id": str(row["agent_id"]),
+        "jurisdiction_id": str(row["jurisdiction_id"]),
+        "tax_year_end_month": int(row["tax_year_end_month"]),
+        "amount_quanta": int(row["total_tax"]),
+    }
+
+
+def _tax_breakdown_row(rollout_index: int, row: Mapping[str, Any]) -> dict[str, object]:
+    return {
+        "rollout_index": rollout_index,
+        "month_index": int(row["month"]),
+        "cause_id": str(row["cause_id"]),
+        "agent_id": str(row["agent_id"]),
+        "jurisdiction_id": str(row["jurisdiction_id"]),
+        "tax_year_end_month": int(row["tax_year_end_month"]),
+        "ordinary_income_quanta": int(row["ordinary_income"]),
+        "ltcg_quanta": int(row["long_term_gain"]),
+        "stcg_quanta": int(row["short_term_gain"]),
+        "standard_deduction_quanta": int(row["standard_deduction"]),
+        "mortgage_interest_deduction_quanta": int(row["mortgage_interest_deduction"]),
+        "salt_deduction_quanta": int(row["salt_deduction"]),
+        "itemized_deduction_quanta": int(row["itemized_deduction"]),
+        "ordinary_taxable_quanta": int(row["ordinary_taxable"]),
+        "capital_gain_taxable_quanta": int(row["long_term_capital_gain_taxable"]),
+        "ordinary_tax_quanta": int(row["ordinary_tax"]),
+        "capital_gain_tax_quanta": int(row["capital_gain_tax"]),
+        "total_tax_quanta": int(row["total_tax"]),
+    }
+
+
+def _tax_settlement_row(rollout_index: int, row: Mapping[str, Any]) -> dict[str, object]:
+    return {
+        "rollout_index": rollout_index,
+        "month_index": int(row["month"]),
+        "cause_id": str(row["cause_id"]),
+        "agent_id": str(row["agent_id"]),
+        "tax_year_end_month": int(row["tax_year_end_month"]),
+        "amount_quanta": int(row["amount"]),
     }

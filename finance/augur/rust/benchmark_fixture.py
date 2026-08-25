@@ -105,7 +105,7 @@ def write_fixture(path: Path, *, rollout_count: int, horizon_months: int) -> Non
     if horizon_months < 3:
         raise ValueError("horizon_months must be at least 3")
     header = {
-        "schema_version": 3,
+        "schema_version": 4,
         "currency_code": "USD",
         "currency_quantum": "0.01",
         "rollout_count": rollout_count,
