@@ -20,10 +20,12 @@ from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
+    CapitalImprovementEvent,
     DistributionTaxSlice,
     InitialAccountBalance,
     InitialLot,
     MortgageFinancing,
+    MortgageInterestDeductionPolicy,
     PropertySaleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
@@ -36,6 +38,7 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SecurityDistribution,
+    SetRentedFractionEvent,
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate_with_external_series
@@ -100,6 +103,17 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 f"legacy ScheduledAssetSale requires one fixed price across rollouts for {spec['cause_id']!r}"
             )
         return _money(int(prices[0]), quantum)
+
+    mortgage_principal_by_liability = {
+        cast(str, mortgage["liability_id"]): _money(cast(int, mortgage["principal"]), quantum)
+        for purchase in scenario_spec.get("scheduled_property_purchases", [])
+        if (mortgage := purchase.get("mortgage")) is not None
+    }
+    tax_jurisdiction_ids = {
+        cast(str, rules["jurisdiction_id"])
+        for profile in scenario_spec.get("tax_profiles", [])
+        for rules in profile["jurisdictions"]
+    }
 
     scenario = Scenario(
         agents=[Agent(agent_id=agent_id) for agent_id in agents],
@@ -246,6 +260,8 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 purchase_price=_money(spec["purchase_price"], quantum),
                 down_payment=_money(spec["down_payment"], quantum),
                 buyer_closing_cost=_money(spec.get("buyer_closing_cost", 0), quantum),
+                rented_fraction=spec.get("rented_fraction_ppb", 0) / 1_000_000_000,
+                land_value_fraction=spec.get("land_value_fraction_ppb", 200_000_000) / 1_000_000_000,
                 mortgage=(
                     MortgageFinancing(
                         liability_id=spec["mortgage"]["liability_id"],
@@ -262,10 +278,45 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
             for spec in scenario_spec.get("scheduled_property_purchases", [])
         ],
         property_lifecycle_events=[
-            PropertySaleEvent(
-                month=spec["month"], property_id=spec["property_id"], closing_cost_pct=spec["closing_cost_bps"] / 100
+            *[
+                SetRentedFractionEvent(
+                    month=spec["month"],
+                    property_id=spec["property_id"],
+                    rented_fraction=spec["rented_fraction_ppb"] / 1_000_000_000,
+                )
+                for spec in scenario_spec.get("property_rented_fraction_events", [])
+            ],
+            *[
+                CapitalImprovementEvent(
+                    month=spec["month"],
+                    property_id=spec["property_id"],
+                    amount=_money(spec["amount"], quantum),
+                    description=spec.get("description", ""),
+                )
+                for spec in scenario_spec.get("capital_improvement_events", [])
+            ],
+            *[
+                PropertySaleEvent(
+                    month=spec["month"],
+                    property_id=spec["property_id"],
+                    closing_cost_pct=spec["closing_cost_bps"] / 100,
+                )
+                for spec in scenario_spec.get("property_sales", [])
+            ],
+        ],
+        mortgage_interest_deduction_policies=[
+            MortgageInterestDeductionPolicy(
+                liability_id=spec["liability_id"],
+                owner_agent_id=spec["owner_agent_id"],
+                # The strict Rust fixture currently models the deliberately
+                # narrower uncapped acquisition-debt subset. Override the
+                # legacy model's jurisdiction defaults with the liability's
+                # own principal so its compiled factor is exactly one.
+                per_jurisdiction_principal_cap=dict.fromkeys(
+                    tax_jurisdiction_ids, mortgage_principal_by_liability[spec["liability_id"]]
+                ),
             )
-            for spec in scenario_spec.get("property_sales", [])
+            for spec in scenario_spec.get("mortgage_interest_deduction_policies", [])
         ],
         property_tax_policies=[
             PropertyTaxPolicy(

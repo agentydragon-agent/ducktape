@@ -5,11 +5,12 @@ use thiserror::Error;
 
 use crate::{
     fixture::{
-        AccountBalance, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture, InitialLotSpec,
-        LotDisposition, MonthOutput, MortgageOriginationOutcome, MortgagePaymentOutcome,
-        MortgageState, ObligationOutcome, PopulationOutput, PropertyPurchaseOutcome,
-        PropertySaleOutcome, PropertySaleSpec, PropertyState, RolloutOutput, RolloutSummary,
-        SeriesSpec, SimulationOutput, TaxAccrual,
+        AccountBalance, CapitalImprovementOutcome, DistributionOutcome, FIXTURE_SCHEMA_VERSION,
+        Fixture, InitialLotSpec, LotDisposition, MonthOutput, MortgageOriginationOutcome,
+        MortgagePaymentOutcome, MortgageState, ObligationOutcome, PopulationOutput,
+        PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
+        PropertySaleSpec, PropertyState, RolloutOutput, RolloutSummary, SeriesSpec,
+        SimulationOutput, TaxAccrual,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
@@ -174,6 +175,16 @@ pub enum SimulationError {
     DuplicatePropertySale { property_id: String },
     #[error("property sale for {property_id:?} has invalid month or closing costs")]
     InvalidPropertySale { property_id: String },
+    #[error("property lifecycle event references unknown property {property_id:?}")]
+    UnknownPropertyLifecycle { property_id: String },
+    #[error("property lifecycle event for {property_id:?} has invalid month or value")]
+    InvalidPropertyLifecycle { property_id: String },
+    #[error("property lifecycle event for {property_id:?} occurs at or after its sale")]
+    PropertyLifecycleAfterSale { property_id: String },
+    #[error("mortgage-interest policy references unknown liability {liability_id:?}")]
+    UnknownMortgageInterestPolicy { liability_id: String },
+    #[error("mortgage-interest policy owner does not match liability {liability_id:?}")]
+    InvalidMortgageInterestPolicy { liability_id: String },
     #[error("property tax policy for {property_id:?} has invalid rate or range")]
     InvalidPropertyTaxPolicy { property_id: String },
     #[error(transparent)]
@@ -230,6 +241,8 @@ struct Recorder {
     tax_accruals: Vec<TaxAccrual>,
     distributions: Vec<DistributionOutcome>,
     property_purchases: Vec<PropertyPurchaseOutcome>,
+    property_rented_fraction_events: Vec<PropertyRentedFractionOutcome>,
+    capital_improvements: Vec<CapitalImprovementOutcome>,
     property_sales: Vec<PropertySaleOutcome>,
     mortgage_originations: Vec<MortgageOriginationOutcome>,
     mortgage_payments: Vec<MortgagePaymentOutcome>,
@@ -238,6 +251,8 @@ struct Recorder {
     tax_accrual_count: u64,
     distribution_count: u64,
     property_purchase_count: u64,
+    property_rented_fraction_event_count: u64,
+    capital_improvement_count: u64,
     property_sale_count: u64,
     mortgage_payment_count: u64,
 }
@@ -253,6 +268,8 @@ impl Recorder {
             tax_accruals: Vec::new(),
             distributions: Vec::new(),
             property_purchases: Vec::new(),
+            property_rented_fraction_events: Vec::new(),
+            capital_improvements: Vec::new(),
             property_sales: Vec::new(),
             mortgage_originations: Vec::new(),
             mortgage_payments: Vec::new(),
@@ -261,6 +278,8 @@ impl Recorder {
             tax_accrual_count: 0,
             distribution_count: 0,
             property_purchase_count: 0,
+            property_rented_fraction_event_count: 0,
+            capital_improvement_count: 0,
             property_sale_count: 0,
             mortgage_payment_count: 0,
         }
@@ -365,6 +384,38 @@ impl Recorder {
         Ok(())
     }
 
+    fn record_property_rented_fraction(
+        &mut self,
+        event: PropertyRentedFractionOutcome,
+    ) -> Result<(), SimulationError> {
+        self.property_rented_fraction_event_count = self
+            .property_rented_fraction_event_count
+            .checked_add(1)
+            .ok_or(ArithmeticError::Overflow {
+                operation: "property rented-fraction event count",
+            })?;
+        if self.capture_trace {
+            self.property_rented_fraction_events.push(event);
+        }
+        Ok(())
+    }
+
+    fn record_capital_improvement(
+        &mut self,
+        event: CapitalImprovementOutcome,
+    ) -> Result<(), SimulationError> {
+        self.capital_improvement_count =
+            self.capital_improvement_count
+                .checked_add(1)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "capital improvement count",
+                })?;
+        if self.capture_trace {
+            self.capital_improvements.push(event);
+        }
+        Ok(())
+    }
+
     fn record_mortgage_payment(
         &mut self,
         payment: MortgagePaymentOutcome,
@@ -409,6 +460,8 @@ impl RolloutComputation {
             tax_accruals: self.recorder.tax_accruals,
             distributions: self.recorder.distributions,
             property_purchases: self.recorder.property_purchases,
+            property_rented_fraction_events: self.recorder.property_rented_fraction_events,
+            capital_improvements: self.recorder.capital_improvements,
             property_sales: self.recorder.property_sales,
             mortgage_originations: self.recorder.mortgage_originations,
             mortgage_payments: self.recorder.mortgage_payments,
@@ -427,6 +480,10 @@ impl RolloutComputation {
             tax_accrual_count: self.recorder.tax_accrual_count,
             distribution_count: self.recorder.distribution_count,
             property_purchase_count: self.recorder.property_purchase_count,
+            property_rented_fraction_event_count: self
+                .recorder
+                .property_rented_fraction_event_count,
+            capital_improvement_count: self.recorder.capital_improvement_count,
             property_sale_count: self.recorder.property_sale_count,
             mortgage_payment_count: self.recorder.mortgage_payment_count,
             failed_month: self.failed_month,
@@ -817,6 +874,7 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
     }
     let mut properties = BTreeMap::new();
     let mut mortgages = BTreeSet::new();
+    let mut mortgage_owners = BTreeMap::new();
     for purchase in &fixture.scenario.scheduled_property_purchases {
         validate_identifier("property purchase", &purchase.cause_id)?;
         validate_identifier("property", &purchase.property_id)?;
@@ -857,6 +915,8 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
         if purchase.purchase_price.0 <= 0
             || purchase.down_payment.0 < 0
             || purchase.buyer_closing_cost.0 < 0
+            || !(0..=RATE_SCALE_PPB).contains(&purchase.rented_fraction_ppb)
+            || !(0..=RATE_SCALE_PPB).contains(&purchase.land_value_fraction_ppb)
             || purchase.down_payment.checked_add(principal)? != purchase.purchase_price
         {
             return Err(SimulationError::InvalidPropertyTerms {
@@ -870,6 +930,10 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                     liability_id: mortgage.liability_id.clone(),
                 });
             }
+            mortgage_owners.insert(
+                mortgage.liability_id.clone(),
+                purchase.buyer_agent_id.clone(),
+            );
             if mortgage.principal.0 <= 0
                 || mortgage.annual_interest_rate_ppb < 0
                 || mortgage.annual_interest_rate_ppb > RATE_SCALE_PPB
@@ -889,6 +953,24 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                 mortgage.annual_interest_rate_ppb,
                 mortgage.term_months,
             )?;
+        }
+    }
+    let mut mortgage_interest_policies = BTreeSet::new();
+    for policy in &fixture.scenario.mortgage_interest_deduction_policies {
+        let Some(owner_agent_id) = mortgage_owners.get(&policy.liability_id) else {
+            return Err(SimulationError::UnknownMortgageInterestPolicy {
+                liability_id: policy.liability_id.clone(),
+            });
+        };
+        if owner_agent_id != &policy.owner_agent_id {
+            return Err(SimulationError::InvalidMortgageInterestPolicy {
+                liability_id: policy.liability_id.clone(),
+            });
+        }
+        if !mortgage_interest_policies.insert(policy.liability_id.clone()) {
+            return Err(SimulationError::InvalidMortgageInterestPolicy {
+                liability_id: policy.liability_id.clone(),
+            });
         }
     }
     let mut property_sales = BTreeSet::new();
@@ -918,6 +1000,34 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
         let series_id = format!("home_value:{}", purchase.location_id);
         if !series_ids.contains(&series_id) {
             return Err(SimulationError::MissingSeries { series_id });
+        }
+    }
+    for event in &fixture.scenario.property_rented_fraction_events {
+        validate_property_lifecycle_event(
+            &properties,
+            &fixture.scenario.property_sales,
+            &event.property_id,
+            event.month,
+            fixture.scenario.horizon_months,
+        )?;
+        if !(0..=RATE_SCALE_PPB).contains(&event.rented_fraction_ppb) {
+            return Err(SimulationError::InvalidPropertyLifecycle {
+                property_id: event.property_id.clone(),
+            });
+        }
+    }
+    for event in &fixture.scenario.capital_improvement_events {
+        validate_property_lifecycle_event(
+            &properties,
+            &fixture.scenario.property_sales,
+            &event.property_id,
+            event.month,
+            fixture.scenario.horizon_months,
+        )?;
+        if event.amount.0 <= 0 {
+            return Err(SimulationError::InvalidPropertyLifecycle {
+                property_id: event.property_id.clone(),
+            });
         }
     }
     let mut property_tax_months = BTreeSet::new();
@@ -1035,6 +1145,36 @@ fn validate_event_month(
             cause_id: cause_id.into(),
             month,
             horizon,
+        });
+    }
+    Ok(())
+}
+
+fn validate_property_lifecycle_event(
+    properties: &BTreeMap<String, &crate::fixture::ScheduledPropertyPurchaseSpec>,
+    sales: &[PropertySaleSpec],
+    property_id: &str,
+    month: u32,
+    horizon: u32,
+) -> Result<(), SimulationError> {
+    validate_identifier("property lifecycle", property_id)?;
+    validate_event_month("property lifecycle", property_id, month, horizon)?;
+    let Some(purchase) = properties.get(property_id) else {
+        return Err(SimulationError::UnknownPropertyLifecycle {
+            property_id: property_id.into(),
+        });
+    };
+    if month <= purchase.month {
+        return Err(SimulationError::InvalidPropertyLifecycle {
+            property_id: property_id.into(),
+        });
+    }
+    if sales
+        .iter()
+        .any(|sale| sale.property_id == property_id && month >= sale.month)
+    {
+        return Err(SimulationError::PropertyLifecycleAfterSale {
+            property_id: property_id.into(),
         });
     }
     Ok(())
@@ -1269,7 +1409,7 @@ fn simulate_rollout(
             }
             continue;
         }
-        execute_property_sales(
+        execute_property_lifecycle_events(
             fixture,
             rollout_id,
             &mut ledger,
@@ -1358,16 +1498,23 @@ fn simulate_rollout(
             )?)
             .collect();
         if settle_obligations(
+            fixture,
             &mut ledger,
             &mut recorder,
+            &mut tax_facts,
+            &properties,
             &mut mortgages,
             month,
             &active_obligations,
         )? {
             failed_month = Some(month);
         }
+        if failed_month.is_none() {
+            accrue_property_depreciation(&mut tax_facts, &mut properties)?;
+        }
         if failed_month.is_none() && (month + 1) % 12 == 0 {
             accrue_year_end_taxes(fixture, &mut ledger, &mut recorder, &mut tax_facts, month)?;
+            reset_property_tax_year_state(&mut properties, &mut mortgages);
         }
         if recorder.capture_trace {
             recorder.record_month(month_output(
@@ -1453,7 +1600,7 @@ fn execute_distributions(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn execute_property_sales(
+fn execute_property_lifecycle_events(
     fixture: &Fixture,
     rollout_id: u32,
     ledger: &mut Ledger,
@@ -1463,11 +1610,132 @@ fn execute_property_sales(
     mortgages: &mut [MortgageState],
     month: u32,
 ) -> Result<(), SimulationError> {
+    let property_ids: BTreeSet<_> = fixture
+        .scenario
+        .property_rented_fraction_events
+        .iter()
+        .filter(|event| event.month == month)
+        .map(|event| event.property_id.as_str())
+        .chain(
+            fixture
+                .scenario
+                .capital_improvement_events
+                .iter()
+                .filter(|event| event.month == month)
+                .map(|event| event.property_id.as_str()),
+        )
+        .chain(
+            fixture
+                .scenario
+                .property_sales
+                .iter()
+                .filter(|event| event.month == month)
+                .map(|event| event.property_id.as_str()),
+        )
+        .collect();
+    for property_id in property_ids {
+        for event in fixture
+            .scenario
+            .property_rented_fraction_events
+            .iter()
+            .filter(|event| event.month == month && event.property_id == property_id)
+        {
+            let Some(property) = properties
+                .iter_mut()
+                .find(|property| property.property_id == event.property_id && property.active)
+            else {
+                continue;
+            };
+            property.rented_fraction_ppb = event.rented_fraction_ppb;
+            recorder.record_property_rented_fraction(PropertyRentedFractionOutcome {
+                month,
+                property_id: event.property_id.clone(),
+                rented_fraction_ppb: event.rented_fraction_ppb,
+            })?;
+        }
+        for event in fixture
+            .scenario
+            .capital_improvement_events
+            .iter()
+            .filter(|event| event.month == month && event.property_id == property_id)
+        {
+            let Some(property) = properties
+                .iter_mut()
+                .find(|property| property.property_id == event.property_id && property.active)
+            else {
+                continue;
+            };
+            let purchase = fixture
+                .scenario
+                .scheduled_property_purchases
+                .iter()
+                .find(|purchase| purchase.property_id == event.property_id)
+                .expect("validated improvement has a purchase");
+            recorder.apply_entry(
+                ledger,
+                JournalEntry {
+                    month,
+                    cause_id: format!("capital-improvement:{}:{month}", event.property_id),
+                    postings: vec![
+                        Posting {
+                            account: AccountRef::new(
+                                &purchase.buyer_agent_id,
+                                &purchase.buyer_account_id,
+                            ),
+                            amount: event.amount.checked_neg()?,
+                        },
+                        Posting {
+                            account: property_asset_account(
+                                &purchase.buyer_agent_id,
+                                &purchase.property_id,
+                            ),
+                            amount: event.amount,
+                        },
+                    ],
+                },
+            )?;
+            property.building_basis = property.building_basis.checked_add(event.amount)?;
+            recorder.record_capital_improvement(CapitalImprovementOutcome {
+                month,
+                property_id: event.property_id.clone(),
+                amount: event.amount,
+                // The existing lifecycle codec currently emits an empty
+                // description for compiled improvement rows.
+                description: String::new(),
+            })?;
+        }
+        execute_property_sales(
+            fixture,
+            rollout_id,
+            ledger,
+            recorder,
+            tax_facts,
+            properties,
+            mortgages,
+            month,
+            property_id,
+        )?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_property_sales(
+    fixture: &Fixture,
+    rollout_id: u32,
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    properties: &mut [PropertyState],
+    mortgages: &mut [MortgageState],
+    month: u32,
+    property_id: &str,
+) -> Result<(), SimulationError> {
     let mut sales: Vec<&PropertySaleSpec> = fixture
         .scenario
         .property_sales
         .iter()
-        .filter(|sale| sale.month == month)
+        .filter(|sale| sale.month == month && sale.property_id == property_id)
         .collect();
     sales.sort_by_key(|sale| &sale.property_id);
     for sale in sales {
@@ -1509,11 +1777,30 @@ fn execute_property_sales(
             total.checked_add(mortgages[*index].principal)
         })?;
         let net_cash = gross_proceeds.checked_sub(mortgage_payoff)?;
-        let realized_gain = gross_proceeds.checked_sub(purchase.purchase_price)?;
-        let long_term_capital_gain = Money(realized_gain.0.max(0));
+        // Match the legacy contract exactly: capitalized buyer closing costs
+        // enter the depreciable building basis, but the sale-gain formula uses
+        // purchase price + later capex - cumulative depreciation.
+        let capital_improvements = property
+            .building_basis
+            .checked_sub(property.building_basis_initial)?;
+        let tax_adjusted_basis = purchase
+            .purchase_price
+            .checked_add(capital_improvements)?
+            .checked_sub(property.cumulative_depreciation)?;
+        let realized_gain = gross_proceeds.checked_sub(tax_adjusted_basis)?;
+        let depreciation_recapture = Money(
+            realized_gain
+                .0
+                .max(0)
+                .min(property.cumulative_depreciation.0),
+        );
+        let long_term_capital_gain =
+            Money(realized_gain.checked_sub(depreciation_recapture)?.0.max(0));
+        let property_asset_balance = property.adjusted_basis.checked_add(capital_improvements)?;
         let basis_writeoff = property
             .adjusted_basis
-            .checked_sub(purchase.purchase_price)?;
+            .checked_sub(purchase.purchase_price)?
+            .checked_add(property.cumulative_depreciation)?;
         let mut postings = vec![
             Posting {
                 account: AccountRef::new(&purchase.buyer_agent_id, &purchase.buyer_account_id),
@@ -1521,7 +1808,7 @@ fn execute_property_sales(
             },
             Posting {
                 account: property_asset_account(&purchase.buyer_agent_id, &purchase.property_id),
-                amount: property.adjusted_basis.checked_neg()?,
+                amount: property_asset_balance.checked_neg()?,
             },
             Posting {
                 account: property_basis_writeoff_account(
@@ -1567,6 +1854,8 @@ fn execute_property_sales(
             },
         )?;
         properties[property_index].active = false;
+        properties[property_index].rented_fraction_ppb = 0;
+        properties[property_index].building_basis = Money(0);
         for index in mortgage_indices {
             mortgages[index].principal = Money(0);
             mortgages[index].active = false;
@@ -1577,6 +1866,7 @@ fn execute_property_sales(
             long_term_capital_gain,
             true,
         )?;
+        record_section_1250_recapture(tax_facts, &purchase.buyer_agent_id, depreciation_recapture)?;
         recorder.record_property_sale(PropertySaleOutcome {
             month,
             property_id: sale.property_id.clone(),
@@ -1584,7 +1874,7 @@ fn execute_property_sales(
             mortgage_payoff,
             net_cash_to_owner: net_cash,
             realized_gain,
-            depreciation_recapture: Money(0),
+            depreciation_recapture,
             section_121_exclusion: Money(0),
             long_term_capital_gain,
         })?;
@@ -1613,6 +1903,13 @@ fn execute_property_purchases(
         let adjusted_basis = purchase
             .purchase_price
             .checked_add(purchase.buyer_closing_cost)?;
+        let building_basis_initial = Money(mul_div_round_half_up(
+            purchase.purchase_price.0,
+            RATE_SCALE_PPB - purchase.land_value_fraction_ppb,
+            RATE_SCALE_PPB,
+            "property building basis",
+        )?)
+        .checked_add(purchase.buyer_closing_cost)?;
         let stake = purchase
             .down_payment
             .checked_add(purchase.buyer_closing_cost)?;
@@ -1683,6 +1980,7 @@ fn execute_property_purchases(
                 monthly_payment,
                 principal: mortgage.principal,
                 interest_paid_ytd: Money(0),
+                rental_interest_paid_ytd: Money(0),
                 principal_paid_ytd: Money(0),
                 active: true,
             });
@@ -1723,6 +2021,11 @@ fn execute_property_purchases(
             owner_agent_id: purchase.buyer_agent_id.clone(),
             purchase_month: month,
             adjusted_basis,
+            rented_fraction_ppb: purchase.rented_fraction_ppb,
+            building_basis_initial,
+            building_basis: building_basis_initial,
+            cumulative_depreciation: Money(0),
+            depreciation_ytd: Money(0),
             contribution_used: stake,
             equity_ledger: equity,
             active: true,
@@ -2073,6 +2376,97 @@ fn record_capital_gain(
     Ok(())
 }
 
+fn record_section_1250_recapture(
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    agent_id: &str,
+    amount: Money,
+) -> Result<(), SimulationError> {
+    for ((taxpayer, _), facts) in tax_facts {
+        if taxpayer == agent_id {
+            facts.section_1250_recapture = facts.section_1250_recapture.checked_add(amount)?;
+        }
+    }
+    Ok(())
+}
+
+fn record_rental_interest_deduction(
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    agent_id: &str,
+    amount: Money,
+) -> Result<(), SimulationError> {
+    for ((taxpayer, _), facts) in tax_facts {
+        if taxpayer == agent_id {
+            facts.ordinary_income = facts.ordinary_income.checked_sub(amount)?;
+            facts.rental_interest_deduction =
+                facts.rental_interest_deduction.checked_add(amount)?;
+        }
+    }
+    Ok(())
+}
+
+fn record_mortgage_interest_deduction(
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    agent_id: &str,
+    amount: Money,
+) -> Result<(), SimulationError> {
+    for ((taxpayer, _), facts) in tax_facts {
+        if taxpayer == agent_id {
+            facts.mortgage_interest_deduction =
+                facts.mortgage_interest_deduction.checked_add(amount)?;
+            facts.itemized_deduction = facts.itemized_deduction.checked_add(amount)?;
+        }
+    }
+    Ok(())
+}
+
+fn accrue_property_depreciation(
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    properties: &mut [PropertyState],
+) -> Result<(), SimulationError> {
+    for property in properties
+        .iter_mut()
+        .filter(|property| property.active && property.rented_fraction_ppb > 0)
+    {
+        let monthly_factor_ppb = mul_div_round_half_up(
+            property.rented_fraction_ppb,
+            1,
+            330,
+            "property monthly depreciation factor",
+        )?;
+        let depreciation = Money(mul_div_round_half_up(
+            property.building_basis.0,
+            monthly_factor_ppb,
+            RATE_SCALE_PPB,
+            "property monthly depreciation",
+        )?);
+        property.cumulative_depreciation =
+            property.cumulative_depreciation.checked_add(depreciation)?;
+        property.depreciation_ytd = property.depreciation_ytd.checked_add(depreciation)?;
+        for ((taxpayer, _), facts) in tax_facts.iter_mut() {
+            if taxpayer == &property.owner_agent_id {
+                facts.ordinary_income = facts.ordinary_income.checked_sub(depreciation)?;
+                facts.depreciation_deduction =
+                    facts.depreciation_deduction.checked_add(depreciation)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn reset_property_tax_year_state(
+    properties: &mut [PropertyState],
+    mortgages: &mut [MortgageState],
+) {
+    for property in properties {
+        property.depreciation_ytd = Money(0);
+    }
+    for mortgage in mortgages {
+        mortgage.interest_paid_ytd = Money(0);
+        mortgage.rental_interest_paid_ytd = Money(0);
+        mortgage.principal_paid_ytd = Money(0);
+    }
+}
+
 fn accrue_year_end_taxes(
     fixture: &Fixture,
     ledger: &mut Ledger,
@@ -2122,10 +2516,16 @@ fn accrue_year_end_taxes(
                 ordinary_income: facts.ordinary_income,
                 short_term_gain: facts.short_term_gain,
                 long_term_gain: facts.long_term_gain,
+                section_1250_recapture: facts.section_1250_recapture,
+                rental_interest_deduction: facts.rental_interest_deduction,
+                depreciation_deduction: facts.depreciation_deduction,
+                mortgage_interest_deduction: facts.mortgage_interest_deduction,
+                itemized_deduction: facts.itemized_deduction,
                 ordinary_taxable: assessment.ordinary_taxable,
                 long_term_capital_gain_taxable: assessment.long_term_capital_gain_taxable,
                 ordinary_tax: assessment.ordinary_tax,
                 capital_gain_tax: assessment.capital_gain_tax,
+                section_1250_tax: assessment.section_1250_tax,
                 total_tax: assessment.total_tax,
                 capital_loss_carryforward: assessment.capital_loss_carryforward,
             })?;
@@ -2141,9 +2541,13 @@ fn accrue_year_end_taxes(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn settle_obligations(
+    fixture: &Fixture,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
+    tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    properties: &[PropertyState],
     mortgages: &mut [MortgageState],
     month: u32,
     obligations: &[ActiveObligation],
@@ -2236,6 +2640,40 @@ fn settle_obligations(
                     mortgage.principal = mortgage.principal.checked_sub(principal)?;
                     mortgage.interest_paid_ytd =
                         mortgage.interest_paid_ytd.checked_add(interest)?;
+                    let rented_fraction_ppb = properties
+                        .iter()
+                        .find(|property| property.property_id == mortgage.property_id)
+                        .map_or(0, |property| property.rented_fraction_ppb);
+                    let rental_interest = Money(mul_div_round_half_up(
+                        interest.0,
+                        rented_fraction_ppb,
+                        RATE_SCALE_PPB,
+                        "rental mortgage interest",
+                    )?);
+                    let owner_interest = interest.checked_sub(rental_interest)?;
+                    mortgage.rental_interest_paid_ytd = mortgage
+                        .rental_interest_paid_ytd
+                        .checked_add(rental_interest)?;
+                    record_rental_interest_deduction(
+                        tax_facts,
+                        &mortgage.agent_id,
+                        rental_interest,
+                    )?;
+                    if fixture
+                        .scenario
+                        .mortgage_interest_deduction_policies
+                        .iter()
+                        .any(|policy| {
+                            policy.liability_id == mortgage.liability_id
+                                && policy.owner_agent_id == mortgage.agent_id
+                        })
+                    {
+                        record_mortgage_interest_deduction(
+                            tax_facts,
+                            &mortgage.agent_id,
+                            owner_interest,
+                        )?;
+                    }
                     mortgage.principal_paid_ytd =
                         mortgage.principal_paid_ytd.checked_add(principal)?;
                     if mortgage.principal == Money(0) {
@@ -2604,7 +3042,10 @@ mod tests {
                 tax_profiles: vec![],
                 distributions: vec![],
                 scheduled_property_purchases: vec![],
+                property_rented_fraction_events: vec![],
+                capital_improvement_events: vec![],
                 property_sales: vec![],
+                mortgage_interest_deduction_policies: vec![],
                 property_tax_policies: vec![],
             },
             series: vec![],
@@ -2682,6 +3123,8 @@ mod tests {
             purchase_price: Money(10),
             down_payment: Money(10),
             buyer_closing_cost: Money(0),
+            rented_fraction_ppb: 0,
+            land_value_fraction_ppb: 200_000_000,
             mortgage: None,
         }];
         assert!(matches!(
@@ -2807,7 +3250,10 @@ mod tests {
                 tax_profiles: vec![],
                 distributions: vec![],
                 scheduled_property_purchases: vec![],
+                property_rented_fraction_events: vec![],
+                capital_improvement_events: vec![],
                 property_sales: vec![],
+                mortgage_interest_deduction_policies: vec![],
                 property_tax_policies: vec![],
             },
             series: vec![SeriesSpec {
@@ -2908,6 +3354,8 @@ mod tests {
             purchase_price: Money(50_000_000),
             down_payment: Money(10_000_000),
             buyer_closing_cost: Money(1_000_000),
+            rented_fraction_ppb: 0,
+            land_value_fraction_ppb: 200_000_000,
             mortgage: Some(MortgageFinancingSpec {
                 liability_id: "home-mortgage".into(),
                 lender_agent_id: "bank".into(),
@@ -3009,7 +3457,10 @@ mod tests {
                 tax_profiles: vec![],
                 distributions: vec![],
                 scheduled_property_purchases: vec![],
+                property_rented_fraction_events: vec![],
+                capital_improvement_events: vec![],
                 property_sales: vec![],
+                mortgage_interest_deduction_policies: vec![],
                 property_tax_policies: vec![],
             },
             series: vec![SeriesSpec {
@@ -3076,7 +3527,10 @@ mod tests {
                 tax_profiles: vec![],
                 distributions: vec![],
                 scheduled_property_purchases: vec![],
+                property_rented_fraction_events: vec![],
+                capital_improvement_events: vec![],
                 property_sales: vec![],
+                mortgage_interest_deduction_policies: vec![],
                 property_tax_policies: vec![],
             },
             series: vec![],
@@ -3157,7 +3611,10 @@ mod tests {
                 tax_profiles: vec![],
                 distributions: vec![],
                 scheduled_property_purchases: vec![],
+                property_rented_fraction_events: vec![],
+                capital_improvement_events: vec![],
                 property_sales: vec![],
+                mortgage_interest_deduction_policies: vec![],
                 property_tax_policies: vec![],
             },
             series: vec![],

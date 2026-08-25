@@ -37,7 +37,12 @@ The differential suite currently proves exact integer agreement for:
   and deductible-expense tax tagging;
 - property sales driven by rollout-scoped home-value paths, including seller
   closing costs, mortgage payoff, realized long-term gain, lifecycle ordering,
-  and same-month suppression of property-tied cashflows and carrying costs;
+  and same-month suppression of property-tied cashflows and carrying costs, for
+  fixtures without primary-residence / §121 state;
+- property rented-fraction transitions, capital improvements, 27.5-year rental
+  depreciation, rental/owner mortgage-interest splitting for uncapped
+  acquisition debt, and sale-time §1250 recapture with federal capped-rate
+  versus state ordinary-income treatment;
 - fixed-payment mortgage origination, monthly interest/principal splitting,
   same-source funding-group settlement, and property-tax carrying costs;
 - grouped scheduled and recurring obligations;
@@ -53,10 +58,9 @@ Still missing before replacement is plausible:
 
 - tax payment/safe-harbor/true-up scheduling and broader modeled tax facts;
 - policy-driven purchases and taxable distribution character;
-- mortgage-interest deduction and contracts beyond the basic fixed-rate
-  purchase mortgage;
-- property occupancy, improvements, depreciation, §1250 recapture, and §121
-  primary-residence exclusion;
+- mortgage contracts beyond the basic fixed-rate purchase mortgage;
+- property-tax/SALT mixed-use splitting, mortgage principal-cap policies, and
+  §121 primary-residence exclusion;
 - target allocation, liquidity funding, TLH, and private equity;
 - complete selected-rollout causal trace parity for those domains;
 - Python extension/Arrow output integration.

@@ -50,7 +50,13 @@ pub struct ScenarioSpec {
     #[serde(default)]
     pub scheduled_property_purchases: Vec<ScheduledPropertyPurchaseSpec>,
     #[serde(default)]
+    pub property_rented_fraction_events: Vec<PropertyRentedFractionSpec>,
+    #[serde(default)]
+    pub capital_improvement_events: Vec<CapitalImprovementSpec>,
+    #[serde(default)]
     pub property_sales: Vec<PropertySaleSpec>,
+    #[serde(default)]
+    pub mortgage_interest_deduction_policies: Vec<MortgageInterestDeductionSpec>,
     #[serde(default)]
     pub property_tax_policies: Vec<PropertyTaxPolicySpec>,
 }
@@ -238,7 +244,33 @@ pub struct ScheduledPropertyPurchaseSpec {
     #[serde(default)]
     pub buyer_closing_cost: Money,
     #[serde(default)]
+    pub rented_fraction_ppb: i64,
+    #[serde(default = "default_land_value_fraction_ppb")]
+    pub land_value_fraction_ppb: i64,
+    #[serde(default)]
     pub mortgage: Option<MortgageFinancingSpec>,
+}
+
+fn default_land_value_fraction_ppb() -> i64 {
+    200_000_000
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PropertyRentedFractionSpec {
+    pub month: u32,
+    pub property_id: String,
+    pub rented_fraction_ppb: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CapitalImprovementSpec {
+    pub month: u32,
+    pub property_id: String,
+    pub amount: Money,
+    #[serde(default)]
+    pub description: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -248,6 +280,13 @@ pub struct PropertySaleSpec {
     pub property_id: String,
     /// Seller closing costs in basis points, where 10_000 is 100%.
     pub closing_cost_bps: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MortgageInterestDeductionSpec {
+    pub liability_id: String,
+    pub owner_agent_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -315,6 +354,11 @@ pub struct PropertyState {
     pub owner_agent_id: String,
     pub purchase_month: u32,
     pub adjusted_basis: Money,
+    pub rented_fraction_ppb: i64,
+    pub building_basis_initial: Money,
+    pub building_basis: Money,
+    pub cumulative_depreciation: Money,
+    pub depreciation_ytd: Money,
     pub contribution_used: Money,
     pub equity_ledger: Money,
     pub active: bool,
@@ -334,6 +378,7 @@ pub struct MortgageState {
     pub monthly_payment: Money,
     pub principal: Money,
     pub interest_paid_ytd: Money,
+    pub rental_interest_paid_ytd: Money,
     pub principal_paid_ytd: Money,
     pub active: bool,
 }
@@ -370,10 +415,16 @@ pub struct TaxAccrual {
     pub ordinary_income: Money,
     pub short_term_gain: Money,
     pub long_term_gain: Money,
+    pub section_1250_recapture: Money,
+    pub rental_interest_deduction: Money,
+    pub depreciation_deduction: Money,
+    pub mortgage_interest_deduction: Money,
+    pub itemized_deduction: Money,
     pub ordinary_taxable: Money,
     pub long_term_capital_gain_taxable: Money,
     pub ordinary_tax: Money,
     pub capital_gain_tax: Money,
+    pub section_1250_tax: Money,
     pub total_tax: Money,
     pub capital_loss_carryforward: Money,
 }
@@ -413,6 +464,21 @@ pub struct PropertySaleOutcome {
     pub depreciation_recapture: Money,
     pub section_121_exclusion: Money,
     pub long_term_capital_gain: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PropertyRentedFractionOutcome {
+    pub month: u32,
+    pub property_id: String,
+    pub rented_fraction_ppb: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CapitalImprovementOutcome {
+    pub month: u32,
+    pub property_id: String,
+    pub amount: Money,
+    pub description: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -456,6 +522,8 @@ pub struct RolloutOutput {
     pub tax_accruals: Vec<TaxAccrual>,
     pub distributions: Vec<DistributionOutcome>,
     pub property_purchases: Vec<PropertyPurchaseOutcome>,
+    pub property_rented_fraction_events: Vec<PropertyRentedFractionOutcome>,
+    pub capital_improvements: Vec<CapitalImprovementOutcome>,
     pub property_sales: Vec<PropertySaleOutcome>,
     pub mortgage_originations: Vec<MortgageOriginationOutcome>,
     pub mortgage_payments: Vec<MortgagePaymentOutcome>,
@@ -479,6 +547,8 @@ pub struct RolloutSummary {
     pub tax_accrual_count: u64,
     pub distribution_count: u64,
     pub property_purchase_count: u64,
+    pub property_rented_fraction_event_count: u64,
+    pub capital_improvement_count: u64,
     pub property_sale_count: u64,
     pub mortgage_payment_count: u64,
     pub failed_month: Option<u32>,

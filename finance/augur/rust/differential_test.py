@@ -564,6 +564,50 @@ def _property_sale_fixture() -> dict[str, Any]:
     return fixture
 
 
+def _property_depreciation_fixture(*, sale: bool) -> dict[str, Any]:
+    fixture = _property_cashflow_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 24 if sale else 12
+    purchase = scenario["scheduled_property_purchases"][0]
+    purchase["rented_fraction_ppb"] = 0
+    purchase["land_value_fraction_ppb"] = 200_000_000
+    purchase["mortgage"]["annual_interest_rate_ppb"] = 120_000_000
+    scenario["property_tax_policies"] = []
+    scenario["property_rented_fraction_events"] = [
+        {"month": 6, "property_id": "home", "rented_fraction_ppb": 500_000_000}
+    ]
+    scenario["capital_improvement_events"] = [
+        {"month": 6, "property_id": "home", "amount": 1_000_000, "description": "new roof"}
+    ]
+    scenario["mortgage_interest_deduction_policies"] = [{"liability_id": "home-mortgage", "owner_agent_id": "alice"}]
+    if sale:
+        scenario["recurring_property_cashflows"][0]["end_month"] = 23
+        scenario["recurring_property_cashflows"][1]["end_month"] = 23
+        scenario["property_sales"] = [{"month": 12, "property_id": "home", "closing_cost_bps": 600}]
+        tax_profile = _tax_fixture()["scenario"]["tax_profiles"][0]
+        tax_profile["jurisdictions"][0]["section_1250_rate_ppb"] = 250_000_000
+        tax_profile["jurisdictions"][1]["section_1250_rate_ppb"] = 0
+        scenario["tax_profiles"] = [tax_profile]
+        fixture["series"] = [
+            {"series_id": "home_value:sf", "snapshots": 25, "values": [50_000_000] * 12 + [75_000_000] * 13}
+        ]
+    return fixture
+
+
+def _uncapped_mortgage_interest_fixture() -> dict[str, Any]:
+    fixture = _property_cashflow_fixture()
+    scenario = fixture["scenario"]
+    purchase = scenario["scheduled_property_purchases"][0]
+    purchase["purchase_price"] = 100_000_000
+    purchase["down_payment"] = 20_000_000
+    purchase["buyer_closing_cost"] = 1_000_000
+    purchase["mortgage"]["principal"] = 80_000_000
+    purchase["rented_fraction_ppb"] = 0
+    scenario["property_tax_policies"] = []
+    scenario["mortgage_interest_deduction_policies"] = [{"liability_id": "home-mortgage", "owner_agent_id": "alice"}]
+    return fixture
+
+
 def _rust_run(fixture: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
     fixture_path = tmp_path / "fixture.json"
     output_path = tmp_path / "rust-output.json"
@@ -1025,6 +1069,113 @@ def test_rust_and_jax_match_property_sale_lifecycle_and_rollout_values(tmp_path:
         assert "home_property_tax_m2" not in sale_month_causes
         for entry in rollout["journal"]:
             assert sum(posting["amount"] for posting in entry["postings"]) == 0
+
+
+def test_rust_and_jax_match_rental_transition_capex_depreciation_and_interest(tmp_path: Path) -> None:
+    fixture = _property_depreciation_fixture(sale=False)
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_cash = (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+    )
+    assert _rust_cash(rust).to_dicts() == legacy_cash.to_dicts()
+    assert legacy.events_log.set_rented_fraction_events.select(
+        "month_index", "property_id", "rented_fraction"
+    ).to_dicts() == [{"month_index": 6, "property_id": "home", "rented_fraction": 0.5}]
+    assert legacy.events_log.capital_improvement_events.select(
+        "month_index", "property_id", "amount_quanta", "description"
+    ).to_dicts() == [{"month_index": 6, "property_id": "home", "amount_quanta": 1_000_000, "description": ""}]
+    rollout = rust["rollouts"][0]
+    assert rollout["property_rented_fraction_events"] == [
+        {"month": 6, "property_id": "home", "rented_fraction_ppb": 500_000_000}
+    ]
+    assert rollout["capital_improvements"] == [
+        {"month": 6, "property_id": "home", "amount": 1_000_000, "description": ""}
+    ]
+    # Lifecycle changes apply before this month's depreciation and mortgage split.
+    first_depreciation = rollout["months"][7]["properties"][0]["cumulative_depreciation"]
+    assert first_depreciation > 0
+    assert rollout["months"][6]["properties"][0]["cumulative_depreciation"] == 0
+
+    legacy_tax = legacy.events_log.tax_breakdowns.row(0, named=True)
+    rust_tax = rollout["tax_accruals"][0]
+    assert rust_tax["ordinary_income"] == legacy_tax["ordinary_income_quanta"]
+    assert rust_tax["mortgage_interest_deduction"] == legacy_tax["mortgage_interest_deduction_quanta"]
+    assert rust_tax["itemized_deduction"] == legacy_tax["itemized_deduction_quanta"]
+    assert rust_tax["ordinary_taxable"] == legacy_tax["ordinary_taxable_quanta"]
+    assert rust_tax["total_tax"] == legacy_tax["total_tax_quanta"]
+    assert rust_tax["rental_interest_deduction"] > 0
+    assert rust_tax["depreciation_deduction"] > 0
+
+
+def test_rust_and_jax_match_uncapped_acquisition_mortgage_interest(tmp_path: Path) -> None:
+    fixture = _uncapped_mortgage_interest_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_tax = legacy.events_log.tax_breakdowns.row(0, named=True)
+    rollout = rust["rollouts"][0]
+    rust_tax = rollout["tax_accruals"][0]
+    total_interest = sum(payment["interest"] for payment in rollout["mortgage_payments"])
+    assert rust_tax["mortgage_interest_deduction"] == total_interest
+    assert rust_tax["mortgage_interest_deduction"] == legacy_tax["mortgage_interest_deduction_quanta"]
+    assert rust_tax["itemized_deduction"] == legacy_tax["itemized_deduction_quanta"]
+    assert rust_tax["total_tax"] == legacy_tax["total_tax_quanta"]
+
+
+def test_rust_and_jax_match_depreciation_recapture_and_jurisdiction_tax(tmp_path: Path) -> None:
+    fixture = _property_depreciation_fixture(sale=True)
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_sales = legacy.events_log.property_sale_events.select(
+        "month_index",
+        "property_id",
+        "gross_proceeds_quanta",
+        "mortgage_payoff_quanta",
+        "net_cash_to_owner_quanta",
+        "realized_gain_quanta",
+        "depreciation_recapture_quanta",
+        "section_121_exclusion_quanta",
+        "long_term_capital_gain_quanta",
+    ).to_dicts()
+    rust_sale = rust["rollouts"][0]["property_sales"][0]
+    assert [
+        {
+            "month_index": rust_sale["month"],
+            "property_id": rust_sale["property_id"],
+            "gross_proceeds_quanta": rust_sale["gross_proceeds"],
+            "mortgage_payoff_quanta": rust_sale["mortgage_payoff"],
+            "net_cash_to_owner_quanta": rust_sale["net_cash_to_owner"],
+            "realized_gain_quanta": rust_sale["realized_gain"],
+            "depreciation_recapture_quanta": rust_sale["depreciation_recapture"],
+            "section_121_exclusion_quanta": rust_sale["section_121_exclusion"],
+            "long_term_capital_gain_quanta": rust_sale["long_term_capital_gain"],
+        }
+    ] == legacy_sales
+    assert rust_sale["depreciation_recapture"] > 0
+
+    legacy_tax = legacy.events_log.tax_breakdowns.filter(pl.col("month_index") == 23).sort("jurisdiction_id").to_dicts()
+    rust_tax = sorted(
+        [row for row in rust["rollouts"][0]["tax_accruals"] if row["month"] == 23],
+        key=lambda row: row["jurisdiction_id"],
+    )
+    assert [row["jurisdiction_id"] for row in rust_tax] == [row["jurisdiction_id"] for row in legacy_tax]
+    for rust_row, legacy_row in zip(rust_tax, legacy_tax, strict=True):
+        assert rust_row["ordinary_income"] == legacy_row["ordinary_income_quanta"]
+        assert rust_row["long_term_gain"] == legacy_row["ltcg_quanta"]
+        assert rust_row["ordinary_taxable"] == legacy_row["ordinary_taxable_quanta"]
+        assert rust_row["long_term_capital_gain_taxable"] == legacy_row["capital_gain_taxable_quanta"]
+        assert rust_row["ordinary_tax"] == legacy_row["ordinary_tax_quanta"]
+        assert rust_row["capital_gain_tax"] == legacy_row["capital_gain_tax_quanta"]
+        assert rust_row["total_tax"] == legacy_row["total_tax_quanta"]
+        assert rust_row["section_1250_recapture"] == rust_sale["depreciation_recapture"]
+    rust_tax_by_jurisdiction = {row["jurisdiction_id"]: row for row in rust_tax}
+    assert rust_tax_by_jurisdiction["federal_us"]["section_1250_tax"] > 0
+    assert rust_tax_by_jurisdiction["california"]["section_1250_tax"] == 0
 
 
 @pytest.mark.parametrize("rollout_count", [1, 17])

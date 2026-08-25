@@ -10,8 +10,12 @@ pub struct TaxFacts {
     pub ordinary_income: Money,
     pub short_term_gain: Money,
     pub long_term_gain: Money,
+    pub section_1250_recapture: Money,
     pub capital_loss_carryforward: Money,
     pub itemized_deduction: Money,
+    pub rental_interest_deduction: Money,
+    pub depreciation_deduction: Money,
+    pub mortgage_interest_deduction: Money,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -32,6 +36,10 @@ pub struct TaxRules {
     pub long_term_capital_gain_brackets: Vec<TaxBracket>,
     pub standard_deduction: Money,
     pub max_capital_loss_ordinary_offset: Money,
+    /// Positive means federal-style capped §1250 tax; zero routes recapture
+    /// through ordinary brackets.
+    #[serde(default)]
+    pub section_1250_rate_ppb: i64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -40,6 +48,7 @@ pub struct TaxAssessment {
     pub long_term_capital_gain_taxable: Money,
     pub ordinary_tax: Money,
     pub capital_gain_tax: Money,
+    pub section_1250_tax: Money,
     pub total_tax: Money,
     pub capital_loss_carryforward: Money,
 }
@@ -71,6 +80,12 @@ pub fn validate_rules(rules: &TaxRules) -> Result<(), TaxError> {
             value: rules.max_capital_loss_ordinary_offset.0,
         });
     }
+    if !(0..=RATE_SCALE).contains(&rules.section_1250_rate_ppb) {
+        return Err(TaxError::InvalidRate {
+            rate_ppb: rules.section_1250_rate_ppb,
+            scale: RATE_SCALE,
+        });
+    }
     validate_brackets(&rules.ordinary_brackets)?;
     if !rules.long_term_capital_gain_brackets.is_empty() {
         validate_brackets(&rules.long_term_capital_gain_brackets)?;
@@ -87,29 +102,41 @@ pub fn assess(facts: TaxFacts, rules: &TaxRules) -> Result<TaxAssessment, TaxErr
         rules.max_capital_loss_ordinary_offset,
     )?;
     let deduction = facts.itemized_deduction.max(rules.standard_deduction);
+    let federal_style_recapture = rules.section_1250_rate_ppb > 0;
+    let ordinary_for_brackets = if federal_style_recapture {
+        facts.ordinary_income
+    } else {
+        facts
+            .ordinary_income
+            .checked_add(facts.section_1250_recapture)?
+    };
     if rules.long_term_capital_gain_brackets.is_empty() {
         let taxable = nonnegative(
-            facts
-                .ordinary_income
+            ordinary_for_brackets
                 .checked_add(short_term)?
                 .checked_add(long_term)?
                 .checked_sub(ordinary_offset)?
                 .checked_sub(deduction)?,
         );
         let ordinary_tax = apply_brackets(taxable, &rules.ordinary_brackets)?;
+        let section_1250_tax = if federal_style_recapture {
+            capped_section_1250_tax(taxable, ordinary_tax, facts.section_1250_recapture, rules)?
+        } else {
+            Money(0)
+        };
         return Ok(TaxAssessment {
             ordinary_taxable: taxable,
             long_term_capital_gain_taxable: Money(0),
             ordinary_tax,
-            capital_gain_tax: Money(0),
-            total_tax: ordinary_tax,
+            capital_gain_tax: section_1250_tax,
+            section_1250_tax,
+            total_tax: ordinary_tax.checked_add(section_1250_tax)?,
             capital_loss_carryforward: carryforward,
         });
     }
 
     let ordinary_taxable = nonnegative(
-        facts
-            .ordinary_income
+        ordinary_for_brackets
             .checked_add(short_term)?
             .checked_sub(ordinary_offset)?
             .checked_sub(deduction)?,
@@ -119,19 +146,51 @@ pub fn assess(facts: TaxFacts, rules: &TaxRules) -> Result<TaxAssessment, TaxErr
     // on top of ordinary taxable income.
     let capital_taxable = nonnegative(long_term);
     let ordinary_tax = apply_brackets(ordinary_taxable, &rules.ordinary_brackets)?;
-    let capital_gain_tax = apply_stacked_brackets(
+    let long_term_capital_gain_tax = apply_stacked_brackets(
         capital_taxable,
         ordinary_taxable,
         &rules.long_term_capital_gain_brackets,
     )?;
+    let section_1250_tax = if federal_style_recapture {
+        capped_section_1250_tax(
+            ordinary_taxable,
+            ordinary_tax,
+            facts.section_1250_recapture,
+            rules,
+        )?
+    } else {
+        Money(0)
+    };
+    let capital_gain_tax = long_term_capital_gain_tax.checked_add(section_1250_tax)?;
     Ok(TaxAssessment {
         ordinary_taxable,
         long_term_capital_gain_taxable: capital_taxable,
         ordinary_tax,
         capital_gain_tax,
+        section_1250_tax,
         total_tax: ordinary_tax.checked_add(capital_gain_tax)?,
         capital_loss_carryforward: carryforward,
     })
+}
+
+fn capped_section_1250_tax(
+    ordinary_taxable: Money,
+    ordinary_tax: Money,
+    recapture: Money,
+    rules: &TaxRules,
+) -> Result<Money, TaxError> {
+    let ordinary_tax_with_recapture = apply_brackets(
+        ordinary_taxable.checked_add(recapture)?,
+        &rules.ordinary_brackets,
+    )?;
+    let implied_tax = nonnegative(ordinary_tax_with_recapture.checked_sub(ordinary_tax)?);
+    let capped_tax = Money(crate::money::mul_div_round_half_up(
+        recapture.0,
+        rules.section_1250_rate_ppb,
+        RATE_SCALE,
+        "section 1250 tax cap",
+    )?);
+    Ok(implied_tax.min(capped_tax))
 }
 
 pub fn apply_brackets(amount: Money, brackets: &[TaxBracket]) -> Result<Money, TaxError> {
@@ -317,6 +376,7 @@ mod tests {
             ],
             standard_deduction: Money(1_460_000),
             max_capital_loss_ordinary_offset: Money(300_000),
+            section_1250_rate_ppb: 250_000_000,
         }
     }
 
@@ -339,6 +399,21 @@ mod tests {
         .unwrap();
         assert_eq!(assessment.ordinary_taxable, Money(3_540_000));
         assert_eq!(assessment.capital_gain_tax, Money(125_625));
+    }
+
+    #[test]
+    fn section_1250_uses_incremental_brackets_below_the_rate_cap() {
+        let assessment = assess(
+            TaxFacts {
+                section_1250_recapture: Money(1_454_545),
+                ..TaxFacts::default()
+            },
+            &federal(),
+        )
+        .unwrap();
+        assert_eq!(assessment.ordinary_taxable, Money(0));
+        assert_eq!(assessment.section_1250_tax, Money(151_345));
+        assert_eq!(assessment.capital_gain_tax, Money(151_345));
     }
 
     #[test]
