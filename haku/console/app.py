@@ -302,6 +302,7 @@ def create_app(
         )
 
     runtime_registry: console_runtime.RuntimeRegistry
+    registrations: list[runtime_catalog.RuntimeRegistration] = []
     runner_environment = (
         {}
         if settings.runner_kubernetes_proxy_url is None
@@ -312,32 +313,35 @@ def create_app(
             claude_profile_id = static_by_id[claude_runtime.mcp_static_agent_id].access_profile_id
         except KeyError as error:
             raise ValueError("configured Claude Agent must be a static Agent") from error
-        registration = runtime_catalog.claude_registration(
-            claude_runtime,
-            sandbox_claims.KubernetesSandboxClaims(
-                sandbox_claims.SandboxClaimSpec(
-                    namespace=claude_runtime.namespace,
-                    warm_pool=claude_runtime.warm_pool,
-                    claim_prefix="claude",
-                    runtime_label="claude-chat",
-                    runner_environment={},
-                )
-            ),
-            # Parsed at construction, so a broken deploy template prevents readiness rather than
-            # failing the first attached chat session hours later.
-            system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
-            agent_id=claude_runtime.mcp_static_agent_id,
-            access_profile_id=claude_profile_id,
-            execution_environment={
-                **runner_environment,
-                **(
-                    {}
-                    if settings.haku_agent_workspace_setup is None
-                    else {RUNNER_SETUP_ENV: str(settings.haku_agent_workspace_setup)}
+        registrations.append(
+            runtime_catalog.claude_registration(
+                claude_runtime,
+                sandbox_claims.KubernetesSandboxClaims(
+                    sandbox_claims.SandboxClaimSpec(
+                        namespace=claude_runtime.namespace,
+                        warm_pool=claude_runtime.warm_pool,
+                        claim_prefix="claude",
+                        runtime_label="claude-chat",
+                        runner_environment={},
+                    )
                 ),
-            },
+                # Parsed at construction, so a broken deploy template prevents readiness rather than
+                # failing the first attached chat session hours later.
+                system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
+                agent_id=claude_runtime.mcp_static_agent_id,
+                access_profile_id=claude_profile_id,
+                execution_environment={
+                    **runner_environment,
+                    **(
+                        {}
+                        if settings.haku_agent_workspace_setup is None
+                        else {RUNNER_SETUP_ENV: str(settings.haku_agent_workspace_setup)}
+                    ),
+                },
+            )
         )
-        runtime_registry = runtime_catalog.execution_registry(registration)
+    if registrations:
+        runtime_registry = runtime_catalog.execution_registry(*registrations)
     else:
         # Runtime-disabled replicas can still inspect every linked durable runtime kind. This
         # registry has projection only: no claims, credentials, or launcher.
@@ -408,7 +412,7 @@ def create_app(
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
     default_runtime_kind: RuntimeKind | None = None
-    if claude_runtime is not None:
+    if runtime_registry.configured_kinds:
         authorize_chat_launch = ChatLaunchAuthorizer(
             agent_authority,
             launchable_agent_ids=launchable_agent_ids,
@@ -456,9 +460,9 @@ def create_app(
         if session_service is not None
         else None
     )
-    # A followed conversation's own socket. Behind the Claude runtime because a follower opens on
-    # the same read `GET /api/conversations/{id}` serves, which is the service's — a replica
-    # without one answers neither.
+    # A followed conversation's own socket. Keep it behind executable runtime composition because
+    # a follower opens on the same read `GET /api/conversations/{id}` serves; a projection-only
+    # replica answers neither.
     follow = (
         None
         if session_service is None
@@ -574,9 +578,9 @@ def create_app(
                 index=index_searcher,
                 recall_access_profiles=tuple(console_config.access_profiles),
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
-                # Only when the Claude runtime is configured: without it nothing writes sessions,
-                # so the read tools would reflect an always-empty corpus.
-                conversations=session_store if claude_runtime is not None else None,
+                # Only with an executable runtime: otherwise nothing writes sessions, so the read
+                # tools would reflect an always-empty corpus.
+                conversations=session_store if runtime_registry.configured_kinds else None,
                 kubernetes=(
                     kubernetes_tools.KubernetesToolsService(
                         grants=kubernetes_grants, authorization=kubernetes_authorization
