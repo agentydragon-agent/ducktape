@@ -64,6 +64,27 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     )
     assert console_rule["toPorts"][0]["ports"] == [{"port": str(bridge_target_port), "protocol": "TCP"}]
 
+    kube_proxy_rule = next(
+        rule
+        for rule in claude_egress["spec"]["egress"]
+        if rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("k8s:app.kubernetes.io/name")
+        == "haku-kube-api-proxy"
+    )
+    assert kube_proxy_rule["toPorts"][0]["ports"] == [{"port": "8080", "protocol": "TCP"}]
+
+    kube_proxy_objects = list(yaml.safe_load_all((k8s_dir / "haku/console/kube-api-proxy.yaml").read_text()))
+    kube_proxy_policy = one(obj for obj in kube_proxy_objects if obj["kind"] == "CiliumNetworkPolicy")
+    runner_ingress = one(rule for rule in kube_proxy_policy["spec"]["ingress"] if "fromEndpoints" in rule)
+    assert runner_ingress["fromEndpoints"] == [
+        {
+            "matchLabels": {
+                "k8s:io.kubernetes.pod.namespace": template_namespace,
+                "k8s:app.kubernetes.io/name": "haku-harness-runner",
+            }
+        }
+    ]
+    assert runner_ingress["toPorts"][0]["ports"] == [{"port": "8080", "protocol": "TCP"}]
+
     general_injection = (k8s_dir / "kyverno/policies/inject-haku-egress-proxy.yaml").read_text()
     assert "haku-claude-sandbox" not in general_injection
 

@@ -208,6 +208,8 @@ oci_image(
         extra_env = {
             "HAKU_CLAUDE_PATH": "/usr/local/bin/claude",
             "HAKU_CODEX_PATH": "/opt/codex/bin/codex",
+            # Compatibility for old Claude pods only. New launches select setup in the
+            # HarnessLaunch environment; Codex explicitly ignores this fallback.
             "HAKU_RUNNER_SETUP": "/usr/local/bin/haku-sandbox-setup.sh",
             "HOME": "/home/runner",
             "CLAUDE_CONFIG_DIR": "/claude-config",

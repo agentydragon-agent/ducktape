@@ -1,7 +1,8 @@
 # Console-owned Claude runners are isolated from Haku's general sandbox namespace.
 # They can reach Haku Console's runner bridge, the OAuth-substituting proxy, the in-cluster
-# Forgejo they check haku-state out of, and the apiserver their ServiceAccount is bound
-# against — but have no direct internet, general cluster access, or general-purpose proxy.
+# Forgejo they check haku-state out of, and Console's authorization proxy. The direct
+# apiserver route remains temporarily for already-running/rollback pods until the follow-up
+# removes their ServiceAccount token.
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:
@@ -41,6 +42,16 @@ spec:
       toPorts:
         - ports:
             - port: "8180"
+              protocol: TCP
+    # New launches use an exact-session tokenFile kubeconfig pointed at Console's authorization
+    # proxy. This route is active before the follow-up removes the old ServiceAccount fallback.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
+            k8s:app.kubernetes.io/name: haku-kube-api-proxy
+      toPorts:
+        - ports:
+            - port: "8080"
               protocol: TCP
     # kubectl. Haku's runtime already treats local kubectl as approval-free, because the
     # apiserver's RBAC *is* the boundary — so the grant is haku-sandbox-admin, shared with the
