@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from decimal import Decimal
 from typing import Any, cast
 
@@ -9,8 +10,10 @@ import numpy as np
 
 from finance.augur.model.series import (
     HomeValueKey,
+    InflationKey,
     LevelSeriesKey,
     LocationId,
+    RentKey,
     SecurityDistributionKey,
     SecurityKey,
     SecuritySymbol,
@@ -22,6 +25,7 @@ from finance.augur.sim.scenario import (
     Agent,
     CapitalImprovementEvent,
     DistributionTaxSlice,
+    FixedAmount,
     InitialAccountBalance,
     InitialLot,
     MortgageFinancing,
@@ -38,6 +42,7 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SecurityDistribution,
+    SeriesIndexedAmount,
     SetRentedFractionEvent,
     TaxProfile,
 )
@@ -46,6 +51,30 @@ from finance.augur.sim.simulate import simulate_with_external_series
 
 def _money(quanta: int, quantum: str) -> Decimal:
     return Decimal(quanta) * Decimal(quantum)
+
+
+def _amount(spec: int | dict[str, Any], quantum: str) -> Decimal | FixedAmount | SeriesIndexedAmount:
+    if isinstance(spec, int):
+        return _money(spec, quantum)
+    match spec.get("kind"):
+        case "fixed":
+            return FixedAmount(amount=_money(cast(int, spec["amount"]), quantum))
+        case "series_indexed":
+            series_id = cast(str, spec["series_id"])
+            if series_id == "inflation":
+                series = InflationKey()
+            elif series_id.startswith("rent:") and (location_id := series_id.removeprefix("rent:")):
+                series = RentKey(location_id=LocationId(location_id))
+            else:
+                raise ValueError(f"unsupported amount index series {series_id!r}")
+            return SeriesIndexedAmount(
+                base_amount=_money(cast(int, spec["base_amount"]), quantum),
+                series=series,
+                base_month_index=cast(int, spec.get("base_month_index", 0)),
+                adjustment_period_months=cast(int, spec.get("adjustment_period_months", 1)),
+            )
+        case kind:
+            raise ValueError(f"unsupported amount kind {kind!r}")
 
 
 def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSeriesContext, dict[str, Location]]:
@@ -77,11 +106,31 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
         elif series_id.startswith("home_value:"):
             location_id = series_id.removeprefix("home_value:")
             key = HomeValueKey(location_id=LocationId(location_id))
+        elif series_id == "inflation":
+            key = InflationKey()
+        elif series_id.startswith("rent:") and (location_id := series_id.removeprefix("rent:")):
+            key = RentKey(location_id=LocationId(location_id))
         else:
             continue
         snapshots = cast(int, series["snapshots"])
         price_matrix_quanta = np.asarray(series["values"], dtype=np.int64).reshape(rollout_count, snapshots)
-        price_matrix = price_matrix_quanta.astype(np.float64) * float(Decimal(quantum))
+        if isinstance(key, (InflationKey, RentKey)):
+            level_values: list[float] = []
+            for raw_value in price_matrix_quanta.flat:
+                value = int(raw_value)
+                if value <= 0:
+                    raise ValueError(f"amount index series {series_id!r} has non-positive level {value}")
+                level = value / 1_000_000_000
+                reconstructed = math.floor(level * 1_000_000_000 + 0.5)
+                if value > 1 << 53 or reconstructed != value:
+                    raise ValueError(
+                        f"amount index series {series_id!r} level {value} cannot round-trip exactly "
+                        "through the Python/JAX float level boundary"
+                    )
+                level_values.append(level)
+            price_matrix = np.asarray(level_values, dtype=np.float64).reshape(rollout_count, snapshots)
+        else:
+            price_matrix = price_matrix_quanta.astype(np.float64) * float(Decimal(quantum))
         if isinstance(key, SecurityKey):
             price_matrices[asset_id] = price_matrix_quanta
         level_blocks.append((key, price_matrix))
@@ -133,7 +182,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 from_account_id=spec["from"]["account_id"],
                 to_agent_id=spec["to"]["agent_id"],
                 to_account_id=spec["to"]["account_id"],
-                amount=_money(spec["amount"], quantum),
+                amount=_amount(spec["amount"], quantum),
                 income_category=ORDINARY_INCOME if spec.get("income_category") == "ordinary" else None,
                 deduction_category="ordinary" if spec.get("deduction_category") == "ordinary" else None,
             )
@@ -148,7 +197,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 from_account_id=spec["from"]["account_id"],
                 to_agent_id=spec["to"]["agent_id"],
                 to_account_id=spec["to"]["account_id"],
-                amount=_money(spec["amount"], quantum),
+                amount=_amount(spec["amount"], quantum),
                 income_category=ORDINARY_INCOME if spec.get("income_category") == "ordinary" else None,
                 deduction_category="ordinary" if spec.get("deduction_category") == "ordinary" else None,
             )
@@ -163,7 +212,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 from_account_id=spec["from"]["account_id"],
                 to_agent_id=spec["to"]["agent_id"],
                 to_account_id=spec["to"]["account_id"],
-                amount=_money(spec["amount"], quantum),
+                amount=_amount(spec["amount"], quantum),
                 income_category=ORDINARY_INCOME if spec.get("income_category") == "ordinary" else None,
                 deduction_category="ordinary" if spec.get("deduction_category") == "ordinary" else None,
             )
@@ -179,7 +228,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 from_account_id=spec["from"]["account_id"],
                 to_agent_id=spec["to"]["agent_id"],
                 to_account_id=spec["to"]["account_id"],
-                amount=_money(spec["amount"], quantum),
+                amount=_amount(spec["amount"], quantum),
                 income_category=ORDINARY_INCOME if spec.get("income_category") == "ordinary" else None,
                 deduction_category="ordinary" if spec.get("deduction_category") == "ordinary" else None,
             )
@@ -194,7 +243,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 from_account_id=spec["from"]["account_id"],
                 to_agent_id=spec["to"]["agent_id"],
                 to_account_id=spec["to"]["account_id"],
-                amount_due=_money(spec["amount_due"], quantum),
+                amount_due=_amount(spec["amount_due"], quantum),
             )
             for spec in scenario_spec["obligations"]
         ],
@@ -208,7 +257,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 from_account_id=spec["from"]["account_id"],
                 to_agent_id=spec["to"]["agent_id"],
                 to_account_id=spec["to"]["account_id"],
-                amount_due=_money(spec["amount_due"], quantum),
+                amount_due=_amount(spec["amount_due"], quantum),
             )
             for spec in scenario_spec.get("recurring_obligations", [])
         ],

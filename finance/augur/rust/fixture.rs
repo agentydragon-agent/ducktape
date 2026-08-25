@@ -81,13 +81,72 @@ pub struct AccountSpec {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum AmountSpec {
+    Fixed(Money),
+    FixedSchedule(FixedAmountSpec),
+    SeriesIndexed(SeriesIndexedAmountSpec),
+}
+
+impl AmountSpec {
+    pub fn base_amount(&self) -> Money {
+        match self {
+            Self::Fixed(amount) => *amount,
+            Self::FixedSchedule(amount) => amount.amount,
+            Self::SeriesIndexed(amount) => amount.base_amount,
+        }
+    }
+}
+
+impl From<Money> for AmountSpec {
+    fn from(value: Money) -> Self {
+        Self::Fixed(value)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FixedAmountSpec {
+    pub kind: FixedAmountKind,
+    pub amount: Money,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum FixedAmountKind {
+    #[serde(rename = "fixed")]
+    Fixed,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SeriesIndexedAmountSpec {
+    pub kind: SeriesIndexedAmountKind,
+    pub base_amount: Money,
+    pub series_id: String,
+    #[serde(default)]
+    pub base_month_index: u32,
+    #[serde(default = "default_adjustment_period_months")]
+    pub adjustment_period_months: u32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum SeriesIndexedAmountKind {
+    #[serde(rename = "series_indexed")]
+    SeriesIndexed,
+}
+
+fn default_adjustment_period_months() -> u32 {
+    1
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScheduledTransferSpec {
     pub month: u32,
     pub cause_id: String,
     pub from: AccountRef,
     pub to: AccountRef,
-    pub amount: Money,
+    pub amount: AmountSpec,
     #[serde(default)]
     pub income_category: Option<String>,
     #[serde(default)]
@@ -102,7 +161,7 @@ pub struct RecurringTransferSpec {
     pub cause_id: String,
     pub from: AccountRef,
     pub to: AccountRef,
-    pub amount: Money,
+    pub amount: AmountSpec,
     #[serde(default)]
     pub income_category: Option<String>,
     #[serde(default)]
@@ -117,7 +176,7 @@ pub struct ScheduledPropertyCashflowSpec {
     pub cause_id: String,
     pub from: AccountRef,
     pub to: AccountRef,
-    pub amount: Money,
+    pub amount: AmountSpec,
     #[serde(default)]
     pub income_category: Option<String>,
     #[serde(default)]
@@ -133,7 +192,7 @@ pub struct RecurringPropertyCashflowSpec {
     pub cause_id: String,
     pub from: AccountRef,
     pub to: AccountRef,
-    pub amount: Money,
+    pub amount: AmountSpec,
     #[serde(default)]
     pub income_category: Option<String>,
     #[serde(default)]
@@ -149,7 +208,7 @@ pub struct ObligationSpec {
     pub obligation_type: String,
     pub from: AccountRef,
     pub to: AccountRef,
-    pub amount_due: Money,
+    pub amount_due: AmountSpec,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -162,7 +221,7 @@ pub struct RecurringObligationSpec {
     pub obligation_type: String,
     pub from: AccountRef,
     pub to: AccountRef,
-    pub amount_due: Money,
+    pub amount_due: AmountSpec,
 }
 
 fn default_obligation_type() -> String {

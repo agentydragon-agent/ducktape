@@ -5,12 +5,13 @@ use thiserror::Error;
 
 use crate::{
     fixture::{
-        AccountBalance, CapitalImprovementOutcome, DistributionOutcome, FIXTURE_SCHEMA_VERSION,
-        Fixture, InitialLotSpec, LotDisposition, MonthOutput, MortgageOriginationOutcome,
-        MortgagePaymentOutcome, MortgageState, ObligationOutcome, PopulationOutput,
-        PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
-        PropertySaleSpec, PropertyState, RolloutOutput, RolloutSummary, SeriesSpec,
-        SimulationOutput, TaxAccrual, TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome,
+        AccountBalance, AmountSpec, CapitalImprovementOutcome, DistributionOutcome,
+        FIXTURE_SCHEMA_VERSION, Fixture, InitialLotSpec, LotDisposition, MonthOutput,
+        MortgageOriginationOutcome, MortgagePaymentOutcome, MortgageState, ObligationOutcome,
+        PopulationOutput, PropertyPurchaseOutcome, PropertyRentedFractionOutcome,
+        PropertySaleOutcome, PropertySaleSpec, PropertyState, RolloutOutput, RolloutSummary,
+        SeriesSpec, SimulationOutput, TaxAccrual, TaxLiabilityState, TaxPaymentOutcome,
+        TaxSettlementOutcome,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
@@ -20,6 +21,8 @@ use crate::{
 const EXTERNAL_AGENT: &str = "__external__";
 const OPENING_EQUITY: &str = "equity:opening";
 const RATE_SCALE_PPB: i64 = 1_000_000_000;
+const INDEX_LEVEL_SCALE: i64 = 1_000_000_000;
+const MAX_EXACT_F64_INTEGER: i64 = 1_i64 << 53;
 const CONTRACT_SCALE: i128 = 1_000_000_000_000_000_000;
 
 #[derive(Debug, Error)]
@@ -117,6 +120,46 @@ pub enum SimulationError {
     EmptyIdentifier { kind: &'static str },
     #[error("unsupported income category {category:?}; only ordinary is implemented")]
     UnsupportedIncomeCategory { category: String },
+    #[error("{kind} {cause_id:?} uses unsupported amount index series {series_id:?}")]
+    UnsupportedAmountSeries {
+        kind: &'static str,
+        cause_id: String,
+        series_id: String,
+    },
+    #[error("{kind} {cause_id:?} has an invalid series-indexed amount schedule")]
+    InvalidSeriesIndexedAmount {
+        kind: &'static str,
+        cause_id: String,
+    },
+    #[error(
+        "{kind} {cause_id:?} is active at month {month} before its series-indexed base month {base_month}"
+    )]
+    SeriesAmountBeforeBase {
+        kind: &'static str,
+        cause_id: String,
+        month: u32,
+        base_month: u32,
+    },
+    #[error(
+        "series-indexed amount {cause_id:?} has non-positive level {value} in {series_id:?} for rollout {rollout} at month {month}"
+    )]
+    NonPositiveSeriesAmountLevel {
+        cause_id: String,
+        series_id: String,
+        rollout: u32,
+        month: u32,
+        value: i64,
+    },
+    #[error(
+        "series-indexed amount {cause_id:?} has level {value} in {series_id:?} for rollout {rollout} at month {month}, which cannot round-trip exactly through the Python/JAX float level boundary"
+    )]
+    InexactSeriesAmountLevel {
+        cause_id: String,
+        series_id: String,
+        rollout: u32,
+        month: u32,
+        value: i64,
+    },
     #[error("duplicate tax profile jurisdiction {agent_id}:{jurisdiction_id}")]
     DuplicateTaxJurisdiction {
         agent_id: String,
@@ -682,7 +725,13 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             transfer.month,
             fixture.scenario.horizon_months,
         )?;
-        validate_positive_amount("scheduled transfer", &transfer.cause_id, transfer.amount)?;
+        validate_amount_spec(
+            fixture,
+            "scheduled transfer",
+            &transfer.cause_id,
+            &transfer.amount,
+            std::iter::once(transfer.month),
+        )?;
         validate_income_category(transfer.income_category.as_deref())?;
         validate_income_category(transfer.deduction_category.as_deref())?;
         validate_account(&accounts, &transfer.from, &transfer.cause_id)?;
@@ -706,7 +755,17 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                 end_month,
             });
         }
-        validate_positive_amount("recurring transfer", &transfer.cause_id, transfer.amount)?;
+        validate_amount_spec(
+            fixture,
+            "recurring transfer",
+            &transfer.cause_id,
+            &transfer.amount,
+            transfer.start_month
+                ..=transfer
+                    .end_month
+                    .unwrap_or(fixture.scenario.horizon_months - 1)
+                    .min(fixture.scenario.horizon_months - 1),
+        )?;
         validate_income_category(transfer.income_category.as_deref())?;
         validate_income_category(transfer.deduction_category.as_deref())?;
         validate_account(&accounts, &transfer.from, &transfer.cause_id)?;
@@ -721,10 +780,12 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             obligation.month,
             fixture.scenario.horizon_months,
         )?;
-        validate_positive_amount(
+        validate_amount_spec(
+            fixture,
             "obligation",
             &obligation.obligation_id,
-            obligation.amount_due,
+            &obligation.amount_due,
+            std::iter::once(obligation.month),
         )?;
         validate_account(&accounts, &obligation.from, &obligation.obligation_id)?;
         validate_account(&accounts, &obligation.to, &obligation.obligation_id)?;
@@ -748,10 +809,16 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                 end_month,
             });
         }
-        validate_positive_amount(
+        validate_amount_spec(
+            fixture,
             "recurring obligation",
             &obligation.obligation_id,
-            obligation.amount_due,
+            &obligation.amount_due,
+            obligation.start_month
+                ..=obligation
+                    .end_month
+                    .unwrap_or(fixture.scenario.horizon_months - 1)
+                    .min(fixture.scenario.horizon_months - 1),
         )?;
         validate_account(&accounts, &obligation.from, &obligation.obligation_id)?;
         validate_account(&accounts, &obligation.to, &obligation.obligation_id)?;
@@ -1137,10 +1204,12 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             cashflow.month,
             fixture.scenario.horizon_months,
         )?;
-        validate_positive_amount(
+        validate_amount_spec(
+            fixture,
             "scheduled property cashflow",
             &cashflow.cause_id,
-            cashflow.amount,
+            &cashflow.amount,
+            std::iter::once(cashflow.month),
         )?;
         validate_income_category(cashflow.income_category.as_deref())?;
         validate_income_category(cashflow.deduction_category.as_deref())?;
@@ -1171,10 +1240,16 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                 end_month,
             });
         }
-        validate_positive_amount(
+        validate_amount_spec(
+            fixture,
             "recurring property cashflow",
             &cashflow.cause_id,
-            cashflow.amount,
+            &cashflow.amount,
+            cashflow.start_month
+                ..=cashflow
+                    .end_month
+                    .unwrap_or(fixture.scenario.horizon_months - 1)
+                    .min(fixture.scenario.horizon_months - 1),
         )?;
         validate_income_category(cashflow.income_category.as_deref())?;
         validate_income_category(cashflow.deduction_category.as_deref())?;
@@ -1265,16 +1340,100 @@ fn is_positive_decimal(value: &str) -> bool {
     saw_digit && saw_nonzero
 }
 
-fn validate_positive_amount(
+fn validate_amount_spec(
+    fixture: &Fixture,
     kind: &'static str,
     cause_id: &str,
-    amount: Money,
+    amount: &AmountSpec,
+    months: impl IntoIterator<Item = u32>,
 ) -> Result<(), SimulationError> {
-    if amount.0 <= 0 {
-        return Err(SimulationError::InvalidAmount {
+    let AmountSpec::SeriesIndexed(amount) = amount else {
+        return Ok(());
+    };
+    if amount.adjustment_period_months == 0 {
+        return Err(SimulationError::InvalidSeriesIndexedAmount {
             kind,
             cause_id: cause_id.into(),
-            amount: amount.0,
+        });
+    }
+    let valid_rent_series = amount
+        .series_id
+        .strip_prefix("rent:")
+        .is_some_and(|location_id| !location_id.is_empty());
+    if amount.series_id != "inflation" && !valid_rent_series {
+        return Err(SimulationError::UnsupportedAmountSeries {
+            kind,
+            cause_id: cause_id.into(),
+            series_id: amount.series_id.clone(),
+        });
+    }
+    let months = months.into_iter().collect::<Vec<_>>();
+    if let Some(month) = months
+        .iter()
+        .copied()
+        .find(|month| *month < amount.base_month_index)
+    {
+        return Err(SimulationError::SeriesAmountBeforeBase {
+            kind,
+            cause_id: cause_id.into(),
+            month,
+            base_month: amount.base_month_index,
+        });
+    }
+    let series = fixture
+        .series
+        .iter()
+        .find(|series| series.series_id == amount.series_id)
+        .ok_or_else(|| SimulationError::MissingSeries {
+            series_id: amount.series_id.clone(),
+        })?;
+    let mut required_months = BTreeSet::from([amount.base_month_index]);
+    for month in months {
+        let elapsed = month - amount.base_month_index;
+        let reset_month = amount.base_month_index
+            + (elapsed / amount.adjustment_period_months) * amount.adjustment_period_months;
+        required_months.insert(reset_month);
+    }
+    for rollout in 0..fixture.rollout_count {
+        for reset_month in &required_months {
+            let value = series.value(rollout, *reset_month).ok_or_else(|| {
+                SimulationError::MissingSeriesValue {
+                    series_id: amount.series_id.clone(),
+                    rollout,
+                    snapshot: *reset_month,
+                }
+            })?;
+            validate_amount_index_level(cause_id, &amount.series_id, rollout, *reset_month, value)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_amount_index_level(
+    cause_id: &str,
+    series_id: &str,
+    rollout: u32,
+    month: u32,
+    value: i64,
+) -> Result<(), SimulationError> {
+    if value <= 0 {
+        return Err(SimulationError::NonPositiveSeriesAmountLevel {
+            cause_id: cause_id.into(),
+            series_id: series_id.into(),
+            rollout,
+            month,
+            value,
+        });
+    }
+    let reconstructed =
+        ((value as f64 / INDEX_LEVEL_SCALE as f64) * INDEX_LEVEL_SCALE as f64).round() as i64;
+    if value > MAX_EXACT_F64_INTEGER || reconstructed != value {
+        return Err(SimulationError::InexactSeriesAmountLevel {
+            cause_id: cause_id.into(),
+            series_id: series_id.into(),
+            rollout,
+            month,
+            value,
         });
     }
     Ok(())
@@ -1507,6 +1666,7 @@ fn simulate_rollout(
         )?;
         execute_cashflows(
             fixture,
+            rollout_id,
             &mut ledger,
             &mut recorder,
             &mut tax_facts,
@@ -1529,45 +1689,47 @@ fn simulate_rollout(
                 sale,
             )?;
         }
-        let active_obligations: Vec<_> = fixture
+        let mut active_obligations = Vec::new();
+        for obligation in fixture
             .scenario
             .obligations
             .iter()
             .filter(|obligation| obligation.month == month)
-            .map(|obligation| ActiveObligation {
+        {
+            active_obligations.push(ActiveObligation {
                 cause_id: format!("{}_m{month}", obligation.obligation_id),
                 obligation_type: obligation.obligation_type.clone(),
                 from: obligation.from.clone(),
                 to: obligation.to.clone(),
-                amount_due: obligation.amount_due,
+                amount_due: amount_value(fixture, rollout_id, month, &obligation.amount_due)?,
                 effect: ObligationEffect::None,
+            });
+        }
+        for obligation in fixture
+            .scenario
+            .recurring_obligations
+            .iter()
+            .filter(|obligation| {
+                obligation.start_month <= month
+                    && obligation.end_month.is_none_or(|end| month <= end)
             })
-            .chain(
-                fixture
-                    .scenario
-                    .recurring_obligations
-                    .iter()
-                    .filter(|obligation| {
-                        obligation.start_month <= month
-                            && obligation.end_month.is_none_or(|end| month <= end)
-                    })
-                    .map(|obligation| ActiveObligation {
-                        cause_id: format!("{}_m{month}", obligation.obligation_id),
-                        obligation_type: obligation.obligation_type.clone(),
-                        from: obligation.from.clone(),
-                        to: obligation.to.clone(),
-                        amount_due: obligation.amount_due,
-                        effect: ObligationEffect::None,
-                    }),
-            )
-            .chain(property_obligations(
-                fixture,
-                &properties,
-                &mortgages,
-                month,
-            )?)
-            .chain(tax_obligations(fixture, &tax_liabilities, month)?)
-            .collect();
+        {
+            active_obligations.push(ActiveObligation {
+                cause_id: format!("{}_m{month}", obligation.obligation_id),
+                obligation_type: obligation.obligation_type.clone(),
+                from: obligation.from.clone(),
+                to: obligation.to.clone(),
+                amount_due: amount_value(fixture, rollout_id, month, &obligation.amount_due)?,
+                effect: ObligationEffect::None,
+            });
+        }
+        active_obligations.extend(property_obligations(
+            fixture,
+            &properties,
+            &mortgages,
+            month,
+        )?);
+        active_obligations.extend(tax_obligations(fixture, &tax_liabilities, month)?);
         if settle_obligations(
             fixture,
             &mut ledger,
@@ -2132,6 +2294,7 @@ fn execute_property_purchases(
 
 fn execute_cashflows(
     fixture: &Fixture,
+    rollout_id: u32,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
@@ -2152,7 +2315,7 @@ fn execute_cashflows(
             &cashflow.cause_id,
             &cashflow.from,
             &cashflow.to,
-            cashflow.amount,
+            amount_value(fixture, rollout_id, month, &cashflow.amount)?,
             cashflow.income_category.as_deref(),
             cashflow.deduction_category.as_deref(),
         )?;
@@ -2173,7 +2336,7 @@ fn execute_cashflows(
             &cashflow.cause_id,
             &cashflow.from,
             &cashflow.to,
-            cashflow.amount,
+            amount_value(fixture, rollout_id, month, &cashflow.amount)?,
             cashflow.income_category.as_deref(),
             cashflow.deduction_category.as_deref(),
         )?;
@@ -2196,7 +2359,7 @@ fn execute_cashflows(
                 &cashflow.cause_id,
                 &cashflow.from,
                 &cashflow.to,
-                cashflow.amount,
+                amount_value(fixture, rollout_id, month, &cashflow.amount)?,
                 cashflow.income_category.as_deref(),
                 cashflow.deduction_category.as_deref(),
             )?;
@@ -2222,7 +2385,7 @@ fn execute_cashflows(
                 &cashflow.cause_id,
                 &cashflow.from,
                 &cashflow.to,
-                cashflow.amount,
+                amount_value(fixture, rollout_id, month, &cashflow.amount)?,
                 cashflow.income_category.as_deref(),
                 cashflow.deduction_category.as_deref(),
             )?;
@@ -3248,6 +3411,32 @@ fn series_value(
         })
 }
 
+fn amount_value(
+    fixture: &Fixture,
+    rollout: u32,
+    month: u32,
+    amount: &AmountSpec,
+) -> Result<Money, SimulationError> {
+    match amount {
+        AmountSpec::Fixed(amount) => Ok(*amount),
+        AmountSpec::FixedSchedule(amount) => Ok(amount.amount),
+        AmountSpec::SeriesIndexed(amount) => {
+            let elapsed = month - amount.base_month_index;
+            let reset_month = amount.base_month_index
+                + (elapsed / amount.adjustment_period_months) * amount.adjustment_period_months;
+            let base_level =
+                series_value(fixture, &amount.series_id, rollout, amount.base_month_index)?;
+            let reset_level = series_value(fixture, &amount.series_id, rollout, reset_month)?;
+            Ok(Money(mul_div_round_half_up(
+                amount.base_amount.0,
+                reset_level,
+                base_level,
+                "series-indexed amount",
+            )?))
+        }
+    }
+}
+
 fn asset_basis_account(lot: &InitialLotSpec) -> AccountRef {
     AccountRef::new(
         &lot.agent_id,
@@ -3394,7 +3583,8 @@ mod tests {
     use crate::fixture::{
         AccountSpec, InitialLotSpec, LocationSpec, MortgageFinancingSpec, ObligationSpec,
         PropertyTaxPolicySpec, RecurringObligationSpec, ScenarioSpec,
-        ScheduledPropertyPurchaseSpec, ScheduledSaleSpec, ScheduledTransferSpec, SeriesSpec,
+        ScheduledPropertyPurchaseSpec, ScheduledSaleSpec, ScheduledTransferSpec,
+        SeriesIndexedAmountKind, SeriesIndexedAmountSpec, SeriesSpec,
     };
 
     use super::*;
@@ -3465,6 +3655,132 @@ mod tests {
     }
 
     #[test]
+    fn series_indexed_amounts_follow_rollout_specific_reset_boundaries() {
+        let mut fixture = minimal_fixture();
+        fixture.rollout_count = 2;
+        fixture.scenario.horizon_months = 13;
+        fixture.scenario.accounts.push(AccountSpec {
+            account: AccountRef::new("landlord", "checking"),
+            opening_balance: Money(0),
+        });
+        fixture.scenario.accounts[0].opening_balance = Money(100_000);
+        fixture.scenario.recurring_obligations = vec![RecurringObligationSpec {
+            start_month: 0,
+            end_month: Some(12),
+            obligation_id: "rent".into(),
+            obligation_type: "cash_spend".into(),
+            from: AccountRef::new("alice", "checking"),
+            to: AccountRef::new("landlord", "checking"),
+            amount_due: AmountSpec::SeriesIndexed(SeriesIndexedAmountSpec {
+                kind: SeriesIndexedAmountKind::SeriesIndexed,
+                base_amount: Money(1_001),
+                series_id: "rent:test".into(),
+                base_month_index: 0,
+                adjustment_period_months: 12,
+            }),
+        }];
+        fixture.series = vec![SeriesSpec {
+            series_id: "rent:test".into(),
+            snapshots: 14,
+            values: [
+                vec![1_000_000_000; 12],
+                vec![1_100_000_000, 1_100_000_000],
+                vec![1_000_000_000; 12],
+                vec![1_250_000_000, 1_250_000_000],
+            ]
+            .concat(),
+        }];
+
+        let output = simulate(&fixture).unwrap();
+        assert_eq!(output.rollouts[0].obligations[11].amount_due, Money(1_001));
+        assert_eq!(output.rollouts[0].obligations[12].amount_due, Money(1_101));
+        assert_eq!(output.rollouts[1].obligations[11].amount_due, Money(1_001));
+        assert_eq!(output.rollouts[1].obligations[12].amount_due, Money(1_251));
+    }
+
+    #[test]
+    fn series_indexed_amount_validation_rejects_invalid_paths() {
+        let amount = AmountSpec::SeriesIndexed(SeriesIndexedAmountSpec {
+            kind: SeriesIndexedAmountKind::SeriesIndexed,
+            base_amount: Money(1),
+            series_id: "inflation".into(),
+            base_month_index: 1,
+            adjustment_period_months: 12,
+        });
+        let mut fixture = minimal_fixture();
+        fixture.scenario.horizon_months = 2;
+        fixture
+            .scenario
+            .scheduled_transfers
+            .push(ScheduledTransferSpec {
+                month: 0,
+                cause_id: "too-early".into(),
+                from: AccountRef::new("alice", "checking"),
+                to: AccountRef::new("alice", "checking"),
+                amount,
+                income_category: None,
+                deduction_category: None,
+            });
+        fixture.series.push(SeriesSpec {
+            series_id: "inflation".into(),
+            snapshots: 3,
+            values: vec![1_000_000_000, 1_000_000_000, 1_000_000_000],
+        });
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::SeriesAmountBeforeBase {
+                month: 0,
+                base_month: 1,
+                ..
+            })
+        ));
+
+        fixture.scenario.scheduled_transfers[0].month = 1;
+        fixture.series[0].values[1] = 0;
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::NonPositiveSeriesAmountLevel {
+                month: 1,
+                value: 0,
+                ..
+            })
+        ));
+
+        fixture.series[0].values[1] = 1_000_000_000;
+        if let AmountSpec::SeriesIndexed(amount) =
+            &mut fixture.scenario.scheduled_transfers[0].amount
+        {
+            amount.adjustment_period_months = 0;
+        }
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::InvalidSeriesIndexedAmount { .. })
+        ));
+
+        if let AmountSpec::SeriesIndexed(amount) =
+            &mut fixture.scenario.scheduled_transfers[0].amount
+        {
+            amount.adjustment_period_months = 1;
+            amount.series_id = "security:vti".into();
+        }
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::UnsupportedAmountSeries { .. })
+        ));
+
+        if let AmountSpec::SeriesIndexed(amount) =
+            &mut fixture.scenario.scheduled_transfers[0].amount
+        {
+            amount.series_id = "inflation".into();
+        }
+        fixture.series[0].values[1] = (1_i64 << 53) + 1;
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::InexactSeriesAmountLevel { month: 1, .. })
+        ));
+    }
+
+    #[test]
     fn rejects_invalid_references_before_rollout_execution() {
         let mut fixture = minimal_fixture();
         fixture
@@ -3475,7 +3791,7 @@ mod tests {
                 cause_id: "unknown-source".into(),
                 from: AccountRef::new("missing", "checking"),
                 to: AccountRef::new("alice", "checking"),
-                amount: Money(1),
+                amount: Money(1).into(),
                 income_category: None,
                 deduction_category: None,
             });
@@ -3600,7 +3916,7 @@ mod tests {
                     cause_id: "gift".into(),
                     from: bob_cash,
                     to: alice_cash,
-                    amount: Money(500),
+                    amount: Money(500).into(),
                     income_category: None,
                     deduction_category: None,
                 }],
@@ -3887,7 +4203,7 @@ mod tests {
                     cause_id: "must-not-run".into(),
                     from: alice_cash.clone(),
                     to: bob_cash.clone(),
-                    amount: Money(1),
+                    amount: Money(1).into(),
                     income_category: None,
                     deduction_category: None,
                 }],
@@ -3900,7 +4216,7 @@ mod tests {
                     obligation_type: "cash_spend".into(),
                     from: alice_cash,
                     to: bob_cash,
-                    amount_due: Money(101),
+                    amount_due: Money(101).into(),
                 }],
                 recurring_obligations: vec![],
                 initial_lots: vec![],
@@ -3975,7 +4291,7 @@ mod tests {
                         obligation_type: "cash_spend".into(),
                         from: alice_cash.clone(),
                         to: landlord_cash,
-                        amount_due: Money(60_000),
+                        amount_due: Money(60_000).into(),
                     },
                     RecurringObligationSpec {
                         start_month: 1,
@@ -3984,7 +4300,7 @@ mod tests {
                         obligation_type: "cash_spend".into(),
                         from: alice_cash,
                         to: utility_cash,
-                        amount_due: Money(1),
+                        amount_due: Money(1).into(),
                     },
                 ],
                 initial_lots: vec![],

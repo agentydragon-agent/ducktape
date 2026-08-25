@@ -29,6 +29,9 @@ The differential suite currently proves exact integer agreement for:
 
 - opening balances and opening equity;
 - scheduled and recurring transfers;
+- scalar, tagged-fixed, and inflation/rent-series-indexed amounts across
+  transfers, property cashflows, and obligations, including rollout-specific
+  monthly or periodic reset boundaries and exact half-up ratio scaling;
 - initial tax lots and FIFO scheduled sales;
 - monthly security distributions based on currently held units;
 - financed or cash property purchases with explicit property, mortgage,
@@ -58,6 +61,14 @@ The Rust ledger also records tax expense/liability accrual entries, tax
 prepayments and settlement, and preserves capital-loss carryforward between tax
 years. Monthly and terminal output retain jurisdiction-level tax-liability
 state; selected traces expose tax-payment and tax-settlement records.
+
+The strict fixture stores monetary series (security prices, distributions, and
+home values) as currency quanta. Inflation and rent index levels instead use a
+dimensionless parts-per-billion scale. Referenced index levels must be positive
+and must round-trip exactly through the Python/JAX `float64` external-series
+boundary; the Rust validator and Python adapter reject fixtures that would lose
+an integer level during that conversion. Series coverage is deliberately dense:
+every series supplies every rollout and snapshot in the fixture.
 
 Still missing before replacement is plausible:
 

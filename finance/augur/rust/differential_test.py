@@ -532,6 +532,170 @@ def _property_cashflow_gating_fixture() -> dict[str, Any]:
     return fixture
 
 
+def _series_indexed_amount_fixture() -> dict[str, Any]:
+    fixture = _failure_fixture()
+    fixture["rollout_count"] = 2
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 14
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 20_000_000},
+        {"account": {"agent_id": "bob", "account_id": "checking"}, "opening_balance": 20_000_000},
+        {"account": {"agent_id": "seller", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "tenant", "account_id": "checking"}, "opening_balance": 20_000_000},
+        {"account": {"agent_id": "landlord", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "manager", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    indexed_inflation = {
+        "kind": "series_indexed",
+        "base_amount": 101,
+        "series_id": "inflation",
+        "base_month_index": 0,
+        "adjustment_period_months": 1,
+    }
+    indexed_annual_rent = {
+        "kind": "series_indexed",
+        "base_amount": 1_001,
+        "series_id": "rent:test",
+        "base_month_index": 0,
+        "adjustment_period_months": 12,
+    }
+    scenario["scheduled_transfers"] = [
+        {
+            "month": 2,
+            "cause_id": "indexed-gift",
+            "from": {"agent_id": "bob", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": indexed_inflation,
+        },
+        {
+            "month": 3,
+            "cause_id": "tagged-fixed-gift",
+            "from": {"agent_id": "bob", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": {"kind": "fixed", "amount": -17},
+        },
+        {
+            "month": 4,
+            "cause_id": "zero-gift",
+            "from": {"agent_id": "bob", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": 0,
+        },
+    ]
+    scenario["recurring_transfers"] = [
+        {
+            "start_month": 0,
+            "end_month": 13,
+            "cause_id": "annual-indexed-paycheck",
+            "from": {"agent_id": "bob", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": indexed_annual_rent,
+        }
+    ]
+    scenario["obligations"] = [
+        {
+            "month": 2,
+            "obligation_id": "indexed-bill",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "amount_due": indexed_inflation,
+        }
+    ]
+    scenario["recurring_obligations"] = [
+        {
+            "start_month": 0,
+            "end_month": 13,
+            "obligation_id": "indexed-rent",
+            "obligation_type": "cash_spend",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "amount_due": indexed_annual_rent,
+        }
+    ]
+    scenario["locations"] = [
+        {
+            "location_id": "test",
+            "display_name": "Test",
+            "jurisdiction_ids": [],
+            "annual_property_tax_rate_ppb": 0,
+            "annual_special_assessment": 0,
+        }
+    ]
+    scenario["scheduled_property_purchases"] = [
+        {
+            "month": 0,
+            "cause_id": "buy-test-home",
+            "property_id": "home",
+            "location_id": "test",
+            "buyer_agent_id": "alice",
+            "buyer_account_id": "checking",
+            "seller_agent_id": "seller",
+            "seller_account_id": "checking",
+            "purchase_price": 100,
+            "down_payment": 100,
+            "buyer_closing_cost": 0,
+            "mortgage": None,
+        }
+    ]
+    scenario["scheduled_property_cashflows"] = [
+        {
+            "month": 2,
+            "property_id": "home",
+            "cause_id": "indexed-repair",
+            "from": {"agent_id": "alice", "account_id": "checking"},
+            "to": {"agent_id": "manager", "account_id": "checking"},
+            "amount": indexed_inflation,
+        }
+    ]
+    scenario["recurring_property_cashflows"] = [
+        {
+            "start_month": 0,
+            "end_month": 13,
+            "property_id": "home",
+            "cause_id": "indexed-property-rent",
+            "from": {"agent_id": "tenant", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": indexed_annual_rent,
+        }
+    ]
+    scenario["initial_lots"] = []
+    scenario["scheduled_sales"] = []
+    scenario["tax_profiles"] = []
+    scenario["distributions"] = []
+    scenario["property_tax_policies"] = []
+    fixture["series"] = [
+        {
+            "series_id": "inflation",
+            "snapshots": 15,
+            "values": [
+                1_000_000_000,
+                1_250_000_000,
+                1_500_000_000,
+                *([1_500_000_000] * 12),
+                1_000_000_000,
+                1_500_000_000,
+                1_250_000_000,
+                *([1_250_000_000] * 12),
+            ],
+        },
+        {
+            "series_id": "rent:test",
+            "snapshots": 15,
+            "values": [
+                *([1_000_000_000] * 12),
+                1_100_000_000,
+                1_100_000_000,
+                1_100_000_000,
+                *([1_000_000_000] * 12),
+                1_250_000_000,
+                1_250_000_000,
+                1_250_000_000,
+            ],
+        },
+    ]
+    return fixture
+
+
 def _property_sale_fixture() -> dict[str, Any]:
     fixture = _financed_property_fixture()
     fixture["rollout_count"] = 2
@@ -798,6 +962,99 @@ def test_rust_and_jax_match_grouped_recurring_obligations(tmp_path: Path) -> Non
         key=lambda row: (row["rollout_index"], row["month_index"], row["obligation_id"]),
     )
     assert rust_outcomes == legacy_outcomes
+
+
+def test_rust_and_jax_match_fixed_and_series_indexed_amounts(tmp_path: Path) -> None:
+    fixture = _series_indexed_amount_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_cash = (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+    )
+    assert _rust_cash(rust).to_dicts() == legacy_cash.to_dicts()
+
+    transfer_causes = {
+        "indexed-gift",
+        "tagged-fixed-gift",
+        "zero-gift",
+        "annual-indexed-paycheck",
+        "indexed-repair",
+        "indexed-property-rent",
+    }
+    legacy_transfers = (
+        legacy.events_log.transfers.filter(pl.col("cause_id").is_in(transfer_causes))
+        .select("rollout_index", "month_index", "cause_id", "amount_quanta")
+        .sort("rollout_index", "month_index", "cause_id")
+        .to_dicts()
+    )
+    destinations = {
+        spec["cause_id"]: spec["to"]
+        for key in (
+            "scheduled_transfers",
+            "recurring_transfers",
+            "scheduled_property_cashflows",
+            "recurring_property_cashflows",
+        )
+        for spec in fixture["scenario"][key]
+    }
+    rust_transfers = []
+    for rollout in rust["rollouts"]:
+        for entry in rollout["journal"]:
+            if entry["cause_id"] not in transfer_causes:
+                continue
+            destination = destinations[entry["cause_id"]]
+            amount = next(posting["amount"] for posting in entry["postings"] if posting["account"] == destination)
+            rust_transfers.append(
+                {
+                    "rollout_index": rollout["rollout_id"],
+                    "month_index": entry["month"],
+                    "cause_id": entry["cause_id"],
+                    "amount_quanta": amount,
+                }
+            )
+    rust_transfers.sort(key=lambda row: (row["rollout_index"], row["month_index"], row["cause_id"]))
+    assert rust_transfers == legacy_transfers
+
+    columns = [
+        "rollout_index",
+        "month_index",
+        "obligation_id",
+        "amount_due_quanta",
+        "amount_paid_quanta",
+        "shortfall_quanta",
+    ]
+    legacy_outcomes = legacy.events_log.obligation_settlements.select(columns).sort(columns[:3]).to_dicts()
+    rust_outcomes = sorted(
+        [
+            {
+                "rollout_index": rollout["rollout_id"],
+                "month_index": outcome["month"],
+                "obligation_id": outcome["obligation_id"],
+                "amount_due_quanta": outcome["amount_due"],
+                "amount_paid_quanta": outcome["amount_paid"],
+                "shortfall_quanta": outcome["shortfall"],
+            }
+            for rollout in rust["rollouts"]
+            for outcome in rollout["obligations"]
+        ],
+        key=lambda row: (row["rollout_index"], row["month_index"], row["obligation_id"]),
+    )
+    assert rust_outcomes == legacy_outcomes
+    assert [row["amount_due_quanta"] for row in rust_outcomes if row["obligation_id"] == "indexed-bill_m2"] == [
+        152,
+        126,
+    ]
+    assert [row["amount_due_quanta"] for row in rust_outcomes if row["obligation_id"] == "indexed-rent_m12"] == [
+        1_101,
+        1_251,
+    ]
+    assert all(rollout["failed_month"] is None for rollout in rust["rollouts"])
+    for rollout in rust["rollouts"]:
+        for entry in rollout["journal"]:
+            assert sum(posting["amount"] for posting in entry["postings"]) == 0
 
 
 def test_generated_benchmark_fixture_matches_at_seventeen_rollouts(tmp_path: Path) -> None:
