@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::{
-    allocation::{AllocationError, quantity_for_value, withdrawal_by_sleeve},
+    allocation::{AllocationError, deposit_by_sleeve, quantity_for_value, withdrawal_by_sleeve},
     fixture::{
         AccountBalance, AmountSpec, BondCashflowOutcome, BondSpec, BondState,
         CapitalImprovementOutcome, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture,
@@ -12,8 +12,8 @@ use crate::{
         MortgagePaymentOutcome, MortgageState, ObligationOutcome, PopulationOutput,
         PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
         PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput, RolloutSummary,
-        SeriesSpec, SimulationOutput, TaxAccrual, TaxLiabilityState, TaxPaymentOutcome,
-        TaxSettlementOutcome,
+        SecurityLotState, SeriesSpec, SimulationOutput, TaxAccrual, TaxLiabilityState,
+        TaxPaymentOutcome, TaxSettlementOutcome,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
@@ -281,11 +281,13 @@ pub enum SimulationError {
         account_id: String,
     },
     #[error(
-        "target-allocation policy for {agent_id}:{account_id} configures purchases, which the Rust sell-side slice does not yet support"
+        "target-allocation policy {cause_id_prefix:?} sleeve {sleeve_index} ran out of purchase slots: {configured} configured, {needed} needed. Raise `purchase_slots_per_sleeve` — every purchase needs its own lot, because it has its own basis and its own holding period."
     )]
-    UnsupportedTargetAllocationPurchases {
-        agent_id: String,
-        account_id: String,
+    TargetAllocationPurchaseSlotExhaustion {
+        cause_id_prefix: String,
+        sleeve_index: usize,
+        configured: u32,
+        needed: u32,
     },
     #[error(
         "target-allocation policy for {agent_id}:{account_id} configures drift rebalancing, which the Rust sell-side slice does not yet support"
@@ -315,6 +317,7 @@ pub enum SimulationError {
 #[derive(Clone, Debug)]
 struct LotState {
     spec: InitialLotSpec,
+    fifo_rank: i64,
     units_remaining: Quantity,
     basis_remaining: Money,
     basis_per_unit: Money,
@@ -327,6 +330,14 @@ struct PlannedDisposition {
     basis: Money,
     proceeds: Money,
     realized_gain: Money,
+}
+
+#[derive(Clone, Debug)]
+struct PendingAllocationBuy {
+    policy_index: usize,
+    sleeve_index: usize,
+    wanted_units: i64,
+    unit_price: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -996,6 +1007,33 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             });
         }
     }
+    for policy in &fixture.scenario.target_allocation_policies {
+        if policy.purchase_slots_per_sleeve == 0 {
+            continue;
+        }
+        let account_id = policy
+            .source_account_ids
+            .first()
+            .unwrap_or(&policy.account_id);
+        for sleeve in &policy.sleeves {
+            let pool = (
+                policy.agent_id.clone(),
+                account_id.clone(),
+                sleeve.asset_id.clone(),
+            );
+            if let Some(first_scale) = pool_scales.insert(pool, sleeve.quantity_scale)
+                && first_scale != sleeve.quantity_scale
+            {
+                return Err(SimulationError::MixedQuantityScale {
+                    agent_id: policy.agent_id.clone(),
+                    account_id: account_id.clone(),
+                    asset_id: sleeve.asset_id.clone(),
+                    first_scale,
+                    second_scale: sleeve.quantity_scale,
+                });
+            }
+        }
+    }
     let mut bonds = BTreeSet::new();
     for bond in &fixture.scenario.initial_bonds {
         validate_identifier("bond", &bond.bond_id)?;
@@ -1196,7 +1234,12 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
         }
     }
     let mut target_allocation_accounts = BTreeSet::new();
-    for policy in &fixture.scenario.target_allocation_policies {
+    for (policy_index, policy) in fixture
+        .scenario
+        .target_allocation_policies
+        .iter()
+        .enumerate()
+    {
         validate_identifier("target-allocation cause", &policy.cause_id_prefix)?;
         validate_account(
             &accounts,
@@ -1206,12 +1249,6 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
         if !target_allocation_accounts.insert((policy.agent_id.clone(), policy.account_id.clone()))
         {
             return Err(SimulationError::DuplicateTargetAllocationPolicy {
-                agent_id: policy.agent_id.clone(),
-                account_id: policy.account_id.clone(),
-            });
-        }
-        if policy.purchase_slots_per_sleeve != 0 {
-            return Err(SimulationError::UnsupportedTargetAllocationPurchases {
                 agent_id: policy.agent_id.clone(),
                 account_id: policy.account_id.clone(),
             });
@@ -1261,9 +1298,9 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             });
         }
         let mut assets = BTreeSet::new();
-        for sleeve in &policy.sleeves {
+        for (sleeve_index, sleeve) in policy.sleeves.iter().enumerate() {
             validate_identifier("target-allocation asset", &sleeve.asset_id)?;
-            if sleeve.weight <= 0 {
+            if sleeve.weight <= 0 || sleeve.quantity_scale <= 0 {
                 return Err(SimulationError::InvalidTargetAllocationPolicy {
                     agent_id: policy.agent_id.clone(),
                     account_id: policy.account_id.clone(),
@@ -1288,11 +1325,25 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
                         .copied()
                 })
                 .collect();
-            if scales.len() > 1 {
+            if scales.len() > 1
+                || scales
+                    .iter()
+                    .next()
+                    .is_some_and(|scale| *scale != sleeve.quantity_scale)
+            {
                 return Err(SimulationError::InvalidTargetAllocationPolicy {
                     agent_id: policy.agent_id.clone(),
                     account_id: policy.account_id.clone(),
                 });
+            }
+            for slot_index in 0..policy.purchase_slots_per_sleeve {
+                let lot_id = format!(
+                    "{}_buy_p{policy_index}_s{sleeve_index}_{slot_index}",
+                    policy.cause_id_prefix
+                );
+                if !lots.insert(lot_id.clone()) {
+                    return Err(SimulationError::DuplicateLot { lot_id });
+                }
             }
         }
     }
@@ -1841,6 +1892,25 @@ fn simulate_rollout(
         accounts.push(realized_gain_account(&lot.agent_id));
         accounts.push(AccountRef::new(&lot.agent_id, OPENING_EQUITY));
     }
+    for policy in &fixture.scenario.target_allocation_policies {
+        let account_id = policy
+            .source_account_ids
+            .first()
+            .unwrap_or(&policy.account_id);
+        accounts.push(realized_gain_account(&policy.agent_id));
+        for sleeve in &policy.sleeves {
+            accounts.push(asset_basis_account(&InitialLotSpec {
+                lot_id: String::new(),
+                agent_id: policy.agent_id.clone(),
+                account_id: account_id.clone(),
+                asset_id: sleeve.asset_id.clone(),
+                purchase_month: 0,
+                quantity_scale: sleeve.quantity_scale,
+                units: Quantity(0),
+                basis: Money(0),
+            }));
+        }
+    }
     for profile in &fixture.scenario.tax_profiles {
         accounts.push(tax_prepayment_account(&profile.agent_id));
         accounts.push(tax_authority_revenue_account(
@@ -1937,7 +2007,31 @@ fn simulate_rollout(
         }
     }
 
-    let mut lots = Vec::with_capacity(fixture.scenario.initial_lots.len());
+    let purchase_slot_count = fixture
+        .scenario
+        .target_allocation_policies
+        .iter()
+        .try_fold(0_usize, |total, policy| {
+            let slots = usize::try_from(policy.purchase_slots_per_sleeve).map_err(|_| {
+                ArithmeticError::Overflow {
+                    operation: "target-allocation purchase slot count",
+                }
+            })?;
+            let policy_slots =
+                policy
+                    .sleeves
+                    .len()
+                    .checked_mul(slots)
+                    .ok_or(ArithmeticError::Overflow {
+                        operation: "target-allocation purchase slot count",
+                    })?;
+            total
+                .checked_add(policy_slots)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "target-allocation purchase slot count",
+                })
+        })?;
+    let mut lots = Vec::with_capacity(fixture.scenario.initial_lots.len() + purchase_slot_count);
     for spec in &fixture.scenario.initial_lots {
         if spec.basis != Money(0) {
             recorder.apply_entry(
@@ -1960,6 +2054,7 @@ fn simulate_rollout(
         }
         lots.push(LotState {
             spec: spec.clone(),
+            fifo_rank: i64::from(spec.purchase_month),
             units_remaining: spec.units,
             basis_remaining: spec.basis,
             basis_per_unit: Money(
@@ -1973,6 +2068,63 @@ fn simulate_rollout(
             ),
         });
     }
+    let mut purchase_slot_rank = i64::from(fixture.scenario.horizon_months)
+        .checked_add(
+            i64::try_from(fixture.scenario.initial_lots.len()).map_err(|_| {
+                ArithmeticError::Overflow {
+                    operation: "target-allocation purchase slot rank",
+                }
+            })?,
+        )
+        .ok_or(ArithmeticError::Overflow {
+            operation: "target-allocation purchase slot rank",
+        })?;
+    for (policy_index, policy) in fixture
+        .scenario
+        .target_allocation_policies
+        .iter()
+        .enumerate()
+    {
+        let account_id = policy
+            .source_account_ids
+            .first()
+            .unwrap_or(&policy.account_id);
+        for (sleeve_index, sleeve) in policy.sleeves.iter().enumerate() {
+            for slot_index in 0..policy.purchase_slots_per_sleeve {
+                lots.push(LotState {
+                    spec: InitialLotSpec {
+                        lot_id: format!(
+                            "{}_buy_p{policy_index}_s{sleeve_index}_{slot_index}",
+                            policy.cause_id_prefix
+                        ),
+                        agent_id: policy.agent_id.clone(),
+                        account_id: account_id.clone(),
+                        asset_id: sleeve.asset_id.clone(),
+                        purchase_month: 0,
+                        quantity_scale: sleeve.quantity_scale,
+                        units: Quantity(0),
+                        basis: Money(0),
+                    },
+                    fifo_rank: purchase_slot_rank,
+                    units_remaining: Quantity(0),
+                    basis_remaining: Money(0),
+                    basis_per_unit: Money(0),
+                });
+                purchase_slot_rank =
+                    purchase_slot_rank
+                        .checked_add(1)
+                        .ok_or(ArithmeticError::Overflow {
+                            operation: "target-allocation purchase slot rank",
+                        })?;
+            }
+        }
+    }
+    let mut target_allocation_buy_count: Vec<Vec<u32>> = fixture
+        .scenario
+        .target_allocation_policies
+        .iter()
+        .map(|policy| vec![0; policy.sleeves.len()])
+        .collect();
     let mut properties = Vec::<PropertyState>::new();
     let mut mortgages = Vec::<MortgageState>::new();
     let mut tax_liabilities = Vec::<TaxLiabilityState>::new();
@@ -1984,6 +2136,7 @@ fn simulate_rollout(
             rollout_id,
             0,
             &ledger,
+            &lots,
             &properties,
             &mortgages,
             &tax_liabilities,
@@ -1998,6 +2151,7 @@ fn simulate_rollout(
                     rollout_id,
                     month + 1,
                     &ledger,
+                    &lots,
                     &properties,
                     &mortgages,
                     &tax_liabilities,
@@ -2107,7 +2261,7 @@ fn simulate_rollout(
             month,
         )?);
         active_obligations.extend(tax_obligations(fixture, &tax_liabilities, month)?);
-        execute_target_allocation_sales(
+        let target_allocation_buys = execute_target_allocation_sales(
             fixture,
             rollout_id,
             &mut ledger,
@@ -2117,7 +2271,7 @@ fn simulate_rollout(
             month,
             &active_obligations,
         )?;
-        if settle_obligations(
+        let settlement_failed = settle_obligations(
             fixture,
             &mut ledger,
             &mut recorder,
@@ -2127,8 +2281,19 @@ fn simulate_rollout(
             &mut tax_liabilities,
             month,
             &active_obligations,
-        )? {
+        )?;
+        if settlement_failed {
             failed_month = Some(month);
+        } else {
+            execute_target_allocation_buys(
+                fixture,
+                &mut ledger,
+                &mut recorder,
+                &mut lots,
+                &mut target_allocation_buy_count,
+                month,
+                &target_allocation_buys,
+            )?;
         }
         if failed_month.is_none() {
             accrue_property_depreciation(&mut tax_facts, &mut properties)?;
@@ -2150,6 +2315,7 @@ fn simulate_rollout(
                 rollout_id,
                 month + 1,
                 &ledger,
+                &lots,
                 &properties,
                 &mortgages,
                 &tax_liabilities,
@@ -3742,12 +3908,7 @@ fn execute_sale(
             asset_id: sale.asset_id.clone(),
         });
     }
-    candidates.sort_by_key(|index| {
-        (
-            lots[*index].spec.purchase_month,
-            lots[*index].spec.lot_id.clone(),
-        )
-    });
+    candidates.sort_by_key(|index| (lots[*index].fifo_rank, lots[*index].spec.lot_id.clone()));
     let available = candidates.iter().try_fold(0_i64, |total, index| {
         total
             .checked_add(lots[*index].units_remaining.0)
@@ -3858,8 +4019,14 @@ fn execute_target_allocation_sales(
     tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
     month: u32,
     obligations: &[ActiveObligation],
-) -> Result<(), SimulationError> {
-    for policy in &fixture.scenario.target_allocation_policies {
+) -> Result<Vec<PendingAllocationBuy>, SimulationError> {
+    let mut pending_buys = Vec::new();
+    for (policy_index, policy) in fixture
+        .scenario
+        .target_allocation_policies
+        .iter()
+        .enumerate()
+    {
         let cash_account = AccountRef::new(&policy.agent_id, &policy.account_id);
         let hard_demand = obligations
             .iter()
@@ -3876,9 +4043,11 @@ fn execute_target_allocation_sales(
         } else {
             Money(0)
         };
-        if raise.0 <= 0 {
-            continue;
-        }
+        let invest = if projected.0 > ceiling.0 {
+            projected.checked_sub(floor)?
+        } else {
+            Money(0)
+        };
 
         let source_accounts: Vec<&str> = if policy.source_account_ids.is_empty() {
             vec![policy.account_id.as_str()]
@@ -3940,7 +4109,24 @@ fn execute_target_allocation_sales(
         }
         let weights: Vec<_> = policy.sleeves.iter().map(|sleeve| sleeve.weight).collect();
         let sleeve_withdrawals = withdrawal_by_sleeve(&values, &weights, raise.0)?;
+        let sleeve_deposits = deposit_by_sleeve(&values, &weights, invest.0)?;
         for (sleeve_index, sleeve) in policy.sleeves.iter().enumerate() {
+            if policy.purchase_slots_per_sleeve > 0 {
+                let wanted_units = quantity_for_value(
+                    sleeve_deposits[sleeve_index],
+                    prices[sleeve_index],
+                    sleeve.quantity_scale,
+                    false,
+                )?;
+                if wanted_units > 0 {
+                    pending_buys.push(PendingAllocationBuy {
+                        policy_index,
+                        sleeve_index,
+                        wanted_units,
+                        unit_price: prices[sleeve_index],
+                    });
+                }
+            }
             let requested = quantity_for_value(
                 sleeve_withdrawals[sleeve_index],
                 prices[sleeve_index],
@@ -3972,10 +4158,7 @@ fn execute_target_allocation_sales(
                     .map(|(index, _)| index)
                     .collect();
                 candidates.sort_by_key(|index| {
-                    (
-                        lots[*index].spec.purchase_month,
-                        lots[*index].spec.lot_id.clone(),
-                    )
+                    (lots[*index].fifo_rank, lots[*index].spec.lot_id.clone())
                 });
                 let available = candidates.iter().try_fold(0_i64, |sum, index| {
                     sum.checked_add(lots[*index].units_remaining.0).ok_or(
@@ -4004,6 +4187,90 @@ fn execute_target_allocation_sales(
                 remaining -= target;
             }
         }
+    }
+    Ok(pending_buys)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_target_allocation_buys(
+    fixture: &Fixture,
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    lots: &mut [LotState],
+    buy_count: &mut [Vec<u32>],
+    month: u32,
+    pending_buys: &[PendingAllocationBuy],
+) -> Result<(), SimulationError> {
+    for order in pending_buys {
+        let policy = &fixture.scenario.target_allocation_policies[order.policy_index];
+        let sleeve = &policy.sleeves[order.sleeve_index];
+        let cash_account = AccountRef::new(&policy.agent_id, &policy.account_id);
+        let cash = ledger.balance(&cash_account)?.0.max(0);
+        let affordable = quantity_for_value(cash, order.unit_price, sleeve.quantity_scale, false)?;
+        let units = order.wanted_units.min(affordable);
+        if units <= 0 {
+            continue;
+        }
+
+        let used = buy_count[order.policy_index][order.sleeve_index];
+        if used >= policy.purchase_slots_per_sleeve {
+            return Err(SimulationError::TargetAllocationPurchaseSlotExhaustion {
+                cause_id_prefix: policy.cause_id_prefix.clone(),
+                sleeve_index: order.sleeve_index,
+                configured: policy.purchase_slots_per_sleeve,
+                needed: used.checked_add(1).ok_or(ArithmeticError::Overflow {
+                    operation: "target-allocation purchase count",
+                })?,
+            });
+        }
+        let lot_id = format!(
+            "{}_buy_p{}_s{}_{}",
+            policy.cause_id_prefix, order.policy_index, order.sleeve_index, used
+        );
+        let lot_index = lots
+            .iter()
+            .position(|lot| lot.spec.lot_id == lot_id)
+            .expect("validated purchase slot must be preallocated");
+        let spent = Money(mul_div_round_half_up(
+            units,
+            order.unit_price,
+            sleeve.quantity_scale,
+            "target-allocation purchase value",
+        )?);
+        let cause_id = format!(
+            "{}_buy_m{month}_security:{}",
+            policy.cause_id_prefix, sleeve.asset_id
+        );
+        recorder.apply_entry(
+            ledger,
+            JournalEntry {
+                month,
+                cause_id,
+                postings: vec![
+                    Posting {
+                        account: cash_account,
+                        amount: spent.checked_neg()?,
+                    },
+                    Posting {
+                        account: asset_basis_account(&lots[lot_index].spec),
+                        amount: spent,
+                    },
+                ],
+            },
+        )?;
+        let lot = &mut lots[lot_index];
+        lot.spec.purchase_month = i32::try_from(month).map_err(|_| ArithmeticError::Overflow {
+            operation: "target-allocation purchase month",
+        })?;
+        lot.spec.units = Quantity(units);
+        lot.spec.basis = spent;
+        lot.units_remaining = Quantity(units);
+        lot.basis_remaining = spent;
+        lot.basis_per_unit = Money(order.unit_price);
+        buy_count[order.policy_index][order.sleeve_index] =
+            used.checked_add(1).ok_or(ArithmeticError::Overflow {
+                operation: "target-allocation purchase count",
+            })?;
     }
     Ok(())
 }
@@ -4430,6 +4697,7 @@ fn month_output(
     rollout_id: u32,
     month: u32,
     ledger: &Ledger,
+    lots: &[LotState],
     properties: &[PropertyState],
     mortgages: &[MortgageState],
     tax_liabilities: &[TaxLiabilityState],
@@ -4438,12 +4706,37 @@ fn month_output(
     Ok(MonthOutput {
         month,
         balances: account_balances(ledger, failed),
+        lots: security_lot_states(lots, failed),
         bonds: bond_states(fixture, rollout_id, month, failed)?,
         properties: property_states(properties, failed),
         mortgages: mortgage_states(mortgages, failed),
         tax_liabilities: tax_liability_states(tax_liabilities, failed),
         failed,
     })
+}
+
+fn security_lot_states(lots: &[LotState], failed: bool) -> Vec<SecurityLotState> {
+    lots.iter()
+        .map(|lot| SecurityLotState {
+            lot_id: lot.spec.lot_id.clone(),
+            agent_id: lot.spec.agent_id.clone(),
+            account_id: lot.spec.account_id.clone(),
+            asset_id: format!("security:{}", lot.spec.asset_id),
+            purchase_month: lot.spec.purchase_month,
+            quantity_scale: lot.spec.quantity_scale,
+            units_remaining: if failed {
+                Quantity(0)
+            } else {
+                lot.units_remaining
+            },
+            basis_remaining: if failed {
+                Money(0)
+            } else {
+                lot.basis_remaining
+            },
+            cost_basis_per_unit: lot.basis_per_unit,
+        })
+        .collect()
 }
 
 fn tax_liability_states(

@@ -19,6 +19,7 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.fixed_point import quantity_scale_for_asset
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -78,6 +79,17 @@ def _amount(spec: int | dict[str, Any], quantum: str) -> Decimal | FixedAmount |
             )
         case kind:
             raise ValueError(f"unsupported amount kind {kind!r}")
+
+
+def _sleeve_target(spec: dict[str, Any]) -> SleeveTarget:
+    asset = SecurityKey(symbol=SecuritySymbol(spec["asset_id"]))
+    expected_scale = quantity_scale_for_asset(asset)
+    if spec["quantity_scale"] != expected_scale:
+        raise ValueError(
+            f"target-allocation sleeve {spec['asset_id']!r} uses quantity scale {spec['quantity_scale']}, "
+            f"but the canonical Python asset scale is {expected_scale}"
+        )
+    return SleeveTarget(asset=asset, weight=spec["weight"])
 
 
 def _ppb_float(value: int, *, context: str) -> float:
@@ -360,10 +372,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 agent_id=spec["agent_id"],
                 account_id=spec["account_id"],
                 source_account_ids=tuple(spec.get("source_account_ids", [])),
-                sleeves=[
-                    SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol(sleeve["asset_id"])), weight=sleeve["weight"])
-                    for sleeve in spec["sleeves"]
-                ],
+                sleeves=[_sleeve_target(sleeve) for sleeve in spec["sleeves"]],
                 cash_floor=_amount(spec.get("cash_floor", 0), quantum),
                 cash_ceiling=_amount(spec["cash_ceiling"], quantum),
                 cause_id_prefix=spec.get("cause_id_prefix", "allocation_sale"),

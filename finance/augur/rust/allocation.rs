@@ -322,6 +322,15 @@ mod tests {
             deposit_by_sleeve(&[90_000, 10_000], &[1, 1], 90_000).unwrap(),
             [5_000, 85_000]
         );
+        assert_eq!(
+            deposit_by_sleeve(&[5_000, 5_000], &[3, 1], 2_000).unwrap(),
+            [2_000, 0]
+        );
+        for wanted in [1, 7, 333, 99_991] {
+            let given = deposit_by_sleeve(&[1_000_003, 700_001, 3], &[5, 3, 1], wanted).unwrap();
+            assert_eq!(given.iter().sum::<i64>(), wanted);
+            assert!(given.iter().all(|amount| *amount >= 0));
+        }
     }
 
     #[test]

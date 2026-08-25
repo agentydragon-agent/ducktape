@@ -6,7 +6,7 @@ use crate::{
     tax::{JurisdictionLevel, TaxRules},
 };
 
-pub const FIXTURE_SCHEMA_VERSION: u32 = 1;
+pub const FIXTURE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -353,6 +353,7 @@ pub struct TargetAllocationPolicySpec {
 pub struct SleeveTargetSpec {
     pub asset_id: String,
     pub weight: i64,
+    pub quantity_scale: i64,
 }
 
 fn default_allocation_cause_id_prefix() -> String {
@@ -490,11 +491,25 @@ pub struct AccountBalance {
 pub struct MonthOutput {
     pub month: u32,
     pub balances: Vec<AccountBalance>,
+    pub lots: Vec<SecurityLotState>,
     pub bonds: Vec<BondState>,
     pub properties: Vec<PropertyState>,
     pub mortgages: Vec<MortgageState>,
     pub tax_liabilities: Vec<TaxLiabilityState>,
     pub failed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SecurityLotState {
+    pub lot_id: String,
+    pub agent_id: String,
+    pub account_id: String,
+    pub asset_id: String,
+    pub purchase_month: i32,
+    pub quantity_scale: i64,
+    pub units_remaining: Quantity,
+    pub basis_remaining: Money,
+    pub cost_basis_per_unit: Money,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

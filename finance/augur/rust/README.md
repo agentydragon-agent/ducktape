@@ -99,24 +99,29 @@ interest. Each slice is paid, journaled, attributed, and routed through the
 jurisdiction's interest-exemption policy independently; the slice sum is the
 fund's cash payout.
 
-The current target-allocation boundary deliberately accepts sell-only policies:
-`purchase_slots_per_sleeve` must be zero and drift-triggered rebalancing must be
-unset; each unsupported field has a specific validation error. It evaluates the
-band after all monthly obligations have accrued, sells before the grouped
-funding check, and therefore makes an unpaid obligation mean the configured
-portfolio genuinely could not fund it. Selected traces expose the source and
-proceeds accounts on every lot disposition and the ordered sleeve identities
-attempted for every matching obligation. Buy slots and the post-settlement
-purchase leg are the next slice rather than silently ignored.
+Target allocation evaluates the band after all monthly obligations have
+accrued, sells before the grouped funding check, and therefore makes an unpaid
+obligation mean the configured portfolio genuinely could not fund it. Buy
+orders are decided from that same pre-settlement observation but execute only
+after obligations settle, with a floor affordability clamp against then-current
+cash. Each purchase fills the next preallocated per-sleeve lot slot, records the
+rollout's observed price and acquisition month, and aborts the run rather than
+silently dropping a purchase when capacity is exhausted. Purchased lots join
+the first configured source-account pool for later FIFO sales. Selected traces
+expose the source and proceeds accounts on every lot disposition and the ordered
+sleeve identities attempted for every matching obligation. Drift-triggered
+rebalancing remains explicitly unsupported. Sleeve quantity scales are explicit
+fixture integers and the adapter verifies that each one matches the canonical
+Python asset scale before differential execution.
 
 Still missing before replacement is plausible:
 
 - broader modeled tax facts and complete deduction policy;
-- policy-driven purchases;
+- optional drift-triggered rebalancing;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax/SALT mixed-use splitting, mortgage principal-cap policies, and
   §121 primary-residence exclusion;
-- target-allocation purchases/rebalancing, broader liquidity policy, TLH, and
+- optional target-allocation rebalancing, broader liquidity policy, TLH, and
   private equity;
 - complete selected-rollout causal trace parity for those domains;
 - Python extension/Arrow output integration.
