@@ -29,8 +29,9 @@ persistent thread — arguably cleaner than `agent_core`'s in-loop handler injec
 
 ## Scope / blast radius
 
-`agent_core` has two consumers: **props** and `x/editor_agent` (`x/editor_agent/host/agent_runner.py`).
-Within props, the live (non-test, non-specimen) surface is small and concentrated — **7 files**:
+At the time of this evaluation, `agent_core` had two consumers: **props** and a
+now-retired experimental editor agent. Within props, the live (non-test,
+non-specimen) surface was small and concentrated — **7 files**:
 
 | File                                                      | What it uses                                                                                                            |
 | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -147,8 +148,9 @@ So none of props' control behaviors is a hard blocker — they're middleware shi
    force `tool_choice`, function middleware for terminate-on-`submit`/`report_failure` + size caps,
    and a chat-middleware (or custom client) wrap for the proxy/budget.
 2. **Adapter seam**: introduce a thin props-side interface (`build_agent(...) -> run()`), implement
-   it on MAF, and keep the agents coded against the seam — so `grader`/`critic_dev`/`x/editor_agent`
-   migrate independently and we can A/B against the `agent_core` implementation.
+   it on MAF, and keep the agents coded against the seam — so `grader` and
+   `critic_dev` migrate independently and we can A/B against the `agent_core`
+   implementation.
 3. **`grader`** next (async `pg_notify` injection → chat middleware mutating `messages`).
 4. **`critic_dev`** + compaction last (depends on `_compaction` maturity).
 5. Replace `agent_core.testing` usage with a MAF mock chat client as each agent moves.
@@ -171,8 +173,6 @@ z.ai path** (the union-tool-input escape hatch from the GLM-4.6 work — see
   keep a custom compaction provider.
 - Does MAF ship a first-class **Anthropic / non-OpenAI** chat client (for the z.ai Anthropic shape),
   or do we wrap one?
-- `x/editor_agent` is the other `agent_core` consumer — decide whether it migrates in lockstep or
-  `agent_core` lingers for it.
 
 ## Alternatives (if MAF doesn't fit)
 

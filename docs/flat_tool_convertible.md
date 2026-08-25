@@ -4,12 +4,10 @@ Tools using `.flat_model()` whose input models only have basic typed fields with
 `Field(description=...)` and defaults. These could be plain FastMCP `@mcp.tool`
 functions with `Annotated[T, "description"]` parameters instead.
 
-## Convertible (28 tools)
+## Convertible (26 tools)
 
 | File                                         | Tool                       | Input model              |
 | -------------------------------------------- | -------------------------- | ------------------------ |
-| `x/editor_agent/host/submit_server.py`       | `submit_success`           | `SubmitSuccessInput`     |
-| `x/editor_agent/host/submit_server.py`       | `submit_failure`           | `SubmitFailureInput`     |
 | `git_commit_ai/agent_backend.py`             | `submit_commit_message`    | `CommitMessage`          |
 | `mcp_infra/compositor/resources_server.py`   | `list_resources`           | none (zero-arg)          |
 | `mcp_infra/compositor/resources_server.py`   | `list_templates`           | none (zero-arg)          |

@@ -655,8 +655,8 @@ status relevant to this project specifically:
 - **Claude Code / Codex CLI wrappers** (`siteboon/claudecodeui`, `agent-sandbox` +
   `agentapi`): ✓, inherited for free from the wrapped CLI's own Bash-tool
   truncation — the survey's preferred axis for exactly this reason.
-- **`x/agent_server`, `agent_core`, `x/editor_agent`** (in-repo experimental agent
-  loops): **explicitly ruled out as reuse candidates by the user** — if a
-  bespoke harness ever gets written for this project, it should not be based on
-  any of them. Consequently their C9 behavior is moot and was not audited; do
-  not treat "unaudited" here as "pending evaluation."
+- **`x/agent_server` and `agent_core`** (in-repo experimental agent loops):
+  **explicitly ruled out as reuse candidates by the user** — if a bespoke
+  harness ever gets written for this project, it should not be based on either.
+  Consequently their C9 behavior is moot and was not audited; do not treat
+  "unaudited" here as "pending evaluation."
