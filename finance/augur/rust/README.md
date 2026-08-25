@@ -49,14 +49,20 @@ The differential suite currently proves exact integer agreement for:
 - insufficient-cash failure month and state freezing;
 - federal and California ordinary-income year-end tax accruals;
 - federal long-term-capital-gain stacking and tax accrual;
+- quarterly estimated-tax payments, aggregate safe-harbor Q4 computation,
+  January true-up, tax-liability settlement, and funded/unfunded tax-payment
+  events;
 - generated benchmark fixtures at 17 rollouts.
 
-The Rust ledger also records tax expense/liability accrual entries and preserves
-capital-loss carryforward between tax years.
+The Rust ledger also records tax expense/liability accrual entries, tax
+prepayments and settlement, and preserves capital-loss carryforward between tax
+years. Monthly and terminal output retain jurisdiction-level tax-liability
+state; selected traces expose tax-payment and tax-settlement records.
 
 Still missing before replacement is plausible:
 
-- tax payment/safe-harbor/true-up scheduling and broader modeled tax facts;
+- broader modeled tax facts, issuer-jurisdiction routing, and complete
+  deduction policy;
 - policy-driven purchases and taxable distribution character;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax/SALT mixed-use splitting, mortgage principal-cap policies, and

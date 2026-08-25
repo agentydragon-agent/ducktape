@@ -340,6 +340,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 tax_authority_agent_id=spec["tax_authority_agent_id"],
                 payment_account_id=spec.get("payment_account_id", "checking"),
                 tax_authority_account_id=spec.get("tax_authority_account_id", "checking"),
+                prior_year_tax=_money(spec.get("prior_year_tax", 0), quantum),
             )
             for spec in scenario_spec.get("tax_profiles", [])
         ],

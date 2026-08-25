@@ -203,6 +203,8 @@ pub struct TaxProfileSpec {
     pub payment_account_id: String,
     #[serde(default = "default_account_id")]
     pub tax_authority_account_id: String,
+    #[serde(default)]
+    pub prior_year_tax: Money,
     pub jurisdictions: Vec<TaxRules>,
 }
 
@@ -344,7 +346,17 @@ pub struct MonthOutput {
     pub balances: Vec<AccountBalance>,
     pub properties: Vec<PropertyState>,
     pub mortgages: Vec<MortgageState>,
+    pub tax_liabilities: Vec<TaxLiabilityState>,
     pub failed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TaxLiabilityState {
+    pub agent_id: String,
+    pub jurisdiction_id: String,
+    pub tax_year_end_month: u32,
+    pub amount_owed: Money,
+    pub active: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -427,6 +439,26 @@ pub struct TaxAccrual {
     pub section_1250_tax: Money,
     pub total_tax: Money,
     pub capital_loss_carryforward: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TaxPaymentOutcome {
+    pub month: u32,
+    pub cause_id: String,
+    pub agent_id: String,
+    pub obligation_type: String,
+    pub amount_due: Money,
+    pub amount_paid: Money,
+    pub shortfall: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TaxSettlementOutcome {
+    pub month: u32,
+    pub cause_id: String,
+    pub agent_id: String,
+    pub tax_year_end_month: u32,
+    pub amount: Money,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -520,6 +552,8 @@ pub struct RolloutOutput {
     pub dispositions: Vec<LotDisposition>,
     pub obligations: Vec<ObligationOutcome>,
     pub tax_accruals: Vec<TaxAccrual>,
+    pub tax_payments: Vec<TaxPaymentOutcome>,
+    pub tax_settlements: Vec<TaxSettlementOutcome>,
     pub distributions: Vec<DistributionOutcome>,
     pub property_purchases: Vec<PropertyPurchaseOutcome>,
     pub property_rented_fraction_events: Vec<PropertyRentedFractionOutcome>,
@@ -542,9 +576,12 @@ pub struct RolloutSummary {
     pub ending_balances: Vec<AccountBalance>,
     pub ending_properties: Vec<PropertyState>,
     pub ending_mortgages: Vec<MortgageState>,
+    pub ending_tax_liabilities: Vec<TaxLiabilityState>,
     pub journal_entry_count: u64,
     pub disposition_count: u64,
     pub tax_accrual_count: u64,
+    pub tax_payment_count: u64,
+    pub tax_settlement_count: u64,
     pub distribution_count: u64,
     pub property_purchase_count: u64,
     pub property_rented_fraction_event_count: u64,

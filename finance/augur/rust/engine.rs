@@ -10,7 +10,7 @@ use crate::{
         MortgagePaymentOutcome, MortgageState, ObligationOutcome, PopulationOutput,
         PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
         PropertySaleSpec, PropertyState, RolloutOutput, RolloutSummary, SeriesSpec,
-        SimulationOutput, TaxAccrual,
+        SimulationOutput, TaxAccrual, TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
@@ -214,6 +214,13 @@ struct PlannedDisposition {
 #[derive(Clone, Debug)]
 enum ObligationEffect {
     None,
+    TaxPayment {
+        profile_index: usize,
+    },
+    TaxTrueUp {
+        profile_index: usize,
+        tax_year_end_month: u32,
+    },
     Mortgage {
         mortgage_index: usize,
         interest: Money,
@@ -223,7 +230,7 @@ enum ObligationEffect {
 
 #[derive(Clone, Debug)]
 struct ActiveObligation {
-    authored_id: String,
+    cause_id: String,
     obligation_type: String,
     from: AccountRef,
     to: AccountRef,
@@ -239,6 +246,8 @@ struct Recorder {
     dispositions: Vec<LotDisposition>,
     obligations: Vec<ObligationOutcome>,
     tax_accruals: Vec<TaxAccrual>,
+    tax_payments: Vec<TaxPaymentOutcome>,
+    tax_settlements: Vec<TaxSettlementOutcome>,
     distributions: Vec<DistributionOutcome>,
     property_purchases: Vec<PropertyPurchaseOutcome>,
     property_rented_fraction_events: Vec<PropertyRentedFractionOutcome>,
@@ -249,6 +258,8 @@ struct Recorder {
     journal_entry_count: u64,
     disposition_count: u64,
     tax_accrual_count: u64,
+    tax_payment_count: u64,
+    tax_settlement_count: u64,
     distribution_count: u64,
     property_purchase_count: u64,
     property_rented_fraction_event_count: u64,
@@ -266,6 +277,8 @@ impl Recorder {
             dispositions: Vec::new(),
             obligations: Vec::new(),
             tax_accruals: Vec::new(),
+            tax_payments: Vec::new(),
+            tax_settlements: Vec::new(),
             distributions: Vec::new(),
             property_purchases: Vec::new(),
             property_rented_fraction_events: Vec::new(),
@@ -276,6 +289,8 @@ impl Recorder {
             journal_entry_count: 0,
             disposition_count: 0,
             tax_accrual_count: 0,
+            tax_payment_count: 0,
+            tax_settlement_count: 0,
             distribution_count: 0,
             property_purchase_count: 0,
             property_rented_fraction_event_count: 0,
@@ -331,6 +346,35 @@ impl Recorder {
                 })?;
         if self.capture_trace {
             self.tax_accruals.push(accrual);
+        }
+        Ok(())
+    }
+
+    fn record_tax_payment(&mut self, payment: TaxPaymentOutcome) -> Result<(), SimulationError> {
+        self.tax_payment_count =
+            self.tax_payment_count
+                .checked_add(1)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "tax payment count",
+                })?;
+        if self.capture_trace {
+            self.tax_payments.push(payment);
+        }
+        Ok(())
+    }
+
+    fn record_tax_settlement(
+        &mut self,
+        settlement: TaxSettlementOutcome,
+    ) -> Result<(), SimulationError> {
+        self.tax_settlement_count =
+            self.tax_settlement_count
+                .checked_add(1)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "tax settlement count",
+                })?;
+        if self.capture_trace {
+            self.tax_settlements.push(settlement);
         }
         Ok(())
     }
@@ -445,6 +489,7 @@ struct RolloutComputation {
     ending_balances: Vec<AccountBalance>,
     ending_properties: Vec<PropertyState>,
     ending_mortgages: Vec<MortgageState>,
+    ending_tax_liabilities: Vec<TaxLiabilityState>,
     recorder: Recorder,
     failed_month: Option<u32>,
 }
@@ -458,6 +503,8 @@ impl RolloutComputation {
             dispositions: self.recorder.dispositions,
             obligations: self.recorder.obligations,
             tax_accruals: self.recorder.tax_accruals,
+            tax_payments: self.recorder.tax_payments,
+            tax_settlements: self.recorder.tax_settlements,
             distributions: self.recorder.distributions,
             property_purchases: self.recorder.property_purchases,
             property_rented_fraction_events: self.recorder.property_rented_fraction_events,
@@ -475,9 +522,12 @@ impl RolloutComputation {
             ending_balances: self.ending_balances,
             ending_properties: self.ending_properties,
             ending_mortgages: self.ending_mortgages,
+            ending_tax_liabilities: self.ending_tax_liabilities,
             journal_entry_count: self.recorder.journal_entry_count,
             disposition_count: self.recorder.disposition_count,
             tax_accrual_count: self.recorder.tax_accrual_count,
+            tax_payment_count: self.recorder.tax_payment_count,
+            tax_settlement_count: self.recorder.tax_settlement_count,
             distribution_count: self.recorder.distribution_count,
             property_purchase_count: self.recorder.property_purchase_count,
             property_rented_fraction_event_count: self
@@ -825,6 +875,13 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
     }
     let mut tax_jurisdictions = BTreeSet::new();
     for profile in &fixture.scenario.tax_profiles {
+        if profile.prior_year_tax.0 < 0 {
+            return Err(SimulationError::InvalidAmount {
+                kind: "tax profile prior-year tax",
+                cause_id: profile.agent_id.clone(),
+                amount: profile.prior_year_tax.0,
+            });
+        }
         validate_identifier("tax profile agent", &profile.agent_id)?;
         if !agents.contains(&profile.agent_id) {
             return Err(SimulationError::UnknownAccountReference {
@@ -1270,6 +1327,10 @@ fn simulate_rollout(
         accounts.push(AccountRef::new(&lot.agent_id, OPENING_EQUITY));
     }
     for profile in &fixture.scenario.tax_profiles {
+        accounts.push(tax_prepayment_account(&profile.agent_id));
+        accounts.push(tax_authority_revenue_account(
+            &profile.tax_authority_agent_id,
+        ));
         for rules in &profile.jurisdictions {
             accounts.push(tax_expense_account(
                 &profile.agent_id,
@@ -1391,10 +1452,18 @@ fn simulate_rollout(
 
     let mut properties = Vec::<PropertyState>::new();
     let mut mortgages = Vec::<MortgageState>::new();
+    let mut tax_liabilities = Vec::<TaxLiabilityState>::new();
 
     let mut failed_month = None;
     if recorder.capture_trace {
-        recorder.record_month(month_output(0, &ledger, &properties, &mortgages, false));
+        recorder.record_month(month_output(
+            0,
+            &ledger,
+            &properties,
+            &mortgages,
+            &tax_liabilities,
+            false,
+        ));
     }
     for month in 0..fixture.scenario.horizon_months {
         if failed_month.is_some() {
@@ -1404,6 +1473,7 @@ fn simulate_rollout(
                     &ledger,
                     &properties,
                     &mortgages,
+                    &tax_liabilities,
                     true,
                 ));
             }
@@ -1465,7 +1535,7 @@ fn simulate_rollout(
             .iter()
             .filter(|obligation| obligation.month == month)
             .map(|obligation| ActiveObligation {
-                authored_id: obligation.obligation_id.clone(),
+                cause_id: format!("{}_m{month}", obligation.obligation_id),
                 obligation_type: obligation.obligation_type.clone(),
                 from: obligation.from.clone(),
                 to: obligation.to.clone(),
@@ -1482,7 +1552,7 @@ fn simulate_rollout(
                             && obligation.end_month.is_none_or(|end| month <= end)
                     })
                     .map(|obligation| ActiveObligation {
-                        authored_id: obligation.obligation_id.clone(),
+                        cause_id: format!("{}_m{month}", obligation.obligation_id),
                         obligation_type: obligation.obligation_type.clone(),
                         from: obligation.from.clone(),
                         to: obligation.to.clone(),
@@ -1496,6 +1566,7 @@ fn simulate_rollout(
                 &mortgages,
                 month,
             )?)
+            .chain(tax_obligations(fixture, &tax_liabilities, month)?)
             .collect();
         if settle_obligations(
             fixture,
@@ -1504,6 +1575,7 @@ fn simulate_rollout(
             &mut tax_facts,
             &properties,
             &mut mortgages,
+            &mut tax_liabilities,
             month,
             &active_obligations,
         )? {
@@ -1513,7 +1585,14 @@ fn simulate_rollout(
             accrue_property_depreciation(&mut tax_facts, &mut properties)?;
         }
         if failed_month.is_none() && (month + 1) % 12 == 0 {
-            accrue_year_end_taxes(fixture, &mut ledger, &mut recorder, &mut tax_facts, month)?;
+            accrue_year_end_taxes(
+                fixture,
+                &mut ledger,
+                &mut recorder,
+                &mut tax_facts,
+                &mut tax_liabilities,
+                month,
+            )?;
             reset_property_tax_year_state(&mut properties, &mut mortgages);
         }
         if recorder.capture_trace {
@@ -1522,6 +1601,7 @@ fn simulate_rollout(
                 &ledger,
                 &properties,
                 &mortgages,
+                &tax_liabilities,
                 failed_month.is_some(),
             ));
         }
@@ -1532,6 +1612,7 @@ fn simulate_rollout(
         ending_balances: account_balances(&ledger, failed_month.is_some()),
         ending_properties: property_states(&properties, failed_month.is_some()),
         ending_mortgages: mortgage_states(&mortgages, failed_month.is_some()),
+        ending_tax_liabilities: tax_liability_states(&tax_liabilities, failed_month.is_some()),
         recorder,
         failed_month,
     })
@@ -2193,7 +2274,7 @@ fn property_obligations(
         );
         let principal = Money((due.0 - interest.0).max(0).min(mortgage.principal.0));
         obligations.push(ActiveObligation {
-            authored_id: format!("{}_payment", mortgage.liability_id),
+            cause_id: format!("{}_payment_m{month}", mortgage.liability_id),
             obligation_type: "mortgage_payment".into(),
             from: AccountRef::new(&mortgage.agent_id, &mortgage.payment_account_id),
             to: AccountRef::new(
@@ -2258,7 +2339,7 @@ fn property_obligations(
             })?,
         );
         obligations.push(ActiveObligation {
-            authored_id: format!("{}_property_tax", policy.property_id),
+            cause_id: format!("{}_property_tax_m{month}", policy.property_id),
             obligation_type: "property_tax".into(),
             from: AccountRef::new(&policy.owner_agent_id, &policy.from_account_id),
             to: AccountRef::new(
@@ -2270,6 +2351,113 @@ fn property_obligations(
         });
     }
     Ok(obligations)
+}
+
+fn tax_obligations(
+    fixture: &Fixture,
+    tax_liabilities: &[TaxLiabilityState],
+    month: u32,
+) -> Result<Vec<ActiveObligation>, SimulationError> {
+    let Some(quarter) = estimated_tax_quarter(month) else {
+        return Ok(Vec::new());
+    };
+    let mut obligations = Vec::new();
+    if quarter <= 3 {
+        for (profile_index, profile) in fixture.scenario.tax_profiles.iter().enumerate() {
+            if profile.prior_year_tax.0 <= 0 {
+                continue;
+            }
+            let amount_due = Money(mul_div_round_half_up(
+                profile.prior_year_tax.0,
+                1,
+                4,
+                "quarterly estimated tax",
+            )?);
+            if amount_due == Money(0) {
+                continue;
+            }
+            obligations.push(ActiveObligation {
+                cause_id: format!(
+                    "{}_estimated_tax_q{quarter}_y{}",
+                    profile.agent_id,
+                    month / 12
+                ),
+                obligation_type: "estimated_tax".into(),
+                from: AccountRef::new(&profile.agent_id, &profile.payment_account_id),
+                to: AccountRef::new(
+                    &profile.tax_authority_agent_id,
+                    &profile.tax_authority_account_id,
+                ),
+                amount_due,
+                effect: ObligationEffect::TaxPayment { profile_index },
+            });
+        }
+        return Ok(obligations);
+    }
+
+    let tax_year = month / 12 - 1;
+    let tax_year_end_month = tax_year * 12 + 11;
+    for (profile_index, profile) in fixture.scenario.tax_profiles.iter().enumerate() {
+        let actual = tax_liabilities
+            .iter()
+            .filter(|liability| {
+                liability.active
+                    && liability.agent_id == profile.agent_id
+                    && liability.tax_year_end_month == tax_year_end_month
+            })
+            .try_fold(Money(0), |total, liability| {
+                total.checked_add(liability.amount_owed)
+            })?;
+        let safe_harbor = Money(profile.prior_year_tax.0.min(actual.0));
+        let first_three_quarters = Money(mul_div_round_half_up(
+            profile.prior_year_tax.0,
+            3,
+            4,
+            "first three estimated-tax quarters",
+        )?);
+        let q4_due = Money((safe_harbor.0 - first_three_quarters.0).max(0));
+        if q4_due != Money(0) {
+            obligations.push(ActiveObligation {
+                cause_id: format!("{}_estimated_tax_q4_y{tax_year}", profile.agent_id),
+                obligation_type: "estimated_tax".into(),
+                from: AccountRef::new(&profile.agent_id, &profile.payment_account_id),
+                to: AccountRef::new(
+                    &profile.tax_authority_agent_id,
+                    &profile.tax_authority_account_id,
+                ),
+                amount_due: q4_due,
+                effect: ObligationEffect::TaxPayment { profile_index },
+            });
+        }
+        let true_up_due = Money((actual.0 - safe_harbor.0).max(0));
+        if true_up_due != Money(0) {
+            obligations.push(ActiveObligation {
+                cause_id: format!("{}_tax_true_up_y{tax_year}", profile.agent_id),
+                obligation_type: "tax_true_up".into(),
+                from: AccountRef::new(&profile.agent_id, &profile.payment_account_id),
+                to: AccountRef::new(
+                    &profile.tax_authority_agent_id,
+                    &profile.tax_authority_account_id,
+                ),
+                amount_due: true_up_due,
+                effect: ObligationEffect::TaxTrueUp {
+                    profile_index,
+                    tax_year_end_month,
+                },
+            });
+        }
+    }
+    Ok(obligations)
+}
+
+fn estimated_tax_quarter(month: u32) -> Option<u32> {
+    match month % 12 {
+        3 => Some(1),
+        5 => Some(2),
+        8 => Some(3),
+        0 if month > 0 => Some(4),
+        _ => None,
+    }
 }
 
 fn mortgage_monthly_payment(
@@ -2472,6 +2660,7 @@ fn accrue_year_end_taxes(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
+    tax_liabilities: &mut Vec<TaxLiabilityState>,
     month: u32,
 ) -> Result<(), SimulationError> {
     for profile in &fixture.scenario.tax_profiles {
@@ -2487,7 +2676,7 @@ fn accrue_year_end_taxes(
                     JournalEntry {
                         month,
                         cause_id: format!(
-                            "tax-accrual:{}:{}:{month}",
+                            "{}_{}_year_end_accrual_m{month}",
                             profile.agent_id, rules.jurisdiction_id
                         ),
                         postings: vec![
@@ -2509,6 +2698,13 @@ fn accrue_year_end_taxes(
                     },
                 )?;
             }
+            tax_liabilities.push(TaxLiabilityState {
+                agent_id: profile.agent_id.clone(),
+                jurisdiction_id: rules.jurisdiction_id.clone(),
+                tax_year_end_month: month,
+                amount_owed: assessment.total_tax,
+                active: true,
+            });
             recorder.record_tax_accrual(TaxAccrual {
                 month,
                 agent_id: profile.agent_id.clone(),
@@ -2549,6 +2745,7 @@ fn settle_obligations(
     tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
     properties: &[PropertyState],
     mortgages: &mut [MortgageState],
+    tax_liabilities: &mut [TaxLiabilityState],
     month: u32,
     obligations: &[ActiveObligation],
 ) -> Result<bool, SimulationError> {
@@ -2574,7 +2771,11 @@ fn settle_obligations(
     let mut any_failure = false;
     for obligation in obligations {
         let funded = funded_by_source[&obligation.from];
-        let firing_id = format!("{}_m{month}", obligation.authored_id);
+        let firing_id = obligation.cause_id.clone();
+        let is_tax_payment = matches!(
+            obligation.effect,
+            ObligationEffect::TaxPayment { .. } | ObligationEffect::TaxTrueUp { .. }
+        );
         let (amount_paid, shortfall) = if funded {
             match obligation.effect {
                 ObligationEffect::None => transfer_money(
@@ -2586,6 +2787,51 @@ fn settle_obligations(
                     &obligation.to,
                     obligation.amount_due,
                 )?,
+                ObligationEffect::TaxPayment { profile_index } => {
+                    book_tax_payment(
+                        fixture,
+                        ledger,
+                        recorder,
+                        month,
+                        &firing_id,
+                        profile_index,
+                        obligation.amount_due,
+                    )?;
+                }
+                ObligationEffect::TaxTrueUp {
+                    profile_index,
+                    tax_year_end_month,
+                } => {
+                    book_tax_payment(
+                        fixture,
+                        ledger,
+                        recorder,
+                        month,
+                        &firing_id,
+                        profile_index,
+                        obligation.amount_due,
+                    )?;
+                    let profile = &fixture.scenario.tax_profiles[profile_index];
+                    let settled = settle_tax_liabilities(
+                        ledger,
+                        recorder,
+                        tax_liabilities,
+                        month,
+                        profile,
+                        tax_year_end_month,
+                    )?;
+                    recorder.record_tax_settlement(TaxSettlementOutcome {
+                        month,
+                        cause_id: format!(
+                            "{}_tax_settlement_y{}",
+                            profile.agent_id,
+                            (tax_year_end_month - 11) / 12
+                        ),
+                        agent_id: profile.agent_id.clone(),
+                        tax_year_end_month,
+                        amount: settled,
+                    })?;
+                }
                 ObligationEffect::Mortgage {
                     mortgage_index,
                     interest,
@@ -2699,6 +2945,17 @@ fn settle_obligations(
             any_failure = true;
             (Money(0), obligation.amount_due)
         };
+        if is_tax_payment {
+            recorder.record_tax_payment(TaxPaymentOutcome {
+                month,
+                cause_id: firing_id.clone(),
+                agent_id: obligation.from.agent_id.clone(),
+                obligation_type: obligation.obligation_type.clone(),
+                amount_due: obligation.amount_due,
+                amount_paid,
+                shortfall,
+            })?;
+        }
         recorder.record_obligation(ObligationOutcome {
             month,
             obligation_id: firing_id,
@@ -2712,6 +2969,104 @@ fn settle_obligations(
         });
     }
     Ok(any_failure)
+}
+
+fn book_tax_payment(
+    fixture: &Fixture,
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    month: u32,
+    cause_id: &str,
+    profile_index: usize,
+    amount: Money,
+) -> Result<(), SimulationError> {
+    if amount == Money(0) {
+        return Ok(());
+    }
+    let profile = &fixture.scenario.tax_profiles[profile_index];
+    recorder.apply_entry(
+        ledger,
+        JournalEntry {
+            month,
+            cause_id: cause_id.into(),
+            postings: vec![
+                Posting {
+                    account: AccountRef::new(&profile.agent_id, &profile.payment_account_id),
+                    amount: amount.checked_neg()?,
+                },
+                Posting {
+                    account: AccountRef::new(
+                        &profile.tax_authority_agent_id,
+                        &profile.tax_authority_account_id,
+                    ),
+                    amount,
+                },
+                Posting {
+                    account: tax_prepayment_account(&profile.agent_id),
+                    amount,
+                },
+                Posting {
+                    account: tax_authority_revenue_account(&profile.tax_authority_agent_id),
+                    amount: amount.checked_neg()?,
+                },
+            ],
+        },
+    )
+}
+
+fn settle_tax_liabilities(
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    tax_liabilities: &mut [TaxLiabilityState],
+    month: u32,
+    profile: &crate::fixture::TaxProfileSpec,
+    tax_year_end_month: u32,
+) -> Result<Money, SimulationError> {
+    let matching: Vec<usize> = tax_liabilities
+        .iter()
+        .enumerate()
+        .filter(|(_, liability)| {
+            liability.active
+                && liability.agent_id == profile.agent_id
+                && liability.tax_year_end_month == tax_year_end_month
+        })
+        .map(|(index, _)| index)
+        .collect();
+    let total = matching.iter().try_fold(Money(0), |sum, index| {
+        sum.checked_add(tax_liabilities[*index].amount_owed)
+    })?;
+    if total != Money(0) {
+        let mut postings = matching
+            .iter()
+            .filter_map(|index| {
+                let liability = &tax_liabilities[*index];
+                (liability.amount_owed != Money(0)).then(|| Posting {
+                    account: tax_liability_account(&liability.agent_id, &liability.jurisdiction_id),
+                    amount: liability.amount_owed,
+                })
+            })
+            .collect::<Vec<_>>();
+        postings.push(Posting {
+            account: tax_prepayment_account(&profile.agent_id),
+            amount: total.checked_neg()?,
+        });
+        recorder.apply_entry(
+            ledger,
+            JournalEntry {
+                month,
+                cause_id: format!(
+                    "{}_tax_settlement_y{}",
+                    profile.agent_id,
+                    (tax_year_end_month - 11) / 12
+                ),
+                postings,
+            },
+        )?;
+    }
+    for index in matching {
+        tax_liabilities[index].amount_owed = Money(0);
+    }
+    Ok(total)
 }
 
 fn transfer_money(
@@ -2916,6 +3271,14 @@ fn tax_liability_account(agent_id: &str, jurisdiction_id: &str) -> AccountRef {
     AccountRef::new(agent_id, format!("liability:tax:{jurisdiction_id}"))
 }
 
+fn tax_prepayment_account(agent_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, "asset:tax-prepayments")
+}
+
+fn tax_authority_revenue_account(agent_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, "income:tax-payments")
+}
+
 fn property_asset_account(agent_id: &str, property_id: &str) -> AccountRef {
     AccountRef::new(agent_id, format!("asset:property:{property_id}"))
 }
@@ -2955,6 +3318,7 @@ fn month_output(
     ledger: &Ledger,
     properties: &[PropertyState],
     mortgages: &[MortgageState],
+    tax_liabilities: &[TaxLiabilityState],
     failed: bool,
 ) -> MonthOutput {
     MonthOutput {
@@ -2962,8 +3326,25 @@ fn month_output(
         balances: account_balances(ledger, failed),
         properties: property_states(properties, failed),
         mortgages: mortgage_states(mortgages, failed),
+        tax_liabilities: tax_liability_states(tax_liabilities, failed),
         failed,
     }
+}
+
+fn tax_liability_states(
+    tax_liabilities: &[TaxLiabilityState],
+    failed: bool,
+) -> Vec<TaxLiabilityState> {
+    tax_liabilities
+        .iter()
+        .cloned()
+        .map(|mut liability| {
+            if failed {
+                liability.amount_owed = Money(0);
+            }
+            liability
+        })
+        .collect()
 }
 
 fn property_states(properties: &[PropertyState], failed: bool) -> Vec<PropertyState> {

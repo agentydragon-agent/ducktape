@@ -26,6 +26,7 @@ from finance.augur.sim.test_state_helpers import (
     property_stakes,
     property_state,
     rollout_status,
+    tax_liabilities,
 )
 
 
@@ -242,6 +243,26 @@ def _tax_fixture() -> dict[str, Any]:
             ],
         }
     ]
+    return fixture
+
+
+def _tax_payment_fixture(*, funded: bool = True) -> dict[str, Any]:
+    fixture = _tax_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 13
+    scenario["tax_profiles"][0]["prior_year_tax"] = 400_000
+    if not funded:
+        scenario["tax_profiles"][0]["prior_year_tax"] = 0
+        scenario["recurring_transfers"].append(
+            {
+                "start_month": 0,
+                "end_month": 11,
+                "cause_id": "alice-spends-paycheck",
+                "from": {"agent_id": "alice", "account_id": "checking"},
+                "to": {"agent_id": "payroll", "account_id": "checking"},
+                "amount": 1_666_667,
+            }
+        )
     return fixture
 
 
@@ -635,6 +656,24 @@ def _rust_cash(rust: dict[str, Any]) -> pl.DataFrame:
     return pl.DataFrame(rows).sort("rollout_index", "month_index", "agent_id", "account_id")
 
 
+def _rust_tax_liabilities(rust: dict[str, Any]) -> pl.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for rollout in rust["rollouts"]:
+        for snapshot in rollout["months"]:
+            rows.extend(
+                {
+                    "rollout_index": rollout["rollout_id"],
+                    "month_index": snapshot["month"],
+                    "agent_id": liability["agent_id"],
+                    "jurisdiction_id": liability["jurisdiction_id"],
+                    "tax_year_end_month": liability["tax_year_end_month"],
+                    "amount_owed_quanta": liability["amount_owed"],
+                }
+                for liability in snapshot["tax_liabilities"]
+            )
+    return pl.DataFrame(rows).sort("rollout_index", "month_index", "agent_id", "jurisdiction_id", "tax_year_end_month")
+
+
 def test_rust_and_jax_match_on_shared_integer_fixture(tmp_path: Path) -> None:
     fixture = _fixture()
     legacy = run_legacy_fixture(fixture)
@@ -858,6 +897,104 @@ def test_rust_and_jax_match_federal_and_california_tax_accruals(tmp_path: Path) 
     assert [row["total_tax_quanta"] for row in rust_accruals] == [1_475_409, 3_753_851]
     for entry in rust["rollouts"][0]["journal"]:
         assert sum(posting["amount"] for posting in entry["postings"]) == 0
+
+
+def test_rust_and_jax_match_estimated_tax_true_up_and_liability_settlement(tmp_path: Path) -> None:
+    fixture = _tax_payment_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_cash = (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+    )
+    assert _rust_cash(rust).to_dicts() == legacy_cash.to_dicts()
+
+    tax_types = ["estimated_tax", "tax_true_up"]
+    legacy_payments = (
+        legacy.events_log.obligation_settlements.filter(pl.col("obligation_type").is_in(tax_types))
+        .select(
+            "month_index",
+            pl.col("obligation_id").alias("cause_id"),
+            "obligation_type",
+            "amount_due_quanta",
+            "amount_paid_quanta",
+            "shortfall_quanta",
+        )
+        .sort("month_index", "cause_id")
+        .to_dicts()
+    )
+    rust_payments = sorted(
+        [
+            {
+                "month_index": payment["month"],
+                "cause_id": payment["cause_id"],
+                "obligation_type": payment["obligation_type"],
+                "amount_due_quanta": payment["amount_due"],
+                "amount_paid_quanta": payment["amount_paid"],
+                "shortfall_quanta": payment["shortfall"],
+            }
+            for payment in rust["rollouts"][0]["tax_payments"]
+        ],
+        key=lambda row: (row["month_index"], row["cause_id"]),
+    )
+    assert rust_payments == legacy_payments
+
+    legacy_liabilities = (
+        tax_liabilities(legacy)
+        .filter(pl.col("month_index").is_in([12, 13]))
+        .sort("rollout_index", "month_index", "agent_id", "jurisdiction_id", "tax_year_end_month")
+    )
+    rust_liabilities = _rust_tax_liabilities(rust).filter(pl.col("month_index").is_in([12, 13]))
+    assert rust_liabilities.to_dicts() == legacy_liabilities.to_dicts()
+
+    legacy_settlements = (
+        legacy.events_log.tax_settlements.select(
+            "month_index", "cause_id", "agent_id", "tax_year_end_month", "amount_quanta"
+        )
+        .sort("month_index", "cause_id")
+        .to_dicts()
+    )
+    rust_settlements = sorted(
+        [
+            {
+                "month_index": settlement["month"],
+                "cause_id": settlement["cause_id"],
+                "agent_id": settlement["agent_id"],
+                "tax_year_end_month": settlement["tax_year_end_month"],
+                "amount_quanta": settlement["amount"],
+            }
+            for settlement in rust["rollouts"][0]["tax_settlements"]
+        ],
+        key=lambda row: (row["month_index"], row["cause_id"]),
+    )
+    assert rust_settlements == legacy_settlements
+    for entry in rust["rollouts"][0]["journal"]:
+        assert sum(posting["amount"] for posting in entry["postings"]) == 0
+
+
+def test_rust_and_jax_match_unfunded_tax_true_up_failure(tmp_path: Path) -> None:
+    fixture = _tax_payment_fixture(funded=False)
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    assert rollout_status(legacy).row(0, named=True)["failed_month"] == 12
+    assert rust["rollouts"][0]["failed_month"] == 12
+    payment = next(
+        payment for payment in rust["rollouts"][0]["tax_payments"] if payment["obligation_type"] == "tax_true_up"
+    )
+    assert payment["cause_id"] == "alice_tax_true_up_y0"
+    assert payment["obligation_type"] == "tax_true_up"
+    assert payment["amount_paid"] == 0
+    assert payment["shortfall"] == payment["amount_due"]
+    assert rust["rollouts"][0]["tax_settlements"] == []
+    assert _rust_cash(rust).to_dicts() == (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+        .to_dicts()
+    )
 
 
 def test_rust_and_jax_match_long_term_gain_tax(tmp_path: Path) -> None:
