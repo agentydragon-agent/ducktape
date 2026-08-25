@@ -13,6 +13,7 @@ from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter, CodexTu
 from haku.console.x.conversation_events import FrameRange, ItemSegment, TurnCompleted
 from haku.console.x.runtime import OpenItemSeed, RuntimeLaunch, RuntimeMcpServer, TurnProjectionSeed
 from haku.runtime.x.bridge.client import FrameSink
+from haku.runtime.x.bridge.codex_options import CodexModelProvider
 from haku.runtime.x.bridge.protocol import HarnessFrame, TextWebSocket
 
 
@@ -46,15 +47,30 @@ class CapturingFactory:
 
 def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_launch() -> None:
     factory = CapturingFactory()
-    adapter = CodexRuntimeAdapter(client_factory=factory)
+    adapter = CodexRuntimeAdapter(
+        client_factory=factory,
+        model="codex-gpt-5.6-sol",
+        model_provider=CodexModelProvider(
+            provider_id="haku",
+            name="Haku OpenAI-compatible",
+            base_url="http://litellm.test/v1",
+            api_key_env_var="OPENAI_API_KEY",
+        ),
+    )
     result = adapter.client(cast(TextWebSocket, object()), _launch(), None, cast(FrameSink, object()))
 
     assert result is factory.result
     assert factory.launch is not None
     assert factory.launch.arguments == (
         "-c",
-        'mcp_servers={ "haku-console" = { url = "https://console.test/mcp", '
-        'bearer_token_env_var = "HAKU_MCP_BEARER_TOKEN" } }',
+        'model_provider = "haku"',
+        "-c",
+        'model_providers = {haku = {name = "Haku OpenAI-compatible", '
+        'base_url = "http://litellm.test/v1", env_key = "OPENAI_API_KEY", '
+        'wire_api = "responses"}}',
+        "-c",
+        'mcp_servers = {haku-console = {url = "https://console.test/mcp", '
+        'bearer_token_env_var = "HAKU_MCP_BEARER_TOKEN"}}',
         "app-server",
         "--listen",
         "stdio://",
@@ -62,7 +78,9 @@ def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_lau
     assert factory.launch.cwd == "/workspace"
     assert factory.launch.resume_from == 29
     assert factory.launch.environment == {"CODEX_HOME": "/codex-home"}
-    assert factory.thread == CodexThread(cwd="/workspace", developer_instructions="you are Haku")
+    assert factory.thread == CodexThread(
+        cwd="/workspace", model="codex-gpt-5.6-sol", developer_instructions="you are Haku"
+    )
 
 
 def test_codex_prompt_detection_reads_only_its_native_request_method() -> None:

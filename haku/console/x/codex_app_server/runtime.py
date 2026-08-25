@@ -26,7 +26,12 @@ from haku.console.x.runtime import (
     TurnProjectionSeed,
 )
 from haku.runtime.x.bridge.client import FrameSink
-from haku.runtime.x.bridge.codex_options import CodexAppServerSession, HttpMcpServer, build_codex_launch
+from haku.runtime.x.bridge.codex_options import (
+    CodexAppServerSession,
+    CodexModelProvider,
+    HttpMcpServer,
+    build_codex_launch,
+)
 from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
 from haku.runtime.x.bridge.transport import ProgressSink
 
@@ -42,6 +47,8 @@ class CodexRuntimeAdapter:
     """Codex launch/protocol/projection behavior, with no sandbox lifecycle state."""
 
     client_factory: CodexClientFactory = app_server_over_websocket
+    model: str | None = None
+    model_provider: CodexModelProvider | None = None
 
     @property
     def kind(self) -> RuntimeKind:
@@ -90,10 +97,15 @@ class CodexRuntimeAdapter:
         }
         return _NativeLaunch(
             harness=build_codex_launch(
-                CodexAppServerSession(cwd=Path(launch.cwd), environment=launch.environment, mcp_servers=native_servers),
+                CodexAppServerSession(
+                    cwd=Path(launch.cwd),
+                    environment=launch.environment,
+                    mcp_servers=native_servers,
+                    model_provider=self.model_provider,
+                ),
                 resume_from=launch.resume_from,
             ),
-            thread=CodexThread(cwd=launch.cwd, developer_instructions=launch.appended_system_prompt),
+            thread=CodexThread(cwd=launch.cwd, model=self.model, developer_instructions=launch.appended_system_prompt),
         )
 
 
