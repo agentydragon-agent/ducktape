@@ -64,13 +64,22 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("PUT", "/stock/entry/{entryId}"): _disabled("stock_entry_edit"),
     ("GET", "/stock/entry/{entryId}/printlabel"): _disabled("print_stock_entry_label"),
     # ── Product stock operations (by ID) ─────────────────────────────
-    ("GET", "/stock/products/{productId}"): _enabled("get_product_stock"),
+    ("GET", "/stock/products/{productId}"): _enabled(
+        "get_product_stock",
+        "The returned `amount` is total on-hand and already includes `amount_opened`; "
+        "the opened amount is a subset, not an additional bucket.",
+    ),
     # POST /stock/products/{productId}/add, /consume, /inventory stripped from
     # OpenAPI spec; replaced by batch stock_add, stock_consume, stock_set.
     # Replaced by custom stock_transfer in batch_tools.py.
     # Stripped from the OpenAPI spec by fix_openapi_spec.py.
     ("POST", "/stock/products/{productId}/transfer"): _disabled("transfer_product_stock"),
-    ("POST", "/stock/products/{productId}/open"): _enabled("open_product_stock"),
+    ("POST", "/stock/products/{productId}/open"): _enabled(
+        "open_product_stock",
+        "Marks stock as opened without consuming it. Opened units remain included in the product's "
+        "total `amount`; `amount_opened` reports that subset. `stock_consume` and downward `stock_set` "
+        "operations normally use opened entries before unopened ones.",
+    ),
     # `list_product_stock_entries` / `list_product_locations` disabled: the
     # generated schema carries a `query[]` filter parameter, whose property
     # key violates Anthropic's tool schema regex

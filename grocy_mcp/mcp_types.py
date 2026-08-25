@@ -79,7 +79,8 @@ class ServerSettings(BaseSettings):
 PRODUCT_DESC = "Product. Name or ID."
 QU_DESC = (
     "Quantity unit. Name or ID. Must match the product's stock QU or have a defined conversion "
-    "(see the `quantity_unit_conversions` entity)."
+    "(see the `quantity_unit_conversions` entity). Product-specific conversions override global "
+    "ones; a missing-conversion error names usable substitutes."
 )
 BEST_BEFORE_DESC = (
     "Best-before / expiration date in `YYYY-MM-DD` format. "
@@ -108,7 +109,8 @@ PARENT_PRODUCT_DESC = (
     "when the parent itself is short (FIFO across variants); (c) shared low-stock rules "
     "when `cumulate_min_stock_amount_of_sub_products=1` on the parent. Typical setup pairs "
     "this with `no_own_stock=1` on the parent so it's a pure umbrella. Single-level "
-    "nesting only — a variant cannot itself have variants."
+    "nesting only — a variant cannot itself have variants, and a product that already has "
+    "variants cannot become a variant."
 )
 
 
@@ -117,7 +119,14 @@ PARENT_PRODUCT_DESC = (
 
 class CreateItem(BaseModel):
     entity_type: WriteableEntityType
-    body: dict[str, Any]
+    body: dict[str, Any] = Field(
+        description=(
+            "Writable columns for this entity. For `quantity_unit_conversions`, use `from_qu_id`, "
+            "`to_qu_id`, `factor`, and optional `product_id`: multiply the from-QU amount by "
+            "`factor` to get the to-QU amount; null product means global, while a product-specific "
+            "row overrides the global conversion."
+        )
+    )
 
 
 class CreateOk(BaseModel):
@@ -158,8 +167,8 @@ class StockEntry(BaseModel):
 
     product_id: int
     product_name: str
-    amount: float
-    amount_opened: float
+    amount: float = Field(description="Total on-hand in the stock QU, including the opened subset.")
+    amount_opened: float = Field(description="Subset of `amount` already marked opened; do not add it to `amount`.")
     qu_name: str
     location_name: str
     best_before_date: date | None = None

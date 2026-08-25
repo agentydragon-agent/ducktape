@@ -121,9 +121,12 @@ _RESIDUAL_TOKENS: set[str] = {
     "deficit",
     "done",
     "entry_ids",
+    "factor",
     "from_location",
+    "from_qu_id",
     "min_amount",
     "to_location",
+    "to_qu_id",
     # OpenAPI-generated tokens not in our models
     "force_serve_as",
     "picture",

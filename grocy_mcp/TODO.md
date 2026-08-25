@@ -1,16 +1,3 @@
-## Fold `server_instructions.md` conventions into tool descriptions
-
-claude.ai does not expose MCP `initialize.instructions` to the LLM
-(verified 2026-04-19). The eval harness compensates by prepending the
-markdown to the system prompt manually; claude.ai has no equivalent
-injection point.
-
-Make tool descriptions more self-contained so they work well without
-server-level instructions. Key conventions that currently live only in
-`server_instructions.md` (e.g. `amount_opened` semantics, when to use
-`stock_set` vs `stock_add`, unit handling) should be folded into the
-relevant tool descriptions themselves.
-
 ## Mark wholly failed batch tool calls as MCP errors
 
 Batch tools currently catch per-item exceptions and return structured
