@@ -257,6 +257,7 @@ py_test(
 
 py_test(
     name = "test_view_extracts_grade_fields",
+    size = "medium",
     srcs = ["test_view_extracts_grade_fields.py"],
     requires_docker = True,
     deps = [

@@ -179,6 +179,7 @@ py_test(
 
 py_test(
     name = "test_agent_db_integration",
+    size = "medium",
     srcs = ["test_agent_db_integration.py"],
     requires_docker = True,
     deps = [
