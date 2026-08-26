@@ -253,6 +253,16 @@ ts_library(
     deps = ["//haku/console/frontend/tool_rendering:actions"],
 )
 
+ts_library(
+    name = "sw_test",
+    srcs = ["sw.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":sw_lib",
+        "//:node_modules/vitest",
+    ],
+)
+
 # The service worker is bundled on its own, not as part of :bundle, because its URL must be
 # stable across deploys (a fingerprinted name would read as a different worker every build) and
 # it must be served from the docroot root so its default scope covers the whole origin. The
@@ -1217,6 +1227,7 @@ vitest_bin.vitest_test(
         ":screenshot_capture_test",
         ":settings_panel_test",
         ":shell_chrome_test",
+        ":sw_test",
         ":tana_client_test",
         ":tool_call_decision_test",
         ":tool_calls_page_test",
