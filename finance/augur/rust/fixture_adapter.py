@@ -8,9 +8,11 @@ from typing import Any, cast
 
 import numpy as np
 
+from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import (
     HomeValueKey,
     InflationKey,
+    IssuerId,
     LevelSeriesKey,
     LocationId,
     RentKey,
@@ -18,6 +20,7 @@ from finance.augur.model.series import (
     SecurityKey,
     SecuritySymbol,
 )
+from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import quantity_scale_for_asset
 from finance.augur.sim.locations import Location
@@ -35,6 +38,7 @@ from finance.augur.sim.scenario import (
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
     PrimaryResidenceAssignment,
+    PrivateEquityTenderPolicy,
     PropertySaleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
@@ -85,6 +89,11 @@ def _amount(spec: int | dict[str, Any], quantum: str) -> Decimal | FixedAmount |
             raise ValueError(f"unsupported amount kind {kind!r}")
 
 
+def _amount_schedule(spec: int | dict[str, Any], quantum: str) -> FixedAmount | SeriesIndexedAmount:
+    amount = _amount(spec, quantum)
+    return FixedAmount(amount=amount) if isinstance(amount, Decimal) else amount
+
+
 def _sleeve_target(spec: dict[str, Any]) -> SleeveTarget:
     asset = SecurityKey(symbol=SecuritySymbol(spec["asset_id"]))
     expected_scale = quantity_scale_for_asset(asset)
@@ -94,6 +103,12 @@ def _sleeve_target(spec: dict[str, Any]) -> SleeveTarget:
             f"but the canonical Python asset scale is {expected_scale}"
         )
     return SleeveTarget(asset=asset, weight=spec["weight"])
+
+
+def _asset(asset_id: str) -> SecurityKey | PrivateEquityAssetKey:
+    if asset_id.startswith("private_equity:") and (issuer_id := asset_id.removeprefix("private_equity:")):
+        return PrivateEquityAssetKey(issuer_id=IssuerId(issuer_id))
+    return SecurityKey(symbol=SecuritySymbol(asset_id))
 
 
 def _ppb_float(value: int, *, context: str) -> float:
@@ -138,6 +153,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
     sales = cast(list[dict[str, Any]], scenario_spec["scheduled_sales"])
     level_blocks: list[tuple[LevelSeriesKey, Any]] = []
     price_matrices: dict[str, np.ndarray[Any, np.dtype[np.int64]]] = {}
+    pe_channels: dict[str, dict[str, np.ndarray[Any, Any]]] = {}
     for series in fixture["series"]:
         series_id = cast(str, series["series_id"])
         if series_id.startswith("security:"):
@@ -153,6 +169,15 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
             key = InflationKey()
         elif series_id.startswith("rent:") and (location_id := series_id.removeprefix("rent:")):
             key = RentKey(location_id=LocationId(location_id))
+        elif series_id.startswith("private_equity_"):
+            channel_and_issuer = series_id.removeprefix("private_equity_")
+            channel, separator, issuer_id = channel_and_issuer.partition(":")
+            if not separator or not issuer_id:
+                raise ValueError(f"invalid private-equity fixture series {series_id!r}")
+            snapshots = cast(int, series["snapshots"])
+            raw = np.asarray(series["values"], dtype=np.int64).reshape(rollout_count, snapshots)
+            pe_channels.setdefault(issuer_id, {})[channel] = raw
+            continue
         else:
             continue
         snapshots = cast(int, series["snapshots"])
@@ -311,7 +336,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 lot_id=spec["lot_id"],
                 agent_id=spec["agent_id"],
                 account_id=spec["account_id"],
-                asset=SecurityKey(symbol=SecuritySymbol(spec["asset_id"])),
+                asset=_asset(spec["asset_id"]),
                 purchase_month_index=spec["purchase_month"],
                 quantity=spec["units"] / spec["quantity_scale"],
                 cost_basis_per_unit=_money(spec["basis"] * spec["quantity_scale"] // spec["units"], quantum),
@@ -340,7 +365,7 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 cause_id=spec["cause_id"],
                 agent_id=spec["agent_id"],
                 source_account_id=spec["account_id"],
-                asset=SecurityKey(symbol=SecuritySymbol(spec["asset_id"])),
+                asset=_asset(spec["asset_id"]),
                 quantity=spec["units"] / pool_scales[(spec["agent_id"], spec["account_id"], spec["asset_id"])],
                 proceeds_account_id=spec["proceeds_account_id"],
                 price_per_unit=sale_price(spec),
@@ -391,6 +416,14 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 ),
             )
             for spec in scenario_spec.get("target_allocation_policies", [])
+        ],
+        private_equity_tender_policies=[
+            PrivateEquityTenderPolicy(
+                owner_agent_id=spec["owner_agent_id"],
+                proceeds_account_id=spec.get("proceeds_account_id", "checking"),
+                liquid_net_worth_floor=_amount_schedule(spec["liquid_net_worth_floor"], quantum),
+            )
+            for spec in scenario_spec.get("private_equity_tender_policies", [])
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -518,8 +551,45 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
         ],
         horizon_months=scenario_spec["horizon_months"],
     )
+    pe_parts = []
+    required_pe_channels = {
+        "mark",
+        "regime",
+        "event_kind",
+        "sale_opportunity",
+        "sale_capacity",
+        "eligible",
+        "forced_sale",
+        "liquidity_blocked",
+        "forced_recovery",
+        "company_valuation",
+    }
+    for issuer_id, channels in sorted(pe_channels.items()):
+        missing = required_pe_channels - channels.keys()
+        if missing:
+            raise ValueError(f"private-equity issuer {issuer_id!r} is missing channels {sorted(missing)!r}")
+        pe_parts.append(
+            PrivateEquityBundle.from_issuer_arrays(
+                issuer_id,
+                mark_usd_per_unit=channels["mark"].astype(np.float64) * float(Decimal(quantum)),
+                regime_code=channels["regime"].astype(np.int64),
+                event_kind_code=channels["event_kind"].astype(np.int64),
+                sale_opportunity_active=channels["sale_opportunity"].astype(np.bool_),
+                sale_capacity_fraction=channels["sale_capacity"].astype(np.float64) / 1_000_000_000,
+                eligible_fraction=channels["eligible"].astype(np.float64) / 1_000_000_000,
+                forced_sale_fraction=channels["forced_sale"].astype(np.float64) / 1_000_000_000,
+                liquidity_blocked=channels["liquidity_blocked"].astype(np.bool_),
+                forced_recovery_cashout_usd=channels["forced_recovery"].astype(np.float64) * float(Decimal(quantum)),
+                company_valuation_usd=channels["company_valuation"].astype(np.float64) * float(Decimal(quantum)),
+                rollout_count=rollout_count,
+                horizon_months=scenario_spec["horizon_months"],
+            )
+        )
     external = ExternalSeriesContext.from_level_blocks(
-        level_blocks, rollout_count=rollout_count, horizon_months=scenario_spec["horizon_months"]
+        level_blocks,
+        rollout_count=rollout_count,
+        horizon_months=scenario_spec["horizon_months"],
+        private_equity=PrivateEquityBundle.combine(pe_parts),
     )
     locations = {
         spec["location_id"]: Location(

@@ -7,7 +7,7 @@ use crate::{
     tax::{JurisdictionLevel, TaxRules},
 };
 
-pub const FIXTURE_SCHEMA_VERSION: u32 = 6;
+pub const FIXTURE_SCHEMA_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -54,6 +54,8 @@ pub struct ScenarioSpec {
     pub distributions: Vec<DistributionSpec>,
     #[serde(default)]
     pub target_allocation_policies: Vec<TargetAllocationPolicySpec>,
+    #[serde(default)]
+    pub private_equity_tender_policies: Vec<PrivateEquityTenderPolicySpec>,
     #[serde(default)]
     pub scheduled_property_purchases: Vec<ScheduledPropertyPurchaseSpec>,
     #[serde(default)]
@@ -359,6 +361,15 @@ pub struct TargetAllocationPolicySpec {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct PrivateEquityTenderPolicySpec {
+    pub owner_agent_id: String,
+    #[serde(default = "default_account_id")]
+    pub proceeds_account_id: String,
+    pub liquid_net_worth_floor: AmountSpec,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SleeveTargetSpec {
     pub asset_id: String,
     pub weight: i64,
@@ -650,6 +661,44 @@ pub struct LotDisposition {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PrivateEquityProtocolOutcome {
+    pub month: u32,
+    pub issuer_id: String,
+    pub asset_id: String,
+    pub event_kind: String,
+    pub regime: String,
+    pub mark: Money,
+    pub sale_capacity_fraction_ppb: i64,
+    pub eligible_fraction_ppb: i64,
+    pub forced_sale_fraction_ppb: i64,
+    pub liquidity_blocked: bool,
+    pub forced_recovery_cashout: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PrivateEquityOpportunityOutcome {
+    pub month: u32,
+    pub cause_id: String,
+    pub issuer_id: String,
+    pub asset_id: String,
+    pub event_kind: String,
+    pub regime: String,
+    pub outcome: String,
+    pub mark: Money,
+    pub sale_capacity_fraction_ppb: i64,
+    pub eligible_fraction_ppb: i64,
+    pub liquidity_blocked: bool,
+    pub floor: Money,
+    pub liquid_net_worth: Money,
+    pub shortfall: Money,
+    pub quantity_scale: i64,
+    pub units_held: Quantity,
+    pub sellable_units: Quantity,
+    pub target_units: Quantity,
+    pub proceeds: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ObligationOutcome {
     pub month: u32,
     pub cause_id: String,
@@ -839,6 +888,8 @@ pub struct RolloutOutput {
     pub journal: Vec<JournalEntry>,
     pub transfers: Vec<TransferOutcome>,
     pub dispositions: Vec<LotDisposition>,
+    pub private_equity_events: Vec<PrivateEquityProtocolOutcome>,
+    pub private_equity_opportunities: Vec<PrivateEquityOpportunityOutcome>,
     pub obligations: Vec<ObligationOutcome>,
     pub rollout_failures: Vec<RolloutFailureOutcome>,
     pub tax_accruals: Vec<TaxAccrual>,
@@ -872,6 +923,8 @@ pub struct RolloutSummary {
     pub ending_tax_liabilities: Vec<TaxLiabilityState>,
     pub journal_entry_count: u64,
     pub disposition_count: u64,
+    pub private_equity_event_count: u64,
+    pub private_equity_opportunity_count: u64,
     pub tax_accrual_count: u64,
     pub tax_payment_count: u64,
     pub tax_settlement_count: u64,

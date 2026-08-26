@@ -61,6 +61,11 @@ The differential suite currently proves exact integer agreement for:
   projected end-of-month demand, exact integer water-filling, source-account
   order, FIFO lot dispositions, immutable sleeve weights, realized gains,
   attempted-funding attribution, and canonical obligation-failure metadata;
+- private-equity protocol execution after settlement, including typed issuer
+  marks/regimes/events, tender capacity and eligibility, liquidity blocks,
+  public-market floor sales, forced-sale fractions, forced-recovery cashouts,
+  deterministic issuer/FIFO order, liquid-net-worth floors that exclude PE,
+  canonical opportunity traces, lot dispositions, and capital-gain effects;
 - insufficient-cash failure month and state freezing;
 - federal and California ordinary-income year-end tax accruals;
 - federal SALT itemization from funded property tax plus sibling state-income
@@ -82,11 +87,11 @@ obligation-accrual, obligation-settlement, and rollout-failure rows into the
 same canonical `EventLog` frame schemas exposed by Python/JAX. It also
 normalizes the currently supported property-purchase, mortgage-origination,
 mortgage-payment, rented-fraction, capital-improvement, and property-sale
-frames, primary-residence assignment frames, plus year-end tax
-accrual/breakdown and tax-liability settlement frames, including exact frame
-dtypes and cause identities. The adapter is an explanatory-output boundary
-only; snapshots remain authoritative state and events are not replayed to
-reconstruct them.
+frames, primary-residence assignment frames, year-end tax accrual/breakdown
+and tax-liability settlement frames, plus private-equity protocol and
+opportunity frames, including exact frame dtypes and cause identities. The
+adapter is an explanatory-output boundary only; snapshots remain authoritative
+state and events are not replayed to reconstruct them.
 
 The strict fixture stores monetary series (security prices, distributions, and
 home values) as currency quanta. Inflation and rent index levels instead use a
@@ -95,6 +100,14 @@ and must round-trip exactly through the Python/JAX `float64` external-series
 boundary; the Rust validator and Python adapter reject fixtures that would lose
 an integer level during that conversion. Series coverage is deliberately dense:
 every series supplies every rollout and snapshot in the fixture.
+
+Private-equity channels use the same dense row-major fixture contract but keep
+their distinct types explicit in the series names: mark/recovery/valuation are
+currency quanta, capacity/eligibility/forced-sale fractions are exact PPB,
+regime/event-kind are validated integer codes, and opportunity/blocked channels
+are 0/1. The Python adapter reconstructs the typed `PrivateEquityBundle` only at
+the legacy boundary; Rust never routes PE marks through ordinary security-price
+series.
 
 Initial lots store total basis, but that total must imply an exact
 integer-currency-quantum basis per whole unit:
@@ -138,8 +151,7 @@ Still missing before replacement is plausible:
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax policy beyond purchase-price assessment and fixed location
   special assessments;
-- broader liquidity policy, TLH, and
-  private equity;
+- broader liquidity policy and TLH;
 - complete selected-rollout causal trace parity for those domains;
 - Python extension/Arrow output integration.
 

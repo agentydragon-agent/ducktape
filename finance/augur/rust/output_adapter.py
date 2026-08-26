@@ -25,6 +25,8 @@ def decode_rust_event_log(output: Mapping[str, Any]) -> EventLog:
 
     transfers: list[dict[str, object]] = []
     dispositions: list[dict[str, object]] = []
+    private_equity_events: list[dict[str, object]] = []
+    private_equity_opportunities: list[dict[str, object]] = []
     obligation_accruals: list[dict[str, object]] = []
     obligation_settlements: list[dict[str, object]] = []
     failures: list[dict[str, object]] = []
@@ -43,6 +45,12 @@ def decode_rust_event_log(output: Mapping[str, Any]) -> EventLog:
         rollout_index = int(rollout["rollout_id"])
         transfers.extend(_transfer_row(rollout_index, row) for row in rollout["transfers"])
         dispositions.extend(_disposition_row(rollout_index, row) for row in rollout["dispositions"])
+        private_equity_events.extend(
+            _private_equity_event_row(rollout_index, row) for row in rollout["private_equity_events"]
+        )
+        private_equity_opportunities.extend(
+            _private_equity_opportunity_row(rollout_index, row) for row in rollout["private_equity_opportunities"]
+        )
         for row in rollout["obligations"]:
             obligation_accruals.append(_obligation_accrual_row(rollout_index, row))
             obligation_settlements.append(_obligation_settlement_row(rollout_index, row))
@@ -71,6 +79,10 @@ def decode_rust_event_log(output: Mapping[str, Any]) -> EventLog:
         {
             "transfers": _frame(EVENT_FRAMES.transfers, transfers),
             "lot_dispositions": _frame(EVENT_FRAMES.lot_dispositions, dispositions),
+            "private_equity_events": _frame(EVENT_FRAMES.private_equity_events, private_equity_events),
+            "private_equity_opportunities": _frame(
+                EVENT_FRAMES.private_equity_opportunities, private_equity_opportunities
+            ),
             "obligation_accruals": _frame(EVENT_FRAMES.obligation_accruals, obligation_accruals),
             "obligation_settlements": _frame(EVENT_FRAMES.obligation_settlements, obligation_settlements),
             "rollout_failures": _frame(EVENT_FRAMES.rollout_failures, failures),
@@ -122,6 +134,48 @@ def _disposition_row(rollout_index: int, row: Mapping[str, Any]) -> dict[str, ob
         "cost_basis_consumed_quanta": int(row["basis"]),
         "proceeds_quanta": int(row["proceeds"]),
         "proceeds_account_id": str(row["proceeds_account_id"]),
+    }
+
+
+def _private_equity_event_row(rollout_index: int, row: Mapping[str, Any]) -> dict[str, object]:
+    return {
+        "rollout_index": rollout_index,
+        "month_index": int(row["month"]),
+        "issuer_id": str(row["issuer_id"]),
+        "asset_id": str(row["asset_id"]),
+        "event_kind": str(row["event_kind"]),
+        "regime": str(row["regime"]),
+        "mark_quanta": int(row["mark"]),
+        "sale_capacity_fraction": int(row["sale_capacity_fraction_ppb"]) / RATE_SCALE,
+        "eligible_fraction": int(row["eligible_fraction_ppb"]) / RATE_SCALE,
+        "forced_sale_fraction": int(row["forced_sale_fraction_ppb"]) / RATE_SCALE,
+        "liquidity_blocked": bool(row["liquidity_blocked"]),
+        "forced_recovery_cashout_quanta": int(row["forced_recovery_cashout"]),
+    }
+
+
+def _private_equity_opportunity_row(rollout_index: int, row: Mapping[str, Any]) -> dict[str, object]:
+    scale = int(row["quantity_scale"])
+    return {
+        "rollout_index": rollout_index,
+        "month_index": int(row["month"]),
+        "cause_id": str(row["cause_id"]),
+        "issuer_id": str(row["issuer_id"]),
+        "asset_id": str(row["asset_id"]),
+        "event_kind": str(row["event_kind"]),
+        "regime": str(row["regime"]),
+        "outcome": str(row["outcome"]),
+        "mark_quanta": int(row["mark"]),
+        "sale_capacity_fraction": int(row["sale_capacity_fraction_ppb"]) / RATE_SCALE,
+        "eligible_fraction": int(row["eligible_fraction_ppb"]) / RATE_SCALE,
+        "liquidity_blocked": bool(row["liquidity_blocked"]),
+        "floor_quanta": int(row["floor"]),
+        "liquid_net_worth_quanta": int(row["liquid_net_worth"]),
+        "shortfall_quanta": int(row["shortfall"]),
+        "units_held": int(row["units_held"]) / scale,
+        "sellable_units": int(row["sellable_units"]) / scale,
+        "target_units": int(row["target_units"]) / scale,
+        "proceeds_quanta": int(row["proceeds"]),
     }
 
 
