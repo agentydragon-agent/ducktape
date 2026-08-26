@@ -300,6 +300,12 @@ context); `logical_parent_uuid` looks like the relink for it and names a message
 carries. A **partial** compaction — `compact_metadata.preserved_segment`, documented by the CLI's
 schema — is still unobserved, so leave it unimplemented rather than guessed.
 
+## Audit and curate generated Google tool descriptions
+
+The Google Discovery-generated schemas currently carry Google's copied descriptions verbatim. Do
+not hand-edit them as part of unrelated MCP guidance work; audit and curate their live-schema
+verbosity in a dedicated follow-up, with client-facing token budgets and semantic tests.
+
 ## Scope conversation reads to the reader's trust tier
 
 **The policy is decided** (operator, 2026-08-15): an agent reads the transcripts and

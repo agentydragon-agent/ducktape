@@ -842,6 +842,11 @@ py_test(
 )
 
 py_library(
+    name = "mcp_guidance",
+    srcs = ["mcp_guidance.py"],
+)
+
+py_library(
     name = "mcp_server",
     srcs = ["mcp_server.py"],
     deps = [
@@ -850,6 +855,7 @@ py_library(
         ":mcp_catalog_reconciler",
         ":mcp_config",
         ":mcp_execution",
+        ":mcp_guidance",
         ":mcp_operator_oauth",
         ":node_daemons",
         ":provider_connection",
