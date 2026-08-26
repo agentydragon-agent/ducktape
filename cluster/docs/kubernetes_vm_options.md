@@ -1,7 +1,5 @@
 # Kubernetes VM Platform Options
 
-Date: 2026-05-28
-
 Question: what existing solution should we use if we want to run VMs inside the
 cluster, with some combination of snapshotting, suspend/resume, and not losing
 the VM when a node goes down?
@@ -57,9 +55,9 @@ region-local, with:
   storage.
 - `lvm-proxmox-ssd` and `lvm-proxmox-hdd`: OpenEBS LVM LocalPV on Proxmox
   nodes.
-- `proxmox-csi-retain`: removed (Proxmox CSI uninstalled 2026-07-16; see
-  <lessons_learned/2026_07_16_disable_proxmox_csi.md>).
-- `longhorn`: removed (uninstalled 2026-05-13; storage classes deleted).
+- `proxmox-csi-retain`: not installed; Proxmox CSI is not part of the current
+  storage platform.
+- `longhorn`: not installed; any revival would be a fresh storage trial.
 - SeaweedFS is present for object/S3 workloads and experimental CSI/FUSE use,
   but repo notes already say not to use it for core infra until recovery,
   upgrades, and node restarts are boring.
@@ -73,8 +71,8 @@ Implications:
   `volsync-backup.yaml` comments and `rg` inspection. KubeVirt snapshots need a
   snapshot-capable CSI class.
 - If live migration/HA is a requirement, the missing foundation is a real VM
-  storage layer: Longhorn, Rook/Ceph, or an external NAS/SAN/NFS design with
-  acceptable performance and failure semantics.
+  storage layer: a newly evaluated Longhorn deployment, Rook/Ceph, or an
+  external NAS/SAN/NFS design with acceptable performance and failure semantics.
 
 ## Option 1: Upstream KubeVirt
 

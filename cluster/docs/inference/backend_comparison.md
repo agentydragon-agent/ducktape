@@ -3,7 +3,7 @@
 Evaluating options for the cluster's GPU inference path. See <README.md> for
 the wider docs hub.
 
-## Current state (2026-04-28)
+## Current state
 
 | Aspect          | Value                                                                                                                 |
 | --------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -21,6 +21,10 @@ the wider docs hub.
 The MXFP4 weights inside the gpt-oss GGUFs are _not_ exercised as native
 Blackwell FP4 — Ollama/llama.cpp dequantize them into compute kernels that
 don't hit the 5090's FP4 tensor cores. Real perf gap on this hardware.
+
+Production remains the single Ollama Deployment. The vLLM configurations in
+this document are evaluation and migration candidates, not a second production
+backend; measured results and parser limitations are tracked in <results.md>.
 
 ## Migration path
 
@@ -110,7 +114,7 @@ Legend: ✅ first-class · 🟡 experimental or partial · ❌ no · — n/a
 - **EXL3** is the accuracy/bpw leader for dense models but locked to TabbyAPI;
   not relevant for our MoE-heavy reasoning targets (gpt-oss, DeepSeek-R1).
 
-## Why our two finalists fall short
+## Current decision summary
 
 **llama.cpp** — has `--split-mode row` true tensor parallel and native
 Anthropic Messages, but `reasoning_effort` has to ride in the system prompt
@@ -120,7 +124,8 @@ edge-case bugs through 2026 ([#20281](https://github.com/ggml-org/llama.cpp/issu
 [#19814](https://github.com/ggml-org/llama.cpp/issues/19814)), no Helm
 chart, one process per model, GGUF-only.
 
-**Ollama** — turnkey for gpt-oss with `"think": "low|medium|high"` as a
+**Ollama** — the current production backend, turnkey for gpt-oss with
+`"think": "low|medium|high"` as a
 real request field, but **no tensor parallel** (layers laid sequentially —
 bandwidth-bound on 2× 5090), no Anthropic endpoint, Responses API non-
 stateful, no `/healthz`, Ollama-flavored `/api/*` is the primary surface
