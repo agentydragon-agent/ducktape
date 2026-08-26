@@ -49,7 +49,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: filler
-          image: ghcr.io/agentydragon/wayback-archive:devel-20260826233337-738852a # {"$imagepolicy": "flux-system:wayback-archive"}
+          image: ghcr.io/agentydragon/wayback-archive:devel-20260826234622-b1eef91 # {"$imagepolicy": "flux-system:wayback-archive"}
           imagePullPolicy: Always
           command:
             - /usr/local/bin/wayback_cache_filler
