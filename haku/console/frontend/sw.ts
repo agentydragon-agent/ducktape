@@ -56,6 +56,11 @@ type PushMessage = PushShow | PushRetract;
 const APPROVE_ACTION = "approve";
 const DENY_ACTION = "deny";
 const DETAILS_ACTION = "details";
+const PENDING_NOTIFICATION_ACTIONS: NotificationAction[] = [
+  { action: APPROVE_ACTION, title: "Approve" },
+  { action: DENY_ACTION, title: "Deny" },
+  { action: DETAILS_ACTION, title: "Details" },
+];
 // How long a resolved notification lingers before closing itself. Long enough to read on a lock
 // screen, short enough that settled calls do not pile up in the shade.
 const RESOLVED_LINGER_MS = 6000;
@@ -88,16 +93,22 @@ function notificationTitle(message: PushShow): string {
  * reports 2), so the array's tail is not guaranteed. Deciding is what the notification is *for*, so
  * Approve and Deny come first and Details only where there is room; dropping it loses nothing,
  * since tapping the notification body opens the call too. */
-function notificationActions(): NotificationAction[] {
-  const decisions = [
-    { action: APPROVE_ACTION, title: "Approve" },
-    { action: DENY_ACTION, title: "Deny" },
-  ];
-  const details = { action: DETAILS_ACTION, title: "Details" };
+function browserMaxNotificationActions(): number | undefined {
+  if (typeof Notification === "undefined") return undefined;
+  return (Notification as typeof Notification & { maxActions?: number }).maxActions;
+}
+
+export function notificationActions(
+  maxActions: number | undefined = browserMaxNotificationActions()
+): NotificationAction[] {
   // Read defensively: `maxActions` is not in every lib.dom, and a browser that omits it is one
-  // whose limit we do not know — offer the full set and let it drop what it cannot show.
-  const max = (Notification as { maxActions?: number }).maxActions;
-  return max === undefined || max > decisions.length ? [...decisions, details] : decisions;
+  // whose limit we do not know — offer the full set and let it drop what it cannot show. Invalid
+  // values are treated the same way; browsers expose this as a finite, non-negative integer.
+  const limit =
+    maxActions === undefined || !Number.isFinite(maxActions) || maxActions < 0
+      ? PENDING_NOTIFICATION_ACTIONS.length
+      : Math.floor(maxActions);
+  return PENDING_NOTIFICATION_ACTIONS.slice(0, limit);
 }
 
 async function showPending(message: PushShow): Promise<void> {
