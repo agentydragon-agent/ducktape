@@ -1,7 +1,8 @@
 # Wyrm2 agent-LLM capability map and experiment plan
 
-- **Status:** active
-- **Last reviewed:** 2026-07-17
+This is the active program for evaluating agent-capable inference configurations
+on `wyrm2`. Durable measurements live in <results.md>; immutable run details live
+under `runs/`.
 
 ## Goal
 
@@ -201,77 +202,31 @@ order, re-running the context probe and the 8K/128K latency workload:
 4. Expert/layer residency, CPU/GPU split, memory mapping, and storage cache.
 5. Context allocation and concurrency.
 
-## First five experiments
+## Baseline results
 
-Each experiment is one run directory: serving manifest(s), a bench Job, and a
-README following the conventions above (context ladder; latency at 8K/32K/128K;
-tool-call smoke; VRAM/RAM footprint; verdict). Quality comes from external evals
-unless a trust mark says otherwise.
+The initial resident-runtime screen is complete. Each experiment has an
+immutable run directory and a row in <results.md>; do not turn this section back
+into a second, competing results table.
 
-### E1 — k8s vLLM baseline: Qwen3-Coder-30B-A3B AWQ, TP2, FP8 KV, 262K
+- **E1 — Qwen3-Coder-30B-A3B, vLLM TP2:** 262K allocated context and passing
+  tool-call smoke; this is the resident baseline. See
+  <runs/2026-07-17_e1_qwen3coder_awq/README.md>.
+- **E2 — gpt-oss-20B, vLLM versus Ollama:** both runtimes work for the normal
+  request paths, but neither passed the parallel tool-call probe. See
+  <runs/2026-07-17_e2_gptoss_vllm_vs_ollama/README.md>.
+- **E3 — Qwen2.5-7B 1M attempt:** allocation was blocked by the missing
+  Blackwell-compatible long-context kernel, not by model memory. See
+  <runs/2026-07-17_e3_qwen25_7b_1m/README.md>.
+- **E4 — Qwen3.5-35B-A3B, vLLM TP2:** 262K allocated context, but the Hermes
+  parser did not pass the tool-call probe. See
+  <runs/2026-07-17_e4_qwen35_35b/README.md>.
+- **E5 — Devstral Small 2 24B, vLLM TP2:** the dense baseline passed the
+  single, parallel, and multi-turn tool-call probes at 128K. See
+  <runs/2026-07-17_e5_devstral_24b/README.md>.
 
-Port the known-good host configuration (`--tensor-parallel-size 2
---kv-cache-dtype fp8 --max-model-len 262144 --gpu-memory-utilization 0.90
---max-num-seqs 32`; see <vllm_history.md>) into a k8s Deployment on `wyrm2`.
-
-- **Measure:** does the k8s + CDI + vLLM path work at all; allocated context at
-  128K and 256K; TTFT and decode tokens/s at 8K/32K/128K; tool-call smoke;
-  per-GPU peak VRAM.
-- **Quality:** external Qwen3-Coder numbers (`ext`).
-- **Why first:** validates the whole harness against a configuration whose host
-  behavior we already know, and produces the reference row in <results.md>.
-
-### E2 — runtime isolation on the incumbent: gpt-oss-20b, vLLM MXFP4 vs Ollama
-
-Same checkpoint family we already serve, two runtimes: vLLM with native
-Blackwell MXFP4 (single GPU, then TP2) versus the live Ollama deployment (which
-dequantizes to bf16).
-
-- **Measure:** decode tokens/s and TTFT at 8K and 128K; tool-call smoke;
-  `reasoning_effort` behavior on each runtime.
-- **Quality:** HumanEval already saturated here (`local`, prior run); no new
-  quality run — this experiment is about the runtime, not the model.
-- **Why:** decides whether the cluster's fast 128K-class default endpoint should
-  move off Ollama, and calibrates how much runtime choice alone is worth.
-
-### E3 — the 1M attempt: Nemotron 3 Nano 30B-A3B FP8, vLLM TP2, FP8 KV
-
-The hybrid-architecture candidate whose KV footprint should be small enough for
-a serious long-context attempt.
-
-- **Measure:** context ladder 128K → 256K → 512K → 1M — largest allocated
-  window, needle probe at each rung (`local~`), TTFT/decode at 128K and at the
-  largest allocated window, VRAM/KV budget at each rung.
-- **Quality:** NVIDIA's published numbers (`ext`).
-- **Why:** the headline question of the whole program — what is the largest
-  _effective_ window this hardware can host at all.
-
-### E4 — current-gen generalist MoE: Qwen3.5-35B-A3B FP8, vLLM TP2, FP8 KV
-
-The strongest recent generalist that plausibly fits resident.
-
-- **Measure:** allocated context at native 262K (then its ~1M extended mode if
-  the runtime supports it); latency curve; tool-call smoke.
-- **Quality:** published Qwen3.5 evals at FP8 (`ext`), compared against E1's
-  Qwen3-Coder externals.
-- **Why:** the "is there a free upgrade over the 2025 coding baseline"
-  experiment.
-
-### E5 — dense coding-agent baseline: Devstral Small 2 24B FP8, vLLM TP2, 256K
-
-The dense counterpoint to the MoEs — expected slower decode but strong published
-agentic numbers.
-
-- **Measure:** allocated context at 256K; latency at 8K/32K/128K; tool-call
-  smoke — Mistral function calling through vLLM's parser is exactly the kind of
-  thing that breaks in deployment-specific ways, so a misbehavior here is a
-  `local` finding external evals can't give us.
-- **Quality:** published Devstral SWE-bench/agentic numbers (`ext`).
-- **Why:** quantify the MoE-vs-dense latency gap at equal VRAM and decide
-  whether dense quality is worth it.
-
-The exotic lane continues in parallel (GLM-5.2 Colibri follow-ups per that run's
-TODO list); it is not gated on E1–E5.
+The follow-on screen is also recorded in <results.md>: E6 (Qwen3.6), E7
+(gpt-oss-120B offload), and E8/E9 (DeepSeek-V4-Flash). The exotic lane is
+independent of the resident baseline and remains a separate experiment track.
 
 ### E10 — MiniMax M3: can it extend the offload coding frontier over DSV4-Flash?
 
@@ -297,9 +252,9 @@ sparse attention, native 1M context, open-weight. External evals: SWE-bench Veri
   GLM-5.2 tier (~0.1–0.3 tok/s). Too big to run usefully on `wyrm2`; revisit only with a
   much smaller quant or more RAM.
 
-## Later work
+## Next work
 
-- **Resume point (2026-07-18): make DeepSeek-V4-Flash faster (E9 follow-up).** E9 runs at
+- **Make DeepSeek-V4-Flash faster (E9 follow-up).** E9 runs at
   2.9 tok/s but that is ~10× under the RAM-bandwidth ceiling, so there is large headroom.
   Ranked next steps (physics + how-to in <runs/2026-07-18_e9_deepseek_v4_flash_llamacpp/README.md>):
   (1) `--n-cpu-moe N` sweep to fill VRAM with experts; (2) `ik_llama.cpp` / CUDA-backend
