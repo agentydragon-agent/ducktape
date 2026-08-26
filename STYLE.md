@@ -249,6 +249,10 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 - **Concise test bodies**: assertions in tests, setup in fixtures.
 - **Update tests with production code**: signature/behavior changes propagate to the
   tests that use them, in the same change.
+- **Use the real test environment, not local platform shims**: when code depends on
+  standard browser or runtime APIs, configure the test runner with an implementation
+  that provides them. Mock only test-specific behavior or genuine external boundaries;
+  do not reimplement the expected platform piecemeal inside a spec.
 - **Test externally meaningful behavior, not implementation text**: assert observable
   behavior, public API contracts, schemas, and durable invariants — never inspect
   implementation source text, count or forbid source fragments, or pin method identity
