@@ -30,10 +30,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from haku.console.app import create_app
