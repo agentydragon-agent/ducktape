@@ -9,3 +9,48 @@ metadata:
 spec:
   endpointSelector: {}
   ingress: []
+---
+# Public-coder runners establish bridge/MCP through Console, use the shared exact-session
+# Kubernetes proxy, and reach GitHub/LiteLLM only through their own least-credential proxy.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: public-coder-runner-egress
+  namespace: haku-runtime-sandbox
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-harness-runner
+      haku.allegedly.works/access-profile-id: public-coder
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
+            k8s:app.kubernetes.io/name: haku-console
+      toPorts:
+        - ports:
+            - { port: "8080", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+            k8s:app.kubernetes.io/name: public-coder-codex-runner-proxy
+      toPorts:
+        - ports:
+            - { port: "8080", protocol: TCP }
+    # Console-selected Kubernetes access is mediated by the shared authorization proxy; the pod
+    # has no ServiceAccount token and the runner writes a tokenFile kubeconfig only for this URL.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
+            k8s:app.kubernetes.io/name: haku-kube-api-proxy
+      toPorts:
+        - ports:
+            - { port: "8080", protocol: TCP }

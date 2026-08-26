@@ -156,6 +156,10 @@ spec:
             k8s:io.kubernetes.pod.namespace: haku-runtime-sandbox
             k8s:app.kubernetes.io/name: haku-harness-runner
             k8s:haku.allegedly.works/access-profile-id: haku
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-runtime-sandbox
+            k8s:app.kubernetes.io/name: haku-harness-runner
+            k8s:haku.allegedly.works/access-profile-id: public-coder
       toPorts:
         - ports:
             - port: "8080"

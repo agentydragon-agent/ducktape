@@ -6,8 +6,10 @@ resources:
   - sandboxwarmpool-haku.yaml
   - sandboxtemplate-haku-claude.yaml
   - sandboxwarmpool-haku-claude.yaml
+  - sandboxtemplate-haku-public-coder-codex.yaml
+  - sandboxwarmpool-haku-public-coder-codex.yaml
   - cleanuppolicy-haku-janitor.yaml
-  # No janitor for the Console's Claude sandboxes. The console slides each live session's
+  # No janitor for Console-launched CLI sandboxes. The console slides each live session's
   # SandboxClaim shutdownTime on its lease heartbeat (haku/console/x/sandbox_claims.py renew) and
   # deletes the claim on a clean end, so the Agent Sandbox controller's own deadline is the reaper;
   # a creation-age CleanupPolicy would only cap a tended session short of its deadline. Accepted

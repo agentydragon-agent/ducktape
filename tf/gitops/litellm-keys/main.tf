@@ -136,13 +136,12 @@ resource "kubernetes_secret" "codex_pod" {
 }
 
 # ============================================================================
-# public-coder-agent — second OpenClaw agent, Codex-subscription + Gemini
+# public-coder-agent — OpenClaw and Console shells, Codex + Gemini lane
 # ============================================================================
-# The coder agent at public-coder-agent.allegedly.works runs the same harness
-# against the same `codex-*` models plus the Gemini chat lineup, but gets its
-# own virtual key rather than sharing openclaw's: usage is then attributable
-# per agent, and either can be revoked without taking the other down. Deleting
-# this key is its kill switch.
+# OpenClaw and its Console-launched Codex sandbox are two shells for the same durable Agent.
+# The key is reflected only into public-coder-agent: OpenClaw may consume it directly, while the
+# least-credential runner proxy substitutes it for the Console runner's inert placeholder. Deleting this
+# key is the Agent's provider kill switch.
 
 resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
@@ -163,7 +162,7 @@ resource "kubernetes_secret" "public_coder_agent" {
     name      = "litellm-key-public-coder-agent"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the public-coder-agent OpenClaw instance (Codex subscription models through CLIProxyAPI, Gemini chat models, plus embeddings)"
+      description                                                     = "LiteLLM virtual key for public-coder-agent OpenClaw and least-credential runner-proxy-mediated Haku Console Codex shells (subscription models through CLIProxyAPI, Gemini chat models, plus embeddings)"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "public-coder-agent"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"

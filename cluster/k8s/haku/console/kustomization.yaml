@@ -26,3 +26,4 @@ configMapGenerator:
     files:
       - config.yaml
       - chat_system_prompt.md.j2
+      - public_coder_system_prompt.md.j2
