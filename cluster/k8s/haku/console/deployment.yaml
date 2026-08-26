@@ -193,6 +193,10 @@ spec:
             # making a frontend-only image update roll this API Deployment.
             - name: HAKU_CONSOLE_STATIC_IMAGE_TAG_FILE
               value: /etc/haku-console/static-metadata/image-tag
+            # Config-first rollout for the approval-wait bound. Current images ignore unknown
+            # environment variables; the follow-up image requires this value at startup.
+            - name: HAKU_CONSOLE_MAX_WAIT_FOR_RESULT_MS
+              value: "60000"
             - name: HAKU_CONSOLE_MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
               value: "30"
             # Direct tana-rw credential. It is resolved only while Console calls the internal
