@@ -11,6 +11,7 @@ import pytest
 import pytest_bazel
 from jinja2 import UndefinedError
 
+from haku.console.mcp_guidance import server_instructions
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
 SESSION = UUID("11111111-2222-4333-8444-555555555555")
@@ -71,6 +72,17 @@ def test_deployed_template_carries_both_sides_of_the_history(deployed: SystemPro
     # monologue and invites the agent to answer questions it already answered.
     assert "you booked it for Monday" in rendered
     assert "no earlier conversation" not in rendered
+
+
+def test_deployed_template_includes_mcp_guidance_for_clients_that_hide_server_instructions(
+    deployed: SystemPromptTemplate,
+):
+    rendered = deployed.render(introduction())
+    guidance = server_instructions()
+    assert guidance in rendered
+    assert "pending_approval" in rendered
+    assert "get_mcp_server_status" in rendered
+    assert "https://github.com/agentydragon/ducktape" in rendered
 
 
 def test_deployed_template_points_at_the_index_whether_or_not_history_was_replayed(deployed: SystemPromptTemplate):

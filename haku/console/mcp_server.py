@@ -81,6 +81,7 @@ from haku.console.mcp_config import (
     load_console_config,
     server_tool_prefix,
 )
+from haku.console.mcp_guidance import approval_request_preamble, server_instructions
 from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
 from haku.console.node_daemons import DaemonStatusResponse, NodeDaemonService
 from haku.console.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
@@ -113,39 +114,7 @@ TOOL_NAME_SEPARATOR = "__"
 _DEFAULT_GET_TOOL_CALL_FIELDS = [ToolCallPayloadField.RESULT]
 _DEFAULT_LIST_TOOL_CALL_FIELDS: list[ToolCallPayloadField] = []
 
-INSTRUCTIONS = (
-    "haku-console tool proxy. Every proxied tool is named `<server>__<tool>`. Tools whose schema "
-    "wraps the real arguments in an `input` + `rationale` envelope submit Agent calls to the "
-    "operator's approval queue: they return the result if approved and completed within the "
-    "synchronous wait, otherwise a non-terminal stub with a `tool_call_id` and approval link. A "
-    "`pending_approval` stub means the operator did not approve or deny before that wait ended; the "
-    "call remains queued, may be approved or denied later, and will execute if later approved. A "
-    "`running` stub means it was approved but execution has not finished. Poll "
-    "`get_tool_call(tool_call_id)` to resolve a stub, or "
-    "`withdraw_tool_call(tool_call_id, reason)` to retract one you no longer want before an operator "
-    "decides it. Tools with the upstream schema auto-approve Agent calls. Calls authenticated "
-    "by the console Operator's browser session execute directly and create no approval record. Call "
-    "`list_mcp_servers` to passively inspect persisted connection state without refreshing credentials. "
-    "If a server is serving tools that your tool list does not contain — discovery does not re-run for "
-    "an established session, so a server that was degraded when you connected has no tools here — name "
-    "them through `call_mcp_tool(server_id, tool_name, arguments)`, passing the same `arguments` the "
-    "generated tool would have taken. `get_mcp_server_status(server_id, include_tool_schemas=True)` "
-    "reports each tool's `approval_mode` and its already-exposed `input_schema`, so you can see which "
-    "of the two shapes to send rather than guessing."
-)
-
-_REQUEST_PREAMBLE = (
-    "For Agent callers, submits `{tool}` on `{server}` through haku-console's operator-approval "
-    "queue. Put the real tool arguments under `input`. Returns the result if approved and completed "
-    "within `wait_for_result_ms`; otherwise returns a non-terminal stub with a `tool_call_id` plus "
-    "approval `url`. A `pending_approval` stub means the operator did not approve or deny before the "
-    "specified wait ended; the request remains queued, may be approved or denied later, and will "
-    "execute if later approved. A `running` stub means approval happened but execution has not "
-    "finished. Poll `get_tool_call(tool_call_id)` to resolve the stub. If you stop wanting the call "
-    "while it is still pending, retract it with `withdraw_tool_call(tool_call_id, reason)` instead of leaving "
-    "it in the operator's queue. An authenticated console Operator call "
-    "executes directly and creates no approval record."
-)
+INSTRUCTIONS = server_instructions()
 
 # Console-native read tools: they read only the console's own persisted catalog/ledger (closed
 # world — never a downstream MCP/provider lookup) and mutate nothing, so advertise both axes.
@@ -585,7 +554,7 @@ def _build_proxy_tool(
         description = tool.description or ""
     else:
         parameters = _envelope_schema(schema)
-        preamble = _REQUEST_PREAMBLE.format(tool=tool.name, server=server_id)
+        preamble = approval_request_preamble(tool=tool.name, server=server_id)
         description = f"{preamble}\n\n{tool.description}" if tool.description else preamble
     return ProxyTool(
         name=name,
@@ -856,28 +825,11 @@ def build_console_mcp(
         arguments: dict[str, Any] | None = None,
         actor: ToolCallActor = current_actor_dependency,
     ) -> ToolResult:
-        """Call any tool on any configured MCP server by naming it, when its generated
-        `<server>__<tool>` tool is missing from your tool list.
+        """Call a configured tool by server/tool name when its generated proxy is missing.
 
-        `arguments` is exactly what you would pass to that generated tool — the same payload, only
-        addressed by name instead of by tool. So it is the raw upstream arguments for a tool the
-        policy auto-approves, and the `{input, rationale, title?, wait_for_result_ms?}` envelope for
-        one that needs operator approval. Everything downstream is identical: the same policy
-        decision, the same schema check, the same audit row, the same result or non-terminal stub.
-
-        **Read `get_mcp_server_status(server_id, include_tool_schemas=True)` first.** Each tool
-        there reports `approval_mode` (which of the two shapes it takes) and an `input_schema` that
-        is already the exposed one — enveloped where required — so you can send it verbatim. Do not
-        guess the shape: an envelope sent to a pass-through tool becomes literal arguments named
-        `input` and `rationale`, and raw arguments sent to an enveloped tool are rejected.
-
-        Reach for this when the named tool is absent — most often because your session enumerated
-        this server while it was degraded. Discovery does not re-run for an established session, so
-        a server that has since recovered contributes no tools to your registry even though it is
-        serving; that reflection call is current when your own tool list is not.
-
-        Omit `arguments` for a pass-through tool that takes none. `list_mcp_servers` shows what is
-        configured.
+        Read `get_mcp_server_status(server_id, include_tool_schemas=True)` first and pass the
+        reflected `input_schema` shape verbatim: raw arguments for pass-through tools, or the
+        approval envelope for approval-required tools. See https://github.com/agentydragon/ducktape for details.
         """
         servers = _load_servers(context.settings)
         if not any(server.id == server_id for server in servers):
@@ -937,20 +889,11 @@ def build_console_mcp(
     async def withdraw_tool_call(
         tool_call_id: str, reason: str | None = None, actor: ToolCallActor = current_actor_dependency
     ) -> ToolCallView:
-        """Retract one of your own tool calls that is still waiting for operator approval.
+        """Retract your own tool call while it is still `pending_approval`.
 
-        Use this as soon as you no longer want a pending call: your plan changed, the operator did
-        the thing by hand, you submitted a duplicate, or you got what you needed another way. It
-        takes the request out of the operator's approval queue so nobody is asked to decide on work
-        you have abandoned — an unwanted pending stub otherwise sits in that queue indefinitely.
-
-        Only works while the call is `pending_approval`. If the operator already approved it, this
-        fails and names the current status; withdrawing never stops or undoes an approved call, so
-        read the outcome with `get_tool_call` instead. You can only withdraw calls your own agent
-        submitted, and withdrawal is terminal — resubmit rather than expecting to un-withdraw.
-
-        `reason` is recorded on the audit row and shown to the operator, so prefer a real
-        explanation ("superseded by tc_… with the corrected label") over "not needed".
+        Withdrawal removes it from the operator queue but never stops an approved call; use
+        `get_tool_call` to read that call's outcome. `reason` is shown to the operator. See
+        https://github.com/agentydragon/ducktape for details.
         """
         try:
             record = await context.tool_calls.withdraw(tool_call_id=tool_call_id, reason=reason, actor=actor)

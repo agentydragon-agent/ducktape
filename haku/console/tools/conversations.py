@@ -249,13 +249,12 @@ def take_page[ItemT](
 def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy) -> FastMCP:
     mcp: FastMCP = FastMCP(
         name=HAKU_CONVERSATIONS_SERVER_ID,
-        instructions="Read Haku's own past sessions. `list_sessions` finds one and `list_turns` finds an "
-        "exchange within it; `read_transcript` is what was said and done, in one vocabulary that names no "
-        "agent backend, and `read_rollout` / `read_frame` are the native frames the session's named harness "
-        "sent — the one place here that is not neutral, so read them as that harness's wire rather "
-        "than as the conversation. Start with the transcript and follow an entry's `provenance` into the "
-        "frames when a normalization looks wrong. Every listing pages the same way: pass `next_cursor` back "
-        "as `cursor`. Read-only.",
+        instructions=(
+            "Read Haku's past sessions: start with `list_sessions`, then `list_turns`, then "
+            "`read_transcript`. Follow transcript `provenance` into `read_rollout`/`read_frame` when "
+            "normalization needs checking. Every listing returns `items` and `next_cursor`; pass the "
+            "cursor back as `cursor`. Read-only."
+        ),
     )
 
     def require_conversation_access(execution: McpExecutionContext) -> None:
@@ -271,15 +270,9 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         limit: Annotated[int, Field(default=20, ge=1, le=MAX_PAGE, description="Most recent sessions first.")] = 20,
         execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> SessionPage:
-        """List Haku's past chat sessions, newest first, a page at a time.
+        """List past sessions, newest first. Use `conversation_id` to group continuations.
 
-        A session is one runner's life and it ends; the `conversation_id` beside it is the thread,
-        which does not. Sessions sharing one are the same conversation continued after a sandbox
-        died, so that is the field to group by when reading back what a room was told.
-
-        Keyset paging like every other listing here, not an offset: sessions keep being created
-        at the top of this order while a reader walks it, so a page counted from the start would
-        skip sessions or repeat them as new ones land.
+        See https://github.com/agentydragon/ducktape for details.
         """
         require_conversation_access(execution)
         sessions, more = split_page(await reader.list_sessions(cursor=cursor, limit=limit + 1), limit=limit)
@@ -297,10 +290,9 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         ),
         execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> TurnPage:
-        """List a session's exchanges — what each cost, how long it took, how it ended.
+        """List a session's exchanges with cost, duration, outcome, and frame range.
 
-        Each carries the frame range it produced, so this is the cheap way to find the exchange
-        worth reading before reading it.
+        See https://github.com/agentydragon/ducktape for details.
         """
         require_conversation_access(execution)
         turns, more = split_page(await reader.list_turns(session_id, cursor=cursor, limit=limit + 1), limit=limit)
@@ -316,19 +308,11 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
         execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> TranscriptPage:
-        """Read what a conversation meant: messages, reasoning, tool calls and their results.
+        """Read normalized messages, reasoning, tool calls, and results oldest first.
 
-        In the console's own vocabulary rather than any agent backend's, so nothing here is
-        `assistant`, a content block or a `tool_use_result`. Entries are in the order they
-        happened, oldest first, and every one says which frames it was read off — follow that
-        `provenance` into `read_frame` when a normalization looks wrong.
-
-        Native streaming details are not on this surface. A conversation being read back is
-        finished, and its integration has already reduced the raw wire to these neutral entries.
-
-        A tool call and its result are two entries, joined by `call_id`, not one entry with the
-        answer folded in: the call is real while it is still running, and a page that waited for
-        the result would have to look arbitrarily far ahead or stop where it did not mean to.
+        Entries use the console's neutral vocabulary and carry `provenance`; follow it into
+        `read_frame` when a normalization needs checking. Tool calls and results are separate
+        entries joined by `call_id`. See https://github.com/agentydragon/ducktape for details.
         """
         require_conversation_access(execution)
         slice_ = await reader.read_transcript(session_id, cursor=cursor, limit=limit + 1)
@@ -360,11 +344,9 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
             ),
         ] = None,
     ) -> RolloutPage:
-        """Read one session's raw protocol frames in order, a page at a time.
+        """Read a session's native harness frames in order, rather than its normalized transcript.
 
-        The session harness's own wire format, verbatim — native frames, not the conversation.
-        `read_transcript` is the same conversation already read, in the vocabulary that names no
-        backend; this is what to check it against.
+        See https://github.com/agentydragon/ducktape for details.
         """
         require_conversation_access(execution)
         frames, more = take_page(
@@ -388,14 +370,10 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         ],
         execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> RolloutFrame:
-        """One native harness frame in full, however large — including one too big for any page.
+        """Read one native frame in full, including a frame clipped from a page.
 
-        A page spends a byte budget and stops, so a frame larger than the whole budget is the one
-        thing it cannot hand over; naming a single frame bounds the response by that frame alone.
-        Use it when a page returned `clipped_bytes` instead of a payload, and when a transcript
-        entry's normalization needs checking against what actually arrived.
-
-        Streaming frames are readable here too, in whatever native shape this harness uses.
+        Use it when `clipped_bytes` is present or a transcript normalization needs checking. See
+        https://github.com/agentydragon/ducktape for details.
         """
         require_conversation_access(execution)
         frame = await reader.read_frame(session_id, frame_seq)

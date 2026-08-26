@@ -35,6 +35,7 @@ from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, resolve_operator_identity, write_config
 from haku.console.mcp_approval import DegradedReflection
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
+from haku.console.mcp_guidance import server_instructions
 from haku.console.mcp_operator_oauth import (
     McpOperatorAuthConnected,
     McpOperatorAuthStatus,
@@ -387,9 +388,11 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     # The non-terminal stub semantics are in the envelope tool's description.
     gmail_write_description = tools["gmail__drafts_create"].description
     assert gmail_write_description is not None
-    assert "operator-approval queue" in gmail_write_description
-    assert "did not approve or deny before the specified wait ended" in gmail_write_description
-    assert "will execute if later approved" in gmail_write_description
+    assert "requires operator approval" in gmail_write_description
+    assert "wait_for_result_ms" in gmail_write_description
+    assert "pending_approval" in gmail_write_description
+    assert "running" in gmail_write_description
+    assert "get_tool_call" in gmail_write_description
     # Calendar reads are transparent; creation is the approval-gated request tool. The server
     # prefix supplies "calendar", so no tool repeats it in the local name.
     assert "google_calendar__get_event" in tools
@@ -404,6 +407,12 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     for tool in tools.values():
         _assert_valid_json_schema(tool.inputSchema)
         _assert_valid_json_schema(tool.outputSchema)
+
+
+def test_console_server_instructions_keep_client_critical_guidance() -> None:
+    assert server_instructions() == mcp_server_module.INSTRUCTIONS
+    for phrase in ("<server>__<tool>", "pending_approval", "get_tool_call", "call_mcp_tool"):
+        assert phrase in mcp_server_module.INSTRUCTIONS
 
 
 def test_approval_envelope_rejects_old_wait_field_name() -> None:
