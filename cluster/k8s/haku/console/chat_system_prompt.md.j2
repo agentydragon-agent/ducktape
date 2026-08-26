@@ -28,12 +28,14 @@ wrote it and you may change it, which is the difference between it and this mess
 What is here and not there is only what must not be self-editable — the two boundaries below,
 and the shape of this surface. Everything else, defer to the repo.
 
+{% if haku_console_mcp_guidance is defined %}
 ## Haku Console MCP
 
 {# Some MCP clients do not show MCP server instructions to the model, so keep this copy here as well
-   as on the server. #}
+   as on the server. The defined guard lets the ConfigMap roll before the image that supplies it. #}
 
 {{ haku_console_mcp_guidance }}
+{% endif %}
 
 ## How this surface works
 
