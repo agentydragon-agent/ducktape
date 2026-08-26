@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Group, Loader, Radio, Select, Stack, Text, TextInput } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   decideAgentEnrollment,
@@ -28,6 +28,14 @@ export function AgentEnrollmentPanel({
   const [accessProfileId, setAccessProfileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -57,6 +65,7 @@ export function AgentEnrollmentPanel({
     setError(null);
     try {
       const result = await decideAgentEnrollment(interactionId, body);
+      if (!mountedRef.current) return;
       if (result.status === "continue") {
         window.location.assign(result.authorization_url);
         return;
@@ -64,6 +73,7 @@ export function AgentEnrollmentPanel({
       toastSuccess("Agent enrollment denied", "No Agent credentials were issued.");
       onReturnToSettings();
     } catch (reason) {
+      if (!mountedRef.current) return;
       setError(displayableError(reason));
       setDeciding(false);
     }

@@ -32,7 +32,8 @@ export default function App() {
     };
   }, []);
 
-  if (view === "oauthResult" && oauthResultId !== null) return <OAuthResultPage resultId={oauthResultId} />;
+  if (view === "oauthResult" && oauthResultId !== null)
+    return <OAuthResultPage key={oauthResultId} resultId={oauthResultId} />;
 
   // The initial config load is the one thing rendered by the shell itself; a failure
   // leaves nothing to frame, so it gets a persistent page-level message — except while the
