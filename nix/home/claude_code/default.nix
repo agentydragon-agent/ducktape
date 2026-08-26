@@ -592,6 +592,44 @@ in
       showThinkingSummaries = true;
       showTurnDuration = true; # "Cooked for Xm Ys" messages
       autoMemoryEnabled = true;
+      autoMode = {
+        environment = [
+          "### Org-wide"
+          ''**Organization**: None configured — personal infrastructure monorepo (per README: "Personal infrastructure monorepo"), single-author (agentydragon)''
+          "**Cloud provider(s)**: None configured — evidence shows self-hosted k8s (Proxmox/Talos, host 'atlas') and Forgejo, not a named commercial cloud provider account"
+          "**Repository visibility**: PUBLIC — github.com/agentydragon/ducktape (confirmed via gh); any push here is publishing"
+          "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary"
+          "**Secrets management**: SOPS with age keys (SOPS_AGE_KEY, SOPS_VERSION markers; sops.yaml patterns in cluster/); k8s Secrets referenced (e.g. props-evaluator-credentials, ollama-api-key)"
+          "**Default / protected branches**: devel (default, protected via ruleset 'default-branch-protection', active) — treat devel on github.com/agentydragon/ducktape as protected"
+          "**CI/CD deploy targets**: GitHub Actions (.github/workflows) and Forgejo (git.allegedly.works/agentydragon/ducktape.git) — Flux/flux-system namespace for GitOps deploys to the atlas k8s cluster"
+          "**Network posture**: gVisor-sandboxed Claude Code web containers used for some work; DOCKER_HOST/podman used for local props testing"
+          "**Source control**: this repo (agentydragon/ducktape) and its two remotes — origin (github.com:agentydragon/ducktape) and forgejo (git.allegedly.works:agentydragon/ducktape.git)"
+          "**Trusted cloud buckets**: None configured"
+          "**Key internal services**: props backend at https://props.allegedly.works (evaluator API); local Postgres at 127.0.0.1:5433 (eval_results db) for props dev/testing; atlas k8s cluster (Proxmox/Talos) reached via kubectl across namespaces (haku-console, forgejo, flux-system, haku-sandbox, kube-system, activitywatch, grocy-sf, seaweedfs, loki, monitoring, nix-cache, agents-infra, authentik)"
+          "**Internal package registry**: local OCI registry proxy at 127.0.0.1:8000 (props testing); ghcr.io/agentydragon/rbe-worker for BuildBuddy RBE image"
+          "**Sensitive data locations & audiences**: cluster/ IaC and secrets docs (cluster/docs/secrets.md, cluster/k8s/*/terraform.yaml, *.sops.yaml files, aws-credentials.sops.yaml, s3-credentials.yaml), devinfra/claude/claude_api/credentials.py, devinfra/claude/testdata/sops_test_secrets.yaml and ssh_encrypted_ed25519, haku/console kubernetes_grant_* files, finance/plaid/db/secret_store.py, airlock/oauth/k8s_client.py — share only with the repo owner (agentydragon)"
+          "**Data retention / declassification**: None configured"
+          "**Sensitive remote targets**: any namespace/host with 'prod' or 'production' as a whole word/segment (none observed by name in this recon); treat the live props deployment at props.allegedly.works and the atlas k8s cluster's production-facing namespaces (e.g. haku-console) with the same caution as prod given they are live-shared infra"
+          "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic; note high-traffic shared namespaces observed: haku-console, forgejo, flux-system, kube-system"
+          "**Protected IaC scopes**: IAM, RBAC, networking, quota, node-pool resources; anything tagged prod/production as a whole word/segment — cluster/terraform/main/*.tf (cilium, flux, home-nodes, infrastructure, nebula, ovh-nodes, proxmox-nodes/vms, talos-ccm, talos-machine-secrets), cluster/k8s/descheduler/rbac-patch.yaml, cluster/docs/iam-policy-route53.json"
+          "### User-specific"
+          "**Primary use of Claude Code**: software development — personal infrastructure monorepo (Bazel/Nix/k8s/Rust/Python) plus props ML-eval-pipeline development, agent trace debugging, and Claude Code container reverse-engineering"
+          "**Trusted repo**: this repo, agentydragon/ducktape, working dir /home/agentydragon/code/ducktape, and its two remotes (github.com/agentydragon/ducktape [public — only this repo's own work should be pushed there] and git.allegedly.works/agentydragon/ducktape.git); confidential/secret material must never be committed to either regardless of visibility"
+          "**Org-specific CLIs**: bb / bbr / bbapi (Bazel/BuildBuddy wrappers), direnv, kubectl (atlas cluster), talosctl, sops, nixos-rebuild, tana-claude, gemini-claude, z-claude, aiquota, codex, ghreq"
+          "routine under /home/agentydragon/code/ducktape/ prefix: Bazel builds/tests, gazelle BUILD regen, props critic/grader dev workflow, kubectl reads against the atlas cluster namespaces listed above, Forgejo/GitHub read operations"
+        ];
+        allow = [
+          "$defaults"
+          "Bash(bb run //devinfra:gazelle:*) in agentydragon/ducktape — routine BUILD file regeneration"
+          "Bash(bazel test //props/...) in agentydragon/ducktape — routine test workflow distinct from manual live-deployment skill"
+          "Bash(kubectl get:*) and Bash(kubectl logs:*) read-only ops against atlas cluster namespaces seen routinely (haku-console, forgejo, flux-system, kube-system, monitoring, loki)"
+        ];
+        soft_deny = [
+          "$defaults"
+          "kubectl apply/delete/exec against atlas cluster namespaces outside a scratch/dev namespace (e.g. haku-console, flux-system, kube-system, authentik) — shared production-adjacent infra"
+          "Writes to cluster/terraform/main/*.tf or cluster/k8s/*/terraform.yaml (IaC affecting IAM, networking, node pools, secrets sync) without explicit confirmation"
+        ];
+      };
       # Voice dictation: speak prompts instead of typing. Tap once to record,
       # tap again to send. Only usable on hosts with a local microphone (the
       # laptop); a no-op on the headless agent-box/claude-web hosts. Requires a
