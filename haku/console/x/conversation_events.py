@@ -26,8 +26,8 @@ them while reporting green.
 
 **Approvals are not modelled here.** They travel over MCP to the approval queue.
 
-Every shape claim below was read off production frames; the measurements are in
-<../debug/frame_shape_census.md> § What will break a naive fold.
+The event shapes below are the projection's current neutral vocabulary; backend-specific wire
+measurements belong in protocol fixtures, not in this record model.
 """
 
 from __future__ import annotations

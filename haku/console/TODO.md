@@ -177,7 +177,7 @@ Two traps for whoever picks this up:
 
 ## Operator browser auth — parked remainders
 
-From the login audit (<debug/2026_07_24_operator_login_audit.md>), fixed in #3516/#3519 except for:
+The browser login flow is fixed in #3516/#3519 except for:
 
 - **A background 401 still navigates the tab** (audit F3). Expiry is now announced beforehand and
   re-authentication returns to the same page, but the redirect itself is still fired by whichever

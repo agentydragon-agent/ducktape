@@ -3,8 +3,7 @@
 <test_diverse_session.py>'s capture holds one straight-line session: text, thinking, tool calls,
 one failure. This one holds the shapes that capture has none of — a command the CLI ran in the
 background and reported on later, and a **subagent**, whose frames carry a `parent_tool_use_id`
-naming the call that spawned it (`testdata/agents_and_background.jsonl`, redacted; provenance in
-<../../debug/frame_shape_census.md> § A capture of agents and background work).
+naming the call that spawned it (`testdata/agents_and_background.jsonl`, redacted).
 
 Those shapes had never been recorded anywhere. Against the whole production frame log — 35,791
 frames on 2026-08-16 — `local_agent` occurs **zero** times and so does `parent_tool_use_id`, so

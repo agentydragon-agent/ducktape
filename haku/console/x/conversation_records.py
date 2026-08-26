@@ -174,7 +174,6 @@ class Outcome(StrEnum):
 
     `UNKNOWN` is the common case, not the corner: the field a provider would report failure in is
     routinely absent, and collapsing that into `SUCCEEDED` reports every unanswerable case as fine.
-    The shares are measured in <../debug/frame_shape_census.md>.
 
     Spelled here rather than shared with <conversation_events.py>'s enum of the same members: that
     one is the fold's own vocabulary.

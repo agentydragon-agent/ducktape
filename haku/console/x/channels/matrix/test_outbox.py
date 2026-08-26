@@ -179,9 +179,9 @@ async def test_replies_are_said_in_the_order_they_were_produced(
 async def test_a_refused_send_leaves_the_row_for_the_next_attempt(
     chat_store, migrated_sessions, migrated_engine, outbox, session_id, turn_id, attachment_id
 ) -> None:
-    """The drop this table exists for (<../../../debug/message_drops.md> E1): the failure is the
-    row's — unsent, one attempt spent, the homeserver's own words kept, and claimable again once
-    its backoff passes.
+    """A failed send leaves the row unsent and claimable again once its backoff passes.
+
+    The homeserver's own words remain recorded, while the failed row spends one attempt.
     """
     homeserver = _Homeserver(refuses={"the answer"})
     pacer, drain = _unpaced(migrated_engine, outbox, homeserver)

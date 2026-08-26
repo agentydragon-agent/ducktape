@@ -1169,7 +1169,7 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
     """`is_error` is `false` on every production result, including all 27 sessions the console
-    recorded as failed (<../debug/frame_shape_census.md>), so closing from it adopts a turn that
+    recorded as failed, so closing from it adopts a turn that
     ended badly as answered. The projection of the frame closes the turn instead, so recovery fails
     exactly as the live path fails on the same frame.
     """
@@ -1598,7 +1598,7 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
     """The drop that needs neither a reconnection nor a roll: a turn that raised after producing
-    text (<../debug/message_drops.md> E4). The ending frame's own events are never applied, so the
+    text. The ending frame's own events are never applied, so the
     message the turn was mid-way through is closed by `close_answer` or by nothing at all — and a
     message left open is prose no channel is owed.
     """
@@ -1719,8 +1719,7 @@ async def test_an_abort_mid_answer_leaves_the_half_answer_unmarked(
 async def test_a_message_the_agent_finished_before_stopping_survives_the_drain(
     chat_store, migrated_sessions, recording_claims, notifications, operator_id
 ) -> None:
-    """<../debug/message_drops.md> E3 — the drop an outbox cannot close, because the reply never
-    reaches the delivery layer at all.
+    """A reply can remain open when the runtime raises before its delivery row is created.
 
     An abort does not land between messages; it lands inside one, and the CLI finishes what it was
     writing before it stops. Draining only to the `result` discards that `assistant` frame

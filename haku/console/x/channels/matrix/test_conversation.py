@@ -492,7 +492,7 @@ async def test_an_unreadable_event_is_a_fact_per_event_on_the_live_conversation(
     thread: UUID,
 ) -> None:
     """One fact per event, for the caller to append in the transaction that acknowledges the batch
-    (<../../../debug/channel_write_audit.md> row 12)."""
+    (the channel must derive it from the durable conversation record)."""
     await serving_session(chat_store, operator_id, thread)
     await serving_room(conversations, operator_id)
 

@@ -2,7 +2,7 @@
 // subpaths resolve to real but untyped files, so they need a module declaration; the wildcard covers
 // every icon under the subpath directory, so adding an icon to icons.tsx needs no edit here. The
 // subpath form is mandatory — the `@tabler/icons-react` barrel OOMs esbuild on RBE (~8.7 GB;
-// debug/esbuild_tabler_memory.md) — and the pattern deliberately does not match it.
+// the barrel import) — and the pattern deliberately does not match it.
 //
 // Must stay a global script (no top-level import/export — the React import lives INSIDE the block)
 // so the declaration registers globally; a top-level import would make this a module and the

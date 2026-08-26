@@ -303,9 +303,8 @@ nothing about it needs a second write on the send path. That is what keeps the r
 what happened, derive what is shown — and it is why the delivery queue can be channel-private
 (§ 5): under reconciliation the queue holds no facts, only work derivable from the record.
 
-The exception is a notice whose fact is not in the record at all. <../debug/channel_write_audit.md>
-is the standing inventory of those; anything still on it needs a conversation-side writer before it
-can be projected rather than sent.
+The exception is a notice whose fact is not in the record at all; anything still on that inventory
+needs a conversation-side writer before it can be projected rather than sent.
 
 ## 5. Where delivery state belongs
 
@@ -832,7 +831,7 @@ Matrix is just one of pluggable backends — channels_). A write that goes strai
 is invisible to every other channel, unrecoverable across a crash, and unprojectable. The test of
 compliance is not "does it work" but "could Telegram show it" — which makes the easy-to-forget
 writes the interesting ones: typing indicators, edits, redactions, invites, and the console's own
-notices. <../debug/channel_write_audit.md> is the inventory.
+notices. The current channel implementation is the inventory.
 
 **The projector is single-writer per session.** The lease gives that, and it is the reason none of
 this needs the fold to be re-runnable. An expired lease means unowned rather than dead, but the

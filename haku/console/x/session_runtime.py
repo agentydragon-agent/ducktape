@@ -3,7 +3,6 @@
 The turn loop, the runner's websocket bridge, the sandbox lifecycle and the SPA chat surface's own
 routes. The rows underneath, and every transaction that moves them, are `session_store.py`.
 
-The incidents behind this file's invariants are in <../debug/2026_08_16_runtime_archaeology.md>.
 """
 
 from __future__ import annotations
@@ -878,7 +877,7 @@ class SessionService:
                 # **The drain is this loop, not a second one beside it.** A harness may finish the
                 # message it is mid-way through between the interrupt and its terminal frame; each
                 # intervening frame is applied like any other
-                # (<../debug/message_drops.md> E3). It therefore moves `said_anything` and
+                # It therefore moves `said_anything` and
                 # `queued_reply`, which is what keeps the tail below from owing the room the turn's
                 # final text as well.
                 #

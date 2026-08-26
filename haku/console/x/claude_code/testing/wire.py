@@ -4,8 +4,8 @@ One builder per shape the parsers in <../frames.py> and <../projection.py> read,
 what it is building — an assistant frame that made one tool call, a tool result that failed — and
 the JSON stays here beside the code that reads it.
 
-Fidelity is to <../testdata/diverse_session.jsonl> and to
-<../../../debug/frame_shape_census.md>: the envelope keys every real frame carries are emitted
+Fidelity is to <../testdata/diverse_session.jsonl> and to `protocol.md`: envelope keys
+every real frame carries are emitted
 whether or not anything reads them, because what the projection ignores is as much a fact about it
 as what it reads. What varies between real frames is a parameter; what is constant on the wire is
 not.
@@ -70,9 +70,8 @@ def assistant(
     here is a shape the wire does not produce — pass one, and a second frame for the next.
 
     `parent_tool_use_id` is the call a nested frame belongs to. `protocol.md` describes it as the
-    marker of a subagent's forwarded frames; the census saw it non-null on `tool_progress` and
-    nowhere else, because no subagent ran. Passing it is a hypothesis about a shape nobody has
-    captured, which is why every test that does says so.
+    marker of a subagent's forwarded frames. Passing it is a compatibility shape, so tests using
+    it make that assumption explicit.
     """
     message: dict[str, Any] = {
         "content": list(blocks),
@@ -81,8 +80,7 @@ def assistant(
         "model": "claude-opus-4-6-20260514",
         "role": "assistant",
         "stop_details": None,
-        # Null on all 1,887 production frames: nothing in an `assistant` frame says the message is
-        # finished.
+        # Nothing in an `assistant` frame says the message is finished.
         "stop_reason": None,
         "stop_sequence": None,
         "type": "message",
@@ -110,8 +108,8 @@ def tool_result(
 ) -> dict[str, Any]:
     """An inbound `user` frame: what a tool answered.
 
-    `is_error=None` is the 56% of results that omit the key entirely, which is why the key is
-    absent rather than false. `structured` is the top-level `tool_use_result` the real output
+    `is_error=None` models a result that omits the key entirely, which is why the key is absent
+    rather than false. `structured` is the top-level `tool_use_result` the real output
     rides on, beside the renderable `content`.
     """
     block: dict[str, Any] = {"content": content, "tool_use_id": call_id, "type": "tool_result"}
@@ -129,8 +127,7 @@ def tool_result(
 def tool_progress(
     call_id: str, tool_name: str, *, parent_tool_use_id: str, elapsed_time_seconds: int
 ) -> dict[str, Any]:
-    """A long-running tool saying it is still running — 113 frames over 7 sessions, and the only
-    frame class the census ever saw carrying a non-null `parent_tool_use_id`.
+    """A long-running tool saying it is still running.
 
     Absent from `protocol.md` entirely, so nothing in the fold has a case for it.
     """
@@ -181,8 +178,8 @@ def stream_event(event: dict[str, Any]) -> dict[str, Any]:
     return {"event": event, "type": "stream_event"}
 
 
-# What the census's own `result` frame reported it cost. Read by nothing — the console keeps no
-# account of what an exchange cost — and emitted because every production result carries it.
+# Sample `result` accounting. Read by nothing — the console keeps no account of what an exchange
+# cost — and emitted because every result frame carries it.
 _RESULT_ACCOUNTING: dict[str, Any] = {
     "duration_ms": 41_902,
     "total_cost_usd": 0.4213,

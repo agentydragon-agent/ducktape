@@ -880,7 +880,7 @@ def main() -> None:
     # open for the life of a chat session, so with the default (None) uvicorn waits *forever* on
     # SIGTERM for it to drain, never cancels the handler, never runs the lifespan shutdown, and is
     # SIGKILLed at the pod's grace deadline — running no finalizer, so the session's lease is never
-    # handed back and the sweep fails it (haku/console/debug/2026_08_13_sessions_boot_and_die.md).
+    # handed back and the sweep fails it.
     # Bounding the wait makes uvicorn cancel the handlers and reach the lifespan, where the chat
     # service hands its leases back. Keep it below the deployment's terminationGracePeriodSeconds.
     uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info", timeout_graceful_shutdown=10)
