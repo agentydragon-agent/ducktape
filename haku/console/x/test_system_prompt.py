@@ -11,7 +11,7 @@ import pytest
 import pytest_bazel
 from jinja2 import UndefinedError
 
-from haku.console.mcp_guidance import server_instructions
+from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 
 SESSION = UUID("11111111-2222-4333-8444-555555555555")
@@ -78,7 +78,7 @@ def test_deployed_template_includes_mcp_guidance_for_clients_that_hide_server_in
     deployed: SystemPromptTemplate,
 ):
     rendered = deployed.render(introduction())
-    guidance = server_instructions()
+    guidance = SERVER_INSTRUCTIONS
     assert guidance in rendered
     assert "pending_approval" in rendered
     assert "get_mcp_server_status" in rendered

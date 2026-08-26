@@ -26,7 +26,7 @@ from uuid import UUID
 
 from jinja2 import Environment, StrictUndefined
 
-from haku.console.mcp_guidance import server_instructions
+from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
 
 
 @dataclass(frozen=True)
@@ -83,5 +83,5 @@ class SystemPromptTemplate:
             session_id=introduction.session_id,
             workspace=introduction.workspace,
             recent_messages=list(introduction.recent_messages),
-            haku_console_mcp_guidance=server_instructions(),
+            haku_console_mcp_guidance=SERVER_INSTRUCTIONS,
         ).strip()

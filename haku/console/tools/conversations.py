@@ -270,10 +270,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         limit: Annotated[int, Field(default=20, ge=1, le=MAX_PAGE, description="Most recent sessions first.")] = 20,
         execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> SessionPage:
-        """List past sessions, newest first. Use `conversation_id` to group continuations.
-
-        See https://github.com/agentydragon/ducktape for details.
-        """
+        """List past sessions, newest first. Use `conversation_id` to group continuations."""
         require_conversation_access(execution)
         sessions, more = split_page(await reader.list_sessions(cursor=cursor, limit=limit + 1), limit=limit)
         return SessionPage(items=sessions, next_cursor=SessionCursor.of(more) if more is not None else None)
@@ -290,10 +287,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         ),
         execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> TurnPage:
-        """List a session's exchanges with cost, duration, outcome, and frame range.
-
-        See https://github.com/agentydragon/ducktape for details.
-        """
+        """List a session's exchanges with cost, duration, outcome, and frame range."""
         require_conversation_access(execution)
         turns, more = split_page(await reader.list_turns(session_id, cursor=cursor, limit=limit + 1), limit=limit)
         return TurnPage(items=turns, next_cursor=TurnCursor.of(more) if more is not None else None)
@@ -312,7 +306,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
 
         Entries use the console's neutral vocabulary and carry `provenance`; follow it into
         `read_frame` when a normalization needs checking. Tool calls and results are separate
-        entries joined by `call_id`. See https://github.com/agentydragon/ducktape for details.
+        entries joined by `call_id`.
         """
         require_conversation_access(execution)
         slice_ = await reader.read_transcript(session_id, cursor=cursor, limit=limit + 1)
@@ -344,10 +338,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
             ),
         ] = None,
     ) -> RolloutPage:
-        """Read a session's native harness frames in order, rather than its normalized transcript.
-
-        See https://github.com/agentydragon/ducktape for details.
-        """
+        """Read a session's native harness frames in order, rather than its normalized transcript."""
         require_conversation_access(execution)
         frames, more = take_page(
             await reader.read_frames(
@@ -372,8 +363,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
     ) -> RolloutFrame:
         """Read one native frame in full, including a frame clipped from a page.
 
-        Use it when `clipped_bytes` is present or a transcript normalization needs checking. See
-        https://github.com/agentydragon/ducktape for details.
+        Use it when `clipped_bytes` is present or a transcript normalization needs checking.
         """
         require_conversation_access(execution)
         frame = await reader.read_frame(session_id, frame_seq)

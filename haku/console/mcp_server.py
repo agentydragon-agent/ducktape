@@ -81,7 +81,7 @@ from haku.console.mcp_config import (
     load_console_config,
     server_tool_prefix,
 )
-from haku.console.mcp_guidance import approval_request_preamble, server_instructions
+from haku.console.mcp_guidance import SERVER_INSTRUCTIONS, approval_request_preamble
 from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
 from haku.console.node_daemons import DaemonStatusResponse, NodeDaemonService
 from haku.console.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
@@ -114,7 +114,7 @@ TOOL_NAME_SEPARATOR = "__"
 _DEFAULT_GET_TOOL_CALL_FIELDS = [ToolCallPayloadField.RESULT]
 _DEFAULT_LIST_TOOL_CALL_FIELDS: list[ToolCallPayloadField] = []
 
-INSTRUCTIONS = server_instructions()
+INSTRUCTIONS = SERVER_INSTRUCTIONS
 
 # Console-native read tools: they read only the console's own persisted catalog/ledger (closed
 # world — never a downstream MCP/provider lookup) and mutate nothing, so advertise both axes.
@@ -825,11 +825,11 @@ def build_console_mcp(
         arguments: dict[str, Any] | None = None,
         actor: ToolCallActor = current_actor_dependency,
     ) -> ToolResult:
-        """Call a configured tool by server/tool name when its generated proxy is missing.
+        """Call a configured tool by server/tool name when it is missing from the tool list.
 
         Read `get_mcp_server_status(server_id, include_tool_schemas=True)` first and pass the
-        reflected `input_schema` shape verbatim: raw arguments for pass-through tools, or the
-        approval envelope for approval-required tools. See https://github.com/agentydragon/ducktape for details.
+        exposed `input_schema` shape verbatim: raw arguments for pass-through tools, or the
+        approval envelope for approval-required tools.
         """
         servers = _load_servers(context.settings)
         if not any(server.id == server_id for server in servers):
@@ -892,8 +892,7 @@ def build_console_mcp(
         """Retract your own tool call while it is still `pending_approval`.
 
         Withdrawal removes it from the operator queue but never stops an approved call; use
-        `get_tool_call` to read that call's outcome. `reason` is shown to the operator. See
-        https://github.com/agentydragon/ducktape for details.
+        `get_tool_call` to read that call's outcome. `reason` is shown to the operator.
         """
         try:
             record = await context.tool_calls.withdraw(tool_call_id=tool_call_id, reason=reason, actor=actor)
