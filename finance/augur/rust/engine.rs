@@ -285,6 +285,8 @@ pub enum SimulationError {
     InvalidMortgageInterestPolicy { liability_id: String },
     #[error("property tax policy for {property_id:?} has invalid rate or range")]
     InvalidPropertyTaxPolicy { property_id: String },
+    #[error("federal SALT policy for {profile_id:?} is invalid")]
+    InvalidSaltPolicy { profile_id: String },
     #[error("duplicate target-allocation policy for {agent_id}:{account_id}")]
     DuplicateTargetAllocationPolicy {
         agent_id: String,
@@ -362,6 +364,9 @@ enum ObligationEffect {
         mortgage_index: usize,
         interest: Money,
         principal: Money,
+    },
+    PropertyTax {
+        owner_agent_id: String,
     },
 }
 
@@ -1435,6 +1440,30 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             }
         }
     }
+    let mut salt_profiles = BTreeSet::new();
+    for policy in &fixture.scenario.federal_salt_deduction_policies {
+        let Some(profile) = fixture
+            .scenario
+            .tax_profiles
+            .iter()
+            .find(|profile| profile.agent_id == policy.profile_id)
+        else {
+            return Err(SimulationError::InvalidSaltPolicy {
+                profile_id: policy.profile_id.clone(),
+            });
+        };
+        if !salt_profiles.insert(policy.profile_id.as_str())
+            || !profile
+                .jurisdictions
+                .iter()
+                .any(|rules| rules.jurisdiction_id == policy.federal_jurisdiction_id)
+            || policy.cap_schedule.iter().any(|entry| entry.cap.0 < 0)
+        {
+            return Err(SimulationError::InvalidSaltPolicy {
+                profile_id: policy.profile_id.clone(),
+            });
+        }
+    }
     let mut locations = BTreeSet::new();
     for location in &fixture.scenario.locations {
         validate_identifier("location", &location.location_id)?;
@@ -1543,6 +1572,19 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             return Err(SimulationError::InvalidMortgageInterestPolicy {
                 liability_id: policy.liability_id.clone(),
             });
+        }
+        if !matches!(policy.debt_class.as_str(), "acquisition" | "home_equity")
+            || policy
+                .per_jurisdiction_principal_cap
+                .values()
+                .any(|cap| cap.0 < 0)
+        {
+            return Err(SimulationError::InvalidMortgageInterestPolicy {
+                liability_id: policy.liability_id.clone(),
+            });
+        }
+        for jurisdiction_id in policy.per_jurisdiction_principal_cap.keys() {
+            validate_identifier("mortgage-interest jurisdiction", jurisdiction_id)?;
         }
         if !mortgage_interest_policies.insert(policy.liability_id.clone()) {
             return Err(SimulationError::InvalidMortgageInterestPolicy {
@@ -2454,6 +2496,7 @@ fn simulate_rollout(
                 &mut recorder,
                 &mut tax_facts,
                 &mut tax_liabilities,
+                &mortgages,
                 month,
             )?;
             reset_property_tax_year_state(&mut properties, &mut mortgages);
@@ -3348,7 +3391,9 @@ fn property_obligations(
                 &policy.tax_authority_account_id,
             ),
             amount_due,
-            effect: ObligationEffect::None,
+            effect: ObligationEffect::PropertyTax {
+                owner_agent_id: policy.owner_agent_id.clone(),
+            },
         });
     }
     Ok(obligations)
@@ -3593,16 +3638,14 @@ fn record_rental_interest_deduction(
     Ok(())
 }
 
-fn record_mortgage_interest_deduction(
+fn record_property_tax_paid(
     tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
     agent_id: &str,
     amount: Money,
 ) -> Result<(), SimulationError> {
     for ((taxpayer, _), facts) in tax_facts {
         if taxpayer == agent_id {
-            facts.mortgage_interest_deduction =
-                facts.mortgage_interest_deduction.checked_add(amount)?;
-            facts.itemized_deduction = facts.itemized_deduction.checked_add(amount)?;
+            facts.property_tax_paid = facts.property_tax_paid.checked_add(amount)?;
         }
     }
     Ok(())
@@ -3656,21 +3699,143 @@ fn reset_property_tax_year_state(
     }
 }
 
+fn mortgage_interest_deduction_for(
+    fixture: &Fixture,
+    mortgages: &[MortgageState],
+    agent_id: &str,
+    jurisdiction_id: &str,
+) -> Result<Money, SimulationError> {
+    let mut scaled_total = 0_i128;
+    for policy in fixture
+        .scenario
+        .mortgage_interest_deduction_policies
+        .iter()
+        .filter(|policy| policy.owner_agent_id == agent_id)
+    {
+        let Some(mortgage) = mortgages
+            .iter()
+            .find(|mortgage| mortgage.liability_id == policy.liability_id)
+        else {
+            continue;
+        };
+        let owner_interest = mortgage
+            .interest_paid_ytd
+            .checked_sub(mortgage.rental_interest_paid_ytd)?;
+        let origination_principal = fixture
+            .scenario
+            .scheduled_property_purchases
+            .iter()
+            .filter_map(|purchase| purchase.mortgage.as_ref())
+            .find(|spec| spec.liability_id == policy.liability_id)
+            .expect("validated MID policy has a mortgage")
+            .principal;
+        let factor_ppb = if policy.debt_class == "home_equity" {
+            0
+        } else {
+            let cap = if policy.per_jurisdiction_principal_cap.is_empty() {
+                origination_principal
+            } else {
+                policy
+                    .per_jurisdiction_principal_cap
+                    .get(jurisdiction_id)
+                    .copied()
+                    .unwrap_or(Money(0))
+            };
+            mul_div_round_half_up(
+                cap.0.min(origination_principal.0),
+                RATE_SCALE_PPB,
+                origination_principal.0,
+                "mortgage-interest principal factor",
+            )?
+        };
+        let scaled = i128::from(owner_interest.0)
+            .checked_mul(i128::from(factor_ppb))
+            .ok_or(ArithmeticError::Overflow {
+                operation: "mortgage-interest scaled deduction",
+            })?;
+        scaled_total = scaled_total
+            .checked_add(scaled)
+            .ok_or(ArithmeticError::Overflow {
+                operation: "mortgage-interest aggregate deduction",
+            })?;
+    }
+    let denominator = i128::from(RATE_SCALE_PPB);
+    let rounded = scaled_total / denominator
+        + i128::from(scaled_total % denominator >= (denominator + 1) / 2);
+    Ok(Money(i64::try_from(rounded).map_err(|_| {
+        ArithmeticError::Overflow {
+            operation: "mortgage-interest aggregate deduction",
+        }
+    })?))
+}
+
 fn accrue_year_end_taxes(
     fixture: &Fixture,
     ledger: &mut Ledger,
     recorder: &mut Recorder,
     tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
     tax_liabilities: &mut Vec<TaxLiabilityState>,
+    mortgages: &[MortgageState],
     month: u32,
 ) -> Result<(), SimulationError> {
     for profile in &fixture.scenario.tax_profiles {
+        let mut annual = BTreeMap::new();
         for rules in &profile.jurisdictions {
             let key = (profile.agent_id.clone(), rules.jurisdiction_id.clone());
-            let facts = *tax_facts
-                .get(&key)
+            let facts = tax_facts
+                .get_mut(&key)
                 .expect("validated tax profile has initialized facts");
+            facts.mortgage_interest_deduction = mortgage_interest_deduction_for(
+                fixture,
+                mortgages,
+                &profile.agent_id,
+                &rules.jurisdiction_id,
+            )?;
+            facts.salt_deduction = Money(0);
+            facts.itemized_deduction = facts.mortgage_interest_deduction;
+            let facts = *facts;
             let assessment = assess(facts, rules)?;
+            annual.insert(rules.jurisdiction_id.clone(), (facts, assessment));
+        }
+        if let Some(policy) = fixture
+            .scenario
+            .federal_salt_deduction_policies
+            .iter()
+            .find(|policy| policy.profile_id == profile.agent_id)
+        {
+            let state_tax = annual
+                .iter()
+                .filter(|(jurisdiction_id, _)| {
+                    jurisdiction_id.as_str() != policy.federal_jurisdiction_id
+                })
+                .try_fold(Money(0), |total, (_, (_, assessment))| {
+                    total.checked_add(assessment.total_tax)
+                })?;
+            let property_tax = annual
+                .get(&policy.federal_jurisdiction_id)
+                .map_or(Money(0), |(facts, _)| facts.property_tax_paid);
+            let salt_total = property_tax.checked_add(state_tax)?;
+            let salt_cap = salt_cap_for(policy, month / 12);
+            let salt_deduction = Money(salt_total.0.min(salt_cap.0));
+            let federal_rules = profile
+                .jurisdictions
+                .iter()
+                .find(|rules| rules.jurisdiction_id == policy.federal_jurisdiction_id)
+                .expect("validated SALT policy has a federal tax link");
+            let (facts, assessment) = annual
+                .get_mut(&policy.federal_jurisdiction_id)
+                .expect("validated SALT policy has annual facts");
+            facts.salt_deduction = salt_deduction;
+            facts.itemized_deduction = facts
+                .mortgage_interest_deduction
+                .checked_add(salt_deduction)?;
+            *assessment = assess(*facts, federal_rules)?;
+        }
+        for rules in &profile.jurisdictions {
+            let key = (profile.agent_id.clone(), rules.jurisdiction_id.clone());
+            let (facts, assessment) = annual
+                .remove(&rules.jurisdiction_id)
+                .expect("annual tax assessment exists for every jurisdiction");
             let cause_id = format!(
                 "{}_{}_year_end_accrual_m{month}",
                 profile.agent_id, rules.jurisdiction_id
@@ -3723,7 +3888,7 @@ fn accrue_year_end_taxes(
                 depreciation_deduction: facts.depreciation_deduction,
                 standard_deduction: rules.standard_deduction,
                 mortgage_interest_deduction: facts.mortgage_interest_deduction,
-                salt_deduction: Money(0),
+                salt_deduction: facts.salt_deduction,
                 itemized_deduction: facts.itemized_deduction,
                 ordinary_taxable: assessment.ordinary_taxable,
                 long_term_capital_gain_taxable: assessment.long_term_capital_gain_taxable,
@@ -3743,6 +3908,18 @@ fn accrue_year_end_taxes(
         }
     }
     Ok(())
+}
+
+fn salt_cap_for(policy: &crate::fixture::FederalSaltDeductionSpec, year_index: u32) -> Money {
+    if policy.cap_schedule.is_empty() {
+        return Money(i64::MAX);
+    }
+    policy
+        .cap_schedule
+        .iter()
+        .filter(|entry| entry.effective_year_index <= year_index)
+        .max_by_key(|entry| entry.effective_year_index)
+        .map_or(Money(0), |entry| entry.cap)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3797,6 +3974,18 @@ fn settle_obligations(
                     &obligation.to,
                     obligation.amount_due,
                 )?,
+                ObligationEffect::PropertyTax { ref owner_agent_id } => {
+                    transfer_money(
+                        ledger,
+                        recorder,
+                        month,
+                        &firing_id,
+                        &obligation.from,
+                        &obligation.to,
+                        obligation.amount_due,
+                    )?;
+                    record_property_tax_paid(tax_facts, owner_agent_id, obligation.amount_due)?;
+                }
                 ObligationEffect::TaxPayment { profile_index } => {
                     book_tax_payment(
                         fixture,
@@ -3906,7 +4095,6 @@ fn settle_obligations(
                         RATE_SCALE_PPB,
                         "rental mortgage interest",
                     )?);
-                    let owner_interest = interest.checked_sub(rental_interest)?;
                     mortgage.rental_interest_paid_ytd = mortgage
                         .rental_interest_paid_ytd
                         .checked_add(rental_interest)?;
@@ -3915,21 +4103,6 @@ fn settle_obligations(
                         &mortgage.agent_id,
                         rental_interest,
                     )?;
-                    if fixture
-                        .scenario
-                        .mortgage_interest_deduction_policies
-                        .iter()
-                        .any(|policy| {
-                            policy.liability_id == mortgage.liability_id
-                                && policy.owner_agent_id == mortgage.agent_id
-                        })
-                    {
-                        record_mortgage_interest_deduction(
-                            tax_facts,
-                            &mortgage.agent_id,
-                            owner_interest,
-                        )?;
-                    }
                     mortgage.principal_paid_ytd =
                         mortgage.principal_paid_ytd.checked_add(principal)?;
                     if mortgage.principal == Money(0) {
@@ -5149,6 +5322,7 @@ mod tests {
                 property_sales: vec![],
                 mortgage_interest_deduction_policies: vec![],
                 property_tax_policies: vec![],
+                federal_salt_deduction_policies: vec![],
             },
             series: vec![],
         }
@@ -5719,6 +5893,7 @@ mod tests {
                 property_sales: vec![],
                 mortgage_interest_deduction_policies: vec![],
                 property_tax_policies: vec![],
+                federal_salt_deduction_policies: vec![],
             },
             series: vec![SeriesSpec {
                 series_id: "security:vti".into(),
@@ -5936,6 +6111,7 @@ mod tests {
                 property_sales: vec![],
                 mortgage_interest_deduction_policies: vec![],
                 property_tax_policies: vec![],
+                federal_salt_deduction_policies: vec![],
             },
             series: vec![SeriesSpec {
                 series_id: "security:vti".into(),
@@ -6011,6 +6187,7 @@ mod tests {
                 property_sales: vec![],
                 mortgage_interest_deduction_policies: vec![],
                 property_tax_policies: vec![],
+                federal_salt_deduction_policies: vec![],
             },
             series: vec![],
         };
@@ -6100,6 +6277,7 @@ mod tests {
                 property_sales: vec![],
                 mortgage_interest_deduction_policies: vec![],
                 property_tax_policies: vec![],
+                federal_salt_deduction_policies: vec![],
             },
             series: vec![],
         };

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::{
     ledger::{AccountRef, JournalEntry},
@@ -6,7 +7,7 @@ use crate::{
     tax::{JurisdictionLevel, TaxRules},
 };
 
-pub const FIXTURE_SCHEMA_VERSION: u32 = 5;
+pub const FIXTURE_SCHEMA_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -69,6 +70,8 @@ pub struct ScenarioSpec {
     pub mortgage_interest_deduction_policies: Vec<MortgageInterestDeductionSpec>,
     #[serde(default)]
     pub property_tax_policies: Vec<PropertyTaxPolicySpec>,
+    #[serde(default)]
+    pub federal_salt_deduction_policies: Vec<FederalSaltDeductionSpec>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -457,6 +460,14 @@ pub struct PropertySaleSpec {
 pub struct MortgageInterestDeductionSpec {
     pub liability_id: String,
     pub owner_agent_id: String,
+    #[serde(default = "default_acquisition_debt_class")]
+    pub debt_class: String,
+    #[serde(default)]
+    pub per_jurisdiction_principal_cap: BTreeMap<String, Money>,
+}
+
+fn default_acquisition_debt_class() -> String {
+    "acquisition".into()
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -475,6 +486,27 @@ pub struct PropertyTaxPolicySpec {
     pub start_month: u32,
     #[serde(default)]
     pub end_month: Option<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FederalSaltCapEntrySpec {
+    pub effective_year_index: u32,
+    pub cap: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FederalSaltDeductionSpec {
+    pub profile_id: String,
+    #[serde(default = "default_federal_jurisdiction_id")]
+    pub federal_jurisdiction_id: String,
+    #[serde(default)]
+    pub cap_schedule: Vec<FederalSaltCapEntrySpec>,
+}
+
+fn default_federal_jurisdiction_id() -> String {
+    "federal_us".into()
 }
 
 fn default_account_id() -> String {

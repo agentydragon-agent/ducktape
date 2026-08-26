@@ -27,6 +27,8 @@ from finance.augur.sim.scenario import (
     BondHolding,
     CapitalImprovementEvent,
     DistributionTaxSlice,
+    FederalSaltCapEntry,
+    FederalSaltDeductionPolicy,
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
@@ -461,13 +463,17 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
             MortgageInterestDeductionPolicy(
                 liability_id=spec["liability_id"],
                 owner_agent_id=spec["owner_agent_id"],
-                # The strict Rust fixture currently models the deliberately
-                # narrower uncapped acquisition-debt subset. Override the
-                # legacy model's jurisdiction defaults with the liability's
-                # own principal so its compiled factor is exactly one.
-                per_jurisdiction_principal_cap=dict.fromkeys(
-                    tax_jurisdiction_ids, mortgage_principal_by_liability[spec["liability_id"]]
-                ),
+                debt_class=spec.get("debt_class", "acquisition"),
+                per_jurisdiction_principal_cap={
+                    jurisdiction_id: _money(cap, quantum)
+                    for jurisdiction_id, cap in spec.get(
+                        "per_jurisdiction_principal_cap",
+                        dict.fromkeys(
+                            tax_jurisdiction_ids,
+                            int(mortgage_principal_by_liability[spec["liability_id"]] / Decimal(quantum)),
+                        ),
+                    ).items()
+                },
             )
             for spec in scenario_spec.get("mortgage_interest_deduction_policies", [])
         ],
@@ -485,6 +491,19 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 end_month=spec.get("end_month"),
             )
             for spec in scenario_spec.get("property_tax_policies", [])
+        ],
+        federal_salt_deduction_policies=[
+            FederalSaltDeductionPolicy(
+                profile_id=spec["profile_id"],
+                federal_jurisdiction_id=spec.get("federal_jurisdiction_id", "federal_us"),
+                cap_schedule=[
+                    FederalSaltCapEntry(
+                        effective_year_index=entry["effective_year_index"], cap=_money(entry["cap"], quantum)
+                    )
+                    for entry in spec.get("cap_schedule", [])
+                ],
+            )
+            for spec in scenario_spec.get("federal_salt_deduction_policies", [])
         ],
         tax_profiles=[
             TaxProfile(

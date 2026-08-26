@@ -50,9 +50,10 @@ The differential suite currently proves exact integer agreement for:
   clearing, the exact 24-of-trailing-60-month use test, and filing-profile §121
   exclusion caps applied after depreciation recapture;
 - property rented-fraction transitions, capital improvements, 27.5-year rental
-  depreciation, rental/owner mortgage-interest splitting for uncapped
-  acquisition debt, and sale-time §1250 recapture with federal capped-rate
-  versus state ordinary-income treatment;
+  depreciation, rental/owner mortgage-interest splitting, per-jurisdiction
+  acquisition-debt principal caps, home-equity-debt exclusion, and sale-time
+  §1250 recapture with federal capped-rate versus state ordinary-income
+  treatment;
 - fixed-payment mortgage origination, monthly interest/principal splitting,
   same-source funding-group settlement, and property-tax carrying costs;
 - grouped scheduled and recurring obligations;
@@ -62,6 +63,8 @@ The differential suite currently proves exact integer agreement for:
   attempted-funding attribution, and canonical obligation-failure metadata;
 - insufficient-cash failure month and state freezing;
 - federal and California ordinary-income year-end tax accruals;
+- federal SALT itemization from funded property tax plus sibling state-income
+  tax, including forward-filled year-indexed cap schedules;
 - federal long-term-capital-gain stacking and tax accrual;
 - quarterly estimated-tax payments, aggregate safe-harbor Q4 computation,
   January true-up, tax-liability settlement, and funded/unfunded tax-payment
@@ -132,8 +135,8 @@ Still missing before replacement is plausible:
 
 - broader modeled tax facts and complete deduction policy;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
-- property-tax/SALT deduction policy and mortgage principal-cap/debt-class
-  policies;
+- property-tax policy beyond purchase-price assessment and fixed location
+  special assessments;
 - broader liquidity policy, TLH, and
   private equity;
 - complete selected-rollout causal trace parity for those domains;

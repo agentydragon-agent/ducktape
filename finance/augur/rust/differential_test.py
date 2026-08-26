@@ -45,7 +45,7 @@ def _fixture() -> dict[str, Any]:
     # sale, while sharing the sale-month value supported by the legacy fixed
     # sale-price surface.
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "currency_code": "USD",
         "currency_quantum": "0.01",
         "rollout_count": 2,
@@ -384,7 +384,7 @@ def _distribution_tax_fixture() -> dict[str, Any]:
 def _target_allocation_fixture() -> dict[str, Any]:
     tax_profile = _tax_fixture()["scenario"]["tax_profiles"][0]
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "currency_code": "USD",
         "currency_quantum": "0.01",
         "rollout_count": 1,
@@ -1210,6 +1210,107 @@ def _uncapped_mortgage_interest_fixture() -> dict[str, Any]:
     purchase["rented_fraction_ppb"] = 0
     scenario["property_tax_policies"] = []
     scenario["mortgage_interest_deduction_policies"] = [{"liability_id": "home-mortgage", "owner_agent_id": "alice"}]
+    return fixture
+
+
+def _mortgage_interest_policy_fixture() -> dict[str, Any]:
+    fixture = _financed_property_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 12
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 30_000_000},
+        {"account": {"agent_id": "bob", "account_id": "checking"}, "opening_balance": 30_000_000},
+        {"account": {"agent_id": "seller-a", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "seller-b", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "bank-a", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "bank-b", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["scheduled_property_purchases"] = [
+        {
+            "month": 0,
+            "cause_id": f"{agent_id}-buys-home",
+            "property_id": f"{agent_id}-home",
+            "location_id": "sf",
+            "buyer_agent_id": agent_id,
+            "buyer_account_id": "checking",
+            "seller_agent_id": seller_id,
+            "seller_account_id": "checking",
+            "purchase_price": 100_000_000,
+            "down_payment": 20_000_000,
+            "buyer_closing_cost": 0,
+            "rented_fraction_ppb": 0,
+            "land_value_fraction_ppb": 1_000_000_000,
+            "mortgage": {
+                "liability_id": f"{agent_id}-mortgage",
+                "lender_agent_id": bank_id,
+                "lender_account_id": "checking",
+                "principal": 80_000_000,
+                "annual_interest_rate_ppb": 60_000_000,
+                "term_months": 360,
+            },
+        }
+        for agent_id, seller_id, bank_id in (("alice", "seller-a", "bank-a"), ("bob", "seller-b", "bank-b"))
+    ]
+    scenario["mortgage_interest_deduction_policies"] = [
+        {
+            "liability_id": "alice-mortgage",
+            "owner_agent_id": "alice",
+            "debt_class": "acquisition",
+            "per_jurisdiction_principal_cap": {"federal_us": 75_000_000, "california": 100_000_000},
+        },
+        {
+            "liability_id": "bob-mortgage",
+            "owner_agent_id": "bob",
+            "debt_class": "home_equity",
+            "per_jurisdiction_principal_cap": {"federal_us": 75_000_000, "california": 100_000_000},
+        },
+    ]
+    scenario["property_tax_policies"] = []
+    scenario["scheduled_property_cashflows"] = []
+    scenario["recurring_property_cashflows"] = []
+    base_profile = _tax_fixture()["scenario"]["tax_profiles"][0]
+    scenario["tax_profiles"] = []
+    for agent_id in ("alice", "bob"):
+        profile = json.loads(json.dumps(base_profile))
+        profile["agent_id"] = agent_id
+        scenario["tax_profiles"].append(profile)
+    fixture["series"] = []
+    return fixture
+
+
+def _salt_deduction_fixture() -> dict[str, Any]:
+    fixture = _financed_property_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 24
+    scenario["accounts"].extend(
+        [
+            {"account": {"agent_id": "payroll", "account_id": "checking"}, "opening_balance": 0},
+            {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+        ]
+    )
+    scenario["recurring_transfers"] = [
+        {
+            "start_month": 0,
+            "end_month": 23,
+            "cause_id": "alice-paycheck",
+            "from": {"agent_id": "payroll", "account_id": "checking"},
+            "to": {"agent_id": "alice", "account_id": "checking"},
+            "amount": 2_000_000,
+            "income_category": "ordinary",
+        }
+    ]
+    scenario["tax_profiles"] = [_tax_fixture()["scenario"]["tax_profiles"][0]]
+    scenario["federal_salt_deduction_policies"] = [
+        {
+            "profile_id": "alice",
+            "federal_jurisdiction_id": "federal_us",
+            "cap_schedule": [
+                {"effective_year_index": 0, "cap": 4_000_000},
+                {"effective_year_index": 1, "cap": 1_000_000},
+            ],
+        }
+    ]
     return fixture
 
 
@@ -2791,6 +2892,50 @@ def test_rust_and_jax_match_uncapped_acquisition_mortgage_interest(tmp_path: Pat
     assert rust_tax["mortgage_interest_deduction"] == legacy_tax["mortgage_interest_deduction_quanta"]
     assert rust_tax["itemized_deduction"] == legacy_tax["itemized_deduction_quanta"]
     assert rust_tax["total_tax"] == legacy_tax["total_tax_quanta"]
+
+
+def test_rust_and_jax_match_mid_principal_caps_and_home_equity_exclusion(tmp_path: Path) -> None:
+    fixture = _mortgage_interest_policy_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+    rust_events = decode_rust_event_log(rust)
+
+    sort_columns = ["rollout_index", "month_index", "agent_id", "jurisdiction_id"]
+    assert rust_events.tax_breakdowns.schema == legacy.events_log.tax_breakdowns.schema
+    assert (
+        rust_events.tax_breakdowns.sort(sort_columns).to_dicts()
+        == legacy.events_log.tax_breakdowns.sort(sort_columns).to_dicts()
+    )
+
+    breakdowns = {(row["agent_id"], row["jurisdiction_id"]): row for row in rust_events.tax_breakdowns.to_dicts()}
+    alice_federal = breakdowns[("alice", "federal_us")]["mortgage_interest_deduction_quanta"]
+    alice_california = breakdowns[("alice", "california")]["mortgage_interest_deduction_quanta"]
+    assert 0 < alice_federal < alice_california
+    assert alice_federal == round(alice_california * 75 / 80)
+    assert breakdowns[("bob", "federal_us")]["mortgage_interest_deduction_quanta"] == 0
+    assert breakdowns[("bob", "california")]["mortgage_interest_deduction_quanta"] == 0
+
+
+def test_rust_and_jax_match_federal_salt_property_and_state_tax_caps(tmp_path: Path) -> None:
+    fixture = _salt_deduction_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+    rust_events = decode_rust_event_log(rust)
+
+    sort_columns = ["rollout_index", "month_index", "agent_id", "jurisdiction_id"]
+    assert rust_events.tax_breakdowns.schema == legacy.events_log.tax_breakdowns.schema
+    assert (
+        rust_events.tax_breakdowns.sort(sort_columns).to_dicts()
+        == legacy.events_log.tax_breakdowns.sort(sort_columns).to_dicts()
+    )
+    federal = {
+        row["month_index"]: row
+        for row in rust_events.tax_breakdowns.filter(pl.col("jurisdiction_id") == "federal_us").to_dicts()
+    }
+    assert 1_000_000 < federal[11]["salt_deduction_quanta"] < 4_000_000
+    assert federal[23]["salt_deduction_quanta"] == 1_000_000
+    assert federal[11]["itemized_deduction_quanta"] == federal[11]["salt_deduction_quanta"]
+    assert federal[23]["itemized_deduction_quanta"] == federal[23]["salt_deduction_quanta"]
 
 
 def test_rust_and_jax_match_depreciation_recapture_and_jurisdiction_tax(tmp_path: Path) -> None:

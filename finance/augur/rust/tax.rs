@@ -24,6 +24,8 @@ pub struct TaxFacts {
     pub rental_interest_deduction: Money,
     pub depreciation_deduction: Money,
     pub mortgage_interest_deduction: Money,
+    pub property_tax_paid: Money,
+    pub salt_deduction: Money,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
