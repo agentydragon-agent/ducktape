@@ -302,6 +302,61 @@ def _long_term_gain_tax_fixture() -> dict[str, Any]:
     return fixture
 
 
+def _capital_loss_carryforward_fixture() -> dict[str, Any]:
+    fixture = _tax_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 24
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["recurring_transfers"] = []
+    scenario["initial_lots"] = [
+        {
+            "lot_id": "loss-lot",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "purchase_month": -24,
+            "quantity_scale": 1_000_000,
+            "units": 1_000_000,
+            "basis": 1_000_000,
+        },
+        {
+            "lot_id": "gain-lot",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "purchase_month": -12,
+            "quantity_scale": 1_000_000,
+            "units": 1_000_000,
+            "basis": 100_000,
+        },
+    ]
+    scenario["scheduled_sales"] = [
+        {
+            "month": 0,
+            "cause_id": "harvest-loss",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "units": 1_000_000,
+            "proceeds_account_id": "checking",
+        },
+        {
+            "month": 12,
+            "cause_id": "realize-gain",
+            "agent_id": "alice",
+            "account_id": "brokerage",
+            "asset_id": "vti",
+            "units": 1_000_000,
+            "proceeds_account_id": "checking",
+        },
+    ]
+    fixture["series"] = [{"series_id": "security:vti", "snapshots": 25, "values": [200_000] * 12 + [600_000] * 13}]
+    return fixture
+
+
 def _distribution_fixture() -> dict[str, Any]:
     fixture = _fixture()
     scenario = fixture["scenario"]
@@ -3039,6 +3094,25 @@ def test_rust_and_jax_match_depreciation_recapture_and_jurisdiction_tax(tmp_path
     rust_tax_by_jurisdiction = {row["jurisdiction_id"]: row for row in rust_tax}
     assert rust_tax_by_jurisdiction["federal_us"]["section_1250_tax"] > 0
     assert rust_tax_by_jurisdiction["california"]["section_1250_tax"] == 0
+
+
+def test_rust_and_jax_match_shared_capital_loss_carryforward_across_tax_links(tmp_path: Path) -> None:
+    fixture = _capital_loss_carryforward_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+    rust_events = decode_rust_event_log(rust)
+
+    sort_columns = ["rollout_index", "month_index", "agent_id", "jurisdiction_id"]
+    assert rust_events.tax_breakdowns.schema == legacy.events_log.tax_breakdowns.schema
+    assert (
+        rust_events.tax_breakdowns.sort(sort_columns).to_dicts()
+        == legacy.events_log.tax_breakdowns.sort(sort_columns).to_dicts()
+    )
+    rust_accruals = sorted(rust["rollouts"][0]["tax_accruals"], key=lambda row: (row["month"], row["jurisdiction_id"]))
+    assert {row["capital_loss_carryforward"] for row in rust_accruals if row["month"] == 11} == {500_000}
+    assert {row["capital_loss_carryforward"] for row in rust_accruals if row["month"] == 23} == {0}
+    assert {row["ordinary_income"] for row in rust_accruals if row["month"] == 11} == {-300_000}
+    assert {row["long_term_gain"] for row in rust_accruals if row["month"] == 23} == {0}
 
 
 @pytest.mark.parametrize("rollout_count", [1, 17])

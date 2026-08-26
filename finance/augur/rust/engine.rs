@@ -20,7 +20,10 @@ use crate::{
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
-    tax::{JurisdictionLevel, RATE_SCALE, TaxError, TaxFacts, assess, validate_rules},
+    tax::{
+        JurisdictionLevel, RATE_SCALE, TaxError, TaxFacts, assess, net_capital_gains,
+        validate_rules,
+    },
 };
 
 const EXTERNAL_AGENT: &str = "__external__";
@@ -195,6 +198,8 @@ pub enum SimulationError {
         agent_id: String,
         jurisdiction_id: String,
     },
+    #[error("tax profile {agent_id:?} must contain at least one jurisdiction")]
+    EmptyTaxProfile { agent_id: String },
     #[error("sale {cause_id:?} references no lots for {agent_id}:{account_id}:{asset_id}")]
     MissingSalePool {
         cause_id: String,
@@ -1400,6 +1405,11 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
     }
     let mut tax_jurisdictions = BTreeSet::new();
     for profile in &fixture.scenario.tax_profiles {
+        if profile.jurisdictions.is_empty() {
+            return Err(SimulationError::EmptyTaxProfile {
+                agent_id: profile.agent_id.clone(),
+            });
+        }
         if profile.prior_year_tax.0 < 0 || profile.section_121_exclusion.0 < 0 {
             return Err(SimulationError::InvalidAmount {
                 kind: "tax profile prior-year tax",
@@ -3779,6 +3789,28 @@ fn accrue_year_end_taxes(
     month: u32,
 ) -> Result<(), SimulationError> {
     for profile in &fixture.scenario.tax_profiles {
+        let representative_key = (
+            profile.agent_id.clone(),
+            profile.jurisdictions[0].jurisdiction_id.clone(),
+        );
+        let representative = *tax_facts
+            .get(&representative_key)
+            .expect("validated tax profile has representative facts");
+        let (net_short, net_long, ordinary_offset, shared_carryforward) = net_capital_gains(
+            representative.short_term_gain,
+            representative.long_term_gain,
+            representative.capital_loss_carryforward,
+            profile.jurisdictions[0].max_capital_loss_ordinary_offset,
+        )?;
+        for rules in &profile.jurisdictions {
+            let facts = tax_facts
+                .get_mut(&(profile.agent_id.clone(), rules.jurisdiction_id.clone()))
+                .expect("validated tax profile has jurisdiction facts");
+            facts.short_term_gain = net_short;
+            facts.long_term_gain = net_long;
+            facts.capital_loss_carryforward = Money(0);
+            facts.ordinary_income = facts.ordinary_income.checked_sub(ordinary_offset)?;
+        }
         let mut annual = BTreeMap::new();
         for rules in &profile.jurisdictions {
             let key = (profile.agent_id.clone(), rules.jurisdiction_id.clone());
@@ -3896,12 +3928,12 @@ fn accrue_year_end_taxes(
                 capital_gain_tax: assessment.capital_gain_tax,
                 section_1250_tax: assessment.section_1250_tax,
                 total_tax: assessment.total_tax,
-                capital_loss_carryforward: assessment.capital_loss_carryforward,
+                capital_loss_carryforward: shared_carryforward,
             })?;
             tax_facts.insert(
                 key,
                 TaxFacts {
-                    capital_loss_carryforward: assessment.capital_loss_carryforward,
+                    capital_loss_carryforward: shared_carryforward,
                     ..TaxFacts::default()
                 },
             );

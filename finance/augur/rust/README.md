@@ -72,8 +72,9 @@ The differential suite currently proves exact integer agreement for:
 - generated benchmark fixtures at 17 rollouts.
 
 The Rust ledger also records tax expense/liability accrual entries, tax
-prepayments and settlement, and preserves capital-loss carryforward between tax
-years. Monthly and terminal output retain jurisdiction-level tax-liability
+prepayments and settlement, and nets capital gains/losses once per taxpayer so
+one shared ordinary-loss offset and carryforward feed every jurisdiction in
+later tax years. Monthly and terminal output retain jurisdiction-level tax-liability
 state and held bond principal; selected traces expose tax-payment,
 tax-settlement, and issuer-attributed bond cashflow/accretion records.
 `output_adapter.py` lifts integer-native Rust transfer, lot-disposition,
