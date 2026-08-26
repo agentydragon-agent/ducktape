@@ -662,6 +662,7 @@ export function HakuUiEmbed({
         {view === "settings" && <SettingsPanel />}
         {view === "agentEnrollment" && agentEnrollmentId !== null && (
           <AgentEnrollmentPanel
+            key={`${agentEnrollmentId}:${agentEnrollmentInitialChoice}`}
             interactionId={agentEnrollmentId}
             initialChoice={agentEnrollmentInitialChoice}
             onReturnToSettings={() => onNavigate("settings")}

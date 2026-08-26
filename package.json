@@ -76,6 +76,7 @@
     "eslint-plugin-react-hooks": "^5",
     "eslint-plugin-svelte": "^3",
     "globals": "^16",
+    "happy-dom": "^20.11.6",
     "http-server": "^14.1.1",
     "jsdom": "^25.0.0",
     "@hey-api/openapi-ts": "^0.97.1",
