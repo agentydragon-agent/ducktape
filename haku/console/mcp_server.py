@@ -49,6 +49,7 @@ from pydantic import (
     Field,
     PrivateAttr,
     SerializerFunctionWrapHandler,
+    StrictInt,
     ValidationError,
     model_serializer,
 )
@@ -108,6 +109,7 @@ logger = logging.getLogger(__name__)
 
 SERVER_NAME = "haku-console"
 # Synchronous hold budget (ms) before a call returns a non-terminal stub; overridable per envelope call.
+MIN_WAIT_MS = 0
 DEFAULT_WAIT_MS = 5000
 MAX_WAIT_MS = 60_000
 TOOL_NAME_SEPARATOR = "__"
@@ -251,23 +253,50 @@ def _backend_status(backend: RemoteMcpBackend | InProcessBackend) -> McpBackendS
             return InProcessBackendStatus(credential=backend.credential)
 
 
-class ApprovalRequestEnvelope(BaseModel):
-    """The approval-request envelope. One model drives both the generated input schema
-    (`_envelope_schema`) and parsing the incoming call (`ProxyTool.run`)."""
+class _ApprovalRequestEnvelopeBase(BaseModel):
+    """The fields shared by dynamically bounded approval-request envelopes."""
 
     model_config = ConfigDict(extra="forbid")
 
     input: dict[str, Any] = Field(description="The real arguments for the upstream tool.")
     rationale: str = Field(description="Why you are requesting this call. Shown to the operator.")
     title: str | None = Field(default=None, description="Short human-facing title for the operator's approval queue.")
-    wait_for_result_ms: int | None = Field(
-        default=None,
-        description=(
-            "How long to wait synchronously for approval and execution before returning a non-terminal stub. "
-            "Returning a stub does not cancel or expire the queued call "
-            f"(default {DEFAULT_WAIT_MS}, max {MAX_WAIT_MS})."
-        ),
-    )
+
+
+def _approval_request_envelope_model(
+    *, default_wait_ms: int | None = None, min_wait_ms: int | None = None, max_wait_ms: int | None = None
+) -> type[Any]:
+    """Build the envelope model with the bounds used by this console instance.
+
+    FastMCP snapshots a tool's JSON schema when it reflects the proxy.  Constructing this model at
+    the point where the schema is requested (and again when a call is parsed) keeps that schema and
+    runtime validation tied to the same default and bounds, rather than leaving a stale class-level
+    ``None`` default that silently turns into the default or a runtime clamp that hides bad input.
+    """
+    resolved_default_wait_ms: int = DEFAULT_WAIT_MS if default_wait_ms is None else default_wait_ms
+    resolved_min_wait_ms: int = MIN_WAIT_MS if min_wait_ms is None else min_wait_ms
+    resolved_max_wait_ms: int = MAX_WAIT_MS if max_wait_ms is None else max_wait_ms
+    if not resolved_min_wait_ms <= resolved_default_wait_ms <= resolved_max_wait_ms:
+        raise ValueError("approval wait bounds must satisfy min <= default <= max")
+
+    class ApprovalRequestEnvelope(_ApprovalRequestEnvelopeBase):
+        wait_for_result_ms: StrictInt = Field(
+            default=resolved_default_wait_ms,
+            ge=resolved_min_wait_ms,
+            le=resolved_max_wait_ms,
+            description=(
+                "How long to wait synchronously for approval and execution before returning a non-terminal stub. "
+                "Returning a stub does not cancel or expire the queued call "
+                f"(default {resolved_default_wait_ms}, min {resolved_min_wait_ms}, max {resolved_max_wait_ms})."
+            ),
+        )
+
+    return ApprovalRequestEnvelope
+
+
+# Keep a stable import for callers/tests while the generated proxy schema and dispatch path use a
+# fresh model so dynamic bounds are reflected if this module's deployment settings change.
+ApprovalRequestEnvelope = _approval_request_envelope_model()
 
 
 def _tool_call_url(settings: Settings, tool_call_id: str) -> str:
@@ -331,7 +360,12 @@ def _is_passthrough(policies: AutoApprovalPolicyRegistry, actor: ToolCallActor, 
 
 
 def _exposed_metadata(
-    metadata: ServerMetadata, *, policies: AutoApprovalPolicyRegistry, actor: ToolCallActor, include_schemas: bool
+    metadata: ServerMetadata,
+    *,
+    policies: AutoApprovalPolicyRegistry,
+    actor: ToolCallActor,
+    include_schemas: bool,
+    max_wait_ms: int = MAX_WAIT_MS,
 ) -> ServerMetadata:
     """Report each tool as *this proxy* exposes it to this caller, not as the upstream declares it.
 
@@ -351,7 +385,11 @@ def _exposed_metadata(
         passthrough = _is_passthrough(policies, actor, metadata.server_id, tool.name)
         # Mirror `_build_proxy_tool`'s treatment of a missing/degenerate upstream schema, so the
         # reported envelope is exactly the one the generated tool would advertise.
-        schema = tool.input_schema if passthrough else _envelope_schema(tool.input_schema or {"type": "object"})
+        schema = (
+            tool.input_schema
+            if passthrough
+            else _envelope_schema(tool.input_schema or {"type": "object"}, max_wait_ms=max_wait_ms)
+        )
         return tool.model_copy(
             update={
                 "approval_mode": "passthrough" if passthrough else "approval_required",
@@ -364,11 +402,11 @@ def _exposed_metadata(
     return metadata.model_copy(update={"state": metadata.state.model_copy(update={"tools": tools})})
 
 
-def _envelope_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
+def _envelope_schema(original_schema: dict[str, Any], *, max_wait_ms: int = MAX_WAIT_MS) -> dict[str, Any]:
     """The approval-request envelope schema: `ApprovalRequestEnvelope`'s generated schema with the
     ``input`` property replaced by the upstream tool's own schema (nested unchanged, so its fields
     can't collide with the envelope's ``rationale``/``title``/``wait_for_result_ms``)."""
-    schema = ApprovalRequestEnvelope.model_json_schema()
+    schema: dict[str, Any] = _approval_request_envelope_model(max_wait_ms=max_wait_ms).model_json_schema()
     schema["properties"]["input"] = copy.deepcopy(original_schema)
     schema.pop("title", None)  # the model class title; the object schema itself needs none
     return schema
@@ -478,16 +516,16 @@ async def _dispatch(
     if passthrough:
         call_args, rationale, title, wait_ms = arguments, "", None, DEFAULT_WAIT_MS
     else:
-        env = ApprovalRequestEnvelope.model_validate(arguments)
+        env = _approval_request_envelope_model(max_wait_ms=context.settings.mcp_max_wait_ms).model_validate(arguments)
         call_args, rationale, title = env.input, env.rationale, env.title
-        wait_ms = DEFAULT_WAIT_MS if env.wait_for_result_ms is None else env.wait_for_result_ms
+        wait_ms = env.wait_for_result_ms
     req = SubmitToolCallRequest(
         server_id=server_id,
         tool_name=tool_name,
         arguments=call_args,
         rationale=rationale,
         title=title,
-        wait_for_ms=max(0, min(int(wait_ms), MAX_WAIT_MS)),
+        wait_for_ms=wait_ms,
     )
     try:
         if isinstance(actor, OperatorActor):
@@ -551,7 +589,7 @@ def _build_proxy_tool(
         parameters = schema
         description = tool.description or ""
     else:
-        parameters = _envelope_schema(schema)
+        parameters = _envelope_schema(schema, max_wait_ms=context.settings.mcp_max_wait_ms)
         preamble = approval_request_preamble(tool=tool.name, server=server_id)
         description = f"{preamble}\n\n{tool.description}" if tool.description else preamble
     return ProxyTool(
@@ -813,6 +851,7 @@ def build_console_mcp(
                 policies=policies,
                 actor=actor,
                 include_schemas=include_tool_schemas,
+                max_wait_ms=context.settings.mcp_max_wait_ms,
             ),
         )
 

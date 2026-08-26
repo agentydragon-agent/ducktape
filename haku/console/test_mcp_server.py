@@ -345,6 +345,16 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     assert set(envelope["required"]) == {"input", "rationale"}
     assert set(envelope["properties"]) == {"input", "title", "rationale", "wait_for_result_ms"}
     assert envelope["additionalProperties"] is False
+    wait_schema = envelope["properties"]["wait_for_result_ms"]
+    assert wait_schema == {
+        "default": mcp_server_module.DEFAULT_WAIT_MS,
+        "description": wait_schema["description"],
+        "maximum": mcp_server_module.MAX_WAIT_MS,
+        "minimum": 0,
+        "title": "Wait For Result Ms",
+        "type": "integer",
+    }
+    assert "anyOf" not in wait_schema
     gmail_write_meta = tools["gmail__drafts_create"].meta
     assert gmail_write_meta is not None
     assert gmail_write_meta[MCP_TOOL_META_KEY] == {
@@ -418,6 +428,31 @@ def test_approval_envelope_rejects_old_wait_field_name() -> None:
         mcp_server_module.ApprovalRequestEnvelope.model_validate(
             {"input": {}, "rationale": "test", "wait_for_approval_ms": 0}
         )
+
+
+def test_approval_envelope_wait_has_default_and_strict_bounds() -> None:
+    envelope = mcp_server_module.ApprovalRequestEnvelope.model_validate({"input": {}, "rationale": "test"})
+    assert envelope.wait_for_result_ms == mcp_server_module.DEFAULT_WAIT_MS
+    for wait_ms in (0, mcp_server_module.MAX_WAIT_MS):
+        assert (
+            mcp_server_module.ApprovalRequestEnvelope.model_validate(
+                {"input": {}, "rationale": "test", "wait_for_result_ms": wait_ms}
+            ).wait_for_result_ms
+            == wait_ms
+        )
+    for invalid_wait_ms in (-1, mcp_server_module.MAX_WAIT_MS + 1, None, "0"):
+        with pytest.raises(ValidationError):
+            mcp_server_module.ApprovalRequestEnvelope.model_validate(
+                {"input": {}, "rationale": "test", "wait_for_result_ms": invalid_wait_ms}
+            )
+
+
+def test_approval_envelope_schema_uses_requested_dynamic_bounds() -> None:
+    model = mcp_server_module._approval_request_envelope_model(default_wait_ms=7, min_wait_ms=1, max_wait_ms=9)
+    wait_schema = model.model_json_schema()["properties"]["wait_for_result_ms"]
+    assert wait_schema["default"] == 7
+    assert wait_schema["minimum"] == 1
+    assert wait_schema["maximum"] == 9
 
 
 async def test_tool_surface_is_specific_to_the_authenticated_agent(harness: _Harness) -> None:
@@ -653,6 +688,30 @@ async def test_get_tool_call_missing_raises(agent_client: Client) -> None:
         await agent_client.call_tool("get_tool_call", {"tool_call_id": "tc_does_not_exist"})
 
 
+@pytest.mark.parametrize("wait_ms", [0, mcp_server_module.MAX_WAIT_MS])
+async def test_request_tool_dispatches_valid_wait_without_clamping(
+    harness: _Harness, agent_client: Client, monkeypatch: pytest.MonkeyPatch, wait_ms: int
+) -> None:
+    submitted_waits: list[int] = []
+
+    async def capture_request(*, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
+        assert actor.operator_id == harness.operator_identity.operator_id
+        submitted_waits.append(req.wait_for_ms)
+        raise ToolCallNotFoundError("captured request")
+
+    monkeypatch.setattr(harness.tool_calls, "submit_and_wait", capture_request)
+    with pytest.raises(ToolError, match="captured request"):
+        await agent_client.call_tool(
+            "gmail__drafts_create",
+            {
+                "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
+                "rationale": "test",
+                "wait_for_result_ms": wait_ms,
+            },
+        )
+    assert submitted_waits == [wait_ms]
+
+
 async def test_two_operator_two_agent_mcp_read_matrix(harness: _Harness) -> None:
     async def submit_draft(token: str, subject: str) -> str:
         async with Client(f"{harness.base}/mcp", auth=token) as client:
@@ -826,6 +885,11 @@ async def test_reflected_schema_is_the_one_call_mcp_tool_accepts(agent_client: C
     assert create["approval_mode"] == "approval_required"
     assert set(create["input_schema"]["required"]) == {"input", "rationale"}
     assert "subject" in create["input_schema"]["properties"]["input"]["properties"]
+    reflected_wait = create["input_schema"]["properties"]["wait_for_result_ms"]
+    assert reflected_wait["default"] == mcp_server_module.DEFAULT_WAIT_MS
+    assert reflected_wait["minimum"] == 0
+    assert reflected_wait["maximum"] == mcp_server_module.MAX_WAIT_MS
+    assert "anyOf" not in reflected_wait
 
     # Now send each reported shape back through the fallback.
     read = await agent_client.call_tool("call_mcp_tool", {"server_id": "gmail", "tool_name": "labels_list"})
