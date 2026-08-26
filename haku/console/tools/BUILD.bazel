@@ -141,6 +141,7 @@ py_library(
     srcs = ["kubernetes.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
+        "//haku/console:grant_principal",
         "//haku/console:kubernetes_authorization",
         "//haku/console:kubernetes_grant_models",
         "//haku/console:kubernetes_grant_service",
@@ -185,6 +186,7 @@ py_test(
     deps = [
         ":kubernetes",
         "//:conftest",
+        "//haku/console:grant_principal",
         "//haku/console:kubernetes_authorization",
         "//haku/console:kubernetes_grant_models",
         "//haku/console:mcp_execution",

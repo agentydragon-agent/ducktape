@@ -715,7 +715,12 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
     for execution, actor in zip(executor.executions, submitted_actors, strict=True):
         assert isinstance(actor, AgentActor)
         context = execution[4]
-        assert context.caller == AgentMcpExecutionCaller(agent_id=actor.agent_id)
+        assert context.caller == AgentMcpExecutionCaller(
+            agent_id=actor.agent_id,
+            credential_binding_id=actor.binding_id,
+            access_profile_id=actor.access_profile_id,
+            session_id=actor.session_id,
+        )
         assert context.tool_call_id is not None
         assert context.approving_operator_id is None
         assert context.approval_policy_id == "policy:test"
@@ -1084,7 +1089,12 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     operator = actors["oa"]
     assert isinstance(agent, AgentActor)
     assert isinstance(operator, OperatorActor)
-    assert context.caller == AgentMcpExecutionCaller(agent_id=agent.agent_id)
+    assert context.caller == AgentMcpExecutionCaller(
+        agent_id=agent.agent_id,
+        credential_binding_id=agent.binding_id,
+        access_profile_id=agent.access_profile_id,
+        session_id=agent.session_id,
+    )
     assert context.tool_call_id == pending.tool_call_id
     assert context.approving_operator_id == operator.operator_id
     assert context.approval_policy_id is None

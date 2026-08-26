@@ -562,8 +562,15 @@ class ToolCallApplicationService:
 
         caller: McpExecutionCaller
         match execution.caller:
-            case AgentActor(agent_id=agent_id, access_profile_id=access_profile_id):
-                caller = AgentMcpExecutionCaller(agent_id=agent_id, access_profile_id=access_profile_id)
+            case AgentActor(
+                agent_id=agent_id, binding_id=binding_id, access_profile_id=access_profile_id, session_id=session_id
+            ):
+                caller = AgentMcpExecutionCaller(
+                    agent_id=agent_id,
+                    credential_binding_id=binding_id,
+                    access_profile_id=access_profile_id,
+                    session_id=session_id,
+                )
             case OperatorActor(operator_id=operator_id):
                 caller = OperatorMcpExecutionCaller(operator_id=operator_id)
 

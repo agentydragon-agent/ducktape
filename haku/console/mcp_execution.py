@@ -24,9 +24,15 @@ class AgentMcpExecutionCaller(BaseModel):
 
     kind: Literal["agent"] = "agent"
     agent_id: UUID
+    # Durable credential generation which authenticated the source ToolCall. Kept explicit so
+    # trusted in-process execution can preserve the same principal without caller arguments.
+    credential_binding_id: UUID
     # Re-read from the durable Agent immediately before an approved call executes. ``None`` is
     # the migration-safe, fail-closed value for profile-scoped in-process servers.
     access_profile_id: str | None = None
+    # Exact live Console session when the ToolCall was submitted with a session bearer. Static
+    # credentials and migration-era rows omit it and therefore cannot mint/use session principals.
+    session_id: UUID | None = None
 
 
 class OperatorMcpExecutionCaller(BaseModel):

@@ -24,6 +24,12 @@ from haku.console.database_schema import (
     McpToolCallPrincipal,
     StaticCredential,
 )
+from haku.console.grant_principal import (
+    AgentGrantPrincipal,
+    GrantPrincipalKind,
+    RequestPrincipal,
+    SessionGrantPrincipal,
+)
 from haku.console.kubernetes_grant_models import (
     KubernetesAllNamespacesGrantScope,
     KubernetesClusterGrantScope,
@@ -46,11 +52,12 @@ _NON_RESOURCE_RULE = KubernetesRule(non_resource_urls=("/version",), verbs=("get
 _RAW_GRANT_INSERT = text(
     """
     INSERT INTO kubernetes_grants (
-        grant_id, agent_id, source_tool_call_id, scope, rules, status,
-        created_at, expires_at, ended_at, end_reason
+        grant_id, owner_agent_id, principal_kind, principal_agent_id, principal_session_id,
+        source_tool_call_id, scope, rules, status, created_at, expires_at, ended_at, end_reason
     ) VALUES (
-        :grant_id, :agent_id, :source_tool_call_id, CAST(:scope AS jsonb),
-        CAST(:rules AS jsonb), 'active', :created_at, :expires_at, NULL, NULL
+        :grant_id, :owner_agent_id, :principal_kind, :principal_agent_id, :principal_session_id,
+        :source_tool_call_id, CAST(:scope AS jsonb), CAST(:rules AS jsonb), 'active',
+        :created_at, :expires_at, NULL, NULL
     )
     """
 )
@@ -74,6 +81,7 @@ async def _source_call(
     server_id: str = "kubernetes",
     tool_name: str = "create_grant",
     approval_policy_id: str | None = None,
+    session_id: UUID | None = None,
 ) -> str:
     tool_call_id = f"tc_{uuid4().hex}"
     async with sessions.begin() as session:
@@ -97,8 +105,53 @@ async def _source_call(
                 approved_at=_NOW,
             )
         )
-        session.add(McpToolCallPrincipal(tool_call_id=tool_call_id, operator_id=None, binding_id=binding_id))
+        session.add(
+            McpToolCallPrincipal(
+                tool_call_id=tool_call_id, operator_id=None, binding_id=binding_id, session_id=session_id
+            )
+        )
     return tool_call_id
+
+
+async def _session_for_binding(sessions: async_sessionmaker[AsyncSession], *, binding_id: UUID) -> UUID:
+    session_id, conversation_id = uuid4(), uuid4()
+    async with sessions.begin() as session:
+        operator_id = await session.scalar(
+            select(Agent.owner_operator_id)
+            .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
+            .where(CredentialBinding.binding_id == binding_id)
+        )
+        assert operator_id is not None
+        await session.execute(
+            text(
+                "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at) "
+                "VALUES (:conversation_id, :operator_id, 'claude_code', :n)"
+            ),
+            {"conversation_id": conversation_id, "operator_id": operator_id, "n": _NOW},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO sessions (
+                    session_id, operator_id, conversation_id, agent_binding_id, status,
+                    bridge_token_fingerprint, lease_expires_at, created_at, updated_at
+                ) VALUES (
+                    :session_id, :operator_id, :conversation_id, :binding_id, 'ready',
+                    :fingerprint, :lease, :n, :n
+                )
+                """
+            ),
+            {
+                "session_id": session_id,
+                "operator_id": operator_id,
+                "conversation_id": conversation_id,
+                "binding_id": binding_id,
+                "fingerprint": session_id.bytes,
+                "lease": datetime(2999, 1, 1, tzinfo=UTC),
+                "n": _NOW,
+            },
+        )
+    return session_id
 
 
 async def _insert_raw_grant(
@@ -108,13 +161,23 @@ async def _insert_raw_grant(
     source_tool_call_id: str,
     scope: dict[str, object],
     rule: KubernetesRule,
+    principal_kind: GrantPrincipalKind = GrantPrincipalKind.AGENT,
+    principal_agent_id: UUID | None = None,
+    principal_session_id: UUID | None = None,
 ) -> None:
     async with sessions.begin() as session:
         await session.execute(
             _RAW_GRANT_INSERT,
             {
                 "grant_id": uuid4(),
-                "agent_id": agent_id,
+                "owner_agent_id": agent_id,
+                "principal_kind": principal_kind,
+                "principal_agent_id": (
+                    agent_id
+                    if principal_kind is GrantPrincipalKind.AGENT and principal_agent_id is None
+                    else principal_agent_id
+                ),
+                "principal_session_id": principal_session_id,
                 "source_tool_call_id": source_tool_call_id,
                 "scope": json.dumps(scope),
                 "rules": json.dumps([rule.model_dump(mode="json")]),
@@ -135,7 +198,8 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
 
         async def exercise() -> None:
             grant = await repository.create(
-                agent_id=agent_id,
+                owner_agent_id=agent_id,
+                grant_principal=AgentGrantPrincipal(agent_id=agent_id),
                 source_tool_call_id=source_tool_call_id,
                 scope=_SCOPE,
                 rules=(_RULE,),
@@ -143,17 +207,24 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
                 expires_at=_NOW + timedelta(minutes=5),
             )
             assert grant.status is KubernetesGrantStatus.ACTIVE
-            assert (await repository.get(agent_id=agent_id, grant_id=grant.grant_id)) == grant
-            assert await repository.active_for_agent(agent_id=agent_id, now=_NOW) == (grant,)
+            assert (await repository.get(owner_agent_id=agent_id, grant_id=grant.grant_id)) == grant
+            assert await repository.active_for_request_principal(
+                request_principal=RequestPrincipal(agent_id=agent_id), now=_NOW
+            ) == (grant,)
 
             released = await repository.release(
-                agent_id=agent_id,
+                owner_agent_id=agent_id,
                 grant_id=grant.grant_id,
                 reason="no longer needed",
                 ended_at=_NOW + timedelta(minutes=1),
             )
             assert released.status is KubernetesGrantStatus.RELEASED
-            assert await repository.active_for_agent(agent_id=agent_id, now=_NOW) == ()
+            assert (
+                await repository.active_for_request_principal(
+                    request_principal=RequestPrincipal(agent_id=agent_id), now=_NOW
+                )
+                == ()
+            )
 
         client.portal.call(exercise)
 
@@ -169,7 +240,8 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
 
         async def exercise() -> None:
             grants = await repository.create_many(
-                agent_id=agent_id,
+                owner_agent_id=agent_id,
+                grant_principal=AgentGrantPrincipal(agent_id=agent_id),
                 source_tool_call_id=source_tool_call_id,
                 grants=(
                     KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),
@@ -185,7 +257,8 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             assert {grant.expires_at for grant in grants} == {_NOW + timedelta(minutes=5)}
 
             retried = await repository.create_many(
-                agent_id=agent_id,
+                owner_agent_id=agent_id,
+                grant_principal=AgentGrantPrincipal(agent_id=agent_id),
                 source_tool_call_id=source_tool_call_id,
                 grants=(
                     KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),
@@ -200,15 +273,22 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
 
             with pytest.raises(KubernetesGrantNotFoundError):
                 await repository.revoke_source(
-                    agent_id=uuid4(),
+                    owner_agent_id=uuid4(),
                     source_tool_call_id=source_tool_call_id,
                     reason="must not cross Agent ownership",
                     ended_at=_NOW + timedelta(seconds=20),
                 )
-            assert len(await repository.active_for_agent(agent_id=agent_id, now=_NOW)) == 2
+            assert (
+                len(
+                    await repository.active_for_request_principal(
+                        request_principal=RequestPrincipal(agent_id=agent_id), now=_NOW
+                    )
+                )
+                == 2
+            )
 
             released_first = await repository.release(
-                agent_id=agent_id,
+                owner_agent_id=agent_id,
                 grant_id=grants[0].grant_id,
                 reason="first scope no longer needed",
                 ended_at=_NOW + timedelta(seconds=30),
@@ -216,7 +296,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             assert released_first.status is KubernetesGrantStatus.RELEASED
 
             revoked = await repository.revoke_source(
-                agent_id=agent_id,
+                owner_agent_id=agent_id,
                 source_tool_call_id=source_tool_call_id,
                 reason="operator ended probe",
                 ended_at=_NOW + timedelta(minutes=1),
@@ -230,7 +310,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             assert by_id[grants[1].grant_id].end_reason == "operator ended probe"
 
             repeated = await repository.revoke_source(
-                agent_id=agent_id,
+                owner_agent_id=agent_id,
                 source_tool_call_id=source_tool_call_id,
                 reason="different retry reason",
                 ended_at=_NOW + timedelta(minutes=2),
@@ -239,7 +319,8 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
 
             with pytest.raises(KubernetesGrantSourceError, match="already created a different"):
                 await repository.create_many(
-                    agent_id=agent_id,
+                    owner_agent_id=agent_id,
+                    grant_principal=AgentGrantPrincipal(agent_id=agent_id),
                     source_tool_call_id=source_tool_call_id,
                     grants=(KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),),
                     created_at=_NOW + timedelta(seconds=10),
@@ -253,6 +334,82 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                     )
                 ).all()
             assert len(rows) == 2
+
+        client.portal.call(exercise)
+
+
+def test_repository_matches_agent_and_exact_session_principals(make_client: Any) -> None:
+    with make_client() as client:
+        app = cast(FastAPI, client.app)
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        assert client.portal is not None
+        agent_id, binding_id = client.portal.call(_default_agent, sessions)
+        session_id = client.portal.call(partial(_session_for_binding, sessions, binding_id=binding_id))
+        agent_source = client.portal.call(partial(_source_call, sessions, binding_id=binding_id))
+        session_source = client.portal.call(
+            partial(_source_call, sessions, binding_id=binding_id, session_id=session_id)
+        )
+        repository = PostgresKubernetesGrantRepository(sessions)
+
+        async def exercise() -> None:
+            agent_grant = await repository.create(
+                owner_agent_id=agent_id,
+                grant_principal=AgentGrantPrincipal(agent_id=agent_id),
+                source_tool_call_id=agent_source,
+                scope=_SCOPE,
+                rules=(_RULE,),
+                created_at=_NOW,
+                expires_at=_NOW + timedelta(minutes=5),
+            )
+            session_grant = await repository.create(
+                owner_agent_id=agent_id,
+                grant_principal=SessionGrantPrincipal(session_id=session_id),
+                source_tool_call_id=session_source,
+                scope=_SCOPE,
+                rules=(_RULE,),
+                created_at=_NOW,
+                expires_at=_NOW + timedelta(minutes=5),
+            )
+
+            assert await repository.active_for_request_principal(
+                request_principal=RequestPrincipal(agent_id=agent_id), now=_NOW
+            ) == (agent_grant,)
+            assert set(
+                await repository.active_for_request_principal(
+                    request_principal=RequestPrincipal(agent_id=agent_id, session_id=session_id), now=_NOW
+                )
+            ) == {agent_grant, session_grant}
+            assert set(
+                await repository.list_for_request_principal(
+                    request_principal=RequestPrincipal(agent_id=agent_id, session_id=session_id)
+                )
+            ) == {agent_grant, session_grant}
+            assert await repository.active_for_request_principal(
+                request_principal=RequestPrincipal(agent_id=agent_id, session_id=uuid4()), now=_NOW
+            ) == (agent_grant,)
+            assert (
+                await repository.active_for_request_principal(
+                    request_principal=RequestPrincipal(agent_id=uuid4(), session_id=session_id), now=_NOW
+                )
+                == ()
+            )
+
+            async with sessions.begin() as session:
+                await session.execute(
+                    text("UPDATE sessions SET status = 'failed' WHERE session_id = :session_id"),
+                    {"session_id": session_id},
+                )
+            ended_source = await _source_call(sessions, binding_id=binding_id, session_id=session_id)
+            with pytest.raises(KubernetesGrantSourceError, match="durable source ToolCall principal"):
+                await repository.create(
+                    owner_agent_id=agent_id,
+                    grant_principal=SessionGrantPrincipal(session_id=session_id),
+                    source_tool_call_id=ended_source,
+                    scope=_SCOPE,
+                    rules=(_RULE,),
+                    created_at=_NOW,
+                    expires_at=_NOW + timedelta(minutes=5),
+                )
 
         client.portal.call(exercise)
 
@@ -280,7 +437,8 @@ def test_repository_persists_canonical_non_exact_scope_shapes(
 
         async def exercise() -> None:
             grant = await repository.create(
-                agent_id=agent_id,
+                owner_agent_id=agent_id,
+                grant_principal=AgentGrantPrincipal(agent_id=agent_id),
                 source_tool_call_id=source_tool_call_id,
                 scope=scope,
                 rules=(rule,),
@@ -307,7 +465,8 @@ def test_repository_rejects_wrong_or_auto_approved_source(make_client: Any) -> N
         async def rejected(source_tool_call_id: str) -> None:
             with pytest.raises(KubernetesGrantSourceError):
                 await repository.create(
-                    agent_id=agent_id,
+                    owner_agent_id=agent_id,
+                    grant_principal=AgentGrantPrincipal(agent_id=agent_id),
                     source_tool_call_id=source_tool_call_id,
                     scope=_SCOPE,
                     rules=(_RULE,),
@@ -333,7 +492,10 @@ def test_database_rejects_grants_with_invalid_source_provenance(make_client: Any
                     session.add(
                         KubernetesGrantRow(
                             grant_id=uuid4(),
-                            agent_id=agent_id,
+                            owner_agent_id=agent_id,
+                            principal_kind=GrantPrincipalKind.AGENT,
+                            principal_agent_id=agent_id,
+                            principal_session_id=None,
                             source_tool_call_id=wrong_tool,
                             scope=_SCOPE,
                             rules=[_RULE],

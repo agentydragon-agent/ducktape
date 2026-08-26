@@ -60,7 +60,12 @@ def _mcp(searcher: _Searcher):
 
 def _meta(actor: ToolCallActor = HAKU) -> dict[str, object]:
     caller = (
-        AgentMcpExecutionCaller(agent_id=actor.agent_id, access_profile_id=actor.access_profile_id)
+        AgentMcpExecutionCaller(
+            agent_id=actor.agent_id,
+            credential_binding_id=actor.binding_id,
+            access_profile_id=actor.access_profile_id,
+            session_id=actor.session_id,
+        )
         if isinstance(actor, AgentActor)
         else OperatorMcpExecutionCaller(operator_id=actor.operator_id)
     )
