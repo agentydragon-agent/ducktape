@@ -301,6 +301,9 @@ def tokens(actors: dict[str, ToolCallActor]) -> _OperatorTokens:
     return _OperatorTokens({actors["oa"].operator_id: "token-a", actors["ob"].operator_id: "token-b"})
 
 
+async def _no_gmail_client(_operator_id: UUID) -> None: ...
+
+
 def _service(
     *,
     database_url: str,
@@ -364,6 +367,7 @@ def _service(
             issuer="https://auth.test/application/o/haku-console/",
         ),
         approval_notifier=notifier,
+        gmail_client_provider=_no_gmail_client,
     )
 
 
