@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import inspect
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID
 
+import fastmcp
 import httpx
 import pytest
 import pytest_bazel
 from fastmcp.exceptions import ToolError
-from fastmcp.server.auth.auth import AccessToken, MultiAuth, TokenVerifier
-from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from mcp.server.auth.provider import AuthorizeError, RefreshToken, TokenError
 from mcp.shared.auth import OAuthToken
 from starlette.exceptions import HTTPException
@@ -39,7 +38,7 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     HakuMcpActorResolver,
     StaticAgentActorResolver,
     TokenFamilyEvidence,
-    assert_fastmcp_adapter_compatibility,
+    ensure_supported_fastmcp_version,
     observe_bearer_operational_failure,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor
@@ -232,6 +231,17 @@ def test_proxy_verifier_hook_preserves_fastmcp_configuration() -> None:
     assert verifier.algorithm == "ES256"
     assert verifier.audience == "api-audience"
     assert verifier.required_scopes == ["read"]
+
+
+def test_fastmcp_version_guard_accepts_the_supported_runtime() -> None:
+    ensure_supported_fastmcp_version()
+
+
+def test_fastmcp_version_guard_rejects_an_unsupported_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(fastmcp, "__version__", "3.4.3")
+
+    with pytest.raises(AssertionError, match=r"supports FastMCP 3\.4\.4 only"):
+        ensure_supported_fastmcp_version()
 
 
 async def test_authorize_uses_validated_correlation_when_cimd_client_omits_redirect_list() -> None:
@@ -675,7 +685,6 @@ def test_failure_preserving_multi_auth_delegates_routes_and_renders_retryable_re
 
     assert auth.get_routes("/mcp") is expected_routes
     server.get_routes.assert_called_once_with("/mcp")
-    assert HakuFailurePreservingMultiAuth.get_routes is MultiAuth.get_routes
 
     authentication = auth.get_middleware()[0]
     on_error = cast(Any, authentication.kwargs["on_error"])
@@ -936,48 +945,6 @@ async def test_missing_or_malformed_tool_call_claims_fail_before_authority(token
         await resolver.resolve()
 
     authority.activate_for_tool_call.assert_not_awaited()
-
-
-def test_actor_resolver_has_no_ambient_actor_context() -> None:
-    source = inspect.getsource(HakuMcpActorResolver)
-    assert "ContextVar" not in source
-    assert "_TOOL_CALL_ACTOR_CONTEXT" not in source
-
-
-def test_fastmcp_344_surface_and_adapter_containment_are_pinned() -> None:
-    assert_fastmcp_adapter_compatibility()
-    assert issubclass(HakuAgentOAuthProxy, RetryableRefreshOIDCProxy)
-    assert inspect.signature(HakuAgentOAuthProxy.get_token_verifier, eval_str=True) == inspect.signature(
-        RetryableRefreshOIDCProxy.get_token_verifier, eval_str=True
-    )
-    source = inspect.getsource(HakuAgentOAuthProxy)
-    assert source.count("self._code_store.") == 2
-    for forbidden in (
-        "_transaction_store",
-        "def get_routes",
-        "def _handle_idp_callback",
-        "def load_authorization_code",
-        "def register_client",
-    ):
-        assert forbidden not in source
-    assert HakuAgentOAuthProxy.get_routes is OAuthProxy.get_routes
-    assert HakuAgentOAuthProxy._handle_idp_callback is OAuthProxy._handle_idp_callback
-    assert HakuFailurePreservingMultiAuth.get_routes is MultiAuth.get_routes
-    assert HakuFailurePreservingMultiAuth.get_well_known_routes is MultiAuth.get_well_known_routes
-
-    exchange_source = inspect.getsource(OAuthProxy.exchange_authorization_code)
-    refresh_source = inspect.getsource(OAuthProxy.exchange_refresh_token)
-    load_source = inspect.getsource(OAuthProxy.load_access_token)
-    assert "self._extract_upstream_claims(idp_tokens)" in exchange_source
-    assert "self._translate_scopes_from_idp(granted_scopes)" in exchange_source
-    assert "self._extract_upstream_claims(" in refresh_source
-    assert "self._translate_scopes_from_idp(refreshed_scopes)" in refresh_source
-    assert "await self._try_transparent_refresh(" in load_source
-    assert "except Exception as e:" in load_source
-
-    multi_auth_source = inspect.getsource(MultiAuth.verify_token)
-    assert "for source in self._sources:" in multi_auth_source
-    assert "except Exception:" in multi_auth_source
 
 
 if __name__ == "__main__":

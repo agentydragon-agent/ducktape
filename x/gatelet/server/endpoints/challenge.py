@@ -34,7 +34,7 @@ def compute_correct_option(key_value: str, nonce_value: str, num_options: int) -
     return digest_byte % num_options
 
 
-COMPUTE_OPTION_SOURCE = inspect.getsource(compute_correct_option)
+COMPUTE_OPTION_SOURCE = f"import hashlib\n\nMAX_OPTIONS = {MAX_OPTIONS}\n\n{inspect.getsource(compute_correct_option)}"
 
 
 def _create_options(num_options: int) -> list[str]:

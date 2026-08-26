@@ -246,6 +246,14 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 - **Concise test bodies**: assertions in tests, setup in fixtures.
 - **Update tests with production code**: signature/behavior changes propagate to the
   tests that use them, in the same change.
+- **Test externally meaningful behavior, not implementation text**: assert observable
+  behavior, public API contracts, schemas, and durable invariants — never inspect
+  implementation source text, count or forbid source fragments, or pin method identity
+  and source signatures. A user-facing source-inspection feature may be exercised
+  through its public boundary, but must not pin the inspected source's contents.
+  Negative coding guidance belongs in this file, a module/file header comment, or a
+  linter/static-analysis rule when it is genuinely enforceable; clever source-pattern
+  tests are brittle and are not a substitute for design.
 - **No pure change-detector tests**: every expectation must encode a durable rule, not
   duplicate the artifact's current state. Reading a checked-in YAML/JSON/XML file and copying
   its current values, shape, roster, or whole contents into assertions is not coverage — an

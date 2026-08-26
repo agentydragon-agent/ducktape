@@ -1,6 +1,11 @@
 """Tests for challenge-response authentication endpoints."""
 
+import asyncio
 import html
+import re
+import subprocess
+import sys
+import textwrap
 from datetime import datetime, timedelta
 from http import HTTPStatus
 
@@ -10,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from x.gatelet.server.config import Settings
-from x.gatelet.server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_correct_option
+from x.gatelet.server.endpoints.challenge import compute_correct_option
 from x.gatelet.server.models import AuthCRSession, AuthKey, AuthNonce
 
 
@@ -49,12 +54,30 @@ async def test_session_extension(client: AsyncClient, db_session: AsyncSession, 
     assert test_auth_session.expires_at > original_exp
 
 
-async def test_challenge_template_contains_code(client: AsyncClient, test_auth_key: AuthKey):
+async def test_challenge_page_instructions_compute_the_accepted_option(
+    client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey, test_settings: Settings
+):
     response = await client.get(f"/cr/{test_auth_key.id}")
     assert response.status_code == HTTPStatus.OK
 
-    page_text = html.unescape(response.text)
-    assert COMPUTE_OPTION_SOURCE in page_text
+    nonce = (await db_session.execute(select(AuthNonce).order_by(AuthNonce.id.desc()))).scalars().first()
+    assert nonce is not None
+    code_match = re.search(r"<pre>\s*(.*?)</pre", response.text, re.DOTALL)
+    assert code_match is not None
+    instructions = textwrap.dedent(html.unescape(code_match.group(1)))
+    completed = await asyncio.to_thread(
+        subprocess.run,
+        [sys.executable, "-c", f"key = {test_auth_key.key_value!r}\n{instructions}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.strip() == str(
+        compute_correct_option(
+            test_auth_key.key_value, nonce.nonce_value, test_settings.auth.challenge_response.num_options
+        )
+    )
 
 
 if __name__ == "__main__":

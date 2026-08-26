@@ -143,12 +143,18 @@ async def test_python3_can_import_and_inspect_props(
         )
         assert_that(result, all_of(exited_successfully(), stdout_contains("props_imported")))
 
-        # Test 2: inspect.getsource works on bundled modules
+        # The critic's source-inspection capability is a user-facing product contract. Verify
+        # that the public Python introspection API can read bundled source without pinning any
+        # implementation text from that source.
         result = yield from m.exec_roundtrip(
-            ["python3", "-c", "import inspect, props.agents.runtime; print(inspect.getsource(props.agents.runtime))"],
+            [
+                "python3",
+                "-c",
+                "import inspect, props.agents.runtime; print(bool(inspect.getsource(props.agents.runtime).strip()))",
+            ],
             timeout_ms=15000,
         )
-        assert_that(result, all_of(exited_successfully(), stdout_contains("def render_system_prompt")))
+        assert_that(result, all_of(exited_successfully(), stdout_contains("True")))
 
         yield m.tool_call("submit", SubmitArgs(issues_count=0, summary="Source inspection test complete"))
 
