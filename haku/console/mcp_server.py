@@ -108,8 +108,6 @@ from haku.console.tool_calls import (
 logger = logging.getLogger(__name__)
 
 SERVER_NAME = "haku-console"
-# Synchronous hold budget (ms) before a call returns a non-terminal stub; overridable per envelope call.
-MIN_WAIT_MS = 0
 DEFAULT_WAIT_MS = 5000
 MAX_WAIT_MS = 60_000
 TOOL_NAME_SEPARATOR = "__"
@@ -274,7 +272,7 @@ def _approval_request_envelope_model(
     ``None`` default that silently turns into the default or a runtime clamp that hides bad input.
     """
     resolved_default_wait_ms: int = DEFAULT_WAIT_MS if default_wait_ms is None else default_wait_ms
-    resolved_min_wait_ms: int = MIN_WAIT_MS if min_wait_ms is None else min_wait_ms
+    resolved_min_wait_ms: int = 0 if min_wait_ms is None else min_wait_ms
     resolved_max_wait_ms: int = MAX_WAIT_MS if max_wait_ms is None else max_wait_ms
     if not resolved_min_wait_ms <= resolved_default_wait_ms <= resolved_max_wait_ms:
         raise ValueError("approval wait bounds must satisfy min <= default <= max")
@@ -516,7 +514,9 @@ async def _dispatch(
     if passthrough:
         call_args, rationale, title, wait_ms = arguments, "", None, DEFAULT_WAIT_MS
     else:
-        env = _approval_request_envelope_model(max_wait_ms=context.settings.mcp_max_wait_ms).model_validate(arguments)
+        env = _approval_request_envelope_model(max_wait_ms=context.settings.max_wait_for_result_ms).model_validate(
+            arguments
+        )
         call_args, rationale, title = env.input, env.rationale, env.title
         wait_ms = env.wait_for_result_ms
     req = SubmitToolCallRequest(
@@ -589,7 +589,7 @@ def _build_proxy_tool(
         parameters = schema
         description = tool.description or ""
     else:
-        parameters = _envelope_schema(schema, max_wait_ms=context.settings.mcp_max_wait_ms)
+        parameters = _envelope_schema(schema, max_wait_ms=context.settings.max_wait_for_result_ms)
         preamble = approval_request_preamble(tool=tool.name, server=server_id)
         description = f"{preamble}\n\n{tool.description}" if tool.description else preamble
     return ProxyTool(
@@ -851,7 +851,7 @@ def build_console_mcp(
                 policies=policies,
                 actor=actor,
                 include_schemas=include_tool_schemas,
-                max_wait_ms=context.settings.mcp_max_wait_ms,
+                max_wait_ms=context.settings.max_wait_for_result_ms,
             ),
         )
 
