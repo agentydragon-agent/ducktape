@@ -325,10 +325,13 @@ narration with some code in it. If prose is most of what a reader scrolls past, 
 
 - Live docs describe the present, active work, durable invariants, and lessons a future maintainer
   needs. Git already records superseded behavior, completed plans, and incident timelines.
-- Delete resolved `debug/` notes and completed plans. Promote only durable constraints to the
-  current code, contract, or design doc.
-- Keep a short tombstone only when an active compatibility or deprecation boundary still needs a
-  pointer; do not create archives or indexes merely to preserve history.
+- Delete resolved `debug/` notes and completed plans only after moving any surviving workaround,
+  required option combination, fragility warning, or recurrence clue beside the current code,
+  contract, or design. Keep that note short and link the upstream bug or fixing commit when it helps
+  a future maintainer recognize the same failure.
+- If an upstream fix made the workaround unnecessary, retain at most a one- or two-line warning when
+  the area remains unusually fragile. Keep a tombstone only while an active compatibility or
+  deprecation boundary needs a pointer; do not create archives or indexes merely to preserve history.
 
 **Then say what is left in fewer words.** Deletion is not the only edit: prose that carries real
 information can still take more clauses and more sentence structure than the information needs,
