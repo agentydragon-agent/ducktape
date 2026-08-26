@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = [
     "//cluster:__subpackages__",
@@ -149,26 +149,6 @@ py_library(
         ":cluster",
         ":k8s",
     ],
-)
-
-py_library(
-    name = "kustomize_build_all_lib",
-    srcs = ["kustomize_build_all.py"],
-    deps = [
-        ":cluster",
-        ":k8s",
-        ":kustomize",
-        "//util/bazel:runfiles",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_binary(
-    name = "kustomize_build_all",
-    data = ["@multitool//tools/kustomize"],
-    main_module = "cluster.validation.kustomize_build_all",
-    deps = [":kustomize_build_all_lib"],
 )
 
 py_test(
