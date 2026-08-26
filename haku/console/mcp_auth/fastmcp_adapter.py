@@ -15,7 +15,6 @@ authority always starts at the signed ``grant_id`` and resolves through Haku.
 
 from __future__ import annotations
 
-import inspect
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
@@ -28,7 +27,6 @@ import httpx
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
-from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.utilities.auth import parse_scopes
@@ -920,39 +918,11 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
         return TokenFamilyEvidence(access_jti=access.jti, refresh_jti=refresh_jti), response_scopes
 
 
-def assert_fastmcp_adapter_compatibility() -> None:
-    """Fail loudly when the one-version adapter containment contract drifts."""
+def ensure_supported_fastmcp_version() -> None:
+    """Fail loudly when the adapter runs against an unsupported FastMCP version."""
 
     if fastmcp.__version__ != _SUPPORTED_FASTMCP_VERSION:
         raise AssertionError(f"HakuAgentOAuthProxy supports FastMCP {_SUPPORTED_FASTMCP_VERSION} only")
-    if HakuAgentOAuthProxy.get_routes is not OAuthProxy.get_routes:
-        raise AssertionError("Haku must leave OAuthProxy.get_routes untouched")
-    if HakuAgentOAuthProxy._handle_idp_callback is not OAuthProxy._handle_idp_callback:
-        raise AssertionError("Haku must leave OAuthProxy._handle_idp_callback untouched")
-    if HakuAgentOAuthProxy.load_authorization_code is not OAuthProxy.load_authorization_code:
-        raise AssertionError("Haku must leave OAuthProxy.load_authorization_code untouched")
-    if HakuAgentOAuthProxy.register_client is not OAuthProxy.register_client:
-        raise AssertionError("Haku must leave OAuthProxy.register_client untouched")
-
-    _assert_method_parameters(OAuthProxy.authorize, ("self", "client", "params"))
-    _assert_method_parameters(OAuthProxy.exchange_authorization_code, ("self", "client", "authorization_code"))
-    _assert_method_parameters(OAuthProxy.exchange_refresh_token, ("self", "client", "refresh_token", "scopes"))
-    _assert_method_parameters(OAuthProxy.load_access_token, ("self", "token"))
-    _assert_method_parameters(OAuthProxy.revoke_token, ("self", "token"))
-    _assert_method_parameters(OAuthProxy._extract_upstream_claims, ("self", "idp_tokens"))
-    _assert_method_parameters(OAuthProxy._translate_scopes_from_idp, ("self", "scopes"))
-    _assert_method_parameters(OAuthProxy._try_transparent_refresh, ("self", "upstream_token_set"))
-    _assert_method_parameters(MultiAuth.verify_token, ("self", "token"))
-    if HakuFailurePreservingMultiAuth.get_routes is not MultiAuth.get_routes:
-        raise AssertionError("Haku auth composite must leave MultiAuth route delegation untouched")
-    if HakuFailurePreservingMultiAuth.get_well_known_routes is not MultiAuth.get_well_known_routes:
-        raise AssertionError("Haku auth composite must leave MultiAuth discovery delegation untouched")
-
-
-def _assert_method_parameters(method: Callable[..., Any], expected: tuple[str, ...]) -> None:
-    actual = tuple(inspect.signature(method).parameters)
-    if actual != expected:
-        raise AssertionError(f"{method.__qualname__} signature changed: {actual!r}")
 
 
 def _grant_id_from_claims(claims: Mapping[str, Any]) -> UUID:

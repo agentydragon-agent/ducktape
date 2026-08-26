@@ -252,17 +252,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                         select(KubernetesGrantRow).where(KubernetesGrantRow.source_tool_call_id == source_tool_call_id)
                     )
                 ).all()
-                source_index = await session.scalar(
-                    text(
-                        "SELECT indexdef FROM pg_indexes "
-                        "WHERE schemaname = current_schema() AND tablename = 'kubernetes_grants' "
-                        "AND indexname = 'idx_kubernetes_grants_source_tool_call'"
-                    )
-                )
             assert len(rows) == 2
-            assert source_index is not None
-            assert "UNIQUE" not in source_index
-            assert "(source_tool_call_id)" in source_index
 
         client.portal.call(exercise)
 

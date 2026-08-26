@@ -22,7 +22,7 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     HakuFailurePreservingMultiAuth,
     OperatorSessionAuthenticationError,
     StaticAgentActorResolver,
-    assert_fastmcp_adapter_compatibility,
+    ensure_supported_fastmcp_version,
 )
 from haku.console.operator_auth import operator_session_for_identity_store
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -104,7 +104,7 @@ def build_auth(
     delegates every product authorization decision to ``agent_authority``. Static credentials use
     the same authority and are accepted only when their exact fingerprint-backed binding is active.
     """
-    assert_fastmcp_adapter_compatibility()
+    ensure_supported_fastmcp_version()
     agent_bearer_authority = agent_bearer_authority or build_agent_bearer_authority(
         agent_authority=agent_authority, static_credentials=static_credentials, session_tokens=session_tokens
     )

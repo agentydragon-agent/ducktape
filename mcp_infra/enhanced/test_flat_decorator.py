@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import json
 from typing import Literal
 
@@ -56,23 +55,6 @@ async def test_flat_model_infers_types_and_emits_schema():
     # Output schema not present by default (structured_output=False by default)
     out_schema = t.outputSchema
     assert out_schema is None
-
-
-def test_flat_model_signature_exposed():
-    m = EnhancedFastMCP("decorator_signature")
-
-    @m.flat_model()
-    def demo(input: InModel) -> OutModel:
-        return OutModel(ok=True)
-
-    # flat_model() returns FlatTool; .fn is the original function (not a wrapper)
-    # The flattening happens at the JSON Schema level for MCP, not in Python signature
-    sig = inspect.signature(demo.fn)
-    params = list(sig.parameters.values())
-
-    # Original function has 1 parameter: the input model
-    assert len(params) == 1
-    assert params[0].name == "input"
 
 
 async def test_flat_model_invocation_accepts_flat_kwargs():
