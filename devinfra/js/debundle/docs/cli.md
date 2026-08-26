@@ -149,9 +149,7 @@ that overrides the default `cycles.json` location (sibling of
 
 ### Atomic-DAG queries
 
-These are top-level commands. Deprecated `debundle peel <...>` aliases
-still exist for compatibility, but new docs and scripts should use the
-top-level forms.
+These are top-level commands.
 
 | Command                     | Mutates? | Function                                                                                                                                                                                                                                                                                                                                                             |
 | --------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -160,10 +158,6 @@ top-level forms.
 | `debundle graph-summary`    | no       | High-level counts (owners, edges, atoms, residual-eligible bindings, etc.). Add `--include-proposals` when proposal and diagnostic counts are needed.                                                                                                                                                                                                                |
 | `debundle describe <id>`    | no       | Dereference any identifier with full graph + spec context. Accepted ID kinds: a binding (minified `XOe` or readable `PluginSettingsAccessor`), a module path (`runtime/plugins`), a module id (`logical:7`), a proposal id, an atom id, an owner id (`owner:42`), a diagnostic id. Add `--include-proposals` when nearby proposal/diagnostic annotations are needed. |
 | `debundle show-source <id>` | no       | Print the source text for any identifier. Accepted ID kinds: binding (minified or readable), module path or unambiguous module filename or module id (concatenated source of every owner statement in the module, in declaration order), proposal id, atom id, owner id, diagnostic id.                                                                              |
-
-The `peel` namespace is deprecated. Existing `peel <...>` invocations
-continue to work as aliases with a stderr deprecation note pointing to
-the top-level form.
 
 ## Argument conventions
 

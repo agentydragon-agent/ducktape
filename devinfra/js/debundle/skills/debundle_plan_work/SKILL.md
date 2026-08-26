@@ -66,9 +66,6 @@ atomic DAG is the source of truth for indivisible move units. The proposal
 queue is a heuristic projection from that DAG, not a serialized fact from
 `debundle run`.
 
-`peel <...>` invocations are deprecated aliases. Prefer the top-level
-commands in all new docs, scripts, and reports.
-
 Selector planning should also record tooling gaps. If `synthesize-selectors`
 skips a large repeated shape, produces selectors that are too exact to be
 forward-compatible, or cannot express a concise stable anchor, recommend a

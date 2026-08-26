@@ -283,44 +283,6 @@ fn modules_merge_dry_run_does_not_modify_files() {
 }
 
 #[test]
-fn deprecated_module_merge_alias_still_works_with_warning() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write_file(
-        root,
-        "target.yaml",
-        "members:\n  - selector: { binding: { name: a } }\n",
-    );
-    write_file(
-        root,
-        "src.yaml",
-        "members:\n  - selector: { binding: { name: b } }\n",
-    );
-
-    let out = Command::new(debundler_path())
-        .args([
-            "module",
-            "merge",
-            "--modules",
-            root.to_str().unwrap(),
-            "--target",
-            "target.yaml",
-            "src.yaml",
-            // Skip the gate: this test only exercises the
-            // deprecated alias path.
-            "--no-verify",
-        ])
-        .output()
-        .expect("spawn debundle");
-    assert!(out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("deprecated"),
-        "expected deprecation warning, got stderr: {stderr}"
-    );
-}
-
-#[test]
 fn merge_carries_source_matches_into_target() {
     // `source_matches:` entries are claims just like `members:` —
     // destroying them with the source file silently unclaims their

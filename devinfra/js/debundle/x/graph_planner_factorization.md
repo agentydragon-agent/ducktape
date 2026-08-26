@@ -27,9 +27,6 @@ Related read-only queries:
 - `debundle describe`
 - `debundle show-source`
 
-Deprecated `debundle peel ...` aliases still exist, but current docs and
-scripts should use the top-level names.
-
 `modules propose` is the ordered dispatch surface for authoring work. It
 reads the emitted owner graph plus embedded atomic DAG and the current spec
 module tree, emits bounded proposal records, and leaves final names and paths

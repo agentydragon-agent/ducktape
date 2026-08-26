@@ -19,7 +19,7 @@ use crate::comment::{
 };
 use crate::edit_gate::Gate;
 use crate::gate::{GateArgs, run_gate_cli};
-use crate::module::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
+use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
 use crate::validate::{ValidateArgs, run_validate_cmd};
@@ -28,9 +28,9 @@ use clap::{Args as ClapArgs, Parser, Subcommand};
 use peel::factorize::DEFAULT_SIZE_CAP_LINES;
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
-    PeelArgs, PeelCommand, PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_report,
-    run_explain_report, run_graph_summary_report, run_patch_plan_report, run_plan_work_report,
-    run_source_slice_report, run_units_report,
+    PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_report, run_explain_report,
+    run_graph_summary_report, run_patch_plan_report, run_plan_work_report, run_source_slice_report,
+    run_units_report,
 };
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
 use selector_codemod::match_selector::{
@@ -73,12 +73,6 @@ pub struct DebundleArgs {
 enum DebundleCommand {
     /// Run the debundle transform pipeline from a flat or tree-shaped spec.
     Run(TransformArgs),
-    /// (Deprecated) Inspect peel-planning evidence. Use the top-level
-    /// commands `atoms`, `coverage`, `graph-summary`, `describe`,
-    /// `show-source`, `modules propose` instead.
-    Peel(PeelArgs),
-    /// (Deprecated) `debundle module merge`. Use `debundle modules merge`.
-    Module(ModuleArgs),
     /// Per-binding spec verbs (comment, list, rename, assign).
     Bindings(BindingsNs),
     /// Module-level spec verbs (comment, merge, propose).
@@ -612,8 +606,6 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
             }
             Ok(())
         }
-        DebundleCommand::Peel(args) => run_peel(args).context("running peel query"),
-        DebundleCommand::Module(args) => run_module_cli(args).context("running module subcommand"),
         DebundleCommand::Bindings(args) => match args.command {
             BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
             BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
@@ -687,82 +679,6 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         // hide them since `main.rs` prints only the top context.
         DebundleCommand::Gate(args) => run_gate_cli(args),
     }
-}
-
-/// Dispatch the deprecated `debundle peel <verb>` aliases. Each alias
-/// delegates to the same report + renderer pair as its replacement
-/// verb, so `--format` (and the tty default) behaves identically —
-/// the aliases previously ignored the flag and always printed JSON.
-fn run_peel(args: PeelArgs) -> Result<()> {
-    match args.command {
-        PeelCommand::PlanWork(args) => {
-            deprecation_notice("peel plan-work", "modules propose");
-            let report = run_plan_work_report(&args)?;
-            emit_report(
-                args.format,
-                &report,
-                render_plan_work_text,
-                "writing plan-work output",
-            )
-        }
-        PeelCommand::Units(args) => {
-            deprecation_notice("peel units", "atoms");
-            let report = run_units_report(&args)?;
-            emit_report(
-                args.format,
-                &report,
-                render_units_text,
-                "writing units output",
-            )
-        }
-        PeelCommand::PatchPlan(args) => {
-            deprecation_notice("peel patch-plan", "coverage");
-            let report = run_patch_plan_report(&args)?;
-            emit_report(
-                args.format,
-                &report,
-                render_patch_plan_text,
-                "writing patch-plan output",
-            )
-        }
-        PeelCommand::Explain(args) => {
-            deprecation_notice("peel explain", "describe <id>");
-            let report = run_explain_report(&args)?;
-            emit_report(
-                args.format,
-                &report,
-                render_explain_text,
-                "writing explain output",
-            )
-        }
-        PeelCommand::SourceSlice(args) => {
-            deprecation_notice("peel source-slice", "show-source <id>");
-            let report = run_source_slice_report(&args)?;
-            emit_report(
-                args.format,
-                &report,
-                render_source_slice_text,
-                "writing source-slice output",
-            )
-        }
-        PeelCommand::GraphSummary(args) => {
-            deprecation_notice("peel graph-summary", "graph-summary");
-            let report = run_graph_summary_report(&args)?;
-            emit_report(
-                args.format,
-                &report,
-                render_graph_summary_text,
-                "writing graph-summary output",
-            )
-        }
-    }
-}
-
-fn deprecation_notice(old: &str, new: &str) {
-    eprintln!(
-        "warning: `debundle {old}` is deprecated; use `debundle {new}` instead. The `peel` \
-         namespace will be removed in a future release."
-    );
 }
 
 /// Shared tail of every report subcommand: resolve `format` (tty-aware default),
@@ -1611,18 +1527,19 @@ mod tests {
     }
 
     #[test]
-    fn parse_peel_units_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "peel",
-            "units",
-            "--graph",
-            "owner_graph.json",
-            "--modules",
-            "modules",
-        ])
-        .expect("parse cli");
-        assert!(matches!(parsed.command, super::DebundleCommand::Peel(_)));
+    fn deprecated_command_roots_are_rejected() {
+        for args in [
+            &["debundle", "peel", "plan-work"][..],
+            &["debundle", "peel", "units"],
+            &["debundle", "peel", "patch-plan"],
+            &["debundle", "peel", "explain"],
+            &["debundle", "peel", "source-slice"],
+            &["debundle", "peel", "graph-summary"],
+            &["debundle", "module", "merge"],
+        ] {
+            let error = DebundleArgs::try_parse_from(args).expect_err("alias should be rejected");
+            assert_eq!(error.kind(), clap::error::ErrorKind::InvalidSubcommand);
+        }
     }
 
     #[test]
@@ -1802,23 +1719,6 @@ mod tests {
         ])
         .expect("parse cli");
         assert!(matches!(parsed.command, super::DebundleCommand::Modules(_)));
-    }
-
-    #[test]
-    fn parse_module_merge_command() {
-        let parsed = DebundleArgs::try_parse_from([
-            "debundle",
-            "module",
-            "merge",
-            "--modules",
-            "modules",
-            "--target",
-            "ui/target.yaml",
-            "ui/src1.yaml",
-            "ui/src2.yaml",
-        ])
-        .expect("parse cli");
-        assert!(matches!(parsed.command, super::DebundleCommand::Module(_)));
     }
 
     #[test]

@@ -19,7 +19,7 @@ use anonymous_resolution::{
     resolve_member_selector_claims,
 };
 use anyhow::{Context, Result, bail};
-use clap::{Args as ClapArgs, Subcommand, ValueEnum};
+use clap::{Args as ClapArgs, ValueEnum};
 use serde::Serialize;
 
 use analysis::{
@@ -30,32 +30,6 @@ use spec_modules::{
     collect_module_files, default_binding_patches_path, load_binding_patch_members,
     module_path_from_file, read_module_claims, read_module_file,
 };
-
-#[derive(Debug, ClapArgs)]
-pub struct PeelArgs {
-    #[command(subcommand)]
-    pub command: PeelCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum PeelCommand {
-    /// Deprecated alias for `debundle modules propose`.
-    #[command(name = "plan-work")]
-    PlanWork(PlanWorkArgs),
-    /// Deprecated alias for `debundle atoms`.
-    Units(UnitsArgs),
-    /// Deprecated alias for `debundle coverage`.
-    #[command(name = "patch-plan")]
-    PatchPlan(PatchPlanArgs),
-    /// Deprecated alias for `debundle describe <id>`.
-    Explain(ExplainArgs),
-    /// Deprecated alias for `debundle show-source <id>`.
-    #[command(name = "source-slice")]
-    SourceSlice(SourceSliceArgs),
-    /// Deprecated alias for `debundle graph-summary`.
-    #[command(name = "graph-summary")]
-    GraphSummary(GraphSummaryArgs),
-}
 
 #[derive(Debug, Clone, ClapArgs)]
 pub struct CommonArgs {
