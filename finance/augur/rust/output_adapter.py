@@ -31,6 +31,7 @@ def decode_rust_event_log(output: Mapping[str, Any]) -> EventLog:
     property_purchases: list[dict[str, object]] = []
     mortgage_originations: list[dict[str, object]] = []
     mortgage_payments: list[dict[str, object]] = []
+    primary_residence_events: list[dict[str, object]] = []
     rented_fraction_events: list[dict[str, object]] = []
     capital_improvements: list[dict[str, object]] = []
     property_sales: list[dict[str, object]] = []
@@ -51,6 +52,9 @@ def decode_rust_event_log(output: Mapping[str, Any]) -> EventLog:
             _mortgage_origination_row(rollout_index, row) for row in rollout["mortgage_originations"]
         )
         mortgage_payments.extend(_mortgage_payment_row(rollout_index, row) for row in rollout["mortgage_payments"])
+        primary_residence_events.extend(
+            _primary_residence_row(rollout_index, row) for row in rollout["primary_residence_events"]
+        )
         rented_fraction_events.extend(
             _rented_fraction_row(rollout_index, row) for row in rollout["property_rented_fraction_events"]
         )
@@ -73,6 +77,7 @@ def decode_rust_event_log(output: Mapping[str, Any]) -> EventLog:
             "property_purchases": _frame(EVENT_FRAMES.property_purchases, property_purchases),
             "mortgage_originations": _frame(EVENT_FRAMES.mortgage_originations, mortgage_originations),
             "mortgage_payments": _frame(EVENT_FRAMES.mortgage_payments, mortgage_payments),
+            "set_primary_residence_events": _frame(EVENT_FRAMES.set_primary_residence_events, primary_residence_events),
             "set_rented_fraction_events": _frame(EVENT_FRAMES.set_rented_fraction_events, rented_fraction_events),
             "capital_improvement_events": _frame(EVENT_FRAMES.capital_improvement_events, capital_improvements),
             "property_sale_events": _frame(EVENT_FRAMES.property_sale_events, property_sales),
@@ -227,6 +232,16 @@ def _rented_fraction_row(rollout_index: int, row: Mapping[str, Any]) -> dict[str
         "month_index": int(row["month"]),
         "property_id": str(row["property_id"]),
         "rented_fraction": int(row["rented_fraction_ppb"]) / RATE_SCALE,
+    }
+
+
+def _primary_residence_row(rollout_index: int, row: Mapping[str, Any]) -> dict[str, object]:
+    return {
+        "rollout_index": rollout_index,
+        "month_index": int(row["month"]),
+        "agent_id": str(row["agent_id"]),
+        "property_id": row["property_id"],
+        "is_primary_residence": bool(row["is_primary_residence"]),
     }
 
 

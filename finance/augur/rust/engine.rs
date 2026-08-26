@@ -13,10 +13,10 @@ use crate::{
         CapitalImprovementOutcome, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture,
         InitialLotSpec, LotDisposition, MonthOutput, MortgageOriginationOutcome,
         MortgagePaymentOutcome, MortgageState, ObligationOutcome, PopulationOutput,
-        PropertyPurchaseOutcome, PropertyRentedFractionOutcome, PropertySaleOutcome,
-        PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput, RolloutSummary,
-        SecurityLotState, SeriesSpec, SimulationOutput, TaxAccrual, TaxLiabilityState,
-        TaxPaymentOutcome, TaxSettlementOutcome, TransferOutcome,
+        PrimaryResidenceOutcome, PropertyPurchaseOutcome, PropertyRentedFractionOutcome,
+        PropertySaleOutcome, PropertySaleSpec, PropertyState, RolloutFailureOutcome, RolloutOutput,
+        RolloutSummary, SecurityLotState, SeriesSpec, SimulationOutput, TaxAccrual,
+        TaxLiabilityState, TaxPaymentOutcome, TaxSettlementOutcome, TransferOutcome,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
     money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
@@ -29,6 +29,8 @@ const RATE_SCALE_PPB: i64 = 1_000_000_000;
 const INDEX_LEVEL_SCALE: i64 = 1_000_000_000;
 const MAX_EXACT_F64_INTEGER: i64 = 1_i64 << 53;
 const CONTRACT_SCALE: i128 = 1_000_000_000_000_000_000;
+const SECTION_121_LOOKBACK_MONTHS: usize = 60;
+const SECTION_121_MIN_QUALIFYING_MONTHS: usize = 24;
 
 #[derive(Debug, Error)]
 pub enum SimulationError {
@@ -267,6 +269,16 @@ pub enum SimulationError {
     InvalidPropertyLifecycle { property_id: String },
     #[error("property lifecycle event for {property_id:?} occurs at or after its sale")]
     PropertyLifecycleAfterSale { property_id: String },
+    #[error(
+        "primary-residence assignment for {agent_id:?} references invalid property {property_id:?} at month {month}"
+    )]
+    InvalidPrimaryResidence {
+        agent_id: String,
+        property_id: String,
+        month: u32,
+    },
+    #[error("multiple primary-residence assignments for {agent_id:?} at month {month}")]
+    DuplicatePrimaryResidence { agent_id: String, month: u32 },
     #[error("mortgage-interest policy references unknown liability {liability_id:?}")]
     UnknownMortgageInterestPolicy { liability_id: String },
     #[error("mortgage-interest policy owner does not match liability {liability_id:?}")]
@@ -378,6 +390,7 @@ struct Recorder {
     bond_cashflows: Vec<BondCashflowOutcome>,
     distributions: Vec<DistributionOutcome>,
     property_purchases: Vec<PropertyPurchaseOutcome>,
+    primary_residence_events: Vec<PrimaryResidenceOutcome>,
     property_rented_fraction_events: Vec<PropertyRentedFractionOutcome>,
     capital_improvements: Vec<CapitalImprovementOutcome>,
     property_sales: Vec<PropertySaleOutcome>,
@@ -391,6 +404,7 @@ struct Recorder {
     bond_cashflow_count: u64,
     distribution_count: u64,
     property_purchase_count: u64,
+    primary_residence_event_count: u64,
     property_rented_fraction_event_count: u64,
     capital_improvement_count: u64,
     property_sale_count: u64,
@@ -413,6 +427,7 @@ impl Recorder {
             bond_cashflows: Vec::new(),
             distributions: Vec::new(),
             property_purchases: Vec::new(),
+            primary_residence_events: Vec::new(),
             property_rented_fraction_events: Vec::new(),
             capital_improvements: Vec::new(),
             property_sales: Vec::new(),
@@ -426,6 +441,7 @@ impl Recorder {
             bond_cashflow_count: 0,
             distribution_count: 0,
             property_purchase_count: 0,
+            primary_residence_event_count: 0,
             property_rented_fraction_event_count: 0,
             capital_improvement_count: 0,
             property_sale_count: 0,
@@ -589,6 +605,22 @@ impl Recorder {
         Ok(())
     }
 
+    fn record_primary_residence(
+        &mut self,
+        event: PrimaryResidenceOutcome,
+    ) -> Result<(), SimulationError> {
+        self.primary_residence_event_count = self
+            .primary_residence_event_count
+            .checked_add(1)
+            .ok_or(ArithmeticError::Overflow {
+                operation: "primary-residence event count",
+            })?;
+        if self.capture_trace {
+            self.primary_residence_events.push(event);
+        }
+        Ok(())
+    }
+
     fn record_property_rented_fraction(
         &mut self,
         event: PropertyRentedFractionOutcome,
@@ -672,6 +704,7 @@ impl RolloutComputation {
             bond_cashflows: self.recorder.bond_cashflows,
             distributions: self.recorder.distributions,
             property_purchases: self.recorder.property_purchases,
+            primary_residence_events: self.recorder.primary_residence_events,
             property_rented_fraction_events: self.recorder.property_rented_fraction_events,
             capital_improvements: self.recorder.capital_improvements,
             property_sales: self.recorder.property_sales,
@@ -697,6 +730,7 @@ impl RolloutComputation {
             bond_cashflow_count: self.recorder.bond_cashflow_count,
             distribution_count: self.recorder.distribution_count,
             property_purchase_count: self.recorder.property_purchase_count,
+            primary_residence_event_count: self.recorder.primary_residence_event_count,
             property_rented_fraction_event_count: self
                 .recorder
                 .property_rented_fraction_event_count,
@@ -1361,7 +1395,7 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
     }
     let mut tax_jurisdictions = BTreeSet::new();
     for profile in &fixture.scenario.tax_profiles {
-        if profile.prior_year_tax.0 < 0 {
+        if profile.prior_year_tax.0 < 0 || profile.section_121_exclusion.0 < 0 {
             return Err(SimulationError::InvalidAmount {
                 kind: "tax profile prior-year tax",
                 cause_id: profile.agent_id.clone(),
@@ -1545,6 +1579,60 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             return Err(SimulationError::MissingSeries { series_id });
         }
     }
+    let sale_month_by_property: BTreeMap<_, _> = fixture
+        .scenario
+        .property_sales
+        .iter()
+        .map(|sale| (sale.property_id.as_str(), sale.month))
+        .collect();
+    let mut primary_initial_agents = BTreeSet::new();
+    for assignment in &fixture.scenario.initial_primary_residences {
+        if !primary_initial_agents.insert(assignment.agent_id.as_str()) {
+            return Err(SimulationError::DuplicatePrimaryResidence {
+                agent_id: assignment.agent_id.clone(),
+                month: 0,
+            });
+        }
+        validate_primary_residence_assignment(
+            &agents,
+            &properties,
+            &sale_month_by_property,
+            &assignment.agent_id,
+            &assignment.property_id,
+            0,
+        )?;
+    }
+    let mut primary_event_keys = BTreeSet::new();
+    for event in &fixture.scenario.primary_residence_events {
+        validate_event_month(
+            "primary residence",
+            &event.agent_id,
+            event.month,
+            fixture.scenario.horizon_months,
+        )?;
+        if !primary_event_keys.insert((event.agent_id.as_str(), event.month)) {
+            return Err(SimulationError::DuplicatePrimaryResidence {
+                agent_id: event.agent_id.clone(),
+                month: event.month,
+            });
+        }
+        if let Some(property_id) = event.property_id.as_deref() {
+            validate_primary_residence_assignment(
+                &agents,
+                &properties,
+                &sale_month_by_property,
+                &event.agent_id,
+                property_id,
+                event.month,
+            )?;
+        } else if !agents.contains(&event.agent_id) {
+            return Err(SimulationError::InvalidPrimaryResidence {
+                agent_id: event.agent_id.clone(),
+                property_id: String::new(),
+                month: event.month,
+            });
+        }
+    }
     for event in &fixture.scenario.property_rented_fraction_events {
         validate_property_lifecycle_event(
             &properties,
@@ -1726,6 +1814,32 @@ fn validate_property_lifecycle_event(
     {
         return Err(SimulationError::PropertyLifecycleAfterSale {
             property_id: property_id.into(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_primary_residence_assignment(
+    agents: &BTreeSet<String>,
+    properties: &BTreeMap<String, &crate::fixture::ScheduledPropertyPurchaseSpec>,
+    sale_month_by_property: &BTreeMap<&str, u32>,
+    agent_id: &str,
+    property_id: &str,
+    month: u32,
+) -> Result<(), SimulationError> {
+    let valid = agents.contains(agent_id)
+        && properties.get(property_id).is_some_and(|purchase| {
+            purchase.buyer_agent_id == agent_id
+                && month >= purchase.month
+                && sale_month_by_property
+                    .get(property_id)
+                    .is_none_or(|sale_month| month <= *sale_month)
+        });
+    if !valid {
+        return Err(SimulationError::InvalidPrimaryResidence {
+            agent_id: agent_id.into(),
+            property_id: property_id.into(),
+            month,
         });
     }
     Ok(())
@@ -2140,6 +2254,17 @@ fn simulate_rollout(
     let mut properties = Vec::<PropertyState>::new();
     let mut mortgages = Vec::<MortgageState>::new();
     let mut tax_liabilities = Vec::<TaxLiabilityState>::new();
+    let mut primary_residence_by_agent: BTreeMap<String, Option<String>> = fixture
+        .scenario
+        .initial_primary_residences
+        .iter()
+        .map(|assignment| {
+            (
+                assignment.agent_id.clone(),
+                Some(assignment.property_id.clone()),
+            )
+        })
+        .collect();
 
     let mut failed_month = None;
     if recorder.capture_trace {
@@ -2172,6 +2297,12 @@ fn simulate_rollout(
             }
             continue;
         }
+        execute_primary_residence_events(
+            fixture,
+            &mut recorder,
+            &mut primary_residence_by_agent,
+            month,
+        )?;
         execute_property_lifecycle_events(
             fixture,
             rollout_id,
@@ -2180,6 +2311,7 @@ fn simulate_rollout(
             &mut tax_facts,
             &mut properties,
             &mut mortgages,
+            &mut primary_residence_by_agent,
             month,
         )?;
         execute_bonds(
@@ -2308,6 +2440,11 @@ fn simulate_rollout(
             )?;
         }
         if failed_month.is_none() {
+            accrue_primary_residence_occupancy(
+                &primary_residence_by_agent,
+                &mut properties,
+                month,
+            )?;
             accrue_property_depreciation(&mut tax_facts, &mut properties)?;
         }
         if failed_month.is_none() && (month + 1) % 12 == 0 {
@@ -2351,6 +2488,31 @@ fn simulate_rollout(
         recorder,
         failed_month,
     })
+}
+
+fn execute_primary_residence_events(
+    fixture: &Fixture,
+    recorder: &mut Recorder,
+    primary_residence_by_agent: &mut BTreeMap<String, Option<String>>,
+    month: u32,
+) -> Result<(), SimulationError> {
+    let mut events: Vec<_> = fixture
+        .scenario
+        .primary_residence_events
+        .iter()
+        .filter(|event| event.month == month)
+        .collect();
+    events.sort_by_key(|event| &event.agent_id);
+    for event in events {
+        primary_residence_by_agent.insert(event.agent_id.clone(), event.property_id.clone());
+        recorder.record_primary_residence(PrimaryResidenceOutcome {
+            month,
+            agent_id: event.agent_id.clone(),
+            property_id: event.property_id.clone(),
+            is_primary_residence: event.property_id.is_some(),
+        })?;
+    }
+    Ok(())
 }
 
 fn execute_distributions(
@@ -2446,6 +2608,7 @@ fn execute_property_lifecycle_events(
     tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
     properties: &mut [PropertyState],
     mortgages: &mut [MortgageState],
+    primary_residence_by_agent: &mut BTreeMap<String, Option<String>>,
     month: u32,
 ) -> Result<(), SimulationError> {
     let property_ids: BTreeSet<_> = fixture
@@ -2550,6 +2713,7 @@ fn execute_property_lifecycle_events(
             tax_facts,
             properties,
             mortgages,
+            primary_residence_by_agent,
             month,
             property_id,
         )?;
@@ -2566,6 +2730,7 @@ fn execute_property_sales(
     tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
     properties: &mut [PropertyState],
     mortgages: &mut [MortgageState],
+    primary_residence_by_agent: &mut BTreeMap<String, Option<String>>,
     month: u32,
     property_id: &str,
 ) -> Result<(), SimulationError> {
@@ -2632,8 +2797,26 @@ fn execute_property_sales(
                 .max(0)
                 .min(property.cumulative_depreciation.0),
         );
-        let long_term_capital_gain =
+        let post_recapture_gain =
             Money(realized_gain.checked_sub(depreciation_recapture)?.0.max(0));
+        let qualifies_for_section_121 = property
+            .owner_occupied_window
+            .iter()
+            .filter(|occupied| **occupied)
+            .count()
+            >= SECTION_121_MIN_QUALIFYING_MONTHS;
+        let exclusion_cap = fixture
+            .scenario
+            .tax_profiles
+            .iter()
+            .find(|profile| profile.agent_id == purchase.buyer_agent_id)
+            .map_or(Money(0), |profile| profile.section_121_exclusion);
+        let section_121_exclusion = if qualifies_for_section_121 {
+            Money(post_recapture_gain.0.min(exclusion_cap.0))
+        } else {
+            Money(0)
+        };
+        let long_term_capital_gain = post_recapture_gain.checked_sub(section_121_exclusion)?;
         let property_asset_balance = property.adjusted_basis.checked_add(capital_improvements)?;
         let basis_writeoff = property
             .adjusted_basis
@@ -2694,6 +2877,12 @@ fn execute_property_sales(
         properties[property_index].active = false;
         properties[property_index].rented_fraction_ppb = 0;
         properties[property_index].building_basis = Money(0);
+        if primary_residence_by_agent
+            .get(&purchase.buyer_agent_id)
+            .is_some_and(|assignment| assignment.as_deref() == Some(&sale.property_id))
+        {
+            primary_residence_by_agent.insert(purchase.buyer_agent_id.clone(), None);
+        }
         for index in mortgage_indices {
             mortgages[index].principal = Money(0);
             mortgages[index].active = false;
@@ -2713,9 +2902,38 @@ fn execute_property_sales(
             net_cash_to_owner: net_cash,
             realized_gain,
             depreciation_recapture,
-            section_121_exclusion: Money(0),
+            section_121_exclusion,
             long_term_capital_gain,
         })?;
+    }
+    Ok(())
+}
+
+fn accrue_primary_residence_occupancy(
+    primary_residence_by_agent: &BTreeMap<String, Option<String>>,
+    properties: &mut [PropertyState],
+    month: u32,
+) -> Result<(), SimulationError> {
+    let window_index = usize::try_from(month).map_err(|_| ArithmeticError::Overflow {
+        operation: "primary-residence window index",
+    })? % SECTION_121_LOOKBACK_MONTHS;
+    for property in properties {
+        let occupied = property.active
+            && property.rented_fraction_ppb < RATE_SCALE_PPB
+            && primary_residence_by_agent
+                .get(&property.owner_agent_id)
+                .and_then(|assignment| assignment.as_deref())
+                == Some(property.property_id.as_str());
+        property.owner_occupied_window[window_index] = occupied;
+        if occupied {
+            property.owner_occupied_months =
+                property
+                    .owner_occupied_months
+                    .checked_add(1)
+                    .ok_or(ArithmeticError::Overflow {
+                        operation: "primary-residence occupied-month count",
+                    })?;
+        }
     }
     Ok(())
 }
@@ -2874,6 +3092,8 @@ fn execute_property_purchases(
             building_basis: building_basis_initial,
             cumulative_depreciation: Money(0),
             depreciation_ytd: Money(0),
+            owner_occupied_months: 0,
+            owner_occupied_window: vec![false; SECTION_121_LOOKBACK_MONTHS],
             contribution_used: stake,
             equity_ledger: equity,
             active: true,
@@ -4922,6 +5142,8 @@ mod tests {
                 distributions: vec![],
                 target_allocation_policies: vec![],
                 scheduled_property_purchases: vec![],
+                initial_primary_residences: vec![],
+                primary_residence_events: vec![],
                 property_rented_fraction_events: vec![],
                 capital_improvement_events: vec![],
                 property_sales: vec![],
@@ -5490,6 +5712,8 @@ mod tests {
                 distributions: vec![],
                 target_allocation_policies: vec![],
                 scheduled_property_purchases: vec![],
+                initial_primary_residences: vec![],
+                primary_residence_events: vec![],
                 property_rented_fraction_events: vec![],
                 capital_improvement_events: vec![],
                 property_sales: vec![],
@@ -5705,6 +5929,8 @@ mod tests {
                 distributions: vec![],
                 target_allocation_policies: vec![],
                 scheduled_property_purchases: vec![],
+                initial_primary_residences: vec![],
+                primary_residence_events: vec![],
                 property_rented_fraction_events: vec![],
                 capital_improvement_events: vec![],
                 property_sales: vec![],
@@ -5778,6 +6004,8 @@ mod tests {
                 distributions: vec![],
                 target_allocation_policies: vec![],
                 scheduled_property_purchases: vec![],
+                initial_primary_residences: vec![],
+                primary_residence_events: vec![],
                 property_rented_fraction_events: vec![],
                 capital_improvement_events: vec![],
                 property_sales: vec![],
@@ -5865,6 +6093,8 @@ mod tests {
                 distributions: vec![],
                 target_allocation_policies: vec![],
                 scheduled_property_purchases: vec![],
+                initial_primary_residences: vec![],
+                primary_residence_events: vec![],
                 property_rented_fraction_events: vec![],
                 capital_improvement_events: vec![],
                 property_sales: vec![],

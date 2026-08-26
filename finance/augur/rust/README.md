@@ -45,8 +45,10 @@ The differential suite currently proves exact integer agreement for:
   and deductible-expense tax tagging;
 - property sales driven by rollout-scoped home-value paths, including seller
   closing costs, mortgage payoff, realized long-term gain, lifecycle ordering,
-  and same-month suppression of property-tied cashflows and carrying costs, for
-  fixtures without primary-residence / §121 state;
+  and same-month suppression of property-tied cashflows and carrying costs;
+- initial and mid-horizon primary-residence assignment, sale-driven assignment
+  clearing, the exact 24-of-trailing-60-month use test, and filing-profile §121
+  exclusion caps applied after depreciation recapture;
 - property rented-fraction transitions, capital improvements, 27.5-year rental
   depreciation, rental/owner mortgage-interest splitting for uncapped
   acquisition debt, and sale-time §1250 recapture with federal capped-rate
@@ -76,10 +78,11 @@ obligation-accrual, obligation-settlement, and rollout-failure rows into the
 same canonical `EventLog` frame schemas exposed by Python/JAX. It also
 normalizes the currently supported property-purchase, mortgage-origination,
 mortgage-payment, rented-fraction, capital-improvement, and property-sale
-frames, plus year-end tax accrual/breakdown and tax-liability settlement
-frames, including exact frame dtypes and cause identities. The adapter is an
-explanatory-output boundary only; snapshots remain authoritative state and
-events are not replayed to reconstruct them.
+frames, primary-residence assignment frames, plus year-end tax
+accrual/breakdown and tax-liability settlement frames, including exact frame
+dtypes and cause identities. The adapter is an explanatory-output boundary
+only; snapshots remain authoritative state and events are not replayed to
+reconstruct them.
 
 The strict fixture stores monetary series (security prices, distributions, and
 home values) as currency quanta. Inflation and rent index levels instead use a
@@ -129,8 +132,8 @@ Still missing before replacement is plausible:
 
 - broader modeled tax facts and complete deduction policy;
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
-- property-tax/SALT mixed-use splitting, mortgage principal-cap policies, and
-  §121 primary-residence exclusion;
+- property-tax/SALT deduction policy and mortgage principal-cap/debt-class
+  policies;
 - broader liquidity policy, TLH, and
   private equity;
 - complete selected-rollout causal trace parity for those domains;

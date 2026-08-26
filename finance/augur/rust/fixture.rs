@@ -6,7 +6,7 @@ use crate::{
     tax::{JurisdictionLevel, TaxRules},
 };
 
-pub const FIXTURE_SCHEMA_VERSION: u32 = 4;
+pub const FIXTURE_SCHEMA_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -55,6 +55,10 @@ pub struct ScenarioSpec {
     pub target_allocation_policies: Vec<TargetAllocationPolicySpec>,
     #[serde(default)]
     pub scheduled_property_purchases: Vec<ScheduledPropertyPurchaseSpec>,
+    #[serde(default)]
+    pub initial_primary_residences: Vec<PrimaryResidenceAssignmentSpec>,
+    #[serde(default)]
+    pub primary_residence_events: Vec<PrimaryResidenceEventSpec>,
     #[serde(default)]
     pub property_rented_fraction_events: Vec<PropertyRentedFractionSpec>,
     #[serde(default)]
@@ -300,6 +304,8 @@ pub struct TaxProfileSpec {
     pub tax_authority_account_id: String,
     #[serde(default)]
     pub prior_year_tax: Money,
+    #[serde(default)]
+    pub section_121_exclusion: Money,
     pub jurisdictions: Vec<TaxRules>,
 }
 
@@ -398,6 +404,21 @@ pub struct ScheduledPropertyPurchaseSpec {
     pub land_value_fraction_ppb: i64,
     #[serde(default)]
     pub mortgage: Option<MortgageFinancingSpec>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrimaryResidenceAssignmentSpec {
+    pub agent_id: String,
+    pub property_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrimaryResidenceEventSpec {
+    pub month: u32,
+    pub agent_id: String,
+    pub property_id: Option<String>,
 }
 
 fn default_land_value_fraction_ppb() -> i64 {
@@ -552,6 +573,9 @@ pub struct PropertyState {
     pub building_basis: Money,
     pub cumulative_depreciation: Money,
     pub depreciation_ytd: Money,
+    pub owner_occupied_months: u32,
+    #[serde(skip)]
+    pub owner_occupied_window: Vec<bool>,
     pub contribution_used: Money,
     pub equity_ledger: Money,
     pub active: bool,
@@ -730,6 +754,14 @@ pub struct PropertyRentedFractionOutcome {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PrimaryResidenceOutcome {
+    pub month: u32,
+    pub agent_id: String,
+    pub property_id: Option<String>,
+    pub is_primary_residence: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CapitalImprovementOutcome {
     pub month: u32,
     pub property_id: String,
@@ -783,6 +815,7 @@ pub struct RolloutOutput {
     pub bond_cashflows: Vec<BondCashflowOutcome>,
     pub distributions: Vec<DistributionOutcome>,
     pub property_purchases: Vec<PropertyPurchaseOutcome>,
+    pub primary_residence_events: Vec<PrimaryResidenceOutcome>,
     pub property_rented_fraction_events: Vec<PropertyRentedFractionOutcome>,
     pub capital_improvements: Vec<CapitalImprovementOutcome>,
     pub property_sales: Vec<PropertySaleOutcome>,
@@ -813,6 +846,7 @@ pub struct RolloutSummary {
     pub bond_cashflow_count: u64,
     pub distribution_count: u64,
     pub property_purchase_count: u64,
+    pub primary_residence_event_count: u64,
     pub property_rented_fraction_event_count: u64,
     pub capital_improvement_count: u64,
     pub property_sale_count: u64,

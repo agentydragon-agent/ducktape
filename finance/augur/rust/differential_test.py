@@ -45,7 +45,7 @@ def _fixture() -> dict[str, Any]:
     # sale, while sharing the sale-month value supported by the legacy fixed
     # sale-price surface.
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "currency_code": "USD",
         "currency_quantum": "0.01",
         "rollout_count": 2,
@@ -384,7 +384,7 @@ def _distribution_tax_fixture() -> dict[str, Any]:
 def _target_allocation_fixture() -> dict[str, Any]:
     tax_profile = _tax_fixture()["scenario"]["tax_profiles"][0]
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "currency_code": "USD",
         "currency_quantum": "0.01",
         "rollout_count": 1,
@@ -1099,6 +1099,72 @@ def _property_sale_fixture() -> dict[str, Any]:
                 55_000_000,
             ],
         }
+    ]
+    return fixture
+
+
+def _section_121_fixture() -> dict[str, Any]:
+    fixture = _financed_property_fixture()
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 86
+    scenario["accounts"] = [
+        *[
+            {"account": {"agent_id": agent_id, "account_id": "checking"}, "opening_balance": 60_000_000}
+            for agent_id in ("alice", "bob", "carol", "dave")
+        ],
+        *[
+            {"account": {"agent_id": seller_id, "account_id": "checking"}, "opening_balance": 0}
+            for seller_id in ("seller-a", "seller-b", "seller-c", "seller-d")
+        ],
+        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["scheduled_property_purchases"] = [
+        {
+            "month": 0,
+            "cause_id": f"{agent_id}-buys-home",
+            "property_id": property_id,
+            "location_id": "sf",
+            "buyer_agent_id": agent_id,
+            "buyer_account_id": "checking",
+            "seller_agent_id": seller_id,
+            "seller_account_id": "checking",
+            "purchase_price": 50_000_000,
+            "down_payment": 50_000_000,
+            "buyer_closing_cost": 0,
+            "rented_fraction_ppb": 0,
+            "mortgage": None,
+        }
+        for agent_id, property_id, seller_id in (
+            ("alice", "alice-home", "seller-a"),
+            ("bob", "bob-home", "seller-b"),
+            ("carol", "carol-home", "seller-c"),
+            ("dave", "dave-home", "seller-d"),
+        )
+    ]
+    scenario["initial_primary_residences"] = [
+        {"agent_id": "alice", "property_id": "alice-home"},
+        {"agent_id": "dave", "property_id": "dave-home"},
+    ]
+    scenario["primary_residence_events"] = [
+        {"month": 7, "agent_id": "bob", "property_id": "bob-home"},
+        {"month": 24, "agent_id": "dave", "property_id": None},
+        {"month": 30, "agent_id": "carol", "property_id": "carol-home"},
+    ]
+    scenario["property_sales"] = [
+        {"month": 30, "property_id": property_id, "closing_cost_bps": 0}
+        for property_id in ("alice-home", "bob-home", "carol-home")
+    ] + [{"month": 84, "property_id": "dave-home", "closing_cost_bps": 0}]
+    scenario["property_tax_policies"] = []
+    federal_profile = _tax_fixture()["scenario"]["tax_profiles"][0]
+    federal_profile["jurisdictions"] = federal_profile["jurisdictions"][:1]
+    scenario["tax_profiles"] = []
+    for agent_id in ("alice", "bob", "carol", "dave"):
+        profile = json.loads(json.dumps(federal_profile))
+        profile["agent_id"] = agent_id
+        profile["section_121_exclusion"] = 25_000_000
+        scenario["tax_profiles"].append(profile)
+    fixture["series"] = [
+        {"series_id": "home_value:sf", "snapshots": 87, "values": [50_000_000] * 30 + [75_000_000] * 57}
     ]
     return fixture
 
@@ -2640,6 +2706,36 @@ def test_rust_and_jax_match_property_sale_lifecycle_and_rollout_values(tmp_path:
         assert "home_property_tax_m2" not in sale_month_causes
         for entry in rollout["journal"]:
             assert sum(posting["amount"] for posting in entry["postings"]) == 0
+
+
+def test_rust_and_jax_match_primary_residence_events_and_section_121_boundaries(tmp_path: Path) -> None:
+    fixture = _section_121_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+    rust_events = decode_rust_event_log(rust)
+
+    primary_sort = ["rollout_index", "month_index", "agent_id"]
+    assert rust_events.set_primary_residence_events.schema == legacy.events_log.set_primary_residence_events.schema
+    assert (
+        rust_events.set_primary_residence_events.sort(primary_sort).to_dicts()
+        == legacy.events_log.set_primary_residence_events.sort(primary_sort).to_dicts()
+    )
+
+    sale_sort = ["rollout_index", "month_index", "property_id"]
+    assert rust_events.property_sale_events.schema == legacy.events_log.property_sale_events.schema
+    assert (
+        rust_events.property_sale_events.sort(sale_sort).to_dicts()
+        == legacy.events_log.property_sale_events.sort(sale_sort).to_dicts()
+    )
+    assert {
+        row["property_id"]: row["section_121_exclusion_quanta"] for row in rust_events.property_sale_events.to_dicts()
+    } == {"alice-home": 25_000_000, "bob-home": 0, "carol-home": 0, "dave-home": 0}
+
+    # Snapshot 30 is after month 29 and immediately before the month-30 sales.
+    assert legacy.output.state.property_owner_occupied_months[30, :, 0].tolist() == [30, 23, 0, 24]
+    rust_month_30 = sorted(rust["rollouts"][0]["months"][30]["properties"], key=lambda row: row["property_id"])
+    assert [row["owner_occupied_months"] for row in rust_month_30] == [30, 23, 0, 24]
+    assert all(sum(posting["amount"] for posting in entry["postings"]) == 0 for entry in rust["rollouts"][0]["journal"])
 
 
 def test_rust_and_jax_match_rental_transition_capex_depreciation_and_interest(tmp_path: Path) -> None:

@@ -32,6 +32,7 @@ from finance.augur.sim.scenario import (
     InitialLot,
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
+    PrimaryResidenceAssignment,
     PropertySaleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
@@ -45,6 +46,7 @@ from finance.augur.sim.scenario import (
     ScheduledTransfer,
     SecurityDistribution,
     SeriesIndexedAmount,
+    SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
     SleeveTarget,
     TargetAllocationPolicy,
@@ -417,6 +419,16 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 ),
             )
             for spec in scenario_spec.get("scheduled_property_purchases", [])
+        ],
+        initial_primary_residences=[
+            PrimaryResidenceAssignment(agent_id=spec["agent_id"], property_id=spec["property_id"])
+            for spec in scenario_spec.get("initial_primary_residences", [])
+        ],
+        primary_residence_events=[
+            SetPrimaryResidenceEvent(
+                month=spec["month"], agent_id=spec["agent_id"], property_id=spec.get("property_id")
+            )
+            for spec in scenario_spec.get("primary_residence_events", [])
         ],
         property_lifecycle_events=[
             *[
