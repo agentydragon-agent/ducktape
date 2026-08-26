@@ -5,7 +5,7 @@ import pytest_bazel
 import yaml
 from pydantic import SecretStr
 
-from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings
+from haku.console.config import CodexAppServerImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.mcp_config import ConsoleConfigFile
 from util.bazel.runfiles import get_required_path
 
@@ -68,6 +68,17 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     assert settings.config_file == config_path
     assert settings.runner_kubernetes_proxy_url == "http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080"
     assert str(settings.haku_agent_workspace_setup) == "/usr/local/bin/haku-sandbox-setup.sh"
+    assert settings.codex_runtime is not None
+    assert settings.codex_runtime.claim_prefix == "codex"
+    assert settings.codex_runtime.runtime_label == "codex-chat"
+    implementation = settings.codex_runtime.implementation
+    assert isinstance(implementation, CodexAppServerImplementationConfig)
+    assert implementation.api_base_url == "http://litellm.litellm.svc.cluster.local:4000/v1"
+    assert settings.codex_runtime.mcp_url == "http://haku-console.haku-console.svc.cluster.local:9090/mcp"
+    assert settings.codex_runtime.https_proxy == (
+        "http://public-coder-codex-runner-proxy.public-coder-agent.svc.cluster.local:8080"
+    )
+    assert "litellm.litellm.svc.cluster.local" not in settings.codex_runtime.no_proxy
 
 
 if __name__ == "__main__":

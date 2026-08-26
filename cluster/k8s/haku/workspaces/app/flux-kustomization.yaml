@@ -21,7 +21,11 @@ spec:
       namespace: ducktape-flux
     - name: haku-rbac # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
       namespace: ducktape-flux
-    - name: haku-runtime-namespace # isolated namespace for the OAuth-capable Console runners
+    - name: haku-runtime-namespace # isolated namespace for all Console-launched CLI runners
+      namespace: ducktape-flux
+    - name: public-coder-agent-proxy # Codex proxy ingress + reflected interception trust bundle
+      namespace: ducktape-flux
+    - name: litellm-keys-tf # public-coder provider key consumed only by its trusted proxy
       namespace: ducktape-flux
     - name: haku-egress-proxy # the fence haku-sandbox is opted into
       namespace: ducktape-flux
