@@ -201,6 +201,7 @@ class _Harness:
     tool_calls: ToolCallApplicationService
     operator_identity: ResolvedOperatorIdentity
     other_operator_identity: ResolvedOperatorIdentity
+    max_wait_for_result_ms: int
 
 
 @pytest.fixture
@@ -281,6 +282,7 @@ async def harness(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> As
             tool_calls=app.state.tool_call_service,
             operator_identity=operator_identity,
             other_operator_identity=other_operator_identity,
+            max_wait_for_result_ms=settings.max_wait_for_result_ms,
         )
 
 
@@ -317,7 +319,7 @@ async def _operator_post(
         return await client.post(path, headers={"Origin": harness.origin}, **kwargs)
 
 
-async def test_tool_surface_splits_pass_through_and_request(agent_client: Client) -> None:
+async def test_tool_surface_splits_pass_through_and_request(agent_client: Client, harness: _Harness) -> None:
     tools = {t.name: t for t in await agent_client.list_tools()}
     daemon_status = await agent_client.call_tool("list_node_daemons", {})
 
@@ -345,6 +347,16 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     assert set(envelope["required"]) == {"input", "rationale"}
     assert set(envelope["properties"]) == {"input", "title", "rationale", "wait_for_result_ms"}
     assert envelope["additionalProperties"] is False
+    wait_schema = envelope["properties"]["wait_for_result_ms"]
+    assert wait_schema == {
+        "default": mcp_server_module.DEFAULT_WAIT_MS,
+        "description": wait_schema["description"],
+        "maximum": harness.max_wait_for_result_ms,
+        "minimum": 0,
+        "title": "Wait For Result Ms",
+        "type": "integer",
+    }
+    assert "anyOf" not in wait_schema
     gmail_write_meta = tools["gmail__drafts_create"].meta
     assert gmail_write_meta is not None
     assert gmail_write_meta[MCP_TOOL_META_KEY] == {
@@ -414,10 +426,32 @@ def test_console_server_instructions_keep_client_critical_guidance() -> None:
 
 
 def test_approval_envelope_rejects_old_wait_field_name() -> None:
+    model = mcp_server_module._approval_request_envelope_model(max_wait_ms=60_000)
     with pytest.raises(ValidationError, match="wait_for_approval_ms"):
-        mcp_server_module.ApprovalRequestEnvelope.model_validate(
-            {"input": {}, "rationale": "test", "wait_for_approval_ms": 0}
+        model.model_validate({"input": {}, "rationale": "test", "wait_for_approval_ms": 0})
+
+
+def test_approval_envelope_wait_has_default_and_strict_bounds() -> None:
+    max_wait_ms = 60_000
+    model = mcp_server_module._approval_request_envelope_model(max_wait_ms=max_wait_ms)
+    envelope = model.model_validate({"input": {}, "rationale": "test"})
+    assert envelope.wait_for_result_ms == mcp_server_module.DEFAULT_WAIT_MS
+    for wait_ms in (0, max_wait_ms):
+        assert (
+            model.model_validate({"input": {}, "rationale": "test", "wait_for_result_ms": wait_ms}).wait_for_result_ms
+            == wait_ms
         )
+    for invalid_wait_ms in (-1, max_wait_ms + 1, None, "0"):
+        with pytest.raises(ValidationError):
+            model.model_validate({"input": {}, "rationale": "test", "wait_for_result_ms": invalid_wait_ms})
+
+
+def test_approval_envelope_schema_uses_requested_dynamic_bounds() -> None:
+    model = mcp_server_module._approval_request_envelope_model(default_wait_ms=7, min_wait_ms=1, max_wait_ms=9)
+    wait_schema = model.model_json_schema()["properties"]["wait_for_result_ms"]
+    assert wait_schema["default"] == 7
+    assert wait_schema["minimum"] == 1
+    assert wait_schema["maximum"] == 9
 
 
 async def test_tool_surface_is_specific_to_the_authenticated_agent(harness: _Harness) -> None:
@@ -653,6 +687,31 @@ async def test_get_tool_call_missing_raises(agent_client: Client) -> None:
         await agent_client.call_tool("get_tool_call", {"tool_call_id": "tc_does_not_exist"})
 
 
+async def test_request_tool_dispatches_valid_wait_without_clamping(
+    harness: _Harness, agent_client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    submitted_waits: list[int] = []
+
+    async def capture_request(*, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
+        assert actor.operator_id == harness.operator_identity.operator_id
+        submitted_waits.append(req.wait_for_ms)
+        raise ToolCallNotFoundError("captured request")
+
+    monkeypatch.setattr(harness.tool_calls, "submit_and_wait", capture_request)
+    expected_waits = [0, harness.max_wait_for_result_ms]
+    for wait_ms in expected_waits:
+        with pytest.raises(ToolError, match="captured request"):
+            await agent_client.call_tool(
+                "gmail__drafts_create",
+                {
+                    "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
+                    "rationale": "test",
+                    "wait_for_result_ms": wait_ms,
+                },
+            )
+    assert submitted_waits == expected_waits
+
+
 async def test_two_operator_two_agent_mcp_read_matrix(harness: _Harness) -> None:
     async def submit_draft(token: str, subject: str) -> str:
         async with Client(f"{harness.base}/mcp", auth=token) as client:
@@ -810,7 +869,7 @@ async def test_call_mcp_tool_rejects_an_unknown_server(harness: _Harness, agent_
     assert response.json()["tool_calls"] == []
 
 
-async def test_reflected_schema_is_the_one_call_mcp_tool_accepts(agent_client: Client) -> None:
+async def test_reflected_schema_is_the_one_call_mcp_tool_accepts(agent_client: Client, harness: _Harness) -> None:
     """The round trip the pair exists for: reflect a tool you cannot see, send back exactly the
     shape reported, get the real behaviour. If these two ever disagree the fallback is unusable,
     because a caller with no generated tool has nothing else to learn the shape from."""
@@ -826,6 +885,11 @@ async def test_reflected_schema_is_the_one_call_mcp_tool_accepts(agent_client: C
     assert create["approval_mode"] == "approval_required"
     assert set(create["input_schema"]["required"]) == {"input", "rationale"}
     assert "subject" in create["input_schema"]["properties"]["input"]["properties"]
+    reflected_wait = create["input_schema"]["properties"]["wait_for_result_ms"]
+    assert reflected_wait["default"] == mcp_server_module.DEFAULT_WAIT_MS
+    assert reflected_wait["minimum"] == 0
+    assert reflected_wait["maximum"] == harness.max_wait_for_result_ms
+    assert "anyOf" not in reflected_wait
 
     # Now send each reported shape back through the fallback.
     read = await agent_client.call_tool("call_mcp_tool", {"server_id": "gmail", "tool_name": "labels_list"})

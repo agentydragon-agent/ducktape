@@ -690,6 +690,10 @@ class Settings(BaseSettings):
     # than httpx's historical 10-second default while retaining a bounded deployment knob.
     mcp_operator_oauth_token_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
 
+    # Maximum synchronous wait an Agent may request for an approval-gated MCP call. Required
+    # deployment wiring: it must leave margin below the deployment's own request timeout.
+    max_wait_for_result_ms: int = Field(ge=5_000)
+
     # The background reconciler refreshes every Operator's configured MCP catalogs this often.
     # `tools/list` itself reads only the already-published in-memory generation, so an upstream
     # connect, OAuth refresh, or large tool schema can never extend the client startup path.

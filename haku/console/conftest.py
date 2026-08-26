@@ -131,6 +131,7 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
             "operator_oidc": TEST_OPERATOR_OIDC,
             "operator_identity": TEST_OPERATOR_IDENTITY,
             "config_file": Path("/nonexistent/haku-console.yaml"),
+            "max_wait_for_result_ms": 60_000,
             **overrides,
         }
     )

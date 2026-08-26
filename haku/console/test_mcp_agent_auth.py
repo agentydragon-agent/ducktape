@@ -67,6 +67,7 @@ def _settings(*, mcp_oauth: McpOAuthConfig | None = None) -> Settings:
         operator_identity=OperatorIdentityConfig(trust_domain="auth.test/authentik-user-id/v1"),
         mcp_oauth=mcp_oauth,
         config_file=Path("/unused/haku-console.yaml"),
+        max_wait_for_result_ms=60_000,
     )
 
 
