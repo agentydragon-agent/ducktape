@@ -1249,6 +1249,7 @@ vitest_bin.vitest_test(
         ":tool_call_decision_test",
         ":tool_calls_page_test",
         "//:node_modules/@haku/console-bridge",
+        "//:node_modules/happy-dom",
         "//:node_modules/vitest",
         "//haku/console/frontend/tool_rendering:actions_test",
         "//haku/console/frontend/tool_rendering:call_entry_test",

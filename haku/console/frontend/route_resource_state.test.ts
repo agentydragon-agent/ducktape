@@ -10,29 +10,6 @@ import type { EnrollmentView, OAuthConnectionResult } from "./client";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-Object.defineProperty(window, "matchMedia", {
-  writable: true,
-  value: () => ({
-    matches: false,
-    media: "",
-    onchange: null,
-    addListener: () => undefined,
-    removeListener: () => undefined,
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined,
-    dispatchEvent: () => false,
-  }),
-});
-
-Object.defineProperty(globalThis, "ResizeObserver", {
-  writable: true,
-  value: class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  },
-});
-
 type Deferred<T> = {
   promise: Promise<T>;
   resolve: (value: T) => void;
