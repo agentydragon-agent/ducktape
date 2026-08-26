@@ -45,6 +45,9 @@ instead, so they load on demand.
 - **No suspicious nullability**: an optional field must represent an intentional,
   defined absent state (or a named transition). Absence is `None` — never `""`/`[]`
   zero values. A field is either required (no default) or `| None = None`.
+- **No footgun defaults**: require a parameter when every correct production caller must
+  supply real configuration or dependency wiring. A fallback value must represent a valid
+  omission in the contract, not merely spare callers from plumbing the authoritative value.
 - **No dead code**: remove unused code and historical comments (ruff F401 catches
   unused imports).
 - **No redundant derived fields**: don't return a collection plus a trivially computable
