@@ -54,8 +54,8 @@ Examples are auto-generated from `critic_scopes_expected_to_recall` in ground tr
 **Hill-climbing query:**
 ```sql
 -- Find easiest examples to start with
-SELECT snapshot_slug, files_hash, n_recall_denominator
+SELECT snapshot_slug, files_hash, recall_denominator
 FROM examples
-WHERE example_kind = 'file_set' AND n_recall_denominator <= 3
-ORDER BY n_recall_denominator;
+WHERE example_kind = 'file_set' AND recall_denominator <= 3
+ORDER BY recall_denominator;
 ```

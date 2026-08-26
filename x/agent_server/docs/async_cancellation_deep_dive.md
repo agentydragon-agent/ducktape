@@ -11,9 +11,10 @@ against asyncio cancellation, not anyio cancel scopes.**
 
 ## The Actual Problem: Step-by-Step Execution Trace
 
-Let's trace through exactly what happens when you run a critic in GEPA:
+The original reproducer was the now-retired Props GEPA adapter. Its trace remains useful
+because the cancellation boundary is in shared FastMCP lifecycle code rather than GEPA:
 
-### Stack Frame 1: GEPA Thread (gepa_adapter.py)
+### Stack Frame 1: Historical GEPA thread
 
 ```python
 def run_in_new_loop():

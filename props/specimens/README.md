@@ -122,7 +122,7 @@ Current split distribution:
 3. **Validate**: Verify paths, ranges, and detection expectations
 4. **Freeze**: Commit to this repo (immutable training data)
 5. **Sync**: Load into database via `adgn-properties db sync`
-6. **Train**: Use for critic optimization (GEPA, prompt tuning, etc.)
+6. **Train**: Use for critic optimization and prompt tuning
 7. **Evaluate**: Measure recall/precision on validation split
 
 **Important**: Specimens are **immutable once created**. Do not update issue files after fixes are made - create new snapshots if you want to capture improvements.

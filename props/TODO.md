@@ -11,6 +11,9 @@
 
 - Reimplement `fix` command as critic-driven loop: run critic, fix issues, rerun until clean or max iterations
 - Agent timeout warning handler: inject "5 minutes remaining" messages using `created_at` + `timeout_seconds`
+- If automated prompt optimization becomes a product priority again, evaluate GEPA or a successor
+  against the current definition-based `run_critic()` and critic-dev architecture. The previous
+  adapter was retired after the legacy critic runner disappeared and the exposed command stopped working.
 
 ## LLM Proxy
 

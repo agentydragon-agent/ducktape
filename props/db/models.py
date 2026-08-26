@@ -1113,7 +1113,7 @@ class RecallByDefinitionExample(Base):
     """Per-(definition, model, example) recall statistics from recall_by_definition_example VIEW.
 
     Intermediate view between recall_by_run and higher-level aggregations.
-    Groups recall_by_run by (definition, model, example) - used by GEPA.
+    Groups recall_by_run by (definition, model, example) for optimization and dashboard reporting.
 
     - recall_denominator: Ground truth count (denominator)
     - credit_stats: Stats of raw credit counts across runs (numerator)

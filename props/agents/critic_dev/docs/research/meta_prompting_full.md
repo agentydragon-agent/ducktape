@@ -169,7 +169,7 @@ Backend Conductor (web architecture, APIs, databases)
    - Duplication expert perspective
    - Architecture expert perspective
 
-3. **Iterative refinement:** The conductor pattern maps to GEPA's feedback loop:
+3. **Iterative refinement:** The conductor pattern maps to a generate-evaluate-refine feedback loop:
    - Optimizer (conductor) delegates to critic (expert)
    - Critic runs on examples
    - Grader provides feedback

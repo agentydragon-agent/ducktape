@@ -39,8 +39,8 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 
 **Relevance to our project:**
 
-- GEPA extends this with iterative refinement (multiple rounds)
-- We similarly generate candidates, evaluate on train/valid, select winners
+- Evolutionary systems such as GEPA extend this with iterative refinement (multiple rounds)
+- Our current critic-dev optimizer similarly generates candidates, evaluates on train/valid, and selects winners
 
 ### OPRO (Optimization by Prompting)
 
@@ -144,8 +144,8 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 
 **Relevance to our project:**
 
-- **We ARE using GEPA** for prompt optimization
-- Our rewritten system prompt guides the "reflection LM" role
+- The retired GEPA prototype explored this approach, but its compositional assumptions did not fit a monolithic critic prompt
+- The current critic-dev optimizer keeps the useful generate-evaluate-refine loop without the framework dependency
 - Key insight: Reflection quality determines optimization effectiveness
 
 ### Common Patterns Across Approaches
@@ -344,7 +344,7 @@ OPRO-style iterative refinement outperforms APE-style one-shot generation:
 
 ## Relevance to Our Prompt Optimizer
 
-### What We're Doing (GEPA)
+### What We're Doing
 
 **Our system:**
 
@@ -355,7 +355,7 @@ OPRO-style iterative refinement outperforms APE-style one-shot generation:
 
 **Our rewritten system prompt:**
 
-- Positions the optimizer as the "reflection LM" in GEPA
+- Positions the optimizer as the agent responsible for reflection and proposal
 - Emphasizes data-driven iteration (not fixed plans)
 - Provides strategic principles (not step-by-step procedures)
 - Trusts the optimizer to form hypotheses and test them
@@ -376,7 +376,7 @@ OPRO-style iterative refinement outperforms APE-style one-shot generation:
 
 **3. Rich diagnostic feedback:**
 
-- Execution traces from `events` table
+- Model/tool traces from `llm_requests` payloads and run logs
 - Tool call sequences, file reads, where critic got stuck
 - More informative than just "82% recall"
 
@@ -502,6 +502,6 @@ Combine neural (LLM) and symbolic (formal rules) approaches:
 4. **Train/valid split essential:** Prevent overfitting by testing on held-out data
 5. **Statistical rigor matters:** Use LCB, watch variance, require sufficient sample size
 6. **Hybrid approach best:** Combine human domain knowledge with automated exploration
-7. **Our project uses GEPA:** Evolutionary search with reflection-based mutation
+7. **Framework fit matters:** Keep reflection-based iteration, but avoid framework machinery whose compositional assumptions do not fit the critic prompt
 
 **Meta-lesson:** Prompt optimization is itself an optimization problem. Use the right tools (evolutionary search, reflection LMs, statistical rigor) to explore the prompt space efficiently.

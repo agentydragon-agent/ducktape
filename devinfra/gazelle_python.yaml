@@ -135,7 +135,6 @@ manifest:
     frozenlist: frozenlist
     fsspec: fsspec
     genai_prices: genai_prices
-    gepa: gepa
     github: pygithub
     glide: valkey_glide
     glide_shared: valkey_glide
@@ -676,4 +675,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 29141986904dd2d3093cfce100f7082c232a945e6d9bce82de856378de2a3a9f
+integrity: 32f62b871d48f4db5b8d351d5ac10fc814d01495c317dd6555d4e831d64a49e0

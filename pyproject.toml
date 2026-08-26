@@ -300,10 +300,7 @@ dependencies = [
     "paramiko",
     "pytz",
 
-    # GEPA integration for props
-    "gepa>=0.0.22",
     "litellm>=1.0.0",
-    "nest-asyncio>=1.5.0",
 ]
 
 # Override rfc3987-syntax with a fork that precompiles the Lark parser: one shared parser

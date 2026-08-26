@@ -7,7 +7,7 @@ Examples are a VIEW (not a table) derived from file_sets + whole-snapshot entrie
 See db/migrations for VIEW definition. This ORM model provides read-only access.
 
 This module also provides shared logic for loading training examples across splits
-(train/valid/test), which is the single source of truth for GEPA and other optimizers.
+(train/valid/test), which is the single source of truth for optimizers and evaluation tooling.
 """
 
 from __future__ import annotations
@@ -117,32 +117,8 @@ class Example(Base):
 
 
 # =============================================================================
-# Training Example Loading (GEPA Integration)
+# Training Example Loading
 # =============================================================================
-
-
-def count_available_examples_for_split(session: Session, split: Split) -> int:
-    """Count available training examples for a split, matching GEPA's loading logic.
-
-    Args:
-        session: SQLAlchemy session
-        split: Split to count examples for
-
-    Returns:
-        Number of training examples available for this split
-
-    Note:
-        Validation/test snapshots should have exactly one example each (full-specimen).
-        This count trusts that db sync created the right examples.
-    """
-    # Count examples efficiently with a join
-    count = (
-        session.query(func.count(Example.snapshot_slug))
-        .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
-        .where(Snapshot.split == split)
-        .scalar()
-    )
-    return count or 0
 
 
 def count_available_examples_by_scope_all(
@@ -177,9 +153,8 @@ def get_examples_for_split(session: Session, split: Split) -> list[Example]:
 
     CRITICAL: Dataset Order Determinism
     ------------------------------------
-    GEPA's ListDataLoader uses list indices as DataIds (0, 1, 2, ...).
-    Examples are ordered by (snapshot_slug, example_kind, files_hash NULLS FIRST) for
-    deterministic ordering across all runs, ensuring checkpoint compatibility.
+    Examples are ordered by (snapshot_slug, example_kind, files_hash NULLS FIRST) so
+    optimizer inputs and analysis output remain reproducible across runs.
 
     Args:
         session: SQLAlchemy session
@@ -214,9 +189,4 @@ def get_examples_for_split(session: Session, split: Split) -> list[Example]:
     return examples
 
 
-__all__ = [
-    "Example",
-    "count_available_examples_by_scope_all",
-    "count_available_examples_for_split",
-    "get_examples_for_split",
-]
+__all__ = ["Example", "count_available_examples_by_scope_all", "get_examples_for_split"]

@@ -39,7 +39,7 @@ non-specimen) surface was small and concentrated — **7 files**:
 | `props/agents/critic_dev/main.py` + `loop.py`             | same + custom `BaseHandler` returning `InjectItems`/`Abort`                                                             |
 | `props/agents/grader/main.py` + `notification_handler.py` | same + custom `BaseHandler` injecting async `pg_notify` messages via `InjectItems`                                      |
 | `props/agents/runtime.py`                                 | model binding (`create_bound_model_from_env`), prompt rendering                                                         |
-| `props/core/gepa/gepa_adapter.py`                         | drives critic/grader runs                                                                                               |
+| Retired GEPA adapter                                      | drove critic/grader runs through the legacy agent loop                                                                  |
 
 Plus ~14 test files using `agent_core.testing` (mock model / fixtures). The
 `props/specimens/**` hits are frozen snapshot copies of the old `adgn` codebase — not live.

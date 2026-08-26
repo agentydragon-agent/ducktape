@@ -57,14 +57,5 @@ def _init_logging_and_db(
     ctx.obj = db
 
 
-# GEPA command (optional - requires gepa package)
-try:
-    from props.cli.cmd_gepa import cmd_gepa
-
-    app.command("gepa")(cmd_gepa)
-except ImportError:
-    pass
-
-
 if __name__ == "__main__":
     app()

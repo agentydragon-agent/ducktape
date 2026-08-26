@@ -11,9 +11,9 @@ while not converged:
     feedback = analyze_performance(scores)
 ```
 
-## Our Approach: GEPA
+## Our Approach: Agent-Directed Iteration
 
-**Generate, Evolve, Prioritize, Analyze:**
+The critic-dev optimizer performs the same core loop directly:
 
 1. **Generate:** Create prompt variants from baseline
 2. **Evaluate:** Test on train examples (per-file and full-snapshot)
@@ -21,7 +21,7 @@ while not converged:
 4. **Prioritize:** Rank by validation LCB (penalizes variance)
 5. **Repeat:** Iterate until convergence
 
-**You are the "reflection LM"** — your job is to analyze failures and propose improvements.
+The optimizer agent analyzes failures, proposes improvements, and decides what evidence to gather next.
 
 ## Best Practices
 
@@ -62,7 +62,7 @@ Don't just look at accuracy numbers. Analyze:
 
 2. **Two-distribution problem:** Train has mixed difficulty (single-file, multi-file, full-snapshot). Valid is ONLY full-snapshot (hardest). Test on full-snapshot train as proxy before validation.
 
-3. **Rich diagnostics:** Use `events` table for execution traces. Tool call sequences tell you where critic got stuck.
+3. **Rich diagnostics:** Use `llm_requests` payloads and run logs for model/tool traces. Tool call sequences tell you where the critic got stuck.
 
 4. **Statistical rigor:** Small validation set = high variance. Use LCB to rank prompts.
 
@@ -94,11 +94,11 @@ Start with small examples, not whole-snapshot:
 
 ```sql
 -- Find easiest file-set examples (1-3 occurrences in expected recall scope)
-SELECT snapshot_slug, files_hash, n_recall_denominator
+SELECT snapshot_slug, files_hash, recall_denominator
 FROM examples
 WHERE example_kind = 'file_set'
-  AND n_recall_denominator BETWEEN 1 AND 3
-ORDER BY n_recall_denominator;
+  AND recall_denominator BETWEEN 1 AND 3
+ORDER BY recall_denominator;
 ```
 
 **Strategy:**
@@ -129,9 +129,10 @@ SELECT * FROM grading_edges
 WHERE grader_run_id = '<grader_run_id>';
 
 -- What did the critic actually do? (execution trace)
-SELECT event_type, payload FROM events
+SELECT api_shape, request_body, response_body, error, created_at
+FROM llm_requests
 WHERE agent_run_id = '<critic_run_id>'
-ORDER BY sequence_num;
+ORDER BY created_at;
 ```
 
 **Diagnose before iterating:**

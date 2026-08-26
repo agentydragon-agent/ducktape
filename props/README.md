@@ -12,7 +12,6 @@ props/
 │   ├── agent_types.py        # Agent type definitions and TypeConfig union
 │   ├── eval_api_models.py    # Request/response models for eval API
 │   ├── models/               # Data models (examples, true_positive, etc.)
-│   └── gepa/                 # GEPA prompt optimization
 ├── cli/                      # Command-line interface
 │   └── cmd_*.py              # Subcommand modules (db, snapshot, etc.)
 ├── db/                       # Database layer
