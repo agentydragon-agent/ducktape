@@ -1,24 +1,66 @@
 # Augur Rust prototype benchmark
 
-This benchmark fixture covers opening balances, scheduled and recurring
-transfers, grouped recurring obligations, FIFO lots, and scheduled sales. It
-does not exercise the prototype's tax-accrual, security-distribution, financed
-property, or property-lifecycle paths. Those paths are differentially tested as
-described in [README.md](README.md), but are intentionally outside this narrow
-throughput baseline. Allocation, TLH, and private equity are also still absent.
+The generated benchmark fixture is now a shared feature-rich Rust/JAX scenario.
+Independent agents exercise ordinary cashflow, grouped obligations, target
+allocation and liquidity sales, distributions, bonds/TIPS, federal and
+California taxes, financed property and mortgage lifecycle, private equity,
+and stateful TLH without one policy family starving another's liquidity.
 
 The canonical generated fixture uses exact integer money and quantity values:
 
-- 100,000 rollouts;
+- a configurable rollout count (500 by default for dense output);
 - 60 monthly transitions plus the month-zero snapshot;
-- three cash accounts;
-- one recurring transfer and one recurring obligation per month;
-- two initial VTI lots and two scheduled FIFO sales;
-- one row-major `100000 × 61` integer security-price series;
-- 36,601,574 serialized bytes.
+- 16 modeled cash accounts and independent finance agents;
+- scheduled and recurring transfers, deductions, and obligations;
+- allocation, PE, and TLH lots plus four par-only bond/TIPS holdings;
+- 17 row-major exact external series;
+- a 60-month property, mortgage, residency, rental, improvement, and sale lifecycle.
 
 Fixture generation and JSON parsing happen outside timed regions. The optimized
 Rust target also validates the fixture once before cold and warm timing.
+
+## 2026-08-26 feature-rich dense benchmark
+
+The matched 500-rollout × 60-transition runs retain dense monthly state and all
+canonical compatibility-event channels in both engines. The four-rollout
+differential oracle compares every canonical event frame and state surface, and
+also asserts that allocation buys/sales, PE tender/public/forced paths, TLH
+sales, taxes, bonds, distributions, property, and mortgages actually execute.
+
+Attempts at 2,000 dense rollouts exceeded the runner memory limit in both
+engines, so 500 is the largest recorded matched run here. Five warm repeats ran
+on the same seven-logical-CPU BuildBuddy runner class.
+
+### Rust
+
+- cold execution: **5.1057 s**;
+- warm median: **0.4768 s**;
+- warm runs: 0.4768, 0.5794, 0.4750, 1.7043, 0.4727 s;
+- throughput: **1,049 rollouts/s**;
+- throughput: **62,921 rollout-months/s**;
+- peak child RSS: **3,061,728 KiB** (2.92 GiB);
+- retained state snapshots: 30,500;
+- retained native event records: 547,875;
+- corresponding canonical event rows: 479,375;
+- BuildBuddy invocation: `d6e2796d-b760-471a-9527-ed94c5eb0db6`.
+
+### JAX
+
+- cold compile/execution/event decode: **74.1452 s**;
+- warm median: **7.6724 s**;
+- warm runs: 7.5735, 7.7744, 7.6724, 6.2492, 8.0152 s;
+- throughput: **65 rollouts/s**;
+- throughput: **3,910 rollout-months/s**;
+- peak process RSS: **4,673,444 KiB** (4.46 GiB);
+- native dense arrays: 70 arrays, 207,420,500 elements, 1,309,843,500 bytes;
+- canonical event frames: 479,375 rows, estimated 45,468,345 bytes;
+- BuildBuddy invocation: `cfa7784d-1ab1-46b7-920c-6b637af3d45e`.
+
+Rust's warm median is **16.09× faster** and its measured peak RSS is
+**34.5% lower** on this representative dense-output fixture. This is still a
+prototype data layout rather than the intended compact product reducer, but it
+is now a broad equivalent-output comparison rather than the earlier narrow
+cashflow-only baseline.
 
 ## 2026-08-25 dense compatibility baseline
 

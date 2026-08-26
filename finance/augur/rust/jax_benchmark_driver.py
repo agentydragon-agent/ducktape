@@ -34,7 +34,7 @@ def _checksum(arrays: list[np.ndarray[Any, Any]]) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rollouts", type=int, default=10_000)
+    parser.add_argument("--rollouts", type=int, default=500)
     parser.add_argument("--horizon-months", type=int, default=60)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument(

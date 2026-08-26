@@ -5753,7 +5753,7 @@ fn execute_target_allocation_pool_sale(
     proceeds_account_id: &str,
     price: i64,
     target: i64,
-    canonical_account_override: Option<&str>,
+    source_account_override: Option<&str>,
     candidates: &[usize],
 ) -> Result<(), SimulationError> {
     let mut remaining = target;
@@ -5831,7 +5831,7 @@ fn execute_target_allocation_pool_sale(
             month,
             cause_id: cause_id.into(),
             agent_id: lot.spec.agent_id.clone(),
-            source_account_id: canonical_account_override
+            source_account_id: source_account_override
                 .unwrap_or(&lot.spec.account_id)
                 .to_owned(),
             asset_id: canonical_lot_asset_id(&lot.spec.asset_id),
@@ -5841,9 +5841,7 @@ fn execute_target_allocation_pool_sale(
             units: item.units,
             basis: item.basis,
             proceeds: item.proceeds,
-            proceeds_account_id: canonical_account_override
-                .unwrap_or(proceeds_account_id)
-                .to_owned(),
+            proceeds_account_id: proceeds_account_id.to_owned(),
             realized_gain: item.realized_gain,
         })?;
     }

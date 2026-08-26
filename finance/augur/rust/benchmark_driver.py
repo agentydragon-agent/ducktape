@@ -38,7 +38,7 @@ def main() -> None:
         help="dense retains monthly state and compatibility events; compact retains terminal summaries",
     )
     args = parser.parse_args()
-    rollout_count = args.rollouts if args.rollouts is not None else (10_000 if args.output_mode == "dense" else 100_000)
+    rollout_count = args.rollouts if args.rollouts is not None else (500 if args.output_mode == "dense" else 20_000)
 
     with tempfile.TemporaryDirectory() as directory:
         fixture = Path(directory) / "fixture.json"
