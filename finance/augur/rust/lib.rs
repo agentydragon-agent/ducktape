@@ -12,6 +12,7 @@ pub mod money;
 pub mod tax;
 
 pub use engine::{
-    SimulationError, ValidatedFixture, simulate, simulate_summaries, simulate_summaries_validated,
+    SimulationError, ValidatedFixture, simulate, simulate_dense, simulate_dense_validated,
+    simulate_summaries, simulate_summaries_validated, simulate_validated,
 };
 pub use fixture::{Fixture, PopulationOutput, SimulationOutput};

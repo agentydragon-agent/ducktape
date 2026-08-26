@@ -1,4 +1,4 @@
-"""Generate a canonical fixture and run the optimized Rust summary benchmark."""
+"""Generate a canonical fixture and run the optimized Rust benchmark."""
 
 from __future__ import annotations
 
@@ -28,15 +28,24 @@ def _binary() -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rollouts", type=int, default=100_000)
+    parser.add_argument("--rollouts", type=int, default=None)
     parser.add_argument("--horizon-months", type=int, default=60)
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument(
+        "--output-mode",
+        choices=("dense", "compact"),
+        default="dense",
+        help="dense retains monthly state and compatibility events; compact retains terminal summaries",
+    )
     args = parser.parse_args()
+    rollout_count = args.rollouts if args.rollouts is not None else (10_000 if args.output_mode == "dense" else 100_000)
 
     with tempfile.TemporaryDirectory() as directory:
         fixture = Path(directory) / "fixture.json"
-        write_fixture(fixture, rollout_count=args.rollouts, horizon_months=args.horizon_months)
-        completed = subprocess.run([_binary(), fixture, str(args.repeats)], check=True, capture_output=True, text=True)
+        write_fixture(fixture, rollout_count=rollout_count, horizon_months=args.horizon_months)
+        completed = subprocess.run(
+            [_binary(), fixture, str(args.repeats), args.output_mode], check=True, capture_output=True, text=True
+        )
         report: dict[str, Any] = json.loads(completed.stdout)
         report.update(
             {

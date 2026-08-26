@@ -23,6 +23,14 @@ existing engine.
   implementation. The compact path does not allocate every monthly snapshot or
   journal and is suitable for 100,000-rollout workloads.
 
+`simulate_dense(...)` is the Python/JAX compatibility-output path: it retains
+every monthly state snapshot and every event record consumed by
+`output_adapter.py`, but deliberately omits Rust's additional balanced journal
+because Python/JAX has no matching output channel. `simulate(...)` remains the
+strictly larger forensic path with that journal, while
+`simulate_summaries(...)` retains only fixed-size terminal summaries. Dense
+performance comparisons must use `simulate_dense(...)`, not the compact path.
+
 ## Covered behavior
 
 The differential suite currently proves exact integer agreement for:
@@ -180,7 +188,8 @@ Still missing before replacement is plausible:
 //finance/augur/rust:jax_benchmark_driver
 ```
 
-`simulator_cli FIXTURE.json OUTPUT.json` retains full traces. The benchmark
-uses `simulate_summaries_validated(...)`, which validates once and then retains
-fixed-size final summaries for every rollout. See [BENCHMARK.md](BENCHMARK.md)
-for the measured 100,000-rollout baseline and its output-contract caveats.
+`simulator_cli FIXTURE.json OUTPUT.json` retains full forensic traces. The Rust
+benchmark driver's default `--output-mode dense` retains monthly state and
+compatibility events; `--output-mode compact` selects the older terminal-summary
+throughput workload. See [BENCHMARK.md](BENCHMARK.md) for the measured baselines
+and their output-contract caveats.

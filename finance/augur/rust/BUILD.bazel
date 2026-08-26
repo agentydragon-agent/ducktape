@@ -100,6 +100,7 @@ py_binary(
     deps = [
         ":benchmark_fixture_lib",
         ":fixture_adapter",
+        "//finance/augur/sim:events",
         "//finance/augur/sim:simulate",
         "@pypi//jax",
         "@pypi//numpy",

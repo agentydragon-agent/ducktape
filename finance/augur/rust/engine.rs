@@ -414,9 +414,26 @@ struct ActiveObligation {
     effect: ObligationEffect,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CaptureMode {
+    Summary,
+    Dense,
+    Forensic,
+}
+
+impl CaptureMode {
+    fn captures_output(self) -> bool {
+        self != Self::Summary
+    }
+
+    fn captures_journal(self) -> bool {
+        self == Self::Forensic
+    }
+}
+
 #[derive(Debug)]
 struct Recorder {
-    capture_trace: bool,
+    capture_mode: CaptureMode,
     months: Vec<MonthOutput>,
     journal: Vec<JournalEntry>,
     transfers: Vec<TransferOutcome>,
@@ -455,9 +472,9 @@ struct Recorder {
 }
 
 impl Recorder {
-    fn new(capture_trace: bool) -> Self {
+    fn new(capture_mode: CaptureMode) -> Self {
         Self {
-            capture_trace,
+            capture_mode,
             months: Vec::new(),
             journal: Vec::new(),
             transfers: Vec::new(),
@@ -508,7 +525,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "journal entry count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_journal() {
             self.journal.push(entry);
         }
         Ok(())
@@ -521,7 +538,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "disposition count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.dispositions.push(disposition);
         }
         Ok(())
@@ -537,7 +554,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "private-equity event count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.private_equity_events.push(event);
         }
         Ok(())
@@ -553,26 +570,26 @@ impl Recorder {
             .ok_or(ArithmeticError::Overflow {
                 operation: "private-equity opportunity count",
             })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.private_equity_opportunities.push(opportunity);
         }
         Ok(())
     }
 
     fn record_transfer(&mut self, transfer: TransferOutcome) {
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.transfers.push(transfer);
         }
     }
 
     fn record_obligation(&mut self, obligation: ObligationOutcome) {
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.obligations.push(obligation);
         }
     }
 
     fn record_rollout_failure(&mut self, failure: RolloutFailureOutcome) {
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.rollout_failures.push(failure);
         }
     }
@@ -584,7 +601,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "tax accrual count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.tax_accruals.push(accrual);
         }
         Ok(())
@@ -597,7 +614,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "tax payment count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.tax_payments.push(payment);
         }
         Ok(())
@@ -613,7 +630,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "tax settlement count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.tax_settlements.push(settlement);
         }
         Ok(())
@@ -629,7 +646,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "distribution count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.distributions.push(distribution);
         }
         Ok(())
@@ -645,7 +662,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "bond cashflow count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.bond_cashflows.push(cashflow);
         }
         Ok(())
@@ -662,7 +679,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "property purchase count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.property_purchases.push(purchase);
             if let Some(origination) = origination {
                 self.mortgage_originations.push(origination);
@@ -678,7 +695,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "property sale count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.property_sales.push(sale);
         }
         Ok(())
@@ -694,7 +711,7 @@ impl Recorder {
             .ok_or(ArithmeticError::Overflow {
                 operation: "primary-residence event count",
             })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.primary_residence_events.push(event);
         }
         Ok(())
@@ -710,7 +727,7 @@ impl Recorder {
             .ok_or(ArithmeticError::Overflow {
                 operation: "property rented-fraction event count",
             })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.property_rented_fraction_events.push(event);
         }
         Ok(())
@@ -726,7 +743,7 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "capital improvement count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.capital_improvements.push(event);
         }
         Ok(())
@@ -742,14 +759,14 @@ impl Recorder {
                 .ok_or(ArithmeticError::Overflow {
                     operation: "mortgage payment count",
                 })?;
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.mortgage_payments.push(payment);
         }
         Ok(())
     }
 
     fn record_month(&mut self, month: MonthOutput) {
-        if self.capture_trace {
+        if self.capture_mode.captures_output() {
             self.months.push(month);
         }
     }
@@ -843,11 +860,36 @@ pub fn simulate(fixture: &Fixture) -> Result<SimulationOutput, SimulationError> 
     simulate_validated(ValidatedFixture::new(fixture)?)
 }
 
-fn simulate_validated(fixture: ValidatedFixture<'_>) -> Result<SimulationOutput, SimulationError> {
+pub fn simulate_validated(
+    fixture: ValidatedFixture<'_>,
+) -> Result<SimulationOutput, SimulationError> {
+    simulate_with_capture(fixture, CaptureMode::Forensic)
+}
+
+/// Run every rollout while retaining dense monthly state and compatibility events.
+///
+/// Unlike [`simulate`], this omits the Rust-only balanced journal because the Python/JAX
+/// compatibility output has no corresponding channel. This is the apples-to-apples dense
+/// benchmark and backend handoff path; all canonical event inputs remain present.
+pub fn simulate_dense(fixture: &Fixture) -> Result<SimulationOutput, SimulationError> {
+    simulate_dense_validated(ValidatedFixture::new(fixture)?)
+}
+
+pub fn simulate_dense_validated(
+    fixture: ValidatedFixture<'_>,
+) -> Result<SimulationOutput, SimulationError> {
+    simulate_with_capture(fixture, CaptureMode::Dense)
+}
+
+fn simulate_with_capture(
+    fixture: ValidatedFixture<'_>,
+    capture_mode: CaptureMode,
+) -> Result<SimulationOutput, SimulationError> {
     let rollouts: Result<Vec<_>, _> = (0..fixture.fixture.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.fixture, rollout_id, true).map(RolloutComputation::into_output)
+            simulate_rollout(fixture.fixture, rollout_id, capture_mode)
+                .map(RolloutComputation::into_output)
         })
         .collect();
     Ok(SimulationOutput {
@@ -871,7 +913,7 @@ pub fn simulate_summaries_validated(
     let rollouts: Result<Vec<_>, _> = (0..fixture.fixture.rollout_count)
         .into_par_iter()
         .map(|rollout_id| {
-            simulate_rollout(fixture.fixture, rollout_id, false)
+            simulate_rollout(fixture.fixture, rollout_id, CaptureMode::Summary)
                 .map(RolloutComputation::into_summary)
         })
         .collect();
@@ -2284,7 +2326,7 @@ fn validate_account(
 fn simulate_rollout(
     fixture: &Fixture,
     rollout_id: u32,
-    capture_trace: bool,
+    capture_mode: CaptureMode,
 ) -> Result<RolloutComputation, SimulationError> {
     let mut accounts: Vec<AccountRef> = fixture
         .scenario
@@ -2376,7 +2418,7 @@ fn simulate_rollout(
     accounts.sort();
     accounts.dedup();
     let mut ledger = Ledger::with_accounts(accounts);
-    let mut recorder = Recorder::new(capture_trace);
+    let mut recorder = Recorder::new(capture_mode);
     let mut tax_facts: BTreeMap<(String, String), TaxFacts> = fixture
         .scenario
         .tax_profiles
@@ -2551,7 +2593,7 @@ fn simulate_rollout(
         .collect();
 
     let mut failed_month = None;
-    if recorder.capture_trace {
+    if recorder.capture_mode.captures_output() {
         recorder.record_month(month_output(
             fixture,
             rollout_id,
@@ -2568,7 +2610,7 @@ fn simulate_rollout(
     }
     for month in 0..fixture.scenario.horizon_months {
         if failed_month.is_some() {
-            if recorder.capture_trace {
+            if recorder.capture_mode.captures_output() {
                 recorder.record_month(month_output(
                     fixture,
                     rollout_id,
@@ -2770,7 +2812,7 @@ fn simulate_rollout(
             )?;
             reset_property_tax_year_state(&mut properties, &mut mortgages);
         }
-        if recorder.capture_trace {
+        if recorder.capture_mode.captures_output() {
             recorder.record_month(month_output(
                 fixture,
                 rollout_id,
@@ -6905,11 +6947,19 @@ mod tests {
             }],
         };
         let output = simulate(&fixture).unwrap();
+        let dense = simulate_dense(&fixture).unwrap();
         let summaries = simulate_summaries(&fixture).unwrap();
         assert_eq!(output.rollouts.len(), 2);
+        assert_eq!(dense.rollouts.len(), 2);
         assert_eq!(summaries.rollouts.len(), 2);
         assert_eq!(output.rollouts[0].dispositions[0].proceeds, Money(15_000));
         assert_eq!(output.rollouts[1].dispositions[0].proceeds, Money(20_000));
+        for (forensic, dense) in output.rollouts.iter().zip(&dense.rollouts) {
+            let mut expected = forensic.clone();
+            expected.journal.clear();
+            assert_eq!(&expected, dense);
+            assert!(dense.journal.is_empty());
+        }
         for (rollout, summary) in output.rollouts.iter().zip(&summaries.rollouts) {
             assert_eq!(summary.rollout_id, rollout.rollout_id);
             assert_eq!(
