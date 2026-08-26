@@ -6,6 +6,7 @@
   },
   "agents": {
     "defaults": {
+      "userTimezone": "America/Los_Angeles",
       "model": {
         "primary": "anthropic/claude-opus-5"
       },
@@ -109,6 +110,7 @@
           "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
         },
         "requestTimeoutMs": 60000,
+        "supportsParallelToolCalls": true,
         "transport": "streamable-http",
         "url": "https://haku.allegedly.works/mcp"
       }
