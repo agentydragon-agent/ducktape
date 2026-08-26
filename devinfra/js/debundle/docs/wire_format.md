@@ -6,8 +6,7 @@ are consumed by:
 - spec authors with `jq` poking at cycle / owner-graph / atomic-unit reports;
 - CLI tooling (top-level `debundle modules propose` / `atoms` /
   `coverage` / `describe` / `show-source` / `scc` / `cluster` /
-  `graph-summary`; deprecated `debundle peel <...>` aliases may still
-  exist but new docs and scripts should not use them);
+  `graph-summary`);
 - humans reading the files during debugging.
 
 This doc states the convention these files follow.

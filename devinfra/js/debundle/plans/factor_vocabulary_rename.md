@@ -89,7 +89,7 @@ together in one commit span, no compatibility shims.
 | `module_graph` (`#[serde(rename = "module_graph")]` on `quotient` field) | `module_dag`                      | Currently has a serde rename from Rust field name `quotient` |
 | (nested object under `module_graph`)                                     | Same struct, no key change within | The object keys (`nodes`, `edges`, `sccs`) stay the same     |
 
-`plan-work` output (from `PeelFactorizeReport`):
+`modules propose` output (from `PeelFactorizeReport`):
 
 | Current JSON key | Proposed JSON key                               | Notes                                                                                         |
 | ---------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------- |

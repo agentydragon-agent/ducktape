@@ -26,26 +26,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::{Args as ClapArgs, Subcommand};
+use clap::Args as ClapArgs;
 use peel::OutputFormat;
 use spec::LogicalModule;
 
 use crate::edit_gate::{Gate, post_delete_spec, post_merge_spec};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
 use crate::yaml_edit::write_yaml_body_if_semantic_changed;
-
-/// Top-level `debundle module ...` argument shape.
-#[derive(Debug, ClapArgs)]
-pub struct ModuleArgs {
-    #[command(subcommand)]
-    command: ModuleCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum ModuleCommand {
-    /// Splice source YAMLs into a target YAML, deleting sources.
-    Merge(MergeArgs),
-}
 
 #[derive(Debug, ClapArgs)]
 pub struct MergeArgs {
@@ -188,22 +175,8 @@ impl DeleteSummary {
     }
 }
 
-/// Run the `debundle module ...` command tree.
-pub fn run_module_cli(args: ModuleArgs) -> Result<()> {
-    match args.command {
-        ModuleCommand::Merge(merge) => {
-            eprintln!(
-                "warning: `debundle module merge` is deprecated; use `debundle modules \
-                 merge` instead."
-            );
-            run_merge(merge)
-        }
-    }
-}
-
 /// Public entry point for the merge verb. Used by the top-level
-/// `debundle modules merge` and by the deprecated `debundle module
-/// merge` alias.
+/// `debundle modules merge` command.
 ///
 /// Validation contract (per docs/cli.md § "Modules"):
 ///

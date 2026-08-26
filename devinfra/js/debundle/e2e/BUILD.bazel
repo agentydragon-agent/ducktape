@@ -1057,10 +1057,9 @@ rust_test(
     ],
 )
 
-# CLI verb `debundle modules merge` (+ deprecated `debundle module
-# merge`): pure YAML splice with the new `--dry-run` flag. The
-# binary-shelling tests cover the new clap top-level node and the
-# deprecation-alias path.
+# CLI verb `debundle modules merge`: pure YAML splice with the
+# `--dry-run` flag. The binary-shelling tests cover the public clap
+# command and mutation behavior.
 rust_test(
     name = "module_merge_test",
     srcs = ["module_merge_test.rs"],
@@ -1189,7 +1188,7 @@ rust_test(
     ],
 )
 
-# Top-level query commands lifted from `peel <sub>` to top-level:
+# Public read-only query commands:
 # `atoms`, `coverage`, `graph-summary`, `describe`, `show-source`,
 # `modules propose`. Calls the public peel report fns directly.
 rust_test(

@@ -2375,7 +2375,7 @@ pub fn build_seed_quotient(
     //      contraction created on its own — the materializer
     //      catches these on `validate_factorization`, and Track A
     //      wires the planner's seed-rejection diagnostic to the
-    //      same verdict so `plan-work` and `bazelisk build` agree
+    //      same verdict so `modules propose` and `bazelisk build` agree
     //      on whether a spec is realizable.
     //
     //      One O(|V|+|E|) call, not |V|·|V| — the per-merge
