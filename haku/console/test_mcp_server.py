@@ -408,7 +408,7 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
 
 
 def test_console_server_instructions_keep_client_critical_guidance() -> None:
-    assert SERVER_INSTRUCTIONS == mcp_server_module.INSTRUCTIONS
+    assert SERVER_INSTRUCTIONS == mcp_server_module.SERVER_INSTRUCTIONS
     for phrase in ("<server>__<tool>", "pending_approval", "get_tool_call", "call_mcp_tool"):
         assert phrase in SERVER_INSTRUCTIONS
 

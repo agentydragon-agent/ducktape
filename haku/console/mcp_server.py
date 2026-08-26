@@ -114,8 +114,6 @@ TOOL_NAME_SEPARATOR = "__"
 _DEFAULT_GET_TOOL_CALL_FIELDS = [ToolCallPayloadField.RESULT]
 _DEFAULT_LIST_TOOL_CALL_FIELDS: list[ToolCallPayloadField] = []
 
-INSTRUCTIONS = SERVER_INSTRUCTIONS
-
 # Console-native read tools: they read only the console's own persisted catalog/ledger (closed
 # world — never a downstream MCP/provider lookup) and mutate nothing, so advertise both axes.
 # Clients like claude.ai key off readOnlyHint to group these as read-only and skip approvals.
@@ -739,7 +737,7 @@ def build_console_mcp(
     provider reflects connected-server tools for the authenticated principal's
     canonical Operator on each discovery and dispatch request.
     """
-    mcp: FastMCP = FastMCP(name=SERVER_NAME, instructions=INSTRUCTIONS)
+    mcp: FastMCP = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS)
     mcp.auth = auth
     catalog = OperatorServerCatalog(context)
     # One registry for both the generated proxies and `call_mcp_tool`, so the two can never disagree
