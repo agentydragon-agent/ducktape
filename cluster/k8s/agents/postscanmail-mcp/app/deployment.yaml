@@ -22,7 +22,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: postscanmail-mcp-server
-          image: ghcr.io/agentydragon/postscanmail-mcp-server:devel-20260826214503-2ac9e7b # {"$imagepolicy": "flux-system:postscanmail-mcp-server"}
+          image: ghcr.io/agentydragon/postscanmail-mcp-server:devel-20260826220136-731819b # {"$imagepolicy": "flux-system:postscanmail-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: bridge
