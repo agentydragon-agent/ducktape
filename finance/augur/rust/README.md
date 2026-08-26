@@ -66,6 +66,10 @@ The differential suite currently proves exact integer agreement for:
   public-market floor sales, forced-sale fractions, forced-recovery cashouts,
   deterministic issuer/FIFO order, liquid-net-worth floors that exclude PE,
   canonical opportunity traces, lot dispositions, and capital-gain effects;
+- reduced-form tax-loss harvesting after settlement, including the calibrated
+  maturity/drawdown curve, exact PPB parameter transport, short/long loss
+  allocation, adjusted-basis harvest ceilings, persistent cumulative deferral,
+  and proportional give-back through scheduled and target-allocation sales;
 - insufficient-cash failure month and state freezing;
 - federal and California ordinary-income year-end tax accruals;
 - federal SALT itemization from funded property tax plus sibling state-income
@@ -82,6 +86,9 @@ one shared ordinary-loss offset and carryforward feed every jurisdiction in
 later tax years. Monthly and terminal output retain jurisdiction-level tax-liability
 state and held bond principal; selected traces expose tax-payment,
 tax-settlement, and issuer-attributed bond cashflow/accretion records.
+Monthly snapshots also retain taxpayer capital-gain state and each TLH policy's
+cumulative harvested-loss ledger; compact terminal summaries preserve the TLH
+ledger because it is future adjusted-basis state rather than explanatory trace.
 `output_adapter.py` lifts integer-native Rust transfer, lot-disposition,
 obligation-accrual, obligation-settlement, and rollout-failure rows into the
 same canonical `EventLog` frame schemas exposed by Python/JAX. It also
@@ -108,6 +115,13 @@ regime/event-kind are validated integer codes, and opportunity/blocked channels
 are 0/1. The Python adapter reconstructs the typed `PrivateEquityBundle` only at
 the legacy boundary; Rust never routes PE marks through ordinary security-price
 series.
+
+TLH policies encode every heuristic parameter as integer PPB. Rust evaluates
+the same float64 maturity/drawdown curve as JAX, quantizes the resulting monthly
+factor back to PPB before applying it to integer money, and keeps the give-back
+ledger entirely in currency quanta. The shared differential fixtures cover
+drawdown versus flat paths, year-end tax facts, two-stage partial liquidation,
+and target-allocation sale give-back.
 
 Initial lots store total basis, but that total must imply an exact
 integer-currency-quantum basis per whole unit:
@@ -151,7 +165,7 @@ Still missing before replacement is plausible:
 - mortgage contracts beyond the basic fixed-rate purchase mortgage;
 - property-tax policy beyond purchase-price assessment and fixed location
   special assessments;
-- broader liquidity policy and TLH;
+- broader liquidity policy;
 - complete selected-rollout causal trace parity for those domains;
 - Python extension/Arrow output integration.
 

@@ -33,6 +33,7 @@ from finance.augur.sim.scenario import (
     FederalSaltCapEntry,
     FederalSaltDeductionPolicy,
     FixedAmount,
+    HarvestPolicy,
     InitialAccountBalance,
     InitialLot,
     MortgageFinancing,
@@ -59,6 +60,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate_with_external_series
+from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 
 def _money(quanta: int, quantum: str) -> Decimal:
@@ -424,6 +426,21 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
                 liquid_net_worth_floor=_amount_schedule(spec["liquid_net_worth_floor"], quantum),
             )
             for spec in scenario_spec.get("private_equity_tender_policies", [])
+        ],
+        harvest_policies=[
+            HarvestPolicy(
+                owner_agent_id=spec["owner_agent_id"],
+                account_id=spec.get("account_id", "checking"),
+                asset=_asset(spec["asset_id"]),
+                yield_params=HarvestYieldParams(
+                    peak_annual_yield=spec["peak_annual_yield_ppb"] / 1_000_000_000,
+                    floor_annual_yield=spec["floor_annual_yield_ppb"] / 1_000_000_000,
+                    maturity_decay_exponent=spec["maturity_decay_exponent_ppb"] / 1_000_000_000,
+                    drawdown_sensitivity=spec["drawdown_sensitivity_ppb"] / 1_000_000_000,
+                ),
+                short_term_fraction=spec.get("short_term_fraction_ppb", 1_000_000_000) / 1_000_000_000,
+            )
+            for spec in scenario_spec.get("harvest_policies", [])
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(

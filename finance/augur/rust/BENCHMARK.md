@@ -89,8 +89,8 @@ Result:
 The measured Rust summary path is about 8.1× the rollout-month throughput of
 the batched JAX run on this narrow fixture. That is encouraging but not yet a
 full-simulator result: Rust retains compact final summaries, while the JAX path
-retains its complete dense monthly output for each 10,000-rollout batch. The
-differential tests establish exact agreement for the covered behavior; broader
-performance claims must wait until the broader property lifecycle, tax payment,
-allocation/TLH, private-equity, and failure-trace behavior is implemented and
-compared under an equivalent output policy.
+retains its complete dense monthly output for each 10,000-rollout batch. These
+numbers and checksums predate the fixture-schema additions for private equity
+and TLH; they remain historical evidence for the narrow workload, not a current
+equivalent-output benchmark. Broader performance claims must wait for product
+metrics, backend contracts, and an equivalent output policy.
