@@ -9,7 +9,7 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
-from jinja2 import UndefinedError
+from jinja2 import Environment, StrictUndefined, UndefinedError
 
 from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
@@ -83,6 +83,17 @@ def test_deployed_template_includes_mcp_guidance_for_clients_that_hide_server_in
     assert "pending_approval" in rendered
     assert "get_mcp_server_status" in rendered
     assert "https://github.com/agentydragon/ducktape" in rendered
+
+
+def test_deployed_template_tolerates_the_previous_renderer_during_config_rollout() -> None:
+    """The ConfigMap may reach current replicas before the follow-up image supplies guidance."""
+    rendered = (
+        Environment(undefined=StrictUndefined)
+        .from_string(DEPLOYED_TEMPLATE.read_text())
+        .render(session_id=SESSION, workspace="/workspace", recent_messages=[])
+    )
+    assert "Haku Console MCP" not in rendered
+    assert SERVER_INSTRUCTIONS not in rendered
 
 
 def test_deployed_template_points_at_the_index_whether_or_not_history_was_replayed(deployed: SystemPromptTemplate):
