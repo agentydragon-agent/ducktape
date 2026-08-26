@@ -71,7 +71,7 @@ spec:
             - name: data
               mountPath: /data
         - name: facade
-          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260826220007-731819b # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260826221511-1acb053 # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http
