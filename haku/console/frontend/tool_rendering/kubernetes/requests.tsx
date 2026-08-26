@@ -20,7 +20,6 @@ const zReleaseGrantsArgs = mcpToolSchema(KUBERNETES_SERVER_ID, "release_grants")
 
 type CreateGrantArgs = z.infer<typeof zCreateGrantArgs>;
 type ReleaseGrantsArgs = z.infer<typeof zReleaseGrantsArgs>;
-export type GrantSpec = CreateGrantArgs["grants"][number];
 export type GrantRule = {
   api_groups?: readonly string[];
   resources?: readonly string[];

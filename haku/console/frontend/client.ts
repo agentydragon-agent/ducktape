@@ -117,14 +117,6 @@ export async function fetchConversations(cursor?: ConversationCursor, limit = 25
   return data;
 }
 
-export async function fetchConversation(conversationId: string): Promise<Conversation> {
-  const { data, error } = await api.GET("/api/conversations/{conversation_id}", {
-    params: { path: { conversation_id: conversationId } },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load conversation"));
-  return data;
-}
-
 /** One page of a conversation's raw protocol frames, in wire order.
  *
  * Omitting `beforeSeq` reads the *tail* of the log; the response's `next_before_seq` walks back
@@ -216,19 +208,6 @@ export async function updateAgentAccessProfile(agentId: string, accessProfileId:
 export async function fetchKubernetesGrants(): Promise<KubernetesGrantListResponse> {
   const { data, error } = await api.GET("/api/kubernetes-grants");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load Kubernetes grants"));
-  return data;
-}
-
-export async function revokeKubernetesGrant(
-  agentId: string,
-  grantId: string,
-  reason: string
-): Promise<OperatorKubernetesGrant> {
-  const { data, error } = await api.POST("/api/kubernetes-grants/{agent_id}/{grant_id}/revoke", {
-    params: { path: { agent_id: agentId, grant_id: grantId } },
-    body: { reason },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to revoke Kubernetes grant"));
   return data;
 }
 
