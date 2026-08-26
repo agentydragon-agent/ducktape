@@ -88,7 +88,9 @@ Lockfile and generated manifest workflows: <devinfra/docs/lockfiles.md>.
 
 ### `plans/`
 
-`<dir>/plans/` holds future work and work-in-progress design notes. Delete or tombstone a plan once it's fully done.
+`<dir>/plans/` holds future work and work-in-progress design notes. Delete a plan once it is fully
+done; keep a short tombstone only when an active compatibility or deprecation boundary still needs
+a pointer.
 
 When a component has one central plan, put it at `<dir>/PLAN.md` instead of a single-file `plans/` directory (e.g. `loom/PLAN.md`, `haku/PLAN.md`). Same lifecycle: delete or tombstone once fully done.
 
@@ -104,13 +106,17 @@ The test is whether the statement outlives the work. A rule the finished system 
 
 ### `debug/`
 
-`<dir>/debug/<topic>.md` holds investigation notes, RCAs, and debug logs. The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
+`<dir>/debug/<topic>.md` holds an active investigation, RCA work in progress, or a reproducible
+diagnostic procedure. Delete it when resolved, or promote its durable lesson to the current docs.
+The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
 
 A note belongs here because it is a multi-step debugging story or an investigation still in progress — not because it is long. Length is a consequence of that content, never a licence: a `debug/` note is held to the same standard as any other prose (<STYLE.md> § Documentation), and padding or after-the-fact justification gets cut here too.
 
 ### `archive/`
 
-`<dir>/archive/` holds inactive historical notes, abandoned approaches, and past blind alleys that are useful to keep but should not be read as current plans. Prefer dated Markdown names like `YYYY_MM_whatever.md` or `YYYY_MM_DD_whatever.md` when adding a new archive note.
+Existing `<dir>/archive/` files are historical records that survived because they carry a
+future-relevant lesson. Do not use the directory as a parking lot for completed plans or incident
+archaeology; Git history is the default archive.
 
 ### `SPEC.md`
 

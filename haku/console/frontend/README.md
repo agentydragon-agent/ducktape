@@ -34,7 +34,7 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
 - `tool_arguments_field.tsx` / `icons.tsx` — shared tool-argument renderer (per-server
   preview or raw JSON) and the icon set, used by both the approvals panel and the history view.
   Icons are thin wrappers over **per-icon `@tabler` subpath imports**, never the barrel, which OOMs
-  esbuild on RBE at ~8.7 GB (<../debug/esbuild_tabler_memory.md>); their ambient types live in
+  esbuild on RBE at ~8.7 GB; their ambient types live in
   `tabler_icons.d.ts`.
 - `tool_result_field.tsx` — the result-side counterpart: a finished call's result as a
   per-server widget (`tool_rendering/<server>/responses.tsx`) over the unwrapped

@@ -328,7 +328,7 @@ Four things to know before changing it:
 - **A turn is resumed from its cursor or not at all.** A cursor from before the turn — or none at
   all — is a position re-projecting from would redo effects that did commit, so `adopt_open_turn`
   ends such a turn as failed rather than resuming it. No session that can still acquire a frame is
-  in that state (<../debug/2026_08_16_legacy_purge.md>).
+  in that state.
 
 **`read_transcript` has no durable handler checkpoint and is not this cursor.** It re-reads the
 session from the first frame through the selected integration's whole-log projection every time;
@@ -345,8 +345,8 @@ meaning anything:
   is exposed as `read_transcript`'s `unreadable`. The raw-frame inspector itself presents exact JSON
   and does not classify native frames.
 
-Before changing the adapter, read <../debug/frame_shape_census.md>: every rule in it is a measured
-fact rather than a reading of `protocol.md`, so what looks like belt and braces mostly is not.
+Before changing the adapter, read `../../cli_protocol/protocol.md` and the adjacent fixtures:
+the wire is version-pinned, and tests preserve the shapes the projection must tolerate.
 
 ### Re-projecting a stored session — `reprojection.py`
 
@@ -437,7 +437,7 @@ Behaviours worth knowing before reading the code:
 - **A produced reply is a row, not a call.** The subscriber writes it when it reads the message
   complete, and `RoomOutboxDrain` — one replica, under the `MXOB` advisory lock —
   claims the oldest, queues it into the pacer, and marks it `sent_at` only once `room_send` has
-  returned (the drops this closes: <../debug/message_drops.md>). Everything else the console says —
+  returned. Everything else the console says —
   the status line, lifecycle and rejection notices, bootstrap narration — stays on the pacer's
   in-process queue, because a notice describing a moment is not worth redelivering ten minutes
   later. Two rules the drain is deliberate about: a failed reply **halts** the queue for its backoff
@@ -468,7 +468,7 @@ Behaviours worth knowing before reading the code:
   re-delivers a message the homeserver has been acknowledged for, so what protects the operator's
   question is that the queue outlives the session that took it: a sandbox dying before the turn
   strands nothing, because the replacement's own `next_prompt` finds the same row
-  (<../debug/message_drops.md> I3). `channels/matrix/ingress_ledger.py` records the events a prompt
+  `channels/matrix/ingress_ledger.py` records the events a prompt
   carries in that prompt's own transaction, which is what makes a re-delivery recognisable.
 - **An event Haku cannot read is announced, not held.** `m.text` and `m.emote` are prose and are
   serviced; an `m.image`, `m.file`, voice memo, or an msgtype invented after this release is
@@ -771,7 +771,5 @@ The code keeps the invariant; the evidence behind it is linked rather than resta
   like belt and braces.
 - <../plans/conversation_layers.md> — what is still wrong and the order to fix it, and
   <channels/matrix/SPEC.md> — what the Matrix channel already guarantees.
-- [The runtime archaeology note](../debug/2026_08_16_runtime_archaeology.md) — which bug each
-  invariant in `session_runtime.py` and `session_store.py` was written against, indexed by the line
-  in the code that keeps it.
-- `debug/` otherwise holds dated findings from one incident and is not maintained.
+- Incident narratives and superseded implementation notes are not maintained beside this
+  experimental surface; Git history is the record when their detail is needed.

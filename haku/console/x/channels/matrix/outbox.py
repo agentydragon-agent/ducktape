@@ -3,7 +3,7 @@
 **The channel writes the row, reading the log forward from its own cursor**
 (`room_subscription.RoomNotices`), and this drains it. `sent_at` is written only once `room_send`
 has returned, so every other outcome, the replica disappearing mid-send included, leaves the row
-claimable by whoever comes next (<../../../debug/message_drops.md> E1, E4, E6, E7).
+claimable by whoever comes next.
 
 **`pacer` owns when.** The drain does not send; it queues one reply into the pacer and waits for
 that closure to settle before claiming the next. So replies keep the room's rate budget, their

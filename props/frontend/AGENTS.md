@@ -31,5 +31,4 @@ OOMs the default RBE VM — there is no per-action memory lever, only a blunt
 platform-global override that hurts CI concurrency. This bundle uses the same
 `spa_bundle` esbuild path, so if you add `@tabler` icons, import each by subpath
 (`@tabler/icons-react/dist/esm/icons/IconX.mjs`, default export) and add an
-ambient `declare module` for `tsc`. Full RCA:
-<../../haku/console/debug/esbuild_tabler_memory.md>.
+ambient `declare module` for `tsc`.

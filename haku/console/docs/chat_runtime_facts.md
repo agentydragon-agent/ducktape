@@ -74,11 +74,6 @@ console's unique `(session_id, runner_seq)` record then makes replay idempotent,
 Whether a frame emits live-only, durable, both, or no neutral conversation effects is the selected
 integration's stateful turn handler's answer. Retention and deduplication do not need to know.
 
-## Investigations, which are not this
-
-Findings from a specific incident stay in `debug/`, dated, and are not maintained:
-
-- Sessions that recorded a container boot and a death:
-  <../debug/2026_08_13_sessions_boot_and_die.md>. Its three production checks are **still unrun**,
-  and every stage since has been built on top of them.
-- CI-wide Docker test timeouts: <../../../debug/2026_08_14_docker_test_timeouts.md>.
+Incident-specific notes are not maintained here. If an investigation proves a constraint that
+future code depends on, keep the concise invariant here or beside the code; the incident narrative
+remains in Git history.

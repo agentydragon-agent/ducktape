@@ -321,6 +321,15 @@ the present code is right is not: the present code being right is not news.
 file and not only the line: every comment can pass the test above while the file still reads as
 narration with some code in it. If prose is most of what a reader scrolls past, keep cutting.
 
+### Documentation lifecycle
+
+- Live docs describe the present, active work, durable invariants, and lessons a future maintainer
+  needs. Git already records superseded behavior, completed plans, and incident timelines.
+- Delete resolved `debug/` notes and completed plans. Promote only durable constraints to the
+  current code, contract, or design doc.
+- Keep a short tombstone only when an active compatibility or deprecation boundary still needs a
+  pointer; do not create archives or indexes merely to preserve history.
+
 **Then say what is left in fewer words.** Deletion is not the only edit: prose that carries real
 information can still take more clauses and more sentence structure than the information needs,
 and that survives the test above because nothing would be lost by keeping it. Prefer the

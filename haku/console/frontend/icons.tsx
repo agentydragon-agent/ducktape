@@ -1,5 +1,5 @@
 // Tabler icons via **per-icon subpath imports** — never `import { … } from "@tabler/icons-react"`
-// (the barrel OOMs esbuild on RBE at ~8.7 GB; see debug/esbuild_tabler_memory.md). Types for the
+// (the barrel OOMs esbuild on RBE at ~8.7 GB). Types for the
 // `.mjs` subpaths come from the ambient declaration in `tabler_icons.d.ts`. Thin wrappers keep a
 // stable local name + a consistent glyph size; callers can still override via props.
 import IconAlertTriangle from "@tabler/icons-react/dist/esm/icons/IconAlertTriangle.mjs";

@@ -3,11 +3,10 @@
 The service that drives a turn is next door in `session_runtime.py`; the line between the two is
 the transaction. A method whose job is "these writes commit together or not at all" is here —
 `apply_frame` writing a frame's events, the items they materialise and the session's cursor in one
-transaction is what makes adoption a read (<../debug/message_drops.md>).
+transaction is what makes adoption a read without replaying committed effects.
 
 Neutral runtime: no channel and no harness, so a second channel inherits every row in it.
 
-The incidents behind this file's invariants are in <../debug/2026_08_16_runtime_archaeology.md>.
 """
 
 from __future__ import annotations

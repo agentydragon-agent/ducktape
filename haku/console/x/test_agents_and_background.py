@@ -3,9 +3,7 @@
 The shapes a console session reaches for once it is doing real work: a `Task` subagent, a `Bash`
 backgrounded, the `BashOutput` loop that watches it, and a background task running while the
 foreground keeps answering. None of them is in the recorded corpus that
-<claude_code/test_projection.py> and <claude_code/test_diverse_session.py> read — every
-`task_started` the census saw was `local_bash` and no subagent ever ran
-(<../debug/frame_shape_census.md> § Loose ends).
+<claude_code/test_projection.py> and <claude_code/test_diverse_session.py> read.
 
 **These frames are composed, not captured**, so what each test may claim is bounded: it says what
 the fold does with a shape, never that the CLI emits exactly that shape. Where a shape is a
@@ -77,7 +75,7 @@ def _subagent_frames(*, nested: bool) -> list[RecordedFrame]:
     """A `Task` call whose subagent's own turns come back on the same stream.
 
     **Hypothesis, not capture.** `protocol.md` says a forwarded subagent frame carries the parent
-    call's id in `parent_tool_use_id`; the census saw that field non-null on `tool_progress` alone,
+    call's id in `parent_tool_use_id`; the protocol describes that field for forwarded frames,
     because no `local_agent` task ever ran. *nested* folds the same session with and without it.
     """
     parent = "toolu_task" if nested else None
@@ -133,8 +131,8 @@ def test_the_call_that_spawned_the_subagent_belongs_to_no_message_at_all():
 
 
 def test_the_only_nested_frame_class_production_sends_is_unprojected():
-    """`tool_progress` — 113 frames, absent from `protocol.md`, and the census's one non-null
-    `parent_tool_use_id`. A fold that routed on that field would route heartbeats into a subagent
+    """`tool_progress` is absent from `protocol.md`, but the fold must still count it as
+    unprojected. Routing on `parent_tool_use_id` would route heartbeats into a subagent
     view; this one has no case for the class, so it lands in the default branch and is counted."""
     projection = project_log(
         [

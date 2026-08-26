@@ -1,12 +1,11 @@
 """What the projection does with the shapes production actually sends.
 
-Every fixture here is built from <../../debug/frame_shape_census.md> — its block combinations, its
-verbatim split-message sequence, its `tool_use_result` key sets, its undocumented frame classes —
-rather than from what `protocol.md` says the wire looks like. Where the two disagree the census
-is what the code has to survive, and each test below is named for the hazard it pins.
+Fixtures preserve observed block combinations, split-message sequences, `tool_use_result` key
+sets, and undocumented frame classes rather than assuming the protocol summary is exhaustive.
+Each test below is named for the hazard it pins.
 
-The shapes themselves come from <testing/wire.py>; what is written out here is a frame class no
-release has seen, which is the one thing a builder cannot supply.
+The shapes themselves come from <testing/wire.py>; the fixture also includes frame classes that
+are easy to omit when composing cases by hand.
 """
 
 import json
@@ -76,7 +75,7 @@ def test_a_message_with_no_prose_in_it_is_not_a_message():
     """
     events = project_log(
         [
-            recorded(1, assistant(thinking_block("The census says the fold is wrong here."), message_id="msg_A")),
+            recorded(1, assistant(thinking_block("The fixture says the fold is wrong here."), message_id="msg_A")),
             recorded(2, assistant(tool_use_block("toolu_1", "Bash", {"command": "ls"}), message_id="msg_A")),
             recorded(3, result()),
         ]
@@ -84,7 +83,7 @@ def test_a_message_with_no_prose_in_it_is_not_a_message():
 
     assert events == (
         ReasoningStarted(provenance=FrameRange(1, 1)),
-        ItemSegment(item=_REASONING, text="The census says the fold is wrong here.", provenance=FrameRange(1, 1)),
+        ItemSegment(item=_REASONING, text="The fixture says the fold is wrong here.", provenance=FrameRange(1, 1)),
         ReasoningCompleted(disclosure=ReasoningDisclosure.SUMMARY, provenance=FrameRange(1, 1)),
         ToolCallStarted(call_id="toolu_1", tool_name="Bash", arguments={"command": "ls"}, provenance=FrameRange(2, 2)),
         TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=FrameRange(3, 3)),
@@ -104,7 +103,7 @@ def test_thinking_the_backend_will_not_show_you_is_an_item_with_no_prose():
 
 
 def test_the_frames_of_one_message_are_not_always_contiguous():
-    """The census's sequence verbatim: parallel calls, the first answered before the second is asked.
+    """The fixture's sequence verbatim: parallel calls, the first answered before the second is asked.
 
     Closing the message on the first non-`assistant` frame would make two messages out of one and
     attribute `toolu_2` to a message that does not exist.

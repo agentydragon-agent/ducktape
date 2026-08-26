@@ -13,9 +13,8 @@ Determinism is what the design rests on: re-projecting a stored session reproduc
 exactly, so drift is detectable by comparison and a projection bug is repairable by fixing the fold
 rather than baked into a row forever.
 
-**Written against what the wire does, not what it documents.** Every rule below that looks
-defensive is a finding from <../../debug/frame_shape_census.md>, where the measurements live — a
-share of production frames is a dated observation and belongs in a dated document.
+**Written against what the wire does, not only what it documents.** Every rule below that looks
+defensive preserves a shape the projection must tolerate.
 
 | What the wire does                                              | What this does with it                                                                                                                    |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -188,7 +187,7 @@ def finish(state: ProjectionState) -> Projection:
     """What ending the stream produces: an open message completed, or nothing at all.
 
     A message still open when the frames run out is one whose turn died mid-answer, which real
-    sessions do (<../../debug/frame_shape_census.md>); it completes with what it had rather than
+    sessions do; it completes with what it had rather than
     being lost. Only a caller that knows no more frames are coming may say this — for one reading a
     live wire, the next frame is the continuation.
 
@@ -270,7 +269,7 @@ class _Projector:
                 self._unprojected(kind)
 
     def close_message(self) -> None:
-        """End the open message, if there is one. Called where the census says a message ends — a
+        """End the open message, if there is one. Called where wire semantics say a message ends — a
         different `message.id`, a `result`, a caller declaring the stream over — and nowhere else.
         Running out of frames is not one of those: `project` leaves it in the state."""
         if (open_message := self.open_message) is None:

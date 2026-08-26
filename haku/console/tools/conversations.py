@@ -107,7 +107,7 @@ FrameKind = Literal["harness_frame", "setup_output"]
 # nothing to protect but the reader's context — and a reader's context is spent by the response,
 # not by any one row in it. A per-frame cap gets that wrong in both directions at once: it dropped
 # a 9 KB frame that a page had ample room for (21% of production `user` frames, every
-# `control_response`, effectively every `system/init` — see `../debug/frame_shape_census.md`),
+# `control_response`, effectively every `system/init`),
 # while still permitting a page of 25 frames just under the line. Stopping the page instead means
 # a large row costs the rest of its page rather than its own contents, and the cursor already
 # says where to resume.

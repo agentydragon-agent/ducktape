@@ -1,10 +1,9 @@
 """What the projection does with one whole session, taken off the wire rather than composed.
 
-<test_projection.py>'s fixtures are written from the census's measurements — one hazard per test,
+<test_projection.py>'s fixtures isolate one hazard per test,
 each frame hand-built to carry it. This file's fixture is a session verbatim: every frame Claude
 Code 2.1.233 emitted while writing a file, reading it back, counting its lines, running a command
-that fails, and summarising (`testdata/diverse_session.jsonl`, redacted; provenance and counts in
-<../../debug/frame_shape_census.md> § A direct capture of one session).
+that fails, and summarising (`testdata/diverse_session.jsonl`, redacted).
 
 That buys two things a composed fixture cannot, and the tests below are those two:
 
@@ -17,7 +16,7 @@ That buys two things a composed fixture cannot, and the tests below are those tw
   the order the wire produced them.
 
 The capture bounds nothing: one session from one CLI version against one model. It is an existence
-proof of shapes, not a distribution — the census is where distributions live.
+proof of shapes, not a distribution.
 """
 
 import json
@@ -95,7 +94,7 @@ def test_the_capture_folds_to_the_session_it_recorded(projection: Projection):
 
 
 def test_a_message_outlives_the_tool_results_inside_it(projection: Projection):
-    """The census's split-message hazard, occurring on its own: the model asked for two Bash calls
+    """The split-message hazard, occurring on its own: the model asked for two Bash calls
     in one message, and both answers arrived before the message was done."""
     started = [event for event in projection.events if isinstance(event, ToolCallStarted)]
     messages = [event for event in projection.events if isinstance(event, MessageCompleted)]
