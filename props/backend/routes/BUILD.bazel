@@ -96,6 +96,7 @@ py_test(
 
 py_test(
     name = "test_ground_truth",
+    size = "medium",
     srcs = ["test_ground_truth.py"],
     requires_docker = True,
     deps = [
