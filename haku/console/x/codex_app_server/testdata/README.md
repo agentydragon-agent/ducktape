@@ -20,6 +20,16 @@ as a real capture.
   the capture workflow before staging. The provenance notes in `.openclaw/codex-trace-4431/README.md`
   are the source record for this fixture.
 
+- `real_high_demand_failure.sanitized.jsonl` is a **real** `codex app-server` stdio exchange
+  captured on 2026-08-26 UTC from the deployed Haku Console Codex runtime. A harmless Web prompt
+  reached the backend, which exhausted five reconnect attempts before reporting a terminal temporary
+  high-demand failure. The extraction was bounded to that turn's known frame range. The prompt,
+  native IDs, database positions, timestamps and duration were replaced with type-compatible
+  placeholders; protocol methods, retry/error shapes, status transitions and provider wording were
+  retained. No credential, environment value, system prompt, repository content, path, tool call or
+  unrelated session data was read into the fixture. Production evidence and the conversation-level
+  error-handling follow-up are recorded in issue #4752.
+
 The capture program writes sanitized records only. Before committing a real capture, review every
 line for all of the following:
 

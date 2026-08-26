@@ -5,6 +5,7 @@ import pytest_bazel
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
 from haku.console.x.codex_app_server.projection import RecordedFrame, project_log
 from haku.console.x.codex_app_server.protocol import read_trace, server_messages
+from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
 from haku.console.x.conversation_events import (
     CallRef,
     FrameRange,
@@ -18,20 +19,27 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
     TurnCompleted,
 )
+from haku.runtime.x.bridge.protocol import HarnessFrame
 from util.bazel.runfiles import get_required_path
 
-_FIXTURE = "haku/console/x/codex_app_server/testdata/real_text_command.sanitized.jsonl"
+_SUCCESS_FIXTURE = "haku/console/x/codex_app_server/testdata/real_text_command.sanitized.jsonl"
+_HIGH_DEMAND_FIXTURE = "haku/console/x/codex_app_server/testdata/real_high_demand_failure.sanitized.jsonl"
 _MESSAGE = OpenRef(item_type=ItemType.MESSAGE)
 
 
-def _frames() -> tuple[RecordedFrame, ...]:
-    source = Path(_FIXTURE)
-    path = source if source.exists() else get_required_path(f"ducktape/{_FIXTURE}")
-    return tuple(RecordedFrame(record.seq, record.message) for record in server_messages(read_trace(path)))
+def _fixture_path(fixture: str) -> Path:
+    source = Path(fixture)
+    return source if source.exists() else get_required_path(f"ducktape/{fixture}")
+
+
+def _frames(fixture: str) -> tuple[RecordedFrame, ...]:
+    return tuple(
+        RecordedFrame(record.seq, record.message) for record in server_messages(read_trace(_fixture_path(fixture)))
+    )
 
 
 def test_real_capture_projects_both_observed_turn_lifecycles():
-    projection = project_log(_frames())
+    projection = project_log(_frames(_SUCCESS_FIXTURE))
 
     assert projection.events == (
         MessageStarted(provenance=FrameRange(12, 12)),
@@ -71,6 +79,23 @@ def test_real_capture_projects_both_observed_turn_lifecycles():
         TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=FrameRange(32, 32)),
     )
     assert projection.unprojected == {}
+
+
+def test_real_high_demand_capture_becomes_a_neutral_failure() -> None:
+    handler = CodexRuntimeAdapter().turn_handler()
+    completions = []
+    for record in server_messages(read_trace(_fixture_path(_HIGH_DEMAND_FIXTURE))):
+        effects = handler.apply(frame_seq=record.seq, frame=HarnessFrame(frame=record.message))
+        if effects.completion is not None:
+            completions.append(effects.completion)
+
+    assert len(completions) == 1
+    completion = completions[0]
+    assert completion.outcome is TurnOutcome.FAILED
+    assert completion.final_text == ""
+    assert completion.failure == (
+        "the agent's turn failed: We're currently experiencing high demand, which may cause temporary errors."
+    )
 
 
 if __name__ == "__main__":
