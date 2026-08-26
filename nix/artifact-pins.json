@@ -25,8 +25,8 @@
       "sha256": "G+QfabOqAAKTa0E5X7i2NL+SS2eTi1JkWdpnUuxmh/g="
     },
     "ducktape": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-1b43000c0baa/ducktape-0.1.0-py3-none-any.whl",
-      "sha256": "G0MADAuqlTU49CfLThbCabWvcAXRstw4Upc9bRM36PU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-b11f2193369d/ducktape-0.1.0-py3-none-any.whl",
+      "sha256": "sR8hkzadZHt7w9hQ5KO0xEvVqzwAKdaKq/o1NyoM/Zs="
     },
     "gterm-theme": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-9d9992c2da1d/gterm_theme-0.1.0-py3-none-any.whl",
@@ -101,8 +101,8 @@
       "sha256": "lUexiV9qdS69nQAIRWsZTSfjNWIF1y9Qq7WGP4sgGq0="
     },
     "skill-debundle_integrator": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_integrator-deb530790e41/debundle_integrator.skill",
-      "sha256": "3rUweQ5B0B1CxGK1kUwBa606H+bAh+RHGNESvL2Uw8o="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_integrator-b6f8ab691ff2/debundle_integrator.skill",
+      "sha256": "tviraR/yy6hE+sEUJ+5O7OXTLjYnmW40LOnra0Z73Yo="
     },
     "skill-debundle_lane_worker": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_lane_worker-19815789be24/debundle_lane_worker.skill",
@@ -117,8 +117,8 @@
       "sha256": "5GBCK0djPezjrw+JXoQQZIaFXkgE6IcnycRpn56t89Y="
     },
     "skill-debundle_plan_work": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_plan_work-a5f1076dcee4/debundle_plan_work.skill",
-      "sha256": "pfEHbc7kr0kbrepjvhQS3LNjs5sDsI510XHcSOt7gXE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_plan_work-211b26f769c6/debundle_plan_work.skill",
+      "sha256": "IRsm92nGni16y/jalrDc9JlYmgBGZ1+ol//s3FtOCsA="
     },
     "skill-debundle_stabilize": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_stabilize-1b869b30778b/debundle_stabilize.skill",
