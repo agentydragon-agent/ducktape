@@ -136,6 +136,7 @@ py_test(
 
 py_test(
     name = "test_agent_registry",
+    size = "medium",
     srcs = [
         "conftest.py",
         "test_agent_registry.py",
