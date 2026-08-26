@@ -96,7 +96,10 @@ py_library(
 py_test(
     name = "test_deployment_config",
     srcs = ["test_deployment_config.py"],
-    data = ["//cluster/k8s:haku_console_config"],
+    data = [
+        "//cluster/k8s:haku_console_config",
+        "//cluster/k8s:haku_console_deployment",
+    ],
     deps = [
         ":config",
         ":mcp_config",

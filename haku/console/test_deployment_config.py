@@ -50,8 +50,14 @@ def test_deployed_console_config_is_valid() -> None:
 
 def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = get_required_path("ducktape/cluster/k8s/haku/console/config.yaml")
+    deployment = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/deployment.yaml").read_text())
+    container_env = {
+        item["name"]: item.get("value") for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    max_wait_for_result_ms = container_env["HAKU_CONSOLE_MAX_WAIT_FOR_RESULT_MS"]
+    assert max_wait_for_result_ms is not None
     monkeypatch.setenv("HAKU_CONSOLE_CONFIG_FILE", str(config_path))
-    monkeypatch.setenv("HAKU_CONSOLE_MAX_WAIT_FOR_RESULT_MS", "7000")
+    monkeypatch.setenv("HAKU_CONSOLE_MAX_WAIT_FOR_RESULT_MS", max_wait_for_result_ms)
     settings = Settings(
         haku_ui_url="https://haku-ui.test",
         auth_origin="https://auth.test",
@@ -67,7 +73,7 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     )
 
     assert settings.config_file == config_path
-    assert settings.max_wait_for_result_ms == 7000
+    assert settings.max_wait_for_result_ms == int(max_wait_for_result_ms)
     assert settings.runner_kubernetes_proxy_url == "http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080"
     assert str(settings.haku_agent_workspace_setup) == "/usr/local/bin/haku-sandbox-setup.sh"
     assert settings.codex_runtime is not None

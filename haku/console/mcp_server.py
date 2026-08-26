@@ -51,6 +51,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     StrictInt,
     ValidationError,
+    create_model,
     model_serializer,
 )
 
@@ -109,7 +110,6 @@ logger = logging.getLogger(__name__)
 
 SERVER_NAME = "haku-console"
 DEFAULT_WAIT_MS = 5000
-MAX_WAIT_MS = 60_000
 TOOL_NAME_SEPARATOR = "__"
 _DEFAULT_GET_TOOL_CALL_FIELDS = [ToolCallPayloadField.RESULT]
 _DEFAULT_LIST_TOOL_CALL_FIELDS: list[ToolCallPayloadField] = []
@@ -262,7 +262,7 @@ class _ApprovalRequestEnvelopeBase(BaseModel):
 
 
 def _approval_request_envelope_model(
-    *, default_wait_ms: int | None = None, min_wait_ms: int | None = None, max_wait_ms: int | None = None
+    *, max_wait_ms: int, default_wait_ms: int = DEFAULT_WAIT_MS, min_wait_ms: int = 0
 ) -> type[Any]:
     """Build the envelope model with the bounds used by this console instance.
 
@@ -271,30 +271,26 @@ def _approval_request_envelope_model(
     runtime validation tied to the same default and bounds, rather than leaving a stale class-level
     ``None`` default that silently turns into the default or a runtime clamp that hides bad input.
     """
-    resolved_default_wait_ms: int = DEFAULT_WAIT_MS if default_wait_ms is None else default_wait_ms
-    resolved_min_wait_ms: int = 0 if min_wait_ms is None else min_wait_ms
-    resolved_max_wait_ms: int = MAX_WAIT_MS if max_wait_ms is None else max_wait_ms
-    if not resolved_min_wait_ms <= resolved_default_wait_ms <= resolved_max_wait_ms:
+    if not min_wait_ms <= default_wait_ms <= max_wait_ms:
         raise ValueError("approval wait bounds must satisfy min <= default <= max")
-
-    class ApprovalRequestEnvelope(_ApprovalRequestEnvelopeBase):
-        wait_for_result_ms: StrictInt = Field(
-            default=resolved_default_wait_ms,
-            ge=resolved_min_wait_ms,
-            le=resolved_max_wait_ms,
-            description=(
-                "How long to wait synchronously for approval and execution before returning a non-terminal stub. "
-                "Returning a stub does not cancel or expire the queued call "
-                f"(default {resolved_default_wait_ms}, min {resolved_min_wait_ms}, max {resolved_max_wait_ms})."
-            ),
-        )
-
-    return ApprovalRequestEnvelope
-
-
-# Keep a stable import for callers/tests while the generated proxy schema and dispatch path use a
-# fresh model so dynamic bounds are reflected if this module's deployment settings change.
-ApprovalRequestEnvelope = _approval_request_envelope_model()
+    return create_model(
+        "ApprovalRequestEnvelope",
+        __base__=_ApprovalRequestEnvelopeBase,
+        wait_for_result_ms=(
+            Annotated[
+                StrictInt,
+                Field(
+                    ge=min_wait_ms,
+                    le=max_wait_ms,
+                    description=(
+                        "How long to wait synchronously for approval and execution before returning a non-terminal "
+                        "stub. Returning a stub does not cancel or expire the queued call."
+                    ),
+                ),
+            ],
+            default_wait_ms,
+        ),
+    )
 
 
 def _tool_call_url(settings: Settings, tool_call_id: str) -> str:
@@ -363,7 +359,7 @@ def _exposed_metadata(
     policies: AutoApprovalPolicyRegistry,
     actor: ToolCallActor,
     include_schemas: bool,
-    max_wait_ms: int = MAX_WAIT_MS,
+    max_wait_ms: int,
 ) -> ServerMetadata:
     """Report each tool as *this proxy* exposes it to this caller, not as the upstream declares it.
 
@@ -400,7 +396,7 @@ def _exposed_metadata(
     return metadata.model_copy(update={"state": metadata.state.model_copy(update={"tools": tools})})
 
 
-def _envelope_schema(original_schema: dict[str, Any], *, max_wait_ms: int = MAX_WAIT_MS) -> dict[str, Any]:
+def _envelope_schema(original_schema: dict[str, Any], *, max_wait_ms: int) -> dict[str, Any]:
     """The approval-request envelope schema: `ApprovalRequestEnvelope`'s generated schema with the
     ``input`` property replaced by the upstream tool's own schema (nested unchanged, so its fields
     can't collide with the envelope's ``rationale``/``title``/``wait_for_result_ms``)."""
