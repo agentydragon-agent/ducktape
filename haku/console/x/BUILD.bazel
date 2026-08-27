@@ -52,6 +52,7 @@ py_test(
         ":runtime_catalog",
         "//:conftest",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
         "//haku/console/x/codex_app_server:runtime",
         "@pypi//pytest",
@@ -197,8 +198,10 @@ py_library(
     name = "transcript_entries",
     srcs = ["transcript_entries.py"],
     deps = [
-        ":conversation_events",
         ":conversation_records",
+        ":session_events",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
     ],
 )
 
@@ -485,6 +488,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console/x/claude_code:projection",
         "//haku/console/x/claude_code:runtime",
+        "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
         "//haku/runtime/x/bridge:protocol",
         "//util:sqlalchemy_types",
@@ -597,12 +601,16 @@ py_test(
     name = "test_transcript_entries",
     srcs = ["test_transcript_entries.py"],
     deps = [
+        ":conversation_events",
         ":conversation_records",
+        ":session_events",
         ":transcript_entries",
         "//:conftest",
-        "//haku/console/x/claude_code:projection",
-        "//haku/console/x/claude_code/testing:wire",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "//util:sqlalchemy_types",
         "@pypi//more_itertools",
+        "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],
 )
@@ -621,6 +629,7 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
