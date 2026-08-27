@@ -46,14 +46,17 @@ provider "litellm" {
 
 locals {
   # Model names must match generated model_name entries in
-  # cluster/k8s/litellm/app/proxy-config.yaml.
+  # cluster/k8s/litellm/app/proxy-config.yaml. During the #4823 staged rename each
+  # list carries the legacy names first, then the {provider}-{shape}-{model} names
+  # (derivations in cluster/k8s/litellm/app/model_rosters.py); the legacy rows drop
+  # once their consumers move. Spelled out rather than built with a for-expression
+  # so the names are greppable and so the test can compare structurally -- HCL2
+  # returns a for-expression as unevaluated source text, not a list.
+  #
   # The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
-  # (haku oai zone, codex-pod, agent-workspaces-codex). Same names as before 2026-08-06,
-  # now served by CLIProxyAPI rather than the retired litellm-chatgpt sub-instance --
-  # see _cliproxy_responses_entries in cluster/k8s/litellm/app/test_litellm_config.py,
-  # which pins this list against it. Spelled out rather than built with a for-expression
-  # so the names are greppable and so the test can compare structurally -- HCL2 returns a
-  # for-expression as unevaluated source text, not a list.
+  # (haku oai zone, codex-pod, agent-workspaces-codex) -- served by CLIProxyAPI; see
+  # _cliproxy_responses_entries in cluster/k8s/litellm/app/test_litellm_config.py,
+  # which pins this list against it.
   oai_lane_models = [
     "gpt-5.4-chatgpt",
     "gpt-5.5-chatgpt",
@@ -61,10 +64,24 @@ locals {
     "gpt-5.6-terra-chatgpt",
     "gpt-5.6-luna-chatgpt",
     "gpt-5.3-codex-spark-chatgpt",
+    "chatgpt/oai-responses/gpt-5.4",
+    "chatgpt/oai-responses/gpt-5.5",
+    "chatgpt/oai-responses/gpt-5.6-sol",
+    "chatgpt/oai-responses/gpt-5.6-terra",
+    "chatgpt/oai-responses/gpt-5.6-luna",
+    "chatgpt/oai-responses/gpt-5.3-codex-spark",
   ]
-  # Tana-UI models fronted through tana-litellm (_TANA_MODELS in test_litellm_config.py).
-  tana_client_models = ["tana-claude-sonnet-4-6", "tana-claude-opus-4-6", "tana-claude-haiku-4-5"]
-  # Codex-subscription models fronted through CLIProxyAPI (_cliproxy_entries).
+  # Tana-UI models fronted through tana-litellm (TANA_MODELS in model_rosters.py).
+  tana_client_models = [
+    "tana-claude-sonnet-4-6",
+    "tana-claude-opus-4-6",
+    "tana-claude-haiku-4-5",
+    "tana/ant-messages/claude-sonnet-4-6",
+    "tana/ant-messages/claude-opus-4-6",
+    "tana/ant-messages/claude-haiku-4-5",
+  ]
+  # Codex-subscription models on the Anthropic Messages surface, fronted through
+  # CLIProxyAPI (_cliproxy_messages_entries) -- Claude Code clients.
   codex_client_models = [
     "codex-gpt-5.4",
     "codex-gpt-5.5",
@@ -72,13 +89,24 @@ locals {
     "codex-gpt-5.6-terra",
     "codex-gpt-5.6-luna",
     "codex-gpt-5.3-codex-spark",
+    "chatgpt/ant-messages/gpt-5.4",
+    "chatgpt/ant-messages/gpt-5.5",
+    "chatgpt/ant-messages/gpt-5.6-sol",
+    "chatgpt/ant-messages/gpt-5.6-terra",
+    "chatgpt/ant-messages/gpt-5.6-luna",
+    "chatgpt/ant-messages/gpt-5.3-codex-spark",
   ]
   # Gemini embeddings (GEMINI_EMBEDDING_MODELS in test_litellm_config.py). Granted to
   # agents whose egress cannot reach api.openai.com: the main openclaw gateway holds
   # a direct OpenAI Platform key for memorySearch, but a domain-confined agent has no
   # route to it and should not gain one just to embed. Routing embeddings through
   # LiteLLM keeps them on the in-cluster path the agent already uses for turns.
-  embedding_client_models = ["gemini-embedding-2", "gemini-embedding-001"]
+  embedding_client_models = [
+    "gemini-embedding-2",
+    "gemini-embedding-001",
+    "google/oai-embeddings/gemini-embedding-2",
+    "google/oai-embeddings/gemini-embedding-001",
+  ]
   # Google Gemini models (GEMINI_MODELS in model_rosters.py) fronted through the
   # `gemini/` provider. Current generation only -- see that module for why the
   # 2.5 generation, gemini-3-pro-preview (shut down), and every non-latest 3.x
@@ -88,6 +116,9 @@ locals {
     "gemini-3.1-pro-preview",
     "gemini-3.7-flash",
     "gemini-3.5-flash-lite",
+    "google/oai-chat/gemini-3.1-pro-preview",
+    "google/oai-chat/gemini-3.7-flash",
+    "google/oai-chat/gemini-3.5-flash-lite",
   ]
 }
 
