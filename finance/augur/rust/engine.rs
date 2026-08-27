@@ -401,6 +401,7 @@ enum ObligationEffect {
     },
     PropertyTax {
         owner_agent_id: String,
+        rented_fraction_ppb: i64,
     },
 }
 
@@ -3711,6 +3712,7 @@ fn property_obligations(
             amount_due,
             effect: ObligationEffect::PropertyTax {
                 owner_agent_id: policy.owner_agent_id.clone(),
+                rented_fraction_ppb: property.rented_fraction_ppb,
             },
         });
     }
@@ -3960,10 +3962,24 @@ fn record_property_tax_paid(
     tax_facts: &mut BTreeMap<(String, String), TaxFacts>,
     agent_id: &str,
     amount: Money,
+    rented_fraction_ppb: i64,
 ) -> Result<(), SimulationError> {
+    let rental_deduction = Money(mul_div_round_half_up(
+        amount.0,
+        rented_fraction_ppb,
+        RATE_SCALE_PPB,
+        "rental property tax deduction",
+    )?);
+    let owner_property_tax = Money(mul_div_round_half_up(
+        amount.0,
+        RATE_SCALE_PPB - rented_fraction_ppb,
+        RATE_SCALE_PPB,
+        "owner property tax",
+    )?);
     for ((taxpayer, _), facts) in tax_facts {
         if taxpayer == agent_id {
-            facts.property_tax_paid = facts.property_tax_paid.checked_add(amount)?;
+            facts.ordinary_income = facts.ordinary_income.checked_sub(rental_deduction)?;
+            facts.property_tax_paid = facts.property_tax_paid.checked_add(owner_property_tax)?;
         }
     }
     Ok(())
@@ -4314,7 +4330,10 @@ fn settle_obligations(
                     &obligation.to,
                     obligation.amount_due,
                 )?,
-                ObligationEffect::PropertyTax { ref owner_agent_id } => {
+                ObligationEffect::PropertyTax {
+                    ref owner_agent_id,
+                    rented_fraction_ppb,
+                } => {
                     transfer_money(
                         ledger,
                         recorder,
@@ -4324,7 +4343,12 @@ fn settle_obligations(
                         &obligation.to,
                         obligation.amount_due,
                     )?;
-                    record_property_tax_paid(tax_facts, owner_agent_id, obligation.amount_due)?;
+                    record_property_tax_paid(
+                        tax_facts,
+                        owner_agent_id,
+                        obligation.amount_due,
+                        rented_fraction_ppb,
+                    )?;
                 }
                 ObligationEffect::TaxPayment { profile_index } => {
                     book_tax_payment(
