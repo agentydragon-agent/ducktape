@@ -51,13 +51,13 @@ or basename guess resolves to a different image's file, quietly. Where only a
 path is available, it is `pathPrefix` + `name`: a source file and the generated
 file of the same name differ only by prefix.
 
-## Fail open, always
+## The planner fails open; the push job does not
 
 `release` and `push-images` run under `always() && !cancelled()`, so they run
-even when `bazel-ci` failed or was skipped. **Anything short of proof that an
-item is unchanged republishes it.** No invocation, an output the stream never
-mentions, an unreadable blob, an unreachable registry — all keep the item in the
-matrix, where its own job checks properly and fails loudly.
+even when `bazel-ci` failed or was skipped. **In the planner, anything short of
+proof that an item is unchanged republishes it.** No invocation, an output the
+stream never mentions, an unreadable blob, an unreachable registry — all keep the
+item in the matrix.
 
 The asymmetry is deliberate: wrongly including an item costs one job, wrongly
 excluding one silently skips a deployment. A planner that cannot prove anything
@@ -68,9 +68,17 @@ built rather than from what the planner could read. A release is content-address
 — same bytes, same tag, nothing new to publish. An image is not: every push mints
 a fresh `devel-<timestamp>-<sha>` tag that Flux picks up, so publishing an
 unchanged image still costs a commit, a reconcile and a rollout. So
-`devinfra/ci/push_image.py` compares its built digest against the newest published
-tag and pushes only on a difference. Without that, a row this sweep cannot see —
-`manifold-mcp-server` below — churns a deployment on every merge.
+`devinfra/ci/push_image.py` compares its built digest against what the registry
+last published and pushes only on a difference. Without that, a row this sweep
+cannot see — `manifold-mcp-server` below — churns a deployment on every merge.
+
+**And there the asymmetry reverses.** The push job is the last check, so a
+registry it cannot read fails the job rather than publishing regardless. Carrying
+the planner's rule down here would have meant a blip republishing the very images
+this check exists to hold back — and it would rarely buy anything, since the push
+that follows goes to the same registry with the same credentials. A push not made
+is recovered by the next merge, which still sees the difference; a push wrongly
+made is a rollout.
 
 ## What a `//...` sweep cannot cover
 
@@ -124,6 +132,23 @@ and it takes about a second. Verified to gate test actions, not just build ones.
 Rejected here only because it costs a Bazel invocation — and therefore a runner
 VM — to learn what `testSummary` in the stream already says for free. Worth
 remembering if provenance ever stops being good enough.
+
+**Push from the plan job, dropping the per-image fan-out.** Tempting once the
+planner works: a merge typically needs zero or one image published, so `push`
+allocates a runner mostly to discover it has nothing to do, and its ~45-60s of
+checkout-and-devshell setup dwarfs the push. Rejected because the fan-out is not
+there for the typical merge. Each push job builds its image's OCI layout and
+downloads it before pushing, and that download is irreducible; one job doing it
+for every changed image serialises them onto one runner's disk. The burst is real
+and not hypothetical — 8 images in one run on 2026-08-27, after a string of
+superseded runs left their changes outstanding, and a base-image bump moves all 42. `fail-fast: false` also keeps one image's failing test gate from taking the
+other publishes down with it.
+
+The two modules stay separate for the same reason and no other: `plan_image_pushes`
+runs once, `push_image` runs per image, and what they share is already in
+`image_registry`, leaving one comparison line apiece. Reconsider if the
+`testSummary` gate below lands, which deletes the per-image `bb remote test` and
+so most of what the fan-out buys.
 
 **Shell out to `bbapi`.** `bbapi` reads the same stream and grew the same
 capability for humans. The planners must not call it: `bbapi` is itself one of
