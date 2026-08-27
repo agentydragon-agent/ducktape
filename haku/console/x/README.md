@@ -32,11 +32,6 @@ genuinely both, so it is two modules: the CLI's own top-level `type` values and 
 pick a value out of one are `claude_code/frames.py`, while `setup_output.py` holds the bridge
 envelope's `kind` and the row the console authors under it.
 
-**One column still carries both**, which no placement fixes: `session_frames.kind` takes the CLI's
-`type` from `RolloutRecorder` and `setup_output` from the progress reporter, so `session_store.py`
-names two of the CLI's kinds in SQL predicates and imports them across that line. Giving the CLI's
-type its own column is what retires those predicates (<../plans/conversation_layers.md> § 13).
-
 ## `session_store.py` and `session_runtime.py` — the rows, and the turn loop over them
 
 The shared substrate: session, message and turn rows, Postgres `LISTEN`/`NOTIFY`, the
@@ -118,9 +113,6 @@ separate sandboxes — so a browser conversation and the Matrix conversation coe
 than contend. **Gotcha:** that also means two live sandboxes, and only the Matrix one
 announces itself, so the browser one is the easy one to forget you are paying for.
 
-Delta streaming (`StreamEvent`) exists for the SPA alone. The Matrix path forwards whole assistant
-messages, each as it completes, so if the SPA view is ever retired that machinery goes with it.
-
 ### What has been lifted out of it
 
 Each is a module nothing in `session_runtime.py` reaches into
@@ -151,8 +143,8 @@ level is the fix, not reinstating the models on the tool.
 
 `POST /api/sessions/{session_id}/messages` and `/abort` ask **who owns the session**, never which
 surface opened it: `enqueue_prompt` checks `operator_id`, `READY`, no open turn and no queued
-prompt, and no session records which surface opened it — `sessions.surface` is unmapped and
-awaiting its drop, and which channels hold a conversation is `chat_attachment`. So the conversation detail
+prompt, and no session records which surface opened it — which channels hold a conversation is
+`chat_attachment`. So the conversation detail
 view carries a composer (`frontend/x/conversation_composer.tsx`) for any session it can read,
 a room's included — the reply then goes wherever that session's channel sends replies, so a prompt
 typed in the browser also lands in the room.
@@ -245,13 +237,18 @@ are, so it lives under the harness directory beside `claude_code/frames.py`, whi
 names are spelled. A second backend adds a sibling adapter and touches neither the vocabulary nor
 its readers.
 
-**The reducer's own contract is in `claude_code/projection.py`** — what `project`, `finish` and
-`project_log` each mean, why a batch boundary is not an ending, and the wire facts every rule in
-it answers. It is not restated here; what follows is who reads it and what is not yet on it.
+**The reducer's own contract is in `claude_code/projection.py`** — what `project` means, why a
+batch boundary is not an ending, and the wire facts every rule in it answers. It is not restated
+here; what follows is who reads it and what is not yet on it.
 
-**Two readers are on them.** `haku_conversations.read_transcript` reads a stored session:
-`SessionStore.read_transcript` calls `project_log` and `transcript_entries.py` maps the result
-onto the read models in `conversation_records.py`. And the live path reads them too.
+**The live turn loop is the only thing that folds frames.** A stored session is read from the log
+instead: `SessionStore.read_transcript` selects the session's `conversation_event` rows and
+`transcript_entries.py` folds them onto the read models in `conversation_records.py`, so
+`haku_conversations` needs neither an adapter nor the session's `runtime_kind` to answer what was
+said. There is no whole-log projection any more — no `project_log` on the adapter, and no `finish`
+that declares a stream over — so an item the frames left open stays open, and only a frame closes
+one. A capture is still folded in tests, through the same reducer one frame at a time
+(`claude_code/testing/fold.py`).
 
 **One typed integration boundary.** `_run_turn` gives each exact native frame to the selected
 runtime's stateful `RuntimeTurnHandler` and acts only on its neutral `FrameEffects`. The integration
@@ -330,20 +327,23 @@ Four things to know before changing it:
   ends such a turn as failed rather than resuming it. No session that can still acquire a frame is
   in that state.
 
-**`read_transcript` has no durable handler checkpoint and is not this cursor.** It re-reads the
-session from the first frame through the selected integration's whole-log projection every time;
-that is a read path with nowhere to keep provider state, not the durable writer position.
+**`read_transcript` never touches this cursor, or any frame.** It folds the session's log rows from
+the log's start on every page — the transcript cursor is a position in that fold, not a durable
+writer position — so a projection change reaches sessions still to run and leaves the ones that
+already happened saying what was recorded of them.
 
 Four properties hold the design up, each stated where it is kept — break one and the rest stop
 meaning anything:
 
 - `project` is pure and deterministic (`projection.py`).
-- One batch and any split of batches project alike (`Projection.then`).
+- One batch and any split of batches project alike (`claude_code/test_projection.py`).
 - Every event carries provenance, and it is a union, so a rebuild cannot delete an authored event
   (`conversation_events.Authored`).
-- The default branch is counted, not dropped (`Projection.unprojected`) and the session-wide count
-  is exposed as `read_transcript`'s `unreadable`. The raw-frame inspector itself presents exact JSON
-  and does not classify native frames.
+- The default branch is counted, not dropped (`Projection.unprojected`). No surface carries that
+  count any more — `read_transcript`'s `unreadable` is the same warning about the log rather than
+  the wire — so what asserts it is the adapters' own capture tests, which name every frame class
+  a recorded session reached the default branch with. The raw-frame inspector itself presents exact
+  JSON and does not classify native frames.
 
 Before changing the adapter, read `../../cli_protocol/protocol.md` and the adjacent fixtures:
 the wire is version-pinned, and tests preserve the shapes the projection must tolerate.
@@ -410,6 +410,9 @@ the test that reads it, as `test_diverse_session` has.
   (`matrix_revision`), which is what the status line is edited and retired through.
 - `room_subscription.py` — the room as a subscriber: its durable position in the conversation
   (`channel_cursor`), the replies it queues from it, and the notices it says from it.
+- `room_copy.py` — the room's durable copy of projected events (`matrix_room_copy`): what the
+  room shows of Haku's own sends, read off their `/sync` echoes, which the reconciler consults
+  before sending and duplicate repair reads.
 - `ingress_ledger.py` — which inbound events a prompt in the record carries
   (`matrix_ingress_event`).
 - `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
@@ -418,8 +421,10 @@ the test that reads it, as `test_diverse_session` has.
 answers, aborts, silence, setup narration, refusals, unreadable input, session handoffs and lease
 losses, plus prompts arriving through another surface, from one cursor and in one order. Only facts
 outside the conversation log — such as binding or adopting a room — are still announced directly.
-The position is kept after the batch, so a crash costs a repeat rather than silence: a notice may be
-said twice, while the outbox's unique subject refuses a duplicate reply.
+The position is kept after the batch, so a crash costs a replay rather than silence: a sealed
+notice is suppressed by the room's own recorded copy, a duplicate reply is refused by the outbox's
+unique subject, and only the direct `announce` path — relayed prompts, silent turns — can still say
+a thing twice.
 
 **A prompt is a conversation fact, so every attached surface shows it.** The prompt item's origin
 names the surface it arrived through, and the room compares it against its own address: a prompt
@@ -754,8 +759,8 @@ dependency:
 - `MatrixConfig` and `Settings.matrix` in <../config.py>. Absent config, or a config whose
   reflected bot password has not landed yet, means the surface does not start and the console
   does.
-- `Session`, `SessionMessage`, `Conversation`, `ChatAttachment`, `MatrixAccessToken` and
-  `MatrixSyncWatermark` in <../database_schema.py>, plus their Alembic revisions — migrations are
+- `Session`, `Conversation`, `ChatAttachment`, `MatrixAccessToken` and `MatrixSyncWatermark` in
+  <../database_schema.py>, plus their Alembic revisions — migrations are
   one lineage for the whole database.
 - `StatusFrontend` is declared beside the stream fold in `room_status.py`; Matrix's sync service
   implements those ephemeral operations. The turn runtime has no channel port.

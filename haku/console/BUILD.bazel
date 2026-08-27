@@ -518,6 +518,7 @@ py_library(
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 
@@ -1212,6 +1213,7 @@ py_library(
         "//haku/console/x/channels/matrix:ingress_ledger",
         "//haku/console/x/channels/matrix:outbox",
         "//haku/console/x/channels/matrix:revisions",
+        "//haku/console/x/channels/matrix:room_copy",
         "//haku/console/x/channels/matrix:room_subscription",
         "//haku/console/x/channels/matrix:conversation",
         "//haku/console/x/channels/matrix:sync",
@@ -1315,6 +1317,7 @@ py_binary(
 
 py_test(
     name = "test_export_mcp_tool_schemas",
+    size = "medium",
     srcs = ["test_export_mcp_tool_schemas.py"],
     deps = [
         ":export_mcp_tool_schemas",
@@ -1884,6 +1887,7 @@ py_test(
 
 py_test(
     name = "test_kubectl_passthrough_policy",
+    size = "medium",
     srcs = ["test_kubectl_passthrough_policy.py"],
     deps = [
         ":conftest",
@@ -1979,6 +1983,7 @@ build_test(
 
 py_test(
     name = "test_migration_command",
+    size = "medium",
     srcs = ["test_migration_command.py"],
     deps = [
         ":app",

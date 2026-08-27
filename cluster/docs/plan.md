@@ -97,10 +97,9 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   rebuild. The `codex-*` entries stay on `anthropic/` → `/v1/messages` for Claude Code;
   the two lanes are the same pod reached through the wire each client speaks natively.
 
-- **Harbor**: `harbor-{namespace,secrets,db,agent-rbac,ci,oidc-config,props,proxy-cache,servicemonitor}` —
-  parked 2026-06-11. It was mostly a registry for props, which now use the Forgejo
-  registry for backing. (`harbor-db` spec already moved to `local-path-ovh` /
-  `region=hil` should it ever be revived.)
+- **Harbor**: **removed 2026-08-11** (#3967) after two months parked — it was mostly a
+  registry for props, which use the Forgejo registry; the replacement track is the
+  lighter-registry item under Next Actions (`oci-cache`).
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
   `authentik-blueprint-inventree-secret` — nice-to-have, parked under capacity pressure.
 - **OpenClaw / OpenShell**: **removed 2026-07-31**, manifests deleted rather than
@@ -122,15 +121,9 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   git-based storage in Forgejo — no PVC, no wyrm2 pinning; see gaffer-private
   `x/thrive_scrape/DESIGN.md`.)
 
-### Down while Proxmox (`atlas`/`wyrm2`) is offline
+### Still down
 
-Suspended only because the home Proxmox host is offline; should auto-recover when it
-returns (not independently parked):
-
-- **proxmox-proxy** — the Proxmox API proxy; needs `atlas`.
-- **sdr**, **scanner** — waiting on `atlas` (sdr also needs the radio re-set-up post-relocation).
-- Not suspended in git, but non-functional while `wyrm2` (GPU) is down: **ollama**,
-  **nvidia-device-plugin**.
+- **sdr** — suspended pending the radio re-set-up post-relocation.
 
 ## Next Actions
 
@@ -314,8 +307,8 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       See <kimsufi_provisioning.md> §5 (path B already executed for worker_1 from
       the same order — `ns103711.ip-147-135-39.us` joined as
       `talos-kimsufi-worker-1` on 2026-05-15).
-- [ ] **Re-key admin-only SOPS files to include user keys** — admin age key currently
-      lives only on wyrm2, which is offline in a SF storage unit. `.sops.yaml` rules say
+- [ ] **Re-key admin-only SOPS files to include user keys** — admin age key
+      lives only on wyrm2. `.sops.yaml` rules say
       `secrets/nebula/ca.sops.key` and `k8s/tofu-state/db/credentials.sops.yaml` (among
       others) should be encrypted to admin + 4 user keys, but the files in git still have
       only admin. Discovered 2026-05-13 trying to provision the Kimsufi node from rugged.
@@ -323,7 +316,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       Tofu applies. The PG backend credentials still block `tofu init` in
       `tofu-state/db/credentials.sops.yaml`). - Partial workaround for PG backend: fetch creds from k8s instead of SOPS in
       `cluster/.envrc` — `kubectl -n tofu-state get secret tofu-state-db-credentials`
-      works with current agent RBAC base/user kubeconfig. - Real fix when wyrm2 is back: `sops updatekeys` on every file where `.sops.yaml`
+      works with current agent RBAC base/user kubeconfig. - Real fix (wyrm2 is up): `sops updatekeys` on every file where `.sops.yaml`
       lists more recipients than the file actually has. Audit with
       `for f in $(git ls-files '*.sops.*'); do jq -r '.sops.age[]?.recipient' $f; done`
       and compare to expected recipients per rule.
@@ -500,8 +493,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       promtail) — unsatisfying because it suppresses all readiness checking. Full
       options, analysis, and the long-term fix (auto-remove stale NotReady nodes):
       <plans/offline_node_daemonset_health.md>.
-- [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`,
-      `proxmox-proxy`, `props`/`props-registry`)
+- [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `props`/`props-registry`).
+      `proxmox-proxy` likely belongs on `optiplex` rather than a roaming laptop —
+      decide placement before moving it.
 - [ ] Cilium Gateway `Programmed: False` (upstream bug `cilium/cilium#42786`):
       hostNetwork gateways currently report `AddressNotAssigned` even though traffic
       works through the hostNetwork Envoy listeners. Current workaround is Route 53
