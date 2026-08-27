@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from haku.console.grant_principal import AgentGrantPrincipal, GrantPrincipal, RequestPrincipal, SessionGrantPrincipal
+from haku.console.grant_principal import (
+    AgentGrantPrincipal,
+    GrantPrincipal,
+    GrantPrincipalKind,
+    RequestPrincipal,
+    SessionGrantPrincipal,
+)
 from haku.console.kubernetes_authorization import (
     AuthorizationRequest,
     AuthorizationResponse,
@@ -73,9 +79,9 @@ class KubernetesToolsService:
         return RequestPrincipal.from_source(cls._caller(context))
 
     @classmethod
-    def _grant_principal(cls, context: McpExecutionContext, applies_to: Literal["agent", "session"]) -> GrantPrincipal:
+    def _grant_principal(cls, context: McpExecutionContext, applies_to: GrantPrincipalKind) -> GrantPrincipal:
         caller = cls._caller(context)
-        if applies_to == "agent":
+        if applies_to is GrantPrincipalKind.AGENT:
             return AgentGrantPrincipal(agent_id=caller.agent_id)
         if caller.session_id is None:
             raise PermissionError("session-scoped Kubernetes grants require a live session-authenticated caller")
@@ -87,7 +93,7 @@ class KubernetesToolsService:
         context: McpExecutionContext,
         grants: list[KubernetesGrantSpec],
         duration_seconds: int,
-        applies_to: Literal["agent", "session"] = "agent",
+        applies_to: GrantPrincipalKind = GrantPrincipalKind.AGENT,
     ) -> tuple[KubernetesGrant, ...]:
         caller = self._caller(context)
         if context.tool_call_id is None:
@@ -183,7 +189,7 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
             ),
         ],
         applies_to: Annotated[
-            Literal["agent", "session"],
+            GrantPrincipalKind,
             Field(
                 description=(
                     "Principal applicability resolved from trusted source identity. "
@@ -191,7 +197,7 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
                     "covers only the exact live session that submitted this ToolCall."
                 )
             ),
-        ] = "agent",
+        ] = GrantPrincipalKind.AGENT,
         context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> list[KubernetesGrant]:
         return list(

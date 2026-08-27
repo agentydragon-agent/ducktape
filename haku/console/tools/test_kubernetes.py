@@ -9,7 +9,12 @@ import pytest_bazel
 from fastmcp import Client
 from pydantic import ValidationError
 
-from haku.console.grant_principal import AgentGrantPrincipal, RequestPrincipal, SessionGrantPrincipal
+from haku.console.grant_principal import (
+    AgentGrantPrincipal,
+    GrantPrincipalKind,
+    RequestPrincipal,
+    SessionGrantPrincipal,
+)
 from haku.console.kubernetes_authorization import (
     AuthorizationResponse,
     KubernetesAuthorizationSource,
@@ -186,7 +191,7 @@ async def test_create_session_scope_uses_exact_trusted_agent_and_session() -> No
         context=_agent_context(),
         grants=[KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,))],
         duration_seconds=60,
-        applies_to="session",
+        applies_to=GrantPrincipalKind.SESSION,
     )
     assert grants.create_grants.await_args.kwargs["grant_principal"] == SessionGrantPrincipal(session_id=_SESSION)
 
@@ -199,7 +204,7 @@ async def test_create_session_scope_rejects_static_agent_context() -> None:
             context=_agent_context(session_id=None),
             grants=[KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,))],
             duration_seconds=60,
-            applies_to="session",
+            applies_to=GrantPrincipalKind.SESSION,
         )
     grants.create_grants.assert_not_awaited()
 
