@@ -30,26 +30,22 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
 ## InvenTree secrets if unsuspending
 
 - [ ] Add SOPS secrets for InvenTree admin and database passwords before
-      unsuspending it. The old Vault `kv/inventree/*` values are gone, so
-      generate fresh values. Background: <../archive/2026_04_19_vault_migration.md>.
+      unsuspending it. The old Vault `kv/inventree/*` values are gone with
+      Vault (decommissioned 2026-04-19; <../docs/decisions.md> § "Secrets: SOPS
+      SSOT"), so generate fresh values.
 
 ## Mobile Nebula phone followups
 
-- [ ] If ActivityWatch returns, design a phone-specific exporter/importer rather
-      than extending retired upstream `aw-sync` + Syncthing topology. It needs
-      provenance-preserving, idempotent imports from device-owned snapshots.
+- [ ] Wire the phone into ActivityWatch: a phone-specific exporter/importer
+      feeding the bearer-gated write route with the same idempotent,
+      provenance-preserving semantics as the desktop importer
+      (<../docs/activitywatch/README.md>).
 - [ ] Allow SSH from the phone to mesh machines such as `wyrm2`; verify the
       phone has an SSH client/key path, host SSH/firewall policy allows the
       phone's Nebula identity or `10.42.0.50`, and access stays key-only.
 - [ ] Consider running an SSH daemon on the phone for emergency access back to
       the device, probably via Termux/OpenSSH, with explicit keys and a clear
       power/background-execution story.
-
-## Retired ActivityWatch followups
-
-- [ ] Before unsuspending, replace upstream `aw-sync` with a repo-owned,
-      provenance-preserving idempotent importer from immutable device snapshots.
-      Then choose a recoverable store for any central query database.
 
 ## OpenHands: self-hosted git provider
 

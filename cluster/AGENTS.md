@@ -35,14 +35,14 @@ applies the previous state and reads as a failed change.
 (Forgejo registry user) both manage objects inside another stateful system whose IDs
 they record in tfstate. Wiping the backing DB without also clearing the tofu state
 triggers `Unable to read … not found with id N` failures on the next plan. State lives
-in the `tofu-state-db` CNPG cluster (one schema per `Terraform` CR). Recovery:
+in the `tofu-state-db-ovh` CNPG cluster (one schema per `Terraform` CR). Recovery:
 <docs/troubleshooting.md> § "Resource ID Desync After Wiping a Backing Datastore".
 
 ### DNS and website must survive OVH-only
 
 They must work without Proxmox: no Proxmox-pinned storage (`lvm-proxmox-*`,
-`local-path-proxmox`) and no Proxmox-pinned nodes. See <docs/plan.md> "OVH-Only Resilience
-Invariants".
+`local-path-proxmox`) and no Proxmox-pinned nodes. See <docs/decisions.md> "OVH-Only
+Resilience Invariants".
 
 ## Primary Directive: Declarative Turnkey Bootstrap
 
