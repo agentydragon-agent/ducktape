@@ -34,6 +34,7 @@ from haku.console.config import (
     NodeDaemonsConfig,
     Settings,
 )
+from haku.console.http_decide_config import EgressDecideConfig
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import ToolCallActor
 from haku.sandbox.config import SandboxEnvironmentConfig
@@ -400,6 +401,8 @@ class ConsoleConfigFile(BaseModel):
     # Standing Kubernetes policy is selected by the same deploy-managed access profile that owns
     # the Agent's other durable authority. Unset keeps the internal proxy endpoint fail-closed.
     kubernetes_authorization: KubernetesAuthorizationConfig | None = None
+    # The internal HTTP egress decide endpoint's credentials (#4670). Unset keeps it fail-closed.
+    egress_decide: EgressDecideConfig | None = None
     # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
     # remain useful client guidance, but these server-side settings are authoritative.
     kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)

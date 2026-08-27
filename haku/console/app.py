@@ -36,6 +36,7 @@ from haku.console import (
     capabilities,
     connection_metrics,
     console_events,
+    http_decide_routes,
     http_grant_routes,
     kube_proxy_authorization,
     kubernetes_grant_routes,
@@ -64,6 +65,8 @@ from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.http_decide_config import load_egress_decide
+from haku.console.http_decide_service import HttpDecideService
 from haku.console.http_grant_repository import PostgresHttpGrantRepository
 from haku.console.http_grant_service import HttpGrantService
 from haku.console.in_process_servers import (
@@ -539,6 +542,11 @@ def create_app(
         PostgresHttpGrantRepository(db_sessions),
         max_lifetime=datetime.timedelta(seconds=console_config.http_grant_max_lifetime_seconds),
     )
+    http_decide = (
+        HttpDecideService(grants=http_grants, credentials=load_egress_decide(console_config.egress_decide))
+        if console_config.egress_decide is not None
+        else None
+    )
     kubernetes_authorization = (
         KubernetesAuthorizationService(
             config=console_config.kubernetes_authorization,
@@ -800,6 +808,7 @@ def create_app(
     app.state.kubernetes_authorization = kubernetes_authorization
     app.state.kubernetes_grants = kubernetes_grants
     app.state.http_grants = http_grants
+    app.state.http_decide = http_decide
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -858,6 +867,9 @@ def create_app(
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
     # endpoint remains fail-closed unless standing SAR policy is configured.
     app.include_router(kube_proxy_authorization.router)
+    # Machine-to-machine decision contract for the colocated egress proxy (#4670): proxy-identity
+    # bearer plus body fence credential, fail-closed unless egress_decide config wires both.
+    app.include_router(http_decide_routes.router)
 
     @app.get("/api/deployment", dependencies=operator_only)
     async def deployment() -> DeploymentInfo:
