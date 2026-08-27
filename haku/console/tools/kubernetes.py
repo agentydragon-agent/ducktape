@@ -11,13 +11,7 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from haku.console.grant_principal import (
-    AgentGrantPrincipal,
-    GrantPrincipal,
-    GrantPrincipalKind,
-    RequestPrincipal,
-    SessionGrantPrincipal,
-)
+from haku.console.grant_principal import AgentGrantPrincipal, GrantPrincipal, GrantPrincipalKind, SessionGrantPrincipal
 from haku.console.kubernetes_authorization import (
     AuthorizationRequest,
     AuthorizationResponse,
@@ -29,7 +23,7 @@ from haku.console.kubernetes_authorization import (
 )
 from haku.console.kubernetes_grant_models import KubernetesGrant, KubernetesGrantScopeKind, KubernetesGrantSpec
 from haku.console.kubernetes_grant_service import KubernetesGrantService
-from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext, require_mcp_execution_context
+from haku.console.mcp_execution import McpExecutionContext, require_mcp_execution_context
 
 KUBERNETES_SERVER_ID = "kubernetes"
 _EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)
@@ -68,25 +62,6 @@ class KubernetesToolsService:
         self.grants = grants
         self.authorization = authorization
 
-    @staticmethod
-    def _caller(context: McpExecutionContext) -> AgentMcpExecutionCaller:
-        if not isinstance(context.caller, AgentMcpExecutionCaller):
-            raise PermissionError("Kubernetes grant operations require an Agent caller")
-        return context.caller
-
-    @classmethod
-    def _request_principal(cls, context: McpExecutionContext) -> RequestPrincipal:
-        return cls._caller(context).principal
-
-    @classmethod
-    def _grant_principal(cls, context: McpExecutionContext, applies_to: GrantPrincipalKind) -> GrantPrincipal:
-        principal = cls._request_principal(context)
-        if applies_to is GrantPrincipalKind.AGENT:
-            return AgentGrantPrincipal(agent_id=principal.agent_id)
-        if principal.session_id is None:
-            raise PermissionError("session-scoped Kubernetes grants require a live session-authenticated caller")
-        return SessionGrantPrincipal(session_id=principal.session_id)
-
     async def create_grants(
         self,
         *,
@@ -95,37 +70,35 @@ class KubernetesToolsService:
         duration_seconds: int,
         applies_to: GrantPrincipalKind = GrantPrincipalKind.AGENT,
     ) -> tuple[KubernetesGrant, ...]:
-        principal = self._request_principal(context)
+        principal = context.request_principal
         if context.tool_call_id is None:
             raise PermissionError("Kubernetes grant creation requires durable tool-call provenance")
         now = datetime.datetime.now(datetime.UTC)
         return await self.grants.create_grants(
             owner_agent_id=principal.agent_id,
-            grant_principal=self._grant_principal(context, applies_to),
+            grant_principal=_grant_principal(context, applies_to),
             source_tool_call_id=context.tool_call_id,
             grants=grants,
             expires_at=now + datetime.timedelta(seconds=duration_seconds),
         )
 
     async def list_grants(self, *, context: McpExecutionContext) -> tuple[KubernetesGrant, ...]:
-        return await self.grants.list_applicable_grants(request_principal=self._request_principal(context))
+        return await self.grants.list_applicable_grants(request_principal=context.request_principal)
 
     async def get_grant(self, *, context: McpExecutionContext, grant_id: UUID) -> KubernetesGrant:
-        return await self.grants.get_applicable_grant(
-            request_principal=self._request_principal(context), grant_id=grant_id
-        )
+        return await self.grants.get_applicable_grant(request_principal=context.request_principal, grant_id=grant_id)
 
     async def release_grants(
         self, *, context: McpExecutionContext, grant_ids: list[UUID], reason: str = "released"
     ) -> tuple[KubernetesGrant, ...]:
         return await self.grants.release_applicable_grants(
-            request_principal=self._request_principal(context), grant_ids=grant_ids, reason=reason
+            request_principal=context.request_principal, grant_ids=grant_ids, reason=reason
         )
 
     async def can_i(self, *, context: McpExecutionContext, requests: list[KubernetesAccessCheck]) -> list[CanIResult]:
         tasks = [
             self.authorization.authorize_agent(
-                request_principal=self._request_principal(context),
+                request_principal=context.request_principal,
                 request=AuthorizationRequest(
                     attributes=request.attributes,
                     required_scope=required_scope(
@@ -138,6 +111,15 @@ class KubernetesToolsService:
         ]
         decisions = await asyncio.gather(*tasks)
         return [_can_i_result(decision) for decision in decisions]
+
+
+def _grant_principal(context: McpExecutionContext, applies_to: GrantPrincipalKind) -> GrantPrincipal:
+    principal = context.request_principal
+    if applies_to is GrantPrincipalKind.AGENT:
+        return AgentGrantPrincipal(agent_id=principal.agent_id)
+    if principal.session_id is None:
+        raise PermissionError("session-scoped Kubernetes grants require a live session-authenticated caller")
+    return SessionGrantPrincipal(session_id=principal.session_id)
 
 
 def _can_i_result(decision: AuthorizationResponse) -> CanIResult:

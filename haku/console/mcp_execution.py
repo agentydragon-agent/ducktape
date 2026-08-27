@@ -53,6 +53,20 @@ class McpExecutionContext(BaseModel):
     approving_operator_id: UUID | None
     approval_policy_id: str | None
 
+    @property
+    def request_principal(self) -> RequestPrincipal:
+        """The trusted Agent principal this execution acts as.
+
+        Operator-direct execution carries no Agent principal, so for it this access is the
+        permission failure itself, not an absent value: a tool serving only Agents reads the
+        property and lets the error propagate, while a tool that also serves Operator-direct
+        execution dispatches on ``caller``.
+        """
+
+        if not isinstance(self.caller, AgentMcpExecutionCaller):
+            raise PermissionError("an Agent caller is required")
+        return self.caller.principal
+
 
 def mcp_execution_request_meta(context: McpExecutionContext) -> dict[str, object]:
     """Serialize trusted execution identity into the reserved MCP request metadata field."""
