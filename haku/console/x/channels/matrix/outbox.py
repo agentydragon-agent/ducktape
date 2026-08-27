@@ -14,6 +14,17 @@ minutes later.
 **One drainer.** The pacer runs on every replica (the turn loop speaks from whichever holds the
 session's lease), but two drains would reorder replies against each other, so this contends for an
 advisory lock the way the sync loop and the neutral runtime reconciler do.
+
+**The enqueue's own transaction wakes the drain, on the channel's own wire** (<outbox_wake.py>),
+because nothing earlier can: the conversation wake that made the enqueueing subscriber read has
+already fired by the time the row exists — possibly on another replica, since the notices and
+outbox elections are separate locks — so a drain woken by that wake would look before the row was
+there and sleep past it. Emitting inside the insert's transaction closes the race exactly:
+`pg_notify` delivers on commit, so the wake the drain acts on cannot precede the row it announces.
+The wire is the channel's own because the fact is: an outbox row is this channel's delivery state,
+not a conversation development, so its wake has no business on the conversation channel. Delivery
+stays at-most-once however the listener fares, and a row's send backoff expires by clock, which no
+wake announces — both are what `WAKE_BACKSTOP` is for.
 """
 
 from __future__ import annotations
@@ -30,11 +41,13 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from tenacity import RetryCallState, Retrying, wait_exponential
 
 from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.database_schema import ConversationItem, MatrixOutbox
 from haku.console.x.channels.matrix.client import EventTag, RoomEventKind
 from haku.console.x.channels.matrix.conversation import live_attachment
+from haku.console.x.channels.matrix.outbox_wake import OutboxWakes, notify_outbox
 from haku.console.x.channels.matrix.pacer import MAX_QUEUED_SENDS, SENDS_PER_SECOND, RoomPacer
 
 logger = logging.getLogger(__name__)
@@ -47,16 +60,18 @@ _OUTBOX_ADVISORY_LOCK = 0x4D58_4F42  # "MXOB"
 # Deliberately not a delete — a reply nobody could say is still somewhere an operator can find it.
 MAX_SEND_ATTEMPTS = 8
 
-# The first wait after a failed attempt, doubling to `MAX_RETRY_BACKOFF`. The whole budget —
-# roughly ten minutes across `MAX_SEND_ATTEMPTS` — stays inside the 30-to-60 minutes Synapse keeps a
-# transaction id for (<../../../docs/chat_runtime_facts.md>); past that window a redrive stops being
-# deduplicated and starts being a second message.
-FIRST_RETRY_BACKOFF = datetime.timedelta(seconds=5)
-MAX_RETRY_BACKOFF = datetime.timedelta(seconds=300)
+# The retry curve for a refused reply: five seconds after the first failure, doubling to five
+# minutes. The whole budget — roughly ten minutes across `MAX_SEND_ATTEMPTS` — stays inside the
+# 30-to-60 minutes Synapse keeps a transaction id for (<../../../docs/chat_runtime_facts.md>); past
+# that window a redrive stops being deduplicated and starts being a second message.
+_RETRY_CURVE = wait_exponential(multiplier=5, max=datetime.timedelta(seconds=300))
 
-# How long the drain waits before looking again when it found nothing. The room's own rate is one
-# send per five seconds, so polling faster than this would buy latency nothing else can spend.
-IDLE_POLL = datetime.timedelta(seconds=1)
+# The backstop behind the wake, for what no notification reaches us with: delivery is at-most-once
+# however the listener fares, and a row waiting out its send backoff comes due by clock, which no
+# wake announces. Matches the notices reader's own backstop; relying on it costs a retry landing up
+# to this much after its backoff, still far inside the transaction-id window the retry budget is
+# sized against.
+WAKE_BACKSTOP = datetime.timedelta(seconds=10)
 
 # How long a replica that lost the election waits before contending again. Shorter than the sync
 # loop's, because what waits out this interval after a roll is an answer the operator is looking
@@ -110,8 +125,16 @@ def _pending(row: MatrixOutbox, *, room_id: str) -> PendingReply:
 
 
 def _backoff(attempts: int) -> datetime.timedelta:
-    doublings: int = 2 ** max(attempts - 1, 0)
-    return min(FIRST_RETRY_BACKOFF * doublings, MAX_RETRY_BACKOFF)
+    """Backoff before the retry that follows the ``attempts``-th spent attempt.
+
+    Tenacity is the wait calculator only (the `oauth_token_state._refresh_retry_delay` pattern): the
+    retry loop itself is the drain re-claiming the row across processes and restarts, so the row's
+    `next_attempt_at` carries the schedule between them and a minimal `RetryCallState` stands in
+    for the live loop tenacity would otherwise drive.
+    """
+    retry_state = RetryCallState(retry_object=Retrying(), fn=None, args=(), kwargs={})
+    retry_state.attempt_number = attempts
+    return datetime.timedelta(seconds=_RETRY_CURVE(retry_state))
 
 
 class RoomOutbox:
@@ -144,6 +167,10 @@ class RoomOutbox:
 
         An item that finished with nothing in it is not a reply: a turn that only ran tools said
         nothing, and an empty room event would be the console reporting that as an answer.
+
+        **A row this call created wakes the drain, from this same transaction** — see the module
+        docstring for why nothing earlier can. A conflict wakes nobody: the enqueue that inserted
+        the row already did.
         """
         now = datetime.datetime.now(datetime.UTC)
         async with self._sessions() as db, db.begin():
@@ -168,7 +195,10 @@ class RoomOutbox:
                 # conflict returns nothing, which is the answer rather than an error.
                 .returning(MatrixOutbox.outbox_id)
             )
-            return queued is not None
+            if queued is None:
+                return False
+            await notify_outbox(db)
+            return True
 
     async def claim_next(self, room_id: str) -> PendingReply | None:
         """Take this room's oldest live reply if it is due, counting the attempt as spent.
@@ -249,14 +279,32 @@ BoundRoom = Callable[[], Awaitable[str | None]]
 
 
 class RoomOutboxDrain:
-    """Turns rows back into room events, at the pace the room will take them."""
+    """Turns rows back into room events, at the pace the room will take them.
 
-    def __init__(self, engine: AsyncEngine, outbox: RoomOutbox, pacer: RoomPacer, post: PostReply, room: BoundRoom):
+    Woken over the channel's own wire (`OutboxWakes`): the enqueue's own transaction emits the
+    wake, so the wake this drain acts on cannot precede the row it announces, and `WAKE_BACKSTOP`
+    covers a wake the listener never saw and a retry coming due by clock.
+    """
+
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        outbox: RoomOutbox,
+        pacer: RoomPacer,
+        post: PostReply,
+        room: BoundRoom,
+        wakes: OutboxWakes,
+        *,
+        backstop: datetime.timedelta = WAKE_BACKSTOP,
+    ):
         self._engine = engine
         self._outbox = outbox
         self._pacer = pacer
         self._post = post
         self._room = room
+        self._wakes = wakes
+        self._backstop = backstop
+        self._changed = asyncio.Event()
 
     async def drain_once(self) -> bool:
         """Say the next reply the bound room is owed. False when there was nothing to say."""
@@ -287,8 +335,14 @@ class RoomOutboxDrain:
         """Drain until cancelled. Only ever entered holding the advisory lock."""
         while True:
             try:
-                if not await self.drain_once():
-                    await asyncio.sleep(IDLE_POLL.total_seconds())
+                # Cleared before the pass, so an enqueue committed while it runs wakes the next
+                # one instead of being cleared away after it was already missed.
+                self._changed.clear()
+                if await self.drain_once():
+                    continue
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(self._backstop.total_seconds()):
+                        await self._changed.wait()
             except Exception:
                 logger.exception("Matrix: draining the room outbox failed")
                 await asyncio.sleep(ERROR_BACKOFF.total_seconds())
@@ -313,10 +367,18 @@ class RoomOutboxDrain:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
-        task = asyncio.create_task(self._run(), name="matrix-room-outbox")
+        """Hold the drain and the wake wire it listens on; the drain owns its wire's lifecycle."""
+        await self._wakes.start()
         try:
-            yield
+            # A wake carries nothing to inspect — which room the drain owes work for is resolved
+            # from the binding inside `drain_once` — so the registration is the event itself.
+            with self._wakes.watch(self._changed.set):
+                task = asyncio.create_task(self._run(), name="matrix-room-outbox")
+                try:
+                    yield
+                finally:
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
         finally:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+            await self._wakes.aclose()

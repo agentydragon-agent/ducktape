@@ -7,13 +7,16 @@ fake store would be asserting the fake.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
 import pytest_bazel
 from more_itertools import one
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import SPA_ORIGIN, ItemStatus, ItemType
@@ -22,6 +25,7 @@ from haku.console.x.channels.matrix.client import MatrixError
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingReply, RoomOutbox, RoomOutboxDrain
+from haku.console.x.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.session_store import BridgeAuthentication, SessionStore
@@ -69,6 +73,8 @@ class _Homeserver:
     def __init__(self, *, refuses: set[str] | None = None) -> None:
         self.posted: list[str] = []
         self.transactions: list[str] = []
+        self.said = asyncio.Event()
+        """Set on each accepted post, for a test that waits on the running drain's outcome."""
         self._refuses = refuses or set()
 
     async def post(self, reply: PendingReply) -> str:
@@ -76,6 +82,7 @@ class _Homeserver:
         if reply.body in self._refuses:
             raise MatrixError("429: slow down")
         self.posted.append(reply.body)
+        self.said.set()
         return f"$event-{len(self.posted)}"
 
     def accepts_everything(self) -> None:
@@ -85,10 +92,23 @@ class _Homeserver:
 def _unpaced(engine: AsyncEngine, outbox: RoomOutbox, homeserver: _Homeserver) -> tuple[RoomPacer, RoomOutboxDrain]:
     """A drain over a pacer with effectively no rate, so a test waits on outcomes not on tokens.
 
-    The rate itself is `pacer`'s and is asserted there.
+    The rate itself is `pacer`'s and is asserted there. The wake wire is stood out: these tests
+    drive `drain_once` directly, and the wire's lifecycle lives in `run()`, which only
+    `test_an_enqueue_wakes_the_running_drain` enters — with a real listener.
     """
     pacer = RoomPacer(sends_per_second=1e6, burst=100)
-    return pacer, RoomOutboxDrain(engine, outbox, pacer, homeserver.post, _room)
+    return pacer, RoomOutboxDrain(engine, outbox, pacer, homeserver.post, _room, cast(Any, None))
+
+
+@pytest.fixture
+async def outbox_wakes(migrated_db_url: str) -> AsyncIterator[OutboxWakes]:
+    """A real listener on the outbox wire — the plumbing is the thing under test."""
+    wire = OutboxWakes(migrated_db_url)
+    await wire.start()
+    try:
+        yield wire
+    finally:
+        await wire.aclose()
 
 
 async def _rows(sessions: async_sessionmaker[AsyncSession]) -> list[MatrixOutbox]:
@@ -316,9 +336,96 @@ async def test_nothing_is_claimed_before_a_room_is_bound(migrated_engine, outbox
     async def unbound() -> str | None:
         return None
 
-    drain = RoomOutboxDrain(migrated_engine, outbox, RoomPacer(), _never_posted, unbound)
+    drain = RoomOutboxDrain(migrated_engine, outbox, RoomPacer(), _never_posted, unbound, cast(Any, None))
 
     assert not await drain.drain_once()
+
+
+async def test_an_enqueued_reply_wakes_the_outbox_wire(
+    chat_store, migrated_sessions, outbox_wakes, outbox, session_id, turn_id, attachment_id
+) -> None:
+    """The wake rides the enqueue's own transaction, so it cannot precede the row it announces.
+
+    Nothing earlier can wake the drain: the conversation wake that made the enqueueing subscriber
+    read had already fired before the row existed, possibly heard on another replica.
+    """
+    woken = asyncio.Event()
+
+    with outbox_wakes.watch(woken.set):
+        woken.clear()  # the registration-time state does not count; only the enqueue's wake does
+        await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+        async with asyncio.timeout(10):
+            await woken.wait()
+
+
+async def test_a_duplicate_enqueue_wakes_nobody(
+    chat_store, migrated_sessions, outbox_wakes, outbox, session_id, turn_id, attachment_id
+) -> None:
+    """The enqueue that inserted the row already woke the drain; a conflict announces nothing new."""
+    await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+    item_id = one(await _said(migrated_sessions, session_id))
+    woken = asyncio.Event()
+
+    with outbox_wakes.watch(woken.set):
+        woken.clear()
+        assert not await outbox.enqueue(attachment_id, item_id)
+        # Delivery is asynchronous, so an absence can only be established by waiting one out.
+        await asyncio.sleep(1)
+
+    assert not woken.is_set()
+
+
+async def test_a_reconnected_wire_wakes_its_registrations(migrated_sessions, outbox_wakes) -> None:
+    """Notifications committed during a listener gap are gone, so a re-established LISTEN wakes
+    everyone: "look at the table" is the only wake this wire has, and it is always correct."""
+    woken = asyncio.Event()
+
+    with outbox_wakes.watch(woken.set):
+        woken.clear()
+        async with migrated_sessions() as db:
+            await db.execute(
+                text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity"
+                    " WHERE pid <> pg_backend_pid() AND query LIKE 'LISTEN%matrix_outbox_wakes%'"
+                )
+            )
+        async with asyncio.timeout(30):
+            await woken.wait()
+
+
+async def test_an_enqueue_wakes_the_running_drain(
+    chat_store, migrated_sessions, migrated_engine, migrated_db_url: str, outbox, session_id, turn_id, attachment_id
+) -> None:
+    """End to end off the wake alone: the backstop here is minutes, so a drain that still needed
+    its poll to find work would time this test out rather than say the reply."""
+    homeserver = _Homeserver()
+    pacer = RoomPacer(sends_per_second=1e6, burst=100)
+    first_pass = asyncio.Event()
+
+    async def room() -> str | None:
+        first_pass.set()
+        return MATRIX_ROOM
+
+    # The drain's own wire, not the fixture's: `run()` owns its start and close.
+    drain = RoomOutboxDrain(
+        migrated_engine,
+        outbox,
+        pacer,
+        homeserver.post,
+        room,
+        OutboxWakes(migrated_db_url),
+        backstop=timedelta(minutes=5),
+    )
+    async with pacer.run(), drain.run():
+        async with asyncio.timeout(30):
+            await first_pass.wait()
+            # Committed only now, so in the common interleaving the drain is already parked in its
+            # wake wait; an enqueue landing mid-pass instead is what the drain's clear-before-pass
+            # ordering covers, and either way only the wake can deliver it inside this timeout.
+            await _enqueue(chat_store, migrated_sessions, outbox, attachment_id, session_id, turn_id, "the answer")
+            await homeserver.said.wait()
+
+    assert homeserver.posted == ["the answer"]
 
 
 async def _room() -> str | None:
