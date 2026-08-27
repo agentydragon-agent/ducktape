@@ -331,6 +331,17 @@ def create_app(
         if settings.runner_kubernetes_proxy_url is None
         else {KUBERNETES_PROXY_URL_ENV: settings.runner_kubernetes_proxy_url}
     )
+    # Prompts belong to launchable Agents: each runtime registration loads its Agent's identity
+    # template, whose own `{% include %}` pulls in the shared attached-chat fragment. Rendered here
+    # at startup for every launchable Agent, so a broken include or name prevents readiness rather
+    # than failing the first attached chat session hours later.
+    launchable_by_id = {entry.agent_id: entry for entry in console_config.launchable_agents}
+
+    def agent_system_prompt(agent_id: UUID) -> SystemPromptTemplate:
+        template = SystemPromptTemplate.from_path(launchable_by_id[agent_id].system_prompt_template)
+        template.verify_renders()
+        return template
+
     if claude_runtime is not None:
         try:
             claude_profile_id = static_by_id[claude_runtime.agent_id].access_profile_id
@@ -348,9 +359,7 @@ def create_app(
                         runner_environment={},
                     )
                 ),
-                # Parsed at construction, so a broken deploy template prevents readiness rather than
-                # failing the first attached chat session hours later.
-                system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
+                system_prompt=agent_system_prompt(claude_runtime.agent_id),
                 access_profile_id=claude_profile_id,
                 execution_environment={
                     **runner_environment,
@@ -379,7 +388,7 @@ def create_app(
                         runner_environment={},
                     )
                 ),
-                system_prompt=SystemPromptTemplate.from_path(codex_runtime.system_prompt_template),
+                system_prompt=agent_system_prompt(codex_runtime.agent_id),
                 access_profile_id=codex_profile_id,
                 # The public-coder SandboxTemplate already owns the explicit empty-workspace
                 # setup policy. Registration contributes only Console-selected shared topology.

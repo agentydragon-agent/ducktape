@@ -331,6 +331,12 @@ class LaunchableAgent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     agent_id: UUID
+    system_prompt_template: Path = Field(
+        description="This Agent's identity template. Prompts belong to Agents, not runtimes: a "
+        "runtime is how a session executes, while who the session is speaking as is the launched "
+        "Agent's. Templates may `{% include %}` siblings from their own directory — the shared "
+        "attached-chat fragment rides in that way rather than through a config key."
+    )
 
 
 class StaticAgentEntry(BaseModel):

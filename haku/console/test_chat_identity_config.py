@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -27,7 +28,6 @@ def _runtime() -> dict[str, object]:
         "ca_bundle": "/ca.pem",
         "no_proxy": "localhost",
         "mcp_url": "https://console.example/mcp",
-        "system_prompt_template": "/prompt",
         "implementation": {"kind": "claude_code", "oauth_placeholder": "placeholder"},
     }
 
@@ -54,7 +54,7 @@ def _config(**overrides: object) -> dict[str, object]:
                 "access_profile_id": "chat",
             }
         ],
-        "launchable_agents": [{"agent_id": str(_AGENT)}],
+        "launchable_agents": [{"agent_id": str(_AGENT), "system_prompt_template": "/prompt"}],
         "default_chat_agent_id": str(_AGENT),
     }
     value.update(overrides)
@@ -64,6 +64,7 @@ def _config(**overrides: object) -> dict[str, object]:
 def test_launchable_agents_and_runtime_edges_are_deploy_config() -> None:
     config = ConsoleConfigFile.model_validate(_config())
     assert config.launchable_agents[0].agent_id == _AGENT
+    assert config.launchable_agents[0].system_prompt_template == Path("/prompt")
     assert config.access_profiles[0].allowed_chat_runtimes == {RuntimeKind.CLAUDE_CODE}
 
 
@@ -82,7 +83,11 @@ def test_profile_read_graph_rejects_cycles() -> None:
 def test_launchable_agent_must_be_a_configured_static_agent() -> None:
     with pytest.raises(ValidationError, match="not configured static Agents"):
         ConsoleConfigFile.model_validate(
-            _config(launchable_agents=[{"agent_id": "00000000-0000-0000-0000-000000000099"}])
+            _config(
+                launchable_agents=[
+                    {"agent_id": "00000000-0000-0000-0000-000000000099", "system_prompt_template": "/prompt"}
+                ]
+            )
         )
 
 
@@ -118,7 +123,10 @@ def test_launchable_agent_requires_its_own_runtime_registration() -> None:
                         "access_profile_id": "chat",
                     },
                 ],
-                launchable_agents=[{"agent_id": str(_AGENT)}, {"agent_id": str(second)}],
+                launchable_agents=[
+                    {"agent_id": str(_AGENT), "system_prompt_template": "/prompt"},
+                    {"agent_id": str(second), "system_prompt_template": "/second-prompt"},
+                ],
             )
         )
 
