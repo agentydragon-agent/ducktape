@@ -74,6 +74,7 @@ from haku.console.tool_call_service import (
 from haku.console.tool_calls import (
     AgentToolCallCaller,
     ApprovalDecisionRequest,
+    ApprovalMode,
     OperatorToolCallCaller,
     SubmitToolCallRequest,
     ToolCallCaller,
@@ -129,7 +130,7 @@ class ToolMetadata(BaseModel):
         ),
     )
     output_schema: dict[str, Any] | None = None
-    approval_mode: Literal["passthrough", "approval_required"] | None = Field(
+    approval_mode: ApprovalMode | None = Field(
         default=None,
         description=(
             "Which payload shape `input_schema` is, for the caller this reflection was performed "
