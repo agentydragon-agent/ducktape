@@ -229,3 +229,83 @@ enforcement-inventory entry.
 server. The encrypted account PAT is reflected only into the `haku-console` namespace and injected
 only into this deployment; the inner Haku workload sees the proxied tool surface, never the PAT.
 The public Tana OAuth facade remains available for external MCP clients but is not on Haku's path.
+
+## Colocated egress proxy (#4942, #4670)
+
+The Console-authorized HTTP egress fence's proxy runs as the `egress-proxy` **sidecar** in this
+Deployment (embedded mitmproxy adapter `haku/egress`, image `ghcr.io/agentydragon/haku-egress-proxy`),
+gating every fenced-workload request against Console's decision endpoint. Colocation is #4670's ruled
+topology; two guarantees are structural:
+
+- **The oracle is loopback-bound (acceptance criterion 14).** `POST /api/internal/http/decide` serves
+  on `127.0.0.1:8079` (`app._serve` / `build_internal_decide_app`), **not** on the network app
+  `create_app` builds. No Service targets `:8079`, so only the in-pod sidecar reaches it over loopback
+  — no sandbox has a route. This is load-bearing: the force-proxy CCNP admits `toEntities: cluster`, so
+  a sandbox _can_ reach this pod's Service; the loopback bind, **not** a NetworkPolicy, is what keeps
+  the oracle unreachable. The proxy-identity bearer authenticates every call (defense in depth).
+- **Proxy and Console roll as one release unit.** One image commit ships both, so the decide call is an
+  internal same-release contract needing no versioning. A Console roll severs in-flight tunnels — the
+  accepted trade for not running a separately-versioned, separately-fenced proxy Deployment.
+
+The fenced-workload-facing listener is `:8888` (`egress-proxy-service.yaml`,
+`haku-egress-proxy.haku-console.svc`).
+
+### Secret wiring
+
+`config.yaml`'s `egress_decide` section names env vars the server resolves at startup
+(`load_egress_decide`); absent, the endpoint stays `503` and the proxy fails closed.
+
+- **`haku-egress-proxy-identity`** (`haku-egress-proxy-identity-eso.yaml`, two ESO Password generators
+  into one Secret) — `proxy-token` and `fence-credential-haku`, opaque bearers **shared** by server and
+  sidecar (the sidecar presents them; the server authenticates the first and resolves the second to the
+  `haku` Agent). Both are compared in-memory and registered nowhere DB-side, so ESO regenerating them is
+  safe — the Secret's Reloader annotation restarts the pod so both containers reload together. Generated
+  once (`refreshInterval: 8760h`); the two keys must differ (`load_egress_decide` rejects equal identity
+  secrets), hence one generator each.
+- **`haku-egress-github-token`** (ESO) — the `github-bot` registry credential (#4951). The Console holds
+  the real value and substitutes it into decide responses; the sandbox only ever holds
+  `github-token-placeholder`. Synced from the same `github-token` remote the retiring iron fence reads,
+  via the claude-sandbox ClusterSecretStore (now admitting `haku-console`). Optional: an unset value is
+  skipped with a warning (#4970), so a not-yet-synced Secret degrades the `github-bot` handle rather
+  than crash-looping — the endpoint still serves reachability verdicts.
+- **Shared interception CA** — the sidecar reuses `haku-egress-proxy-ca` (reflected into this
+  namespace); an init container assembles it into `confdir/mitmproxy-ca.pem` so fenced sandboxes trust
+  its leaves. A missing reflected Secret fails the init container and the pod never starts.
+
+### The Cilium ceiling — ruled Option A
+
+The sidecar shares the _trusted_ Console pod's netns, and Console needs broad cluster-internal egress,
+so #4670's "public-only, deny private/cluster" network ceiling can't apply to this pod without breaking
+it. The operator ruled **A — app-layer boundary**: no restrictive egress CCNP on the Console pod; the
+destination boundary is the decide service's resolved-address-class validation (#4954
+`_prohibited_address_class` + `egress_decide.prohibited_cidrs`), which rejects
+loopback/link-local/multicast/private/RFC1918/ULA/configured-CIDR answers _before_ consulting grants. So
+under colocation the app layer, not Cilium, denies private/cluster/metadata.
+
+Recorded rejected alternatives: **B** (separate proxy Deployment with its own tight network ceiling)
+reintroduces exactly what the ruling rejected — endpoint auth, an oracle NetworkPolicy, a versioned
+contract — kept only as the fallback if data-plane load dominates. **C** (colocation plus an enumerated
+Console egress CCNP) is the "true" ceiling but flips the trusted pod to default-deny egress and must
+enumerate every Console destination; deferred until that set is pinned.
+
+### Adoption, rollout, recovery
+
+- **Repointed:** the force-proxy CCNP (`ccnp-haku-proxy-egress.yaml`) names the colocated listener, so
+  fenced sandboxes can _reach_ `haku-console:8888`.
+- **Rollout:** `push-images` builds `haku-egress-proxy` on the first `devel` merge; its ImagePolicy
+  rewrites the placeholder tag. The Console rolls with the sidecar under `maxUnavailable: 0`.
+- **Recovery:** the fence is fail-closed by construction — any decision-path error (server
+  `503`/unreachable, timeout, malformed response, denied destination, address-class rejection) makes the
+  proxy refuse, never forward. Recover by fixing the server (its logs show a `load_egress_decide` error
+  or `HttpDecideUnavailableError`; the sidecar logs per-request `deny …: <reason>`, values never
+  logged), not by bypassing it. A full-fidelity audit stream is a separate #4670 item.
+
+### Deferred
+
+The traffic **cutover** — repointing the Kyverno `inject-haku-egress-proxy` `HTTP_PROXY` from the
+port-8080 iron fence to `haku-egress-proxy.haku-console.svc:8888` — is the adoption step, gated on the
+first spike (#4943). Iron-fence retirement (which carries the shared CA out of
+`cluster/k8s/agents/haku-egress-proxy/`), minted per-claim fence credentials (one shared bearer today),
+and the embedded runner's `stream_large_bodies` + h2/gRPC handling for broad adoption (dind layer pulls
+OOM-killed the iron fence without the former; the sidecar is sized `1Gi` for the small-body spike until
+then) are #4670 work items, not this PR.
