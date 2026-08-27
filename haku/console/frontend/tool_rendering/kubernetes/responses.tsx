@@ -44,7 +44,7 @@ function Timestamp({ label, value }: { label: string; value: string }) {
   );
 }
 
-function principalText(principal: KubernetesGrant["principal"]): string {
+export function principalText(principal: KubernetesGrant["principal"]): string {
   switch (principal.kind) {
     case "agent":
       return `Agent ${principal.agent_id}`;

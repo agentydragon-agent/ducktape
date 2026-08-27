@@ -24,6 +24,7 @@ import { formatTimestamp } from "./approval_state";
 import { ExternalLink } from "./link";
 import { toolCallPath } from "./routing";
 import { toastError, toastSuccess } from "./toast";
+import { principalText } from "./tool_rendering/kubernetes/responses";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
 
@@ -51,15 +52,6 @@ function scopeLabel(scope: OperatorKubernetesGrant["grant"]["scope"]): string {
       return "Cluster-scoped resources";
     case "non_resource":
       return "Kubernetes non-resource URLs";
-  }
-}
-
-function principalLabel(principal: OperatorKubernetesGrant["grant"]["principal"]): string {
-  switch (principal.kind) {
-    case "agent":
-      return "Applies to every authenticated execution of this Agent";
-    case "session":
-      return `Applies only to session ${principal.session_id}`;
   }
 }
 
@@ -102,7 +94,7 @@ function GrantSetCard({ item, onRevoke }: { item: KubernetesGrantSet; onRevoke: 
             {item.grants.length} grant{item.grants.length === 1 ? "" : "s"} from one approval
           </Text>
           <Text size="xs" c="dimmed">
-            {principalLabel(first.grant.principal)}
+            Applies to {principalText(first.grant.principal)}
           </Text>
         </Stack>
         <Badge color={activeCount > 0 ? "teal" : "gray"} variant="light" style={{ flexShrink: 0 }}>
