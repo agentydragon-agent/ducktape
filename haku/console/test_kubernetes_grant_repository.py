@@ -209,7 +209,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
             assert grant.status is KubernetesGrantStatus.ACTIVE
             assert (await repository.get(owner_agent_id=agent_id, grant_id=grant.grant_id)) == grant
             assert await repository.active_for_request_principal(
-                request_principal=RequestPrincipal(agent_id=agent_id), now=_NOW
+                request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None), now=_NOW
             ) == (grant,)
 
             released = await repository.release(
@@ -221,7 +221,8 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
             assert released.status is KubernetesGrantStatus.RELEASED
             assert (
                 await repository.active_for_request_principal(
-                    request_principal=RequestPrincipal(agent_id=agent_id), now=_NOW
+                    request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None),
+                    now=_NOW,
                 )
                 == ()
             )
@@ -281,7 +282,8 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             assert (
                 len(
                     await repository.active_for_request_principal(
-                        request_principal=RequestPrincipal(agent_id=agent_id), now=_NOW
+                        request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None),
+                        now=_NOW,
                     )
                 )
                 == 2
@@ -372,24 +374,29 @@ def test_repository_matches_agent_and_exact_session_principals(make_client: Any)
             )
 
             assert await repository.active_for_request_principal(
-                request_principal=RequestPrincipal(agent_id=agent_id), now=_NOW
+                request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None), now=_NOW
             ) == (agent_grant,)
             assert set(
                 await repository.active_for_request_principal(
-                    request_principal=RequestPrincipal(agent_id=agent_id, session_id=session_id), now=_NOW
+                    request_principal=RequestPrincipal(
+                        agent_id=agent_id, session_id=session_id, access_profile_id=None
+                    ),
+                    now=_NOW,
                 )
             ) == {agent_grant, session_grant}
             assert set(
                 await repository.list_for_request_principal(
-                    request_principal=RequestPrincipal(agent_id=agent_id, session_id=session_id)
+                    request_principal=RequestPrincipal(agent_id=agent_id, session_id=session_id, access_profile_id=None)
                 )
             ) == {agent_grant, session_grant}
             assert await repository.active_for_request_principal(
-                request_principal=RequestPrincipal(agent_id=agent_id, session_id=uuid4()), now=_NOW
+                request_principal=RequestPrincipal(agent_id=agent_id, session_id=uuid4(), access_profile_id=None),
+                now=_NOW,
             ) == (agent_grant,)
             assert (
                 await repository.active_for_request_principal(
-                    request_principal=RequestPrincipal(agent_id=uuid4(), session_id=session_id), now=_NOW
+                    request_principal=RequestPrincipal(agent_id=uuid4(), session_id=session_id, access_profile_id=None),
+                    now=_NOW,
                 )
                 == ()
             )

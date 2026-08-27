@@ -76,16 +76,16 @@ class KubernetesToolsService:
 
     @classmethod
     def _request_principal(cls, context: McpExecutionContext) -> RequestPrincipal:
-        return RequestPrincipal.from_source(cls._caller(context))
+        return cls._caller(context).principal
 
     @classmethod
     def _grant_principal(cls, context: McpExecutionContext, applies_to: GrantPrincipalKind) -> GrantPrincipal:
-        caller = cls._caller(context)
+        principal = cls._request_principal(context)
         if applies_to is GrantPrincipalKind.AGENT:
-            return AgentGrantPrincipal(agent_id=caller.agent_id)
-        if caller.session_id is None:
+            return AgentGrantPrincipal(agent_id=principal.agent_id)
+        if principal.session_id is None:
             raise PermissionError("session-scoped Kubernetes grants require a live session-authenticated caller")
-        return SessionGrantPrincipal(session_id=caller.session_id)
+        return SessionGrantPrincipal(session_id=principal.session_id)
 
     async def create_grants(
         self,
@@ -95,12 +95,12 @@ class KubernetesToolsService:
         duration_seconds: int,
         applies_to: GrantPrincipalKind = GrantPrincipalKind.AGENT,
     ) -> tuple[KubernetesGrant, ...]:
-        caller = self._caller(context)
+        principal = self._request_principal(context)
         if context.tool_call_id is None:
             raise PermissionError("Kubernetes grant creation requires durable tool-call provenance")
         now = datetime.datetime.now(datetime.UTC)
         return await self.grants.create_grants(
-            owner_agent_id=caller.agent_id,
+            owner_agent_id=principal.agent_id,
             grant_principal=self._grant_principal(context, applies_to),
             source_tool_call_id=context.tool_call_id,
             grants=grants,

@@ -339,7 +339,7 @@ async def test_active_grant_is_consulted_only_after_clean_sar_denial() -> None:
     grants.match_request.assert_awaited_once()
     kwargs = grants.match_request.await_args.kwargs
     assert kwargs["request_principal"] == RequestPrincipal(
-        agent_id=_agent().agent_id, access_profile_id="public-diagnostics"
+        agent_id=_agent().agent_id, session_id=None, access_profile_id="public-diagnostics"
     )
     assert kwargs["required_scope"].kind is KubernetesGrantScopeKind.NAMESPACES
     assert kwargs["required_scope"].namespaces == {"demo"}

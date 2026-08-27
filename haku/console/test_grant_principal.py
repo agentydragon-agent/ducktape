@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from uuid import UUID
 
 import pytest
@@ -17,6 +16,7 @@ from haku.console.grant_principal import (
     SessionGrantPrincipal,
     grant_principal_applies_to,
 )
+from haku.console.tool_call_actor import AgentActor
 
 AGENT_A = UUID("00000000-0000-4000-8000-000000000001")
 AGENT_B = UUID("00000000-0000-4000-8000-000000000002")
@@ -66,19 +66,18 @@ def test_grant_and_request_principals_are_immutable_and_reject_untrusted_fields(
     with pytest.raises(ValidationError, match="operator_id"):
         RequestPrincipal.model_validate({"agent_id": str(AGENT_A), "operator_id": str(AGENT_B)})
     with pytest.raises(ValidationError, match="access_profile_id"):
-        RequestPrincipal(agent_id=AGENT_A, access_profile_id=" Public Coder ")
+        RequestPrincipal(agent_id=AGENT_A, access_profile_id=" Public Coder ", session_id=None)
 
 
-@dataclass(frozen=True)
-class _Source:
-    agent_id: UUID
-    session_id: UUID | None
-    access_profile_id: str | None
-
-
-def test_request_principal_projects_trusted_agent_sources_once() -> None:
-    source = _Source(agent_id=AGENT_A, session_id=SESSION_A, access_profile_id="public-coder")
-    assert RequestPrincipal.from_source(source) == RequestPrincipal(
+def test_request_principal_projects_the_authenticated_actor_and_drops_its_other_identity() -> None:
+    actor = AgentActor(
+        agent_id=AGENT_A,
+        operator_id=UUID(int=7),
+        binding_id=UUID(int=8),
+        access_profile_id="public-coder",
+        session_id=SESSION_A,
+    )
+    assert RequestPrincipal.from_source(actor) == RequestPrincipal(
         agent_id=AGENT_A, session_id=SESSION_A, access_profile_id="public-coder"
     )
 
@@ -86,17 +85,29 @@ def test_request_principal_projects_trusted_agent_sources_once() -> None:
 def test_agent_grant_principal_covers_every_authenticated_execution_of_that_agent() -> None:
     principal = AgentGrantPrincipal(agent_id=AGENT_A)
 
-    assert grant_principal_applies_to(principal, RequestPrincipal(agent_id=AGENT_A))
-    assert grant_principal_applies_to(principal, RequestPrincipal(agent_id=AGENT_A, session_id=SESSION_A))
-    assert not grant_principal_applies_to(principal, RequestPrincipal(agent_id=AGENT_B, session_id=SESSION_B))
+    assert grant_principal_applies_to(
+        principal, RequestPrincipal(agent_id=AGENT_A, session_id=None, access_profile_id=None)
+    )
+    assert grant_principal_applies_to(
+        principal, RequestPrincipal(agent_id=AGENT_A, session_id=SESSION_A, access_profile_id=None)
+    )
+    assert not grant_principal_applies_to(
+        principal, RequestPrincipal(agent_id=AGENT_B, session_id=SESSION_B, access_profile_id=None)
+    )
 
 
 def test_session_grant_principal_covers_only_the_exact_live_session_identity() -> None:
     principal = SessionGrantPrincipal(session_id=SESSION_A)
 
-    assert grant_principal_applies_to(principal, RequestPrincipal(agent_id=AGENT_A, session_id=SESSION_A))
-    assert not grant_principal_applies_to(principal, RequestPrincipal(agent_id=AGENT_A))
-    assert not grant_principal_applies_to(principal, RequestPrincipal(agent_id=AGENT_A, session_id=SESSION_B))
+    assert grant_principal_applies_to(
+        principal, RequestPrincipal(agent_id=AGENT_A, session_id=SESSION_A, access_profile_id=None)
+    )
+    assert not grant_principal_applies_to(
+        principal, RequestPrincipal(agent_id=AGENT_A, session_id=None, access_profile_id=None)
+    )
+    assert not grant_principal_applies_to(
+        principal, RequestPrincipal(agent_id=AGENT_A, session_id=SESSION_B, access_profile_id=None)
+    )
 
 
 if __name__ == "__main__":

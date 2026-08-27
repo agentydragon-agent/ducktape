@@ -155,14 +155,14 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
     assert grant.principal == _GRANT_PRINCIPAL
     assert (
         await service.match_request(
-            request_principal=RequestPrincipal(agent_id=_AGENT),
+            request_principal=RequestPrincipal(agent_id=_AGENT, session_id=None, access_profile_id=None),
             required_scope=_DEFAULT_SCOPE,
             required_rules=(_rule(),),
         )
     ).allowed
     assert not (
         await service.match_request(
-            request_principal=RequestPrincipal(agent_id=_OTHER_AGENT),
+            request_principal=RequestPrincipal(agent_id=_OTHER_AGENT, session_id=None, access_profile_id=None),
             required_scope=_DEFAULT_SCOPE,
             required_rules=(_rule(),),
         )
@@ -192,7 +192,7 @@ async def test_principal_lifecycle_inherits_agent_grants_without_crossing_sessio
         expires_at=_NOW + timedelta(minutes=5),
     )
 
-    request_principal_a = RequestPrincipal(agent_id=_AGENT, session_id=session_a)
+    request_principal_a = RequestPrincipal(agent_id=_AGENT, session_id=session_a, access_profile_id=None)
     assert set(await service.list_applicable_grants(request_principal=request_principal_a)) == {
         agent_grant,
         session_grant,
@@ -202,7 +202,7 @@ async def test_principal_lifecycle_inherits_agent_grants_without_crossing_sessio
         == session_grant
     )
 
-    request_principal_b = RequestPrincipal(agent_id=_AGENT, session_id=session_b)
+    request_principal_b = RequestPrincipal(agent_id=_AGENT, session_id=session_b, access_profile_id=None)
     assert await service.list_applicable_grants(request_principal=request_principal_b) == (agent_grant,)
     with pytest.raises(KubernetesGrantNotFoundError):
         await service.get_applicable_grant(request_principal=request_principal_b, grant_id=session_grant.grant_id)
@@ -377,7 +377,7 @@ async def test_match_ignores_expired_rows_without_writing() -> None:
 
     assert not (
         await service.match_request(
-            request_principal=RequestPrincipal(agent_id=_AGENT),
+            request_principal=RequestPrincipal(agent_id=_AGENT, session_id=None, access_profile_id=None),
             required_scope=_DEFAULT_SCOPE,
             required_rules=(_rule(),),
         )
@@ -438,7 +438,9 @@ async def test_match_returns_the_earliest_expiration_bound() -> None:
     )
 
     decision = await service.match_request(
-        request_principal=RequestPrincipal(agent_id=_AGENT), required_scope=_DEFAULT_SCOPE, required_rules=(_rule(),)
+        request_principal=RequestPrincipal(agent_id=_AGENT, session_id=None, access_profile_id=None),
+        required_scope=_DEFAULT_SCOPE,
+        required_rules=(_rule(),),
     )
 
     assert decision.allowed

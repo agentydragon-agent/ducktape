@@ -34,7 +34,6 @@ from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesTools
 
 _AGENT = UUID("10000000-0000-4000-8000-000000000001")
 _GRANT = UUID("20000000-0000-4000-8000-000000000002")
-_BINDING = UUID("30000000-0000-4000-8000-000000000003")
 _SESSION = UUID("40000000-0000-4000-8000-000000000004")
 _NOW = datetime(2026, 8, 20, tzinfo=UTC)
 _SCOPE = KubernetesNamespacesGrantScope(namespaces=("demo",))
@@ -54,14 +53,21 @@ _REQUEST_PRINCIPAL = RequestPrincipal(agent_id=_AGENT, session_id=_SESSION, acce
 def _agent_context(*, session_id: UUID | None = _SESSION) -> McpExecutionContext:
     return McpExecutionContext(
         caller=AgentMcpExecutionCaller(
-            agent_id=_AGENT, credential_binding_id=_BINDING, access_profile_id="public-coder", session_id=session_id
+            principal=RequestPrincipal(agent_id=_AGENT, session_id=session_id, access_profile_id="public-coder")
         ),
         tool_call_id="tc_create_grant",
+        approving_operator_id=None,
+        approval_policy_id=None,
     )
 
 
 def _operator_context() -> McpExecutionContext:
-    return McpExecutionContext(caller=OperatorMcpExecutionCaller(operator_id=UUID(int=9)), tool_call_id="tc_operator")
+    return McpExecutionContext(
+        caller=OperatorMcpExecutionCaller(operator_id=UUID(int=9)),
+        tool_call_id="tc_operator",
+        approving_operator_id=None,
+        approval_policy_id=None,
+    )
 
 
 @pytest.fixture

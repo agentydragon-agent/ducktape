@@ -106,6 +106,7 @@ py_test(
     deps = [
         ":recall_index",
         "//:conftest",
+        "//haku/console:grant_principal",
         "//haku/console:mcp_config",
         "//haku/console:mcp_execution",
         "//haku/console:recall_index_access",
@@ -123,6 +124,7 @@ py_test(
     deps = [
         ":conversations",
         "//:conftest",
+        "//haku/console:grant_principal",
         "//haku/console:in_process_server_access",
         "//haku/console:mcp_config",
         "//haku/console:mcp_execution",

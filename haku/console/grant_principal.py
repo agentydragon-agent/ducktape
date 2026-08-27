@@ -11,10 +11,12 @@ live session belongs to the named Agent; request payloads never select principal
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Literal, Protocol, assert_never
+from typing import Annotated, Literal, assert_never
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from haku.console.tool_call_actor import AgentActor
 
 type AccessProfileId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")]
 
@@ -49,17 +51,6 @@ class SessionGrantPrincipal(BaseModel):
 type GrantPrincipal = Annotated[AgentGrantPrincipal | SessionGrantPrincipal, Field(discriminator="kind")]
 
 
-class _RequestPrincipalSource(Protocol):
-    @property
-    def agent_id(self) -> UUID: ...
-
-    @property
-    def session_id(self) -> UUID | None: ...
-
-    @property
-    def access_profile_id(self) -> str | None: ...
-
-
 class RequestPrincipal(BaseModel):
     """Complete trusted authenticated identity attempting to exercise a grant or SAR.
 
@@ -71,12 +62,13 @@ class RequestPrincipal(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     agent_id: UUID
-    session_id: UUID | None = None
-    access_profile_id: AccessProfileId | None = None
+    session_id: UUID | None
+    access_profile_id: AccessProfileId | None
 
     @classmethod
-    def from_source(cls, source: _RequestPrincipalSource) -> RequestPrincipal:
-        """Project any trusted Agent caller into the shared request-principal vocabulary."""
+    def from_source(cls, source: AgentActor) -> RequestPrincipal:
+        """Project the bearer-authenticated Agent identity into the request-principal vocabulary,
+        dropping the operator and credential-binding identity that applicability must not read."""
 
         return cls(agent_id=source.agent_id, session_id=source.session_id, access_profile_id=source.access_profile_id)
 

@@ -15,6 +15,8 @@ from fastmcp import Context
 from fastmcp.dependencies import CurrentContext
 from pydantic import BaseModel, ConfigDict, Field
 
+from haku.console.grant_principal import RequestPrincipal
+
 _HAKU_EXECUTION_META_KEY = "haku_execution"
 _CURRENT_CONTEXT = CurrentContext()
 
@@ -23,16 +25,12 @@ class AgentMcpExecutionCaller(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal["agent"] = "agent"
-    agent_id: UUID
-    # Durable credential generation which authenticated the source ToolCall. Kept explicit so
-    # trusted in-process execution can preserve the same principal without caller arguments.
-    credential_binding_id: UUID
-    # Re-read from the durable Agent immediately before an approved call executes. ``None`` is
-    # the migration-safe, fail-closed value for profile-scoped in-process servers.
-    access_profile_id: str | None = None
-    # Exact live Console session when the ToolCall was submitted with a session bearer. Static
-    # credentials and migration-era rows omit it and therefore cannot mint/use session principals.
-    session_id: UUID | None = None
+    # The complete trusted request principal, embedded whole rather than as scattered id fields.
+    # Re-read from the durable Agent immediately before an approved call executes: the profile is
+    # the fail-closed value for profile-scoped in-process servers, and the exact session is present
+    # only when the ToolCall was submitted with a session bearer — static credentials omit it and
+    # therefore cannot mint or use session principals.
+    principal: RequestPrincipal
 
 
 class OperatorMcpExecutionCaller(BaseModel):
@@ -52,8 +50,8 @@ class McpExecutionContext(BaseModel):
 
     caller: McpExecutionCaller
     tool_call_id: str | None
-    approving_operator_id: UUID | None = None
-    approval_policy_id: str | None = None
+    approving_operator_id: UUID | None
+    approval_policy_id: str | None
 
 
 def mcp_execution_request_meta(context: McpExecutionContext) -> dict[str, object]:
