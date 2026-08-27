@@ -4,6 +4,12 @@ Existing grants remain Agent-principal grants. New relational principal columns 
 an Agent or one exact Console session while the source-provenance trigger validates
 Agent-facing creation against durable authenticated ToolCall state.
 
+Also indexes the conversation item read's keyset branches: `read_items` pages
+`conversation_item` and `conversation_turn` by the rows' defining stream positions — a tool
+call's `opened_seq`, a completed item's `closed_seq`, an ended turn's `last_seq` — and these
+partial indexes are what lets the planner serve each branch as a keyset walk rather than
+filtering or sorting the conversation's whole row set per page.
+
 Revision ID: 0097
 Revises: 0096
 """
@@ -210,9 +216,30 @@ def upgrade() -> None:
         ["principal_session_id", "status", "expires_at"],
     )
     _create_new_source_trigger()
+    op.create_index(
+        "idx_conversation_item_tool_call_opened",
+        "conversation_item",
+        ["conversation_id", "opened_seq"],
+        postgresql_where=sa.text("item_type = 'tool_call'"),
+    )
+    op.create_index(
+        "idx_conversation_item_completed",
+        "conversation_item",
+        ["conversation_id", "closed_seq"],
+        postgresql_where=sa.text("status = 'complete'"),
+    )
+    op.create_index(
+        "idx_conversation_turn_ended",
+        "conversation_turn",
+        ["conversation_id", "last_seq"],
+        postgresql_where=sa.text("last_seq IS NOT NULL"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("idx_conversation_turn_ended", table_name="conversation_turn")
+    op.drop_index("idx_conversation_item_completed", table_name="conversation_item")
+    op.drop_index("idx_conversation_item_tool_call_opened", table_name="conversation_item")
     op.execute(
         """
         DO $$
