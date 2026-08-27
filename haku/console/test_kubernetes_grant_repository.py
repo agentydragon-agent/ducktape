@@ -15,15 +15,8 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.agents.authorization import fingerprint_static_token
-from haku.console.database_schema import (
-    Agent,
-    CredentialBinding,
-    KubernetesGrantRow,
-    McpToolCall,
-    McpToolCallPrincipal,
-    StaticCredential,
-)
+from haku.console.conftest import default_agent_binding, insert_approved_tool_call, insert_live_session
+from haku.console.database_schema import KubernetesGrantRow
 from haku.console.grant_principal import (
     AgentGrantPrincipal,
     GrantPrincipalKind,
@@ -42,7 +35,6 @@ from haku.console.kubernetes_grant_models import (
     KubernetesRule,
 )
 from haku.console.kubernetes_grant_repository import PostgresKubernetesGrantRepository
-from haku.console.tool_calls import ToolCallStatus
 
 _NOW = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
 _RULE = KubernetesRule(api_groups=("",), resources=("pods",), verbs=("get",))
@@ -61,97 +53,6 @@ _RAW_GRANT_INSERT = text(
     )
     """
 )
-
-
-async def _default_agent(sessions: async_sessionmaker[AsyncSession]) -> tuple[UUID, UUID]:
-    async with sessions() as session:
-        result = await session.execute(
-            select(CredentialBinding.agent_id, CredentialBinding.binding_id)
-            .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
-            .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
-            .where(StaticCredential.credential_fingerprint == fingerprint_static_token("default-agent-token"))
-        )
-        return cast(tuple[UUID, UUID], result.one())
-
-
-async def _source_call(
-    sessions: async_sessionmaker[AsyncSession],
-    *,
-    binding_id: UUID,
-    server_id: str = "kubernetes",
-    tool_name: str = "create_grant",
-    approval_policy_id: str | None = None,
-    session_id: UUID | None = None,
-) -> str:
-    tool_call_id = f"tc_{uuid4().hex}"
-    async with sessions.begin() as session:
-        session.add(
-            McpToolCall(
-                tool_call_id=tool_call_id,
-                server_id=server_id,
-                tool_name=tool_name,
-                status=ToolCallStatus.RUNNING,
-                created_at=_NOW,
-                updated_at=_NOW,
-                arguments_json={"duration_seconds": 300},
-                rationale="temporary diagnostic access",
-                title="Kubernetes diagnostic grant",
-                result_json=None,
-                error=None,
-                denial_reason=None,
-                withdrawal_reason=None,
-                approval_policy_id=approval_policy_id,
-                auto_approval_evaluation=None,
-                approved_at=_NOW,
-            )
-        )
-        session.add(
-            McpToolCallPrincipal(
-                tool_call_id=tool_call_id, operator_id=None, binding_id=binding_id, session_id=session_id
-            )
-        )
-    return tool_call_id
-
-
-async def _session_for_binding(sessions: async_sessionmaker[AsyncSession], *, binding_id: UUID) -> UUID:
-    session_id, conversation_id = uuid4(), uuid4()
-    async with sessions.begin() as session:
-        operator_id = await session.scalar(
-            select(Agent.owner_operator_id)
-            .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
-            .where(CredentialBinding.binding_id == binding_id)
-        )
-        assert operator_id is not None
-        await session.execute(
-            text(
-                "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at) "
-                "VALUES (:conversation_id, :operator_id, 'claude_code', :n)"
-            ),
-            {"conversation_id": conversation_id, "operator_id": operator_id, "n": _NOW},
-        )
-        await session.execute(
-            text(
-                """
-                INSERT INTO sessions (
-                    session_id, operator_id, conversation_id, agent_binding_id, status,
-                    bridge_token_fingerprint, lease_expires_at, created_at, updated_at
-                ) VALUES (
-                    :session_id, :operator_id, :conversation_id, :binding_id, 'ready',
-                    :fingerprint, :lease, :n, :n
-                )
-                """
-            ),
-            {
-                "session_id": session_id,
-                "operator_id": operator_id,
-                "conversation_id": conversation_id,
-                "binding_id": binding_id,
-                "fingerprint": session_id.bytes,
-                "lease": datetime(2999, 1, 1, tzinfo=UTC),
-                "n": _NOW,
-            },
-        )
-    return session_id
 
 
 async def _insert_raw_grant(
@@ -192,8 +93,10 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         assert client.portal is not None
-        agent_id, binding_id = client.portal.call(_default_agent, sessions)
-        source_tool_call_id = client.portal.call(partial(_source_call, sessions, binding_id=binding_id))
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        source_tool_call_id = client.portal.call(
+            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
+        )
         repository = PostgresKubernetesGrantRepository(sessions)
 
         async def exercise() -> None:
@@ -235,8 +138,10 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         assert client.portal is not None
-        agent_id, binding_id = client.portal.call(_default_agent, sessions)
-        source_tool_call_id = client.portal.call(partial(_source_call, sessions, binding_id=binding_id))
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        source_tool_call_id = client.portal.call(
+            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
+        )
         repository = PostgresKubernetesGrantRepository(sessions)
 
         async def exercise() -> None:
@@ -345,11 +250,11 @@ def test_repository_matches_agent_and_exact_session_principals(make_client: Any)
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         assert client.portal is not None
-        agent_id, binding_id = client.portal.call(_default_agent, sessions)
-        session_id = client.portal.call(partial(_session_for_binding, sessions, binding_id=binding_id))
-        agent_source = client.portal.call(partial(_source_call, sessions, binding_id=binding_id))
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        session_id = client.portal.call(partial(insert_live_session, sessions, binding_id=binding_id, now=_NOW))
+        agent_source = client.portal.call(partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW))
         session_source = client.portal.call(
-            partial(_source_call, sessions, binding_id=binding_id, session_id=session_id)
+            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW, session_id=session_id)
         )
         repository = PostgresKubernetesGrantRepository(sessions)
 
@@ -406,7 +311,9 @@ def test_repository_matches_agent_and_exact_session_principals(make_client: Any)
                     text("UPDATE sessions SET status = 'failed' WHERE session_id = :session_id"),
                     {"session_id": session_id},
                 )
-            ended_source = await _source_call(sessions, binding_id=binding_id, session_id=session_id)
+            ended_source = await insert_approved_tool_call(
+                sessions, binding_id=binding_id, now=_NOW, session_id=session_id
+            )
             with pytest.raises(KubernetesGrantSourceError, match="durable source ToolCall principal"):
                 await repository.create(
                     owner_agent_id=agent_id,
@@ -438,8 +345,10 @@ def test_repository_persists_canonical_non_exact_scope_shapes(
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         assert client.portal is not None
-        agent_id, binding_id = client.portal.call(_default_agent, sessions)
-        source_tool_call_id = client.portal.call(partial(_source_call, sessions, binding_id=binding_id))
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        source_tool_call_id = client.portal.call(
+            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
+        )
         repository = PostgresKubernetesGrantRepository(sessions)
 
         async def exercise() -> None:
@@ -462,10 +371,18 @@ def test_repository_rejects_wrong_or_auto_approved_source(make_client: Any) -> N
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         assert client.portal is not None
-        agent_id, binding_id = client.portal.call(_default_agent, sessions)
-        wrong_tool = client.portal.call(partial(_source_call, sessions, binding_id=binding_id, tool_name="list_grants"))
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        wrong_tool = client.portal.call(
+            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW, tool_name="list_grants")
+        )
         auto_approved = client.portal.call(
-            partial(_source_call, sessions, binding_id=binding_id, approval_policy_id="unsafe-test-policy")
+            partial(
+                insert_approved_tool_call,
+                sessions,
+                binding_id=binding_id,
+                now=_NOW,
+                approval_policy_id="unsafe-test-policy",
+            )
         )
         repository = PostgresKubernetesGrantRepository(sessions)
 
@@ -490,8 +407,10 @@ def test_database_rejects_grants_with_invalid_source_provenance(make_client: Any
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         assert client.portal is not None
-        agent_id, binding_id = client.portal.call(_default_agent, sessions)
-        wrong_tool = client.portal.call(partial(_source_call, sessions, binding_id=binding_id, tool_name="list_grants"))
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        wrong_tool = client.portal.call(
+            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW, tool_name="list_grants")
+        )
 
         async def rejected() -> None:
             with pytest.raises(IntegrityError, match="invalid Kubernetes grant source provenance"):
@@ -532,8 +451,10 @@ def test_database_accepts_canonical_non_exact_scope_shape(
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         assert client.portal is not None
-        agent_id, binding_id = client.portal.call(_default_agent, sessions)
-        source_tool_call_id = client.portal.call(partial(_source_call, sessions, binding_id=binding_id))
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        source_tool_call_id = client.portal.call(
+            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
+        )
 
         client.portal.call(
             partial(
@@ -565,8 +486,10 @@ def test_database_rejects_invalid_scope_shape(make_client: Any, scope: dict[str,
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         assert client.portal is not None
-        agent_id, binding_id = client.portal.call(_default_agent, sessions)
-        source_tool_call_id = client.portal.call(partial(_source_call, sessions, binding_id=binding_id))
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        source_tool_call_id = client.portal.call(
+            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
+        )
 
         async def rejected() -> None:
             with pytest.raises(IntegrityError, match="ck_kubernetes_grants_scope_shape"):

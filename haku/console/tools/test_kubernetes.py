@@ -1,15 +1,31 @@
+"""Integration tests for the Kubernetes MCP tools over the real grant store.
+
+The tools service runs against the app's PostgreSQL-backed grant service, so every assertion
+observes durable state — created rows, source provenance, principal applicability — rather than
+call forwarding. The only stand-in is the SubjectAccessReview client: the in-cluster Kubernetes
+API is a genuine external boundary.
+"""
+
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from functools import partial
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
 import pytest_bazel
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from fastmcp import Client
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.agent_bearer_authority import AgentBearerAuthority
+from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
+from haku.console.conftest import default_agent_binding, insert_approved_tool_call, insert_live_session
 from haku.console.grant_principal import (
     AgentGrantPrincipal,
     GrantPrincipalKind,
@@ -17,24 +33,22 @@ from haku.console.grant_principal import (
     SessionGrantPrincipal,
 )
 from haku.console.kubernetes_authorization import (
-    AuthorizationResponse,
+    KubernetesAuthorizationService,
     KubernetesAuthorizationSource,
     RequestAttributes,
+    SubjectAccessReviewResult,
 )
 from haku.console.kubernetes_grant_models import (
-    KubernetesGrant,
     KubernetesGrantScopeKind,
     KubernetesGrantSpec,
     KubernetesGrantStatus,
     KubernetesNamespacesGrantScope,
     KubernetesRule,
 )
+from haku.console.kubernetes_grant_service import KubernetesGrantService
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext, OperatorMcpExecutionCaller
 from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesToolsService, build_mcp
 
-_AGENT = UUID("10000000-0000-4000-8000-000000000001")
-_GRANT = UUID("20000000-0000-4000-8000-000000000002")
-_SESSION = UUID("40000000-0000-4000-8000-000000000004")
 _NOW = datetime(2026, 8, 20, tzinfo=UTC)
 _SCOPE = KubernetesNamespacesGrantScope(namespaces=("demo",))
 _RULE = KubernetesRule(api_groups=("",), resources=("pods",), verbs=("get",))
@@ -46,19 +60,63 @@ _REQUEST = RequestAttributes(
     resource="pods",
     path="/api/v1/namespaces/demo/pods",
 )
-# The complete trusted identity `_agent_context()` carries, as the grant reads must forward it.
-_REQUEST_PRINCIPAL = RequestPrincipal(agent_id=_AGENT, session_id=_SESSION, access_profile_id="public-coder")
+_SUBJECT = KubernetesAuthorizationSubject(username="haku-agent-subject", groups=("haku-agents",))
+# The access profile `make_client` assigns its seeded default static agent.
+_PROFILE = "no_auto_approval"
 
 
-def _agent_context(*, session_id: UUID | None = _SESSION) -> McpExecutionContext:
-    return McpExecutionContext(
-        caller=AgentMcpExecutionCaller(
-            principal=RequestPrincipal(agent_id=_AGENT, session_id=session_id, access_profile_id="public-coder")
-        ),
-        tool_call_id="tc_create_grant",
-        approving_operator_id=None,
-        approval_policy_id=None,
-    )
+class _FakeSubjectAccessReviews:
+    """Stands in for the in-cluster Kubernetes SAR API — the one external boundary here."""
+
+    def __init__(self) -> None:
+        self.allowed = False
+        self.reason: str | None = "RBAC: access denied"
+        self.reviews: list[tuple[KubernetesAuthorizationSubject, RequestAttributes]] = []
+
+    async def review(
+        self, *, subject: KubernetesAuthorizationSubject, attributes: RequestAttributes
+    ) -> SubjectAccessReviewResult:
+        self.reviews.append((subject, attributes))
+        return SubjectAccessReviewResult(allowed=self.allowed, reason=self.reason)
+
+    async def aclose(self) -> None:
+        pass
+
+
+@dataclass(frozen=True, slots=True)
+class _Console:
+    """One console app over a fresh migrated database, its grant store wired into the tools."""
+
+    client: TestClient
+    sessions: async_sessionmaker[AsyncSession]
+    service: KubernetesToolsService
+    sar: _FakeSubjectAccessReviews
+    agent_id: UUID
+    binding_id: UUID
+
+    def call[T](self, func: Callable[..., Awaitable[T]], *args: Any) -> T:
+        """Run one async step on the app's own event loop, where its engine lives."""
+        assert self.client.portal is not None
+        return self.client.portal.call(func, *args)
+
+    def agent_context(self, *, session_id: UUID | None = None) -> McpExecutionContext:
+        """A trusted Agent execution whose fresh ToolCall satisfies grant source provenance."""
+        tool_call_id = self.call(
+            partial(
+                insert_approved_tool_call, self.sessions, binding_id=self.binding_id, now=_NOW, session_id=session_id
+            )
+        )
+        return McpExecutionContext(
+            caller=AgentMcpExecutionCaller(
+                principal=RequestPrincipal(agent_id=self.agent_id, session_id=session_id, access_profile_id=_PROFILE)
+            ),
+            tool_call_id=tool_call_id,
+            approving_operator_id=None,
+            approval_policy_id=None,
+        )
+
+    def live_session(self) -> UUID:
+        return self.call(partial(insert_live_session, self.sessions, binding_id=self.binding_id, now=_NOW))
 
 
 def _operator_context() -> McpExecutionContext:
@@ -71,47 +129,37 @@ def _operator_context() -> McpExecutionContext:
 
 
 @pytest.fixture
-def grant() -> KubernetesGrant:
-    return KubernetesGrant(
-        grant_id=_GRANT,
-        owner_agent_id=_AGENT,
-        principal=AgentGrantPrincipal(agent_id=_AGENT),
-        source_tool_call_id="tc_create_grant",
-        scope=_SCOPE,
-        rules=(_RULE,),
-        status=KubernetesGrantStatus.ACTIVE,
-        created_at=_NOW,
-        expires_at=datetime(2026, 8, 20, 1, tzinfo=UTC),
-    )
+def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
+    with make_client() as client:
+        app = cast(FastAPI, client.app)
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        grants = cast(KubernetesGrantService, app.state.kubernetes_grants)
+        sar = _FakeSubjectAccessReviews()
+        authorization = KubernetesAuthorizationService(
+            config=KubernetesAuthorizationConfig(subjects_by_access_profile={_PROFILE: _SUBJECT}),
+            # The trusted in-process path never resolves a bearer; no sources states that.
+            agent_bearer_authority=AgentBearerAuthority(()),
+            grants=grants,
+            sar_client=sar,
+        )
+        assert client.portal is not None
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        yield _Console(
+            client=client,
+            sessions=sessions,
+            service=KubernetesToolsService(grants=grants, authorization=authorization),
+            sar=sar,
+            agent_id=agent_id,
+            binding_id=binding_id,
+        )
 
 
-@pytest.fixture
-def grants(grant: KubernetesGrant) -> AsyncMock:
-    mock = AsyncMock()
-    mock.create_grants.return_value = (grant,)
-    mock.list_applicable_grants.return_value = (grant,)
-    mock.get_applicable_grant.return_value = grant
-    mock.release_applicable_grants.return_value = (grant,)
-    return mock
+def test_server_exposes_exact_stable_tool_set_without_context_argument(console: _Console) -> None:
+    async def list_tools() -> list[Any]:
+        async with Client(build_mcp(console.service)) as client:
+            return list(await client.list_tools())
 
-
-@pytest.fixture
-def authorization() -> AsyncMock:
-    mock = AsyncMock()
-    mock.authorize_agent.return_value = AuthorizationResponse(
-        allowed=True, reason="standing", source=KubernetesAuthorizationSource.SAR, decision_id="sar:decision"
-    )
-    return mock
-
-
-@pytest.fixture
-def service(grants: AsyncMock, authorization: AsyncMock) -> KubernetesToolsService:
-    return KubernetesToolsService(grants=grants, authorization=authorization)
-
-
-async def test_server_exposes_exact_stable_tool_set_without_context_argument(service: KubernetesToolsService) -> None:
-    async with Client(build_mcp(service)) as client:
-        tools = await client.list_tools()
+    tools = console.call(list_tools)
     assert {tool.name for tool in tools} == {"can_i", "create_grant", "list_grants", "get_grant", "release_grants"}
     for tool in tools:
         assert "context" not in tool.inputSchema.get("properties", {})
@@ -126,9 +174,8 @@ async def test_server_exposes_exact_stable_tool_set_without_context_argument(ser
     assert release_grants.inputSchema["properties"]["grant_ids"]["maxItems"] == 32
 
 
-async def test_create_uses_trusted_agent_current_tool_call_and_exact_grants(
-    service: KubernetesToolsService, grants: AsyncMock
-) -> None:
+def test_create_persists_trusted_identity_provenance_and_exact_grants(console: _Console) -> None:
+    context = console.agent_context()
     requested = [
         KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),
         KubernetesGrantSpec(
@@ -136,12 +183,23 @@ async def test_create_uses_trusted_agent_current_tool_call_and_exact_grants(
             rules=(KubernetesRule(api_groups=("apps",), resources=("deployments",), verbs=("patch",)),),
         ),
     ]
-    await service.create_grants(context=_agent_context(), grants=requested, duration_seconds=60)
-    kwargs = grants.create_grants.await_args.kwargs
-    assert kwargs["owner_agent_id"] == _AGENT
-    assert kwargs["grant_principal"] == AgentGrantPrincipal(agent_id=_AGENT)
-    assert kwargs["source_tool_call_id"] == "tc_create_grant"
-    assert kwargs["grants"] == requested
+
+    async def exercise() -> None:
+        created = await console.service.create_grants(context=context, grants=requested, duration_seconds=600)
+        assert [grant.scope for grant in created] == [spec.scope for spec in requested]
+        assert [grant.rules for grant in created] == [spec.rules for spec in requested]
+        for grant in created:
+            assert grant.owner_agent_id == console.agent_id
+            assert grant.principal == AgentGrantPrincipal(agent_id=console.agent_id)
+            assert grant.source_tool_call_id == context.tool_call_id
+            assert grant.status is KubernetesGrantStatus.ACTIVE
+        # One atomic set: shared timestamps, expiry bounded by the requested duration.
+        assert len({(grant.created_at, grant.expires_at) for grant in created}) == 1
+        assert timedelta() < created[0].expires_at - created[0].created_at <= timedelta(seconds=600)
+        assert set(await console.service.list_grants(context=context)) == set(created)
+        assert await console.service.get_grant(context=context, grant_id=created[0].grant_id) == created[0]
+
+    console.call(exercise)
 
 
 @pytest.mark.parametrize(
@@ -156,80 +214,116 @@ async def test_create_uses_trusted_agent_current_tool_call_and_exact_grants(
             id="create",
         ),
         pytest.param(lambda service: service.list_grants(context=_operator_context()), id="list"),
-        pytest.param(lambda service: service.get_grant(context=_operator_context(), grant_id=_GRANT), id="get"),
+        pytest.param(lambda service: service.get_grant(context=_operator_context(), grant_id=UUID(int=2)), id="get"),
         pytest.param(
-            lambda service: service.release_grants(context=_operator_context(), grant_ids=[_GRANT]), id="release"
+            lambda service: service.release_grants(context=_operator_context(), grant_ids=[UUID(int=2)]), id="release"
         ),
     ],
 )
-async def test_operator_cannot_mint_or_inspect_agent_grants(
-    service: KubernetesToolsService, operation: Callable[[KubernetesToolsService], Awaitable[object]]
+def test_operator_cannot_mint_or_inspect_agent_grants(
+    console: _Console, operation: Callable[[KubernetesToolsService], Awaitable[object]]
 ) -> None:
     with pytest.raises(PermissionError):
-        await operation(service)
+        console.call(partial(operation, console.service))
 
 
-async def test_inspection_uses_the_complete_trusted_request_principal(
-    service: KubernetesToolsService, grants: AsyncMock, grant: KubernetesGrant
-) -> None:
-    assert await service.list_grants(context=_agent_context()) == (grant,)
-    assert await service.get_grant(context=_agent_context(), grant_id=_GRANT) == grant
+def test_session_scope_binds_the_grant_to_the_exact_live_session(console: _Console) -> None:
+    session_id = console.live_session()
+    session_context = console.agent_context(session_id=session_id)
+    static_context = console.agent_context()
 
-    grants.list_applicable_grants.assert_awaited_once_with(request_principal=_REQUEST_PRINCIPAL)
-    grants.get_applicable_grant.assert_awaited_once_with(request_principal=_REQUEST_PRINCIPAL, grant_id=_GRANT)
-
-
-async def test_release_uses_trusted_agent_and_supplied_grant_order(
-    service: KubernetesToolsService, grants: AsyncMock, grant: KubernetesGrant
-) -> None:
-    other = UUID("20000000-0000-4000-8000-000000000003")
-    grants.release_applicable_grants.return_value = (grant, grant.model_copy(update={"grant_id": other}))
-
-    result = await service.release_grants(context=_agent_context(), grant_ids=[_GRANT, other], reason="probe complete")
-
-    assert [item.grant_id for item in result] == [_GRANT, other]
-    grants.release_applicable_grants.assert_awaited_once_with(
-        request_principal=_REQUEST_PRINCIPAL, grant_ids=[_GRANT, other], reason="probe complete"
-    )
-
-
-async def test_can_i_uses_shared_agent_evaluator_and_returns_source(
-    service: KubernetesToolsService, authorization: AsyncMock
-) -> None:
-    result = await service.can_i(context=_agent_context(), requests=[KubernetesAccessCheck(attributes=_REQUEST)])
-    assert result[0].allowed is True
-    assert result[0].source is KubernetesAuthorizationSource.SAR
-    kwargs = authorization.authorize_agent.await_args.kwargs
-    assert kwargs["request_principal"] == _REQUEST_PRINCIPAL
-    request = kwargs["request"]
-    assert request.attributes == _REQUEST
-    assert request.required_scope == _SCOPE
-    assert request.required_rules == [_RULE]
-
-
-async def test_create_session_scope_uses_exact_trusted_agent_and_session(
-    service: KubernetesToolsService, grants: AsyncMock
-) -> None:
-    await service.create_grants(
-        context=_agent_context(),
-        grants=[KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,))],
-        duration_seconds=60,
-        applies_to=GrantPrincipalKind.SESSION,
-    )
-    assert grants.create_grants.await_args.kwargs["grant_principal"] == SessionGrantPrincipal(session_id=_SESSION)
-
-
-async def test_create_session_scope_rejects_static_agent_context(
-    service: KubernetesToolsService, grants: AsyncMock
-) -> None:
-    with pytest.raises(PermissionError, match="live session-authenticated"):
-        await service.create_grants(
-            context=_agent_context(session_id=None),
+    async def exercise() -> None:
+        (session_grant,) = await console.service.create_grants(
+            context=session_context,
             grants=[KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,))],
-            duration_seconds=60,
+            duration_seconds=600,
             applies_to=GrantPrincipalKind.SESSION,
         )
-    grants.create_grants.assert_not_awaited()
+        assert session_grant.principal == SessionGrantPrincipal(session_id=session_id)
+        (agent_grant,) = await console.service.create_grants(
+            context=static_context, grants=[KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,))], duration_seconds=600
+        )
+        # The exact session may exercise both; a static-credential execution of the same Agent
+        # never sees the session-scoped grant.
+        assert set(await console.service.list_grants(context=session_context)) == {session_grant, agent_grant}
+        assert await console.service.list_grants(context=static_context) == (agent_grant,)
+
+    console.call(exercise)
+
+
+def test_create_session_scope_rejects_static_agent_context(console: _Console) -> None:
+    context = console.agent_context()
+
+    async def exercise() -> None:
+        with pytest.raises(PermissionError, match="live session-authenticated"):
+            await console.service.create_grants(
+                context=context,
+                grants=[KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,))],
+                duration_seconds=600,
+                applies_to=GrantPrincipalKind.SESSION,
+            )
+        assert await console.service.list_grants(context=context) == ()
+
+    console.call(exercise)
+
+
+def test_release_ends_grants_in_the_supplied_order(console: _Console) -> None:
+    context = console.agent_context()
+
+    async def exercise() -> None:
+        first, second = await console.service.create_grants(
+            context=context,
+            grants=[
+                KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),
+                KubernetesGrantSpec(scope=KubernetesNamespacesGrantScope(namespaces=("other",)), rules=(_RULE,)),
+            ],
+            duration_seconds=600,
+        )
+        released = await console.service.release_grants(
+            context=context, grant_ids=[second.grant_id, first.grant_id], reason="probe complete"
+        )
+        assert [grant.grant_id for grant in released] == [second.grant_id, first.grant_id]
+        assert all(grant.status is KubernetesGrantStatus.RELEASED for grant in released)
+        assert {grant.end_reason for grant in released} == {"probe complete"}
+        refetched = await console.service.get_grant(context=context, grant_id=first.grant_id)
+        assert refetched.status is KubernetesGrantStatus.RELEASED
+
+    console.call(exercise)
+
+
+def test_can_i_reports_standing_policy_through_the_configured_subject(console: _Console) -> None:
+    context = console.agent_context()
+    console.sar.allowed = True
+    console.sar.reason = "RBAC: allowed by ClusterRoleBinding"
+
+    async def exercise() -> None:
+        (result,) = await console.service.can_i(context=context, requests=[KubernetesAccessCheck(attributes=_REQUEST)])
+        assert result.allowed is True
+        assert result.source is KubernetesAuthorizationSource.SAR
+        assert result.valid_until is None
+
+    console.call(exercise)
+    # The review crossed the boundary as the profile-configured subject, never a caller-chosen one.
+    assert console.sar.reviews == [(_SUBJECT, _REQUEST)]
+
+
+def test_can_i_falls_back_to_an_active_grant_only_after_sar_denial(console: _Console) -> None:
+    context = console.agent_context()
+
+    async def exercise() -> None:
+        (denied,) = await console.service.can_i(context=context, requests=[KubernetesAccessCheck(attributes=_REQUEST)])
+        assert denied.allowed is False
+        assert denied.source is KubernetesAuthorizationSource.SAR
+
+        (grant,) = await console.service.create_grants(
+            context=context, grants=[KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,))], duration_seconds=600
+        )
+        (allowed,) = await console.service.can_i(context=context, requests=[KubernetesAccessCheck(attributes=_REQUEST)])
+        assert allowed.allowed is True
+        assert allowed.source is KubernetesAuthorizationSource.GRANT
+        assert allowed.valid_until == grant.expires_at
+
+    console.call(exercise)
 
 
 def test_can_i_requires_explicit_scope_for_unnamespaced_resource_request() -> None:
