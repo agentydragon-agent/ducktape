@@ -6,7 +6,7 @@ Haku Console should control whether an authenticated Agent may initiate an
 outbound HTTP(S) connection and whether that Agent may use a Console-managed
 credential on the resulting request.
 
-The system must provide five capabilities behind one enforced egress fence:
+The system must provide four capabilities behind one enforced egress fence:
 
 1. deploy-managed standing destination policy;
 2. time-boxed, operator-approved destination grants;
@@ -52,9 +52,15 @@ upstream permitted by both Console and Cilium
   convenience, not enforcement.
 - The proxy pod may reach the Console authorization Services directly without
   sending those calls through itself. Agent workloads do not inherit that route.
-- The proxy authenticates with a Console-minted credential bound to one Agent and
-  narrow internal HTTP-policy audiences. Request JSON, client IP and proxy fields
-  never select `agent_id` or access profile.
+- The proxy authenticates with a Console-minted fence credential bound to one
+  Agent and narrow internal HTTP-policy audiences. Request JSON, client IP and
+  proxy fields never select `agent_id`, session or access profile.
+- An Agent workload may additionally authenticate an exact execution principal
+  to its proxy with a narrow Agent- or session-bound proxy-client credential.
+  The proxy strips that credential before forwarding and presents it to Console
+  alongside the fence credential. Console requires both credentials to resolve
+  to the same Agent. Omitting an exact-session credential can never exercise a
+  session-scoped grant.
 - Console policy is an authority within the proxy pod's Cilium ceiling. It cannot
   override NetworkPolicy, TLS validation or credential-redemption restrictions.
 - TLS interception uses one deploy-managed shared egress-interception CA trusted
@@ -97,6 +103,78 @@ Console evaluates destination access in this order:
 Standing policy and grants share one decision response but remain distinct
 sources for audit. The proxy does not cache dynamic authorization decisions.
 Approval, release, revocation and expiry therefore affect the next admission.
+
+### Grant principals
+
+Kubernetes and HTTP grants use one shared principal vocabulary even though their
+capability matchers remain separate typed domains. Four concepts must not share
+one field:
+
+1. **Source** is the immutable `source_tool_call_id` plus its durable approval
+   provenance. It provides idempotency and supports source-set revocation. It is
+   not the identity that later exercises the permission.
+2. **Owner** is lifecycle/controller metadata: the Agent that controls
+   operator-visible inspection, release, revocation and audit grouping. Current
+   Agent-created grants are owned by their source Agent.
+3. **Grant principal** is the stored Agent or exact-session identity receiving
+   the temporary permission.
+4. **Request principal** is the trusted authenticated caller attempting to
+   exercise the permission. Request JSON never supplies this identity.
+
+The shared discriminated grant-principal model has these variants:
+
+```json
+{"kind": "agent", "agent_id": "018f..."}
+{"kind": "session", "session_id": "018f..."}
+```
+
+The discriminator and variant identity fields are always explicit in persisted
+and wire representations. An Agent grant principal covers every authenticated
+execution of that Agent. A session ID is globally unique and already belongs to
+one fixed Agent, so the narrower session principal does not duplicate
+`agent_id`. Trusted authentication and source-provenance checks validate that
+fixed Agent and credential-binding relationship. A static Agent credential,
+mismatched request principal or replacement session cannot exercise the session
+grant. A session request principal may still use a broader Agent grant.
+
+The Agent-facing Kubernetes and HTTP creation tools accept only
+`applies_to: "agent" | "session"`, defaulting to `agent` to preserve the
+implemented Kubernetes behavior. They never accept an arbitrary Agent or session
+ID. Console derives the grant principal from the durable source ToolCall
+principal and credential binding, rejecting `session` when the source has no
+live exact session. All grants created by one ToolCall share its grant principal
+and lifetime. Access profiles remain deploy-managed standing-policy context;
+they are not temporary grant principals.
+
+The first implementation shares grant-principal types, trusted request-principal
+projection, applicability code and conformance tests, but keeps separate
+Kubernetes and HTTP grant tables and services. This avoids prematurely forcing
+Kubernetes rules, HTTP origins and credential-use capabilities into one generic
+matcher or persistence envelope. A common lifecycle envelope can be extracted
+after those domains demonstrate that their remaining ownership and lifecycle
+fields are genuinely identical.
+
+The shared Python vocabulary lives in `haku/console/grant_principal.py`. It
+consists of the discriminated `GrantPrincipal` union of `AgentGrantPrincipal`
+and `SessionGrantPrincipal`, the trusted `RequestPrincipal`, and one conservative
+`grant_principal_applies_to` predicate. `RequestPrincipal` carries authenticated
+`agent_id`, optional exact `session_id`, and optional standing-policy
+`access_profile_id`. Domain services authorize against the complete request
+principal. Each domain keeps typed persistence appropriate to its matcher.
+Kubernetes stores `owner_agent_id`, `principal_kind`, nullable
+`principal_agent_id`, and nullable `principal_session_id` relationally. Agent
+principals are explicit rather than inferred from the owner column; current
+policy separately requires an Agent grant principal to equal its lifecycle
+owner. The migration backfills every existing grant as an explicit Agent
+principal while preserving grant ID, source ToolCall, scope, rules, status and
+timestamps. HTTP grants should reuse the principal semantics without requiring
+the same physical table shape.
+
+A session grant's usable interval is the intersection of its recorded lifetime
+and the authenticated session's life. Live-session bearer resolution already
+fails closed after the session ends; lifecycle cleanup also terminalizes
+remaining active session grants with the audit reason `principal_ended`.
+Replacement sessions do not inherit them.
 
 A denied request does not create an approval as a side effect. Console returns a
 machine-readable reason and canonical grant scope; the proxy surfaces a message
@@ -559,10 +637,13 @@ An allowed response carries an audit decision ID and the exact replacement for
 the credential slot. The response model marks replacement fields as secret and
 all access logging redacts them.
 
-The proxy credential is accepted only for `http-authorize` and
+The fence credential is accepted only for `http-authorize` and
 `http-credential-redeem`; it is invalid for MCP, Agent session and operator APIs.
+An optional proxy-client principal credential has a separate narrow audience and
+resolves to the exact Agent or live session whose grant applicability is being
+tested. Console verifies that its Agent matches the fence credential's Agent.
 The current general `AgentBearerAuthority` has no audience parameter, so the HTTP
-implementation needs a separate credential kind and resolver path rather than a
+implementation needs separate credential kinds and resolver paths rather than a
 copy of the Kubernetes proxy route.
 
 ## Proxy adapter contract
@@ -745,31 +826,48 @@ adapter behavior without exposing sensitive values.
 
 ## Implementation sequence
 
-1. Define `HttpGrant`, exact-origin normalization and coverage tests.
-2. Add persistence, migration, repository provenance checks and lifecycle
-   service by following the Kubernetes grant implementation.
-3. Add Agent create/list/get/release tools and operator inspection/revocation.
-4. Define deploy-managed standing destination policy.
-5. Mint endpoint-scoped Agent proxy credentials and a dedicated resolver.
-6. Implement `POST /api/internal/http/authorize` as a read-only facade.
-7. Define Console-owned egress credential handles and credential-use grants.
-8. Implement `POST /api/internal/http/credentials/redeem` with mandatory secret
-   redaction.
-9. Decide the proxy-pod Cilium ceiling for grantable public origins.
-10. Spike Squid DNS pinning, helper no-cache behavior and `client_lifetime` with
+1. Land `haku/console/grant_principal.py` with the shared discriminated grant
+   principal, trusted request principal, applicability predicate and behavioral
+   contract tests.
+2. Preserve credential-binding and optional session identity through trusted
+   in-process MCP execution.
+3. Migrate Kubernetes grants from overloaded `agent_id` to lifecycle
+   `owner_agent_id` plus relational `principal_kind`, `principal_agent_id` and
+   `principal_session_id`, backfilling current rows as explicit Agent grant
+   principals.
+4. Change Kubernetes repository and service APIs from Agent-only lookup to
+   complete request-principal matching; add principal-scoped Agent lifecycle
+   operations, `applies_to` to its creation tool and session-end cleanup.
+5. Define `HttpGrant`, exact-origin normalization and coverage tests using the
+   same principal semantics.
+6. Add HTTP persistence, migration, repository provenance checks and lifecycle
+   service while keeping its matcher payload separate from Kubernetes.
+7. Add the same `applies_to` selector to the HTTP grant tool, resolving IDs only
+   from durable source provenance.
+8. Add Agent create/list/get/release tools and operator inspection/revocation.
+9. Define deploy-managed standing destination policy.
+10. Mint endpoint-scoped fence and proxy-client principal credentials with
+    dedicated resolvers.
+11. Implement `POST /api/internal/http/authorize` as a read-only facade.
+12. Define Console-owned egress credential handles and credential-use grants.
+13. Implement `POST /api/internal/http/credentials/redeem` with mandatory secret
+    redaction.
+14. Decide the proxy-pod Cilium ceiling for grantable public origins.
+15. Spike Squid DNS pinning, helper no-cache behavior and `client_lifetime` with
     active CONNECT traffic.
-11. Implement the smallest conforming adapter or composition.
-12. Run end-to-end grant, credential-selection, failure and rebinding tests.
-13. Roll out one experimental Agent before generalizing the deployment.
-14. Define a versioned structured request-capability model and bind credential
+16. Implement the smallest conforming adapter or composition.
+17. Run end-to-end grant-principal, request-principal, credential-selection,
+    failure and rebinding tests.
+18. Roll out one experimental Agent before generalizing the deployment.
+19. Define a versioned structured request-capability model and bind credential
     redemption to its decision IDs.
-15. Expose one read-only Grocy or similarly conventional API directly through
+20. Expose one read-only Grocy or similarly conventional API directly through
     instructions and an opaque placeholder; add generated tools only if their
     ergonomics justify the additional surface.
-16. Model broad Gmail list/get coverage for an Agent whose existing policy
+21. Model broad Gmail list/get coverage for an Agent whose existing policy
     allows all Gmail reads, using Google Discovery operation IDs, least-scope
     OAuth tokens and explicit route/query constraints.
-17. Route direct Kubernetes HTTP through the existing canonical
+22. Route direct Kubernetes HTTP through the existing canonical
     `RequestAttributes` authorizer without replacing typed Kubernetes grants
     with generic URL rules.
 
@@ -779,6 +877,15 @@ adapter behavior without exposing sensitive values.
 
 - standing origin succeeds without a temporary grant;
 - unknown origin denies with the exact canonical grant scope;
+- existing Kubernetes grants migrate to explicit Agent grant principals without
+  a coverage change;
+- an Agent grant principal covers another live session of the same Agent;
+- a session grant principal covers only the exact live source session and stops
+  being usable when that session ends;
+- static Agent credentials and replacement sessions cannot use a session grant;
+- an Agent cannot select another Agent or session ID in grant arguments;
+- access profiles remain standing-policy context and are not temporary grant
+  principals;
 - manually approved grant succeeds on retry;
 - the same grant fails for another Agent or origin;
 - redirect succeeds only when every origin is covered;
@@ -789,6 +896,7 @@ adapter behavior without exposing sensitive values.
 
 ### Address safety
 
+- fence and proxy-client principal credentials must resolve to the same Agent;
 - public IPv4 and IPv6 answers connect to the selected validated address;
 - loopback, private, carrier-grade NAT, link-local, metadata, ULA, cluster,
   Service and node addresses deny;
