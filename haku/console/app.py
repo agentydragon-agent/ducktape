@@ -36,6 +36,7 @@ from haku.console import (
     capabilities,
     connection_metrics,
     console_events,
+    http_grant_routes,
     kube_proxy_authorization,
     kubernetes_grant_routes,
     mcp_agent_auth,
@@ -63,6 +64,8 @@ from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.http_grant_repository import PostgresHttpGrantRepository
+from haku.console.http_grant_service import HttpGrantService
 from haku.console.in_process_servers import (
     HostexecServerConfig,
     InProcessServerDependencies,
@@ -90,6 +93,7 @@ from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
 from haku.console.tools import (
     gmail as gmail_tools,
+    http_grants as http_grants_tools,
     kubernetes as kubernetes_tools,
     routine as routine_tools,
     sandbox as sandbox_tools,
@@ -550,6 +554,10 @@ def create_app(
         PostgresKubernetesGrantRepository(db_sessions),
         max_lifetime=datetime.timedelta(seconds=console_config.kubernetes_grant_max_lifetime_seconds),
     )
+    http_grants = HttpGrantService(
+        PostgresHttpGrantRepository(db_sessions),
+        max_lifetime=datetime.timedelta(seconds=console_config.http_grant_max_lifetime_seconds),
+    )
     kubernetes_authorization = (
         KubernetesAuthorizationService(
             config=console_config.kubernetes_authorization,
@@ -602,8 +610,9 @@ def create_app(
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
         # could only ever disagree with it — a listed server with no builder fails the binding
         # validation below.
+        configured_server_ids = {server.id for server in console_config.mcp.servers}
         index_searcher = None
-        if any(server.id == HAKU_INDEX_SERVER_ID for server in console_config.mcp.servers):
+        if HAKU_INDEX_SERVER_ID in configured_server_ids:
             if settings.embedder is None:
                 raise ValueError(
                     f"MCP server {HAKU_INDEX_SERVER_ID!r} is configured but no embedder is: "
@@ -634,8 +643,7 @@ def create_app(
             SandboxServerConfig(
                 client=InClusterSandboxClient(console_config.agent_sandbox), environment=console_config.agent_sandbox
             )
-            if console_config.agent_sandbox is not None
-            and any(server.id == sandbox_tools.SANDBOX_SERVER_ID for server in console_config.mcp.servers)
+            if console_config.agent_sandbox is not None and sandbox_tools.SANDBOX_SERVER_ID in configured_server_ids
             else None
         )
         in_process_servers = build_in_process_servers(
@@ -656,7 +664,12 @@ def create_app(
                         grants=kubernetes_grants, authorization=kubernetes_authorization
                     )
                     if kubernetes_authorization is not None
-                    and any(server.id == kubernetes_tools.KUBERNETES_SERVER_ID for server in console_config.mcp.servers)
+                    and kubernetes_tools.KUBERNETES_SERVER_ID in configured_server_ids
+                    else None
+                ),
+                http_grants=(
+                    http_grants_tools.HttpToolsService(grants=http_grants, agents=agent_authority)
+                    if http_grants_tools.HTTP_GRANTS_SERVER_ID in configured_server_ids
                     else None
                 ),
             )
@@ -809,6 +822,7 @@ def create_app(
     app.state.web_push_identity = web_push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
     app.state.kubernetes_grants = kubernetes_grants
+    app.state.http_grants = http_grants
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -852,6 +866,7 @@ def create_app(
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(kubernetes_grant_routes.router, dependencies=operator_only)
+    app.include_router(http_grant_routes.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(oauth_connection_result.router, dependencies=operator_only)

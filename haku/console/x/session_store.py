@@ -52,6 +52,7 @@ from haku.console.database_schema import (
     ConversationItem,
     ConversationPrompt,
     ConversationTurn,
+    HttpGrantRow,
     KubernetesGrantRow,
     Session,
     SessionFrame,
@@ -497,17 +498,17 @@ class SessionStore:
             db, chat.conversation_id, session_id=chat.session_id, turn_id=None, now=now
         )
         writer.authored(session_events.SessionEndedBody(status=chat.status, error=error))
-        session_principal = (
-            KubernetesGrantRow.principal_kind == GrantPrincipalKind.SESSION,
-            KubernetesGrantRow.principal_session_id == chat.session_id,
-        )
         # Exact-session authority never transfers to a replacement session. End it in the same
         # transaction as the session's terminal event so authorization and the durable account
         # cannot disagree. Expiration wins when the lease had already reached its time bound.
+        kubernetes_session_principal = (
+            KubernetesGrantRow.principal_kind == GrantPrincipalKind.SESSION,
+            KubernetesGrantRow.principal_session_id == chat.session_id,
+        )
         await db.execute(
             update(KubernetesGrantRow)
             .where(
-                *session_principal,
+                *kubernetes_session_principal,
                 KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE,
                 KubernetesGrantRow.expires_at <= now,
             )
@@ -515,8 +516,21 @@ class SessionStore:
         )
         await db.execute(
             update(KubernetesGrantRow)
-            .where(*session_principal, KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE)
+            .where(*kubernetes_session_principal, KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE)
             .values(status=KubernetesGrantStatus.REVOKED, ended_at=now, end_reason="principal_ended")
+        )
+        # HTTP grant status is derived, so already-expired leases need no write: one revocation
+        # fact ends every lease this session could still exercise.
+        await db.execute(
+            update(HttpGrantRow)
+            .where(
+                HttpGrantRow.principal_kind == GrantPrincipalKind.SESSION,
+                HttpGrantRow.principal_session_id == chat.session_id,
+                HttpGrantRow.released_at.is_(None),
+                HttpGrantRow.revoked_at.is_(None),
+                HttpGrantRow.expires_at > now,
+            )
+            .values(revoked_at=now, end_reason="principal_ended")
         )
 
     async def create(

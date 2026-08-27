@@ -18,6 +18,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Identity,
     Index,
+    Integer,
     LargeBinary,
     Text,
     UniqueConstraint,
@@ -56,6 +57,7 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.grant_principal import GrantPrincipalKind
+from haku.console.http_grant_models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.kubernetes_grant_models import KubernetesGrantScope, KubernetesGrantStatus, KubernetesRule
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
@@ -577,6 +579,73 @@ class KubernetesGrantRow(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class HttpGrantRow(Base):
+    """One Agent-owned, principal-scoped, time-bounded HTTP egress lease.
+
+    The origin is three relational columns because a grant pins exactly ``(scheme, host, port)``;
+    ``methods``/``path_regex`` narrow requests at that origin. The domain canonicalizes and
+    validates coverage app-side (`http_grant_models`); Postgres holds only the relational
+    invariants. Status is derived, never stored (root STYLE.md § SQLAlchemy): the row records the
+    end facts — ``released_at``, ``revoked_at`` — and `http_grant_models.derive_status` computes
+    the vocabulary from them and the clock, so expiry needs no sweeper.
+    ``source_tool_call_id`` is retained as immutable provenance and must refer to the
+    Agent-authenticated source call. Lifecycle ownership and authorization applicability are
+    deliberately separate columns.
+    """
+
+    __tablename__ = "http_grants"
+    __table_args__ = (
+        CheckConstraint("btrim(source_tool_call_id) <> ''", name="ck_http_grants_source_tool_call_nonempty"),
+        CheckConstraint(
+            "(principal_kind = 'agent' AND principal_agent_id IS NOT NULL "
+            "AND principal_agent_id = owner_agent_id AND principal_session_id IS NULL) OR "
+            "(principal_kind = 'session' AND principal_agent_id IS NULL "
+            "AND principal_session_id IS NOT NULL)",
+            name="ck_http_grants_principal_shape",
+        ),
+        CheckConstraint("expires_at > created_at", name="ck_http_grants_expiration_after_creation"),
+        # The fact shape the derivation reads: at most one end action, and a reason exactly when
+        # one is recorded.
+        CheckConstraint(
+            "num_nonnulls(released_at, revoked_at) <= 1 "
+            "AND ((num_nonnulls(released_at, revoked_at) = 1) = (end_reason IS NOT NULL)) "
+            "AND (end_reason IS NULL OR btrim(end_reason) <> '')",
+            name="ck_http_grants_end_shape",
+        ),
+        Index("idx_http_grants_source_tool_call", "source_tool_call_id"),
+        Index("idx_http_grants_owner_expiry", "owner_agent_id", "expires_at"),
+        Index("idx_http_grants_agent_principal_expiry", "principal_agent_id", "expires_at"),
+        Index("idx_http_grants_session_principal_expiry", "principal_session_id", "expires_at"),
+    )
+
+    grant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    owner_agent_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=False
+    )
+    principal_kind: Mapped[GrantPrincipalKind] = mapped_column(
+        TextBackedStrEnumColumn(GrantPrincipalKind), nullable=False
+    )
+    principal_agent_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=True
+    )
+    principal_session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="RESTRICT"), nullable=True
+    )
+    source_tool_call_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
+    )
+    scheme: Mapped[HttpScheme] = mapped_column(TextBackedStrEnumColumn(HttpScheme), nullable=False)
+    host: Mapped[str] = mapped_column(Text, nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    methods: Mapped[frozenset[HttpMethod]] = mapped_column(PydanticColumn(HttpMethods), nullable=False)
+    path_regex: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

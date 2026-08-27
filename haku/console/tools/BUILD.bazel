@@ -140,6 +140,21 @@ py_test(
 )
 
 py_library(
+    name = "http_grants",
+    srcs = ["http_grants.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:grant_principal",
+        "//haku/console:http_grant_models",
+        "//haku/console:http_grant_service",
+        "//haku/console:mcp_execution",
+        "//haku/console/agents:enrollment",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "kubernetes",
     srcs = ["kubernetes.py"],
     visibility = ["//haku/console:__subpackages__"],
@@ -180,6 +195,33 @@ py_test(
         "@pypi//mcp",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http_grants",
+    size = "medium",
+    srcs = ["test_http_grants.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":http_grants",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console:grant_principal",
+        "//haku/console:http_grant_models",
+        "//haku/console:http_grant_service",
+        "//haku/console:mcp_execution",
+        "//haku/console/agents:enrollment",
+        "@pypi//fastapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

@@ -552,6 +552,7 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console:grant_principal",
+        "//haku/console:http_grant_models",
         "//haku/console:kubernetes_grant_models",
         "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code/testing:wire",
