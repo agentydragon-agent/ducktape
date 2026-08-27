@@ -91,7 +91,8 @@ let
       # NixOS uses systemd-resolved in stub mode, so /etc/resolv.conf has
       # nameserver 127.0.0.53. Point kubelet at the real upstream resolv.conf
       # so all pods (including dnsPolicy:Default like CoreDNS) get real
-      # upstreams instead of the stub. See debug/coredns-loop-nixos.md.
+      # upstreams instead of the stub (else CoreDNS forwards to itself and
+      # crash-loops; incident details on the kubelet restartTriggers below).
       resolvConf = "/run/systemd/resolve/resolv.conf";
     }
   );
@@ -351,8 +352,13 @@ in
     systemd.services.kubelet = {
       description = "Kubernetes Kubelet";
       # Restart kubelet when its config file changes. kubelet reads --config
-      # only at startup; a nixos-rebuild switch that changes the config won't
-      # take effect until kubelet restarts.
+      # only at startup, and NixOS restarts a service only when its unit
+      # changes — so without this trigger a switch that changes the config
+      # silently leaves the old one running. Bit us 2026-03-21: kubelet kept a
+      # pre-resolvConf config for 9 switches, handed pods the systemd-resolved
+      # stub (127.0.0.53), and CoreDNS on NixOS workers crash-looped with
+      # 'plugin/loop: Loop (...) detected'. resolvConf applies to
+      # dnsPolicy: Default pods too (verified in kubelet/containerd source).
       restartTriggers = [
         kubeletConfigYaml
         config.environment.etc."nebula/config.yaml".source
