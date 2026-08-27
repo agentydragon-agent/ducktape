@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import patch
@@ -68,16 +69,19 @@ from haku.console.x.conversation_events import (
     ToolCallCompleted,
     ToolCallStarted,
 )
-from haku.console.x.conversation_records import (
-    FrameCursor,
+from haku.console.x.conversation_reads import (
+    FrameRecord,
     FromFrames,
+    HarnessFrameRecord,
     MessageEntry,
     PromptEntry,
     SessionCursor,
-    TranscriptCursor,
+    ToolCallEntry,
+    ToolResultEntry,
     TurnAnsweredEnd,
     TurnCursor,
 )
+from haku.console.x.item_entries import entry_of
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
 from haku.console.x.session_events import PromptStartedBody, TurnAbortedBody, TurnAnsweredBody, TurnFailedBody
 from haku.console.x.session_notifications import SessionEvent, SessionEventKind
@@ -93,6 +97,12 @@ from haku.console.x.session_store import (
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
 ROOM = "!room:example.org"
+
+
+def _harness(frames: Sequence[FrameRecord]) -> list[HarnessFrameRecord]:
+    """Narrow a frame page to the harness variant, which these reads are asserting about."""
+    assert all(isinstance(frame, HarnessFrameRecord) for frame in frames)
+    return cast(list[HarnessFrameRecord], list(frames))
 
 
 class _AlternateFrameVocabulary:
@@ -123,7 +133,7 @@ async def test_store_delegates_prompt_semantics_and_keeps_native_json_opaque(mig
 
     assert await store.adopt_open_turn(view.session_id) is not None
     frames = await store.read_frames(view.session_id, cursor=None, limit=25)
-    assert [frame.payload for frame in frames] == [
+    assert [frame.payload for frame in _harness(frames)] == [
         {"动作": "提问", "正文": "hello"},
         {"阶段": "碎片", "正文": "你"},
         {"阶段": "最终", "正文": "你好"},
@@ -435,13 +445,11 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
         )
 
     first = await chat_store.read_frames(str(session.session_id), cursor=None, limit=2)
-    rest = await chat_store.read_frames(
-        str(session.session_id), cursor=FrameCursor(frame_seq=first[-1].frame_seq + 1), limit=2
-    )
+    rest = await chat_store.read_frames(str(session.session_id), cursor=first[-1].frame_seq + 1, limit=2)
 
     assert [frame.kind for frame in first] == ["harness_frame", "harness_frame"]
-    assert [frame.payload["type"] for frame in first] == ["user", "assistant"]
-    assert [frame.payload["type"] for frame in rest] == ["result"]
+    assert [frame.payload["type"] for frame in _harness(first)] == ["user", "assistant"]
+    assert [frame.payload["type"] for frame in _harness(rest)] == ["result"]
 
 
 async def test_the_kinds_filter_uses_only_hakus_outer_bridge_class(chat_store, operator_id) -> None:
@@ -459,9 +467,9 @@ async def test_the_kinds_filter_uses_only_hakus_outer_bridge_class(chat_store, o
         str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.HARNESS_FRAME]
     )
 
-    assert [(frame.kind, frame.payload) for frame in default] == [("harness_frame", {"阶段": "最终"})]
-    assert [(frame.kind, frame.payload) for frame in setup] == [("setup_output", {"text": "booting"})]
-    assert [(frame.kind, frame.payload) for frame in harness] == [("harness_frame", {"阶段": "最终"})]
+    assert [(frame.kind, frame.payload) for frame in _harness(default)] == [("harness_frame", {"阶段": "最终"})]
+    assert [(frame.kind, frame.text) for frame in setup] == [("setup_output", "booting")]
+    assert [(frame.kind, frame.payload) for frame in _harness(harness)] == [("harness_frame", {"阶段": "最终"})]
 
 
 async def test_method_only_native_frames_are_visible_and_filterable(chat_store, operator_id) -> None:
@@ -473,11 +481,10 @@ async def test_method_only_native_frames_are_visible_and_filterable(chat_store, 
     )
 
     default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
-    exact = await chat_store.read_frame(session.session_id, recorded.frame_seq)
+    exact = await chat_store.read_frames(session.session_id, cursor=recorded.frame_seq, limit=1)
 
-    assert [frame.payload for frame in default] == [inner]
-    assert exact is not None
-    assert exact.payload == inner
+    assert [frame.payload for frame in _harness(default)] == [inner]
+    assert [frame.payload for frame in _harness(exact)] == [inner]
 
 
 async def test_native_frames_without_a_known_discriminator_remain_in_the_default_and_exact_views(
@@ -491,11 +498,10 @@ async def test_native_frames_without_a_known_discriminator_remain_in_the_default
     )
 
     default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
-    exact = await chat_store.read_frame(session.session_id, recorded.frame_seq)
+    exact = await chat_store.read_frames(session.session_id, cursor=recorded.frame_seq, limit=1)
 
-    assert [frame.payload for frame in default] == [inner]
-    assert exact is not None
-    assert exact.payload == inner
+    assert [frame.payload for frame in _harness(default)] == [inner]
+    assert [frame.payload for frame in _harness(exact)] == [inner]
 
 
 async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> None:
@@ -518,7 +524,7 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
 
     frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
     assert [frame.kind for frame in frames] == ["harness_frame"]
-    assert [frame.payload["type"] for frame in frames] == ["assistant"]
+    assert [frame.payload["type"] for frame in _harness(frames)] == ["assistant"]
 
 
 async def test_the_resume_cursor_is_the_highest_number_a_runner_gave_this_session(chat_store, operator_id) -> None:
@@ -603,7 +609,7 @@ async def test_the_raw_log_returns_every_native_frame_without_classifying_it(cha
     default = await chat_store.read_frames(str(session_id), cursor=None, limit=25)
 
     assert [frame.kind for frame in default] == ["harness_frame", "harness_frame"]
-    assert [frame.payload["type"] for frame in default] == ["stream_event", "result"]
+    assert [frame.payload["type"] for frame in _harness(default)] == ["stream_event", "result"]
 
 
 async def test_one_session_never_reads_another_session_frames(chat_store, operator_id) -> None:
@@ -619,7 +625,7 @@ async def test_one_session_never_reads_another_session_frames(chat_store, operat
     frames = await chat_store.read_frames(str(mine.session_id), cursor=None, limit=25)
 
     assert [frame.kind for frame in frames] == ["harness_frame"]
-    assert [frame.payload["type"] for frame in frames] == ["assistant"]
+    assert [frame.payload["type"] for frame in _harness(frames)] == ["assistant"]
 
 
 async def test_the_frame_inspector_opens_on_the_end_of_the_log_and_walks_back(chat_store, operator_id) -> None:
@@ -855,9 +861,15 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
     assert brackets[spoke.turn_id] == (answer.frame_seq, answer.frame_seq)
 
 
-async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(chat_store, operator_id) -> None:
-    """What a session meant, with a way back to the frames it was read off."""
+async def _conversation_entries(chat_store, conversation_id, *, after_seq=None, limit=100):
+    """The store's page rows folded to entries, as `item_entries.ConversationReads` serves them."""
+    return [entry_of(row) for row in await chat_store.read_item_rows(conversation_id, after_seq=after_seq, limit=limit)]
+
+
+async def test_the_items_read_as_the_conversation_rather_than_the_protocol(chat_store, operator_id) -> None:
+    """What a conversation meant, with a way back to the frames it was read off."""
     view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     started = await chat_store.next_prompt(view.session_id)
@@ -881,85 +893,171 @@ async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(ch
     )
     await chat_store.end_turn(started.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
 
-    transcript = await chat_store.read_transcript(view.session_id, cursor=None, limit=10)
+    entries = await _conversation_entries(chat_store, conversation_id, limit=10)
 
-    assert [entry.kind for entry in transcript.entries] == ["prompt", "message", "turn_end"]
-    said = transcript.entries[1]
+    assert [entry.kind for entry in entries] == ["prompt", "message", "turn_end"]
+    said = entries[1]
     assert isinstance(said, MessageEntry)
     assert said.text == "a bad config"
     assert isinstance(said.provenance, FromFrames)
+    assert said.provenance.session_id == view.session_id, "frames are session-level, so the appeal names whose"
     named = await chat_store.read_frames(
-        view.session_id, cursor=FrameCursor(frame_seq=said.provenance.first_frame_seq), limit=1, kinds=None
+        said.provenance.session_id, cursor=said.provenance.first_frame_seq, limit=1, kinds=None
     )
-    assert named[0].payload["message"]["id"] == "msg_1", "provenance points at the complete inner frame it was read off"
+    assert _harness(named)[0].payload["message"]["id"] == "msg_1", (
+        "provenance points at the complete inner frame it was read off"
+    )
 
 
-async def test_the_transcript_and_the_items_are_two_folds_of_one_log(
+async def test_the_items_read_hands_back_the_rows_the_writer_materialised(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """`conversation_item.text` is a materialisation of the same segments the transcript folds, so
-    the two cannot come to disagree — which a transcript re-derived from the frames could not
-    promise, because a change to the projection would move one of them and not the other."""
+    """`conversation_item.text` is the writer's own fold of the log's segments, so a read of the
+    rows cannot disagree with the log — which a read re-derived from the frames could not promise,
+    because a change to the projection would move one of them and not the other."""
     view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await _exchange(chat_store, operator_id, view.session_id, "first?", "one")
     await _exchange(chat_store, operator_id, view.session_id, "second?", "two")
 
-    transcript = await chat_store.read_transcript(view.session_id, cursor=None, limit=100)
+    entries = await _conversation_entries(chat_store, conversation_id)
 
-    spoken = [entry.text for entry in transcript.entries if isinstance(entry, MessageEntry)]
+    spoken = [entry.text for entry in entries if isinstance(entry, MessageEntry)]
     assert spoken == await answers(migrated_sessions, view.session_id)
 
 
-async def test_a_transcript_page_holds_what_the_whole_session_holds_at_that_position(chat_store, operator_id) -> None:
-    """The fold runs from the log's first row however far in the cursor is, so a page boundary
-    cannot close a message the whole session does not end there."""
+async def test_an_item_page_resumes_at_its_cursor_without_refolding_the_thread(chat_store, operator_id) -> None:
+    """The cursor is a durable stream position, so pages concatenate to the whole read and a page
+    is served from its position alone — page N of a long conversation costs what page one does."""
     view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     for index in range(3):
         await _exchange(chat_store, operator_id, view.session_id, f"ask {index}", f"answer {index}")
 
-    whole = await chat_store.read_transcript(view.session_id, cursor=None, limit=100)
-    first = await chat_store.read_transcript(view.session_id, cursor=None, limit=3)
-    rest = await chat_store.read_transcript(view.session_id, cursor=TranscriptCursor(index=3), limit=100)
+    whole = await _conversation_entries(chat_store, conversation_id)
+    first = await _conversation_entries(chat_store, conversation_id, limit=3)
+    rest = await _conversation_entries(chat_store, conversation_id, after_seq=whole[3].seq)
 
-    assert first.entries + rest.entries == whole.entries
-    assert [entry.index for entry in whole.entries] == list(range(len(whole.entries)))
+    assert first + rest == whole
+    assert [entry.seq for entry in whole] == sorted({entry.seq for entry in whole}), "defining positions are unique"
 
 
-async def test_a_frame_the_fold_never_committed_is_not_on_the_transcript(chat_store, operator_id) -> None:
-    """The transcript is the conversation log, so what is on it is what the fold committed — never
-    whatever the frame table happens to hold. `read_rollout` still serves the frame by name."""
+async def test_a_frame_the_fold_never_committed_is_not_an_item(chat_store, operator_id) -> None:
+    """The entries are the conversation's record, so what is on them is what the fold committed —
+    never whatever the frame table happens to hold. `read_frames` still serves the frame by name."""
     view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.record_frame(
         view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, text_delta("h")
     )
 
-    transcript = await chat_store.read_transcript(view.session_id, cursor=None, limit=10)
+    entries = await _conversation_entries(chat_store, conversation_id, limit=10)
     frames = await chat_store.read_frames(view.session_id, cursor=None, limit=10, kinds=None)
 
-    assert transcript.entries == []
-    assert transcript.unreadable is None
+    assert entries == []
     assert len(frames) == 1, "the frame is recorded and readable; it just never became a fact"
 
 
-async def test_a_prompt_admitted_before_its_session_is_on_that_sessions_transcript(
+async def test_a_call_and_its_answer_are_separate_entries_at_their_own_positions(chat_store, operator_id) -> None:
+    """A call's entry is written where the call opens — its arguments are whole by then — and its
+    answer where the call completes, joined by the id the protocol gave the ask."""
+    view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "look it up", SPA_ORIGIN)
+    started = await chat_store.next_prompt(view.session_id)
+    assert started is not None
+    asked = await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "assistant"}
+    )
+    await chat_store.apply_frame(
+        view.session_id,
+        started.turn_id,
+        asked.frame_seq,
+        [
+            ToolCallStarted(
+                call_id="toolu_1",
+                tool_name="Bash",
+                arguments={"command": "ls"},
+                provenance=FrameRange(asked.frame_seq, asked.frame_seq),
+            )
+        ],
+    )
+    answered = await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"}
+    )
+    await chat_store.apply_frame(
+        view.session_id,
+        started.turn_id,
+        answered.frame_seq,
+        [
+            ItemSegment(
+                item=CallRef(call_id="toolu_1"),
+                text="a.txt",
+                provenance=FrameRange(answered.frame_seq, answered.frame_seq),
+            ),
+            ToolCallCompleted(
+                item=CallRef(call_id="toolu_1"),
+                outcome=ToolOutcome.SUCCEEDED,
+                structured={"exit_code": 0},
+                provenance=FrameRange(answered.frame_seq, answered.frame_seq),
+            ),
+        ],
+    )
+
+    entries = await _conversation_entries(chat_store, conversation_id, limit=10)
+
+    assert [entry.kind for entry in entries] == ["prompt", "tool_call", "tool_result"]
+    call, result_entry = entries[1], entries[2]
+    assert isinstance(call, ToolCallEntry)
+    assert (call.tool_name, call.arguments) == ("Bash", {"command": "ls"})
+    assert isinstance(result_entry, ToolResultEntry)
+    assert result_entry.call_id == call.call_id
+    assert (result_entry.content, result_entry.structured) == ("a.txt", {"exit_code": 0})
+    assert call.seq < result_entry.seq, "the ask and the answer sit at their own stream positions"
+
+
+async def test_the_items_read_spans_replaced_sessions(chat_store, migrated_sessions, operator_id) -> None:
+    """A conversation outlives its runners, so the read that follows one thread does not stop
+    where a sandbox died; which session produced an entry is on its provenance."""
+    view, token = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await _exchange(chat_store, operator_id, view.session_id, "first?", "one")
+    await chat_store.fail(view.session_id, "sandbox died")
+    replacement, replacement_token = await chat_store.create(operator_id, conversation_id=conversation_id)
+    assert replacement.session_id != view.session_id
+    assert await chat_store.authenticate_bridge(replacement.session_id, replacement_token) == (
+        BridgeAuthentication.ACCEPTED
+    )
+    await _exchange(chat_store, operator_id, replacement.session_id, "second?", "two")
+
+    entries = await _conversation_entries(chat_store, conversation_id)
+
+    spoken = [entry for entry in entries if isinstance(entry, MessageEntry)]
+    assert [entry.text for entry in spoken] == ["one", "two"]
+    assert [entry.provenance.session_id for entry in spoken if isinstance(entry.provenance, FromFrames)] == [
+        view.session_id,
+        replacement.session_id,
+    ]
+
+
+async def test_a_prompt_admitted_before_any_session_is_on_the_conversations_items(
     chat_store, migrated_sessions, operator_id
 ) -> None:
-    """A prompt buys the sandbox, so it is accepted before a runner exists and the rows recording it
-    name no session at all. Which session holds it is the item's answer, written when the session is
-    created for the demand — so a session's transcript asks the item rather than the rows."""
+    """A prompt buys the sandbox, so it is accepted before a runner exists and the rows recording
+    it name no session at all. The read is keyed by the conversation, so the prompt is on it from
+    admission rather than from whenever a session claims it."""
     view, _ = await chat_store.create_idle(operator_id)
     conversation_id = await chat_store.conversation_of(view.session_id)
     async with migrated_sessions.begin() as db:
         await db.delete(await db.get(Session, view.session_id))
     await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "start", SPA_ORIGIN)
 
-    demand = await chat_store.ensure_session_for_demand(operator_id, conversation_id)
-
-    assert demand is not None
-    entry = one((await chat_store.read_transcript(demand.session_id, cursor=None, limit=10)).entries)
+    entry = one(await _conversation_entries(chat_store, conversation_id, limit=10))
     assert isinstance(entry, PromptEntry)
     assert (entry.text, entry.origin) == ("start", PromptOriginKind.SPA)
 
