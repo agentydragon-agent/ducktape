@@ -211,6 +211,10 @@
     "skill-semantic_branch_pruner": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-semantic_branch_pruner-cdc68e38255f/semantic_branch_pruner.skill",
       "sha256": "zcaOOCVfx/GJzszicLGTJAe5K/Y4bZBdOGcq4soigII="
+    },
+    "gazelle": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gazelle-3dbad0701692/gazelle_python_binary",
+      "sha256": "PbrQcBaSry3T2Epz47/FsCSn+M4pdUiXX5cbhp2DtKw="
     }
   }
 }
