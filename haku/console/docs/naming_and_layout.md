@@ -161,7 +161,7 @@ protocol, not to the fold.
 | failure reason        | field **`failure`**                                                   | `TurnFailed.failure`                                                  |                                                     | never `reason` (the one-string-three-hops unified with the #4667 cutover)                                                                                                                                                                                                                                                |
 | tool outcome          | `ToolOutcome`                                                         | `ToolOutcome`                                                         |                                                     | delete the duplicate `conversation_reads.Outcome`                                                                                                                                                                                                                                                                        |
 | item read model       | `Item` (or `…Item`, plain on wire)                                    | `conversation/item_reads.py` — private to the conversation read tools |                                                     | **"entry" leaves the vocabulary** (C6); the `item_entries.py` module name is already gone                                                                                                                                                                                                                                |
-| session (runner life) | `Session`                                                             | `SessionRecord` (MCP) · `SessionView` (REST)                          | `Session` / `sessions`                              | three representations, one concept-name + role suffix; fix the "…agent conversation" table docstring                                                                                                                                                                                                                     |
+| session (runner life) | `Session`                                                             | `SessionRecord` (MCP) · `SessionView` (REST)                          | `Session` / `sessions`                              | three representations, one concept-name + role suffix — landed: `SessionView` is the one REST session shape                                                                                                                                                                                                              |
 | channel copy          | `ChannelAttachment`                                                   | `ChannelAttachment`                                                   | `ChannelAttachment` / `channel_attachment`          | landed (C4b)                                                                                                                                                                                                                                                                                                             |
 | harness wire frame    | `SessionFrame`                                                        | `HarnessFrameRecord` / `…View`                                        | `SessionFrame` / `session_frames`                   | `session/session_frames.py` is the one forthcoming session module; `x/session_events.py` (which held `conversation_event` bodies, not frames) dissolved into `conversation/conversation_event.py` (C5)                                                                                                                   |
 | front-end kind        | `ChannelSurface` (not `ChatSurface`)                                  |                                                                       | text col + CHECK                                    | landed (C4b)                                                                                                                                                                                                                                                                                                             |
@@ -395,7 +395,7 @@ quiet gap.
   a transitional grab-bag whose enums span every layer, so it has no single layer word and is
   **deleted** rather than renamed. Its survival _is_ the tracked cleanup item — the #4772 reorg
   is not done until it is gone, each enum scattered to its true home:
-  - `SessionStatus`, `LeaseExpiryReason` (+ the session-status frozensets) → `session/` (C7-adjacent)
+  - `SessionStatus`, `LeaseExpiryReason` (+ the session-status frozensets) → `session/`
   - `ItemType`, `ItemStatus`, `ToolOutcome` → `conversation/item_reads.py` (C6)
   - `RuntimeKind` → `harnesses/kind.py` as `HarnessKind` (C4d)
   - `BridgeFrameKind`, `FrameDirection` → the session-frames home (`session/session_frames.py`)
@@ -415,8 +415,6 @@ quiet gap.
   deploy-coordinated expand/contract, same recipe as the `chat_runtimes` → `harnesses` key flip)_.
 - **C6 · "entry" → item read model** _(semantic)_ — `*Entry` → `Item…`, into `conversation/item_reads.py`
   (private to the conversation read surface, beside the store that produces it — not `mcp/`).
-- **C7 · Session-trio dedup** _(semantic)_ — after the conversation quiet window
-  (`ConversationTurnView` is already gone).
 
 ### Identity lane — rides the #4836 compose PR
 
@@ -455,7 +453,7 @@ Needs operator go **and** the `<auth-context>` name pick.
 now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C9 → C10     ← after operator go + <auth-context>  [identity lane]
      ├─ C12               ← C11 landed with #4889's envelope    [grants lane]
-     └─ C4e → C6 → C7                            ← packages + C5 landed         [conversation lane]
+     └─ C4e → C6                            ← packages + C5 landed         [conversation lane]
                   │
                   C14 (de-Haku) ────────────────→ after lanes settle names
                   C15 (final packaging) ────────→ last
