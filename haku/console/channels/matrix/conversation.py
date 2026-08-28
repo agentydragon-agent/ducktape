@@ -19,9 +19,9 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.channels.matrix.client import InboundMessage, UnmappableEvent
+from haku.console.channels.matrix.config import Config
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.chat_models import ChannelSurface, MatrixOrigin, PromptRejection, RuntimeKind
-from haku.console.config import MatrixConfig
 from haku.console.database_schema import ChannelAttachmentRow, Conversation, Operator
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x import session_events
@@ -273,7 +273,7 @@ class Turns:
 
     def __init__(
         self,
-        config: MatrixConfig,
+        config: Config,
         session_store: SessionStore,
         identities: PostgresOperatorIdentityStore,
         ledger: IngressLedger,
@@ -296,7 +296,7 @@ class Turns:
         try:
             # The refusing variant, deliberately: this channel promises a mid-turn batch is
             # rejected, not held (<SPEC.md> § Batching and admission), and under the inbox that
-            # policy is the surface's to choose (<../../prompt_inbox.py>).
+            # policy is the surface's to choose (<../../x/prompt_inbox.py>).
             prompt_id = await self._session_store.submit_exclusive_prompt(
                 operator_id,
                 binding.conversation_id,
