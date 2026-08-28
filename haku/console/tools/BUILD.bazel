@@ -118,7 +118,6 @@ py_test(
         "//haku/console/grants:principal",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -205,7 +204,6 @@ py_test(
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -233,7 +231,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -264,7 +261,6 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -313,7 +309,6 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
@@ -342,7 +337,6 @@ py_test(
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -357,7 +351,6 @@ py_test(
         "//haku/console:conftest",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -381,7 +374,6 @@ py_test(
         "//haku/console:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -398,7 +390,6 @@ py_test(
         "//haku/console:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -412,7 +403,6 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -425,7 +415,6 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -438,7 +427,6 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -454,7 +442,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
@@ -480,7 +467,6 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
