@@ -28,7 +28,13 @@ def _runtime() -> dict[str, object]:
         "ca_bundle": "/ca.pem",
         "no_proxy": "localhost",
         "mcp_url": "https://console.example/mcp",
-        "implementation": {"kind": "claude_code", "oauth_placeholder": "placeholder"},
+        "implementation": {
+            "kind": "claude_code",
+            "api_base_url": "http://litellm.test:4000",
+            "model": "claude/ant-messages/claude-sonnet-5",
+            "haiku_model": "claude/ant-messages/claude-haiku-4-5-20251001",
+            "auth_token_placeholder": "placeholder",
+        },
     }
 
 

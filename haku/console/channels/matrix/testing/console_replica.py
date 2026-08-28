@@ -167,7 +167,13 @@ async def _serve() -> None:
         ca_bundle="/egress-proxy-ca/ca-certificates.crt",
         no_proxy="127.0.0.1,localhost",
         mcp_url="http://haku-console.test:9090/mcp",
-        implementation={"kind": "claude_code", "oauth_placeholder": "not-a-secret"},
+        implementation={
+            "kind": "claude_code",
+            "api_base_url": "http://litellm.test:4000",
+            "model": "claude/ant-messages/claude-sonnet-5",
+            "haiku_model": "claude/ant-messages/claude-haiku-4-5-20251001",
+            "auth_token_placeholder": "not-a-secret",
+        },
     )
 
     engine = create_async_engine(database_url, pool_pre_ping=True)
