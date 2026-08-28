@@ -5,8 +5,8 @@ page them; this module holds the item read: what one `conversation_item` row loo
 wire, and the single fold every reader consumes to get there. An item is the row with its wire
 face on: the row's `item_type` as the item's kind, the row's lifecycle as its `status`, the prose
 as it stands, and the frame span its content was read off as `provenance`. The rows are folds of
-the log the writer keeps — asserted so by <reprojection.py> — which is what lets a page be served
-by a keyset read instead of refolding the conversation from its first row.
+the log the writer keeps, which is what lets a page be served by a keyset read instead of
+refolding the conversation from its first row.
 
 **An item sits at the row's opening position for its whole life.** `opened_seq` is allocated when
 the item opens and never moves, so paging is stable while an item is still being written: a later
