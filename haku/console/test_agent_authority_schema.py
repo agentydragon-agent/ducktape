@@ -22,7 +22,6 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     UNMAPPED_COLUMNS_PENDING_DROP,
-    UNMAPPED_CONSTRAINTS_PENDING_DROP,
     UNMAPPED_INDEXES_PENDING_DROP,
     UNMAPPED_TABLES_PENDING_DROP,
     metadata,
@@ -578,8 +577,6 @@ def _not_awaiting_its_drop(name: str | None, type_: str, parent_names: dict[str,
             return name not in UNMAPPED_TABLES_PENDING_DROP
         case "column":
             return (parent_names["table_name"], name) not in UNMAPPED_COLUMNS_PENDING_DROP
-        case "check_constraint":
-            return name not in UNMAPPED_CONSTRAINTS_PENDING_DROP
         case "index":
             return name not in UNMAPPED_INDEXES_PENDING_DROP
         case _:
@@ -663,6 +660,35 @@ def test_conversation_harness_kind_read_switch_backfills_and_guards_new_column(d
                     )
                 ).scalar_one()
                 == "YES"
+            )
+
+        apply_migrations(db_url, "0121")
+        with engine.connect() as conn:
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'conversation' AND column_name = 'runtime_kind'"
+                    )
+                ).scalar_one()
+                == 0
+            )
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_constraint "
+                        "WHERE conrelid = 'conversation'::regclass AND conname = 'ck_conversation_runtime_kind'"
+                    )
+                ).scalar_one()
+                == 0
+            )
+
+        with pytest.raises(ProgrammingError, match="identity is immutable"), engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE conversation SET harness_kind = 'codex_app_server' WHERE conversation_id = :conversation_id"
+                ),
+                {"conversation_id": conversation_id},
             )
     finally:
         engine.dispose()

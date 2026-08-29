@@ -1757,16 +1757,8 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
 # in the one above, which hides a whole table — naming `conversation_item` there would stop the
 # comparison noticing any drift in it.
 UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("agents", "auto_approval_policy"),
-        ("conversation", "runtime_kind"),
-        ("enrollment_interactions", "auto_approval_policy"),
-    }
+    {("agents", "auto_approval_policy"), ("enrollment_interactions", "auto_approval_policy")}
 )
-
-# The legacy conversation discriminator's constraint remains physical through the release that
-# stops writing the column. The following release drops it with the column.
-UNMAPPED_CONSTRAINTS_PENDING_DROP: frozenset[str] = frozenset({"ck_conversation_runtime_kind"})
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
 # index over columns that are all still mapped would be drift rather than an unfinished drop.
