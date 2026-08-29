@@ -79,6 +79,29 @@ CLIPROXY_MODELS: list[str] = [
     "gpt-5.3-codex-spark",
 ]
 
+# Context window + max output tokens for the Codex-subscription models. Measured,
+# not published: litellm's model_cost DB (live-fetched from BerriAI) has exact
+# entries for the real OpenAI models at their raw-API windows -- gpt-5.6-{sol,terra,
+# luna} at 922K, gpt-5.4/5.5 at 1.05M -- and Codex product docs say 272K, but none
+# is what this subscription path (client -> LiteLLM -> CLIProxyAPI -> upstream)
+# actually serves. So the openai/-prefixed routes advertise litellm's raw-API window
+# (it has no entry for the anthropic/-prefixed twins -> null); this measured value is
+# the SSOT the LiteLLM config injects into model_info (test_litellm_config.py).
+#
+# openai_utils/probe_context_window.py binary-searches the live path. On 2026-07-29
+# all three 5.6 models behaved identically: 370,629 tokens accepted, 372,194
+# rejected. Re-derive with:
+#
+#     kubectl exec -i -n <ns> <pod> -- python3 - --low 350000 --high 400000 \
+#         chatgpt/ant-messages/gpt-5.6-{luna,sol,terra} < openai_utils/probe_context_window.py
+CODEX_CONTEXT_WINDOW = 372_000
+CODEX_MAX_TOKENS = 128_000
+
+# Only the probed 5.6 models carry the measured window in the LiteLLM manifest;
+# gpt-5.4/5.5/5.3-codex-spark were never probed and are left without model_info
+# token limits. A newly added 5.6 model must be probed before being added here.
+CODEX_MEASURED_MODELS: list[str] = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+
 # Tana-UI models fronted through tana-litellm. Tana encodes reasoning effort in the
 # model name (`/medium`, `/high`), not a `reasoning_effort` param, so there is no clean
 # "one model + effort knob" to map onto; we expose one model per family at its default
@@ -141,7 +164,7 @@ GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-00
 # Published input/output token limits shared across the current Gemini chat
 # generation: ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview,
 # .../gemini-3.7-flash, and .../gemini-3.5-flash-lite (2026-08-23). Unlike
-# Codex's CODEX_CONTEXT_WINDOW below, there is no live serving-path probe for
+# Codex's CODEX_CONTEXT_WINDOW above, there is no live serving-path probe for
 # a third-party hosted API, so this is Google's published figure rather than
 # a measured one. Used by public-coder-agent's OpenClaw catalog.
 GEMINI_CONTEXT_WINDOW = 1_048_576
