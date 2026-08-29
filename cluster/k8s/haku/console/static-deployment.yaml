@@ -34,7 +34,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: static
-          image: ghcr.io/agentydragon/haku-console-static:devel-20260829093952-6ca943a # {"$imagepolicy": "flux-system:haku-console-static"}
+          image: ghcr.io/agentydragon/haku-console-static:devel-20260829104259-9b42d1f # {"$imagepolicy": "flux-system:haku-console-static"}
           imagePullPolicy: Always
           env:
             # The nginx entrypoint renders /etc/nginx/templates/default.conf.template
