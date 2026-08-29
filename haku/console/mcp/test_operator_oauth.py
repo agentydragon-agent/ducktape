@@ -1,4 +1,4 @@
-"""Tests for the operator OAuth helpers and store (haku.console.mcp_operator_oauth)."""
+"""Tests for the operator OAuth helpers and store (haku.console.mcp.operator_oauth)."""
 
 from __future__ import annotations
 
@@ -15,13 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, OAuthTokenState, Operator
 from haku.console.identity.operator_identity import InactiveOperatorError, OperatorStatus
-from haku.console.mcp_config import (
-    DynamicOAuthClientRegistration,
-    McpServerEntry,
-    RemoteMcpBackend,
-    RemoteServerOAuthAuth,
-)
-from haku.console.mcp_operator_oauth import (
+from haku.console.mcp.operator_oauth import (
     McpOperatorAuthConnected,
     McpOperatorAuthDegraded,
     PostgresMcpOperatorOAuthStore,
@@ -29,6 +23,12 @@ from haku.console.mcp_operator_oauth import (
     _OperatorOAuthTokenClient,
     _refresh_operator_oauth_token,
     _token_request_auth,
+)
+from haku.console.mcp_config import (
+    DynamicOAuthClientRegistration,
+    McpServerEntry,
+    RemoteMcpBackend,
+    RemoteServerOAuthAuth,
 )
 from haku.console.oauth.token_state import (
     PostgresTokenStateStore,
@@ -97,7 +97,7 @@ async def test_refresh_read_timeout_is_classified_as_ambiguous_and_uses_configur
         assert timeout == 37.0
         return TimeoutClient()
 
-    monkeypatch.setattr("haku.console.mcp_operator_oauth.httpx.AsyncClient", client)
+    monkeypatch.setattr("haku.console.mcp.operator_oauth.httpx.AsyncClient", client)
     with pytest.raises(RefreshError) as raised:
         await _refresh_operator_oauth_token(
             _OperatorOAuthTokenClient(
@@ -157,7 +157,7 @@ async def test_operator_oauth_callback_rechecks_operator_after_token_exchange(
         await _disable_operator(migrated_engine, operator_id)
         return OAuthToken(access_token="must-not-be-persisted")
 
-    monkeypatch.setattr("haku.console.mcp_operator_oauth._exchange_operator_oauth_code", exchange_after_disable)
+    monkeypatch.setattr("haku.console.mcp.operator_oauth._exchange_operator_oauth_code", exchange_after_disable)
 
     with pytest.raises(InactiveOperatorError):
         await oauth_store.complete_callback(
@@ -195,7 +195,7 @@ async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
             token_endpoint="https://auth.test/token",
         )
 
-    monkeypatch.setattr("haku.console.mcp_operator_oauth._build_operator_oauth_flow", build_flow_after_disable)
+    monkeypatch.setattr("haku.console.mcp.operator_oauth._build_operator_oauth_flow", build_flow_after_disable)
 
     with pytest.raises(InactiveOperatorError):
         await oauth_store.connect_flow(server=server, operator_id=operator_id, public_base_url="https://haku.test")
@@ -239,7 +239,7 @@ async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
             access_token="must-not-be-written-or-returned", refresh_token="must-not-be-written", expires_in=3600
         )
 
-    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", refresh_after_disable)
+    monkeypatch.setattr("haku.console.mcp.operator_oauth._refresh_operator_oauth_token", refresh_after_disable)
 
     with pytest.raises(InactiveOperatorError):
         await oauth_store.access_token_for(server=server, operator_id=operator_id)
@@ -312,7 +312,7 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
             access_token="stale-refresh-result", refresh_token="stale-rotated-refresh-token", expires_in=3600
         )
 
-    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", refresh_after_reconnect)
+    monkeypatch.setattr("haku.console.mcp.operator_oauth._refresh_operator_oauth_token", refresh_after_reconnect)
 
     returned = await oauth_store.access_token_for(server=server, operator_id=operator_id)
 
@@ -367,7 +367,7 @@ async def test_operator_oauth_concurrent_callers_share_one_refresh(
         await allow_refresh.wait()
         return OAuthToken(access_token="fresh", refresh_token="rotated", expires_in=3600)
 
-    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", controlled_refresh)
+    monkeypatch.setattr("haku.console.mcp.operator_oauth._refresh_operator_oauth_token", controlled_refresh)
     first = asyncio.create_task(oauth_store.access_token_for(server=server, operator_id=operator_id))
     await refresh_started.wait()
     second = asyncio.create_task(oauth_store.access_token_for(server=server, operator_id=operator_id))
@@ -426,7 +426,7 @@ async def test_operator_oauth_ambiguous_timeout_retries_then_stops_on_invalid_gr
             action=RefreshFailureAction.RECONNECT,
         )
 
-    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", refresh)
+    monkeypatch.setattr("haku.console.mcp.operator_oauth._refresh_operator_oauth_token", refresh)
     with pytest.raises(RefreshError):
         await oauth_store.access_token_for(server=server, operator_id=operator_id)
 
@@ -508,7 +508,7 @@ async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_succe
             )
         return OAuthToken(access_token="fresh", refresh_token="rotated", expires_in=3600)
 
-    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", refresh)
+    monkeypatch.setattr("haku.console.mcp.operator_oauth._refresh_operator_oauth_token", refresh)
     with pytest.raises(RefreshError):
         await oauth_store.access_token_for(server=server, operator_id=operator_id)
     with pytest.raises(RefreshBlockedError):
@@ -589,7 +589,7 @@ async def test_operator_oauth_failure_recording_survives_long_episodes(
     async def refresh(_client: object, _refresh_token: str) -> OAuthToken:
         raise RefreshError(failure_message, kind=RefreshFailureKind.CONNECT, action=RefreshFailureAction.RETRYING)
 
-    monkeypatch.setattr("haku.console.mcp_operator_oauth._refresh_operator_oauth_token", refresh)
+    monkeypatch.setattr("haku.console.mcp.operator_oauth._refresh_operator_oauth_token", refresh)
     with pytest.raises(RefreshError):
         await oauth_store.access_token_for(server=server, operator_id=operator_id)
 

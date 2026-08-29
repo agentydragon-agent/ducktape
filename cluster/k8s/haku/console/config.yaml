@@ -856,7 +856,7 @@ mcp:
         auth:
           kind: remote_server_oauth
           # Scopes deliberately omitted (NOT `scopes: []`, which sends an explicit
-          # *empty*-scope OAuth request per mcp_operator_oauth.py's `oauth.scopes is not
+          # *empty*-scope OAuth request per mcp/operator_oauth.py's `oauth.scopes is not
           # None` check -- that was this line's actual effect, confirmed 2026-08-18).
           # Omitting the field makes the flow ask GitHub's server for its own default,
           # which per github-mcp-server's docs is "the full supported set." The real

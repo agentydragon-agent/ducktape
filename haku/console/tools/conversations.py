@@ -74,8 +74,8 @@ from haku.console.conversation_read_access import (
     ConversationReadAccessPolicy,
     ConversationReadScope,
 )
-from haku.console.in_process_server_access import InProcessServerAccessPolicy
-from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
+from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
+from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.session.session_frames import BridgeFrameKind
 
 # Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in

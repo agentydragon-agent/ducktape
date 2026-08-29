@@ -54,7 +54,7 @@ from haku.console.grants.principal import (
 )
 from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 from haku.console.identity.enrollment import AgentEnrollmentService
-from haku.console.mcp_execution import (
+from haku.console.mcp.execution import (
     AgentMcpExecutionCaller,
     McpExecutionContext,
     OperatorMcpExecutionCaller,

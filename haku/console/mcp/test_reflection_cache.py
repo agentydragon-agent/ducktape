@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 from mcp import types as mcp_types
 
-from haku.console.mcp_reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
+from haku.console.mcp.reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
 
 # Long enough that nothing expires mid-test; expiry itself is covered by the zero-TTL cases.
 NEVER_EXPIRES = 3600.0

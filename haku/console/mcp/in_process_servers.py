@@ -4,7 +4,7 @@ The registry holds *builders* (`InProcessServers`): the gmail/google_calendar se
 built per execution from the acting Operator's Google access token, hostexec from the acting
 Operator's Authentik access token, while routine, conversations and index are credential-free.
 Trusted caller context for the profile-scoped servers travels in MCP request metadata. See
-`mcp_execution.McpExecutionContext`.
+`execution.McpExecutionContext`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import haku.console.tools.routine as routine_tools
 import haku.console.tools.sandbox as sandbox_tools
 from haku.console.config import HostexecConfig
 from haku.console.conversation_read_access import ConversationReadAccessPolicy
-from haku.console.in_process_server_access import InProcessServerAccessPolicy
+from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import (
     AccessProfile,
     InProcessCredentialKind,

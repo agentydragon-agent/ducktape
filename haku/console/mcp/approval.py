@@ -5,8 +5,8 @@ This module contains the FastAPI/wire adapter, the current Postgres repository, 
 both executing tool calls and reflecting catalogs. `ToolCallApplicationService` owns the
 actor-scoped lifecycle: calls run immediately only when reviewed policy matches; all
 others wait for an operator decision in trusted console chrome. The connected-server
-catalog lives in `mcp_config`; operator OAuth account linkage lives in
-`mcp_operator_oauth`.
+catalog lives in `config`; operator OAuth account linkage lives in
+`operator_oauth`.
 """
 
 from __future__ import annotations
@@ -42,6 +42,20 @@ from haku.console.database_schema import (
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus
 from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.identity.operator_identity import OperatorStatus
+from haku.console.mcp.execution import McpExecutionContext, mcp_execution_request_meta
+from haku.console.mcp.operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.mcp.reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
+from haku.console.mcp.tool_call_service import (
+    AuthentikOperatorTokenStore,
+    BackendAccountNotConnectedError,
+    ProviderConnectionTokenStore,
+    ToolCallApplicationService,
+    ToolCallExecutionAuthorization,
+    ToolCallNotFoundError,
+    ToolCallPageCursor,
+    ToolCallStateConflictError,
+    backend_auth_for_operator,
+)
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessServers,
@@ -55,22 +69,8 @@ from haku.console.mcp_config import (
     _credential_token,
     _transport,
 )
-from haku.console.mcp_execution import McpExecutionContext, mcp_execution_request_meta
-from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.mcp_reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
 from haku.console.session.status import SessionStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
-from haku.console.tool_call_service import (
-    AuthentikOperatorTokenStore,
-    BackendAccountNotConnectedError,
-    ProviderConnectionTokenStore,
-    ToolCallApplicationService,
-    ToolCallExecutionAuthorization,
-    ToolCallNotFoundError,
-    ToolCallPageCursor,
-    ToolCallStateConflictError,
-    backend_auth_for_operator,
-)
 from haku.console.tool_calls import (
     AgentToolCallCaller,
     ApprovalDecisionRequest,
@@ -848,7 +848,7 @@ class McpServerDispatcher:
         in_process_servers: InProcessServers,
         *,
         # 0 still collapses concurrent reflections of one server; it disables only reuse across
-        # requests. See `mcp_reflection_cache`.
+        # requests. See `reflection_cache`.
         catalog_cache_ttl_seconds: float,
     ) -> None:
         self._in_process = in_process_servers

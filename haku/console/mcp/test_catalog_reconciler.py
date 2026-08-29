@@ -7,10 +7,10 @@ from uuid import UUID
 import pytest_bazel
 from mcp import types as mcp_types
 
-from haku.console.mcp_approval import DegradedReflection, ReflectionFailureStage
-from haku.console.mcp_catalog_reconciler import OperatorCatalogReconciler
+from haku.console.mcp.approval import DegradedReflection, ReflectionFailureStage
+from haku.console.mcp.catalog_reconciler import OperatorCatalogReconciler
+from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp_config import McpServerEntry, NoCredential, RemoteMcpBackend
-from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.notifications.console_events import ConnectionStatus, McpOperatorAuthChangedEvent
 
 

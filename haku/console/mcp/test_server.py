@@ -29,24 +29,24 @@ from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 from sqlalchemy.engine import make_url
 
-from haku.console import mcp_catalog_reconciler as mcp_catalog_reconciler_module, mcp_server as mcp_server_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, resolve_operator_identity, write_config
 from haku.console.identity.operator_identity import ResolvedOperatorIdentity
-from haku.console.mcp_approval import DegradedReflection, ReflectionFailureStage
-from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
-from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
-from haku.console.mcp_operator_oauth import (
+from haku.console.mcp import catalog_reconciler as mcp_catalog_reconciler_module, server as mcp_server_module
+from haku.console.mcp.approval import DegradedReflection, ReflectionFailureStage
+from haku.console.mcp.guidance import SERVER_INSTRUCTIONS
+from haku.console.mcp.operator_oauth import (
     McpOperatorAuthConnected,
     McpOperatorAuthStatus,
     McpOperatorAuthStatusResponse,
     McpOperatorAuthUnconnected,
 )
-from haku.console.mcp_reflection_cache import ReflectedCatalog
+from haku.console.mcp.reflection_cache import ReflectedCatalog
+from haku.console.mcp.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
+from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.oauth.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
 from haku.console.tool_call_actor import AgentActor, RuntimeActor
-from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,

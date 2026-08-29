@@ -23,7 +23,16 @@ from haku.console.grants.principal import RequestPrincipal
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.mcp_approval import PostgresToolCallLedger
+from haku.console.mcp.approval import PostgresToolCallLedger
+from haku.console.mcp.execution import AgentMcpExecutionCaller, McpExecutionContext
+from haku.console.mcp.tool_call_service import (
+    AgentActorRequiredError,
+    BackendAccountNotConnectedError,
+    OperatorActorRequiredError,
+    ToolCallApplicationService,
+    ToolCallNotFoundError,
+    ToolCallStateConflictError,
+)
 from haku.console.mcp_config import (
     AccessProfile,
     InProcessCredentialKind,
@@ -34,19 +43,10 @@ from haku.console.mcp_config import (
     NoCredential,
     RemoteMcpBackend,
 )
-from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore
 from haku.console.oauth.token_state import PostgresTokenStateStore
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
-from haku.console.tool_call_service import (
-    AgentActorRequiredError,
-    BackendAccountNotConnectedError,
-    OperatorActorRequiredError,
-    ToolCallApplicationService,
-    ToolCallNotFoundError,
-    ToolCallStateConflictError,
-)
 from haku.console.tool_calls import (
     ApprovalDecision,
     ApprovalDecisionRequest,
@@ -704,7 +704,7 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
     service: ToolCallApplicationService,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
+    monkeypatch.setattr("haku.console.mcp.tool_call_service.auto_approve_tool_call", _always_approve)
 
     submitted_actors = [actors["aa1"], actors["ab1"]]
     completed = [
@@ -796,7 +796,7 @@ async def test_calls_that_never_queue_are_never_notified(
     Every push a browser shows draws down a budget it will eventually enforce, so a retraction
     for a notification that was never raised is not merely redundant — it is corrosive.
     """
-    monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
+    monkeypatch.setattr("haku.console.mcp.tool_call_service.auto_approve_tool_call", _always_approve)
 
     completed = await service.submit_and_wait(req=_request(owner="auto"), actor=actors["aa1"])
 
@@ -953,7 +953,7 @@ async def test_list_tool_calls_filters_by_auto_approved(
     actor = actors["aa1"]
     manual = await service.submit_and_wait(req=_request(owner="manual"), actor=actor)
 
-    monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
+    monkeypatch.setattr("haku.console.mcp.tool_call_service.auto_approve_tool_call", _always_approve)
     auto = await service.submit_and_wait(req=_request(owner="auto"), actor=actor)
 
     operator = actors["oa"]
@@ -983,7 +983,7 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
     notifier: _RecordingApprovalNotifier,
 ) -> None:
     actor = actors["aa1"]
-    monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
+    monkeypatch.setattr("haku.console.mcp.tool_call_service.auto_approve_tool_call", _always_approve)
     publisher = _RaisingInvalidationPublisher()
     service = _service(
         database_url=migrated_db_url,
@@ -1020,7 +1020,7 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     notifier: _RecordingApprovalNotifier,
 ) -> None:
     actor = actors["aa1"]
-    monkeypatch.setattr("haku.console.tool_call_service.auto_approve_tool_call", _always_approve)
+    monkeypatch.setattr("haku.console.mcp.tool_call_service.auto_approve_tool_call", _always_approve)
     executor = _CancellingExecutor()
     service = _service(
         database_url=migrated_db_url,

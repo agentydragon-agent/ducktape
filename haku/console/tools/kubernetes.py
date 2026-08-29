@@ -24,7 +24,7 @@ from haku.console.grants.kubernetes.authorization import (
     required_scope,
 )
 from haku.console.grants.kubernetes.models import GrantScopeKind
-from haku.console.mcp_execution import McpExecutionContext
+from haku.console.mcp.execution import McpExecutionContext
 
 # The batch bound the `kubernetes_can_i` tool advertises.
 CAN_I_BATCH_LIMIT = 32

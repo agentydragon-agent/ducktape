@@ -38,8 +38,12 @@ from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from haku.console.config import HostexecConfig
 from haku.console.hostexecd.service import DaemonStatusResponse
-from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
-from haku.console.mcp_server import SERVER_NAME, McpServerConnectionStatusResponse, McpServerProbeResponse
+from haku.console.mcp.in_process_servers import (
+    HostexecServerConfig,
+    InProcessServerDependencies,
+    build_in_process_servers,
+)
+from haku.console.mcp.server import SERVER_NAME, McpServerConnectionStatusResponse, McpServerProbeResponse
 from haku.console.tools.grants import GrantsToolsService
 from haku.console.tools.kubernetes import KubernetesToolsService
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider

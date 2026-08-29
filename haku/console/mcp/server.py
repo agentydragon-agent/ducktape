@@ -59,7 +59,7 @@ from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, Tool
 from haku.console.config import Settings, tool_call_console_url
 from haku.console.hostexecd.service import DaemonStatusResponse, Service
 from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver
-from haku.console.mcp_approval import (
+from haku.console.mcp.approval import (
     DegradedReflection,
     DegradedServerState,
     McpServerDispatcher,
@@ -69,7 +69,16 @@ from haku.console.mcp_approval import (
     metadata_for_operator,
     server_metadata_response,
 )
-from haku.console.mcp_catalog_reconciler import OperatorCatalogReconciler
+from haku.console.mcp.catalog_reconciler import OperatorCatalogReconciler
+from haku.console.mcp.guidance import SERVER_INSTRUCTIONS, approval_request_preamble
+from haku.console.mcp.operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
+from haku.console.mcp.tool_call_service import (
+    AgentActorRequiredError,
+    BackendAccountNotConnectedError,
+    ToolCallApplicationService,
+    ToolCallNotFoundError,
+    ToolCallStateConflictError,
+)
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessCredential,
@@ -84,17 +93,8 @@ from haku.console.mcp_config import (
     load_console_config,
     server_tool_prefix,
 )
-from haku.console.mcp_guidance import SERVER_INSTRUCTIONS, approval_request_preamble
-from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
 from haku.console.tool_call_actor import OperatorActor, RuntimeActor
-from haku.console.tool_call_service import (
-    AgentActorRequiredError,
-    BackendAccountNotConnectedError,
-    ToolCallApplicationService,
-    ToolCallNotFoundError,
-    ToolCallStateConflictError,
-)
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,
@@ -685,11 +685,11 @@ class OperatorToolProvider(Provider):
         except Exception:
             # Discovery is an aggregate availability surface: an unexpected failure in one server
             # must remain visible in logs without erasing every unrelated server's tools.
-            logger.exception("mcp_server: failed to reflect server %s for Operator %s", server.id, actor.operator_id)
+            logger.exception("mcp.server: failed to reflect server %s for Operator %s", server.id, actor.operator_id)
             return []
         if isinstance(meta, DegradedReflection):
             logger.info(
-                "mcp_server: hiding unavailable server %s from Operator %s: %s",
+                "mcp.server: hiding unavailable server %s from Operator %s: %s",
                 server.id,
                 actor.operator_id,
                 meta.degraded_reason,

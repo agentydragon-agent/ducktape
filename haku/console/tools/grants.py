@@ -28,7 +28,7 @@ import haku.console.tools.kubernetes as kubernetes_tools
 from haku.console.grants.envelope import GRANT_SET_LIMIT, GrantNotFoundError
 from haku.console.grants.principal import GrantPrincipalKind, grant_principal_for
 from haku.console.identity.enrollment import AgentEnrollmentService
-from haku.console.mcp_execution import (
+from haku.console.mcp.execution import (
     EXECUTION_CONTEXT_DEPENDENCY,
     AgentMcpExecutionCaller,
     McpExecutionContext,

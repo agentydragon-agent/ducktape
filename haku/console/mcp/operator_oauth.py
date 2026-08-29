@@ -8,7 +8,7 @@ Registration (or uses a pre-registered client), stores the resulting token
 association, and refreshes it as needed. This module owns that flow, its Postgres-backed
 storage, and the connect/disconnect/callback endpoints. `ToolCallApplicationService`
 consumes the linked token via `access_token_for` before executing an approved call; the
-catalog of which servers use operator OAuth lives in `mcp_config`.
+catalog of which servers use operator OAuth lives in `config`.
 """
 
 from __future__ import annotations

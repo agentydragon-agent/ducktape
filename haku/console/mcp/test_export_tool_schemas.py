@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from jsonschema import Draft202012Validator
 
-from haku.console.export_mcp_tool_schemas import (
+from haku.console.mcp.export_tool_schemas import (
     _validate_frontend_schema,
     build_mcp_tool_arguments_schema,
     build_mcp_tool_results_schema,

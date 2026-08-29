@@ -48,7 +48,7 @@ from haku.console.grants.kubernetes.models import (
 from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import AgentGrantPrincipal, RequestPrincipal
 from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
-from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext
+from haku.console.mcp.execution import AgentMcpExecutionCaller, McpExecutionContext
 from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesToolsService
 
 _NOW = datetime(2026, 8, 20, tzinfo=UTC)

@@ -55,7 +55,7 @@ from haku.console.identity.agent import (
 )
 from haku.console.identity.authorization import fingerprint_static_token
 from haku.console.identity.operator_identity import OperatorStatus
-from haku.console.mcp_approval import (
+from haku.console.mcp.approval import (
     DegradedReflection,
     McpServerDispatcher,
     PostgresToolCallLedger,
@@ -64,6 +64,10 @@ from haku.console.mcp_approval import (
     _mcp_result_to_json,
     metadata_for_operator,
 )
+from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
+from haku.console.mcp.operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.mcp.reflection_cache import ReflectedCatalog
+from haku.console.mcp.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
 from haku.console.mcp_config import (
     ConsoleConfigFile,
     InProcessBackend,
@@ -75,13 +79,9 @@ from haku.console.mcp_config import (
     RemoteServerOAuthAuth,
     validate_in_process_server_bindings,
 )
-from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
-from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.notifications import console_events
 from haku.console.oauth.token_state import new_token_state
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
-from haku.console.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
 from haku.console.tool_calls import (
     AgentToolCallCaller,
     OperatorToolCallCaller,
@@ -739,8 +739,8 @@ def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID
             authentik_store=authentik_store,
         )
 
-    monkeypatch.setattr("haku.console.mcp_approval._execution_auth", recording_execution_auth)
-    monkeypatch.setattr("haku.console.tool_call_service.backend_auth_for_operator", recording_service_auth)
+    monkeypatch.setattr("haku.console.mcp.approval._execution_auth", recording_execution_auth)
+    monkeypatch.setattr("haku.console.mcp.tool_call_service.backend_auth_for_operator", recording_service_auth)
     return operator_ids
 
 

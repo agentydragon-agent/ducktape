@@ -48,7 +48,7 @@ class ReflectedCatalog:
     """One successful reflection: the upstream tools, plus what the server said about itself.
 
     `instructions` is the server's own `initialize` guidance on how to use it. It lives here rather
-    than in `mcp_approval` because this module owns what a cache entry holds, and defining it there
+    than in `approval` because this module owns what a cache entry holds, and defining it there
     would make the two import each other.
     """
 
