@@ -515,7 +515,7 @@ spec:
         # any decision-path error; the fenced-workload-facing listener is 8888, published by
         # egress-proxy-service.yaml for the force-proxy fence.
         - name: egress-proxy
-          image: ghcr.io/agentydragon/haku-egress-proxy:devel-20260829065311-066355c # {"$imagepolicy": "flux-system:haku-egress-proxy"}
+          image: ghcr.io/agentydragon/haku-egress-proxy:devel-20260829073356-5bca293 # {"$imagepolicy": "flux-system:haku-egress-proxy"}
           imagePullPolicy: Always
           env:
             - name: HAKU_EGRESS_DECIDE_URL
