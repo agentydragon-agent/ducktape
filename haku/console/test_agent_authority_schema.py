@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     UNMAPPED_COLUMNS_PENDING_DROP,
+    UNMAPPED_CONSTRAINTS_PENDING_DROP,
     UNMAPPED_INDEXES_PENDING_DROP,
     UNMAPPED_TABLES_PENDING_DROP,
     metadata,
@@ -577,6 +578,8 @@ def _not_awaiting_its_drop(name: str | None, type_: str, parent_names: dict[str,
             return name not in UNMAPPED_TABLES_PENDING_DROP
         case "column":
             return (parent_names["table_name"], name) not in UNMAPPED_COLUMNS_PENDING_DROP
+        case "check_constraint":
+            return name not in UNMAPPED_CONSTRAINTS_PENDING_DROP
         case "index":
             return name not in UNMAPPED_INDEXES_PENDING_DROP
         case _:
@@ -648,6 +651,18 @@ def test_conversation_harness_kind_read_switch_backfills_and_guards_new_column(d
                     "UPDATE conversation SET harness_kind = 'codex_app_server' WHERE conversation_id = :conversation_id"
                 ),
                 {"conversation_id": conversation_id},
+            )
+
+        apply_migrations(db_url, "0120")
+        with engine.connect() as conn:
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT is_nullable FROM information_schema.columns "
+                        "WHERE table_name = 'conversation' AND column_name = 'runtime_kind'"
+                    )
+                ).scalar_one()
+                == "YES"
             )
     finally:
         engine.dispose()
@@ -1446,9 +1461,8 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
             conn.execute(
                 text(
                     """
-                    INSERT INTO conversation (
-                        conversation_id, operator_id, harness_kind, runtime_kind, created_at
-                    ) VALUES (:conversation_id, :operator_id, 'claude_code', 'claude_code', :now)
+                    INSERT INTO conversation (conversation_id, operator_id, harness_kind, created_at)
+                    VALUES (:conversation_id, :operator_id, 'claude_code', :now)
                     """
                 ),
                 {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},
@@ -1513,9 +1527,8 @@ def test_an_event_names_an_item_exactly_when_its_kind_is_about_one(db_url: str) 
             conn.execute(
                 text(
                     """
-                    INSERT INTO conversation (
-                        conversation_id, operator_id, harness_kind, runtime_kind, created_at
-                    ) VALUES (:conversation_id, :operator_id, 'claude_code', 'claude_code', :now)
+                    INSERT INTO conversation (conversation_id, operator_id, harness_kind, created_at)
+                    VALUES (:conversation_id, :operator_id, 'claude_code', :now)
                     """
                 ),
                 {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},

@@ -989,13 +989,9 @@ class Conversation(Base):
     # than on a session so a replacement runner necessarily inherits the implementation whose prompt,
     # replay and projection semantics created the thread. Text + CHECK is deliberate: the next
     # harness widens one transactional constraint rather than altering a PostgreSQL enum type.
-    # C4d release 1: this is the canonical application discriminator. The legacy physical column is
-    # mapped below only as a temporary storage-compatibility write; it is not part of the conversation
-    # identity or any service/API contract.
+    # C4d release 2: this is the sole application discriminator. The legacy physical column remains
+    # in PostgreSQL for the compatibility window, but is intentionally not mapped or written here.
     harness_kind: Mapped[HarnessKind] = mapped_column(TextBackedStrEnumColumn(HarnessKind), nullable=False)
-    legacy_harness_kind: Mapped[HarnessKind] = mapped_column(
-        "runtime_kind", TextBackedStrEnumColumn(HarnessKind), nullable=False
-    )
     # The next `conversation_event.event_seq` to hand out, taken under `SELECT … FOR UPDATE` in the
     # writing transaction. A counter here rather than a sequence because the log's address must be
     # **dense** — a sequence is unique but leaves gaps, and a gap a channel cannot distinguish from
@@ -1009,7 +1005,6 @@ class Conversation(Base):
             name="ck_conversation_access_profile_id_nonempty",
         ),
         CheckConstraint("(agent_id IS NULL) = (access_profile_id IS NULL)", name="ck_conversation_agent_profile_pair"),
-        CheckConstraint("runtime_kind IN ('claude_code', 'codex_app_server')", name="ck_conversation_runtime_kind"),
         CheckConstraint("harness_kind IN ('claude_code', 'codex_app_server')", name="ck_conversation_harness_kind"),
         CheckConstraint("next_event_seq > 0", name="ck_conversation_next_event_seq"),
         Index("idx_conversation_operator", "operator_id", "created_at"),
@@ -1762,8 +1757,16 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
 # in the one above, which hides a whole table — naming `conversation_item` there would stop the
 # comparison noticing any drift in it.
 UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
-    {("agents", "auto_approval_policy"), ("enrollment_interactions", "auto_approval_policy")}
+    {
+        ("agents", "auto_approval_policy"),
+        ("conversation", "runtime_kind"),
+        ("enrollment_interactions", "auto_approval_policy"),
+    }
 )
+
+# The legacy conversation discriminator's constraint remains physical through the release that
+# stops writing the column. The following release drops it with the column.
+UNMAPPED_CONSTRAINTS_PENDING_DROP: frozenset[str] = frozenset({"ck_conversation_runtime_kind"})
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
 # index over columns that are all still mapped would be drift rather than an unfinished drop.
