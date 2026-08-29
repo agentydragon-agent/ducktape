@@ -16,8 +16,8 @@ from haku.console.conversation.runtime import Runtime
 from haku.console.database_schema import ConversationItem, Session
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.session.conftest import TEST_ACCESS_PROFILE_ID, TEST_AGENT_ID, configured_runtimes
-from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
+from haku.console.session.conftest import TEST_ACCESS_PROFILE_ID, TEST_AGENT_ID, configured_harnesses
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer, LaunchIdentity
 from haku.console.session.runtime import SessionService
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import ADOPTION_GRACE, RunnerConnectionAuthentication, Store
@@ -41,7 +41,7 @@ async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
         harness_kind=HarnessKind.CLAUDE_CODE,
     )
     conversation_id = await session_store.conversation_of(view.session_id)
-    # Model a conversation created or attached without a runtime session.
+    # Model a conversation created or attached without a harness session.
     async with migrated_sessions.begin() as db:
         await db.delete(await db.get(Session, view.session_id))
 
@@ -96,7 +96,7 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
             )
         ]
     )
-    production = ChatLaunchAuthorizer(
+    production = HarnessLaunchAuthorizer(
         authority,
         launchable_agent_ids={expected_agent_id},
         registered_harness_identities={HarnessKey(expected_agent_id, HarnessKind.CLAUDE_CODE)},
@@ -117,9 +117,9 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
         calls.append((operator_id, expected_profile_id, db.in_transaction()))
         return await production(db, operator_id, agent_id, harness_kind, expected_profile_id=expected_profile_id)
 
-    runtimes = configured_runtimes(recording_claims)
+    harnesses = configured_harnesses(recording_claims)
     store = Store(migrated_sessions)
-    service = SessionService(runtimes, store, session_wakes, launch_authorizer=authorize)
+    service = SessionService(harnesses, store, session_wakes, launch_authorizer=authorize)
     first = await service.create(operator_id, agent_id=expected_agent_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await store.conversation_of(first.session_id)
     async with migrated_sessions.begin() as db:
