@@ -22,6 +22,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.channels.matrix.config import MatrixLaunchConfig
 from haku.console.conversation.item_vocabulary import ItemType
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import ConversationItem, MatrixSyncWatermark, Session, SubmittedPrompt
@@ -69,9 +70,12 @@ class Deployment:
         bot_user_id: str,
         bot_password: str,
         operator_user_id: str,
+        operator_subject: str,
         database_url: str,
         sessions: async_sessionmaker[AsyncSession],
         store: Store,
+        matrix_launch: MatrixLaunchConfig,
+        matrix_access_profile_id: str,
         state: Path,
     ):
         self.bot_user_id = bot_user_id
@@ -102,12 +106,18 @@ class Deployment:
             "HAKU_E2E_BOT_USER_ID": bot_user_id,
             "HAKU_E2E_BOT_PASSWORD": bot_password,
             "HAKU_E2E_OPERATOR_USER_ID": operator_user_id,
+            "HAKU_E2E_OPERATOR_SUBJECT": operator_subject,
             "HAKU_E2E_WORKSPACE": str(workspace),
             "HAKU_E2E_CLAIMS_DIR": str(self._claims),
             "HAKU_E2E_REFUSE_NEXT_REPLY": str(self._refusal),
             "HAKU_E2E_SYSTEM_PROMPT_TEMPLATE": str(get_required_path(SYSTEM_PROMPT_TEMPLATE)),
             "HAKU_E2E_ADOPTION_GRACE_SECONDS": str(ADOPTION_GRACE.total_seconds()),
             "HAKU_E2E_SWEEP_INTERVAL_SECONDS": str(SWEEP_INTERVAL.total_seconds()),
+            # The process is the Matrix worker's launch composition in miniature. Keep the route
+            # explicit so a full-stack test cannot accidentally pass by relying on a service default.
+            "HAKU_E2E_MATRIX_DEFAULT_AGENT_ID": str(matrix_launch.default_agent_id),
+            "HAKU_E2E_MATRIX_DEFAULT_HARNESS_KIND": matrix_launch.default_harness_kind.value,
+            "HAKU_E2E_MATRIX_ACCESS_PROFILE_ID": matrix_access_profile_id,
             # The nested binaries need the test's RUNFILES_* to find their own, and the stub
             # inherits this environment in turn (`backend.child_environment`), which is how
             # it learns where to leave its handshake files.

@@ -7,7 +7,6 @@ const selection = {
   agent_display_name: "public-coder-agent",
   runtime: "codex_app_server",
   runtime_display_name: "Codex",
-  is_default: false,
 } satisfies ChatLaunchOption;
 
 const conversation = {
@@ -21,7 +20,7 @@ function mockConversationPost() {
 afterEach(() => vi.restoreAllMocks());
 
 describe("createConversation", () => {
-  it("submits the explicit Agent/runtime pair without a profile selector", async () => {
+  it("submits the explicit Agent/harness pair without a profile selector", async () => {
     const post = mockConversationPost();
 
     expect(await createConversation(selection)).toBe(conversation);
