@@ -6,7 +6,7 @@ import datetime
 from collections.abc import Sequence
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, and_, select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import KubernetesGrantRow
@@ -23,7 +23,7 @@ from haku.console.grants.principal import (
     grant_principal_column_values,
     grant_principal_from_columns,
 )
-from haku.console.grants.provenance import SourceToolFilter, assert_owner_principal_and_source, lock_owned_source
+from haku.console.grants.provenance import SourceToolFilter, assert_owner_principal_and_source
 
 # Grant creation moved to the shared `grants` server (#4918); the source ToolCall provenance is
 # pinned to it. Stored audit rows from before the cutover keep their old `server_id` and are never
@@ -36,7 +36,7 @@ def _row_spec(row: KubernetesGrantRow) -> str:
 
 
 def _not_ended() -> ColumnElement[bool]:
-    return and_(KubernetesGrantRow.released_at.is_(None), KubernetesGrantRow.revoked_at.is_(None))
+    return KubernetesGrantRow.ended_at.is_(None)
 
 
 class PostgresGrantRepository:
@@ -51,15 +51,17 @@ class PostgresGrantRepository:
             grant_id=row.grant_id,
             owner_agent_id=row.owner_agent_id,
             principal=grant_principal_from_columns(
-                row.principal_kind, agent_id=row.principal_agent_id, session_id=row.principal_session_id
+                row.principal_kind,
+                agent_id=row.principal_agent_id,
+                session_id=row.principal_session_id,
+                access_profile_id=row.principal_access_profile_id,
             ),
             source_tool_call_id=row.source_tool_call_id,
             scope=row.scope,
             rules=tuple(row.rules),
             created_at=row.created_at,
             expires_at=row.expires_at,
-            released_at=row.released_at,
-            revoked_at=row.revoked_at,
+            ended_at=row.ended_at,
             end_reason=row.end_reason,
         )
 
@@ -123,7 +125,9 @@ class PostgresGrantRepository:
                     row_spec=_row_spec,
                 )
                 return tuple(self._row_to_model(row) for row in replayed)
-            principal_agent_id, principal_session_id = grant_principal_column_values(grant_principal)
+            principal_agent_id, principal_session_id, principal_access_profile_id = grant_principal_column_values(
+                grant_principal
+            )
             rows = [
                 KubernetesGrantRow(
                     grant_id=uuid4(),
@@ -131,13 +135,13 @@ class PostgresGrantRepository:
                     principal_kind=grant_principal.kind,
                     principal_agent_id=principal_agent_id,
                     principal_session_id=principal_session_id,
+                    principal_access_profile_id=principal_access_profile_id,
                     source_tool_call_id=source_tool_call_id,
                     scope=grant.scope,
                     rules=list(grant.rules),
                     created_at=created_at,
                     expires_at=expires_at,
-                    released_at=None,
-                    revoked_at=None,
+                    ended_at=None,
                     end_reason=None,
                 )
                 for grant in grants
@@ -169,70 +173,24 @@ class PostgresGrantRepository:
                 raise GrantOwnershipError(str(grant_id))
             return self._row_to_model(row)
 
-    async def _end(
-        self, *, owner_agent_id: UUID, grant_id: UUID, release: bool, reason: str, now: datetime.datetime
+    async def end(
+        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str | None, now: datetime.datetime
     ) -> Grant:
-        reason = reason.strip()
-        if not reason:
-            raise ValueError("grant end reason must not be empty")
         async with self._sessions.begin() as session:
             row = await session.scalar(
                 select(KubernetesGrantRow).where(KubernetesGrantRow.grant_id == grant_id).with_for_update()
             )
             if row is None:
                 raise GrantNotFoundError(str(grant_id))
-            if row.owner_agent_id != owner_agent_id:
+            if row.owner_agent_id not in owner_agent_ids:
                 raise GrantOwnershipError(str(grant_id))
             # Only a still-active grant records an end action: an already-ended one keeps its
             # facts, and an expired one stays expired by derivation rather than being relabeled.
-            if row.released_at is None and row.revoked_at is None and row.expires_at > now:
-                if release:
-                    row.released_at = now
-                else:
-                    row.revoked_at = now
+            if row.ended_at is None and row.expires_at > now:
+                row.ended_at = now
                 row.end_reason = reason
                 await session.flush()
             return self._row_to_model(row)
-
-    async def release(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant:
-        return await self._end(owner_agent_id=owner_agent_id, grant_id=grant_id, release=True, reason=reason, now=now)
-
-    async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant:
-        return await self._end(owner_agent_id=owner_agent_id, grant_id=grant_id, release=False, reason=reason, now=now)
-
-    async def revoke_source(
-        self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str, now: datetime.datetime
-    ) -> tuple[Grant, ...]:
-        """Revoke every still-active grant created by one reviewed source ToolCall."""
-
-        reason = reason.strip()
-        if not reason:
-            raise ValueError("grant end reason must not be empty")
-        async with self._sessions.begin() as session:
-            # Serialize source-set lifecycle with create_many(), which locks this same durable
-            # ToolCall before reading or inserting the immutable grant set.
-            await lock_owned_source(session, owner_agent_id=owner_agent_id, source_tool_call_id=source_tool_call_id)
-            rows = (
-                await session.scalars(
-                    select(KubernetesGrantRow)
-                    .where(
-                        KubernetesGrantRow.owner_agent_id == owner_agent_id,
-                        KubernetesGrantRow.source_tool_call_id == source_tool_call_id,
-                    )
-                    .order_by(KubernetesGrantRow.grant_id)
-                    .with_for_update()
-                )
-            ).all()
-            if not rows:
-                raise GrantNotFoundError(source_tool_call_id)
-            for row in rows:
-                # As in _end: only a still-active grant records the revocation fact; an
-                # already-ended or already-expired row keeps its derived status.
-                if row.released_at is None and row.revoked_at is None and row.expires_at > now:
-                    row.revoked_at = now
-                    row.end_reason = reason
-            await session.flush()
-            return tuple(self._row_to_model(row) for row in rows)
 
     async def list_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True

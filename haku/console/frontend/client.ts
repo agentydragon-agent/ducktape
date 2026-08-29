@@ -52,12 +52,9 @@ export type ConversationUpdate = components["schemas"]["ConversationUpdate"];
 export type SessionFrame = components["schemas"]["SessionFrameView"];
 export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
-// The #4918 entity-prefix drop renamed these route models to `OperatorGrant`/`GrantListResponse`,
-// which collide with the http domain's in the flat OpenAPI component namespace; pydantic emits
-// module-path-qualified component keys, which the generated types carry (naming_and_layout §4.1 seam 3).
-export type OperatorKubernetesGrant = components["schemas"]["haku__console__grants__kubernetes__routes__OperatorGrant"];
-export type KubernetesGrantListResponse =
-  components["schemas"]["haku__console__grants__kubernetes__routes__GrantListResponse"];
+export type AgentGrant = components["schemas"]["AgentGrant"];
+export type GrantListResponse = components["schemas"]["GrantListResponse"];
+export type RevokeGrantResponse = components["schemas"]["RevokeGrantResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
   | components["schemas"]["CreateEnrollmentRequest"]
@@ -212,22 +209,17 @@ export async function updateAgentAccessProfile(agentId: string, accessProfileId:
   return data;
 }
 
-export async function fetchKubernetesGrants(): Promise<KubernetesGrantListResponse> {
-  const { data, error } = await api.GET("/api/kubernetes-grants");
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load Kubernetes grants"));
+export async function fetchGrants(): Promise<GrantListResponse> {
+  const { data, error } = await api.GET("/api/grants");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load grants"));
   return data;
 }
 
-export async function revokeKubernetesGrantSet(
-  agentId: string,
-  sourceToolCallId: string,
-  reason: string
-): Promise<KubernetesGrantListResponse> {
-  const { data, error } = await api.POST("/api/kubernetes-grants/{agent_id}/source/{source_tool_call_id}/revoke", {
-    params: { path: { agent_id: agentId, source_tool_call_id: sourceToolCallId } },
-    body: { reason },
+export async function revokeGrant(grantId: string): Promise<RevokeGrantResponse> {
+  const { data, error } = await api.POST("/api/grants/revoke", {
+    body: { grant_ids: [grantId] },
   });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to revoke Kubernetes grant set"));
+  if (error || !data) throw new Error(errorDetail(error, "Failed to revoke grant"));
   return data;
 }
 

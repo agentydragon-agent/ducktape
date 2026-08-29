@@ -7,7 +7,7 @@ import {
   SAMPLE_DAEMONS,
   SAMPLE_DEPLOYMENT,
   SAMPLE_INDEX_STATUS,
-  SAMPLE_KUBERNETES_GRANTS,
+  SAMPLE_GRANTS,
   SAMPLE_MCP_PROBES,
   SAMPLE_MCP_SERVERS,
   SAMPLE_PENDING,
@@ -515,7 +515,7 @@ const mcpServers =
     : SAMPLE_MCP_SERVERS;
 
 async function respond(input: RequestInfo | URL, init: RequestInit | undefined, url: string): Promise<Response | null> {
-  if (url.includes("/api/kubernetes-grants")) return jsonResponse(SAMPLE_KUBERNETES_GRANTS);
+  if (url.includes("/api/grants")) return jsonResponse(SAMPLE_GRANTS);
   if (url.includes("/api/agent-enrollment/agents/") && init?.method === "PUT") {
     const body = JSON.parse(String(init.body)) as { access_profile_id: string };
     return jsonResponse({
@@ -534,6 +534,17 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
     return jsonResponse({
       access_profiles: ["manual_review", "haku_v1"],
       agents: [
+        {
+          agent_id: "30000000-0000-4000-8000-000000000003",
+          display_name: "Public Coder",
+          status: "active",
+          credential_kind: "static",
+          credential_status: "active",
+          created_at: "2026-07-18T12:00:00Z",
+          activated_at: "2026-07-18T12:00:00Z",
+          last_seen_at: "2026-07-20T19:30:00Z",
+          access_profile_id: "manual_review",
+        },
         {
           agent_id: "40000000-0000-4000-8000-000000000004",
           display_name: "Claude Desktop",

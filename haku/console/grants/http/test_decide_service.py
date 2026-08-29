@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
 from typing import Any, cast
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
@@ -23,6 +24,7 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.conftest import default_agent_binding, insert_approved_tool_call
+from haku.console.grants.catalog import GrantCatalog
 from haku.console.grants.http.decide_config import EgressStandingPolicyEntry, LoadedEgressCredential, LoadedEgressDecide
 from haku.console.grants.http.decide_service import HttpDecideService, HttpDecideUnavailableError
 from haku.console.grants.http.models import GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
@@ -32,13 +34,13 @@ from haku.console.grants.principal import AgentGrantPrincipal
 from haku.console.identity.agent_bearer_authority import ResolvedAgentBearer
 from haku.console.tool_call_actor import AgentActor
 from haku.egress.decision import (
-    DecideAllowed,
-    DecideDenied,
     DecideRequest,
-    DecisionSource,
+    HttpAuthorizationAllowed,
+    HttpAuthorizationDenied,
     PlaceholderSubstitution,
     RequestMeta,
 )
+from haku.grants.authorization import GrantSourceKind
 
 _NOW = datetime(2026, 8, 27, 12, 0, tzinfo=UTC)
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=443)
@@ -128,12 +130,17 @@ def _harness(
     assert client.portal is not None
     agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
     grants = GrantService(PostgresGrantRepository(sessions), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    standing_entries = standing(agent_id) if standing is not None else []
     decide = HttpDecideService(
-        grants=grants,
+        catalog=GrantCatalog(
+            kubernetes_grants=cast(Any, app.state.kubernetes_grants),
+            http_grants=grants,
+            http_config_policies=tuple(standing_entries),
+        ),
         credentials=LoadedEgressDecide(
             fence_credential=SecretStr(_FENCE),
             credentials=credentials(agent_id) if credentials is not None else [],
-            standing_policies=standing(agent_id) if standing is not None else [],
+            standing_policies=standing_entries,
         ),
         prohibited_cidrs=prohibited_cidrs,
         agent_bearer_authority=cast(Any, _BridgeBearerAuthority(agent_id=agent_id, binding_id=binding_id)),
@@ -207,9 +214,9 @@ def test_grant_scoped_verdicts_against_stored_grants(make_client: Any) -> None:
         decide = partial(client.portal.call, harness.decide.decide)
 
         allowed = decide(_request(path="/api/items?state=open"))
-        assert allowed == DecideAllowed(
-            source=DecisionSource.GRANT,
-            decision_id=f"grant:{prefix_grant_id}",
+        assert allowed == HttpAuthorizationAllowed(
+            source=GrantSourceKind.DATABASE,
+            decision_id=f"database:{prefix_grant_id}",
             valid_until=_NOW + timedelta(minutes=30),
             substitutions=[],
         )
@@ -218,7 +225,7 @@ def test_grant_scoped_verdicts_against_stored_grants(make_client: Any) -> None:
         # it, so an exact-path pin does not admit the same path with a query string appended.
         assert decide(_request(host="exact.example", path="/api/items")).allowed
         exact_miss = decide(_request(host="exact.example", path="/api/items?state=open"))
-        assert isinstance(exact_miss, DecideDenied)
+        assert isinstance(exact_miss, HttpAuthorizationDenied)
 
         for miss in (
             _request(method="POST", path="/api/items"),
@@ -228,10 +235,10 @@ def test_grant_scoped_verdicts_against_stored_grants(make_client: Any) -> None:
             _request(scheme="http", port=80, path="/api/items"),
         ):
             decision = decide(miss)
-            assert isinstance(decision, DecideDenied), miss.request
+            assert isinstance(decision, HttpAuthorizationDenied), miss.request
             assert decision.reason == "no active HTTP grant covers the request"
         denied = decide(_request(path="/elsewhere"))
-        assert isinstance(denied, DecideDenied)
+        assert isinstance(denied, HttpAuthorizationDenied)
         assert denied.grant_scope is not None
         assert (denied.grant_scope.scheme, denied.grant_scope.host, denied.grant_scope.port) == (
             "https",
@@ -246,7 +253,7 @@ def test_live_bridge_bearer_is_required_for_attribution(make_client: Any) -> Non
         denied = client.portal.call(
             partial(harness.decide.decide, _request(proxy_client_credential="not-a-live-session"))
         )
-        assert denied == DecideDenied(reason="unknown proxy client credential")
+        assert denied == HttpAuthorizationDenied(reason="unknown proxy client credential")
 
         # The test authority maps the bridge bearer to the configured Agent/session. Shared-fence
         # auth is carried separately in the HTTP Authorization header, but the live session is the
@@ -271,16 +278,16 @@ def test_connect_tunnel_admission(make_client: Any) -> None:
 
         # Any active https grant at the origin admits the tunnel, whatever its method/path pins.
         allowed = decide(_request(method="CONNECT", scheme=None, path=None))
-        assert isinstance(allowed, DecideAllowed)
-        assert allowed.decision_id == f"grant:{https_grant_id}"
+        assert isinstance(allowed, HttpAuthorizationAllowed)
+        assert allowed.decision_id == f"database:{https_grant_id}"
 
         unknown = decide(_request(method="CONNECT", scheme=None, path=None, host="other.example"))
-        assert isinstance(unknown, DecideDenied)
+        assert isinstance(unknown, HttpAuthorizationDenied)
         assert unknown.reason == "no active HTTP grant covers the origin"
 
         # A tunnel transports TLS, so a cleartext-origin grant cannot admit one.
         cleartext = decide(_request(method="CONNECT", scheme=None, path=None, host="plain.example", port=80))
-        assert isinstance(cleartext, DecideDenied)
+        assert isinstance(cleartext, HttpAuthorizationDenied)
 
 
 def test_standing_allowance_admits_with_provenance_and_no_deadline(make_client: Any) -> None:
@@ -301,15 +308,18 @@ def test_standing_allowance_admits_with_provenance_and_no_deadline(make_client: 
         decide = partial(client.portal.call, harness.decide.decide)
 
         allowed = decide(_request(path="/api/items?state=open"))
-        assert allowed == DecideAllowed(
-            source=DecisionSource.STANDING, decision_id="standing:api-standing", valid_until=None, substitutions=[]
+        assert allowed == HttpAuthorizationAllowed(
+            source=GrantSourceKind.CONFIG_FILE,
+            decision_id="config_file:api-standing",
+            valid_until=None,
+            substitutions=[],
         )
 
         # Ruled in #4884 for grants and identical here: the regex sees path plus query, so an
         # exact-path pin does not admit the same path with a query string appended.
         assert decide(_request(host="exact.example", path="/api/items")).allowed
         exact_miss = decide(_request(host="exact.example", path="/api/items?state=open"))
-        assert isinstance(exact_miss, DecideDenied)
+        assert isinstance(exact_miss, HttpAuthorizationDenied)
 
         # No standing match falls through to grants — none exist, so the grant evaluator's clean
         # denial comes back unchanged.
@@ -319,7 +329,7 @@ def test_standing_allowance_admits_with_provenance_and_no_deadline(make_client: 
             _request(host="other.example", path="/api/items"),
         ):
             decision = decide(miss)
-            assert isinstance(decision, DecideDenied), miss.request
+            assert isinstance(decision, HttpAuthorizationDenied), miss.request
             assert decision.reason == "no active HTTP grant covers the request"
 
 
@@ -338,16 +348,16 @@ def test_standing_wins_over_a_matching_grant(make_client: Any) -> None:
 
         # Both authorities cover GET; standing is evaluated first and provenance says so.
         covered_by_both = decide(_request())
-        assert isinstance(covered_by_both, DecideAllowed)
-        assert covered_by_both.source is DecisionSource.STANDING
-        assert covered_by_both.decision_id == "standing:api-standing"
+        assert isinstance(covered_by_both, HttpAuthorizationAllowed)
+        assert covered_by_both.source is GrantSourceKind.CONFIG_FILE
+        assert covered_by_both.decision_id == "config_file:api-standing"
         assert covered_by_both.valid_until is None
 
         # Outside standing coverage the grant path is untouched: same verdict it always gave.
         grant_only = decide(_request(method="POST"))
-        assert isinstance(grant_only, DecideAllowed)
-        assert grant_only.source is DecisionSource.GRANT
-        assert grant_only.decision_id == f"grant:{grant_id}"
+        assert isinstance(grant_only, HttpAuthorizationAllowed)
+        assert grant_only.source is GrantSourceKind.DATABASE
+        assert grant_only.decision_id == f"database:{grant_id}"
         assert grant_only.valid_until == _NOW + timedelta(minutes=30)
 
 
@@ -362,7 +372,7 @@ def test_prohibited_resolved_answer_denies_despite_standing_policy(make_client: 
             partial(harness.decide.decide, _request(resolved_ips=frozenset({loopback}), upstream_ip=loopback))
         )
 
-        assert decision == DecideDenied(reason="resolved address 127.0.0.1 is loopback")
+        assert decision == HttpAuthorizationDenied(reason="resolved address 127.0.0.1 is loopback")
 
 
 def test_standing_allowance_redeems_the_registry_credential(make_client: Any) -> None:
@@ -375,9 +385,9 @@ def test_standing_allowance_redeems_the_registry_credential(make_client: Any) ->
 
         allowed = client.portal.call(partial(harness.decide.decide, _request(path="/repos/agentydragon/ducktape")))
 
-        assert allowed == DecideAllowed(
-            source=DecisionSource.STANDING,
-            decision_id="standing:api-standing",
+        assert allowed == HttpAuthorizationAllowed(
+            source=GrantSourceKind.CONFIG_FILE,
+            decision_id="config_file:api-standing",
             valid_until=None,
             substitutions=[
                 PlaceholderSubstitution(
@@ -404,8 +414,8 @@ def test_overlapping_standing_entries_union_credentials_and_keep_first_provenanc
 
         allowed = client.portal.call(partial(harness.decide.decide, _request()))
 
-        assert isinstance(allowed, DecideAllowed)
-        assert allowed.decision_id == "standing:broad"
+        assert isinstance(allowed, HttpAuthorizationAllowed)
+        assert allowed.decision_id == "config_file:broad"
         assert [substitution.value for substitution in allowed.substitutions] == [_GITHUB_VALUE]
 
 
@@ -424,18 +434,18 @@ def test_standing_connect_tunnel_admission(make_client: Any) -> None:
         decide = partial(client.portal.call, harness.decide.decide)
 
         allowed = decide(_request(method="CONNECT", scheme=None, path=None))
-        assert isinstance(allowed, DecideAllowed)
-        assert allowed.source is DecisionSource.STANDING
-        assert allowed.decision_id == "standing:api-standing"
+        assert isinstance(allowed, HttpAuthorizationAllowed)
+        assert allowed.source is GrantSourceKind.CONFIG_FILE
+        assert allowed.decision_id == "config_file:api-standing"
         # A tunnel has no inner request yet: nothing to substitute into, even credentialed.
         assert allowed.substitutions == []
 
         # A tunnel transports TLS, so a cleartext-origin standing entry cannot admit one.
         cleartext = decide(_request(method="CONNECT", scheme=None, path=None, host="plain.example", port=80))
-        assert isinstance(cleartext, DecideDenied)
+        assert isinstance(cleartext, HttpAuthorizationDenied)
 
         unknown = decide(_request(method="CONNECT", scheme=None, path=None, host="other.example"))
-        assert isinstance(unknown, DecideDenied)
+        assert isinstance(unknown, HttpAuthorizationDenied)
 
 
 def test_standing_unresolvable_credential_degrades(make_client: Any, caplog: pytest.LogCaptureFixture) -> None:
@@ -472,8 +482,8 @@ def test_standing_unresolvable_credential_degrades(make_client: Any, caplog: pyt
                 (_request(host="third.example"), "not configured"),
             ]:
                 decision = decide(request)
-                assert isinstance(decision, DecideAllowed), request.request
-                assert decision.source is DecisionSource.STANDING
+                assert isinstance(decision, HttpAuthorizationAllowed), request.request
+                assert decision.source is GrantSourceKind.CONFIG_FILE
                 assert decision.substitutions == []
                 assert warning in caplog.text
         assert _GITHUB_VALUE not in caplog.text
@@ -491,9 +501,9 @@ def test_credentialed_grant_redeems_the_substitution(make_client: Any) -> None:
         decide = partial(client.portal.call, harness.decide.decide)
 
         allowed = decide(_request(path="/repos/agentydragon/ducktape"))
-        assert allowed == DecideAllowed(
-            source=DecisionSource.GRANT,
-            decision_id=f"grant:{grant_id}",
+        assert allowed == HttpAuthorizationAllowed(
+            source=GrantSourceKind.DATABASE,
+            decision_id=f"database:{grant_id}",
             valid_until=_NOW + timedelta(minutes=30),
             substitutions=[
                 PlaceholderSubstitution(
@@ -513,8 +523,8 @@ def test_credentialed_grant_redeems_the_substitution(make_client: Any) -> None:
             expires_at=_NOW + timedelta(minutes=10),
         )
         combined = decide(_request(path="/repos/agentydragon/ducktape"))
-        assert isinstance(combined, DecideAllowed)
-        assert combined.decision_id == f"grant:{reachability_id}"
+        assert isinstance(combined, HttpAuthorizationAllowed)
+        assert combined.decision_id == f"database:{reachability_id}"
         assert combined.valid_until == _NOW + timedelta(minutes=10)
         assert [substitution.value for substitution in combined.substitutions] == [_GITHUB_VALUE]
 
@@ -533,7 +543,7 @@ def test_connect_tunnel_admission_carries_no_substitutions(make_client: Any) -> 
 
         allowed = client.portal.call(partial(harness.decide.decide, _request(method="CONNECT", scheme=None, path=None)))
 
-        assert isinstance(allowed, DecideAllowed)
+        assert isinstance(allowed, HttpAuthorizationAllowed)
         assert allowed.substitutions == []
 
 
@@ -585,7 +595,7 @@ def test_unresolvable_credential_admits_without_substitution(
                 (_request(host="third.example"), "not configured"),
             ]:
                 decision = decide(request)
-                assert isinstance(decision, DecideAllowed), request.request
+                assert isinstance(decision, HttpAuthorizationAllowed), request.request
                 assert decision.substitutions == []
                 assert warning in caplog.text
         assert _GITHUB_VALUE not in caplog.text
@@ -601,8 +611,8 @@ def test_earliest_expiry_bounds_the_admission(make_client: Any) -> None:
 
         decision = client.portal.call(partial(harness.decide.decide, _request()))
 
-        assert isinstance(decision, DecideAllowed)
-        assert decision.decision_id == f"grant:{earlier_id}"
+        assert isinstance(decision, HttpAuthorizationAllowed)
+        assert decision.decision_id == f"database:{earlier_id}"
         assert decision.valid_until == _NOW + timedelta(minutes=10)
 
 
@@ -623,7 +633,7 @@ def test_ungrantable_metadata_denies_with_a_reason(make_client: Any) -> None:
             (_request(method="CONNECT", scheme=None, path=None, host="203.0.113.7"), "origin is not grantable"),
         ]:
             decision = decide(request)
-            assert decision == DecideDenied(reason=reason, grant_scope=None), request.request
+            assert decision == HttpAuthorizationDenied(reason=reason, grant_scope=None), request.request
 
 
 def test_prohibited_resolved_answer_denies_each_class(make_client: Any) -> None:
@@ -652,7 +662,9 @@ def test_prohibited_resolved_answer_denies_each_class(make_client: Any) -> None:
         ]
         for prohibited, class_label in prohibited_answers:
             decision = decide(_request(resolved_ips=frozenset({prohibited}), upstream_ip=prohibited))
-            assert decision == DecideDenied(reason=f"resolved address {prohibited} is {class_label}"), prohibited
+            assert decision == HttpAuthorizationDenied(reason=f"resolved address {prohibited} is {class_label}"), (
+                prohibited
+            )
 
 
 def test_mixed_public_and_prohibited_answer_denies_whole(make_client: Any) -> None:
@@ -673,7 +685,7 @@ def test_mixed_public_and_prohibited_answer_denies_whole(make_client: Any) -> No
             )
         )
 
-        assert decision == DecideDenied(reason="resolved address 10.0.0.5 is in a private range")
+        assert decision == HttpAuthorizationDenied(reason="resolved address 10.0.0.5 is in a private range")
 
 
 def test_configured_prohibited_cidrs_extend_the_always_on_classes(make_client: Any) -> None:
@@ -702,7 +714,9 @@ def test_configured_prohibited_cidrs_extend_the_always_on_classes(make_client: A
             denied = client.portal.call(
                 partial(fenced.decide.decide, _request(resolved_ips=frozenset({address}), upstream_ip=address))
             )
-            assert denied == DecideDenied(reason=f"resolved address {address} is in prohibited range {network}")
+            assert denied == HttpAuthorizationDenied(
+                reason=f"resolved address {address} is in prohibited range {network}"
+            )
         # A public answer — mixed-family included — still admits through the fenced service.
         public = client.portal.call(
             partial(
@@ -734,14 +748,14 @@ def test_flagged_standing_entry_reaches_a_fully_internal_destination(make_client
                 _request(path="/repos/agentydragon/ducktape", resolved_ips=frozenset({internal}), upstream_ip=internal),
             )
         )
-        assert isinstance(allowed, DecideAllowed)
-        assert allowed.source is DecisionSource.STANDING
+        assert isinstance(allowed, HttpAuthorizationAllowed)
+        assert allowed.source is GrantSourceKind.CONFIG_FILE
         assert [substitution.value for substitution in allowed.substitutions] == [_GITHUB_VALUE]
 
         denied = client.portal.call(
             partial(unflagged.decide.decide, _request(resolved_ips=frozenset({internal}), upstream_ip=internal))
         )
-        assert denied == DecideDenied(reason="resolved address 10.0.0.5 is in a private range")
+        assert denied == HttpAuthorizationDenied(reason="resolved address 10.0.0.5 is in a private range")
 
 
 def test_flagged_grant_reaches_a_destination_in_a_configured_prohibited_cidr(make_client: Any) -> None:
@@ -760,9 +774,9 @@ def test_flagged_grant_reaches_a_destination_in_a_configured_prohibited_cidr(mak
         allowed = client.portal.call(
             partial(harness.decide.decide, _request(resolved_ips=frozenset({internal}), upstream_ip=internal))
         )
-        assert isinstance(allowed, DecideAllowed)
-        assert allowed.source is DecisionSource.GRANT
-        assert allowed.decision_id == f"grant:{grant_id}"
+        assert isinstance(allowed, HttpAuthorizationAllowed)
+        assert allowed.source is GrantSourceKind.DATABASE
+        assert allowed.decision_id == f"database:{grant_id}"
 
 
 def test_prohibited_address_override_is_scoped_to_its_own_origin(make_client: Any) -> None:
@@ -775,7 +789,7 @@ def test_prohibited_address_override_is_scoped_to_its_own_origin(make_client: An
 
         assert decide(_request(resolved_ips=frozenset({internal}), upstream_ip=internal)).allowed
         other = decide(_request(host="other.example", resolved_ips=frozenset({internal}), upstream_ip=internal))
-        assert other == DecideDenied(reason="resolved address 10.0.0.5 is in a private range")
+        assert other == HttpAuthorizationDenied(reason="resolved address 10.0.0.5 is in a private range")
 
 
 def test_flag_never_overrides_a_mixed_public_and_prohibited_answer(make_client: Any) -> None:
@@ -791,7 +805,7 @@ def test_flag_never_overrides_a_mixed_public_and_prohibited_answer(make_client: 
             )
         )
 
-        assert decision == DecideDenied(reason="resolved address 10.0.0.5 is in a private range")
+        assert decision == HttpAuthorizationDenied(reason="resolved address 10.0.0.5 is in a private range")
 
 
 async def test_grant_authority_failure_raises_unavailable() -> None:
@@ -801,7 +815,12 @@ async def test_grant_authority_failure_raises_unavailable() -> None:
         create_async_engine("postgresql+asyncpg://nobody:nothing@127.0.0.1:9/unreachable"), expire_on_commit=False
     )
     service = HttpDecideService(
-        grants=GrantService(PostgresGrantRepository(unreachable), max_lifetime=timedelta(hours=1), clock=lambda: _NOW),
+        catalog=GrantCatalog(
+            kubernetes_grants=AsyncMock(),
+            http_grants=GrantService(
+                PostgresGrantRepository(unreachable), max_lifetime=timedelta(hours=1), clock=lambda: _NOW
+            ),
+        ),
         credentials=LoadedEgressDecide(fence_credential=SecretStr(_FENCE)),
         prohibited_cidrs=frozenset(),
         agent_bearer_authority=cast(Any, _UnavailableBridgeBearerAuthority()),

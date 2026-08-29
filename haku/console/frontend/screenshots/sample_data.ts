@@ -1,7 +1,7 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state";
-import type { DeploymentInfo, KubernetesGrantListResponse, ToolCallRecord } from "../client";
+import type { DeploymentInfo, GrantListResponse, ToolCallRecord } from "../client";
 import type { DaemonStatus, IndexStatus, McpServerConnection, McpServerProbe } from "../mcp_status_client";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index";
 
@@ -318,90 +318,115 @@ export const SAMPLE_MCP_PROBES: Record<string, McpServerProbe> = Object.fromEntr
   ])
 );
 
-export const SAMPLE_KUBERNETES_GRANTS: KubernetesGrantListResponse = {
+export const SAMPLE_GRANTS: GrantListResponse = {
   grants: [
     {
-      agent_display_name: "Public Coder",
+      agent_id: "30000000-0000-4000-8000-000000000003",
       grant: {
-        grant_id: "50000000-0000-4000-8000-000000000005",
-        owner_agent_id: "30000000-0000-4000-8000-000000000003",
-        principal: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
-        source_tool_call_id: "tc_0123456789abcdef01234567",
-        scope: { kind: "namespaces", namespaces: ["public-coder-agent"] },
-        rules: [
-          {
-            api_groups: [""],
-            resources: ["pods/log"],
-            verbs: ["get"],
-            resource_names: [],
-            non_resource_urls: [],
-          },
-          {
-            api_groups: ["apps"],
-            resources: ["deployments"],
-            verbs: ["get", "list"],
-            resource_names: [],
-            non_resource_urls: [],
-          },
-        ],
-        status: "active",
-        created_at: "2026-08-22T00:35:00Z",
-        expires_at: "2026-08-22T02:05:00Z",
-        end_reason: null,
-      },
-    },
-    {
-      agent_display_name: "Public Coder",
-      grant: {
-        grant_id: "50000000-0000-4000-8000-000000000007",
-        owner_agent_id: "30000000-0000-4000-8000-000000000003",
-        principal: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
-        source_tool_call_id: "tc_0123456789abcdef01234567",
-        scope: { kind: "cluster" },
-        rules: [
-          {
-            api_groups: ["rbac.authorization.k8s.io"],
-            resources: ["clusterroles"],
-            verbs: ["get", "list"],
-            resource_names: [],
-            non_resource_urls: [],
-          },
-        ],
-        status: "active",
-        created_at: "2026-08-22T00:35:00Z",
-        expires_at: "2026-08-22T02:05:00Z",
-        end_reason: null,
-      },
-    },
-    {
-      agent_display_name: "Public Coder",
-      grant: {
-        grant_id: "50000000-0000-4000-8000-000000000006",
-        owner_agent_id: "30000000-0000-4000-8000-000000000003",
-        principal: {
-          kind: "session",
-          session_id: "60000000-0000-4000-8000-000000000006",
+        source: {
+          kind: "database",
+          id: "50000000-0000-4000-8000-000000000005",
+          tool_call_id: "tc_0123456789abcdef01234567",
+          created_at: "2026-08-22T00:35:00Z",
         },
-        source_tool_call_id: "tc_1123456789abcdef01234567",
-        scope: { kind: "cluster" },
-        rules: [
-          {
-            api_groups: [""],
-            resources: ["nodes"],
-            verbs: ["get"],
-            resource_names: ["wyrm2"],
-            non_resource_urls: [],
-          },
-        ],
-        status: "revoked",
-        created_at: "2026-08-21T21:00:00Z",
-        expires_at: "2026-08-21T22:00:00Z",
-        revoked_at: "2026-08-21T21:20:00Z",
-        end_reason: "Pilot complete; return to standing diagnostics.",
+        subject: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
+        coverage: {
+          kind: "kubernetes_rules",
+          scope: { kind: "namespaces", namespaces: ["public-coder-agent"] },
+          rules: [
+            {
+              api_groups: [""],
+              resources: ["pods/log"],
+              verbs: ["get"],
+              resource_names: [],
+              non_resource_urls: [],
+            },
+            {
+              api_groups: ["apps"],
+              resources: ["deployments"],
+              verbs: ["get", "list"],
+              resource_names: [],
+              non_resource_urls: [],
+            },
+          ],
+        },
+        validity: { ends_at: "2026-08-22T02:05:00Z", status: "active", ended_at: null, end_reason: null },
+      },
+    },
+    {
+      agent_id: "30000000-0000-4000-8000-000000000003",
+      grant: {
+        source: {
+          kind: "database",
+          id: "50000000-0000-4000-8000-000000000007",
+          tool_call_id: "tc_0123456789abcdef01234567",
+          created_at: "2026-08-22T00:35:00Z",
+        },
+        subject: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
+        coverage: {
+          kind: "kubernetes_rules",
+          scope: { kind: "cluster" },
+          rules: [
+            {
+              api_groups: ["rbac.authorization.k8s.io"],
+              resources: ["clusterroles"],
+              verbs: ["get", "list"],
+              resource_names: [],
+              non_resource_urls: [],
+            },
+          ],
+        },
+        validity: { ends_at: "2026-08-22T02:05:00Z", status: "active", ended_at: null, end_reason: null },
+      },
+    },
+    {
+      agent_id: "30000000-0000-4000-8000-000000000003",
+      grant: {
+        source: {
+          kind: "database",
+          id: "50000000-0000-4000-8000-000000000006",
+          tool_call_id: "tc_1123456789abcdef01234567",
+          created_at: "2026-08-21T21:00:00Z",
+        },
+        subject: { kind: "session", session_id: "60000000-0000-4000-8000-000000000006" },
+        coverage: {
+          kind: "kubernetes_rules",
+          scope: { kind: "cluster" },
+          rules: [
+            {
+              api_groups: [""],
+              resources: ["nodes"],
+              verbs: ["get"],
+              resource_names: ["wyrm2"],
+              non_resource_urls: [],
+            },
+          ],
+        },
+        validity: {
+          ends_at: "2026-08-21T22:00:00Z",
+          status: "ended",
+          ended_at: "2026-08-21T21:20:00Z",
+          end_reason: "Pilot complete; return to standard diagnostics.",
+        },
+      },
+    },
+    {
+      agent_id: "30000000-0000-4000-8000-000000000003",
+      grant: {
+        source: { kind: "config_file", entry_id: "grocy-read" },
+        subject: { kind: "access_profile", access_profile_id: "public-coder" },
+        coverage: {
+          kind: "http",
+          origins: [{ scheme: "https", host: "grocy.example", port: 443 }],
+          coverage: { methods: ["GET"], path_regex: "/api/.*" },
+          credential_handles: ["grocy-readonly"],
+          allow_prohibited_address: false,
+        },
+        validity: { ends_at: null, status: "active", ended_at: null, end_reason: null },
       },
     },
   ],
-} satisfies KubernetesGrantListResponse;
+} satisfies GrantListResponse;
 
 export const SAMPLE_DAEMONS: DaemonStatus[] = [
   {

@@ -111,6 +111,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":agent_names",
+        ":client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -700,13 +701,14 @@ ts_library(
 )
 
 ts_library(
-    name = "kubernetes_grants_panel",
-    srcs = ["kubernetes_grants_panel.tsx"],
+    name = "grants_panel",
+    srcs = ["grants_panel.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
         ":client",
+        ":code_block",
         ":grant_principal",
         ":link",
         ":routing",
@@ -727,7 +729,7 @@ ts_library(
         ":async_resource",
         ":client",
         ":console_events",
-        ":kubernetes_grants_panel",
+        ":grants_panel",
         ":link",
         ":mcp_status_client",
         ":open_external",
@@ -883,11 +885,11 @@ filegroup(
         "confirm_dialog.tsx",
         "field.tsx",
         "gmail_client.ts",
+        "grants_panel.tsx",
         "grocy_client.ts",
         "haku_ui_embed.tsx",
         "icons.tsx",
         "index.html",
-        "kubernetes_grants_panel.tsx",
         "main.tsx",
         "oauth_result_announcement.ts",
         "oauth_result_page.tsx",

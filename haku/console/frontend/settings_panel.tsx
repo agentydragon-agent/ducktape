@@ -17,7 +17,7 @@ import {
   type OperatorConnectionName,
 } from "./client";
 import { useConsoleEvents } from "./console_events";
-import { KubernetesGrantsPanel } from "./kubernetes_grants_panel";
+import { GrantsPanel } from "./grants_panel";
 import { ExternalLink } from "./link";
 import { usePushNotifications, type PushState } from "./push_subscription";
 import {
@@ -459,7 +459,7 @@ function PushNotificationCard() {
   );
 }
 
-const SETTINGS_TABS = ["mcp", "agents", "kubernetes", "notifications", "nodes", "system"] as const;
+const SETTINGS_TABS = ["mcp", "agents", "grants", "notifications", "nodes", "system"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export function settingsTabFromSearch(search: string): SettingsTab {
@@ -762,7 +762,7 @@ export function SettingsPanel(): JSX.Element {
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <Text fw={700}>Settings</Text>
-          {activeTab !== "notifications" && activeTab !== "kubernetes" && (
+          {activeTab !== "notifications" && activeTab !== "grants" && (
             <Button size="xs" variant="light" color="gray" loading={loading} onClick={refreshActiveTab}>
               Refresh
             </Button>
@@ -774,9 +774,9 @@ export function SettingsPanel(): JSX.Element {
             <span className="haku-settings-tab-short">MCP</span>
           </Tabs.Tab>
           <Tabs.Tab value="agents">Agents</Tabs.Tab>
-          <Tabs.Tab value="kubernetes">
-            <span className="haku-settings-tab-long">Kubernetes grants</span>
-            <span className="haku-settings-tab-short">K8s</span>
+          <Tabs.Tab value="grants">
+            <span className="haku-settings-tab-long">Grants</span>
+            <span className="haku-settings-tab-short">Grants</span>
           </Tabs.Tab>
           <Tabs.Tab value="notifications">
             <span className="haku-settings-tab-long">Notifications</span>
@@ -831,8 +831,8 @@ export function SettingsPanel(): JSX.Element {
             }
           </ResourcePanel>
         </Tabs.Panel>
-        <Tabs.Panel value="kubernetes">
-          <KubernetesGrantsPanel />
+        <Tabs.Panel value="grants">
+          <GrantsPanel />
         </Tabs.Panel>
         <Tabs.Panel value="notifications">
           <Stack gap="xs" className="haku-page-list">

@@ -8,6 +8,10 @@ type CreateGrantItem = McpToolArgumentsFor<"grants", "create_grant">["grants"][n
 type GrantView = McpToolResultFor<"grants", "revoke_grants">[number];
 
 const AGENT_DISPLAY_NAMES = { "10000000-0000-4000-8000-000000000001": "Haku agent" };
+const AGENT_PRINCIPAL = {
+  kind: "agent" as const,
+  agent_id: "10000000-0000-4000-8000-000000000001",
+};
 
 const KUBERNETES_ITEM: CreateGrantItem = {
   domain: "kubernetes" as const,
@@ -55,8 +59,8 @@ const SESSION_KUBERNETES_VIEW: GrantView = {
     // session's Agent identity.
     owner_agent_id: "90000000-0000-4000-8000-000000000009",
     principal: { kind: "session" as const, session_id: "30000000-0000-4000-8000-000000000006" },
-    status: "released" as const,
-    released_at: "2025-01-27T10:15:00Z",
+    status: "ended" as const,
+    ended_at: "2025-01-27T10:15:00Z",
     end_reason: "probe complete",
   },
 };
@@ -66,7 +70,7 @@ const PREVIEW_FIXTURES = [
     title: "Create temporary Kubernetes grants",
     serverId: "grants",
     toolName: "create_grant",
-    args: { grants: [KUBERNETES_ITEM], duration_seconds: 3600 },
+    args: { grants: [KUBERNETES_ITEM], duration_seconds: 3600, principal: AGENT_PRINCIPAL },
     agentDisplayNames: AGENT_DISPLAY_NAMES,
     result: [KUBERNETES_VIEW],
   },
@@ -74,7 +78,7 @@ const PREVIEW_FIXTURES = [
     title: "Create a temporary HTTP egress grant",
     serverId: "grants",
     toolName: "create_grant",
-    args: { grants: [HTTP_ITEM], duration_seconds: 1800 },
+    args: { grants: [HTTP_ITEM], duration_seconds: 1800, principal: AGENT_PRINCIPAL },
     agentDisplayNames: AGENT_DISPLAY_NAMES,
     result: [
       {
@@ -93,7 +97,7 @@ const PREVIEW_FIXTURES = [
     ],
   },
   {
-    title: "Release several Kubernetes grants (Agent)",
+    title: "End several Kubernetes grants (Agent)",
     serverId: "grants",
     toolName: "revoke_grants",
     args: {
@@ -107,9 +111,8 @@ const PREVIEW_FIXTURES = [
         domain: "kubernetes" as const,
         grant: {
           ...KUBERNETES_VIEW.grant,
-          status: "released" as const,
-          released_at: "2025-01-27T10:15:00Z",
-          revoked_at: null,
+          status: "ended" as const,
+          ended_at: "2025-01-27T10:15:00Z",
           end_reason: "probe complete",
         },
       },
@@ -117,7 +120,7 @@ const PREVIEW_FIXTURES = [
     ],
   },
   {
-    title: "Revoke an owned Agent's grant (Operator)",
+    title: "End an owned Agent's grant (Operator)",
     serverId: "grants",
     toolName: "revoke_grants",
     args: {
@@ -136,11 +139,10 @@ const PREVIEW_FIXTURES = [
           principal: { kind: "agent" as const, agent_id: KUBERNETES_VIEW.grant.owner_agent_id },
           source_tool_call_id: "tc_create_grant",
           spec: HTTP_ITEM.spec,
-          status: "revoked" as const,
+          status: "ended" as const,
           created_at: "2025-01-27T10:00:00Z",
           expires_at: "2025-01-27T11:00:00Z",
-          released_at: null,
-          revoked_at: "2025-01-27T10:20:00Z",
+          ended_at: "2025-01-27T10:20:00Z",
           end_reason: "operator revoked",
         },
       },
