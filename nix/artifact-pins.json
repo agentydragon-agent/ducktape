@@ -221,8 +221,8 @@
       "sha256": "PbrQcBaSry3T2Epz47/FsCSn+M4pdUiXX5cbhp2DtKw="
     },
     "hakuctl": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/hakuctl-53f31973bd02/hakuctl-0.1.0-py3-none-any.whl",
-      "sha256": "U/MZc70C+nBN61GHXCUyzV212LvwD+yMDzzAtKPi5rc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/hakuctl-19245dcb58ca/hakuctl-0.1.0-py3-none-any.whl",
+      "sha256": "GSRdy1jKf+0SGEctZzmDNY24gHwAyzr10qKeOBfA9/g="
     }
   }
 }
