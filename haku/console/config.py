@@ -13,6 +13,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from haku.console.harnesses.environment import EnvironmentPassthrough
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.http_url import UncredentialedHttpUrl
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
@@ -265,7 +266,7 @@ class RuntimeExecutionConfig(BaseModel):
         return _proxy_environment(proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle, pip=pip)
 
 
-class ClaudeCodeImplementationConfig(BaseModel):
+class ClaudeCodeImplementationConfig(EnvironmentPassthrough):
     """The settings that belong specifically to the Claude CLI implementation."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -320,6 +321,7 @@ class RuntimeRegistrationConfig(RuntimeExecutionConfig):
         return {
             **self.proxy_environment(pip=isinstance(implementation, CodexAppServerImplementationConfig)),
             **provider_environment,
+            **implementation.environment,
         }
 
 

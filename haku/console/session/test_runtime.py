@@ -278,6 +278,21 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
     }
 
 
+def test_claude_environment_merges_configured_extra_environment_last() -> None:
+    implementation = runtime_config().implementation.model_dump(mode="json")
+    config = runtime_config(
+        implementation=implementation
+        | {"environment": {"ENABLE_TOOL_SEARCH": "true", "ANTHROPIC_MODEL": "deploy-override"}}
+    )
+
+    environment = config.environment()
+    assert environment["ENABLE_TOOL_SEARCH"] == "true"
+    assert environment["ANTHROPIC_MODEL"] == "deploy-override"
+
+    with pytest.raises(ValidationError, match="environment"):
+        runtime_config(implementation=implementation | {"environment": {"not a name": "x"}})
+
+
 def _codex_runtime_config(**overrides: Any) -> RuntimeRegistrationConfig:
     implementation: dict[str, Any] = {
         "kind": "codex_app_server",
@@ -372,6 +387,7 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
         "haiku_model": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
         "auth_token_placeholder": "not-a-secret",
         "gateway_discovery": True,
+        "environment": {},
     }
     assert RuntimeRegistrationConfig.model_validate(wire) == config
     assert isinstance(config.implementation, ClaudeCodeImplementationConfig)
