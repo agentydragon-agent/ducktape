@@ -15,6 +15,7 @@ than each re-deriving the harness.
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime
 import logging
 import socket
@@ -46,8 +47,8 @@ from haku.egress.runner import EgressProxy
 
 PLACEHOLDER = "proxy-github-placeholder"
 REAL_CREDENTIAL = "real-redeemed-credential"
-PROXY_BEARER = "proxy-identity-bearer"
-FENCE_CREDENTIAL = "agent-fence-credential"
+FENCE_CREDENTIAL = "shared-fence-credential"
+BRIDGE_BEARER = "bridge-session-bearer"
 
 
 def allow(*substitutions: PlaceholderSubstitution) -> DecideAllowed:
@@ -150,7 +151,9 @@ def make_proxy(
 
 
 def proxy_url(proxy: EgressProxy) -> str:
-    return f"http://127.0.0.1:{proxy.listen_port}"
+    # URL userinfo makes aiohttp send the same Basic proxy credential ordinary runner-launched
+    # clients use. The addon decodes it and the upstream never sees Proxy-Authorization.
+    return f"http://:{BRIDGE_BEARER}@127.0.0.1:{proxy.listen_port}"
 
 
 async def proxied_get(proxy: EgressProxy, url: str, headers: dict[str, str] | None = None) -> tuple[int, str]:
@@ -169,7 +172,13 @@ async def proxied_get_raw(proxy_port: int, url: str, header_lines: list[tuple[st
     need. ``url`` is the absolute request target (``http://host:port/path``).
     """
     authority = url.split("//", 1)[1].split("/", 1)[0]
-    lines = [f"GET {url} HTTP/1.1", f"Host: {authority}", "Connection: close"]
+    proxy_auth = base64.b64encode(f":{BRIDGE_BEARER}".encode()).decode()
+    lines = [
+        f"GET {url} HTTP/1.1",
+        f"Host: {authority}",
+        "Connection: close",
+        f"Proxy-Authorization: Basic {proxy_auth}",
+    ]
     lines += [f"{name}: {value}" for name, value in header_lines]
     reader, writer = await asyncio.open_connection("127.0.0.1", proxy_port)
     try:
@@ -190,7 +199,9 @@ class RaisingDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
+        proxy_client_credential: str | None = None,
     ) -> DecideResponse:
+        del resolved_ips, upstream_ip, proxy_client_credential
         raise RuntimeError("decide transport exploded")
 
 
@@ -201,7 +212,9 @@ class HangingDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
+        proxy_client_credential: str | None = None,
     ) -> DecideResponse:
+        del resolved_ips, upstream_ip, proxy_client_credential
         await asyncio.Event().wait()
         raise AssertionError("unreachable: the event is never set")
 
@@ -213,7 +226,9 @@ class MalformedDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
+        proxy_client_credential: str | None = None,
     ) -> DecideResponse:
+        del request, resolved_ips, upstream_ip, proxy_client_credential
         return cast(DecideResponse, {"allowed": True, "substitutions": []})
 
 
@@ -258,8 +273,8 @@ class StubConsole:
         behavior = self.behavior
         if isinstance(behavior, Unconfigured):
             return web.json_response({"detail": "HTTP egress decision is not configured"}, status=503)
-        if request.headers.get("Authorization") != f"Bearer {PROXY_BEARER}":
-            return web.json_response({"detail": "proxy identity bearer was rejected"}, status=401)
+        if request.headers.get("Authorization") != f"Bearer {FENCE_CREDENTIAL}":
+            return web.json_response({"detail": "fence credential was rejected"}, status=401)
         self.requests.append(DecideRequest.model_validate_json(await request.read()))
         match behavior:
             case DecideAllowed() | DecideDenied() as verdict:
@@ -296,12 +311,11 @@ async def stub_console(behavior: StubBehavior) -> AsyncIterator[StubConsole]:
 
 
 def stub_client(
-    stub: StubConsole, *, proxy_bearer: str = PROXY_BEARER, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    stub: StubConsole, *, fence_credential: str = FENCE_CREDENTIAL, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
 ) -> LocalhostDecideClient:
     return LocalhostDecideClient(
         base_url=f"http://127.0.0.1:{stub.port}",
-        proxy_bearer=SecretStr(proxy_bearer),
-        fence_credential=SecretStr(FENCE_CREDENTIAL),
+        fence_credential=SecretStr(fence_credential),
         timeout_seconds=timeout_seconds,
     )
 
@@ -319,7 +333,6 @@ def dead_decide_client(*, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> L
     """A real decide client pointed at a closed port: every ``decide`` raises a connection error."""
     return LocalhostDecideClient(
         base_url=f"http://127.0.0.1:{closed_localhost_port()}",
-        proxy_bearer=SecretStr(PROXY_BEARER),
         fence_credential=SecretStr(FENCE_CREDENTIAL),
         timeout_seconds=timeout_seconds,
     )
@@ -362,7 +375,11 @@ async def tunneled_get(proxy_port: int, authority: str, path: str) -> tuple[int,
     """
     reader, writer = await asyncio.open_connection("127.0.0.1", proxy_port)
     try:
-        writer.write(f"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n\r\n".encode())
+        proxy_auth = base64.b64encode(f":{BRIDGE_BEARER}".encode()).decode()
+        writer.write(
+            f"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n"
+            f"Proxy-Authorization: Basic {proxy_auth}\r\n\r\n".encode()
+        )
         await writer.drain()
         connect_head = await reader.readuntil(b"\r\n\r\n")
         connect_status = int(connect_head.split(b" ", 2)[1])

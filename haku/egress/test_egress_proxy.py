@@ -42,9 +42,9 @@ from haku.egress.addon import EgressGateAddon
 from haku.egress.decision import DecideDenied, GrantScope, RequestMeta
 from haku.egress.localhost_decide_client import DEFAULT_TIMEOUT_SECONDS
 from haku.egress.proxy_test_harness import (
+    BRIDGE_BEARER,
     FENCE_CREDENTIAL,
     PLACEHOLDER,
-    PROXY_BEARER,
     REAL_CREDENTIAL,
     GarbageBody,
     Hang,
@@ -195,8 +195,27 @@ async def test_localhost_decide_allow_flows_end_to_end(upstream: RecordingUpstre
     assert one(upstream.requests).headers["authorization"] == f"Bearer {REAL_CREDENTIAL}"
     sent = one(stub.requests)
     assert sent.request == RequestMeta(method="GET", scheme="http", host="127.0.0.1", port=upstream.port, path="/hello")
-    assert sent.fence_credential.get_secret_value() == FENCE_CREDENTIAL
+    assert sent.proxy_client_credential is not None
+    assert sent.proxy_client_credential.get_secret_value() == BRIDGE_BEARER
+    assert "proxy-authorization" not in one(upstream.requests).headers
     assert (sent.resolved_ips, sent.upstream_ip) == (frozenset({IPv4Address("127.0.0.1")}), IPv4Address("127.0.0.1"))
+
+
+async def test_invalid_proxy_client_bearer_is_refused_without_upstream_contact(
+    upstream: RecordingUpstream, tmp_path: Path
+) -> None:
+    async with (
+        make_proxy(StaticDecideClient(allow_with_substitution()), tmp_path) as proxy,
+        aiohttp.ClientSession() as session,
+        session.get(
+            f"http://127.0.0.1:{upstream.port}/unauthenticated",
+            proxy=f"http://127.0.0.1:{proxy.listen_port}",
+            proxy_auth=aiohttp.BasicAuth("not-the-bearer", "wrong"),
+        ) as response,
+    ):
+        status = response.status
+    assert status == 407
+    assert (upstream.connections, upstream.requests) == (0, [])
 
 
 async def test_localhost_decide_deny_refuses_without_upstream_contact(
@@ -238,14 +257,14 @@ class EndpointFailure:
     """One way the decide hop fails; each must refuse with zero upstream contact."""
 
     behavior: StubBehavior
-    proxy_bearer: str = PROXY_BEARER
+    fence_credential: str = FENCE_CREDENTIAL
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
 
 
 ENDPOINT_FAILURES = [
     pytest.param(
-        EndpointFailure(behavior=allow_with_substitution(), proxy_bearer="not-the-proxy-bearer"),
-        id="rejected-bearer-401",
+        EndpointFailure(behavior=allow_with_substitution(), fence_credential="not-the-fence-credential"),
+        id="rejected-fence-credential-401",
     ),
     pytest.param(EndpointFailure(behavior=Unconfigured()), id="unconfigured-503"),
     pytest.param(EndpointFailure(behavior=Hang(), timeout_seconds=0.2), id="endpoint-timeout"),
@@ -260,7 +279,7 @@ async def test_localhost_decide_endpoint_failure_fails_closed(
     async with (
         stub_console(failure.behavior) as stub,
         aclosing(
-            stub_client(stub, proxy_bearer=failure.proxy_bearer, timeout_seconds=failure.timeout_seconds)
+            stub_client(stub, fence_credential=failure.fence_credential, timeout_seconds=failure.timeout_seconds)
         ) as decide,
         make_proxy(decide, tmp_path) as proxy,
     ):
