@@ -7,6 +7,8 @@ import type { McpToolResultFor } from "../../mcp_tool_result_schema";
 type CreateGrantItem = McpToolArgumentsFor<"grants", "create_grant">["grants"][number];
 type GrantView = McpToolResultFor<"grants", "revoke_grants">[number];
 
+const AGENT_DISPLAY_NAMES = { "10000000-0000-4000-8000-000000000001": "Haku agent" };
+
 const KUBERNETES_ITEM: CreateGrantItem = {
   domain: "kubernetes" as const,
   spec: {
@@ -44,12 +46,28 @@ const KUBERNETES_VIEW: GrantView = {
   },
 };
 
+const SESSION_KUBERNETES_VIEW: GrantView = {
+  ...KUBERNETES_VIEW,
+  grant: {
+    ...KUBERNETES_VIEW.grant,
+    grant_id: "20000000-0000-4000-8000-000000000005",
+    // The grant owner is deliberately different from the tool-call caller: ownership is not the
+    // session's Agent identity.
+    owner_agent_id: "90000000-0000-4000-8000-000000000009",
+    principal: { kind: "session" as const, session_id: "30000000-0000-4000-8000-000000000006" },
+    status: "released" as const,
+    released_at: "2025-01-27T10:15:00Z",
+    end_reason: "probe complete",
+  },
+};
+
 const PREVIEW_FIXTURES = [
   {
     title: "Create temporary Kubernetes grants",
     serverId: "grants",
     toolName: "create_grant",
     args: { grants: [KUBERNETES_ITEM], duration_seconds: 3600 },
+    agentDisplayNames: AGENT_DISPLAY_NAMES,
     result: [KUBERNETES_VIEW],
   },
   {
@@ -57,6 +75,7 @@ const PREVIEW_FIXTURES = [
     serverId: "grants",
     toolName: "create_grant",
     args: { grants: [HTTP_ITEM], duration_seconds: 1800 },
+    agentDisplayNames: AGENT_DISPLAY_NAMES,
     result: [
       {
         domain: "http" as const,
@@ -82,6 +101,7 @@ const PREVIEW_FIXTURES = [
       grant_ids: [KUBERNETES_VIEW.grant.grant_id, "20000000-0000-4000-8000-000000000003"],
       reason: "probe complete",
     },
+    agentDisplayNames: AGENT_DISPLAY_NAMES,
     result: [
       {
         domain: "kubernetes" as const,
@@ -93,6 +113,7 @@ const PREVIEW_FIXTURES = [
           end_reason: "probe complete",
         },
       },
+      SESSION_KUBERNETES_VIEW,
     ],
   },
   {
@@ -105,6 +126,7 @@ const PREVIEW_FIXTURES = [
       grant_ids: ["20000000-0000-4000-8000-000000000004"],
       reason: "operator revoked",
     },
+    agentDisplayNames: { [KUBERNETES_VIEW.grant.owner_agent_id]: "Haku agent" },
     result: [
       {
         domain: "http" as const,
