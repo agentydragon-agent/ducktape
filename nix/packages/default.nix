@@ -154,6 +154,14 @@ let
   # Combined CLI + GNOME Shell extension package.
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib; };
 
+  # Chrome-free GTK/WebKit approval window plus the GNOME Shell launcher.
+  hakuApprovals = pkgs.callPackage ./gnome-shell-haku-approvals.nix {
+    inherit
+      artifacts
+      lib
+      ;
+  };
+
   mkBinaryArtifact =
     {
       pname,
@@ -346,7 +354,9 @@ rec {
   aw-watcher-tmux = pkgs.callPackage ./aw-watcher-tmux.nix { };
 
   # Alias for programs.gnome-shell.extensions compatibility.
+  inherit hakuApprovals;
   gnome-shell-aiquota = aiquota;
+  gnome-shell-haku-approvals = hakuApprovals;
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };
