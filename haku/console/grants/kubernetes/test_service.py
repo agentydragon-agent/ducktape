@@ -13,6 +13,7 @@ from haku.console.grants.kubernetes.models import Grant, GrantSpec, NamespacesGr
 from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import (
     AgentGrantPrincipal,
+    GrantPrincipal,
     RequestPrincipal,
     SessionGrantPrincipal,
     grant_principal_applies_to,
@@ -73,15 +74,19 @@ class FakeRepository:
         self.grants.update((grant.grant_id, grant) for grant in created)
         return created
 
-    async def list(self, *, owner_agent_id, now, include_terminal=True):
-        return tuple(g for g in self.grants.values() if g.owner_agent_id == owner_agent_id)
+    async def list(self, *, principal: GrantPrincipal | None = None, now, include_inactive=False):
+        return tuple(
+            grant
+            for grant in self.grants.values()
+            if (principal is None or grant.principal == principal) and (include_inactive or self._active(grant, now))
+        )
 
-    async def list_for_request_principal(self, *, request_principal, now, include_terminal=True):
+    async def list_for_request_principal(self, *, request_principal, now, include_inactive=False):
         return tuple(
             grant
             for grant in self.grants.values()
             if grant_principal_applies_to(grant.principal, request_principal)
-            and (include_terminal or self._active(grant, now))
+            and (include_inactive or self._active(grant, now))
         )
 
     async def get(self, *, owner_agent_id, grant_id):

@@ -39,7 +39,7 @@ class GrantRepository(Protocol):
     ) -> tuple[Grant, ...]: ...
 
     async def list(
-        self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
+        self, *, principal: GrantPrincipal | None, now: datetime.datetime, include_inactive: bool = False
     ) -> tuple[Grant, ...]: ...
 
     async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant: ...
@@ -49,7 +49,7 @@ class GrantRepository(Protocol):
     ) -> Grant: ...
 
     async def list_for_request_principal(
-        self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
+        self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_inactive: bool = False
     ) -> tuple[Grant, ...]: ...
 
     async def active_for_request_principal(
@@ -111,18 +111,20 @@ class GrantService:
             expires_at=expires_at,
         )
 
-    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[Grant, ...]:
-        return await self._repository.list(
-            owner_agent_id=owner_agent_id, now=self._now(), include_terminal=include_terminal
-        )
+    async def list(
+        self, *, principal: GrantPrincipal | None = None, include_inactive: bool = False
+    ) -> tuple[Grant, ...]:
+        """List all grants, or the grants declared for one exact principal."""
+
+        return await self._repository.list(principal=principal, now=self._now(), include_inactive=include_inactive)
 
     async def list_applicable_grants(
-        self, *, request_principal: RequestPrincipal, include_terminal: bool = True
+        self, *, request_principal: RequestPrincipal, include_inactive: bool = False
     ) -> tuple[Grant, ...]:
         """List only grants this authenticated request principal may exercise."""
 
         return await self._repository.list_for_request_principal(
-            request_principal=request_principal, now=self._now(), include_terminal=include_terminal
+            request_principal=request_principal, now=self._now(), include_inactive=include_inactive
         )
 
     async def get_grant(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant:

@@ -37,13 +37,18 @@ from haku.console.conftest import (
     insert_live_session,
 )
 from haku.console.database_schema import Agent
-from haku.console.grants.catalog import DatabaseGrantSource, GrantCatalog
+from haku.console.grants.catalog import ConfigFileGrantSource, DatabaseGrantSource, GrantCatalog
 from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.http.service import GrantService as HttpGrantService
 from haku.console.grants.kubernetes.authorization import RequestAttributes, SubjectAccessReviewResult
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
-from haku.console.grants.principal import AgentGrantPrincipal, RequestPrincipal, SessionGrantPrincipal
+from haku.console.grants.principal import (
+    AccessProfileGrantPrincipal,
+    AgentGrantPrincipal,
+    RequestPrincipal,
+    SessionGrantPrincipal,
+)
 from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 from haku.console.identity.enrollment import AgentEnrollmentService
 from haku.console.mcp.execution import (
@@ -54,6 +59,7 @@ from haku.console.mcp.execution import (
 )
 from haku.console.tools.grants import (
     GrantDomain,
+    GrantReadScope,
     GrantsToolsService,
     HttpGrantRequest,
     HttpGrantView,
@@ -229,10 +235,7 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
     # whoami is a pure identity read: no arguments beyond the hidden execution context.
     assert tools["whoami"].inputSchema.get("properties", {}) == {}
     assert set(tools["create_grant"].inputSchema["properties"]) == {"grants", "duration_seconds", "principal"}
-    # `list_grants` carries only the optional own-scope declaration; `self` is the sole value.
-    assert set(tools["list_grants"].inputSchema["properties"]) == {"principal"}
-    principal_schema = tools["list_grants"].inputSchema["properties"]["principal"]
-    assert "self" in {branch.get("const") for branch in principal_schema["anyOf"]}
+    assert set(tools["list_grants"].inputSchema["properties"]) == {"principal", "include_inactive"}
     assert set(tools["get_grant"].inputSchema["properties"]) == {"domain", "grant_id"}
     # One end-grants tool: an Agent omits owner_agent_id (relinquishes its own); an Operator names it.
     assert set(tools["revoke_grants"].inputSchema["properties"]) == {"domain", "grant_ids", "reason", "owner_agent_id"}
@@ -242,7 +245,7 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
     assert {branch["properties"]["domain"]["const"] for branch in branches} == {"kubernetes", "http"}
 
 
-def test_list_grants_is_actor_scoped_under_either_principal_declaration(console: _Console) -> None:
+def test_list_grants_resolves_self_and_named_subjects(console: _Console) -> None:
     context = console.agent_context()
 
     async def exercise() -> None:
@@ -252,13 +255,64 @@ def test_list_grants_is_actor_scoped_under_either_principal_declaration(console:
             duration_seconds=600,
             principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
-        # `principal=self` and the omitted (reserved broader) read both return only the caller's own
-        # grants today — the service is actor-scoped regardless; the scope arg only gates auto-approval.
-        for principal in ("self", None):
-            listed = await console.service.list_grants(context=context, principal=principal)
-            assert [item.source.id for item in listed if isinstance(item.source, DatabaseGrantSource)] == [
+        self_grants = await console.service.list_grants(context=context, principal="self")
+        assert [item.source.id for item in self_grants if isinstance(item.source, DatabaseGrantSource)] == [
+            view.grant.grant_id
+        ]
+        all_grants = await console.service.list_grants(context=context)
+        assert [item.source.id for item in all_grants if isinstance(item.source, DatabaseGrantSource)] == [
+            view.grant.grant_id
+        ]
+        assert [grant.source.entry_id for grant in all_grants if isinstance(grant.source, ConfigFileGrantSource)] == [
+            f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}"
+        ]
+        named = await console.service.list_grants(
+            context=context, principal=AgentGrantPrincipal(agent_id=console.agent_id)
+        )
+        assert [item.source.id for item in named if isinstance(item.source, DatabaseGrantSource)] == [
+            view.grant.grant_id
+        ]
+        profile_grants = await console.service.list_grants(
+            context=context, principal=AccessProfileGrantPrincipal(access_profile_id=DEFAULT_ACCESS_PROFILE_ID)
+        )
+        assert [
+            grant.source.entry_id for grant in profile_grants if isinstance(grant.source, ConfigFileGrantSource)
+        ] == [f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}"]
+
+    console.call(exercise)
+
+
+def test_list_grants_includes_database_history_only_when_requested(console: _Console) -> None:
+    context = console.agent_context()
+
+    async def exercise() -> None:
+        (view,) = await console.service.create_grants(
+            context=context,
+            requests=[_kubernetes(_K8S_SPEC)],
+            duration_seconds=600,
+            principal=AgentGrantPrincipal(agent_id=console.agent_id),
+        )
+        await console.service.revoke_grants(
+            context=context, domain=GrantDomain.KUBERNETES, grant_ids=[view.grant.grant_id], reason=None
+        )
+        scopes: tuple[GrantReadScope | None, ...] = ("self", None, AgentGrantPrincipal(agent_id=console.agent_id))
+        for principal in scopes:
+            current = await console.service.list_grants(context=context, principal=principal)
+            history = await console.service.list_grants(context=context, principal=principal, include_inactive=True)
+            assert not [grant for grant in current if isinstance(grant.source, DatabaseGrantSource)]
+            assert [grant.source.id for grant in history if isinstance(grant.source, DatabaseGrantSource)] == [
                 view.grant.grant_id
             ]
+        assert [
+            grant.source.entry_id
+            for grant in await console.service.list_grants(context=context)
+            if isinstance(grant.source, ConfigFileGrantSource)
+        ] == [f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}"]
+        assert [
+            grant.source.entry_id
+            for grant in await console.service.list_grants(context=context, include_inactive=True)
+            if isinstance(grant.source, ConfigFileGrantSource)
+        ] == [f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}"]
 
     console.call(exercise)
 
@@ -509,15 +563,34 @@ def test_session_scope_binds_the_grant_to_the_exact_live_session(console: _Conso
             duration_seconds=600,
             principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
-        # The exact session may exercise both; a static-credential execution never sees the session grant.
+        # `self` resolves the trusted request principal; omission lists every catalog grant.
         assert {
             view.source.id
-            for view in await console.service.list_grants(context=session_context)
+            for view in await console.service.list_grants(context=session_context, principal="self")
+            if isinstance(view.source, DatabaseGrantSource)
+        } == {session_view.grant.grant_id, agent_view.grant.grant_id}
+        assert {
+            view.source.id
+            for view in await console.service.list_grants(context=static_context, principal="self")
+            if isinstance(view.source, DatabaseGrantSource)
+        } == {agent_view.grant.grant_id}
+        assert {
+            view.source.id
+            for view in await console.service.list_grants(context=static_context)
             if isinstance(view.source, DatabaseGrantSource)
         } == {session_view.grant.grant_id, agent_view.grant.grant_id}
         assert [
             view.source.id
-            for view in await console.service.list_grants(context=static_context)
+            for view in await console.service.list_grants(
+                context=session_context, principal=SessionGrantPrincipal(session_id=session_id)
+            )
+            if isinstance(view.source, DatabaseGrantSource)
+        ] == [session_view.grant.grant_id]
+        assert [
+            view.source.id
+            for view in await console.service.list_grants(
+                context=session_context, principal=AgentGrantPrincipal(agent_id=console.agent_id)
+            )
             if isinstance(view.source, DatabaseGrantSource)
         ] == [agent_view.grant.grant_id]
 

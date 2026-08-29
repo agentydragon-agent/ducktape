@@ -46,11 +46,9 @@ class GrantDomain(StrEnum):
     HTTP = "http"
 
 
-# The declared read scope for `list_grants`. Only `self` (the caller's own grants) is served today,
-# and it is the value the argument-conditional auto-approval policy keys on; a broader nameable
-# principal is an Operator-reviewed follow-up. Absent means the (reserved) broader read, which stays
-# manual.
-GrantReadScope = Literal["self"]
+# Only the explicit `self` read auto-approves. Named and omitted reads are broader and require
+# Operator approval.
+type GrantReadScope = Literal["self"] | GrantPrincipal
 
 
 class KubernetesGrantRequest(BaseModel):
@@ -157,14 +155,16 @@ class GrantsToolsService:
         return [HttpGrantView(grant=grant) for grant in http_grants]
 
     async def list_grants(
-        self, *, context: McpExecutionContext, principal: GrantReadScope | None = None
+        self, *, context: McpExecutionContext, principal: GrantReadScope | None = None, include_inactive: bool = False
     ) -> list[Grant]:
-        # The read is actor-scoped regardless: `list_applicable_grants` filters to the caller's own
-        # grants via the trusted request principal. `principal` is the caller's declared scope,
-        # carried for argument-conditional auto-approval; only `self` is served today and it equals
-        # that own-scoped read.
-        del principal
-        return list(await self._catalog.list_applicable(request_principal=context.request_principal))
+        request_principal = context.request_principal
+        if principal == "self":
+            return list(
+                await self._catalog.list_applicable(
+                    request_principal=request_principal, include_inactive=include_inactive
+                )
+            )
+        return list(await self._catalog.list(principal=principal, include_inactive=include_inactive))
 
     async def get_grant(self, *, context: McpExecutionContext, domain: GrantDomain, grant_id: UUID) -> Grant:
         if domain is GrantDomain.KUBERNETES:
@@ -225,7 +225,9 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
             "domains. Each create item carries a 'domain' tag: 'kubernetes' for RBAC-like scope/rule coverage, "
             "'http' for one exact canonical public origin narrowed by method set and optional path regex. One "
             "create_grant call creates grants in a single domain, atomically, with one shared expiry. get_grant "
-            "and revoke_grants take the 'domain' of the grant IDs (as returned by create/list). One revoke_grants "
+            "and revoke_grants take the 'domain' of the grant IDs (as returned by create/list). "
+            "list_grants returns active database grants by default; include_inactive also returns expired and ended "
+            "database history, while configuration-file grants are always listed. One revoke_grants "
             "call ends up to 32 durable grant IDs sequentially. An Agent ends its own grants; an Operator ends an "
             "owned Agent's grants by naming "
             "owner_agent_id. Agent identity and tool-call provenance are trusted request metadata, never tool "
@@ -302,14 +304,24 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
             GrantReadScope | None,
             Field(
                 description=(
-                    "Read scope. 'self' returns only this Agent's own grants (the only scope served "
-                    "today) and is the click-free path; omit it for the Operator-reviewed broader read."
+                    "Grant subject to list. 'self' resolves the caller's trusted request principal and is "
+                    "the click-free path. A named principal returns grants declared for exactly that subject; "
+                    "it requires Operator approval. Omit it to list all declared grants."
                 )
             ),
         ] = None,
+        include_inactive: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Include expired and ended database grants. Configuration-file grants are always listed because "
+                    "they have no inactive lifecycle state."
+                )
+            ),
+        ] = False,
         context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> list[Grant]:
-        return await service.list_grants(context=context, principal=principal)
+        return await service.list_grants(context=context, principal=principal, include_inactive=include_inactive)
 
     @mcp.tool
     async def get_grant(

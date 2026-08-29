@@ -13,6 +13,7 @@ from haku.console.database_schema import KubernetesGrantRow
 from haku.console.grants.envelope import (
     GrantNotFoundError,
     GrantOwnershipError,
+    grant_principal_clause,
     match_replayed_grant_set,
     request_principal_clause,
 )
@@ -151,11 +152,13 @@ class PostgresGrantRepository:
             return tuple(self._row_to_model(row) for row in rows)
 
     async def list(
-        self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
+        self, *, principal: GrantPrincipal | None, now: datetime.datetime, include_inactive: bool = False
     ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
-            statement = select(KubernetesGrantRow).where(KubernetesGrantRow.owner_agent_id == owner_agent_id)
-            if not include_terminal:
+            statement = select(KubernetesGrantRow)
+            if principal is not None:
+                statement = statement.where(grant_principal_clause(KubernetesGrantRow, principal))
+            if not include_inactive:
                 statement = statement.where(_not_ended(), KubernetesGrantRow.expires_at > now)
             rows = (
                 await session.scalars(
@@ -193,13 +196,13 @@ class PostgresGrantRepository:
             return self._row_to_model(row)
 
     async def list_for_request_principal(
-        self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
+        self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_inactive: bool = False
     ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             statement = select(KubernetesGrantRow).where(
                 request_principal_clause(KubernetesGrantRow, request_principal)
             )
-            if not include_terminal:
+            if not include_inactive:
                 statement = statement.where(_not_ended(), KubernetesGrantRow.expires_at > now)
             rows = (
                 await session.scalars(

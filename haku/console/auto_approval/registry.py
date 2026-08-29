@@ -264,13 +264,16 @@ class AutoApprovalPolicyRegistry:
                     return
                 if arguments.get("principal") == _OWN_GRANT_SCOPE:
                     evaluation.record(
-                        current_path, AutoApproved("list_grants is scoped to the caller's own grants (principal=self)")
+                        current_path,
+                        AutoApproved(
+                            "list_grants is scoped to the caller's own grants (principal=self), including history when requested"
+                        ),
                     )
                 else:
                     evaluation.record(
                         current_path,
                         NotAutoApproved(
-                            "list_grants auto-approves only with principal=self; the broader read is manual"
+                            "list_grants auto-approves only with principal=self; all-grants and named reads are manual"
                         ),
                     )
             case KubernetesPassthroughAutoApprovalPolicy(server=server):
