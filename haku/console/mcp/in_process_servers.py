@@ -20,6 +20,7 @@ import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
 import haku.console.tools.sandbox as sandbox_tools
 import haku.console.tools.session_sandboxes as session_sandboxes_tools
+import haku.console.tools.workers as workers_tools
 from haku.console.config import HostexecConfig
 from haku.console.conversation_read_access import ConversationReadAccessPolicy
 from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
@@ -79,6 +80,9 @@ class InProcessServerDependencies:
     # The Agent Sandbox lifecycle client and the environment it hands out — set only when
     # `config.yaml` both lists the server and configures `agent_sandbox`.
     sandbox: SandboxServerConfig | None = None
+    # The session runtime the `workers` server dispatches hosted worker sessions through — set only
+    # when a launch-capable chat runtime is configured, since without it there is nothing to launch.
+    sessions: SessionService | None = None
     # The Console's own active-session inventory and termination path. It is separate from the
     # Agent Sandbox lifecycle server above: that server manages named workboxes, while this one
     # manages claims allocated to Console chat sessions.
@@ -141,6 +145,12 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
             builder=lambda _token: sandbox_tools.build_mcp(sandbox.client, sandbox.environment),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=in_process_access.authorizer_for(sandbox_tools.SANDBOX_SERVER_ID),
+        )
+    if (sessions := dependencies.sessions) is not None:
+        servers[workers_tools.WORKERS_SERVER_ID] = InProcessServerRegistration(
+            builder=lambda _token: workers_tools.build_mcp(sessions),
+            credential_kind=InProcessCredentialKind.NONE,
+            authorizer=in_process_access.authorizer_for(workers_tools.WORKERS_SERVER_ID),
         )
     if (session_sandboxes := dependencies.session_sandboxes) is not None:
         servers[session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID] = InProcessServerRegistration(

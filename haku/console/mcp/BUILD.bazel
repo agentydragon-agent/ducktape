@@ -160,6 +160,7 @@ py_library(
         "//haku/console/tools:routine",
         "//haku/console/tools:sandbox",
         "//haku/console/tools:session_sandboxes",
+        "//haku/console/tools:workers",
         "//haku/sandbox:config",
     ],
 )

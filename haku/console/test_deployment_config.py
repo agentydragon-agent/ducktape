@@ -40,6 +40,7 @@ def test_deployed_console_config_is_valid() -> None:
         "haku_conversations",
         "grants",
         "sandbox",
+        "workers",
         "haku_session_sandboxes",
     }
     assert "haku_session_sandboxes" in profiles["public-coder"].in_process_server_ids
