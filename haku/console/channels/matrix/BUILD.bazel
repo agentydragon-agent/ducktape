@@ -93,7 +93,7 @@ py_library(
         ":client",
         ":config",
         ":ingress_ledger",
-        "//haku/console:chat_models",
+        "//haku/console/channels:surface",
         "//haku/console:database_schema",
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:prompt_origin",
@@ -457,7 +457,7 @@ py_test(
         ":conftest",  # keep: pytest walks ancestor conftests only — the runtime fixtures re-export here
         ":revisions",
         "//:conftest",
-        "//haku/console:chat_models",
+        "//haku/console/channels:surface",
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/harnesses:kind",

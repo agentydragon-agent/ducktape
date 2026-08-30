@@ -13,7 +13,7 @@ py_library(
         ":sandbox_allocation",
         ":store",
         ":system_prompt",
-        "//haku/console:chat_models",
+        "//haku/console/channels:surface",
         "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
