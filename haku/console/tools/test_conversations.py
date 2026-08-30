@@ -229,13 +229,7 @@ async def test_tool_surface() -> None:
     async with Client(_mcp(_Reader())) as client:
         tools = {tool.name for tool in await client.list_tools()}
 
-    assert tools == {
-        "list_sessions",
-        "list_turns",
-        "read_conversation_items",
-        "read_session_frames",
-        "session_outcome",
-    }
+    assert tools == {"list_sessions", "list_turns", "read_conversation_items", "read_session_frames", "session_outcome"}
 
 
 async def test_harness_kind_is_a_required_closed_identity_field_on_a_session() -> None:
