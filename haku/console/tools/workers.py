@@ -54,7 +54,9 @@ class DispatchedWorker(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     session_id: UUID = Field(
-        description="The new worker session. Poll its sandbox with get_worker_provisioning or outcome with `session_outcome`."
+        description=(
+            "The new worker session. Poll its sandbox with get_worker_provisioning or outcome with `session_outcome`."
+        )
     )
 
 

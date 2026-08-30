@@ -168,10 +168,12 @@ async def _seed_turn(
             )
         )
 
-
     return turn_id
 
-async def _seed_message(env: _Env, conversation_id: UUID, session_id: UUID, text: str, turn_id: UUID | None = None) -> None:
+
+async def _seed_message(
+    env: _Env, conversation_id: UUID, session_id: UUID, text: str, turn_id: UUID | None = None
+) -> None:
     now = _now()
     async with env.sessions.begin() as db:
         db.add(

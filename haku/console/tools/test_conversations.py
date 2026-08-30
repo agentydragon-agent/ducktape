@@ -42,8 +42,8 @@ from haku.console.mcp.execution import (
 from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import AccessProfile
 from haku.console.session.session_frames import SessionFrameKind
-from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.session.status import SessionStatus
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tools.conversations import FramePage, ItemPage, SessionPage, build_mcp
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
