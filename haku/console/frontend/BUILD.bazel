@@ -247,17 +247,6 @@ ts_library(
 )
 
 ts_library(
-    name = "page_scroll",
-    srcs = ["page_scroll.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "theme",
     srcs = ["theme.ts"],
     isolated_typecheck = True,
@@ -708,7 +697,6 @@ ts_library(
         ":client",
         ":coalesced_refresh",
         ":console_events",
-        ":page_scroll",
         ":pending_tool_call_actions",
         ":toast",
         ":tool_call_card",
@@ -766,7 +754,6 @@ ts_library(
         ":link",
         ":mcp_status_client",
         ":open_external",
-        ":page_scroll",
         ":push_subscription",
         ":session_sandboxes_client",
         ":time",
@@ -784,7 +771,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
-        ":page_scroll",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

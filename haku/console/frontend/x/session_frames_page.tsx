@@ -6,7 +6,6 @@ import { JsonPreview } from "../json_preview";
 import { conversationPath, navigateToConsolePath } from "../routing";
 import { useVariant, VariantControl } from "../variant_control";
 import { prependEarlierPage } from "./frame_log";
-import { usePageScroll } from "../page_scroll";
 
 // Matches the server's own default page. Held here too so "Load earlier frames" asks for the same
 // size as the first read; a frame carries a whole tool result, and each one on screen builds a
@@ -63,8 +62,13 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
  * frames stay in wire order and the view opens at the top of it, since reading a protocol log
  * backwards is not reading it. Each row's payload builds its editor only once it nears the
  * viewport, which keeps a page of fifty JSON blocks off the main thread. */
-export function SessionFramesPage({ sessionId }: { sessionId: string }): JSX.Element {
-  const scrollRef = usePageScroll(`session-frames:${sessionId}`);
+export function SessionFramesPage({
+  sessionId,
+  hidden = false,
+}: {
+  sessionId: string;
+  hidden?: boolean;
+}): JSX.Element {
   const [reloads, setReloads] = useState(0);
   const [loaded, setLoaded] = useState<SessionFramePage | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +107,7 @@ export function SessionFramesPage({ sessionId }: { sessionId: string }): JSX.Ele
 
   const frames = loaded?.frames;
   return (
-    <section className="haku-page" aria-label="Raw frames">
+    <section className="haku-page" aria-label="Raw frames" hidden={hidden}>
       <header className="haku-page-header">
         <div className="haku-page-bar haku-conversation-detail-header">
           <div>
@@ -130,7 +134,7 @@ export function SessionFramesPage({ sessionId }: { sessionId: string }): JSX.Ele
           </Group>
         </div>
       </header>
-      <div ref={scrollRef} className="haku-page-scroll">
+      <div className="haku-page-scroll">
         <div className="haku-page-list">
           {error && (
             <Text c="red" size="sm">

@@ -9,7 +9,6 @@ import {
   type EnrollmentView,
 } from "./client";
 import { toastSuccess } from "./toast";
-import { usePageScroll } from "./page_scroll";
 
 export type EnrollmentChoice = "create" | "reconnect";
 
@@ -17,10 +16,12 @@ export function AgentEnrollmentPanel({
   interactionId,
   initialChoice = "create",
   onReturnToSettings,
+  hidden = false,
 }: {
   interactionId: string;
   initialChoice?: EnrollmentChoice;
   onReturnToSettings: () => void;
+  hidden?: boolean;
 }): JSX.Element {
   const [enrollment, setEnrollment] = useState<EnrollmentView | null>(null);
   const [choice, setChoice] = useState<EnrollmentChoice>(initialChoice);
@@ -30,7 +31,6 @@ export function AgentEnrollmentPanel({
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
   const mountedRef = useRef(true);
-  const scrollRef = usePageScroll(`agent-enrollment:${interactionId}`);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -107,7 +107,7 @@ export function AgentEnrollmentPanel({
   }
 
   return (
-    <section className="haku-page" aria-label="Connect an Agent">
+    <section className="haku-page" aria-label="Connect an Agent" hidden={hidden}>
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <div>
@@ -121,7 +121,7 @@ export function AgentEnrollmentPanel({
           </Button>
         </div>
       </header>
-      <div ref={scrollRef} className="haku-page-scroll">
+      <div className="haku-page-scroll">
         <Stack gap="md" className="haku-page-list">
           {!enrollment && !error && (
             <Group justify="center" p="xl">
