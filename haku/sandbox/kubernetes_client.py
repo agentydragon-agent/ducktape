@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shlex
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from types import TracebackType
@@ -19,6 +19,7 @@ from kubernetes_asyncio.config.config_exception import ConfigException
 from kubernetes_asyncio.stream import WsApiClient
 from kubernetes_asyncio.stream.ws_client import ERROR_CHANNEL, STDERR_CHANNEL, STDOUT_CHANNEL
 
+from haku.sandbox.claims import CLAIM_GROUP, CLAIMS_PLURAL, SandboxClaimSpec, create_sandbox_claim
 from haku.sandbox.config import SandboxEnvironmentConfig
 from haku.sandbox.models import (
     BootstrapState,
@@ -35,10 +36,8 @@ from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
 
-CLAIM_GROUP = "extensions.agents.x-k8s.io"
 SANDBOX_GROUP = "agents.x-k8s.io"
 API_VERSION = "v1beta1"
-CLAIMS_PLURAL = "sandboxclaims"
 SANDBOXES_PLURAL = "sandboxes"
 POD_NAME_ANNOTATION = "agents.x-k8s.io/pod-name"
 
@@ -275,8 +274,8 @@ class KubernetesSandboxClient:
     async def aclose(self) -> None:
         await self._api_client.close()
 
-    async def provision(self, name: str) -> SandboxInfo:
-        await self._create_or_adopt_claim(name)
+    async def provision(self, name: str, *, env: Mapping[str, str] | None = None) -> SandboxInfo:
+        await self._create_or_adopt_claim(name, env=env)
         deadline = asyncio.get_running_loop().time() + self._environment.sandbox.provisioning_timeout_seconds
         while True:
             info = await self.info(name)
@@ -471,29 +470,26 @@ class KubernetesSandboxClient:
             raise ToolError(_api_error("dispose the sandbox claim", error)) from error
         return DisposeSandboxResult(name=name, deleted=True)
 
-    async def _create_or_adopt_claim(self, name: str) -> dict[str, Any]:
+    async def _create_or_adopt_claim(self, name: str, *, env: Mapping[str, str] | None = None) -> dict[str, Any]:
         expires_at = self._now() + timedelta(seconds=self._environment.sandbox.initial_ttl_seconds)
-        body = {
-            "apiVersion": f"{CLAIM_GROUP}/{API_VERSION}",
-            "kind": "SandboxClaim",
-            "metadata": {
-                "name": name,
-                "labels": {MANAGED_BY_LABEL: MANAGED_BY_VALUE},
-                "annotations": {
-                    WARM_POOL_ANNOTATION: self._environment.sandbox.warm_pool,
-                    CONTAINER_ANNOTATION: self._environment.sandbox.container,
-                    DEFAULT_CWD_ANNOTATION: self._environment.sandbox.default_cwd,
-                    BOOTSTRAP_STATE_ANNOTATION: "pending",
-                },
-            },
-            "spec": {
-                "warmPoolRef": {"name": self._environment.sandbox.warm_pool},
-                "lifecycle": {"shutdownPolicy": "Delete", "shutdownTime": _format_timestamp(expires_at)},
-            },
-        }
         try:
-            return await self._custom_objects.create_namespaced_custom_object(
-                CLAIM_GROUP, API_VERSION, self._environment.sandbox.namespace, CLAIMS_PLURAL, body
+            return await create_sandbox_claim(
+                self._custom_objects,
+                SandboxClaimSpec(
+                    namespace=self._environment.sandbox.namespace,
+                    name=name,
+                    warm_pool=self._environment.sandbox.warm_pool,
+                    labels={MANAGED_BY_LABEL: MANAGED_BY_VALUE},
+                    annotations={
+                        WARM_POOL_ANNOTATION: self._environment.sandbox.warm_pool,
+                        CONTAINER_ANNOTATION: self._environment.sandbox.container,
+                        DEFAULT_CWD_ANNOTATION: self._environment.sandbox.default_cwd,
+                        BOOTSTRAP_STATE_ANNOTATION: "pending",
+                    },
+                    shutdown_policy="Delete",
+                    shutdown_time=expires_at,
+                    env=env,
+                ),
             )
         except ApiException as error:
             if error.status != 409:
@@ -715,8 +711,8 @@ class InClusterSandboxClient:
                 )
         return self._client
 
-    async def provision(self, name: str) -> SandboxInfo:
-        return await (await self._get_client()).provision(name)
+    async def provision(self, name: str, *, env: Mapping[str, str] | None = None) -> SandboxInfo:
+        return await (await self._get_client()).provision(name, env=env)
 
     async def execute(
         self, *, name: str, script: str, cwd: str | None, timeout_seconds: int, max_output_bytes: int

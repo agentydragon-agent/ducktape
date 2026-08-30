@@ -104,6 +104,7 @@ py_library(
     srcs = ["sandbox_claims.py"],
     deps = [
         "//haku/runner:backend",
+        "//haku/sandbox:claims",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",

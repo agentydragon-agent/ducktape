@@ -26,6 +26,14 @@ from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict
 
 from haku.runner.backend import LEGACY_SESSION_TOKEN_VARIABLE, SESSION_TOKEN_VARIABLE
+from haku.sandbox.claims import (
+    CLAIM_API_VERSION,
+    CLAIM_GROUP,
+    CLAIMS_PLURAL,
+    SandboxClaimSpec as SharedSandboxClaimSpec,
+    create_sandbox_claim,
+    format_shutdown_time,
+)
 from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
@@ -34,12 +42,8 @@ logger = logging.getLogger(__name__)
 # against the controller's own status writes; a persistent conflict is a bug, not contention.
 _RENEW_ATTEMPTS = 3
 
-_CLAIM_API = ("extensions.agents.x-k8s.io", "v1beta1")
-_CLAIMS_PLURAL = "sandboxclaims"
-
-
-def _format_shutdown_time(when: datetime) -> str:
-    return when.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+_CLAIM_API = (CLAIM_GROUP, CLAIM_API_VERSION)
+_CLAIMS_PLURAL = CLAIMS_PLURAL
 
 
 class ProvisioningStep(StrEnum):
@@ -152,33 +156,33 @@ class KubernetesSandboxClaims:
         return f"{self._spec.claim_prefix}-{session_id.hex}"
 
     async def create(self, *, session_id: UUID, session_token: str, expires_at: datetime) -> None:
-        body = {
-            "apiVersion": "extensions.agents.x-k8s.io/v1beta1",
-            "kind": "SandboxClaim",
-            "metadata": {
-                "name": self._claim_name(session_id),
-                "labels": {
+        env = {
+            **self._spec.runner_environment,
+            "HAKU_RUNNER_SESSION_ID": str(session_id),
+            SESSION_TOKEN_VARIABLE: session_token,
+            # CLEANUP(added 2026-08-29): dual mint while runner images that read only the
+            # legacy name may still serve claims; drop with the fallback in
+            # haku/runner/backend.py once the deployed runner image reads
+            # HAKU_SESSION_TOKEN — one release after both images converge.
+            LEGACY_SESSION_TOKEN_VARIABLE: session_token,
+        }
+        client = (await self._connected()).custom_objects
+        await create_sandbox_claim(
+            client,
+            SharedSandboxClaimSpec(
+                namespace=self._spec.namespace,
+                name=self._claim_name(session_id),
+                warm_pool=self._spec.warm_pool,
+                labels={
                     "app.kubernetes.io/managed-by": "haku-console",
                     "haku.allegedly.works/harness": self._spec.harness_label,
                 },
-            },
-            "spec": {
-                "warmPoolRef": {"name": self._spec.warm_pool},
-                "lifecycle": {"shutdownPolicy": "DeleteForeground", "shutdownTime": _format_shutdown_time(expires_at)},
-                "env": [
-                    *({"name": name, "value": value} for name, value in self._spec.runner_environment.items()),
-                    {"name": "HAKU_RUNNER_SESSION_ID", "value": str(session_id)},
-                    {"name": SESSION_TOKEN_VARIABLE, "value": session_token},
-                    # CLEANUP(added 2026-08-29): dual mint while runner images that read only the
-                    # legacy name may still serve claims; drop with the fallback in
-                    # haku/runner/backend.py once the deployed runner image reads
-                    # HAKU_SESSION_TOKEN — one release after both images converge.
-                    {"name": LEGACY_SESSION_TOKEN_VARIABLE, "value": session_token},
-                ],
-            },
-        }
-        client = (await self._connected()).custom_objects
-        await client.create_namespaced_custom_object(*_CLAIM_API, self._spec.namespace, _CLAIMS_PLURAL, body)
+                annotations={},
+                shutdown_policy="DeleteForeground",
+                shutdown_time=expires_at,
+                env=env,
+            ),
+        )
 
     async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:
         """Slide this session's sandbox shutdown deadline forward while a replica is tending it.
@@ -193,7 +197,7 @@ class KubernetesSandboxClaims:
         """
         client = (await self._connected()).custom_objects
         name = self._claim_name(session_id)
-        shutdown_time = _format_shutdown_time(expires_at)
+        shutdown_time = format_shutdown_time(expires_at)
         for attempt in range(_RENEW_ATTEMPTS):
             try:
                 claim = await client.get_namespaced_custom_object(
