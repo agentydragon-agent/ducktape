@@ -51,6 +51,15 @@ def _meta(actor: AgentActor | OperatorActor, *, approving_operator_id: UUID | No
     )
 
 
+async def test_send_message_is_registered_with_bounded_text_schema() -> None:
+    async with Client(build_mcp(_Sessions(), conversation_reads=ConversationReadAccessPolicy(()))) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+    assert "send_message" in tools
+    schema = tools["send_message"].inputSchema
+    assert schema["properties"]["text"]["minLength"] == 1
+    assert schema["properties"]["text"]["maxLength"] == 100_000
+
+
 async def test_agent_requires_per_call_operator_approval() -> None:
     sessions = _Sessions()
     actor = AgentActor(agent_id=_AGENT_ID, operator_id=_OPERATOR_ID, binding_id=UUID(int=5))
