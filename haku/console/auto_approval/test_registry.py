@@ -169,9 +169,9 @@ _DENIAL_CONFIG_DATA["auto_approval_policies"].append(
     }
 )
 for _root_id in ("haku_v1", "public_coder_github_reads"):
-    next(
-        policy for policy in _DENIAL_CONFIG_DATA["auto_approval_policies"] if policy["id"] == _root_id
-    )["policies"].extend(["public_github_repository_mcp_denial", "public_github_actions_reads"])
+    next(policy for policy in _DENIAL_CONFIG_DATA["auto_approval_policies"] if policy["id"] == _root_id)[
+        "policies"
+    ].extend(["public_github_repository_mcp_denial", "public_github_actions_reads"])
 _DENIAL_CONFIG = ConsoleConfigFile.model_validate(_DENIAL_CONFIG_DATA)
 
 
@@ -648,8 +648,7 @@ async def _public_denial_raw_decision(
 ) -> tuple[str | None, str | None] | PolicyDenial:
     http_client = httpx.AsyncClient(base_url="https://api.github.com", transport=httpx.MockTransport(handler))
     registry = AutoApprovalPolicyRegistry(
-        _DENIAL_CONFIG,
-        github_repository_visibility=GitHubRepositoryVisibilityService(http_client, ttl_seconds=3600.0),
+        _DENIAL_CONFIG, github_repository_visibility=GitHubRepositoryVisibilityService(http_client, ttl_seconds=3600.0)
     )
     return await auto_approve_tool_call(
         policies=registry,

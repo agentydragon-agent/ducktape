@@ -70,7 +70,9 @@ def test_deployed_console_config_is_valid() -> None:
     assert policies["public_github_repository_mcp_denial"]["type"] == "github_public_repository_deny"
     assert "get_file_contents" in policies["public_github_repository_mcp_denial"]["tools"]
     assert set(policies["public_github_actions_reads"]["tools"]) == {"actions_get", "actions_list", "get_job_logs"}
-    assert not set(policies["public_github_actions_reads"]["tools"]) & set(policies["public_github_repository_mcp_denial"]["tools"])
+    assert not set(policies["public_github_actions_reads"]["tools"]) & set(
+        policies["public_github_repository_mcp_denial"]["tools"]
+    )
     assert not {"public_ducktape_reads", "public_ducktape_fork_reads", "public_github_reads"} & policies.keys()
     # A policy naming a server the catalog does not declare governs nothing at all, and does so
     # silently — renaming a server would leave its approvals behind without failing anything.
