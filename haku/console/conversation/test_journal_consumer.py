@@ -415,9 +415,7 @@ async def test_lifecycle_violations_reject_the_batch_atomically(
 
 
 async def test_abort_after_completion_is_ignored(
-    consumer: JournalConsumer,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    journal_session: tuple[UUID, UUID],
+    consumer: JournalConsumer, migrated_sessions: async_sessionmaker[AsyncSession], journal_session: tuple[UUID, UUID]
 ) -> None:
     session_id, _conversation_id = journal_session
     runner_turn = uuid4()
