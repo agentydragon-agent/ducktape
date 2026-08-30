@@ -1,10 +1,11 @@
 """Contracts for the approval-gated ``workers.send_message`` action."""
 
+from typing import cast
 from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest_bazel
-from fastmcp import Client
+from fastmcp import Client, FastMCP
 
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.conversation_read_access import ConversationReadAccessPolicy
@@ -15,6 +16,7 @@ from haku.console.mcp.execution import (
     OperatorMcpExecutionCaller,
     mcp_execution_request_meta,
 )
+from haku.console.session.runtime import SessionService
 from haku.console.tool_call_actor import AgentActor, OperatorActor
 from haku.console.tools.workers import build_mcp
 
@@ -51,8 +53,12 @@ def _meta(actor: AgentActor | OperatorActor, *, approving_operator_id: UUID | No
     )
 
 
+def _build_mcp(sessions: _Sessions) -> FastMCP:
+    return build_mcp(cast(SessionService, sessions), conversation_reads=ConversationReadAccessPolicy(()))
+
+
 async def test_send_message_is_registered_with_bounded_text_schema() -> None:
-    async with Client(build_mcp(_Sessions(), conversation_reads=ConversationReadAccessPolicy(()))) as client:
+    async with Client(_build_mcp(_Sessions())) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
     assert "send_message" in tools
     schema = tools["send_message"].inputSchema
@@ -63,7 +69,7 @@ async def test_send_message_is_registered_with_bounded_text_schema() -> None:
 async def test_agent_requires_per_call_operator_approval() -> None:
     sessions = _Sessions()
     actor = AgentActor(agent_id=_AGENT_ID, operator_id=_OPERATOR_ID, binding_id=UUID(int=5))
-    async with Client(build_mcp(sessions, conversation_reads=ConversationReadAccessPolicy(()))) as client:
+    async with Client(_build_mcp(sessions)) as client:
         result = await client.call_tool(
             "send_message",
             {"session_id": str(_SESSION_ID), "text": "continue the work"},
@@ -78,7 +84,7 @@ async def test_agent_requires_per_call_operator_approval() -> None:
 async def test_approved_agent_enqueues_user_role_prompt_and_returns_prompt_id() -> None:
     sessions = _Sessions()
     actor = AgentActor(agent_id=_AGENT_ID, operator_id=_OPERATOR_ID, binding_id=UUID(int=5))
-    async with Client(build_mcp(sessions, conversation_reads=ConversationReadAccessPolicy(()))) as client:
+    async with Client(_build_mcp(sessions)) as client:
         result = await client.call_tool(
             "send_message",
             {"session_id": str(_SESSION_ID), "text": "continue the work"},
@@ -92,7 +98,7 @@ async def test_approved_agent_enqueues_user_role_prompt_and_returns_prompt_id() 
 
 async def test_operator_can_send_directly() -> None:
     sessions = _Sessions()
-    async with Client(build_mcp(sessions, conversation_reads=ConversationReadAccessPolicy(()))) as client:
+    async with Client(_build_mcp(sessions)) as client:
         result = await client.call_tool(
             "send_message",
             {"session_id": str(_SESSION_ID), "text": "operator follow-up"},
@@ -104,7 +110,7 @@ async def test_operator_can_send_directly() -> None:
 
 async def test_unknown_session_is_reported() -> None:
     sessions = _Sessions(KeyError(_SESSION_ID))
-    async with Client(build_mcp(sessions, conversation_reads=ConversationReadAccessPolicy(()))) as client:
+    async with Client(_build_mcp(sessions)) as client:
         result = await client.call_tool(
             "send_message",
             {"session_id": str(_SESSION_ID), "text": "missing"},
