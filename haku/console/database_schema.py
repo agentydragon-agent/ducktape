@@ -1522,7 +1522,7 @@ class ConversationTurn(Base):
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     outcome: Mapped[TurnOutcome | None] = mapped_column(TextBackedStrEnumColumn(TurnOutcome), nullable=True)
     # Set exactly when `outcome` is `failed`, and the check below is what makes that true rather
-    # than hoped: a failed turn that states no reason is the state #4752 was filed about.
+    # than hoped: a failed turn that states no failure is the state #4752 was filed about.
     failure: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
