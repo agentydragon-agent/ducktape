@@ -53,7 +53,7 @@ function statusColor(status: Session["status"]): string {
   return "gray";
 }
 
-function firstErrorLine(error: string | null): string {
+function firstErrorLine(error: string | null | undefined): string {
   return error?.split(/\r?\n/, 1)[0].trim() || "Session failed";
 }
 
