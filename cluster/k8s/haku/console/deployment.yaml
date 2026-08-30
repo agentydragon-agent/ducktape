@@ -391,12 +391,12 @@ spec:
             # these env vars; `load_egress_decide` reads them at startup and the decide endpoint
             # (loopback :8079, served by app._serve) resolves requests using the shared-fence
             # credential the sidecar presents in Authorization. It authenticates the sidecar only
-            # and carries no Agent identity (egress_decide.fence_credential_env_var).
-            - name: HAKU_EGRESS_FENCE_CREDENTIAL
+            # and carries no Agent identity (egress_decide.decision_endpoint_token_env_var).
+            - name: HAKU_DECISION_ENDPOINT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: haku-egress-proxy-identity
-                  key: fence-credential
+                  key: decision-endpoint-token
             #   - the github-bot registry credential's real value (#4951 EgressCredentialEntry
             #     value_env_var). The Console holds it and substitutes it into decide responses;
             #     the sandbox only ever presents the inert `github-token-placeholder`. Synced from
@@ -525,11 +525,11 @@ spec:
               value: /egress-proxy-confdir
             # The shared-fence credential the sidecar presents in Authorization; the server
             # container reads the same value above.
-            - name: HAKU_EGRESS_FENCE_CREDENTIAL
+            - name: HAKU_DECISION_ENDPOINT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: haku-egress-proxy-identity
-                  key: fence-credential
+                  key: decision-endpoint-token
           ports:
             - name: proxy
               containerPort: 8888

@@ -41,4 +41,4 @@ spec:
       rewrite:
         - regexp:
             source: "^password$"
-            target: "fence-credential"
+            target: "decision-endpoint-token"
