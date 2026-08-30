@@ -26,8 +26,8 @@ function writeScrollTop(viewKey: string, scrollTop: number): void {
   }
 }
 
-export function usePageScroll(viewKey: string): RefObject<HTMLDivElement | null> {
-  const scrollRef = useRef<HTMLDivElement>(null);
+export function usePageScroll(viewKey: string): RefObject<HTMLDivElement> {
+  const scrollRef = useRef<HTMLDivElement>(null!);
 
   useLayoutEffect(() => {
     const element = scrollRef.current;
