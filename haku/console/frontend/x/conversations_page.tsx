@@ -27,6 +27,7 @@ import { useFollowedConversation } from "./conversation_follow";
 import { conversationPath, CONVERSATIONS_PATH, navigateToConsolePath, sessionFramesPath } from "../routing";
 import { bootstrapNarration, type BootstrapNarration } from "./bootstrap_narration";
 import { isNearChatBottom } from "./chat_scroll";
+import { groupItemRuns, type GroupedItem, type ItemRun } from "./item_runs";
 import { ToolCallView } from "./tool_call";
 import { ConversationComposer } from "./conversation_composer";
 import { Markdown } from "./markdown";
@@ -206,6 +207,45 @@ function ItemView({ item }: { item: Item }) {
       );
     }
   }
+}
+
+function ItemRunView({ run }: { run: ItemRun }) {
+  if (run.kind === "single") return <ItemView item={run.item} />;
+
+  const initiallyOpen = run.items[run.items.length - 1].status === "open";
+  return (
+    <ToolReasoningRunView
+      items={run.items}
+      summary={run.summary}
+      initiallyOpen={initiallyOpen}
+    />
+  );
+}
+
+function ToolReasoningRunView({
+  items,
+  summary,
+  initiallyOpen,
+}: {
+  items: GroupedItem[];
+  summary: string;
+  initiallyOpen: boolean;
+}) {
+  const [open, setOpen] = useState(initiallyOpen);
+  return (
+    <details
+      className="haku-shell-disclosure haku-conversation-tool-reasoning-run"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>{summary}</summary>
+      <div className="haku-shell-disclosure-body">
+        {items.map((item) => (
+          <ItemView key={item.opened_seq} item={item} />
+        ))}
+      </div>
+    </details>
+  );
 }
 
 /** Every conversation this operator has, newest activity first, and the button that starts one.
@@ -597,8 +637,8 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
                 Nothing was recorded for this conversation.
               </Text>
             )}
-            {rows.map((item) => (
-              <ItemView key={item.opened_seq} item={item} />
+            {groupItemRuns(rows).map((run) => (
+              <ItemRunView key={run.kind === "single" ? run.item.opened_seq : run.items[0].opened_seq} run={run} />
             ))}
           </div>
         </div>

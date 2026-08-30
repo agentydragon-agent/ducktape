@@ -43,6 +43,14 @@ ts_library(
 )
 
 ts_library(
+    name = "item_runs",
+    srcs = ["item_runs.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = ["//haku/console/frontend:client"],
+)
+
+ts_library(
     name = "sandbox_provisioning",
     srcs = ["sandbox_provisioning.tsx"],
     isolated_typecheck = True,
@@ -137,6 +145,7 @@ ts_library(
         ":chat_scroll",
         ":conversation_composer",
         ":conversation_follow",
+        ":item_runs",
         ":markdown",
         ":sandbox_provisioning",
         ":tool_call",
@@ -150,6 +159,18 @@ ts_library(
         "//haku/console/frontend:conversation_launch",
         "//haku/console/frontend:icons",
         "//haku/console/frontend:routing",
+    ],
+)
+
+ts_library(
+    name = "item_runs_test",
+    srcs = ["item_runs.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":item_runs",
+        "//:node_modules/vitest",
+        "//haku/console/frontend:client",
     ],
 )
 
