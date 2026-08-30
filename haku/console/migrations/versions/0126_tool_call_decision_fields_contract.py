@@ -50,6 +50,27 @@ def upgrade() -> None:
             """
         )
     )
+    # Some historical manual decisions have incomplete provenance even though this database has
+    # exactly one Operator. That sole row is an unambiguous attribution; do not apply this repair
+    # when there are zero or multiple Operators, so the contract remains fail-closed there.
+    op.execute(
+        sa.text(
+            """
+            UPDATE mcp_tool_calls AS call
+            SET decision_operator_id = sole.operator_id
+            FROM operators AS sole
+            WHERE call.decision_operator_id IS NULL
+              AND (
+                  (call.status = 'denied'
+                   AND COALESCE(call.auto_approval_evaluation, '') NOT LIKE 'denied:%')
+                  OR (call.status IN ('running', 'ok', 'error')
+                      AND call.approved_at IS NOT NULL
+                      AND call.approval_policy_id IS NULL)
+              )
+              AND (SELECT count(*) FROM operators) = 1
+            """
+        )
+    )
     op.execute(
         sa.text(
             """
