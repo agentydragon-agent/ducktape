@@ -1,7 +1,7 @@
 """Client of the colocated Console decision endpoint (github.com/agentydragon/ducktape/issues/4670).
 
 Speaks ``POST /api/internal/http/decide`` (haku/console/grants/http/decide_routes.py):
-the shared-fence credential travels in ``Authorization``, and the caller's session
+the decision endpoint token travels in ``Authorization``, and the caller's session
 token travels inside the ``DecideRequest`` body; the gate's resolution and pin arrive as
 arguments and travel verbatim. Any failure — connection error,
 timeout, non-2xx (401 rejected bearer, 503 unconfigured or authority failure),
@@ -29,13 +29,13 @@ class LocalhostDecideClient(DecideClient):
     """One decide POST per request/CONNECT; owns its ``httpx`` client (``aclose`` on shutdown)."""
 
     def __init__(
-        self, *, base_url: str, fence_credential: SecretStr, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+        self, *, base_url: str, decision_endpoint_token: SecretStr, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     ) -> None:
         # trust_env=False: a localhost machine-to-machine hop must never route
         # through HTTP(S)_PROXY from the environment.
         self._client = httpx.AsyncClient(
             base_url=base_url,
-            headers={"Authorization": f"Bearer {fence_credential.get_secret_value()}"},
+            headers={"Authorization": f"Bearer {decision_endpoint_token.get_secret_value()}"},
             timeout=timeout_seconds,
             trust_env=False,
         )

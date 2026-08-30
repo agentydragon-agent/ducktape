@@ -2,18 +2,18 @@
 
 The decision endpoint is the oracle of the egress fence: it converts an authenticated caller
 identity plus concrete request metadata into a reachability verdict and the request-specific
-credential substitutions. The shared-fence credential arrives in ``Authorization`` and is not a
+credential substitutions. The decision endpoint token arrives in ``Authorization`` and is not a
 general Agent/Operator credential. A Console-launched sandbox also supplies its session token in
 the body:
 
-- the **shared-fence credential** in ``Authorization`` — endpoint-scoped by construction and
-  resolved only here; it authenticates the shared fence, but does not identify an Agent;
+- the **decision endpoint token** in ``Authorization`` — endpoint-scoped by construction and
+  resolved only here; it authenticates the shared egress proxy, but does not identify an Agent;
 - the required **session token** in the body — resolved through ``AgentBearerAuthority``
   and accepted only for a live session, then used as the exact data-plane Agent identity. It is
   the same secret the runner protocol and Console MCP authenticate. A missing or non-session
   token is denied; there is no static Agent fallback.
 
-Every error path denies: an unknown fence credential, ungrantable metadata, or a grant-authority
+Every error path denies: an unknown decision endpoint token, ungrantable metadata, or a grant-authority
 failure never admits, and the proxy fails closed on any non-2xx response.
 
 Reaching a cluster-internal destination (#4948 override). By default a resolved answer touching
@@ -153,10 +153,10 @@ class HttpDecideService:
         self._prohibited_cidrs = sorted(prohibited_cidrs, key=str)
 
     def authenticate_proxy(self, authorization: str) -> bool:
-        """Whether ``Authorization`` presents exactly the shared fence bearer."""
+        """Whether ``Authorization`` presents exactly the decision endpoint token."""
         token = _bearer_token(authorization)
         return token is not None and secrets.compare_digest(
-            token, self._credentials.fence_credential.get_secret_value()
+            token, self._credentials.decision_endpoint_token.get_secret_value()
         )
 
     def _prohibited_label(self, address: IPv4Address | IPv6Address) -> str | None:
