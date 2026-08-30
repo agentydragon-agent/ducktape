@@ -5,7 +5,7 @@ import type { AiquotaView } from "./client";
 import { AiquotaIcon, CloseIcon } from "./icons";
 import { formatClockTime, formatDurationShort, formatWindowDuration, parseTimestamp, secondsUntil } from "./time";
 
-type Window = NonNullable<AiquotaView["providers"][number]["last_success"]>["result"]["windows"][number];
+type Window = NonNullable<NonNullable<AiquotaView["providers"][number]["last_success"]>["result"]["windows"]>[number];
 
 function windowLabel(window: Window): string {
   const seconds = Math.round(window.window_seconds);
