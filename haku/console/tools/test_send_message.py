@@ -16,7 +16,7 @@ from haku.console.mcp.execution import (
     mcp_execution_request_meta,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor
-from haku.console.tools.workers import build_mcp
+from haku.console.tools.workers import SentMessage, build_mcp
 
 _SESSION_ID = UUID("50000000-0000-4000-8000-00000000dd01")
 _PROMPT_ID = UUID("50000000-0000-4000-8000-00000000dd02")
@@ -84,8 +84,10 @@ async def test_approved_agent_enqueues_user_role_prompt_and_returns_prompt_id() 
             {"session_id": str(_SESSION_ID), "text": "continue the work"},
             meta=_meta(actor, approving_operator_id=_OPERATOR_ID),
         )
-    assert result.data.session_id == _SESSION_ID
-    assert result.data.prompt_id == _PROMPT_ID
+    assert not result.is_error
+    sent = SentMessage.model_validate(result.structured_content)
+    assert sent.session_id == _SESSION_ID
+    assert sent.prompt_id == _PROMPT_ID
     sessions.enqueue_prompt.assert_awaited_once_with(_OPERATOR_ID, _SESSION_ID, "continue the work", SPA_ORIGIN)
 
 
@@ -97,7 +99,9 @@ async def test_operator_can_send_directly() -> None:
             {"session_id": str(_SESSION_ID), "text": "operator follow-up"},
             meta=_meta(OperatorActor(operator_id=_OPERATOR_ID)),
         )
-    assert result.data.prompt_id == _PROMPT_ID
+    assert not result.is_error
+    sent = SentMessage.model_validate(result.structured_content)
+    assert sent.prompt_id == _PROMPT_ID
 
 
 async def test_unknown_session_is_reported() -> None:
