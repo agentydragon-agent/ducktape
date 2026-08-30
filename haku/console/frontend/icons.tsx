@@ -11,6 +11,7 @@ import IconCircleCheck from "@tabler/icons-react/dist/esm/icons/IconCircleCheck.
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconHome from "@tabler/icons-react/dist/esm/icons/IconHome.mjs";
+import IconInfoCircle from "@tabler/icons-react/dist/esm/icons/IconInfoCircle.mjs";
 import IconList from "@tabler/icons-react/dist/esm/icons/IconList.mjs";
 import IconListDetails from "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs";
 import IconMail from "@tabler/icons-react/dist/esm/icons/IconMail.mjs";
@@ -75,6 +76,11 @@ export function ConversationsIcon(props: TablerIconProps): JSX.Element {
 /** Message with plus — starts a new conversation from the conversation inventory. */
 export function NewConversationIcon(props: TablerIconProps): JSX.Element {
   return <IconMessagePlus size={20} {...props} />;
+}
+
+/** Info circle — opens a compact conversation's details and actions. */
+export function InfoCircleIcon(props: TablerIconProps): JSX.Element {
+  return <IconInfoCircle size={20} {...props} />;
 }
 
 /** Map pin — the shell's location-sharing control, and a preview's location field. */
