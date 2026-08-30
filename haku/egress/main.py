@@ -45,11 +45,7 @@ def _require(name: str) -> str:
 
 
 def _require_decision_endpoint_token() -> str:
-    if token := os.environ.get("HAKU_DECISION_ENDPOINT_TOKEN"):
-        return token
-    # CLEANUP(added 2026-08-30): remove once cluster manifests write the new name (stage 2 of #5163)
-    # and a full roll has passed.
-    return _require("HAKU_EGRESS_FENCE_CREDENTIAL")
+    return _require("HAKU_DECISION_ENDPOINT_TOKEN")
 
 
 async def async_main() -> None:

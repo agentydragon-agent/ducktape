@@ -21,7 +21,7 @@ import os
 import re
 from ipaddress import IPv4Network, IPv6Network
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.grants.http.models import CREDENTIAL_HANDLE_PATTERN, HttpOrigin, HttpRequestCoverage
 from haku.console.grants.principal import ConfigGrantPrincipal
@@ -155,9 +155,7 @@ class EgressDecideConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
     decision_endpoint_token_env_var: EnvironmentVariableName = Field(
-        # CLEANUP(added 2026-08-30): remove the old alias once cluster manifests write the new name (stage 2 of #5163)
-        # and a full roll has passed.
-        validation_alias=AliasChoices("decision_endpoint_token_env_var", "fence_credential_env_var")
+        description="Env reference holding the shared decision endpoint token."
     )
     credentials: list[EgressCredentialEntry] = Field(default_factory=list)
     grants: list[EgressConfigGrantEntry] = Field(default_factory=list)
@@ -253,17 +251,6 @@ def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
     """
     configured_env_var = str(config.decision_endpoint_token_env_var)
     decision_endpoint_token = os.environ.get(configured_env_var)
-    if (
-        configured_env_var in {"HAKU_DECISION_ENDPOINT_TOKEN", "HAKU_EGRESS_FENCE_CREDENTIAL"}
-        and not decision_endpoint_token
-    ):
-        # CLEANUP(added 2026-08-30): remove once cluster manifests write the new name (stage 2 of #5163)
-        # and a full roll has passed.
-        decision_endpoint_token = os.environ.get(
-            "HAKU_EGRESS_FENCE_CREDENTIAL"
-            if configured_env_var == "HAKU_DECISION_ENDPOINT_TOKEN"
-            else "HAKU_DECISION_ENDPOINT_TOKEN"
-        )
     if not decision_endpoint_token:
         raise RuntimeError(f"missing decision endpoint token env var {configured_env_var}")
     identity_tokens = {decision_endpoint_token}

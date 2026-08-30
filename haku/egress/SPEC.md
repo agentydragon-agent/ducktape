@@ -150,9 +150,5 @@ the decision endpoint token.
   argv, or persisted session records.
 - Any authority, parsing, DNS, pinning, or lifetime failure fails closed.
 
-The current follow-up work is tracked in <TODO.md>. Stage 1 accepts the new
-`HAKU_DECISION_ENDPOINT_TOKEN` while retaining the deployed old name and Secret key:
-
-<!-- CLEANUP(added 2026-08-30): rename `HAKU_EGRESS_FENCE_CREDENTIAL` and the `fence-credential`
-Secret key to `decision-endpoint-token` once cluster manifests write the new name (stage 2 of #5163)
-and a full roll has passed. -->
+The current follow-up work is tracked in <TODO.md>. The deployed configuration uses
+`HAKU_DECISION_ENDPOINT_TOKEN` for the shared proxy-to-Console token.
