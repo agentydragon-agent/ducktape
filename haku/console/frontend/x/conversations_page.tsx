@@ -509,7 +509,11 @@ function ConversationDetailsMenu({
         <Menu.Label>Session details</Menu.Label>
         <Box px="sm" pb="xs">
           <Text size="xs" c="dimmed">
-            {conversation.attachments.length === 0 ? "No channel attached" : <Attachments attachments={conversation.attachments} />}
+            {conversation.attachments.length === 0 ? (
+              "No channel attached"
+            ) : (
+              <Attachments attachments={conversation.attachments} />
+            )}
           </Text>
           <Text size="xs" c="dimmed">
             started {timestamp(conversation.created_at)}
