@@ -107,12 +107,10 @@ py_library(
     name = "reader",
     srcs = ["reader.py"],
     deps = [
-        ":conversation_event",
         ":item_reads",
         ":reads",
         "//haku/console:conversation_read_access",
         "//haku/console/session:session_frames",
-        "//haku/console/session:status",
         "//haku/console/session:store",
     ],
 )
@@ -124,6 +122,7 @@ py_library(
         ":conversation_event",
         "//haku/console/harnesses:kind",
         "//haku/console/session:session_frames",
+        "//haku/console/session:status",
         "@pypi//pydantic",
     ],
 )
