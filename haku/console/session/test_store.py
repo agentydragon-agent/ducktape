@@ -536,18 +536,10 @@ async def test_frame_payload_with_nul_survives_and_session_continues(
     payload = {"type": "commandExecution", "output": "before\x00after"}
 
     first = await session_store.record_frame(
-        session.session_id,
-        FrameDirection.FROM_AGENT,
-        SessionFrameKind.HARNESS_FRAME,
-        payload,
-        runner_seq=1,
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, payload, runner_seq=1
     )
     second = await session_store.record_frame(
-        session.session_id,
-        FrameDirection.FROM_AGENT,
-        SessionFrameKind.HARNESS_FRAME,
-        {"type": "result"},
-        runner_seq=2,
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "result"}, runner_seq=2
     )
 
     async with migrated_sessions() as db:
