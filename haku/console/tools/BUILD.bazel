@@ -86,7 +86,6 @@ py_library(
         "//haku/console/mcp:execution",
         "//haku/console/mcp:in_process_server_access",
         "//haku/console/session:session_frames",
-        "//haku/console/session:status",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
