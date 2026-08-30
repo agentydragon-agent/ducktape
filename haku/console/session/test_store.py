@@ -1620,9 +1620,7 @@ async def test_abort_is_refused_until_a_turn_is_actually_running(session_store, 
     assert await session_store.request_abort(view.session_id) is False
 
 
-async def test_abort_latch_survives_runner_reconnect_and_clears_at_turn_end(
-    session_store, operator_id
-) -> None:
+async def test_abort_latch_survives_runner_reconnect_and_clears_at_turn_end(session_store, operator_id) -> None:
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     assert (
         await session_store.authenticate_runner_connection(view.session_id, token)
