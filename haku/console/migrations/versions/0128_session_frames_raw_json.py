@@ -15,7 +15,9 @@ depends_on: str | None = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE session_frames ALTER COLUMN payload TYPE json USING payload::text::json")
+    op.execute(
+        "ALTER TABLE session_frames ALTER COLUMN payload TYPE json USING payload::text::json"
+    )
 
 
 def downgrade() -> None:
