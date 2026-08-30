@@ -22,7 +22,7 @@ if [ -n "$session_token" ]; then
   export HTTPS_PROXY="$HTTP_PROXY"
   export http_proxy="$HTTP_PROXY"
   export https_proxy="$HTTP_PROXY"
-  export NO_PROXY="127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,"\
+  export NO_PROXY="127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local," \
     "haku-kube-api-proxy.haku-console.svc.cluster.local"
   export no_proxy="$NO_PROXY"
   export SSL_CERT_FILE="$bundle"

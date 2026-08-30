@@ -7,10 +7,10 @@ in the harness and drives this box through `exec_sandbox`.
 
 Two builds of the same image exist right now:
 
-| File          | Built by                                       | Pushed to                            | Status                                    |
-| ------------- | ---------------------------------------------- | ------------------------------------ | ----------------------------------------- |
-| `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls |
-| `default.nix` | `.github/workflows/nix-oci-images.yml` | `ducktape-ci/haku-sandbox-image-nix` | **Works — 25/26**, cutover pending        |
+| File          | Built by                                   | Pushed to                            | Status                                    |
+| ------------- | ------------------------------------------ | ------------------------------------ | ----------------------------------------- |
+| `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml` | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls |
+| `default.nix` | `.github/workflows/nix-oci-images.yml`     | `ducktape-ci/haku-sandbox-image-nix` | **Works — 25/26**, cutover pending        |
 
 The exec-target image bakes `haku-sandbox-setup.sh`; Console-launched runner images contain only
 the harness toolchain. Agent-specific setup is mounted by each SandboxTemplate instead of being

@@ -62,14 +62,8 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     ca_mount = one(mount for mount in mounts if mount["name"] == "egress-proxy-ca")
     assert str(PurePosixPath(runtime["ca_bundle"]).parent) == ca_mount["mountPath"]
     setup_mount = one(mount for mount in mounts if mount["name"] == "claude-runner-setup")
-    assert setup_mount == {
-        "name": "claude-runner-setup",
-        "mountPath": "/etc/haku",
-        "readOnly": True,
-    }
-    setup_volume = one(
-        volume for volume in pod_template["spec"]["volumes"] if volume["name"] == "claude-runner-setup"
-    )
+    assert setup_mount == {"name": "claude-runner-setup", "mountPath": "/etc/haku", "readOnly": True}
+    setup_volume = one(volume for volume in pod_template["spec"]["volumes"] if volume["name"] == "claude-runner-setup")
     assert setup_volume["configMap"] == {"name": "haku-claude-runner-setup", "defaultMode": 493}
     setup_path = PurePosixPath(
         yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())["settings"]["haku_agent_workspace_setup"]

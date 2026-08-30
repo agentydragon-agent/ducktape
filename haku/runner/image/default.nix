@@ -7,12 +7,14 @@
   pkgsMaster,
 }:
 let
-  pythonEnv = pkgs.python3.withPackages (pythonPackages: with pythonPackages; [
-    anyio
-    pydantic
-    tenacity
-    websockets
-  ]);
+  pythonEnv = pkgs.python3.withPackages (
+    pythonPackages: with pythonPackages; [
+      anyio
+      pydantic
+      tenacity
+      websockets
+    ]
+  );
 
   runnerSource = pkgs.runCommand "haku-runner-source" { } ''
     mkdir -p $out/lib
