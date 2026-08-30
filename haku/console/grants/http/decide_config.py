@@ -21,15 +21,7 @@ import os
 import re
 from ipaddress import IPv4Network, IPv6Network
 
-from pydantic import (
-    AliasChoices,
-    BaseModel,
-    ConfigDict,
-    Field,
-    SecretStr,
-    field_validator,
-    model_validator,
-)
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.grants.http.models import CREDENTIAL_HANDLE_PATTERN, HttpOrigin, HttpRequestCoverage
 from haku.console.grants.principal import ConfigGrantPrincipal
@@ -165,7 +157,7 @@ class EgressDecideConfig(BaseModel):
     decision_endpoint_token_env_var: EnvironmentVariableName = Field(
         # CLEANUP(added 2026-08-30): remove the old alias once cluster manifests write the new name (stage 2 of #5163)
         # and a full roll has passed.
-        validation_alias=AliasChoices("decision_endpoint_token_env_var", "fence_credential_env_var"),
+        validation_alias=AliasChoices("decision_endpoint_token_env_var", "fence_credential_env_var")
     )
     credentials: list[EgressCredentialEntry] = Field(default_factory=list)
     grants: list[EgressConfigGrantEntry] = Field(default_factory=list)
