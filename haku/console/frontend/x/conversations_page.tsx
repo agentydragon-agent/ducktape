@@ -532,13 +532,7 @@ function ConversationDetailsMenu({
   );
 }
 
-function ConversationDetailPage({
-  conversationId,
-  hidden = false,
-}: {
-  conversationId: string;
-  hidden?: boolean;
-}) {
+function ConversationDetailPage({ conversationId, hidden = false }: { conversationId: string; hidden?: boolean }) {
   const [terminating, setTerminating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const transcriptScrollRef = useRef<HTMLDivElement>(null);

@@ -129,8 +129,7 @@ export function HakuUiEmbed({
     if (agentEnrollmentId !== null) setMountedAgentEnrollmentId(agentEnrollmentId);
   }, [agentEnrollmentId]);
   useEffect(() => {
-    if (sessionFramesId !== null && sessionFramesId !== undefined)
-      setMountedSessionFramesId(sessionFramesId);
+    if (sessionFramesId !== null && sessionFramesId !== undefined) setMountedSessionFramesId(sessionFramesId);
   }, [sessionFramesId]);
   // A deep-linked call opens the drawer on arrival — following the link *is* the request to
   // decide it. Keyed on the id so navigating to a different call re-opens a drawer the operator
