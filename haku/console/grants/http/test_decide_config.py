@@ -42,25 +42,15 @@ def _credential_entry(**overrides: Any) -> EgressCredentialEntry:
 def test_egress_decide_config_requires_distinct_env_references() -> None:
     with pytest.raises(ValueError, match="identity secrets"):
         EgressDecideConfig(
-            decision_endpoint_token_env_var="EGRESS_TOKEN",
-            credentials=[_credential_entry(value_env_var="EGRESS_TOKEN")],
+            decision_endpoint_token_env_var="EGRESS_TOKEN", credentials=[_credential_entry(value_env_var="EGRESS_TOKEN")]
         )
 
 
 def test_egress_decide_config_accepts_both_token_env_var_names() -> None:
-    assert EgressDecideConfig.model_validate(
-        {"fence_credential_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}
-    ).decision_endpoint_token_env_var == "EGRESS_DECISION_ENDPOINT_TOKEN"
-    assert EgressDecideConfig.model_validate(
-        {"decision_endpoint_token_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}
-    ).decision_endpoint_token_env_var == "EGRESS_DECISION_ENDPOINT_TOKEN"
+    assert EgressDecideConfig.model_validate({"fence_credential_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}).decision_endpoint_token_env_var == "EGRESS_DECISION_ENDPOINT_TOKEN"
+    assert EgressDecideConfig.model_validate({"decision_endpoint_token_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}).decision_endpoint_token_env_var == "EGRESS_DECISION_ENDPOINT_TOKEN"
     with pytest.raises(ValidationError, match="fence_credentials"):
-        EgressDecideConfig.model_validate(
-            {
-                "fence_credentials": [],
-                "decision_endpoint_token_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN",
-            }
-        )
+        EgressDecideConfig.model_validate({"fence_credentials": [], "decision_endpoint_token_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"})
 
 
 def test_credential_entry_canonicalizes_and_validates_match_headers() -> None:
@@ -113,9 +103,7 @@ def test_load_egress_decide_reads_env_references_and_fails_loud(monkeypatch: pyt
 
 
 def test_load_egress_decide_prefers_new_env_name_for_old_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = EgressDecideConfig.model_validate(
-        {"fence_credential_env_var": "HAKU_EGRESS_FENCE_CREDENTIAL"}
-    )
+    config = EgressDecideConfig.model_validate({"fence_credential_env_var": "HAKU_EGRESS_FENCE_CREDENTIAL"})
     monkeypatch.delenv("HAKU_EGRESS_FENCE_CREDENTIAL", raising=False)
     monkeypatch.setenv("HAKU_DECISION_ENDPOINT_TOKEN", _DECISION_ENDPOINT_TOKEN)
 

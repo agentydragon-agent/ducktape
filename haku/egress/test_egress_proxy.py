@@ -317,11 +317,7 @@ async def test_localhost_decide_endpoint_failure_fails_closed(
     async with (
         stub_console(failure.behavior) as stub,
         aclosing(
-            stub_client(
-                stub,
-                decision_endpoint_token=failure.decision_endpoint_token,
-                timeout_seconds=failure.timeout_seconds,
-            )
+            stub_client(stub, decision_endpoint_token=failure.decision_endpoint_token, timeout_seconds=failure.timeout_seconds)
         ) as decide,
         make_proxy(decide, tmp_path) as proxy,
     ):

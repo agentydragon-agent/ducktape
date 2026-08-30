@@ -188,7 +188,7 @@ def _request(
     )
 
 
-def test_fence_bearer_gates_evaluation(make_client: Any) -> None:
+def test_decision_endpoint_token_gates_evaluation(make_client: Any) -> None:
     with make_client() as client:
         harness = _harness(client)
         service = harness.decide

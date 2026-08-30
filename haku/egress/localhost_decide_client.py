@@ -29,11 +29,7 @@ class LocalhostDecideClient(DecideClient):
     """One decide POST per request/CONNECT; owns its ``httpx`` client (``aclose`` on shutdown)."""
 
     def __init__(
-        self,
-        *,
-        base_url: str,
-        decision_endpoint_token: SecretStr,
-        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        self, *, base_url: str, decision_endpoint_token: SecretStr, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     ) -> None:
         # trust_env=False: a localhost machine-to-machine hop must never route
         # through HTTP(S)_PROXY from the environment.
