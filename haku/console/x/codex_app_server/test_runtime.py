@@ -46,7 +46,7 @@ def test_codex_launch_carries_the_provider_argv_and_the_runner_thread_params() -
         "-c",
         'model_provider = "test-provider"',
         "-c",
-        'model_providers = {"test-provider" = {name = "Test OpenAI-compatible provider", '
+        'model_providers = {test-provider = {name = "Test OpenAI-compatible provider", '
         'base_url = "http://litellm.test/v1", env_key = "OPENAI_API_KEY", '
         'wire_api = "responses"}}',
         "-c",

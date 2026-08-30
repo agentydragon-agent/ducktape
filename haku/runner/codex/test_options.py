@@ -33,7 +33,7 @@ def test_the_app_server_launch_is_exactly_this() -> None:
         "-c",
         'model_provider = "test-provider"',
         "-c",
-        'model_providers = {"test-provider" = {name = "Test OpenAI-compatible provider", '
+        'model_providers = {test-provider = {name = "Test OpenAI-compatible provider", '
         'base_url = "http://litellm.test/v1", env_key = "OPENAI_API_KEY", '
         'wire_api = "responses"}}',
         "-c",
