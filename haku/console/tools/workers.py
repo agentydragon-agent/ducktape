@@ -54,8 +54,9 @@ class DispatchedWorker(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     session_id: UUID = Field(
-        description="The new worker session. Poll its sandbox with get_worker_provisioning or outcome with "
-        "get_worker_result."
+        description=(
+            "The new worker session. Poll its sandbox with get_worker_provisioning or outcome with `session_outcome`."
+        )
     )
 
 
@@ -101,7 +102,7 @@ def build_mcp(sessions: SessionService, *, conversation_reads: ConversationReadA
             "enqueued and reach the agent when it can accept them: FIFO with other queued prompts, admitted "
             "at the current turn's natural end, never interrupting or injecting into a running turn; a message "
             "sent to an idle session starts its next turn immediately. "
-            "Poll its sandbox with get_worker_provisioning and its outcome with get_worker_result. "
+            "Poll its sandbox with get_worker_provisioning and its outcome with session_outcome. "
             "The worker runs under its own Agent perimeter (its own grants and fence identity), not "
             "yours. Every dispatch is reviewed and approved by the Operator per call; reads are pass-through."
         ),

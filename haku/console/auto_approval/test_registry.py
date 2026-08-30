@@ -85,6 +85,7 @@ _CONFIG = ConsoleConfigFile.model_validate(
         "mcp": {"servers": _SERVER_CONFIGS},
         "auto_approval_policies": [
             {"id": "safe_tools", "type": "exact_tools", "tools": _EXACT_TOOLS},
+            {"id": "github_identity_reads", "type": "exact_tools", "tools": {"github": ["get_me"]}},
             {"id": "managed_gmail_labels", "type": "gmail_label_namespace", "server": "gmail", "label_prefix": "haku/"},
             {
                 "id": "public_ducktape_reads",
@@ -107,6 +108,7 @@ _CONFIG = ConsoleConfigFile.model_validate(
                 "type": "any_of",
                 "policies": [
                     "safe_tools",
+                    "github_identity_reads",
                     "managed_gmail_labels",
                     "public_ducktape_reads",
                     "public_gaffer_private_reads",
@@ -121,7 +123,12 @@ _CONFIG = ConsoleConfigFile.model_validate(
             {
                 "id": "public_coder_github_reads",
                 "type": "any_of",
-                "policies": ["public_ducktape_reads", "public_gaffer_private_reads", "public_github_reads"],
+                "policies": [
+                    "public_ducktape_reads",
+                    "public_gaffer_private_reads",
+                    "public_github_reads",
+                    "github_identity_reads",
+                ],
             },
             {"id": "none", "type": "never"},
         ],
@@ -493,6 +500,14 @@ async def test_public_ducktape_reads_auto_approve(tool_name: str, arguments: dic
     assert policy_id == AGENT_AUTO_APPROVAL_ID
     assert evaluation is not None
     assert "reviewed read targets repository agentydragon/ducktape" in evaluation
+
+
+@pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
+async def test_configured_agents_auto_approve_github_identity_read(actor: AgentActor) -> None:
+    policy_id, evaluation = await _remote_decision("github", "get_me", {}, actor=actor)
+    assert policy_id == AGENT_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "exact tool github/get_me is listed" in evaluation
 
 
 @pytest.mark.parametrize(("tool_name", "tool_arguments"), list(_GITHUB_TOOL_ARGUMENTS.items()))

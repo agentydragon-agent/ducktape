@@ -1,7 +1,7 @@
-"""End-to-end contracts for `get_worker_result` over the real store and a migrated Postgres.
+"""End-to-end contracts for `session_outcome` over the real store and a migrated Postgres.
 
 The tool is exercised the way the orchestrator Agent reaches it: through `build_mcp`'s real
-`haku_conversations` server, over a real `ConversationReads` on a migrated Postgres, reading worker
+`haku_conversations` server, over a real `ConversationReads` on a migrated Postgres, reading
 sessions a real `Store` wrote. Nothing the tool touches is stood in for — the store, the session
 status derivation, the profile-DAG read scope, and the durable Agent authority are all real; only
 the sandbox a worker would run in is absent, which a status/answer read never consults.
@@ -26,7 +26,7 @@ from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.conversation.conversation_event import TurnOutcome
 from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.conversation.reader import ConversationReads
-from haku.console.conversation.reads import WorkerResult, WorkerStatus
+from haku.console.conversation.reads import SessionOutcome
 from haku.console.conversation_read_access import ConversationReadAccessPolicy
 from haku.console.database_schema import Conversation, ConversationItem, ConversationTurn, Session
 from haku.console.grants.principal import RequestPrincipal
@@ -149,17 +149,20 @@ async def _seed_session(env: _Env, *, ready: bool, profile: str = _WORKER_PROFIL
 
 async def _seed_turn(
     env: _Env, conversation_id: UUID, session_id: UUID, *, outcome: TurnOutcome | None, failure: str | None = None
-) -> None:
+) -> UUID:
     now = _now()
     ended = outcome is not None
+    turn_id = uuid4()
     async with env.sessions.begin() as db:
         db.add(
             ConversationTurn(
-                turn_id=uuid4(),
+                turn_id=turn_id,
                 conversation_id=conversation_id,
                 session_id=session_id,
                 first_seq=1,
                 last_seq=2 if ended else None,
+                first_frame_seq=1,
+                last_frame_seq=2 if ended else None,
                 started_at=now,
                 ended_at=now if ended else None,
                 outcome=outcome,
@@ -167,8 +170,12 @@ async def _seed_turn(
             )
         )
 
+    return turn_id
 
-async def _seed_message(env: _Env, conversation_id: UUID, session_id: UUID, text: str) -> None:
+
+async def _seed_message(
+    env: _Env, conversation_id: UUID, session_id: UUID, text: str, turn_id: UUID | None = None
+) -> None:
     now = _now()
     async with env.sessions.begin() as db:
         db.add(
@@ -176,6 +183,7 @@ async def _seed_message(env: _Env, conversation_id: UUID, session_id: UUID, text
                 item_id=uuid4(),
                 conversation_id=conversation_id,
                 session_id=session_id,
+                turn_id=turn_id,
                 item_type=ItemType.MESSAGE,
                 status=ItemStatus.COMPLETE,
                 opened_seq=3,
@@ -199,59 +207,78 @@ def _meta(profile: str) -> dict[str, object]:
 async def _call(env: _Env, session_id: UUID, *, profile: str = _ORCHESTRATOR, raise_on_error: bool = False):
     async with Client(env.mcp) as client:
         return await client.call_tool(
-            "get_worker_result", {"session_id": str(session_id)}, meta=_meta(profile), raise_on_error=raise_on_error
+            "session_outcome", {"session_id": str(session_id)}, meta=_meta(profile), raise_on_error=raise_on_error
         )
 
 
-async def _result(env: _Env, session_id: UUID, *, profile: str = _ORCHESTRATOR) -> WorkerResult:
-    return WorkerResult.model_validate((await _call(env, session_id, profile=profile)).structured_content)
+async def _result(env: _Env, session_id: UUID, *, profile: str = _ORCHESTRATOR) -> SessionOutcome:
+    return SessionOutcome.model_validate((await _call(env, session_id, profile=profile)).structured_content)
 
 
-async def test_a_dispatched_worker_with_no_turn_yet_reports_running(env: _Env) -> None:
+async def test_a_dispatched_session_with_no_turn_yet_reports_real_status(env: _Env) -> None:
     session_id, _ = await _seed_session(env, ready=False)
 
     result = await _result(env, session_id)
 
-    assert result.status is WorkerStatus.RUNNING
-    assert result.result is None
+    assert result.status is SessionStatus.IDLE
+    assert result.latest_turn is None
 
 
-async def test_a_worker_mid_turn_reports_running_and_withholds_its_answer(env: _Env) -> None:
+async def test_an_open_turn_reports_running_shape(env: _Env) -> None:
     session_id, conversation_id = await _seed_session(env, ready=True)
     await _seed_turn(env, conversation_id, session_id, outcome=None)
 
     result = await _result(env, session_id)
 
-    assert result.status is WorkerStatus.RUNNING
-    assert result.result is None
+    assert result.status is SessionStatus.READY
+    assert result.latest_turn is not None
+    assert result.latest_turn.ended_at is None
+    assert result.latest_turn.end is None
 
 
-async def test_a_worker_that_answered_reports_done_with_its_final_message(env: _Env) -> None:
-    """`done` follows the answered turn, not a closed session: a one-shot worker stays ready after
-    it answers, and the orchestrator must still read its result off the still-live session."""
+async def test_a_session_with_an_answered_turn_reports_the_final_message(env: _Env) -> None:
+    """An answered turn carries its real outcome, not a closed session: a one-shot worker stays ready after
+    it answers, and the orchestrator must still read its message off the still-live session."""
     session_id, conversation_id = await _seed_session(env, ready=True)
-    await _seed_turn(env, conversation_id, session_id, outcome=TurnOutcome.ANSWERED)
-    await _seed_message(env, conversation_id, session_id, "Opened the PR: https://example.test/pr/7")
+    turn_id = await _seed_turn(env, conversation_id, session_id, outcome=TurnOutcome.ANSWERED)
+    await _seed_message(env, conversation_id, session_id, "Opened the PR: https://example.test/pr/7", turn_id)
 
     # The point of the case: the session is still live, yet the worker is reported done.
     assert await env.store.status(session_id) is SessionStatus.READY
     result = await _result(env, session_id)
 
-    assert result.status is WorkerStatus.DONE
-    assert result.result == "Opened the PR: https://example.test/pr/7"
+    assert result.status is SessionStatus.READY
+    assert result.latest_turn is not None
+    assert result.latest_turn.end is not None
+    assert result.latest_turn.end.outcome is TurnOutcome.ANSWERED
+    assert result.final_message == "Opened the PR: https://example.test/pr/7"
 
 
-async def test_a_failed_session_reports_failed_with_its_error_surface(env: _Env) -> None:
+async def test_an_aborted_turn_reports_aborted_without_a_final_message(env: _Env) -> None:
+    session_id, conversation_id = await _seed_session(env, ready=True)
+    await _seed_turn(env, conversation_id, session_id, outcome=TurnOutcome.ABORTED)
+
+    result = await _result(env, session_id)
+
+    assert result.status is SessionStatus.READY
+    assert result.latest_turn is not None
+    assert result.latest_turn.end is not None
+    assert result.latest_turn.end.outcome is TurnOutcome.ABORTED
+    assert result.final_message is None
+
+
+async def test_a_failed_session_carries_its_error(env: _Env) -> None:
     session_id, _ = await _seed_session(env, ready=True)
     await env.store.fail(session_id, "sandbox runner disconnected")
 
     result = await _result(env, session_id)
 
-    assert result.status is WorkerStatus.FAILED
-    assert result.result == "sandbox runner disconnected"
+    assert result.status is SessionStatus.FAILED
+    assert result.error == "sandbox runner disconnected"
+    assert result.final_message is None
 
 
-async def test_a_failed_turn_reports_failed_with_the_turn_failure(env: _Env) -> None:
+async def test_a_failed_turn_preserves_its_real_outcome(env: _Env) -> None:
     """A turn can die without the session dying, so its failure is the surface even while the
     session itself is still ready."""
     session_id, conversation_id = await _seed_session(env, ready=True)
@@ -261,16 +288,18 @@ async def test_a_failed_turn_reports_failed_with_the_turn_failure(env: _Env) -> 
 
     result = await _result(env, session_id)
 
-    assert result.status is WorkerStatus.FAILED
-    assert result.result == "the model returned an error"
+    assert result.status is SessionStatus.READY
+    assert result.latest_turn is not None
+    assert result.latest_turn.end is not None
+    assert result.latest_turn.end.outcome is TurnOutcome.FAILED
 
 
 async def test_a_session_outside_the_read_scope_is_refused(env: _Env) -> None:
-    """The worker's result is fenced by the same profile-DAG scope the other reads use: a caller
+    """The session outcome is fenced by the same profile-DAG scope the other reads use: a caller
     whose closure does not reach the worker's profile is denied, not handed the answer."""
     session_id, conversation_id = await _seed_session(env, ready=True)
-    await _seed_turn(env, conversation_id, session_id, outcome=TurnOutcome.ANSWERED)
-    await _seed_message(env, conversation_id, session_id, "secret")
+    turn_id = await _seed_turn(env, conversation_id, session_id, outcome=TurnOutcome.ANSWERED)
+    await _seed_message(env, conversation_id, session_id, "secret", turn_id)
 
     result = await _call(env, session_id, profile=_OUTSIDER, raise_on_error=False)
 
