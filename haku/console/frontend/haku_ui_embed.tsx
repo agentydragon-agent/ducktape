@@ -108,6 +108,7 @@ export function HakuUiEmbed({
   onNavigate: (view: ConsoleNavigationView) => void;
 }): JSX.Element {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [mountedViews, setMountedViews] = useState(() => new Set([view]));
   const [mountedAgentEnrollmentId, setMountedAgentEnrollmentId] = useState(agentEnrollmentId);
   const [mountedSessionFramesId, setMountedSessionFramesId] = useState(sessionFramesId);
   const viewRef = useRef(view);
@@ -125,6 +126,12 @@ export function HakuUiEmbed({
   const screenshotApprovalsRef = useRef<ScreenshotApproval[]>([]);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const approvalsOpenedAutomaticallyRef = useRef(false);
+  useEffect(() => {
+    setMountedViews((previous) => {
+      if (previous.has(view)) return previous;
+      return new Set(previous).add(view);
+    });
+  }, [view]);
   useEffect(() => {
     if (agentEnrollmentId !== null) setMountedAgentEnrollmentId(agentEnrollmentId);
   }, [agentEnrollmentId]);
@@ -667,7 +674,7 @@ export function HakuUiEmbed({
           sandbox="allow-scripts allow-same-origin allow-forms"
           className={`haku-ui-frame ${view === "embed" ? "" : "haku-ui-frame-hidden"}`}
         />
-        <SettingsPanel hidden={view !== "settings"} />
+        {(mountedViews.has("settings") || view === "settings") && <SettingsPanel hidden={view !== "settings"} />}
         {mountedAgentEnrollmentId !== null && (
           <AgentEnrollmentPanel
             hidden={view !== "agentEnrollment"}
@@ -676,8 +683,12 @@ export function HakuUiEmbed({
             onReturnToSettings={() => onNavigate("settings")}
           />
         )}
-        <ToolCallsPage hidden={view !== "toolCalls"} />
-        <ConversationsPage hidden={view !== "conversations"} conversationId={conversationId ?? null} />
+        {(mountedViews.has("toolCalls") || view === "toolCalls") && (
+          <ToolCallsPage hidden={view !== "toolCalls"} />
+        )}
+        {(mountedViews.has("conversations") || view === "conversations") && (
+          <ConversationsPage hidden={view !== "conversations"} conversationId={conversationId ?? null} />
+        )}
         {mountedSessionFramesId != null && (
           <SessionFramesPage hidden={view !== "sessionFrames"} sessionId={mountedSessionFramesId} />
         )}
