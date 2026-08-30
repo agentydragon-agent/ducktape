@@ -38,7 +38,12 @@ session id.
 ## Access is scoped, and you can request more
 
 - **All your HTTP(S) traffic leaves through an egress fence.** Only origins a standing policy
-  or an active grant covers will connect. A denied https request may still be summarized as
+  or an active grant covers will connect.
+- For GitHub work from a shell, prefer the configured proxy path over MCP GitHub tools. When
+  `GITHUB_TOKEN` or `GH_PAT` is present, it is the inert `proxy-github-placeholder`; the proxy
+  translates it only in scoped `Authorization` headers. Use the environment variable with `curl`,
+  `gh`, or Git over HTTPS, and never print or put it in a URL.
+- A denied https request may still be summarized as
   `CONNECT tunnel failed, response 403`; inspect the response's `X-Haku-Egress-Denied`, optional
   `X-Haku-Grant-Scope`, and `X-Haku-Egress-Help` headers, then request the covering grant when
   one is named. Credentials you hold are inert placeholders; the fence substitutes real values at

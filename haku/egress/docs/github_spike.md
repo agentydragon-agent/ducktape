@@ -8,7 +8,9 @@ substitution (Bearer and git-over-HTTPS Basic), deny without an allowance, the t
 path (deny → `create_grant` → retry → release → deny), and fail-closed refusal. Success is the
 gate for repointing the fleet Kyverno injection at this listener
 (`cluster/k8s/haku/console/README.md` § Colocated egress proxy → Deferred). Report results on
-[#4943](https://github.com/agentydragon/ducktape/issues/4943).
+
+> **Historical note:** this runbook documents the retired OpenClaw colocated-fence spike. The current OpenClaw deployment does not carry `HAKU_GITHUB_TOKEN`; the shared Haku sandbox bootstrap now uses `GITHUB_TOKEN` instead.
+> [#4943](https://github.com/agentydragon/ducktape/issues/4943).
 
 Everything here runs as the operator (cluster direnv kubeconfig). The spike sends requests from
 the live agent pod but changes no state in it: every command below is per-invocation (no

@@ -128,17 +128,17 @@ login ${HAKU_GIT_USERNAME}
 password ${HAKU_GIT_PASSWORD}
 NETRC
 
-# GitHub, only where the template asked for it. HAKU_GITHUB_TOKEN is a non-secret
+# GitHub, only where the template asked for it. GITHUB_TOKEN is a non-secret
 # placeholder the egress proxy swaps for the real agentydragon-agent PAT on the way out, so
 # what lands here is inert on its own — that is the point, and why this is safe to write
 # into a file the agent can read. The login name is ignored by GitHub when the password is a
 # token, but git demands one. Absent in the haku-sandbox template, which reaches github.com
 # unauthenticated for public reads and should keep doing so.
-if [ -n "${HAKU_GITHUB_TOKEN:-}" ]; then
+if [ -n "${GITHUB_TOKEN:-}" ]; then
   cat >>"$HOME/.netrc" <<NETRC
 machine github.com
 login x-access-token
-password ${HAKU_GITHUB_TOKEN}
+password ${GITHUB_TOKEN}
 NETRC
 fi
 

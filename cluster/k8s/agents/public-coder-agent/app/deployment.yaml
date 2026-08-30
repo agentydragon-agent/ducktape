@@ -114,18 +114,6 @@ spec:
             # would never see it. See docs/personal_agents/findings/ F7, F10, F16.
             - name: GH_PAT
               value: "proxy-github-placeholder"
-            # The #4943 spike placeholder: requests sent through the colocated Console egress
-            # fence (haku-console:8888) carrying this value get the `github-bot` credential
-            # substituted server-side under a configuration-file grant (cluster/k8s/haku/console/config.yaml
-            # egress_decide). Inert on its own and on every other path — iron does not know it.
-            # Through the fence, the shared fence credential authenticates only the colocated
-            # proxy. The per-session bridge bearer selects the live sandbox Agent for each decide
-            # call, so this pod's identity is not inferred from the shared fence. GH_PAT above
-            # stays the production GitHub path for the same reason. Not named GITHUB_TOKEN:
-            # OpenClaw strips that from exec env, and `gh` picking it up would send a
-            # fence-only placeholder down the iron path.
-            - name: HAKU_GITHUB_TOKEN
-              value: "github-token-placeholder"
             # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists
             # only in Haku Console and this agent's iron-proxy, which replaces this value only in
             # Authorization headers sent to the exact haku.allegedly.works host.

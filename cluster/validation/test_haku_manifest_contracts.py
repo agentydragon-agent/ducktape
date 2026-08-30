@@ -235,23 +235,6 @@ def test_public_coder_pod_joins_the_colocated_egress_fence(k8s_dir: Path) -> Non
     assert peer["podSelector"]["matchLabels"] == service["spec"]["selector"]
     assert one(fence_rule["ports"]) == {"port": port["port"], "protocol": "TCP"}
 
-    # The positive migrated-runner path remains coherent: the Haku Agent's configuration grants cover
-    # both GitHub origins and name a credential whose placeholder this spike pod holds. This checks
-    # the shared config/placeholder contract without treating the shared fence as Agent identity.
-    config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
-    egress = config["egress_decide"]
-    haku_agent = config["harnesses"]["claude_code"]["agent_id"]
-    registry = {entry["handle"]: entry for entry in egress["credentials"]}
-    covered = {
-        (origin["host"], origin["port"])
-        for entry in egress["grants"]
-        if entry["principal"] == {"kind": "agent", "agent_id": haku_agent}
-        and (handle := entry.get("credential_handle")) is not None
-        and registry[handle]["placeholder"] == env["HAKU_GITHUB_TOKEN"]
-        for origin in entry["origins"]
-    }
-    assert {("api.github.com", 443), ("github.com", 443)} <= covered
-
 
 def test_harness_runtimes_share_capacity_but_not_agent_resources(k8s_dir: Path) -> None:
     """Claude and Codex share one namespace/image, but retain Agent-owned resources."""
@@ -384,6 +367,9 @@ def test_haku_runtimes_and_access_profile_share_one_grant(k8s_dir: Path) -> None
     exec_target = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku.yaml").read_text())
     runner_template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
     assert runner_template["metadata"]["namespace"] == "haku-runtime-sandbox"
+    runner_environment = sandbox_env(runner_template)
+    assert runner_environment["GITHUB_TOKEN"] == {"name": "GITHUB_TOKEN", "value": "github-token-placeholder"}
+    assert "HAKU_GITHUB_TOKEN" not in runner_environment
 
     for template in (exec_target, runner_template):
         pod = template["spec"]["podTemplate"]["spec"]
@@ -632,6 +618,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     app_deployment = yaml.safe_load((agent_dir / "app" / "deployment.yaml").read_text())
     app_container = one(app_deployment["spec"]["template"]["spec"]["containers"])
     app_env = {entry["name"]: entry for entry in app_container["env"]}
+    assert "HAKU_GITHUB_TOKEN" not in app_env
     assert app_env["AIQUOTA_API_BEARER_TOKEN"] == {
         "name": "AIQUOTA_API_BEARER_TOKEN",
         "value": "proxy-aiquota-api-bearer-placeholder",
@@ -812,7 +799,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
         "value": "proxy-litellm-public-coder-placeholder",
     }
     assert environment["HAKU_RUNNER_SETUP"]["value"] == ""
-    assert not {"HAKU_GIT_USERNAME", "HAKU_GIT_PASSWORD", "HAKU_GITHUB_TOKEN"} & environment.keys()
+    assert not {"HAKU_GIT_USERNAME", "HAKU_GIT_PASSWORD"} & environment.keys()
     workspace = one(volume for volume in pod["volumes"] if volume["name"] == "workspace")
     assert workspace == {"name": "workspace", "emptyDir": {"sizeLimit": "10Gi"}}
     # The runner trusts the colocated Console egress fence it now routes through (#4670): the bundle

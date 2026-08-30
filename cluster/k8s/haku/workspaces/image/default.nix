@@ -98,7 +98,7 @@ let
   );
 
   # Everything the run needs on PATH. Mirrors the Dockerfile's apt list plus the two tools
-  # its absence kept costing (jq, tea); each line notes what breaks without it.
+  # its absence kept costing (jq, gh, tea); each line notes what breaks without it.
   hakuSandboxEnv = pkgs.buildEnv {
     name = "haku-sandbox-env";
     paths = [
@@ -125,6 +125,7 @@ let
       pkgs.openssl # haku-sandbox-setup.sh §1 splits the egress CA bundle with it
       pkgs.cacert
       pkgs.jq
+      pkgs.gh # authenticated GitHub repository and pull-request workflows through the proxy
       pkgs.tea # procedures/code_changes.md routes code changes through Forgejo PRs
       pkgs.kubectl # tools/plaid_q.sh, cli/k8s_secrets.py, pod-driven source reads
 
