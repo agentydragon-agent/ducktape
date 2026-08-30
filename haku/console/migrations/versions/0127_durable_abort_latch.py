@@ -16,9 +16,7 @@ depends_on: str | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "sessions", sa.Column("abort_requested_at", sa.DateTime(timezone=True), nullable=True)
-    )
+    op.add_column("sessions", sa.Column("abort_requested_at", sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:
