@@ -293,7 +293,7 @@ canonical terms above.
   “runner connection,” “runner protocol envelope,” and `SessionFrame`/`SessionFrameKind`; the persisted
   frame discriminator remains the existing `kind` column unless a separately approved schema rename is
   needed. `Bridge v3` remains only when naming historical compatibility behavior.
-- **Frontend-bridge family:** `@haku/console-bridge`, `haku/shared/bridge_protocol/`,
+- **Agent UI bridge family:** `@haku/console-bridge`, `haku/shared/bridge_protocol/`,
   `frontend/bridge.ts`, “bridge verb,” “bridge action,” “Bridge request id,” and “postMessage bridge.”
   Keep **Agent UI bridge** as the canonical concept name for this iframe ↔ trusted outer-shell channel,
   normalize its actions/verbs/request IDs under that name, and do not conflate it with the runner
