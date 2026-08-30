@@ -312,6 +312,21 @@ py_test(
 )
 
 py_test(
+    name = "test_send_message",
+    srcs = ["test_send_message.py"],
+    deps = [
+        ":workers",
+        "//haku/console:conversation_read_access",
+        "//haku/console:tool_call_actor",
+        "//haku/console/conversation:prompt_origin",
+        "//haku/console/grants:principal",
+        "//haku/console/mcp:execution",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_worker_provisioning",
     size = "medium",
     srcs = ["test_worker_provisioning.py"],
