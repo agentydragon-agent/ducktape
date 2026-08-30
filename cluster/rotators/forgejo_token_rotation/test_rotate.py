@@ -229,7 +229,7 @@ def test_tea_config_yaml_matches_upstream_config_shape():
     rendered = tea_config_yaml(r, creds, "token-value")
     assert "logins:" in rendered
     assert "name: forgejo" in rendered
-    assert "url: https://git.allegedly.works" in rendered
+    assert "url: https://git.test" in rendered
     assert "token: token-value" in rendered
     assert "default: true" in rendered
     assert "version_check: false" in rendered
@@ -281,7 +281,7 @@ def test_mint_token_omits_repositories_for_full_account_access():
     client = _RecordingClient()
     data = mint_token(client, r, creds, now=datetime(2026, 7, 1, 1, 2, 3, 456789, tzinfo=UTC))
     assert data["name"] == "forgejo-tea-haku-20260701010203456789"
-    assert client.posts[0][1]["auth"] == ("haku", "secret")
+    assert client.posts[0][1]["auth"] == ("test-user", "test-secret")
     assert client.posts[0][1]["json"] == {"name": data["name"], "scopes": FULL_ACCOUNT_SCOPES}
 
 
