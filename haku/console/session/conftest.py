@@ -48,11 +48,11 @@ TEST_ACCESS_PROFILE_ID = "no_auto_approval"
 def runtime_config(**overrides: object) -> HarnessRegistrationConfig:
     values: dict[str, object] = {
         "agent_id": str(TEST_AGENT_ID),
-        "namespace": "haku-claude-sandbox",
-        "warm_pool": "haku-claude",
+        "namespace": "test-claude-sandbox",
+        "warm_pool": "test-claude-pool",
         "claim_prefix": "claude",
         "harness_label": "claude",
-        "cwd": "/workspace",
+        "cwd": "/test/workspace",
         "session_ttl_seconds": 7200,
         "https_proxy": "http://proxy.test:8180",
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",

@@ -33,7 +33,7 @@ from util.bazel.subprocess import python_env
 # gazelle:include_dep //mcp_infra/testing:stdio_app
 
 
-def make_container_opts(image: str, *, working_dir: Path = Path("/workspace")) -> ContainerExecServerConfig:
+def make_container_opts(image: str, *, working_dir: Path = Path("/test/workspace")) -> ContainerExecServerConfig:
     """Create standard ContainerExecServerConfig for tests."""
     return ContainerExecServerConfig(
         image=image,

@@ -18,7 +18,7 @@ from haku.runner.protocol import FINE_GRAINED_TOOL_STREAMING_ENV
 
 CONSOLE_SESSION = ClaudeSession(
     append_system_prompt="you are Haku",
-    cwd=Path("/workspace"),
+    cwd=Path("/test/workspace"),
     environment={"HAKU_ROOM": "!room:example.org"},
     mcp_servers={"haku-console": HttpMcpServer(url="https://console/mcp", headers={"Authorization": "Bearer T"})},
 )
@@ -53,7 +53,7 @@ def test_the_console_session_launch_is_exactly_this() -> None:
         "--input-format",
         "stream-json",
     )
-    assert launch.cwd == "/workspace"
+    assert launch.cwd == "/test/workspace"
 
 
 def test_streaming_is_requested_on_both_halves_at_once() -> None:

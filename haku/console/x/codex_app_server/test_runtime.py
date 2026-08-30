@@ -15,7 +15,7 @@ from haku.runner.codex.options import CodexModelProvider
 
 def _launch(**overrides: Any) -> HarnessLaunchSpec:
     values: dict[str, Any] = {
-        "cwd": "/workspace",
+        "cwd": "/test/workspace",
         "environment": {"CODEX_HOME": "/codex-home"},
         "mcp_servers": {
             "haku-console": HarnessMcpServer(
@@ -31,11 +31,11 @@ def _launch(**overrides: Any) -> HarnessLaunchSpec:
 
 def test_codex_launch_carries_the_provider_argv_and_the_runner_thread_params() -> None:
     adapter = CodexHarnessAdapter(
-        model="codex-gpt-5.6-sol",
+        model="test-codex-model",
         reasoning_effort=ReasoningEffort.LOW,
         model_provider=CodexModelProvider(
-            provider_id="haku",
-            name="Haku OpenAI-compatible",
+            provider_id="test-provider",
+            name="Test OpenAI-compatible provider",
             base_url="http://litellm.test/v1",
             api_key_env_var="OPENAI_API_KEY",
         ),
@@ -44,9 +44,9 @@ def test_codex_launch_carries_the_provider_argv_and_the_runner_thread_params() -
 
     assert launch.arguments == (
         "-c",
-        'model_provider = "haku"',
+        'model_provider = "test-provider"',
         "-c",
-        'model_providers = {haku = {name = "Haku OpenAI-compatible", '
+        'model_providers = {test-provider = {name = "Test OpenAI-compatible provider", '
         'base_url = "http://litellm.test/v1", env_key = "OPENAI_API_KEY", '
         'wire_api = "responses"}}',
         "-c",
@@ -55,13 +55,13 @@ def test_codex_launch_carries_the_provider_argv_and_the_runner_thread_params() -
         "--listen",
         "stdio://",
     )
-    assert launch.cwd == "/workspace"
+    assert launch.cwd == "/test/workspace"
     assert launch.resume_from == 29
     # The runner owns thread/start now, so model, reasoning effort and developer instructions ride
     # the launch environment for the runner's CodexHarness to read.
     assert launch.environment == {
         "CODEX_HOME": "/codex-home",
-        "HAKU_CODEX_MODEL": "codex-gpt-5.6-sol",
+        "HAKU_CODEX_MODEL": "test-codex-model",
         "HAKU_CODEX_REASONING_EFFORT": "low",
         "HAKU_CODEX_DEVELOPER_INSTRUCTIONS": "you are Haku",
     }

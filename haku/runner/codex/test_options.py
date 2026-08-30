@@ -14,11 +14,11 @@ from haku.runner.codex.options import CodexAppServerSession, CodexModelProvider,
 def test_the_app_server_launch_is_exactly_this() -> None:
     launch = build_codex_launch(
         CodexAppServerSession(
-            cwd=Path("/workspace"),
+            cwd=Path("/test/workspace"),
             environment={"CODEX_HOME": "/codex-home"},
             model_provider=CodexModelProvider(
-                provider_id="haku",
-                name="Haku OpenAI-compatible",
+                provider_id="test-provider",
+                name="Test OpenAI-compatible provider",
                 base_url="http://litellm.test/v1",
                 api_key_env_var="OPENAI_API_KEY",
             ),
@@ -31,9 +31,9 @@ def test_the_app_server_launch_is_exactly_this() -> None:
 
     assert launch.arguments == (
         "-c",
-        'model_provider = "haku"',
+        'model_provider = "test-provider"',
         "-c",
-        'model_providers = {haku = {name = "Haku OpenAI-compatible", '
+        'model_providers = {test-provider = {name = "Test OpenAI-compatible provider", '
         'base_url = "http://litellm.test/v1", env_key = "OPENAI_API_KEY", '
         'wire_api = "responses"}}',
         "-c",
@@ -42,7 +42,7 @@ def test_the_app_server_launch_is_exactly_this() -> None:
         "--listen",
         "stdio://",
     )
-    assert launch.cwd == "/workspace"
+    assert launch.cwd == "/test/workspace"
     assert launch.environment == {"CODEX_HOME": "/codex-home"}
     assert launch.resume_from == 19
 
@@ -52,8 +52,8 @@ def test_the_provider_credential_never_enters_codex_arguments() -> None:
         CodexAppServerSession(
             environment={"OPENAI_API_KEY": "provider-secret"},
             model_provider=CodexModelProvider(
-                provider_id="haku",
-                name="Haku OpenAI-compatible",
+                provider_id="test-provider",
+                name="Test OpenAI-compatible provider",
                 base_url="http://litellm.test/v1",
                 api_key_env_var="OPENAI_API_KEY",
             ),

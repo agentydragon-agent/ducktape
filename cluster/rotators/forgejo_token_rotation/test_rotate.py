@@ -54,7 +54,7 @@ class _RecordingClient:
 def test_write_raw_token_sops_file_formats_after_encrypt(monkeypatch, tmp_path: Path):
     sops_file = tmp_path / "secrets" / "haku.yaml"
     rotation = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=sops_file)
-    creds = ForgejoCredentials("haku", "secret", "http://forgejo-http.forgejo:3000", "https://git.allegedly.works")
+    creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
     calls: list[tuple[str, object]] = []
 
     def fake_run(args, **_kwargs):
@@ -83,7 +83,7 @@ def test_write_tea_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
     rotation = Rotation(
         name="haku", credentials_dir=Path("/creds"), sops_file=tmp_path / "secrets/haku.yaml", tea_secret=out
     )
-    creds = ForgejoCredentials("haku", "secret", "http://forgejo-http.forgejo:3000", "https://git.allegedly.works")
+    creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
     calls: list[tuple[str, object]] = []
 
     def fake_run(args, **_kwargs):
@@ -137,7 +137,7 @@ def test_minted_token_requests_full_non_admin_write_scope_set():
     reviewed as a permissions change, not absorbed by a constant edit.
     """
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
-    creds = ForgejoCredentials("haku", "secret", "http://forgejo-http.forgejo:3000", "https://git.allegedly.works")
+    creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
     client = _RecordingClient()
     mint_token(client, r, creds, now=datetime(2026, 7, 1, tzinfo=UTC))
     assert client.posts[0][1]["json"]["scopes"] == [
@@ -221,19 +221,16 @@ def test_should_rotate_when_stamped_token_missing_from_forgejo():
 def test_tea_config_yaml_matches_upstream_config_shape():
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
     creds = ForgejoCredentials(
-        username="haku",
-        password="secret",
-        api_url="http://forgejo-http.forgejo:3000",
-        tea_url="https://git.allegedly.works",
+        username="test-user", password="test-secret", api_url="http://forgejo.test:3000", tea_url="https://git.test"
     )
     rendered = tea_config_yaml(r, creds, "token-value")
     assert "logins:" in rendered
     assert "name: forgejo" in rendered
-    assert "url: https://git.allegedly.works" in rendered
+    assert "url: https://git.test" in rendered
     assert "token: token-value" in rendered
     assert "default: true" in rendered
     assert "version_check: false" in rendered
-    assert "user: haku" in rendered
+    assert "user: test-user" in rendered
 
 
 def test_secret_manifest_carries_config_and_raw_token():
@@ -243,7 +240,7 @@ def test_secret_manifest_carries_config_and_raw_token():
         namespace="haku-sandbox",
     )
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"), tea_secret=out)
-    creds = ForgejoCredentials("haku", "secret", "http://forgejo-http.forgejo:3000", "https://git.allegedly.works")
+    creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
     manifest = build_secret_manifest(
         out,
         r,
@@ -253,7 +250,7 @@ def test_secret_manifest_carries_config_and_raw_token():
     assert manifest["metadata"]["name"] == "haku-forgejo-tea"
     assert manifest["metadata"]["namespace"] == "haku-sandbox"
     assert manifest["stringData"]["token"] == "token-value"
-    assert manifest["stringData"]["username"] == "haku"
+    assert manifest["stringData"]["username"] == "test-user"
     assert "config.yml" in manifest["stringData"]
 
 
@@ -277,11 +274,11 @@ def test_mint_token_omits_repositories_for_full_account_access():
         credentials_dir=Path("/creds"),
         sops_file=Path("secrets/haku.yaml"),
     )
-    creds = ForgejoCredentials("haku", "secret", "http://forgejo-http.forgejo:3000", "https://git.allegedly.works")
+    creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
     client = _RecordingClient()
     data = mint_token(client, r, creds, now=datetime(2026, 7, 1, 1, 2, 3, 456789, tzinfo=UTC))
     assert data["name"] == "forgejo-tea-haku-20260701010203456789"
-    assert client.posts[0][1]["auth"] == ("haku", "secret")
+    assert client.posts[0][1]["auth"] == ("test-user", "test-secret")
     assert client.posts[0][1]["json"] == {"name": data["name"], "scopes": FULL_ACCOUNT_SCOPES}
 
 
@@ -293,7 +290,7 @@ def test_tokens_to_prune_keeps_current_and_newest_previous():
         sops_file=Path("secrets/haku.yaml"),
         keep_previous=1,
     )
-    creds = ForgejoCredentials("haku", "secret", "http://forgejo-http.forgejo:3000", "https://git.allegedly.works")
+    creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
     current = RotatedToken(
         rotation=r,
         credentials=creds,

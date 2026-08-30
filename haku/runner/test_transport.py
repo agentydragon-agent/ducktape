@@ -69,7 +69,7 @@ def test_every_frame_kind_round_trips() -> None:
     message = HarnessFrame(frame={"type": "user", "message": {"role": "user", "content": "hi"}})
 
     for outbound in (
-        HarnessLaunch(arguments=("-v",), cwd="/workspace", environment={"SAFE": "v"}),
+        HarnessLaunch(arguments=("-v",), cwd="/test/workspace", environment={"SAFE": "v"}),
         message,
         EndInput(),
     ):
@@ -88,7 +88,7 @@ def test_every_frame_kind_round_trips() -> None:
 
 def test_each_direction_refuses_the_other_direction_only_frames() -> None:
     """The direction is a property of the type, not a check each reader has to remember."""
-    for wrong_way in (HarnessLaunch(arguments=(), cwd="/workspace", environment={}), EndInput()):
+    for wrong_way in (HarnessLaunch(arguments=(), cwd="/test/workspace", environment={}), EndInput()):
         with pytest.raises(ValidationError, match="union_tag_invalid"):
             RUNNER_TO_CONSOLE.validate_json(wrong_way.model_dump_json())
 
@@ -104,7 +104,7 @@ def test_an_sdk_payload_naming_our_control_frames_is_still_a_conversation_frame(
 
 
 def test_launch_rejects_another_protocol_version() -> None:
-    launch = HarnessLaunch(arguments=("--verbose",), cwd="/workspace", environment={})
+    launch = HarnessLaunch(arguments=("--verbose",), cwd="/test/workspace", environment={})
     older = {**json.loads(launch.model_dump_json()), "protocol_version": 1}
 
     with pytest.raises(ValidationError, match="protocol_version"):
@@ -146,7 +146,7 @@ async def test_the_console_settles_the_version_on_what_the_runner_said() -> None
     """The handshake, in the direction it has to go: the runner speaks first because its image is
     fixed when its claim is created, while the console is whatever rolled most recently."""
     console_socket, runner_socket = memory_websocket_pair()
-    launch = HarnessLaunch(arguments=(), cwd="/workspace", environment={})
+    launch = HarnessLaunch(arguments=(), cwd="/test/workspace", environment={})
     transport = WebSocketTransport(console_socket, launch)
 
     async with anyio.create_task_group() as tasks:
@@ -163,7 +163,7 @@ async def test_a_runner_that_never_says_hello_is_refused() -> None:
     """Silence is a runner that will never launch, not one to guess a version for: every image that
     can reach this console sends `Hello`, so a launch sent into the silence is one nothing reads."""
     console_socket, _ = memory_websocket_pair()
-    launch = HarnessLaunch(arguments=(), cwd="/workspace", environment={})
+    launch = HarnessLaunch(arguments=(), cwd="/test/workspace", environment={})
     transport = WebSocketTransport(console_socket, launch, hello_timeout=0.05)
 
     with anyio.fail_after(5), pytest.raises(RuntimeError, match="sent no hello"):
@@ -175,7 +175,7 @@ async def test_a_runner_with_no_version_in_common_is_refused() -> None:
     nobody checks. A peer sharing nothing cannot be talked to, and saying so beats a launch it
     cannot parse."""
     console_socket, runner_socket = memory_websocket_pair()
-    transport = WebSocketTransport(console_socket, HarnessLaunch(arguments=(), cwd="/workspace", environment={}))
+    transport = WebSocketTransport(console_socket, HarnessLaunch(arguments=(), cwd="/test/workspace", environment={}))
 
     async with anyio.create_task_group() as tasks:
 
@@ -189,7 +189,7 @@ async def test_a_runner_with_no_version_in_common_is_refused() -> None:
 
 async def test_a_runner_that_speaks_before_saying_hello_is_a_sequencing_error() -> None:
     console_socket, runner_socket = memory_websocket_pair()
-    transport = WebSocketTransport(console_socket, HarnessLaunch(arguments=(), cwd="/workspace", environment={}))
+    transport = WebSocketTransport(console_socket, HarnessLaunch(arguments=(), cwd="/test/workspace", environment={}))
 
     async with anyio.create_task_group() as tasks:
 
@@ -203,7 +203,7 @@ async def test_a_runner_that_speaks_before_saying_hello_is_a_sequencing_error() 
 
 async def test_transport_preserves_fine_grained_tool_input_stream_events() -> None:
     console_socket, runner_socket = memory_websocket_pair()
-    launch = HarnessLaunch(arguments=("--verbose",), cwd="/workspace", environment={"SAFE": "value"})
+    launch = HarnessLaunch(arguments=("--verbose",), cwd="/test/workspace", environment={"SAFE": "value"})
     transport = WebSocketTransport(console_socket, launch)
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(transport.connect)
@@ -270,7 +270,7 @@ async def test_the_cursor_goes_out_on_start_and_the_runners_number_comes_back_on
     connection's cursor is computed from.
     """
     console_socket, runner_socket = memory_websocket_pair()
-    launch = HarnessLaunch(arguments=(), cwd="/workspace", environment={}, resume_from=41)
+    launch = HarnessLaunch(arguments=(), cwd="/test/workspace", environment={}, resume_from=41)
     transport = WebSocketTransport(console_socket, launch)
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(transport.connect)
@@ -289,7 +289,7 @@ async def test_the_cursor_goes_out_on_start_and_the_runners_number_comes_back_on
 
 async def test_transport_rejects_non_object_frames() -> None:
     console_socket, runner_socket = memory_websocket_pair()
-    launch = HarnessLaunch(arguments=(), cwd="/workspace", environment={})
+    launch = HarnessLaunch(arguments=(), cwd="/test/workspace", environment={})
     transport = WebSocketTransport(console_socket, launch)
     await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == launch
@@ -310,20 +310,20 @@ async def test_progress_reaches_the_sink_and_not_the_conversation() -> None:
         reported.append(line)
 
     transport = WebSocketTransport(
-        console_socket, HarnessLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
+        console_socket, HarnessLaunch(arguments=(), cwd="/test/workspace", environment={}), on_progress
     )
     await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
     messages = transport.read_messages()
-    await runner_socket.send_text(SetupOutput(data=b"Cloning into '/workspace/haku-state'...\n").model_dump_json())
+    await runner_socket.send_text(SetupOutput(data=b"Cloning into '/test/workspace/test-state'...\n").model_dump_json())
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
     await runner_socket.send_text(HarnessFrame(frame=answer).model_dump_json())
 
     with anyio.fail_after(1):
         # The progress frame is consumed on the way to this, not yielded before it.
         assert (await anext(messages)).frame == answer
-    assert reported == ["Cloning into '/workspace/haku-state'..."]
+    assert reported == ["Cloning into '/test/workspace/test-state'..."]
 
     await transport.close()
 
@@ -337,7 +337,7 @@ async def test_setup_output_is_reassembled_across_chunks() -> None:
         reported.append(line)
 
     transport = WebSocketTransport(
-        console_socket, HarnessLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
+        console_socket, HarnessLaunch(arguments=(), cwd="/test/workspace", environment={}), on_progress
     )
     await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
@@ -359,7 +359,7 @@ async def test_setup_output_is_reassembled_across_chunks() -> None:
 
 async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
     console_socket, runner_socket = memory_websocket_pair()
-    transport = WebSocketTransport(console_socket, HarnessLaunch(arguments=(), cwd="/workspace", environment={}))
+    transport = WebSocketTransport(console_socket, HarnessLaunch(arguments=(), cwd="/test/workspace", environment={}))
     await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
@@ -383,13 +383,13 @@ async def test_a_failing_progress_sink_does_not_end_the_conversation() -> None:
         raise RuntimeError(f"the room said no to {line!r}")
 
     transport = WebSocketTransport(
-        console_socket, HarnessLaunch(arguments=(), cwd="/workspace", environment={}), on_progress
+        console_socket, HarnessLaunch(arguments=(), cwd="/test/workspace", environment={}), on_progress
     )
     await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
 
     messages = transport.read_messages()
-    await runner_socket.send_text(SetupOutput(data=b"Cloning into '/workspace/haku-state'...\n").model_dump_json())
+    await runner_socket.send_text(SetupOutput(data=b"Cloning into '/test/workspace/test-state'...\n").model_dump_json())
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
     await runner_socket.send_text(HarnessFrame(frame=answer).model_dump_json())
 
@@ -407,7 +407,7 @@ async def test_transport_refuses_a_control_frame_from_the_runner() -> None:
     SDK's message iterator.
     """
     console_socket, runner_socket = memory_websocket_pair()
-    transport = WebSocketTransport(console_socket, HarnessLaunch(arguments=(), cwd="/workspace", environment={}))
+    transport = WebSocketTransport(console_socket, HarnessLaunch(arguments=(), cwd="/test/workspace", environment={}))
     await connected(transport, runner_socket)
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
     await runner_socket.send_text(EndInput().model_dump_json())

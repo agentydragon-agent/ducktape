@@ -18,8 +18,8 @@ _DUMMY_URL = "postgresql+psycopg://u:p@host/db"
 
 def test_admin_users_from_env_single(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("STUDY_CASINO_DATABASE_URL", _DUMMY_URL)
-    monkeypatch.setenv("STUDY_CASINO_ADMIN_USERS", "agentydragon")
-    assert Settings().admin_users == frozenset({"agentydragon"})
+    monkeypatch.setenv("STUDY_CASINO_ADMIN_USERS", "test-admin")
+    assert Settings().admin_users == frozenset({"test-admin"})
 
 
 def test_admin_users_from_env_csv(monkeypatch: pytest.MonkeyPatch) -> None:

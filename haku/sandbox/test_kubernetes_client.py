@@ -36,7 +36,7 @@ from mcp_infra.exec.models import Exited
 
 NOW = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
 SANDBOX: dict[str, Any] = {
-    "metadata": {"name": "haku-abcde", "annotations": {POD_NAME_ANNOTATION: "pod-abcde"}},
+    "metadata": {"name": "test-sandbox-abcde", "annotations": {POD_NAME_ANNOTATION: "pod-abcde"}},
     "status": {"conditions": [{"type": "Ready", "status": "True", "reason": "Ready"}]},
 }
 
@@ -47,16 +47,16 @@ def environment() -> SandboxEnvironmentConfig:
         {
             "sandbox": {
                 "namespace": "agent-workspaces",
-                "warm_pool": "haku",
+                "warm_pool": "test-pool",
                 "container": "workspace",
-                "default_cwd": "/workspace/haku-state",
+                "default_cwd": "/test/workspace/test-state",
                 "initial_ttl_seconds": 28_800,
                 "exec_ttl_extension_seconds": 7_200,
                 "provisioning_timeout_seconds": 10,
                 "max_exec_timeout_seconds": 300,
                 "max_output_bytes": 100_000,
             },
-            "bootstrap": {"cwd": "/workspace", "timeout_seconds": 30, "script": "echo bootstrap"},
+            "bootstrap": {"cwd": "/test/workspace", "timeout_seconds": 30, "script": "echo bootstrap"},
         }
     )
 
@@ -84,12 +84,12 @@ def _claim(
             "annotations": recorded | (annotations or {}),
         },
         "spec": {
-            "warmPoolRef": {"name": "haku"},
+            "warmPoolRef": {"name": "test-pool"},
             "lifecycle": {"shutdownPolicy": "Delete", "shutdownTime": deadline.isoformat()},
         },
         "status": {
             "conditions": [{"type": "Ready", "status": "True", "reason": "Ready"}],
-            "sandbox": {"name": "haku-abcde"},
+            "sandbox": {"name": "test-sandbox-abcde"},
         },
     }
 
@@ -116,7 +116,7 @@ def _route_get(claim: dict):
         assert namespace == "agent-workspaces"
         if (group, plural, name) == (CLAIM_GROUP, CLAIMS_PLURAL, "task-one"):
             return claim
-        if (group, plural, name) == (SANDBOX_GROUP, SANDBOXES_PLURAL, "haku-abcde"):
+        if (group, plural, name) == (SANDBOX_GROUP, SANDBOXES_PLURAL, "test-sandbox-abcde"):
             return SANDBOX
         raise AssertionError((group, plural, name))
 
@@ -138,7 +138,7 @@ async def test_provision_creates_named_delete_claim_and_adopts_ready_result(
     assert result.state == "ready"
     body = custom.create_namespaced_custom_object.await_args.args[4]
     assert body["metadata"]["name"] == "task-one"
-    assert body["spec"]["warmPoolRef"] == {"name": "haku"}
+    assert body["spec"]["warmPoolRef"] == {"name": "test-pool"}
     assert body["spec"]["lifecycle"]["shutdownPolicy"] == "Delete"
     recorded = body["metadata"]["annotations"]
     assert recorded[WARM_POOL_ANNOTATION] == environment.sandbox.warm_pool
@@ -190,7 +190,7 @@ async def test_pod_describing_fields_each_warn_by_kind(environment: SandboxEnvir
         annotations={
             WARM_POOL_ANNOTATION: "retired-pool",
             CONTAINER_ANNOTATION: "old-workspace",
-            DEFAULT_CWD_ANNOTATION: "/workspace/old",
+            DEFAULT_CWD_ANNOTATION: "/test/workspace/old",
         },
     )
     custom = Mock()
@@ -295,7 +295,7 @@ async def test_exec_renews_near_deadline_before_running(environment: SandboxEnvi
         namespace="agent-workspaces",
         container="workspace",
         script="echo ok",
-        cwd="/workspace/haku-state",
+        cwd="/test/workspace/test-state",
         max_output_bytes=1000,
         timeout_seconds=30,
     )

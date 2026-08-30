@@ -25,7 +25,7 @@ from mcp_infra.prefix import MCPMountPrefix
 
 # Dynamic model matching a server with all fields enabled
 _TestExecInput: type[BaseModel] = _make_exec_input_model(
-    allow_user=True, allow_env=True, cwd_policy=DefaultValue(value=Path("/workspace"))
+    allow_user=True, allow_env=True, cwd_policy=DefaultValue(value=Path("/test/workspace"))
 )
 
 
@@ -65,10 +65,10 @@ def render_handler_to_string(call: ToolCall, output: ToolCallOutput, prefix: str
 @pytest.mark.parametrize(
     "cmd",
     [
-        pytest.param(["bash", "-c", "ls -la /workspace"], id="bash_-c"),
+        pytest.param(["bash", "-c", "ls -la /test/workspace"], id="bash_-c"),
         pytest.param(["sh", "-c", "echo hello | tr a-z A-Z"], id="sh_-c"),
         pytest.param(["/bin/sh", "-lc", "sed -n '1,10p' file.txt"], id="/bin/sh_-lc"),
-        pytest.param(["ruff", "check", "/workspace"], id="non_wrapped"),
+        pytest.param(["ruff", "check", "/test/workspace"], id="non_wrapped"),
         pytest.param(["python", "-c", "print('hello world')"], id="non_wrapped_spaces"),
     ],
 )
@@ -77,7 +77,7 @@ def test_docker_exec_shell_unwrapping_snapshot(snapshot: SnapshotAssertion, call
 
     Tests the _unwrap_shell_command() logic for various shell wrappers.
     """
-    exec_input = _TestExecInput(cmd=cmd, cwd="/workspace", env=None, user=None, timeout_ms=30000)
+    exec_input = _TestExecInput(cmd=cmd, cwd="/test/workspace", env=None, user=None, timeout_ms=30000)
 
     call = ToolCall(
         name=build_mcp_function(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME),

@@ -13,7 +13,7 @@ _FULL_ENV = {
     "PROPS_OIDC_CLIENT_SECRET": "shh",
     "PROPS_OIDC_SESSION_SECRET": "cookie-signing-key",
     "PROPS_OIDC_PUBLIC_BASE_URL": "https://props.allegedly.works",
-    "PROPS_OIDC_ADMIN_EMAILS": "agentydragon@gmail.com, other@example.com",
+    "PROPS_OIDC_ADMIN_EMAILS": "admin@test.invalid, other@example.com",
 }
 
 
@@ -67,10 +67,10 @@ def test_cookie_secure_follows_scheme() -> None:
 def test_is_admin_matches_allowlist_case_insensitively(oidc_env: None) -> None:
     settings = load_oidc_settings()
     assert settings is not None
-    assert settings.is_admin("agentydragon@gmail.com")
-    assert settings.is_admin("AgentyDragon@Gmail.com")
+    assert settings.is_admin("admin@test.invalid")
+    assert settings.is_admin("Admin@Test.Invalid")
     assert settings.is_admin("other@example.com")
-    assert not settings.is_admin("intruder@evil.com")
+    assert not settings.is_admin("intruder@test.invalid")
 
 
 if __name__ == "__main__":

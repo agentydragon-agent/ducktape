@@ -39,7 +39,7 @@ def test_get_caller_db_admin_returns_admin_db(exhaust_generator):
 def test_get_caller_db_sso_session_returns_admin_db(exhaust_generator):
     """SSO browser sessions are admin-only: they use the shared admin pool."""
     admin_db = MagicMock(spec=Database)
-    auth = SessionIdentity(email="agentydragon@gmail.com")
+    auth = SessionIdentity(email="admin@test.invalid")
 
     gen = get_caller_db(admin_db=admin_db, auth=auth)
     db = exhaust_generator(gen)
@@ -48,7 +48,7 @@ def test_get_caller_db_sso_session_returns_admin_db(exhaust_generator):
 
 def test_sso_session_passes_admin_and_evaluator_acls():
     """A SessionIdentity is treated as admin by the ACL helpers."""
-    auth = SessionIdentity(email="agentydragon@gmail.com")
+    auth = SessionIdentity(email="admin@test.invalid")
     assert is_admin_or_evaluator(auth)
     # These raise HTTPException on denial; not raising means access is allowed.
     require_admin_access(auth)

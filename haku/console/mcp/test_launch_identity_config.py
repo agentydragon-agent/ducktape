@@ -22,7 +22,7 @@ def _runtime() -> dict[str, object]:
         "warm_pool": "pool",
         "claim_prefix": "claude",
         "harness_label": "claude",
-        "cwd": "/workspace",
+        "cwd": "/test/workspace",
         "session_ttl_seconds": 300,
         "https_proxy": "https://proxy.example",
         "ca_bundle": "/ca.pem",

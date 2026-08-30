@@ -7,7 +7,7 @@ from props.core.agent_types import AgentType
 from props.core.oci_utils import RegistryProxyConfig, UpstreamRegistryConfig, is_digest
 
 _UPSTREAM = UpstreamRegistryConfig(
-    url="http://forgejo-http.forgejo:3000", username=None, password=None, project="props"
+    url="http://test-registry.invalid:3000", username=None, password=None, project="props"
 )
 _NO_PROJECT = UpstreamRegistryConfig(url="http://reg:5000", username=None, password=None, project=None)
 
@@ -113,7 +113,7 @@ class TestRewriteLocation:
 
     def test_absolute_upstream_host_stripped(self) -> None:
         assert (
-            _UPSTREAM.rewrite_location("http://forgejo-http.forgejo:3000/v2/props/critic/blobs/uploads/abc?_state=xyz")
+            _UPSTREAM.rewrite_location("http://test-registry.invalid:3000/v2/props/critic/blobs/uploads/abc?_state=xyz")
             == "/v2/critic/blobs/uploads/abc?_state=xyz"
         )
 

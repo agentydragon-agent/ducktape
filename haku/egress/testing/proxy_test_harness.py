@@ -45,7 +45,7 @@ from haku.egress.localhost_decide_client import DEFAULT_TIMEOUT_SECONDS, Localho
 from haku.egress.runner import EgressProxy
 from haku.grants.authorization import GrantSourceKind
 
-PLACEHOLDER = "proxy-github-placeholder"
+PLACEHOLDER = "test-github-token-placeholder"
 REAL_CREDENTIAL = "real-redeemed-credential"
 FENCE_CREDENTIAL = "shared-fence-credential"
 SESSION_TOKEN = "test-session-token"

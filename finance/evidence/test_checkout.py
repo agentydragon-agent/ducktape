@@ -43,7 +43,7 @@ def test_certificate_check_accepts_libgit2_valid_cert() -> None:
 def test_certificate_check_accepts_mitm_cert_behind_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
     # libgit2 marks the cluster mitmproxy's MITM cert invalid; accept it because
     # the only egress is that trusted in-cluster proxy.
-    monkeypatch.setenv("HTTPS_PROXY", "http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080")
+    monkeypatch.setenv("HTTPS_PROXY", "http://test-mitmproxy.invalid:8080")
     assert _EgressTrust().certificate_check(None, False, b"git.allegedly.works") is True
 
 
