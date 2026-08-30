@@ -53,6 +53,10 @@ function statusColor(status: Session["status"]): string {
   return "gray";
 }
 
+function firstErrorLine(error: string | null | undefined): string {
+  return error?.split(/\r?\n/, 1)[0].trim() || "Session failed";
+}
+
 function timestamp(value: string): JSX.Element {
   const display = formatTimestamp(value);
   return <span title={display.title}>{display.text}</span>;
@@ -414,7 +418,12 @@ function ConversationListPage() {
                       ) : conversation.last_session_status === "failed" ? (
                         // A failed session is not live, so without this branch the row would read
                         // like any idle thread.
-                        <Badge size="sm" color="red" variant="light">
+                        <Badge
+                          size="sm"
+                          color="red"
+                          variant="light"
+                          title={firstErrorLine(conversation.last_session_error)}
+                        >
                           failed
                         </Badge>
                       ) : (
@@ -479,6 +488,20 @@ function EarlierSessions({ sessions }: { sessions: Conversation["earlier_session
         ))}
       </Stack>
     </Paper>
+  );
+}
+
+function SessionError({ error }: { error: string | null }) {
+  if (!error) return null;
+  return (
+    <details className="haku-shell-disclosure haku-conversation-session-error">
+      <summary>Session error: {firstErrorLine(error)}</summary>
+      <div className="haku-shell-disclosure-body">
+        <Code block style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          {error}
+        </Code>
+      </div>
+    </details>
   );
 }
 
@@ -691,6 +714,7 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
             {narration && (
               <BootstrapNarrationPanel narration={narration} starting={session.status === "provisioning"} />
             )}
+            {session.status === "failed" && <SessionError error={session.error} />}
             {conversationEmpty && !narration && !conversation.provisioning && (
               <Text c="dimmed" size="sm">
                 Nothing was recorded for this conversation.
