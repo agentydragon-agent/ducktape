@@ -421,16 +421,10 @@ async def test_abort_after_completion_is_ignored(
 ) -> None:
     session_id, _conversation_id = journal_session
     runner_turn = uuid4()
-    await consumer.commit(
-        session_id, _batch(1, TurnOpened(turn_id=runner_turn, cause=WakeCause(), provenance=None))
-    )
-    await consumer.commit(
-        session_id, _batch(2, TurnEnded(turn_id=runner_turn, end=TurnAnswered(), provenance=None))
-    )
+    await consumer.commit(session_id, _batch(1, TurnOpened(turn_id=runner_turn, cause=WakeCause(), provenance=None)))
+    await consumer.commit(session_id, _batch(2, TurnEnded(turn_id=runner_turn, end=TurnAnswered(), provenance=None)))
 
-    await consumer.commit(
-        session_id, _batch(3, TurnEnded(turn_id=runner_turn, end=TurnAborted(), provenance=None))
-    )
+    await consumer.commit(session_id, _batch(3, TurnEnded(turn_id=runner_turn, end=TurnAborted(), provenance=None)))
 
     async with migrated_sessions() as db:
         turn = await db.scalar(select(ConversationTurn).where(ConversationTurn.session_id == session_id))
