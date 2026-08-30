@@ -220,7 +220,12 @@ def test_should_rotate_when_stamped_token_missing_from_forgejo():
 
 def test_tea_config_yaml_matches_upstream_config_shape():
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
-    creds = ForgejoCredentials(username="test-user", password="test-secret", api_url="http://forgejo.test:3000", tea_url="https://git.test")
+    creds = ForgejoCredentials(
+        username="test-user",
+        password="test-secret",
+        api_url="http://forgejo.test:3000",
+        tea_url="https://git.test",
+    )
     rendered = tea_config_yaml(r, creds, "token-value")
     assert "logins:" in rendered
     assert "name: forgejo" in rendered
