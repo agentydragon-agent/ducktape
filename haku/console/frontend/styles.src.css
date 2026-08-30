@@ -498,6 +498,14 @@
   padding: 0.45rem 0.85rem;
 }
 
+.haku-conversation-queued-prompt {
+  align-self: flex-end;
+  max-width: min(80%, 40rem);
+  border: 1px dashed color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 14px 14px 4px 14px;
+  padding: 0.45rem 0.85rem;
+}
+
 /* The agent's prose sits flush left with no chrome of its own — the transcript is mostly this,
  * so it gets the page rather than a card on it. */
 .haku-conversation-assistant {
