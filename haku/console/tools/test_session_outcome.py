@@ -161,6 +161,8 @@ async def _seed_turn(
                 session_id=session_id,
                 first_seq=1,
                 last_seq=2 if ended else None,
+                first_frame_seq=1,
+                last_frame_seq=2 if ended else None,
                 started_at=now,
                 ended_at=now if ended else None,
                 outcome=outcome,
