@@ -8,7 +8,7 @@ import { ApprovalsTab, type ShellChromeProps } from "./shell_chrome";
 import { useToolCallDecision } from "./tool_call_decision";
 
 // This is deliberately a tool-call-only surface. Geolocation and screenshot approvals are
-// bridge requests owned by the Haku UI iframe; this page has no iframe to receive their result,
+// Agent UI bridge requests owned by the Haku UI iframe; this page has no iframe to receive their result,
 // so rendering those buttons here would offer an action with nowhere to deliver its decision.
 export function ApprovalsEmbedPage(): JSX.Element {
   const [pendingApprovals, setPendingApprovals] = useState<ToolCallRecord[]>([]);

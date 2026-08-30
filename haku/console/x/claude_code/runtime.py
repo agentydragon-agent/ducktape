@@ -1,6 +1,6 @@
 """Claude Code's provider-specific Console launch adapter.
 
-Sandbox claims, runner bootstrap, bridge credentials, MCP credentials and attached-chat prompt
+Sandbox claims, runner bootstrap, the session token, MCP credentials and attached-chat prompt
 selection are Haku infrastructure owned by ``harness.py`` / ``session_runtime.py``.  This adapter
 only translates generic launch facts into Claude's process launch; the runner interprets Claude's
 own stream and projects it to neutral operations (#4667).

@@ -8,7 +8,7 @@ exchanged. What a session may never do is name a channel — the layer contract 
 The shared substrate is two files, and the line between them is the transaction: `store.py`
 holds the rows and every method whose job is "these writes commit together or not at all"
 (`apply_frame` is the one to read first), and `runtime.py` drives one turn against a CLI — the
-turn loop, the runner's websocket bridge, the sandbox lifecycle, and the SPA chat surface's own
+turn loop, the runner's protocol connection, the sandbox lifecycle, and the SPA chat surface's own
 HTTP routes. Around them:
 
 | Module                  | Role                                                                                                                      |
@@ -19,7 +19,7 @@ HTTP routes. Around them:
 | `subscription.py`       | Reading a conversation from a position; where the position lives is the subscriber's own (`Cursor`).                      |
 | `system_prompt.py`      | The system prompt a chat session is started with (the template is deploy config).                                         |
 | `launch_identity.py`    | Neutral launch-identity types shared by channel and runtime stores.                                                       |
-| `setup_output.py`       | The bridge envelope's `kind`; the setup-narration compatibility frame.                                                    |
+| `setup_output.py`       | The `SessionFrame` kind; the setup-narration compatibility frame.                                                         |
 | `session_frames.py`     | Vocabulary of the durable session wire log (`session_frames` rows).                                                       |
 | `status.py`             | The session lifecycle vocabulary: status, the status sets, and how a lease can fail one.                                  |
 
@@ -30,7 +30,7 @@ loop (`MXSY`) is a third such election, held by the separately deployed `haku-ma
 worker (<../channels/matrix/worker.py>).
 
 **Cross-replica state, and the trap it sets:** `replicas: 2` means any given HTTP request
-reaches an arbitrary pod, while a session's live objects — the runner's bridge websocket, its
+reaches an arbitrary pod, while a session's live objects — the runner's protocol connection, its
 abort event — belong to exactly one. Anything that has to reach a running turn therefore goes
 through Postgres `NOTIFY`, never an in-process registry: a dict keyed by session id looks
 correct in tests and single-replica dev, and silently answers "no such session" in production

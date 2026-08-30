@@ -42,7 +42,7 @@ import { ToolCallsPage } from "./tool_calls_page";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox — embedded as
 // a sandboxed cross-origin iframe (the backend CSP frame-src permits the embed). The console never
-// renders Haku's UI itself; it frames this origin and runs the trusted **bridge**: the iframe may
+// renders Haku's UI itself; it frames this origin and runs the trusted **Agent UI bridge**: the iframe may
 // `openLink`, `requestLaunch`, read location (`requestGeolocation` one-shot /
 // `startGeolocationWatch` stream), or `requestScreenshot` (a real tab-capture crop, not a DOM
 // serialization) via postMessage, but only the shell decides and acts (origin-checked +
@@ -407,7 +407,7 @@ export function HakuUiEmbed({
                 : "Not found · Haku";
   }, [view]);
 
-  // The bridge listener stays registered for the tab's whole life, reached through a ref rather
+  // The Agent UI bridge listener stays registered for the tab's whole life, reached through a ref rather
   // than being an effect dependency. Re-subscribing whenever a handler it closes over changes would
   // open a window in which a postMessage arrives with nothing listening, silently dropping a launch
   // or geolocation reply — and the ref also keeps every handler current, which a dependency list
@@ -471,7 +471,7 @@ export function HakuUiEmbed({
       return;
     }
     if (msg.type === "titleChanged") {
-      // The frame is cross-origin, so a validated bridge message is the only way for the
+      // The frame is cross-origin, so a validated Agent UI bridge message is the only way for the
       // outer tab to follow its document.title.
       frameTitleRef.current = msg.title;
       if (viewRef.current === "embed") document.title = msg.title;
@@ -526,7 +526,7 @@ export function HakuUiEmbed({
   }, [recentToolCalls]);
 
   // The operator approved against trusted-rendered chrome — now actually perform the action
-  // (open the link / fire the capability) and report the outcome back over the bridge.
+  // (open the link / fire the capability) and report the outcome back over the Agent UI bridge.
   function onApprove() {
     const action = activeAction;
     if (pending) setPending(null);

@@ -123,8 +123,8 @@ APP_SHELL_CACHE_CONTROL = "no-store"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 NO_STORE_CACHE_CONTROL = "no-store"
 REFERRER_POLICY = "no-referrer"
-# The shell (top-level) may read geolocation for the `requestGeolocation` bridge action, and
-# capture the screen for the `requestScreenshot` bridge action; `(self)` scopes both to the
+# The shell (top-level) may read geolocation for the `requestGeolocation` Agent UI bridge action, and
+# capture the screen for the `requestScreenshot` Agent UI bridge action; `(self)` scopes both to the
 # shell origin so neither is ever delegated to the framed haku-ui origin — the frame stays
 # unable to read location or capture the screen on its own (docs/containment.md).
 PERMISSIONS_POLICY = "geolocation=(self), display-capture=(self)"

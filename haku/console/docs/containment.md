@@ -30,7 +30,7 @@ privileged-action tier_ inventory entries.
 
 | Thing                                                                                                          | Owner               | PR-gated?                    |
 | -------------------------------------------------------------------------------------------------------------- | ------------------- | ---------------------------- |
-| Trusted shell: capability tier (bearer), iframe host, CSP, the bridge protocol                                 | operator / ducktape | ✅                           |
+| Trusted shell: capability tier (bearer), iframe host, CSP, the Agent UI bridge protocol                        | operator / ducktape | ✅                           |
 | **Public route** `haku-ui.allegedly.works` (HTTPRoute + injected CSP + Authentik provider) → Service `haku-ui` | operator            | ✅                           |
 | The `haku-ui` Service contract (name, port, pod label selector) in `haku-sandbox`                              | operator            | ✅                           |
 | **The UI Deployment + pods + everything served**                                                               | **Haku**            | ❌ — Haku's to evolve freely |
@@ -76,13 +76,13 @@ Haku could author hostile UI). Safety comes from the perimeter, not from trustin
 ## The shell as a thin trusted layer
 
 The iframe fills the content area beside a narrow shell-owned navigation rail; the shell owns only the moment-of-decision surfaces, the frame,
-the bridge, and the CSP. **A persistent "trust indicator" is not a security control**: a web
+the Agent UI bridge, and the CSP. **A persistent "trust indicator" is not a security control**: a web
 page has no secure-attention channel, and an iframe can render a pixel-perfect decoy badge.
 Security rests on two things instead:
 
 1. **The capability gate makes a faked control inert.** A fake "Launch" button can only emit
-   a bridge request, which the shell re-gates with exact-Origin admission + confirm + bearer.
-2. **The shell is the only trustworthy approval surface.** Immediate bridge escalations render as
+   a Agent UI bridge request, which the shell re-gates with exact-Origin admission + confirm + bearer.
+2. **The shell is the only trustworthy approval surface.** Immediate Agent UI bridge escalations render as
    a **top-layer `<dialog>.showModal()` with a backdrop**. Queueable approvals render in the
    shell-owned non-modal approvals drawer. In both cases the iframe cannot draw over the trusted controls,
    read them, or intercept their clicks. Anti-clickjacking hygiene: explicit action text, a
@@ -101,10 +101,10 @@ top-layer confirm. Consistent with invariant #4: a persistent panel is not a tru
 indicator, and a spoofed decoy of it is inert (the real grant lives in shell `localStorage`,
 and the browser's own site-settings revoke is the tamper-proof backstop).
 
-## The bridge protocol (postMessage)
+## The Agent UI bridge protocol (postMessage)
 
 Display data and operator intent go straight to Haku's backend (it holds the `haku-state`
-creds); the bridge carries only actions needing the trusted side. Every inbound message is
+creds); the Agent UI bridge carries only actions needing the trusted side. Every inbound message is
 origin-checked (`event.origin === "https://haku-ui.allegedly.works"`) and schema-validated;
 the iframe can only _request_ — the shell decides and acts. Wire shapes are defined once in
 the shared `@haku/console-bridge` package (<../../shared/bridge_protocol/protocol.ts>, owned here); the
@@ -115,7 +115,7 @@ Haku's UI will link the same package as a Bazel module from haku-state (migratio
 ### `routeChanged` / `titleChanged` — mirror browser chrome
 
 haku-ui posts `{type: "routeChanged", path}` whenever its route changes. On the first such call,
-the shared bridge client also starts a `MutationObserver` over the iframe document's `<head>` and
+the shared Agent UI bridge client also starts a `MutationObserver` over the iframe document's `<head>` and
 posts `{type: "titleChanged", title}` initially and whenever `document.title` changes. The shell
 validates and mirrors the path into its own URL for refresh/deep-link restoration while Haku UI is
 selected, remembering it while a `/_console/*` page is visible. The shell likewise copies each
@@ -138,7 +138,7 @@ the server-side bearer (see <../README.md> → _The capability tier_).
 
 ### Tool calls — routed through haku-ui backend, approved in trusted chrome
 
-The `<tool-call>` affordance does **not** give the iframe a direct console bridge verb in v1.
+The `<tool-call>` affordance does **not** give the iframe a direct Agent UI bridge action in v1.
 haku-ui frontend posts to its own same-origin backend, that backend reads
 `tool_requests/<id>.yaml` from haku-state and invokes haku-console's `/mcp` endpoint with its
 configured static Agent token. If approval is
@@ -163,7 +163,7 @@ it ends. Why it must route through the shell, and how consent works:
   to nothing. Only the trusted top-level origin can read it, so the iframe must ask.
 - **The shell holds every watch.** `startGeolocationWatch` runs the actual
   `navigator.geolocation.watchPosition` **in the shell** (`geolocation.ts` → `GeolocationWatcher`),
-  keyed by the bridge `id`; each fix is relayed to the frame. So a prompt-injected Haku can
+  keyed by the Agent UI bridge request ID; each fix is relayed to the frame. So a prompt-injected Haku can
   neither start a watch silently (it needs the grant) nor keep one the operator has stopped
   (the shell owns `clearWatch`) — the Location panel's "Stop" is a real kill switch.
 - **A shell-owned standing grant is the gate** (`geolocation_grant.ts`, persisted in the

@@ -23,7 +23,7 @@ async def decide_http_request(
     The endpoint is intentionally not operator-session protected: it is the machine-to-machine
     hop from the colocated proxy, bound on localhost and never sandbox-routable (#4670 § oracle
     constraint). The ``Authorization`` bearer is the shared-fence credential; it authenticates
-    the fence but does not identify an Agent. The required sandbox bridge bearer in the body
+    the fence but does not identify an Agent. The required session token in the body
     selects the live session Agent inside the service. Any non-2xx makes the proxy refuse the
     admission, so every error response here is fail-closed by construction.
     """

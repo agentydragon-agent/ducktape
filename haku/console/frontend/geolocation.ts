@@ -1,6 +1,6 @@
 // Browser-geolocation glue for the shell. Only the trusted top-level origin reads location
 // (the iframe has no `allow="geolocation"`); the shell exposes it to the iframe over the
-// bridge, gated by the standing consent grant. Two shapes: a one-shot read
+// Agent UI bridge, gated by the standing consent grant. Two shapes: a one-shot read
 // (`getGeolocation`, for `requestGeolocation`) and a live watch (`GeolocationWatcher`, for
 // `startGeolocationWatch`/`stopGeolocationWatch`). See docs/containment.md → geolocation.
 
@@ -31,7 +31,7 @@ export type GeoResult = { ok: true; position: GeoPosition } | { ok: false; code:
 
 // One-shot read of the shell origin's location. Only after the operator approved on trusted
 // chrome; the browser may still surface its own native prompt on first use. Never throws:
-// resolves to a discriminated result so the caller reports it over the bridge either way.
+// resolves to a discriminated result so the caller reports it over the Agent UI bridge either way.
 export function getGeolocation(options?: GeolocationOptions): Promise<GeoResult> {
   return new Promise((resolve) => {
     if (!("geolocation" in navigator)) {
@@ -49,13 +49,13 @@ export function getGeolocation(options?: GeolocationOptions): Promise<GeoResult>
 // One streamed fix (or error) from a live watch — the payload the shell relays to the iframe.
 export type WatchEmit = { ok: true; position: GeoPosition } | { ok: false; code: number; message: string };
 
-// Manages shell-side `navigator.geolocation.watchPosition` streams keyed by the bridge's
+// Manages shell-side `navigator.geolocation.watchPosition` streams keyed by the Agent UI bridge's
 // per-watch id (the iframe's correlation id). Each active watch pushes fixes/errors to
 // `emit(id, ...)` until stopped. The shell (not the iframe) holds every watch, so a
 // prompt-injected Haku can neither start one without the consent grant nor keep one the
 // operator has stopped — `stopAll` is the Location panel's kill switch.
 export class GeolocationWatcher {
-  private readonly watches = new Map<string, number>(); // bridge watch id → browser watch id
+  private readonly watches = new Map<string, number>(); // Agent UI bridge watch ID → browser watch ID
 
   constructor(private readonly emit: (id: string, e: WatchEmit) => void) {}
 
@@ -82,7 +82,7 @@ export class GeolocationWatcher {
   }
 
   // Stop every live watch (the withdraw / unmount kill switch). Returns the stopped ids so
-  // the caller can send each a terminal message over the bridge.
+  // the caller can send each a terminal message over the Agent UI bridge.
   stopAll(): string[] {
     const ids = [...this.watches.keys()];
     for (const browserId of this.watches.values()) navigator.geolocation.clearWatch(browserId);

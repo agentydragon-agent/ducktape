@@ -83,7 +83,7 @@ describe("GeolocationWatcher", () => {
     return { emits, watcher };
   }
 
-  it("relays every fix as an emit tagged with the bridge watch id", () => {
+  it("relays every fix as an emit tagged with the Agent UI bridge watch ID", () => {
     const { watches } = stubWatch();
     const { emits, watcher } = collector();
     watcher.start("w1");
