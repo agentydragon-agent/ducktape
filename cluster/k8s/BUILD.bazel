@@ -96,6 +96,7 @@ filegroup(
         "ducktape-flux/ducktape-flux-reader.yaml",
         "flux-image-automation-forgejo/haku-harness-runner-image.yaml",
         "flux-image-automation-forgejo/haku-matrix-adapter-image.yaml",
+        "flux-image-automation-forgejo/kustomization.yaml",
         "flux-image-automation-ghcr/kustomization.yaml",
         "flux-system/kustomization.yaml",
         "flux-webhook/github-webhook-receiver.yaml",

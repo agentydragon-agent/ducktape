@@ -68,7 +68,6 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     },
     "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
     "flux-image-automation-ghcr": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
-    "flux-image-automation-forgejo": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
 }
 
 # Derived: CRD kind -> operator name (for error messages)
