@@ -329,7 +329,7 @@ def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
     container = one(yaml.safe_load(template_text)["spec"]["podTemplate"]["spec"]["containers"])
     image_repository, image_tag = container["image"].rsplit(":", 1)
     assert image_repository == f"git.allegedly.works/ducktape-ci/{canonical_name}"
-    assert re.fullmatch(policy["spec"]["filterTags"]["pattern"], image_tag)
+    assert image_tag == "latest"
     assert f'# {{"$imagepolicy": "flux-system:{canonical_name}"}}' in template_text
     assert container["args"] == ["--harness", "claude"]
 
