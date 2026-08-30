@@ -2,9 +2,9 @@
 
 Python BUILD files are gazelle-managed. `bb run //devinfra:gazelle` regenerates them;
 a run over a converged tree is a no-op, so `--mode=diff` (exit nonzero on any diff or
-unresolvable import) is the drift check. Code-shape conventions (per-file libraries,
-`main_module` binaries, test-glob reservation, the conftest chain) live in
-<../../STYLE.md> § Gazelle.
+unresolvable import) is the drift check, and CI runs it on every PR (§ Drift check).
+Code-shape conventions (per-file libraries, `main_module` binaries, test-glob
+reservation, the conftest chain) live in <../../STYLE.md> § Gazelle.
 
 The same binary is released (the `gazelle` pin in <../../nix/artifact-pins.json>) and
 the devshell puts it on PATH: `gazelle` from anywhere in a checkout regenerates BUILD
@@ -60,6 +60,22 @@ Import validation is on; every escape is explicit and local:
   (`agent_framework_{anthropic,claude,openai}` beside `_core`), and any dep of a rule
   whose source gazelle cannot parse. Macro-kind rules (`live_openai_py_test`) are
   unmanaged and hand-carry `//:conftest`.
+
+## Drift check
+
+`.github/workflows/gazelle-diff.yml` runs the released gazelle binary in
+`--mode=diff` on every PR and devel push, unconditionally — like the pre-commit
+checks. It is deliberately its own signal on a plain runner:
+`nix profile install .#gazelle` puts the pinned binary on PATH (the flake's
+`artifacts.gazelle` fetchurl verifies its digest) — no Bazel, no BuildBuddy —
+and a red drift check neither blocks nor delays bazel-ci.
+
+The binary is the ordinary artifact pipeline: `//devinfra:gazelle_python_binary`
+is a row in <../ci/artifact_targets.json>, released from devel pushes and pinned
+into `nix/artifact-pins.json` by sync-pins. A PR that changes the binary itself
+(plugin version, patch, binary composition) is still checked with the released
+binary, which may disagree with that PR's tree — the devel run after merge is
+the authoritative one.
 
 ## Known limitations
 

@@ -1,0 +1,46 @@
+# Gazelle drift check: Python BUILD files are gazelle-managed (README §Gazelle),
+# so a run over a converged tree is a no-op and any diff or unresolvable import
+# here means the PR hand-edited managed rules or skipped the gazelle run.
+#
+# Deliberately its own workflow on a plain runner, run unconditionally like the
+# pre-commit checks: `nix profile install .#gazelle` puts the released binary on
+# PATH — the flake's `artifacts.gazelle` fetchurl carries the pin's sha256
+# (nix/artifact-pins.json), so nix is the download and the digest check in one,
+# with no secrets and no substituter beyond cache.nixos.org — no Bazel, no
+# BuildBuddy, and a red drift check neither blocks nor delays bazel-ci. A PR
+# that changes the binary itself (plugin bump, patch) is still checked with the
+# released binary; the devel run after merge is the authoritative one.
+name: Gazelle diff
+"on":
+  pull_request: {}
+  push:
+    branches: [devel]
+  workflow_dispatch: {}
+concurrency:
+  group: gazelle-diff-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  gazelle-diff:
+    name: Gazelle diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Install pinned gazelle
+        run: nix profile install .#gazelle
+
+      - name: Gazelle --mode=diff
+        run: |
+          if ! gazelle --mode=diff; then
+            echo "::error::BUILD files drifted from gazelle; run: gazelle (devshell) or bb run //devinfra:gazelle"
+            exit 1
+          fi
