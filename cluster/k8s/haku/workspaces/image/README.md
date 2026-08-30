@@ -12,8 +12,9 @@ Two builds of the same image exist right now:
 | `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls |
 | `default.nix` | `.github/workflows/nix-oci-images.yml` | `ducktape-ci/haku-sandbox-image-nix` | **Works — 25/26**, cutover pending        |
 
-Both bake the same `haku-sandbox-setup.sh`, so the per-claim bootstrap cannot drift between
-them. The Nix build exists to end the recurring "the image is missing X" bug (`kubectl`,
+The exec-target image bakes `haku-sandbox-setup.sh`; Console-launched runner images contain only
+the harness toolchain. Agent-specific setup is mounted by each SandboxTemplate instead of being
+shared through the runner image. The Nix build exists to end the recurring "the image is missing X" bug (`kubectl`,
 then a `python3-minimal` with no `json`, then `jq`/`gh`/`tea`) by making the tool set one
 reviewable list that shares a substrate with <../../../../../x/codex_pod_image/default.nix>.
 
@@ -103,11 +104,9 @@ Once the checklist passes: delete `Dockerfile`, change the sandbox entry in
 
 ## What the bootstrap does
 
-`haku-sandbox-setup.sh` runs once per claim (Console's configured `bootstrap.script` is just a call to
-it). In order: the egress CA into a JVM truststore for Bazel's downloader, the `haku` git
-identity, `http.sslCAInfo` so plain `git` trusts the bumped proxy, a two-machine `.netrc`
-for both Forgejo hostnames, the `haku-state` clone, and a partial `ducktape` clone so the
-run's base-sync step has something to diff against.
+`haku-sandbox-setup.sh` runs once per exec-target claim. It configures the egress CA for Bazel, the
+`haku` git identity and credentials, proxied Kubernetes access, and the `haku-state` plus `ducktape`
+checkouts. Console-launched Agents own their setup through a mounted per-Agent script instead.
 
 ## Console harness runner image
 

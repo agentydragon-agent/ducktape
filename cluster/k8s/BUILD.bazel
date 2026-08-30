@@ -146,6 +146,7 @@ filegroup(
         "haku/runtime-namespace/networkpolicy.yaml",
         "haku/runtime-namespace/resourcequota.yaml",
         "haku/workspaces/app/flux-kustomization.yaml",
+        "haku/workspaces/app/haku-claude-runner-setup.sh",
         "haku/workspaces/app/haku-console-runtime-claim-role.yaml",
         "haku/workspaces/app/haku-console-runtime-claim-rolebinding.yaml",
         "haku/workspaces/app/sandboxtemplate-haku.yaml",
@@ -303,8 +304,7 @@ filegroup(
     ],
 )
 
-# The per-claim sandbox bootstrap, shared with the Console-owned Claude runner image so the
-# two boxes get the same git credentials and checkouts from one reviewed script.
+# The full per-claim bootstrap for the haku-sandbox exec target.
 filegroup(
     name = "haku_sandbox_setup",
     srcs = ["haku/workspaces/image/haku-sandbox-setup.sh"],

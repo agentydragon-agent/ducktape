@@ -71,8 +71,6 @@ pkgs.dockerTools.buildLayeredImage {
     # binaries come from the flake's pinned package sets.
     ln -s ${pkgsUnstable.claude-code}/bin/claude usr/local/bin/claude
     ln -s ${pkgsMaster.codex} opt/codex
-    cp ${../../..}/cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh usr/local/bin/haku-sandbox-setup.sh
-    chmod 0755 usr/local/bin/haku-sandbox-setup.sh
     ln -s ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/ssl/certs/ca-certificates.crt
 
     chown -R 1000:1000 home/runner workspace
@@ -100,7 +98,6 @@ pkgs.dockerTools.buildLayeredImage {
       "PATH=/bin:${tools}/bin"
       "HAKU_CLAUDE_PATH=/usr/local/bin/claude"
       "HAKU_CODEX_PATH=/opt/codex/bin/codex"
-      "HAKU_RUNNER_SETUP=/usr/local/bin/haku-sandbox-setup.sh"
       "HOME=/home/runner"
       "CLAUDE_CONFIG_DIR=/claude-config"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
