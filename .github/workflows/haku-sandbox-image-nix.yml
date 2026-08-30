@@ -70,13 +70,10 @@ jobs:
           SLUG="${GITHUB_REF_NAME//\//-}"
           echo "pin_tag=${SLUG}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
 
-      # Ungated, unlike codex-pod-image.yml's devel-only push. Nothing consumes
-      # `haku-sandbox-image-nix` — no ImagePolicy, no SandboxTemplate — so a branch tag
-      # cannot be auto-deployed anywhere, and tags are timestamped so nothing is clobbered.
-      # RE-GATE THIS TO devel when the cutover lands and this collapses into
-      # haku-sandbox-image.yml under the consumed name; at that point an unreviewed branch
-      # push would roll the live sandbox.
+      # Keep feature-branch and pull-request runs build-only: fork workflows do not receive
+      # the Forgejo publish credentials, and this image is not consumed until the cutover.
       - name: Push to Forgejo
+        if: github.ref_name == 'devel'
         run: |
           ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
           skopeo copy --insecure-policy \
