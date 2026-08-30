@@ -247,6 +247,17 @@ ts_library(
 )
 
 ts_library(
+    name = "page_scroll",
+    srcs = ["page_scroll.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "theme",
     srcs = ["theme.ts"],
     isolated_typecheck = True,
@@ -693,6 +704,7 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":page_scroll",
         ":approval_state",
         ":client",
         ":coalesced_refresh",
@@ -746,6 +758,7 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":page_scroll",
         ":async_resource",
         ":client",
         ":console_events",
@@ -770,6 +783,7 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":page_scroll",
         ":client",
         ":toast",
         "//:node_modules/@mantine/core",

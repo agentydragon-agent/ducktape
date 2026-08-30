@@ -9,6 +9,7 @@ import {
   type EnrollmentView,
 } from "./client";
 import { toastSuccess } from "./toast";
+import { usePageScroll } from "./page_scroll";
 
 export type EnrollmentChoice = "create" | "reconnect";
 
@@ -29,6 +30,7 @@ export function AgentEnrollmentPanel({
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
   const mountedRef = useRef(true);
+  const scrollRef = usePageScroll(`agent-enrollment:${interactionId}`);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -119,7 +121,7 @@ export function AgentEnrollmentPanel({
           </Button>
         </div>
       </header>
-      <div className="haku-page-scroll">
+      <div ref={scrollRef} className="haku-page-scroll">
         <Stack gap="md" className="haku-page-list">
           {!enrollment && !error && (
             <Group justify="center" p="xl">

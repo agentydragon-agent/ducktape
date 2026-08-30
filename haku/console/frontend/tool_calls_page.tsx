@@ -9,6 +9,7 @@ import { ToolCallCard } from "./tool_call_card";
 import { useToolCallDecision } from "./tool_call_decision";
 import { changedConversationId, useConsoleEvents } from "./console_events";
 import { useVariant } from "./variant_control";
+import { usePageScroll } from "./page_scroll";
 
 // One screenful and change, not the ledger's `le=500` cap. Every record carries its whole arguments
 // and result payload, so a page of 25 is ~100 KB where 500 is several megabytes, and each row
@@ -78,6 +79,7 @@ function ToolCallRow({
 // A pending call that streams in over the live WS signal can be decided here too, through the same
 // exact-Origin-gated endpoints the approvals panel uses.
 export function ToolCallsPage(): JSX.Element {
+  const scrollRef = usePageScroll("tool-calls");
   const [loaded, setLoaded] = useState<ToolCallPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -180,7 +182,7 @@ export function ToolCallsPage(): JSX.Element {
           </Group>
         </div>
       </header>
-      <div className="haku-page-scroll">
+      <div ref={scrollRef} className="haku-page-scroll">
         <div className="haku-page-list">
           {error && (
             <Text c="red" size="sm">

@@ -34,6 +34,7 @@ import { ConversationComposer } from "./conversation_composer";
 import { Markdown } from "./markdown";
 import { SandboxProvisioning } from "./sandbox_provisioning";
 import { InfoCircleIcon, NewConversationIcon } from "../icons";
+import { usePageScroll } from "../page_scroll";
 
 /** A session that has ended takes no more prompts, so it gets no composer. */
 const SETTLED = new Set<Session["status"]>(["closing", "closed", "failed"]);
@@ -252,6 +253,7 @@ function ToolReasoningRunView({
  * tool-call history does.
  */
 function ConversationListPage() {
+  const scrollRef = usePageScroll("conversations");
   // Null until the first read lands: an empty inventory and an unread one look the same
   // otherwise, and the two want different things on screen.
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
@@ -371,7 +373,7 @@ function ConversationListPage() {
           </Group>
         </div>
       </header>
-      <div className="haku-page-scroll">
+      <div ref={scrollRef} className="haku-page-scroll">
         <div className="haku-page-list haku-conversation-list">
           {error && (
             <Paper withBorder p="sm">

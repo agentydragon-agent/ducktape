@@ -36,6 +36,7 @@ import {
 import { openExternal, POPUP_HINT } from "./open_external";
 import { listActiveSandboxes, terminateSandbox, type ActiveSandbox } from "./session_sandboxes_client";
 import { toastError, toastSuccess } from "./toast";
+import { usePageScroll } from "./page_scroll";
 
 type DeploymentVersion = {
   label: string;
@@ -843,6 +844,7 @@ function IndexStatusRow({ index }: { index: IndexState }) {
 }
 
 export function SettingsPanel(): JSX.Element {
+  const scrollRef = usePageScroll("settings");
   const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTabFromLocation);
   const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
   const loadMcpServers = useCallback<AsyncResourceLoader<McpServerView[]>>(async (emit, previous) => {
@@ -1045,7 +1047,7 @@ export function SettingsPanel(): JSX.Element {
           <Tabs.Tab value="system">System</Tabs.Tab>
         </Tabs.List>
       </header>
-      <div className="haku-page-scroll">
+      <div ref={scrollRef} className="haku-page-scroll">
         <Tabs.Panel value="mcp">
           <ResourcePanel
             title="MCP servers"
