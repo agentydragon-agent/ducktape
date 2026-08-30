@@ -1,7 +1,7 @@
 // Shell side of the console↔iframe postMessage protocol: the trusted shell (this console)
 // origin-checks and schema-validates every inbound request from Haku's agent-authored UI
 // iframe, then decides and acts. The iframe may only **request**.
-// See docs/containment.md → "The frontend bridge protocol".
+// See docs/containment.md → "The Agent UI bridge protocol".
 //
 // The wire shapes (Inbound/Outbound/GeolocationOptions/GeoPosition) plus the client helpers live in
 // the shared @haku/console-bridge package (haku/js/bridge_protocol), which both sides import. The

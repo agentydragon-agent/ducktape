@@ -258,7 +258,7 @@ are the target names:
 | Console ↔ sandbox runner WebSocket     | **runner protocol**                         | The runner's authenticated control and neutral-operation wire. A live connection is a runner connection; it is not a generic bridge.                                                                                                                                                                                                                                                  |
 | Durable records of the runner wire     | **`SessionFrame`** / **`SessionFrameKind`** | The opaque harness frame or Console-authored setup output recorded for one `Session`. The native payload remains a `HarnessFrame`; the outer record is a `SessionFrame`.                                                                                                                                                                                                              |
 | Runner ↔ native CLI boundary           | **harness adapter**                         | The runner-side implementation that starts one selected `harness`, speaks its native protocol, and emits neutral operations.                                                                                                                                                                                                                                                          |
-| Sandboxed iframe ↔ trusted outer shell | **frontend bridge**                         | The schema-validated `postMessage` contract for shell-owned actions such as opening links, launching, geolocation, and screenshots. It is independent of the runner protocol.                                                                                                                                                                                                         |
+| Sandboxed iframe ↔ trusted outer shell | **Agent UI bridge**                         | The schema-validated `postMessage` contract for shell-owned actions such as opening links, launching, geolocation, and screenshots. It is independent of the runner protocol.                                                                                                                                                                                                         |
 | Per-session authentication secret      | **session token**                           | One random secret for one `Session`. The runner presents it to the runner protocol; the Agent presents the same value to Console MCP; the proxy presents it as proxy authentication and includes the same value in the decision request body. Console resolves it to the live session's Agent identity. It is not a runner-only token, MCP token, proxy credential, or bridge bearer. |
 | Shared proxy → Console authentication  | **HTTP decision endpoint token**            | One Secret-backed token presented in the decision endpoint's `Authorization` header. It authenticates the shared egress proxy to Console and never identifies an Agent or session.                                                                                                                                                                                                    |
 | Console-owned destination secret       | **egress credential**                       | A credential selected by an authorized egress policy and substituted for an inert placeholder. It is distinct from both authentication tokens above.                                                                                                                                                                                                                                  |
@@ -295,7 +295,7 @@ canonical terms above.
   needed. `Bridge v3` remains only when naming historical compatibility behavior.
 - **Frontend-bridge family:** `@haku/console-bridge`, `haku/shared/bridge_protocol/`,
   `frontend/bridge.ts`, “bridge verb,” “bridge action,” “Bridge request id,” and “postMessage bridge.”
-  Keep **frontend bridge** as the canonical concept name for this iframe ↔ trusted outer-shell channel,
+  Keep **Agent UI bridge** as the canonical concept name for this iframe ↔ trusted outer-shell channel,
   normalize its actions/verbs/request IDs under that name, and do not conflate it with the runner
   protocol. Package/path alignment with the haku-state consumer is a separate change, not a reason to
   remove the word “bridge” from this boundary.
@@ -555,7 +555,7 @@ quiet gap.
   - **C16b · frame vocabulary:** landed — `SessionFrameKind` is the vocabulary name and current
     prose says runner protocol; `Bridge v3` and old migration names remain only in historical
     compatibility documentation.
-  - **C16c · frontend bridge:** keep “frontend bridge” as the canonical name for the iframe ↔ trusted
+  - **C16c · Agent UI bridge:** keep “Agent UI bridge” as the canonical name for the iframe ↔ trusted
     outer-shell JavaScript channel. Normalize “bridge verb”/“bridge action”/request-id prose under
     that concept, while treating `@haku/console-bridge`, `haku/shared/bridge_protocol/`, and
     `frontend/bridge.ts` as coordinated cross-repository package/path work with the haku-state
@@ -585,7 +585,7 @@ quiet gap.
     and `failure` respectively. Do not alter valid registry/policy entries, lease/Kubernetes/egress
     reasons, or historical migration identifiers. The final search gate must find no current
     `bridge`/`chat`/old SDK/session-token spelling outside the explicitly listed historical,
-    compatibility, frontend-bridge, native-index, and cross-repository package exceptions; schema and deployment
+    compatibility, Agent UI bridge, native-index, and cross-repository package exceptions; schema and deployment
     contract tests must cover every renamed published or persisted name.
 
 ### Identity lane — rides the #4836 compose PR

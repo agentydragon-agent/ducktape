@@ -384,7 +384,7 @@ function GeolocationApprovalCard({
               </Field>
             )}
             <details className="haku-shell-disclosure">
-              <summary>Frontend bridge request ID</summary>
+              <summary>Agent UI bridge request ID</summary>
               <code>{approval.id}</code>
             </details>
           </div>

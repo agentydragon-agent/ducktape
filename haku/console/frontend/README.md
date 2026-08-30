@@ -15,7 +15,7 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
 
 - `main.tsx` → `app.tsx` → `haku_ui_embed.tsx`, the persistent application shell. The cross-origin
   iframe remains mounted while the content area switches between Haku UI, Settings, and Past tool
-  calls, preserving frontend bridge and in-frame state.
+  calls, preserving Agent UI bridge and in-frame state.
 - `routing.ts` — `/_console/settings` and `/_console/tool-calls` are trusted console pages, while
   `/_console/approvals-embed` is the chrome-free tool-approval surface used by the desktop window;
   `/_console/assets/*` holds fingerprinted browser assets. Every other pathname is mirrored into
@@ -26,14 +26,14 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
   and screenshot-capture state through compact popovers.
 - `approvals_embed_page.tsx` — the small-window tool-approval surface. It reuses the approvals tab
   and shared tool-call cards without mounting navigation chrome or the cross-origin Haku UI iframe;
-  frontend-bridge-only location and screenshot approvals remain in the full shell.
+  Agent UI bridge-only location and screenshot approvals remain in the full shell.
 - `settings_panel.tsx` — the Settings page. It reads MCP-server and node-daemon reflection through
   the console's Operator-authenticated MCP transport, validating each result against the
   Python-generated MCP result-schema catalog, and hosts account connect/disconnect, per-Agent
   auto-approval policy, Web Push registration, deployment commit links, and configured recall-index
   freshness.
 - `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener
-  severed, shared by the embed shell (the `openLink` frontend bridge action) and the settings panel
+  severed, shared by the embed shell (the `openLink` Agent UI bridge action) and the settings panel
   (the MCP OAuth popup).
 - `tool_arguments_field.tsx` / `icons.tsx` — shared tool-argument renderer (per-server
   preview or raw JSON) and the icon set, used by both the approvals panel and the history view.
@@ -62,7 +62,7 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
   carrying it has no route for FastAPI to document. Includes the
   launch-routine helper, MCP approval queue helpers (`pending`, approve, deny), and
   MCP operator-account association helpers.
-- `confirm_dialog.tsx` — trusted top-layer confirmations for frontend bridge launches, geolocation
+- `confirm_dialog.tsx` — trusted top-layer confirmations for Agent UI bridge launches, geolocation
   grants, off-whitelist opens, and MCP tool-call approvals.
 - `styles.src.css` — `@import`s Tailwind + `@mantine/core` CSS; compiled by
   `@tailwindcss/cli` to `generated/styles.css`, then fingerprinted into
