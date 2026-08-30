@@ -71,10 +71,10 @@ from haku.console.conversation.item_reads import Item
 from haku.console.conversation.reads import (
     FrameRecord,
     SessionCursor,
+    SessionOutcome,
     SessionRecord,
     TurnCursor,
     TurnRecord,
-    WorkerResult,
 )
 from haku.console.conversation_read_access import (
     ConversationAccessDeniedError,
@@ -167,7 +167,7 @@ class ConversationReader(Protocol):
         self, conversation_id: UUID, *, cursor: int | None, limit: int, scope: ConversationReadScope
     ) -> list[Item]: ...
 
-    async def get_worker_result(self, session_id: UUID, *, scope: ConversationReadScope) -> WorkerResult: ...
+    async def session_outcome(self, session_id: UUID, *, scope: ConversationReadScope) -> SessionOutcome: ...
 
 
 def split_page[ItemT](rows: Sequence[ItemT], *, limit: int) -> tuple[list[ItemT], ItemT | None]:
@@ -188,8 +188,8 @@ def build_mcp(
             "Read Haku's past conversations: start with `list_sessions`, then `list_turns`, then "
             "`read_conversation_items`. Follow an item's `provenance` into `read_session_frames` when normalization "
             "needs checking. Every listing returns `items` and `next_cursor`; pass the cursor back "
-            "as `cursor`. To poll a worker you dispatched, `get_worker_result(session_id)` returns its "
-            "status and, once it has answered, its final message. Read-only."
+            "as `cursor`. To inspect a session you dispatched, `session_outcome(session_id)` returns its real "
+            "status, latest turn outcome, and final assistant message when it answered. Read-only."
         ),
     )
 
@@ -309,24 +309,22 @@ def build_mcp(
         return FramePage(items=frames, next_cursor=more.frame_seq if more is not None else None)
 
     @mcp.tool
-    async def get_worker_result(
+    async def session_outcome(
         session_id: Annotated[
-            UUID, Field(description="The worker session `dispatch_worker` returned, whose result to poll.")
+            UUID, Field(description="The session `dispatch_worker` returned, whose outcome to inspect.")
         ],
         execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
-    ) -> WorkerResult:
-        """Poll a dispatched worker: its `status`, and once it has answered, its final message.
+    ) -> SessionOutcome:
+        """Read a session's real status, latest turn outcome, and answered message.
 
-        `running` while the worker is still working, `done` with the worker's final assistant message
-        once its turn has answered, `failed` with the failure surface if the session or its turn
-        died. The worker runs under its own perimeter; this only reads the session it produced, and
-        only a session in your read scope — another operator's or agent's is `conversation access
-        denied`. Read-only, so it is not queued for approval. Final-message text and status only: a
-        structured outcome (PR links, files touched) is out of scope for now.
+        The worker runs under its own perimeter; this only reads the session it produced, and only
+        a session in your read scope — another operator's or agent's is `conversation access denied`.
+        Read-only, so it is not queued for approval. Turns are not paged here; use `list_turns` for
+        the complete turn history.
         """
         scope = read_scope(execution)
         try:
-            return await reader.get_worker_result(session_id, scope=scope)
+            return await reader.session_outcome(session_id, scope=scope)
         except ConversationAccessDeniedError:
             raise ToolError("conversation access denied") from None
         except KeyError:

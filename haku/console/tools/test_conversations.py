@@ -23,8 +23,7 @@ from haku.console.conversation.reads import (
     SessionRecord,
     TurnCursor,
     TurnRecord,
-    WorkerResult,
-    WorkerStatus,
+    SessionOutcome,
 )
 from haku.console.conversation_read_access import (
     ConversationAccessDeniedError,
@@ -44,6 +43,7 @@ from haku.console.mcp.in_process_server_access import InProcessServerAccessPolic
 from haku.console.mcp_config import AccessProfile
 from haku.console.session.session_frames import SessionFrameKind
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
+from haku.console.session.status import SessionStatus
 from haku.console.tools.conversations import FramePage, ItemPage, SessionPage, build_mcp
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
@@ -196,10 +196,10 @@ class _Reader:
         selected = self._items if cursor is None else [item for item in self._items if item.opened_seq >= cursor]
         return selected[:limit]
 
-    async def get_worker_result(self, session_id: UUID, *, scope: ConversationReadScope) -> WorkerResult:
+    async def session_outcome(self, session_id: UUID, *, scope: ConversationReadScope) -> SessionOutcome:
         self._point_read(scope)
         self.queries.append({"session_id": session_id})
-        return WorkerResult(status=WorkerStatus.RUNNING)
+        return SessionOutcome(status=SessionStatus.READY, error=None, latest_turn=None, final_message=None)
 
 
 def _mcp(reader: _Reader):
@@ -234,7 +234,7 @@ async def test_tool_surface() -> None:
         "list_turns",
         "read_conversation_items",
         "read_session_frames",
-        "get_worker_result",
+        "session_outcome",
     }
 
 

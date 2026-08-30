@@ -1,7 +1,7 @@
 # Agent-facing session surface (haku-console)
 
 Design note for the multi-agent read/drive surface. Supersedes the v0 "worker" tool
-naming (`dispatch_worker` / `get_worker_result` / `get_worker_provisioning`).
+naming (`dispatch_worker` / `get_worker_provisioning`).
 
 > **Status: first cut (v0).** A starting interface, not a settled one — expect a better one
 > as we use it. The part most likely to be reworked is the **authorization model for who may
@@ -32,7 +32,7 @@ the agent sees what the operator sees.
   turn's state + session lifecycle). One read answers "where is this session, and what is it
   doing." Derive, don't store. Subsumes today's `get_worker_provisioning`.
 - **`session_outcome`** _(+ turns)_ — real session status + latest-turn outcome, replacing
-  `get_worker_result`'s `running/done/failed` coarsening.
+  its former `running/done/failed` coarsening.
 - **`list_sessions`** — enumerate the sessions in scope (replaces the `list_workers` idea).
 
 ## Actions
@@ -74,7 +74,7 @@ placeholder for that model, not its final shape.
 | v0 tool                   | becomes                                                |
 | ------------------------- | ------------------------------------------------------ |
 | `get_worker_provisioning` | folded into `session_status` (provisioning + activity) |
-| `get_worker_result`       | `session_outcome` (+ turns) read — real states         |
+| `get_worker_result`       | replaced by `session_outcome`                          |
 | `dispatch_worker`         | `dispatch` action                                      |
 | —                         | + `send_message`, `session_status`, `list_sessions`    |
 
@@ -83,7 +83,7 @@ placeholder for that model, not its final shape.
 ## Placement
 
 Fold the session reads beside the existing conversation reads (`haku_conversations` already
-hosts `get_worker_result`, `read_session_frames`, `read_conversation_items`); keep `dispatch`
+hosts `session_outcome`, `read_session_frames`, `read_conversation_items`); keep `dispatch`
 
 - `send_message` as the actions. The `workers` / `dispatch_v0` server-name question mostly
   dissolves.
@@ -106,7 +106,7 @@ conversation_id, text, origin=user)`; resolve `session_id → conversation`. Sam
 
 1. `session_status` — one read composing sandbox provisioning (`SessionProvisioningView`,
    subsuming `get_worker_provisioning`) + activity.
-2. `session_outcome` — real session/turn states, replacing `get_worker_result`.
+2. `session_outcome` — real session/turn states, replacing the former worker-result read.
 3. `list_sessions`.
 4. `send_message` + the config-declared read/send policy + its auto-approval.
 
