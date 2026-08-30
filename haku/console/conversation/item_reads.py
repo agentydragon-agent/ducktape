@@ -196,7 +196,7 @@ class ConversationPageRow:
 def turn_end_of(turn: ConversationTurn) -> TurnEnd | None:
     """How *turn* ended, or None while it is still running.
 
-    `ck_conversation_turn_failure` is what makes the failed arm's reason always present.
+    `ck_conversation_turn_failure` is what makes the failed arm's failure always present.
     """
     match turn.outcome:
         case None:

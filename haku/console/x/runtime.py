@@ -66,7 +66,7 @@ class HarnessAdapter(Protocol):
     def display_name(self) -> str: ...
 
     def build_launch(self, launch: HarnessLaunchSpec) -> HarnessLaunch:
-        """The native `HarnessLaunch` the journal bridge (#4667) sends the runner directly."""
+        """The native `HarnessLaunch` the journal dispatch (#4667) sends the runner directly."""
         ...
 
 
