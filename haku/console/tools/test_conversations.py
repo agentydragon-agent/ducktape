@@ -20,10 +20,10 @@ from haku.console.conversation.reads import (
     FrameRecord,
     HarnessFrameRecord,
     SessionCursor,
+    SessionOutcome,
     SessionRecord,
     TurnCursor,
     TurnRecord,
-    SessionOutcome,
 )
 from haku.console.conversation_read_access import (
     ConversationAccessDeniedError,
