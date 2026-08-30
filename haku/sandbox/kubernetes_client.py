@@ -262,16 +262,13 @@ class KubernetesSandboxClient:
         environment: SandboxEnvironmentConfig,
         *,
         api_client: ApiClient,
-        custom_objects: CustomObjectsClient,
-        core_v1: CoreV1Api,
+        claims: SandboxClaimClient,
         exec_runner: ExecRunner,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._environment = environment
         self._api_client = api_client
-        self._custom_objects = custom_objects
-        self._core_v1 = core_v1
-        self._claims = SandboxClaimClient(custom_objects, core_v1, environment.sandbox.namespace)
+        self._claims = claims
         self._exec_runner = exec_runner
         self._now = now or (lambda: datetime.now(UTC))
 
@@ -438,11 +435,8 @@ class KubernetesSandboxClient:
         if not 1 <= limit <= 100:
             raise ToolError("limit must be between 1 and 100")
         try:
-            list_kwargs: dict[str, Any] = {"label_selector": f"{MANAGED_BY_LABEL}={MANAGED_BY_VALUE}", "limit": limit}
-            if continue_token is not None:
-                list_kwargs["_continue"] = continue_token
-            page = await self._custom_objects.list_namespaced_custom_object(
-                CLAIM_GROUP, API_VERSION, self._environment.sandbox.namespace, CLAIMS_PLURAL, **list_kwargs
+            page = await self._claims.list(
+                limit=limit, continue_token=continue_token, label_selector=f"{MANAGED_BY_LABEL}={MANAGED_BY_VALUE}"
             )
         except ApiException as error:
             raise ToolError(_api_error("list sandbox claims", error)) from error
@@ -662,11 +656,13 @@ class InClusterSandboxClient:
                 except ConfigException as error:
                     raise ToolError("Kubernetes in-cluster configuration is unavailable") from error
                 api_client = ApiClient(configuration=configuration)
+                custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api_client))
+                core_v1 = CoreV1Api(api_client)
+                claims = SandboxClaimClient(custom_objects, core_v1, self._environment.sandbox.namespace)
                 self._client = KubernetesSandboxClient(
                     self._environment,
                     api_client=api_client,
-                    custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api_client)),
-                    core_v1=CoreV1Api(api_client),
+                    claims=claims,
                     exec_runner=KubernetesWebSocketExecRunner(configuration),
                 )
         return self._client

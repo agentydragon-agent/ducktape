@@ -30,6 +30,7 @@ from haku.sandbox.kubernetes_client import (
     WARM_POOL_ANNOTATION,
     CommandResult,
     KubernetesSandboxClient,
+    SandboxClaimClient,
     _exec_handshake_error,
 )
 from mcp_infra.exec.models import Exited
@@ -105,8 +106,13 @@ def _runner_result() -> CommandResult:
 
 
 def _client(environment: SandboxEnvironmentConfig, custom: Mock, core: Mock, runner: Mock) -> KubernetesSandboxClient:
+    claims = SandboxClaimClient(custom, core, environment.sandbox.namespace)
     return KubernetesSandboxClient(
-        environment, api_client=Mock(), custom_objects=custom, core_v1=core, exec_runner=runner, now=lambda: NOW
+        environment,
+        api_client=Mock(),
+        claims=claims,
+        exec_runner=runner,
+        now=lambda: NOW,
     )
 
 

@@ -80,7 +80,7 @@ class SandboxProvisioningView(BaseModel):
 
 @dataclass(frozen=True)
 class KubernetesClients:
-    """The three clients built from one in-cluster configuration.
+    """The API clients and shared claim client built from one configuration.
 
     One object because they are built together and closed together, so no state where some exist
     and others do not is reachable. Public so a test can supply recorded ones through the
@@ -90,6 +90,7 @@ class KubernetesClients:
     api: ApiClient
     custom_objects: CustomObjectsClient
     core_v1: CoreV1Api
+    claims: SandboxClaimClient
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,16 +143,15 @@ class KubernetesSandboxClaims:
                 except ConfigException as error:
                     raise RuntimeError("Kubernetes in-cluster configuration is unavailable") from error
                 api = ApiClient(configuration=configuration)
+                custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
+                core_v1 = CoreV1Api(api)
                 self._clients = KubernetesClients(
                     api=api,
-                    # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
-                    custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
-                    core_v1=CoreV1Api(api),
+                    custom_objects=custom_objects,
+                    core_v1=core_v1,
+                    claims=SandboxClaimClient(custom_objects, core_v1, self._spec.namespace),
                 )
             return self._clients
-
-    def _claim_client(self, clients: KubernetesClients) -> SandboxClaimClient:
-        return SandboxClaimClient(clients.custom_objects, clients.core_v1, self._spec.namespace)
 
     def _claim_name(self, session_id: UUID) -> str:
         return f"{self._spec.claim_prefix}-{session_id.hex}"
@@ -168,7 +168,7 @@ class KubernetesSandboxClaims:
             LEGACY_SESSION_TOKEN_VARIABLE: session_token,
         }
         clients = await self._connected()
-        await self._claim_client(clients).create(
+        await clients.claims.create(
             SharedSandboxAllocationSpec(
                 namespace=self._spec.namespace,
                 name=self._claim_name(session_id),
@@ -198,7 +198,7 @@ class KubernetesSandboxClaims:
         clients = await self._connected()
         name = self._claim_name(session_id)
         try:
-            await self._claim_client(clients).renew(name, expires_at, attempts=_RENEW_ATTEMPTS)
+            await clients.claims.renew(name, expires_at, attempts=_RENEW_ATTEMPTS)
         except k8s_client.ApiException as error:
             logger.warning("could not slide sandbox deadline for %s: %s", name, error)
         except ValueError as error:
@@ -206,13 +206,13 @@ class KubernetesSandboxClaims:
 
     async def delete(self, *, session_id: UUID) -> None:
         clients = await self._connected()
-        await self._claim_client(clients).delete(self._claim_name(session_id))
+        await clients.claims.delete(self._claim_name(session_id))
 
     async def inspect(self, *, session_id: UUID) -> SandboxProvisioningView:
         claim_name = self._claim_name(session_id)
         clients = await self._connected()
         try:
-            graph = await self._claim_client(clients).graph(claim_name)
+            graph = await clients.claims.graph(claim_name)
         except k8s_client.ApiException:
             raise
         claim = graph.claim

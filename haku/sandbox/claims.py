@@ -186,6 +186,18 @@ class SandboxClaimClient:
             raise
         return True
 
+    async def list(
+        self, *, limit: int, continue_token: str | None = None, label_selector: str | None = None
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {"limit": limit}
+        if continue_token is not None:
+            kwargs["_continue"] = continue_token
+        if label_selector is not None:
+            kwargs["label_selector"] = label_selector
+        return await self._custom_objects.list_namespaced_custom_object(
+            CLAIM_GROUP, CLAIM_API_VERSION, self._namespace, CLAIMS_PLURAL, **kwargs
+        )
+
     async def patch_annotations(self, name: str, annotations: Mapping[str, str]) -> None:
         await self._custom_objects.patch_namespaced_custom_object(
             CLAIM_GROUP,
