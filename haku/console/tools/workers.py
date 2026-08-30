@@ -60,6 +60,17 @@ class DispatchedWorker(BaseModel):
     )
 
 
+class SentMessage(BaseModel):
+    """The user-role prompt ``send_message`` placed in a worker session's inbox."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    session_id: UUID = Field(description="The worker session that received the message.")
+    prompt_id: UUID = Field(
+        description="The durable queued prompt id, suitable for referencing the prompt in the session inbox."
+    )
+
+
 def _dispatching_operator(context: McpExecutionContext) -> UUID:
     """The Operator the dispatched worker session is opened for.
 
@@ -87,6 +98,10 @@ def build_mcp(sessions: SessionService, *, conversation_reads: ConversationReadA
         instructions=(
             "Dispatch a one-shot hosted worker: open a conversation for a worker Agent on a harness, "
             "seed its opening prompt, and get back the session id immediately without awaiting the work. "
+            "Use send_message to enqueue a user-role prompt into an existing session. Messages are durably "
+            "enqueued and reach the agent when it can accept them: FIFO with other queued prompts, admitted "
+            "at the current turn's natural end, never interrupting or injecting into a running turn; a message "
+            "sent to an idle session starts its next turn immediately. "
             "Poll its sandbox with get_worker_provisioning and its outcome with session_outcome. "
             "The worker runs under its own Agent perimeter (its own grants and fence identity), not "
             "yours. Every dispatch is reviewed and approved by the Operator per call; reads are pass-through."
@@ -133,6 +148,32 @@ def build_mcp(sessions: SessionService, *, conversation_reads: ConversationReadA
             raise ToolError("the selected worker Agent is not launchable on this harness") from None
         await sessions.enqueue_conversation_prompt(operator_id, conversation.conversation_id, prompt, SPA_ORIGIN)
         return DispatchedWorker(session_id=conversation.session.session_id)
+
+    @mcp.tool(annotations=ToolAnnotations(idempotentHint=False, openWorldHint=False))
+    async def send_message(
+        session_id: Annotated[UUID, Field(description="The worker session to send the message into.")],
+        text: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=100_000,
+                description="The user-role message to durably enqueue for the worker session.",
+            ),
+        ],
+        context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
+    ) -> SentMessage:
+        """Durably enqueue a user-role prompt for a worker session.
+
+        The prompt reaches the agent when it can accept it, FIFO with other queued prompts, at the
+        current turn's natural end. It never interrupts or injects into a running turn. Sent to an
+        idle session, it starts the next turn immediately.
+        """
+        operator_id = _dispatching_operator(context)
+        try:
+            prompt_id = await sessions.enqueue_prompt(operator_id, session_id, text, SPA_ORIGIN)
+        except KeyError:
+            raise ToolError("session not found") from None
+        return SentMessage(session_id=session_id, prompt_id=prompt_id)
 
     @mcp.tool
     async def get_worker_provisioning(
