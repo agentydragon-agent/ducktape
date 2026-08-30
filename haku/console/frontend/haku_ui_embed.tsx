@@ -683,9 +683,7 @@ export function HakuUiEmbed({
             onReturnToSettings={() => onNavigate("settings")}
           />
         )}
-        {(mountedViews.has("toolCalls") || view === "toolCalls") && (
-          <ToolCallsPage hidden={view !== "toolCalls"} />
-        )}
+        {(mountedViews.has("toolCalls") || view === "toolCalls") && <ToolCallsPage hidden={view !== "toolCalls"} />}
         {(mountedViews.has("conversations") || view === "conversations") && (
           <ConversationsPage hidden={view !== "conversations"} conversationId={conversationId ?? null} />
         )}
