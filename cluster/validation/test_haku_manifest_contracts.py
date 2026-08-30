@@ -368,10 +368,7 @@ def test_haku_runtimes_and_access_profile_share_one_grant(k8s_dir: Path) -> None
     runner_template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
     assert runner_template["metadata"]["namespace"] == "haku-runtime-sandbox"
     runner_environment = sandbox_env(runner_template)
-    assert runner_environment["GITHUB_TOKEN"] == {
-        "name": "GITHUB_TOKEN",
-        "value": "github-token-placeholder",
-    }
+    assert runner_environment["GITHUB_TOKEN"] == {"name": "GITHUB_TOKEN", "value": "github-token-placeholder"}
     assert "HAKU_GITHUB_TOKEN" not in runner_environment
 
     for template in (exec_target, runner_template):
