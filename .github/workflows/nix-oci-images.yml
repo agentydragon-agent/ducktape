@@ -47,15 +47,12 @@ jobs:
           - name: codex-pod
             flake_output: codex-pod-image
             image: git.allegedly.works/ducktape-ci/codex-pod
-            push_latest: "false"
           - name: haku-sandbox-image-nix
             flake_output: haku-sandbox-image
             image: git.allegedly.works/ducktape-ci/haku-sandbox-image-nix
-            push_latest: "false"
           - name: haku-harness-runner
             flake_output: haku-harness-runner-image
             image: git.allegedly.works/ducktape-ci/haku-harness-runner
-            push_latest: "true"
     steps:
       - uses: actions/checkout@v7
 
@@ -65,4 +62,3 @@ jobs:
           flake_output: ${{ matrix.flake_output }}
           image: ${{ matrix.image }}
           push: ${{ github.ref_name == 'devel' }}
-          push_latest: ${{ matrix.push_latest }}

@@ -1,5 +1,5 @@
 name: Build and publish Nix OCI image
-description: Build a dockerTools OCI archive and optionally publish it with a sortable tag
+description: Build a dockerTools OCI archive and publish it with a sortable tag
 
 inputs:
   sops_age_key:
@@ -13,10 +13,6 @@ inputs:
     required: true
   push:
     description: Publish the image when true
-    required: false
-    default: "false"
-  push_latest:
-    description: Also publish the archive as the latest tag
     required: false
     default: "false"
 
@@ -50,20 +46,12 @@ runs:
         set -euo pipefail
         archive="$(readlink -f result)"
         local_digest="$(skopeo inspect --format '{{.Digest}}' "docker-archive:$archive")"
-        latest_tag="$(skopeo list-tags \
+        remote_digest="$(skopeo inspect --insecure-policy \
           --creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
-          "docker://$IMAGE" 2>/dev/null \
-          | jq -r '[.Tags[] | select(startswith("devel-"))] | sort | last // empty')"
-        if [[ -n "$latest_tag" ]]; then
-          remote_digest="$(skopeo inspect --insecure-policy \
-            --creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
-            --format '{{.Digest}}' "docker://$IMAGE:$latest_tag")"
-        else
-          remote_digest=""
-        fi
+          --format '{{.Digest}}' "docker://$IMAGE:latest" 2>/dev/null || true)"
         if [[ -n "$remote_digest" && "$local_digest" == "$remote_digest" ]]; then
           echo "changed=false" >> "$GITHUB_OUTPUT"
-          echo "Image matches $IMAGE:$latest_tag ($local_digest); skipping publish." >> "$GITHUB_STEP_SUMMARY"
+          echo "Image matches $IMAGE:latest ($local_digest); skipping publish." >> "$GITHUB_STEP_SUMMARY"
         else
           echo "changed=true" >> "$GITHUB_OUTPUT"
         fi
@@ -76,12 +64,11 @@ runs:
       run: |
         set -euo pipefail
         ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
+        archive="docker-archive:$(readlink -f result)"
         skopeo copy --insecure-policy \
           --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
-          "docker-archive:$(readlink -f result)" "docker://$ref"
-        if [[ "${{ inputs.push_latest }}" == "true" ]]; then
-          skopeo copy --insecure-policy \
-            --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
-            "docker-archive:$(readlink -f result)" "docker://$IMAGE:latest"
-        fi
-        echo "pushed \`$ref\`" >> "$GITHUB_STEP_SUMMARY"
+          "$archive" "docker://$ref"
+        skopeo copy --insecure-policy \
+          --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+          "$archive" "docker://$IMAGE:latest"
+        echo "pushed \`$ref\` and \`$IMAGE:latest\`" >> "$GITHUB_STEP_SUMMARY"
