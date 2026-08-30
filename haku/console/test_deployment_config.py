@@ -138,7 +138,7 @@ def test_deployed_egress_decide_env_slots_are_bound_at_their_rigor() -> None:
     containers = {container["name"]: container for container in deployment["spec"]["template"]["spec"]["containers"]}
     server_env = {entry["name"]: entry for entry in containers["server"]["env"]}
 
-    for slot in [egress["fence_credential_env_var"]]:
+    for slot in [egress["decision_endpoint_token_env_var"]]:
         reference = server_env[slot]["valueFrom"]["secretKeyRef"]
         assert not reference.get("optional", False), f"identity {slot=} must fail loud, never be optional"
 
@@ -151,8 +151,8 @@ def test_deployed_egress_decide_env_slots_are_bound_at_their_rigor() -> None:
 
     sidecar_env = {entry["name"]: entry for entry in containers["egress-proxy"]["env"]}
     assert (
-        sidecar_env["HAKU_EGRESS_FENCE_CREDENTIAL"]["valueFrom"]
-        == server_env[egress["fence_credential_env_var"]]["valueFrom"]
+        sidecar_env["HAKU_DECISION_ENDPOINT_TOKEN"]["valueFrom"]
+        == server_env[egress["decision_endpoint_token_env_var"]]["valueFrom"]
     )
     assert "HAKU_EGRESS_PROXY_TOKEN" not in server_env
     assert "HAKU_EGRESS_PROXY_TOKEN" not in sidecar_env

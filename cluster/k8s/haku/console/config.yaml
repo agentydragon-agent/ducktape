@@ -572,7 +572,7 @@ egress_decide:
   # decide call. It authenticates the sidecar only and carries no Agent identity. Every data-plane
   # request must also present a live per-session bridge bearer, which is the sole source of
   # Agent/session attribution.
-  fence_credential_env_var: HAKU_EGRESS_FENCE_CREDENTIAL
+  decision_endpoint_token_env_var: HAKU_DECISION_ENDPOINT_TOKEN
   # Console-owned egress credential registry (#4951): a grant redeems a credential by naming its
   # handle, and the endpoint returns the placeholder->value substitution only for its `principal`
   # at an origin in `origins`. First entry: the bot GitHub token (mirrors the retiring
