@@ -12,7 +12,6 @@ Neutral runtime: no channel and no harness, so a second channel inherits every r
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import secrets
