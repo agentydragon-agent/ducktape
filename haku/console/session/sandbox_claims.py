@@ -32,9 +32,8 @@ from haku.sandbox.claims import (
     CLAIMS_PLURAL,
     MANAGED_BY_LABEL,
     MANAGED_BY_VALUE,
-    SandboxClaimSpec as SharedSandboxClaimSpec,
-    create_sandbox_claim,
-    format_shutdown_time,
+    SandboxAllocationSpec as SharedSandboxAllocationSpec,
+    SandboxClaimClient,
 )
 from util.kubernetes import CustomObjectsClient
 
@@ -151,6 +150,9 @@ class KubernetesSandboxClaims:
                 )
             return self._clients
 
+    def _claim_client(self, clients: KubernetesClients) -> SandboxClaimClient:
+        return SandboxClaimClient(clients.custom_objects, clients.core_v1, self._spec.namespace)
+
     def _claim_name(self, session_id: UUID) -> str:
         return f"{self._spec.claim_prefix}-{session_id.hex}"
 
@@ -165,10 +167,9 @@ class KubernetesSandboxClaims:
             # HAKU_SESSION_TOKEN — one release after both images converge.
             LEGACY_SESSION_TOKEN_VARIABLE: session_token,
         }
-        client = (await self._connected()).custom_objects
-        await create_sandbox_claim(
-            client,
-            SharedSandboxClaimSpec(
+        clients = await self._connected()
+        await self._claim_client(clients).create(
+            SharedSandboxAllocationSpec(
                 namespace=self._spec.namespace,
                 name=self._claim_name(session_id),
                 warm_pool=self._spec.warm_pool,
@@ -180,7 +181,7 @@ class KubernetesSandboxClaims:
                 shutdown_policy="DeleteForeground",
                 shutdown_time=expires_at,
                 env=env,
-            ),
+            )
         )
 
     async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:
@@ -194,74 +195,34 @@ class KubernetesSandboxClaims:
         Best effort: a slide that fails leaves the sandbox on its previous deadline and the sweep
         handles the fallout, so it must not take the renewal heartbeat down with it.
         """
-        client = (await self._connected()).custom_objects
+        clients = await self._connected()
         name = self._claim_name(session_id)
-        shutdown_time = format_shutdown_time(expires_at)
-        for attempt in range(_RENEW_ATTEMPTS):
-            try:
-                claim = await client.get_namespaced_custom_object(
-                    CLAIM_GROUP, CLAIM_API_VERSION, self._spec.namespace, CLAIMS_PLURAL, name
-                )
-            except k8s_client.ApiException as error:
-                if error.status != 404:
-                    logger.warning("could not read sandbox claim %s to slide its deadline: %s", name, error)
-                return  # a gone claim is the session ending; the lease sweep is what notices.
-            patch = [
-                {
-                    "op": "test",
-                    "path": "/metadata/resourceVersion",
-                    "value": _nested_string(claim, "metadata", "resourceVersion"),
-                },
-                {"op": "replace", "path": "/spec/lifecycle/shutdownTime", "value": shutdown_time},
-            ]
-            try:
-                await client.patch_namespaced_custom_object(
-                    CLAIM_GROUP,
-                    CLAIM_API_VERSION,
-                    self._spec.namespace,
-                    CLAIMS_PLURAL,
-                    name,
-                    patch,
-                    _content_type="application/json-patch+json",
-                )
-                return
-            except k8s_client.ApiException as error:
-                if error.status == 409 and attempt + 1 < _RENEW_ATTEMPTS:
-                    continue
-                logger.warning("could not slide sandbox deadline for %s: %s", name, error)
-                return
+        try:
+            await self._claim_client(clients).renew(name, expires_at, attempts=_RENEW_ATTEMPTS)
+        except k8s_client.ApiException as error:
+            logger.warning("could not slide sandbox deadline for %s: %s", name, error)
+        except ValueError as error:
+            logger.warning("could not slide sandbox deadline for %s: %s", name, error)
 
     async def delete(self, *, session_id: UUID) -> None:
-        client = (await self._connected()).custom_objects
-        try:
-            await client.delete_namespaced_custom_object(
-                "extensions.agents.x-k8s.io",
-                "v1beta1",
-                self._spec.namespace,
-                "sandboxclaims",
-                self._claim_name(session_id),
-                body=k8s_client.V1DeleteOptions(propagation_policy="Foreground"),
-            )
-        except k8s_client.ApiException as error:
-            if error.status != 404:
-                raise
+        clients = await self._connected()
+        await self._claim_client(clients).delete(self._claim_name(session_id))
 
     async def inspect(self, *, session_id: UUID) -> SandboxProvisioningView:
         claim_name = self._claim_name(session_id)
         clients = await self._connected()
         try:
-            claim = await clients.custom_objects.get_namespaced_custom_object(
-                "extensions.agents.x-k8s.io", "v1beta1", self._spec.namespace, "sandboxclaims", claim_name
-            )
-        except k8s_client.ApiException as error:
-            if error.status == 404:
-                return provisioning_view(claim_name, step=ProvisioningStep.CLAIM_ABSENT)
+            graph = await self._claim_client(clients).graph(claim_name)
+        except k8s_client.ApiException:
             raise
+        claim = graph.claim
+        if claim is None:
+            return provisioning_view(claim_name, step=ProvisioningStep.CLAIM_ABSENT)
 
         claim_condition = _condition(claim, "Ready")
         claim_reason = _condition_text(claim_condition, "reason")
         claim_message = _condition_text(claim_condition, "message")
-        sandbox_name = _nested_string(claim, "status", "sandbox", "name")
+        sandbox_name = graph.sandbox_name
         if sandbox_name is None:
             return provisioning_view(
                 claim_name,
@@ -271,40 +232,31 @@ class KubernetesSandboxClaims:
                 claim_message=claim_message,
             )
 
-        try:
-            sandbox = await clients.custom_objects.get_namespaced_custom_object(
-                "agents.x-k8s.io", "v1beta1", self._spec.namespace, "sandboxes", sandbox_name
+        sandbox = graph.sandbox
+        if sandbox is None:
+            return provisioning_view(
+                claim_name,
+                step=ProvisioningStep.WAITING_FOR_SANDBOX,
+                claim_ready=_condition_bool(claim_condition),
+                claim_reason=claim_reason,
+                claim_message=claim_message,
+                sandbox_name=sandbox_name,
             )
-        except k8s_client.ApiException as error:
-            if error.status == 404:
-                return provisioning_view(
-                    claim_name,
-                    step=ProvisioningStep.WAITING_FOR_SANDBOX,
-                    claim_ready=_condition_bool(claim_condition),
-                    claim_reason=claim_reason,
-                    claim_message=claim_message,
-                    sandbox_name=sandbox_name,
-                )
-            raise
 
         sandbox_condition = _condition(sandbox, "Ready")
-        annotations = sandbox.get("metadata", {}).get("annotations", {}) or {}
-        pod_name = str(annotations.get("agents.x-k8s.io/pod-name") or sandbox_name)
-        try:
-            pod = await clients.core_v1.read_namespaced_pod(pod_name, self._spec.namespace)
-        except k8s_client.ApiException as error:
-            if error.status == 404:
-                return provisioning_view(
-                    claim_name,
-                    step=ProvisioningStep.WAITING_FOR_POD,
-                    claim_ready=_condition_bool(claim_condition),
-                    claim_reason=claim_reason,
-                    claim_message=claim_message,
-                    sandbox_name=sandbox_name,
-                    sandbox_ready=_condition_bool(sandbox_condition),
-                    pod_name=pod_name,
-                )
-            raise
+        pod_name = graph.pod_name
+        pod = graph.pod
+        if pod is None:
+            return provisioning_view(
+                claim_name,
+                step=ProvisioningStep.WAITING_FOR_POD,
+                claim_ready=_condition_bool(claim_condition),
+                claim_reason=claim_reason,
+                claim_message=claim_message,
+                sandbox_name=sandbox_name,
+                sandbox_ready=_condition_bool(sandbox_condition),
+                pod_name=pod_name,
+            )
 
         pod_phase = pod.status.phase if pod.status is not None else None
         pod_ready = _pod_ready(pod)
@@ -448,15 +400,6 @@ def _condition_bool(condition: dict[str, Any] | None) -> bool | None:
     if status == "False":
         return False
     return None
-
-
-def _nested_string(resource: dict[str, Any], *path: str) -> str | None:
-    value: Any = resource
-    for key in path:
-        if not isinstance(value, dict):
-            return None
-        value = value.get(key)
-    return value if isinstance(value, str) and value else None
 
 
 def _pod_ready(pod: k8s_client.V1Pod) -> bool | None:

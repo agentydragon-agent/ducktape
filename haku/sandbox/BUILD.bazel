@@ -6,6 +6,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
 )
@@ -49,6 +50,7 @@ py_test(
     deps = [
         ":claims",
         "//:conftest",
+        "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
