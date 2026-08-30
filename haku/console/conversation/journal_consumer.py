@@ -162,6 +162,8 @@ async def _apply(
             if ending is None:
                 raise JournalViolationError(f"turn.ended names a turn never opened: {operation.turn_id=}")
             if ending.ended_at is not None:
+                if isinstance(operation.end, neutral_operations.TurnAborted):
+                    return
                 raise JournalViolationError(f"turn.ended names a turn already ended: {operation.turn_id=}")
             body = _ended(operation.end)
             ending.last_seq = writer.conversation.next_event_seq
@@ -169,6 +171,7 @@ async def _apply(
             ending.ended_at = writer.now
             ending.outcome = body.outcome
             ending.failure = body.failure if isinstance(body, conversation_event.TurnFailed) else None
+            chat.abort_requested_at = None
             writer.authored(body, turn_id=ending.turn_id)
         case neutral_operations.PromptAdmitted():
             # Dense in-order commits put the cursor at `batch_seq - 1` here, so the frontier is

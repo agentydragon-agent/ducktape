@@ -1620,6 +1620,30 @@ async def test_abort_is_refused_until_a_turn_is_actually_running(session_store, 
     assert await session_store.request_abort(view.session_id) is False
 
 
+async def test_abort_latch_survives_runner_reconnect_and_clears_at_turn_end(
+    session_store, operator_id
+) -> None:
+    view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
+    await session_store.enqueue_prompt(operator_id, view.session_id, "work", SPA_ORIGIN)
+    turn = await session_store.next_prompt(view.session_id)
+    assert turn is not None
+
+    assert await session_store.request_abort(view.session_id) is True
+    await session_store.release_lease(view.session_id)
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
+    assert await session_store.abort_requested(view.session_id) is True
+
+    await session_store.end_turn(turn.turn_id, TurnAborted())
+    assert await session_store.abort_requested(view.session_id) is False
+
+
 async def test_abort_reaches_the_replica_running_the_turn(
     migrated_db_url, session_store, session_wakes, operator_id
 ) -> None:

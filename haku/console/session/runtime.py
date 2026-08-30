@@ -804,6 +804,8 @@ class SessionService:
                 abort_event.set()
 
         with self._notifications.watch_session(session_id, on_event):
+            if await self._store.abort_requested(session_id):
+                abort_event.set()
             await asyncio.Event().wait()
 
     async def aclose(self) -> None:
@@ -947,12 +949,12 @@ async def read_session_provisioning(
 @router.post("/api/sessions/{session_id}/abort", status_code=202)
 async def abort_session(session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep) -> dict[str, str]:
     try:
-        aborted = await service.request_abort(actor.operator_id, session_id)
+        requested = await service.request_abort(actor.operator_id, session_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
-    if not aborted:
+    if not requested:
         raise HTTPException(status_code=409, detail="no active turn to abort")
-    return {"status": "aborted"}
+    return {"status": "abort requested"}
 
 
 @router.post("/api/conversations/{conversation_id}/messages", status_code=202)

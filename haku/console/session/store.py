@@ -1618,8 +1618,9 @@ class Store:
             turn.outcome = ended.outcome
             turn.failure = ended.failure if isinstance(ended, conversation_event.TurnFailed) else None
             writer.authored(ended, turn_id=turn_id)
-            chat = await db.get(Session, turn.session_id)
+            chat = await db.get(Session, turn.session_id, with_for_update=True)
             if chat is not None:
+                chat.abort_requested_at = None
                 # `responding` is derived from this turn being open, so closing it retires the
                 # state and the SPA has to be told.
                 _advance_cursor(chat, projected_frame_seq)
@@ -2449,11 +2450,19 @@ class Store:
         the runner connection, while the operator's HTTP request is balanced across all.
         """
         async with self._sessions.begin() as db:
-            chat = await db.get(Session, session_id)
+            chat = await db.get(Session, session_id, with_for_update=True)
             if chat is None or await _open_turn(db, chat.conversation_id) is None:
                 return False
+            chat.abort_requested_at = datetime.now(UTC)
+            chat.updated_at = chat.abort_requested_at
             await notify(db, SessionEventKind.ABORT, session_id)
             return True
+
+    async def abort_requested(self, session_id: UUID) -> bool:
+        async with self._sessions() as db:
+            return (
+                await db.scalar(select(Session.abort_requested_at).where(Session.session_id == session_id))
+            ) is not None
 
 
 def _expiry_detail(reason: LeaseExpiryReason, holder: str | None) -> str:

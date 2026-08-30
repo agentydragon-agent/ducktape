@@ -1164,6 +1164,9 @@ class Session(Base):
     # The operator asked this session to end. Stamped once and never cleared — ending is one-way —
     # which is what derives `closing` until `ended_at` lands.
     close_requested_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The operator asked the current turn to abort. Cleared when that turn ends, so a reconnecting
+    # runner can re-check and receive an abort that was notified while no replica was listening.
+    abort_requested_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # The session is over as of this instant, whatever ended it; NULL is a session that can still
     # run. With `error` it spells the terminal member: ended with an error is `failed`, without one
     # `closed`.
