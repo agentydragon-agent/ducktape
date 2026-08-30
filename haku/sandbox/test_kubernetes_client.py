@@ -56,7 +56,7 @@ def environment() -> SandboxEnvironmentConfig:
                 "max_exec_timeout_seconds": 300,
                 "max_output_bytes": 100_000,
             },
-                "bootstrap": {"cwd": "/test/workspace", "timeout_seconds": 30, "script": "echo bootstrap"},
+            "bootstrap": {"cwd": "/test/workspace", "timeout_seconds": 30, "script": "echo bootstrap"},
         }
     )
 

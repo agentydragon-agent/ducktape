@@ -29,7 +29,7 @@ def _environment(*, max_exec_timeout_seconds: int = 300, max_output_bytes: int =
                 "max_exec_timeout_seconds": max_exec_timeout_seconds,
                 "max_output_bytes": max_output_bytes,
             },
-                "bootstrap": {"cwd": "/test/workspace", "timeout_seconds": 300, "script": "echo ready"},
+            "bootstrap": {"cwd": "/test/workspace", "timeout_seconds": 300, "script": "echo ready"},
         }
     )
 
