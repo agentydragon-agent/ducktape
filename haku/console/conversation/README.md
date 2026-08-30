@@ -12,7 +12,7 @@ is offered — the layer contract is <../docs/conversation_layers.md>, the schem
 | `prompt_inbox.py`     | The durable prompt inbox: what the Console has accepted and still owes a runner, pending → withdrawn.                                          |
 | `prompt_origin.py`    | Whose voice a prompt is: the origin arms a stored prompt carries.                                                                              |
 | `reads.py`            | What a conversation read hands back, and the cursors that page them.                                                                           |
-| `item_reads.py`       | The one place a materialised item row folds onto `reads.py`'s entry union — one entry per row, identical for the MCP reader and the SPA views. |
+| `item_reads.py`       | The one place a materialised item row folds onto `reads.py`'s Item union — one Item per row, identical for the MCP reader and the SPA views. |
 | `reader.py`           | The actor-scoped read surface the `haku_conversations` tools serve.                                                                            |
 | `follow.py`           | `WS /api/conversations/{id}/follow`: a conversation's state and the changes to it, as one operation.                                           |
 | `live_updates.py`     | Conversation changes as console-socket invalidations for open tabs.                                                                            |

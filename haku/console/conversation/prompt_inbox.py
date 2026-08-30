@@ -58,7 +58,7 @@ async def submit(
 async def pending(db: AsyncSession, conversation_id: UUID) -> Sequence[SubmittedPrompt]:
     """This conversation's still-owed prompts — neither admitted nor withdrawn — oldest first.
 
-    What the journal bridge dispatches to the runner on connect and after each new submission.
+    What the journal dispatch sends to the runner on connect and after each new submission.
     Dispatch is idempotent by `prompt_id` (the runner ignores an id it has taken), so re-listing an
     already-dispatched-but-unadmitted prompt after a reconnect is correct, not a double-send.
     """

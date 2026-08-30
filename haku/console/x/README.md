@@ -10,7 +10,7 @@ What remains is what is still being restructured:
 
 | Where                                   | What it is                                                                                                                                                             |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conversation_events.py`                | The neutral in-memory event vocabulary log writes are expressed in, and `stored`, its bridge into the durable one (`../conversation/conversation_event.py`).           |
+| `conversation_events.py`                | The neutral in-memory event vocabulary log writes are expressed in, and `stored`, its fold into the durable one (`../conversation/conversation_event.py`).           |
 | `runtime.py`, `runtime_catalog.py`      | Backend-neutral runtime catalog and its application composition; the harness _selection_ residue headed for `harnesses/` (<../docs/naming_and_layout.md> § 2).         |
 | `x/claude_code/`, `x/codex_app_server/` | **One CLI harness each, launch-only.** Named for the product whose binary they launch, not for the model. The native protocol and projection live runner-ward (#4667). |
 | `testing/`                              | Stand-ins a test stands something up _with_, importable by non-pytest processes too (<testing/recording_claims.py> for the rationale).                                 |
@@ -27,7 +27,7 @@ fixture capture.
 
 - `claude_code/`: `frames.py` (Claude Code's own `type` vocabulary and the readers that pick a value
   out of one, kept for classifying stored frames) and `runtime.py` (the launch adapter, which builds
-  the `HarnessLaunch` the journal bridge sends the runner).
+  the `HarnessLaunch` the journal dispatch sends the runner).
 - `codex_app_server/`: `config.py` (the deploy-owned implementation config) and `runtime.py` (the
   Codex launch adapter).
 

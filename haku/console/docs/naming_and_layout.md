@@ -109,9 +109,9 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
 
   conversation/        # the durable, provider-neutral record (landed)
     conversation_event.py          # ONE Pydantic vocabulary: row body + wire (#4772 core, landed C5);
-                                    #   x/conversation_events.py is the neutral in-memory vocabulary that bridges into it
+                                    #   x/conversation_events.py is the neutral in-memory vocabulary that folds into it
     reads.py  reader.py  log.py  follow.py  history.py  live_updates.py  runtime.py
-    item_reads.py                  # folded item read models ("entry" leaves with C6) — private to the
+    item_reads.py                  # folded item read models ("Item" leaves with C6) — private to the
                                    #   conversation read surface (the store/reader that produce them + the
                                    #   haku_conversations tool that serves them); NOT a generic mcp/ file (§4.2)
     prompt_inbox.py  prompt_origin.py  journal_consumer.py
@@ -580,13 +580,11 @@ quiet gap.
     `FENCE_CREDENTIAL`, and the `fence-credential` Secret key to the HTTP decision endpoint token
     vocabulary in one proxy/Console deployment change. It must remain distinct from the session token
     and from destination egress credentials.
-  - **C16f · wording and verification:** replace “journal bridge,” “bridge into durable vocabulary,”
-    item-read “entry,” and failed-turn “reason” with `journal dispatch`, `adapter`/`fold`, `Item`,
-    and `failure` respectively. Do not alter valid registry/policy entries, lease/Kubernetes/egress
-    reasons, or historical migration identifiers. The final search gate must find no current
-    `bridge`/`chat`/old SDK/session-token spelling outside the explicitly listed historical,
-    compatibility, Agent UI bridge, native-index, and cross-repository package exceptions; schema and deployment
-    contract tests must cover every renamed published or persisted name.
+  - **C16f · wording and verification:** **Landed**: current dispatch/adaptation prose uses
+    `journal dispatch`, `adapter`/`fold`, `Item`, and `failure`; the final search gate preserves only
+    the documented historical, compatibility, Agent UI bridge, native-index, and cross-repository
+    package exceptions. Schema and deployment contract tests cover every renamed published or persisted
+    name. Remaining wording cleanup is tracked with the final #5164 sweep.
 
 ### Identity lane — rides the #4836 compose PR
 

@@ -198,19 +198,19 @@ class TurnAnswered:
 
 @dataclass(frozen=True, slots=True)
 class TurnAborted:
-    """Someone stopped it. It carries no reason because nothing went wrong."""
+    """Someone stopped it. It carries no failure because nothing went wrong."""
 
 
 @dataclass(frozen=True, slots=True)
 class TurnFailed:
     """The runtime could not finish, and why.
 
-    The reason is required, so that a failure cannot be recorded without saying what failed. It is
+    The failure is required, so that a failure cannot be recorded without saying what failed. It is
     bounded prose for an operator to read, in whatever words the provider used; nothing dispatches
     on it, which is why there is no category beside it.
     """
 
-    reason: str
+    failure: str
 
 
 type TurnEnd = TurnAnswered | TurnAborted | TurnFailed
@@ -229,7 +229,7 @@ class TurnCompleted:
 
 
 def outcome_of(end: TurnEnd) -> TurnOutcome:
-    """`end` in the console's own durable vocabulary, which keeps no reason."""
+    """`end` in the console's own durable vocabulary, which keeps no failure."""
     match end:
         case TurnAnswered():
             return TurnOutcome.ANSWERED

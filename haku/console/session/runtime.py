@@ -159,7 +159,7 @@ class PromptAccepted(BaseModel):
 class StarletteTextWebSocket(TextWebSocket):
     def __init__(self, websocket: WebSocket):
         self._websocket = websocket
-        # The journal bridge has several concurrent senders on one socket — the ACK pump, the prompt
+        # The journal dispatch has several concurrent senders on one socket — the ACK pump, the prompt
         # dispatcher, the interrupt relay — and Starlette's `send_text` is not concurrency-safe, so
         # a lone lock serialises writes. Reads are a single task and take no lock.
         self._send_lock = asyncio.Lock()
