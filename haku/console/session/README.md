@@ -19,7 +19,7 @@ HTTP routes. Around them:
 | `subscription.py`       | Reading a conversation from a position; where the position lives is the subscriber's own (`Cursor`).                      |
 | `system_prompt.py`      | The system prompt a chat session is started with (the template is deploy config).                                         |
 | `launch_identity.py`    | Neutral launch-identity types shared by channel and runtime stores.                                                       |
-| `setup_output.py`       | The session-frame envelope's `kind`; the setup-narration compatibility frame.                                                    |
+| `setup_output.py`       | The `SessionFrame` kind; the setup-narration compatibility frame.                                                         |
 | `session_frames.py`     | Vocabulary of the durable session wire log (`session_frames` rows).                                                       |
 | `status.py`             | The session lifecycle vocabulary: status, the status sets, and how a lease can fail one.                                  |
 

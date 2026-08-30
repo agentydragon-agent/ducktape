@@ -30,7 +30,7 @@ privileged-action tier_ inventory entries.
 
 | Thing                                                                                                          | Owner               | PR-gated?                    |
 | -------------------------------------------------------------------------------------------------------------- | ------------------- | ---------------------------- |
-| Trusted shell: capability tier (bearer), iframe host, CSP, the frontend bridge protocol                     | operator / ducktape | ✅                           |
+| Trusted shell: capability tier (bearer), iframe host, CSP, the frontend bridge protocol                        | operator / ducktape | ✅                           |
 | **Public route** `haku-ui.allegedly.works` (HTTPRoute + injected CSP + Authentik provider) → Service `haku-ui` | operator            | ✅                           |
 | The `haku-ui` Service contract (name, port, pod label selector) in `haku-sandbox`                              | operator            | ✅                           |
 | **The UI Deployment + pods + everything served**                                                               | **Haku**            | ❌ — Haku's to evolve freely |
