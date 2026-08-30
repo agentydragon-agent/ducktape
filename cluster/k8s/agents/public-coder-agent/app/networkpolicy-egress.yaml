@@ -32,10 +32,9 @@ spec:
       ports:
         - { port: 8080, protocol: TCP }
     # The colocated Console egress fence's workload listener (#4942/#4943). Reachable, not the
-    # default route: HTTP_PROXY in the Deployment still names the iron proxy above, and the spike
-    # runbook (haku/egress/docs/github_spike.md) drives GitHub requests through this listener
-    # per-request. The sidecar shares the Console pod's network namespace, so the Console pod
-    # label selects it.
+    # default route: HTTP_PROXY in the Deployment still names the iron proxy above. GitHub egress
+    # validation passed in PR #5223, merged August 30, 2026. The sidecar shares the Console pod's
+    # network namespace, so the Console pod label selects it.
     - to:
         - namespaceSelector:
             matchLabels:

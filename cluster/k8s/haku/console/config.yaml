@@ -678,15 +678,14 @@ egress_decide:
         methods: [GET]
         path_regex: /headers
       credential_handle: substitution-smoke
-    # The #4943 GitHub spike's haku-scoped entries are retained for the separate iron-proxy
-    # exercise. If that workload is moved onto this colocated fence, it must first acquire a live
-    # bridge bearer for the intended Agent; there is no static Agent fallback here.
+    # The GitHub egress path was validated in PR #5223, merged August 30, 2026. These haku-scoped
+    # entries remain for the separate iron-proxy exercise; moving that workload onto this colocated
+    # fence still requires a live bridge bearer for the intended Agent.
     # Coverage: the GitHub API and git-over-HTTPS smart-HTTP endpoints, redeeming the bot
     # credential at both — Bearer on the API, Basic (decoded/swapped/re-encoded proxy-side) on
     # github.com. No path pin: git smart HTTP needs /info/refs?service=git-upload-pack through to
     # the pack endpoints. codeload.github.com is deliberately not configured — the registry can
-    # redeem there, but reaching it takes a temporary grant, which is the spike's
-    # deny -> create_grant -> retry -> release leg (haku/egress/docs/github_spike.md).
+    # redeem there, but reaching it takes a temporary grant.
     - id: haku-github-api
       principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:

@@ -322,14 +322,10 @@ enumerate every Console destination; deferred until that set is pinned.
 
 ### Deferred
 
-The traffic **cutover** — repointing the Kyverno `inject-haku-egress-proxy` `HTTP_PROXY` from the
-port-8080 iron fence to `haku-egress-proxy.haku-console.svc:8888` — is the adoption step, gated on the
-first spike (#4943). The spike targets the public-coder-agent OpenClaw pod, which carries the
-fence wiring itself (`../../agents/public-coder-agent/app/deployment.yaml`); the operator
-procedure is <../../../../haku/egress/docs/github_spike.md>. Iron-fence retirement (which carries the shared CA out of
-`cluster/k8s/agents/haku-egress-proxy/`), adoption of a live session token for every colocated
-caller, Secret-backed binding for the session token (tracked in
-`haku/sandbox/TODO.md`),
-and the embedded runner's `stream_large_bodies` + h2/gRPC handling for broad adoption (dind layer pulls
-OOM-killed the iron fence without the former; the sidecar is sized `1Gi` for the small-body spike until
-then) are #4670 work items, not this PR.
+The first GitHub egress validation passed in [PR #5223](https://github.com/agentydragon/ducktape/pull/5223), merged
+August 30, 2026. The detailed spike runbook is retired.
+
+The remaining cutover work stays deferred: retiring the iron fence (which carries the shared CA out of
+`cluster/k8s/agents/haku-egress-proxy/`), adopting a live session token for every colocated caller,
+Secret-backed binding for that token (tracked in `haku/sandbox/TODO.md`), and broad-body/h2/gRPC
+handling. These remain #4670 work items.
