@@ -4,6 +4,7 @@ generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
   - name: haku-claude-runner-setup
+    namespace: haku-runtime-sandbox
     files:
       - haku-claude-runner-setup.sh
 resources:

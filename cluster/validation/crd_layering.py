@@ -67,9 +67,8 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "VolumeUploadSource",
     },
     "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
-    # TODO: if non-GHCR image automations are added, add a separate entry here
-    # (e.g. "flux-image-automation-dockerhub": {"ImageRepository", ...}).
     "flux-image-automation-ghcr": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
+    "flux-image-automation-forgejo": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
 }
 
 # Derived: CRD kind -> operator name (for error messages)
