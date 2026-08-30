@@ -164,13 +164,13 @@ export async function sendChatPrompt(conversationId: string, text: string): Prom
  * Not an error: the turn can end between the operator seeing the button and pressing it, and
  * "there was nothing left to stop" is the outcome they wanted either way.
  */
-export async function abortSessionTurn(sessionId: string): Promise<boolean> {
-  const { error, response } = await api.POST("/api/sessions/{session_id}/abort", {
+export async function abortSessionTurn(sessionId: string): Promise<string | false> {
+  const { data, error, response } = await api.POST("/api/sessions/{session_id}/abort", {
     params: { path: { session_id: sessionId } },
   });
   if (response.status === 409) return false;
-  if (error) throw new Error(errorDetail(error, "Failed to abort the turn"));
-  return true;
+  if (error || !data) throw new Error(errorDetail(error, "Failed to abort the turn"));
+  return data.status;
 }
 
 /** End this session and release its sandbox. The conversation it ran outlives it. */

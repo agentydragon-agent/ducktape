@@ -46,6 +46,7 @@ from haku.runner.neutral_operations import (
     RunnerHello,
     ToolCallCompletion,
     ToolOutcome as WireToolOutcome,
+    TurnAborted,
     TurnAnswered,
     TurnEnded,
     TurnOpened,
@@ -411,6 +412,22 @@ async def test_lifecycle_violations_reject_the_batch_atomically(
             session_id, _batch(3, TurnEnded(turn_id=runner_turn, end=TurnAnswered(), provenance=None))
         )
     assert await _cursor(migrated_sessions, session_id) == 2
+
+
+async def test_abort_after_completion_is_ignored(
+    consumer: JournalConsumer, migrated_sessions: async_sessionmaker[AsyncSession], journal_session: tuple[UUID, UUID]
+) -> None:
+    session_id, _conversation_id = journal_session
+    runner_turn = uuid4()
+    await consumer.commit(session_id, _batch(1, TurnOpened(turn_id=runner_turn, cause=WakeCause(), provenance=None)))
+    await consumer.commit(session_id, _batch(2, TurnEnded(turn_id=runner_turn, end=TurnAnswered(), provenance=None)))
+
+    await consumer.commit(session_id, _batch(3, TurnEnded(turn_id=runner_turn, end=TurnAborted(), provenance=None)))
+
+    async with migrated_sessions() as db:
+        turn = await db.scalar(select(ConversationTurn).where(ConversationTurn.session_id == session_id))
+    assert turn is not None
+    assert turn.outcome is TurnOutcome.ANSWERED
 
 
 async def test_fail_preserves_streamed_text_and_ends_the_journal(
