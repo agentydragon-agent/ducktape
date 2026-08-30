@@ -1718,7 +1718,7 @@ class Store:
                 session_id=session_id,
                 direction=direction,
                 kind=kind,
-                payload=json.dumps(payload),
+                payload=payload,
                 runner_seq=runner_seq,
                 created_at=now,
                 updated_at=now,

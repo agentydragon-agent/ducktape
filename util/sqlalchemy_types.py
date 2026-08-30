@@ -6,20 +6,10 @@ from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import Dialect, Enum, String, Text
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy import Enum, String, Text
 from sqlalchemy.types import TypeDecorator
 
 from util.enum_vocab import UnknownValue
-
-
-class RawJSON(JSON):
-    """PostgreSQL ``json`` column that binds already serialized JSON text."""
-
-    cache_ok = True
-
-    def bind_processor(self, _dialect: Dialect) -> None:
-        return None
 
 
 def _union_members(enum_classes: Sequence[type[StrEnum]]) -> dict[str, StrEnum]:
