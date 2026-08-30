@@ -226,7 +226,7 @@ else
   # ONLY on the PR affected-set path; on the full `//...` sweep it would
   # mean every test was filtered out -- a real problem we must not mask.
   test_rc=0
-  bazel test --invocation_id="$TEST_INVOCATION_ID" --keep_going $RBE_FLAGS $TARGETS || test_rc=$?
+  bazel test --test_output=all --invocation_id="$TEST_INVOCATION_ID" --keep_going $RBE_FLAGS $TARGETS || test_rc=$?
   if [ "$test_rc" -eq 4 ] && [ "$TARGETS" != "//..." ]; then
     echo "No runnable tests after tag filtering in the affected set; continuing to build."
     test_rc=0
