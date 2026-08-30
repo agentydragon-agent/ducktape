@@ -88,6 +88,24 @@ rotations:
     credentials_dir: /var/run/secrets/authentik/agent-box-codex
     sops_file: secrets/agent-box-codex-k8s-jwt.yaml
     token_field: jwt
+  - name: haku-grocy-sf
+    # Source JWT for Haku's read-only Grocy SF HTTP egress. The same bearer is
+    # accepted by the Grocy proxy, while the Console's GET-only grant supplies
+    # the method boundary before the request reaches Grocy.
+    provider_slug: grocy-mcp-sf
+    scopes: openid profile email
+    credential_mode: user_password
+    expected_audiences:
+      - grocy-mcp-sf
+    credentials_dir: /var/run/secrets/authentik/haku-grocy-sf
+    sops_file: secrets/haku-grocy-jwt.yaml
+    token_field: jwt
+    k8s_secret:
+      path: cluster/k8s/agents/authentik-jwt-rotation/haku-grocy-token.sops.yaml
+      name: haku-cloud-grocy-sf-token
+      namespace: flux-system
+    probe:
+      url: https://grocy-sf.allegedly.works/api/system/info
   - name: haku-mail
     # JWT for haku's mailbox (Stalwart, cluster/k8s/haku/mailbox). The server's
     # OIDC directory validates tokens against the dedicated stalwart-haku

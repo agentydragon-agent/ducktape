@@ -32,6 +32,7 @@ resources:
   - egress-proxy-service.yaml
   - haku-egress-proxy-identity-eso.yaml
   - haku-egress-github-token-eso.yaml
+  - haku-grocy-token-eso.yaml
 
 configMapGenerator:
   - name: haku-console-config

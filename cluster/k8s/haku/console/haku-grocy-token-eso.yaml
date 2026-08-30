@@ -1,0 +1,22 @@
+# Mirror the rotator-published Grocy bearer into haku-console. The Console
+# substitutes it only for requests matching the haku-grocy GET grant; Haku's
+# sandbox holds grocy-token-placeholder, never this JWT.
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: haku-grocy-token
+spec:
+  namespaces:
+    - haku-console
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-flux-system-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: haku-grocy-token
+    data:
+      - secretKey: jwt
+        remoteRef:
+          key: haku-cloud-grocy-sf-token
+          property: jwt

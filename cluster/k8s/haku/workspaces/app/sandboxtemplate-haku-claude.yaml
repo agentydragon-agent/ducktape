@@ -70,6 +70,10 @@ spec:
             # look, and the netrc entry the bootstrap writes is what git uses.
             - name: GITHUB_TOKEN
               value: github-token-placeholder
+            # The colocated Console egress fence swaps this inert bearer for
+            # Haku's rotating Grocy token on the Grocy origin and GET grant.
+            - name: GROCY_TOKEN
+              value: grocy-token-placeholder
             # The runner's model access (ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN/ANTHROPIC_MODEL) and
             # its GitHub identity are injected declaratively by Console from config.yaml's claude_code
             # implementation (haku/console/config.py). The AIQuota and ActivityWatch read tokens the

@@ -43,6 +43,9 @@ spec:
             - name: agent-box-codex-creds
               secret:
                 secretName: agent-box-codex-client-credentials
+            - name: haku-grocy-sf-creds
+              secret:
+                secretName: haku-grocy-client-credentials
             - name: haku-mail-creds
               secret:
                 secretName: haku-mail-client-credentials
@@ -80,6 +83,9 @@ spec:
                   readOnly: true
                 - name: agent-box-codex-creds
                   mountPath: /var/run/secrets/authentik/agent-box-codex
+                  readOnly: true
+                - name: haku-grocy-sf-creds
+                  mountPath: /var/run/secrets/authentik/haku-grocy-sf
                   readOnly: true
                 - name: haku-mail-creds
                   mountPath: /var/run/secrets/authentik/haku-mail
