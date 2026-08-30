@@ -42,7 +42,8 @@ def _credential_entry(**overrides: Any) -> EgressCredentialEntry:
 def test_egress_decide_config_requires_distinct_env_references() -> None:
     with pytest.raises(ValueError, match="identity secrets"):
         EgressDecideConfig(
-            decision_endpoint_token_env_var="EGRESS_TOKEN", credentials=[_credential_entry(value_env_var="EGRESS_TOKEN")]
+            decision_endpoint_token_env_var="EGRESS_TOKEN",
+            credentials=[_credential_entry(value_env_var="EGRESS_TOKEN")],
         )
 
 
@@ -223,7 +224,8 @@ def test_config_grant_allow_prohibited_address_defaults_off_and_parses() -> None
 def test_load_egress_decide_passes_configuration_grants_through(monkeypatch: pytest.MonkeyPatch) -> None:
     """Configuration grants carry no secrets, so loading preserves the reviewed entry."""
     config = EgressDecideConfig(
-        decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN", credentials=[_credential_entry()],
+        decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN",
+        credentials=[_credential_entry()],
         grants=[_config_grant(credential_handle="github-bot")],
     )
     monkeypatch.setenv("EGRESS_DECISION_ENDPOINT_TOKEN", _DECISION_ENDPOINT_TOKEN)
@@ -296,8 +298,7 @@ def test_load_egress_credentials_present_value_conflicts_fail_loud(monkeypatch: 
     misconfiguration or attack and still raises: it may not duplicate an identity secret nor equal a
     configured placeholder."""
     config = EgressDecideConfig(
-        decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN",
-        credentials=[_credential_entry()],
+        decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN", credentials=[_credential_entry()]
     )
     monkeypatch.setenv("EGRESS_DECISION_ENDPOINT_TOKEN", _DECISION_ENDPOINT_TOKEN)
 
