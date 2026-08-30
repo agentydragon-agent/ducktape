@@ -40,8 +40,36 @@ runs:
         SLUG="${GITHUB_REF_NAME//\//-}"
         echo "pin_tag=${SLUG}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
 
-    - name: Publish image
+    - name: Check whether image changed
+      id: image
       if: inputs.push == 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+        archive="$(readlink -f result)"
+        local_digest="$(skopeo inspect --format '{{.Digest}}' "docker-archive:$archive")"
+        latest_tag="$(skopeo list-tags \
+          --creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+          "docker://$IMAGE" 2>/dev/null \
+          | jq -r '[.Tags[] | select(startswith("devel-"))] | sort | last // empty')"
+        if [[ -n "$latest_tag" ]]; then
+          remote_digest="$(skopeo inspect --insecure-policy \
+            --creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+            --format '{{.Digest}}' "docker://$IMAGE:$latest_tag")"
+        else
+          remote_digest=""
+        fi
+        if [[ -n "$remote_digest" && "$local_digest" == "$remote_digest" ]]; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "Image matches $IMAGE:$latest_tag ($local_digest); skipping publish." >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Publish image
+      if: inputs.push == 'true' && steps.image.outputs.changed == 'true'
       shell: bash
       env:
         IMAGE: ${{ inputs.image }}
