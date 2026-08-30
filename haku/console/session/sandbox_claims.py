@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 # against the controller's own status writes; a persistent conflict is a bug, not contention.
 _RENEW_ATTEMPTS = 3
 
+
 class ProvisioningStep(StrEnum):
     # Kubernetes does not have this session's claim: it was never created, or it has been reclaimed
     # (`session_runtime._cleanup_terminal_claim` deletes it once the session ends). Distinct from

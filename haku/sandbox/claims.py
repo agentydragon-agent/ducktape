@@ -84,11 +84,7 @@ def build_sandbox_claim(spec: SandboxClaimSpec) -> dict[str, Any]:
     return _SandboxClaim(
         apiVersion=f"{CLAIM_GROUP}/{CLAIM_API_VERSION}",
         kind="SandboxClaim",
-        metadata={
-            "name": spec.name,
-            "labels": dict(spec.labels),
-            "annotations": dict(spec.annotations) or None,
-        },
+        metadata={"name": spec.name, "labels": dict(spec.labels), "annotations": dict(spec.annotations) or None},
         spec={
             "warmPoolRef": {"name": spec.warm_pool},
             "lifecycle": {
@@ -96,9 +92,7 @@ def build_sandbox_claim(spec: SandboxClaimSpec) -> dict[str, Any]:
                 "shutdownTime": format_shutdown_time(spec.shutdown_time),
             },
             "env": (
-                [{"name": name, "value": value} for name, value in spec.env.items()]
-                if spec.env is not None
-                else None
+                [{"name": name, "value": value} for name, value in spec.env.items()] if spec.env is not None else None
             ),
         },
     ).model_dump(by_alias=True, exclude_none=True)
