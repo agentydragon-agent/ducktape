@@ -15,6 +15,7 @@ import {
   type Session,
 } from "../client";
 import { AgentName } from "../agent_names";
+import { formatTimestamp } from "../time";
 import { useCoalescedRefresh } from "../coalesced_refresh";
 import {
   conversationLaunchOptions,
@@ -52,8 +53,9 @@ function statusColor(status: Session["status"]): string {
   return "gray";
 }
 
-function timestamp(value: string): string {
-  return `${value.slice(0, 16).replace("T", " ")} UTC`;
+function timestamp(value: string): JSX.Element {
+  const display = formatTimestamp(value);
+  return <span title={display.title}>{display.text}</span>;
 }
 
 /** The channels holding a copy of this conversation, or that none do.
