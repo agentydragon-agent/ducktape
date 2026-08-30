@@ -1,0 +1,86 @@
+name: Build and publish Nix OCI image
+description: Build a dockerTools OCI archive and optionally publish it with a sortable tag
+
+inputs:
+  sops_age_key:
+    description: SOPS age private key for CI decryption
+    required: true
+  flake_output:
+    description: Nix flake output containing the dockerTools image
+    required: true
+  image:
+    description: Full destination image repository
+    required: true
+  registry:
+    description: Registry kind, either ghcr or forgejo
+    required: true
+  push:
+    description: Publish the image when true
+    required: false
+    default: "false"
+  push_latest:
+    description: Also publish the archive as the latest tag
+    required: false
+    default: "false"
+  github_token:
+    description: GitHub token used for GHCR authentication
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-nix-attic
+      with:
+        sops_age_key: ${{ inputs.sops_age_key }}
+
+    - name: Build image
+      shell: bash
+      run: nix build .#${{ inputs.flake_output }} --print-build-logs
+
+    - name: Compute tag
+      id: meta
+      shell: bash
+      run: |
+        set -euo pipefail
+        SHA="${{ github.sha }}"
+        SLUG="${GITHUB_REF_NAME//\//-}"
+        echo "pin_tag=${SLUG}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+    - name: Publish image
+      if: inputs.push == 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        REGISTRY: ${{ inputs.registry }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+        set -euo pipefail
+        ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
+        case "$REGISTRY" in
+          forgejo)
+            skopeo copy --insecure-policy \
+              --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+              "docker-archive:$(readlink -f result)" "docker://$ref"
+            if [[ "${{ inputs.push_latest }}" == "true" ]]; then
+              skopeo copy --insecure-policy \
+                --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+                "docker-archive:$(readlink -f result)" "docker://$IMAGE:latest"
+            fi
+            ;;
+          ghcr)
+            printf '%s\n' "$GITHUB_TOKEN" | skopeo login ghcr.io \
+              --username "${{ github.actor }}" --password-stdin
+            skopeo copy --insecure-policy \
+              "docker-archive:$(readlink -f result)" "docker://$ref"
+            if [[ "${{ inputs.push_latest }}" == "true" ]]; then
+              skopeo copy --insecure-policy \
+                "docker-archive:$(readlink -f result)" "docker://$IMAGE:latest"
+            fi
+            ;;
+          *)
+            echo "Unsupported registry kind: $REGISTRY" >&2
+            exit 1
+            ;;
+        esac
+        echo "pushed \`$ref\`" >> "$GITHUB_STEP_SUMMARY"

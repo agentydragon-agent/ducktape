@@ -10,7 +10,7 @@ Two builds of the same image exist right now:
 | File          | Built by                                       | Pushed to                            | Status                                    |
 | ------------- | ---------------------------------------------- | ------------------------------------ | ----------------------------------------- |
 | `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls |
-| `default.nix` | `.github/workflows/haku-sandbox-image-nix.yml` | `ducktape-ci/haku-sandbox-image-nix` | **Works — 25/26**, cutover pending        |
+| `default.nix` | `.github/workflows/nix-oci-images.yml` | `ducktape-ci/haku-sandbox-image-nix` | **Works — 25/26**, cutover pending        |
 
 Both bake the same `haku-sandbox-setup.sh`, so the per-claim bootstrap cannot drift between
 them. The Nix build exists to end the recurring "the image is missing X" bug (`kubectl`,
@@ -97,9 +97,9 @@ If step 2 or 3 fails, the next thing to try is `nix-ld` via pod env (`NIX_LD`,
 Firecracker made unreachable and a pod spec makes trivial. The Dockerfile stays in the
 meantime; it is not costing much beyond the occasional missing tool.
 
-Once the checklist passes: delete `Dockerfile`, fold
-`haku-sandbox-image-nix.yml` back into `haku-sandbox-image.yml` under the original image
-name, and repoint the SandboxTemplate.
+Once the checklist passes: delete `Dockerfile`, change the sandbox entry in
+`.github/workflows/nix-oci-images.yml` from `haku-sandbox-image-nix` to the original
+`haku-sandbox-image` repository, and repoint the SandboxTemplate.
 
 ## What the bootstrap does
 
@@ -111,8 +111,9 @@ run's base-sync step has something to diff against.
 
 ## Console harness runner image
 
-The Console sandbox bridge is `//haku/runner:runner_image`, published once as
-`ghcr.io/agentydragon/haku-harness-runner`. It contains the pinned native Claude and Codex CLIs,
+The Console sandbox bridge is `.#haku-harness-runner-image`, published by
+`.github/workflows/nix-oci-images.yml` as
+`git.allegedly.works/ducktape-ci/haku-harness-runner`. It contains the pinned native Claude and Codex CLIs,
 git, kubectl, and CA roots; the SandboxTemplate still selects Claude explicitly with `--harness`.
 
 The repository rename and the first publication necessarily meet at the merge commit: CI cannot

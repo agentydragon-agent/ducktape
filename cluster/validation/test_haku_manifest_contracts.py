@@ -781,7 +781,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert pod["automountServiceAccountToken"] is False
     assert "serviceAccountName" not in pod
     container = one(pod["containers"])
-    assert container["image"].startswith("ghcr.io/agentydragon/haku-harness-runner:devel-")
+    assert container["image"].startswith("git.allegedly.works/ducktape-ci/haku-harness-runner:")
     assert '# {"$imagepolicy": "flux-system:haku-harness-runner"}' in template_text
     assert container["args"] == ["--harness", "codex-app-server"]
     environment = sandbox_env(template)

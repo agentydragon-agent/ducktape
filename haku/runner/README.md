@@ -32,11 +32,11 @@ durable frame record; the runner-side projection is what the neutral generation 
 and `transport.py` are the Console-side client value types and WebSocket transport of the v3 path,
 retained while that cutover completes.
 
-**Gotcha:** the provider-neutral image name is `haku-harness-runner`, the key in
-<../../devinfra/ci/image_targets.json> rather than derived from this Bazel path — so moving the
-target does not rename the published image. Its one OCI (`:runner_image`) contains the runner, both
-native CLIs, git, kubectl and CA roots. The SandboxTemplate selects the harness at launch; adding
-another harness must not create another publication alias.
+**Gotcha:** the provider-neutral image name is `haku-harness-runner`, published by
+`.github/workflows/nix-oci-images.yml` from the
+`.#haku-harness-runner-image` flake output. It contains the runner, both native CLIs, git, kubectl
+and CA roots. The SandboxTemplate selects the harness at launch; adding another harness must not
+create another publication alias.
 
 ## v4 framing
 
