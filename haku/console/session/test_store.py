@@ -1392,6 +1392,7 @@ async def test_a_conversation_whose_last_session_failed_says_so_in_the_inventory
     failed_row = rows[await session_store.conversation_of(failed.session_id)]
     assert failed_row.live_session is None
     assert failed_row.last_session_status == SessionStatus.FAILED
+    assert failed_row.last_session_error == "the sandbox went away"
     replaced_row = rows[await session_store.conversation_of(replaced.session_id)]
     assert replaced_row.live_session is not None
     assert replaced_row.last_session_status is None

@@ -92,6 +92,10 @@ class ConversationSummary(BaseModel):
         " runner failed from one that closed cleanly, which `live_session: null` alone cannot say."
         " None while a session is live (its state is `live_session`).",
     )
+    last_session_error: str | None = Field(
+        default=None,
+        description="The most recent session's failure error, when it recorded one. None while a session is live.",
+    )
     item_count: int = Field(
         description="How many transcript rows this conversation holds — prompts, answers and calls alike."
     )

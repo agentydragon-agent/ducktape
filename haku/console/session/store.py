@@ -308,7 +308,9 @@ async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUI
     return {row.conversation_id: session_view(row, responding=row.session_id in responding) for row in rows}
 
 
-async def _last_ended_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, SessionStatus]:
+async def _last_ended_sessions(
+    db: AsyncSession, conversations: set[UUID]
+) -> dict[UUID, tuple[SessionStatus | None, str | None]]:
     """How each of *conversations*' newest session ended.
 
     Asked only about conversations no session is holding, so every answer is a terminal status —
@@ -316,13 +318,13 @@ async def _last_ended_sessions(db: AsyncSession, conversations: set[UUID]) -> di
     """
     rows = (
         await db.execute(
-            select(Session.conversation_id, Session.status)
+            select(Session.conversation_id, Session.status, Session.error)
             .where(Session.conversation_id.in_(conversations))
             .distinct(Session.conversation_id)
             .order_by(Session.conversation_id, Session.created_at.desc())
         )
     ).tuples()
-    return dict(rows.all())
+    return {conversation_id: (status, error) for conversation_id, status, error in rows.all()}
 
 
 class RunnerConnectionAuthentication(StrEnum):
@@ -1005,7 +1007,8 @@ class Store:
                     last_activity_at=row.last_activity_at,
                     attachments=attachments[row.conversation_id],
                     live_session=live.get(row.conversation_id),
-                    last_session_status=ended.get(row.conversation_id),
+                    last_session_status=ended.get(row.conversation_id, (None, None))[0],
+                    last_session_error=ended.get(row.conversation_id, (None, None))[1],
                     item_count=counts[row.conversation_id],
                     preview=previews[row.conversation_id],
                 )

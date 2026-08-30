@@ -273,7 +273,7 @@ const setupNarration = [
 // One conversation per row, with the channels holding it rather than one surface: the first is a
 // room with a live session, the second a room between runners whose last session closed cleanly,
 // the third a browser thread whose runner failed. A failed session is never live — the backend
-// reports it through `last_session_status` — so the third row is the shape production actually
+// reports it through `last_session_status` and `last_session_error` — so the third row is the shape production actually
 // serves for a failed thread.
 const conversationPage = {
   conversations: [
@@ -291,6 +291,7 @@ const conversationPage = {
         updated_at: "2026-08-01T03:01:00Z",
       },
       last_session_status: null,
+      last_session_error: null,
       item_count: 6,
       preview: {
         opening_prompt:
@@ -308,6 +309,7 @@ const conversationPage = {
       attachments: [{ surface: "matrix", address: "!archive:example.org", attached_at: "2026-07-31T18:20:00Z" }],
       live_session: null,
       last_session_status: "closed",
+      last_session_error: null,
       item_count: 8,
       preview: {
         opening_prompt: "Review the deployment history and identify the first release that changed this behavior.",
@@ -323,6 +325,7 @@ const conversationPage = {
       attachments: [],
       live_session: null,
       last_session_status: "failed",
+      last_session_error: "the sandbox pod was evicted",
       item_count: 2,
       preview: {
         opening_prompt: "Find out why this worker stopped responding.",
