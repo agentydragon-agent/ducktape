@@ -173,10 +173,7 @@ class KubernetesSandboxClaims:
                 namespace=self._spec.namespace,
                 name=self._claim_name(session_id),
                 warm_pool=self._spec.warm_pool,
-                labels={
-                    MANAGED_BY_LABEL: MANAGED_BY_VALUE,
-                    "haku.allegedly.works/harness": self._spec.harness_label,
-                },
+                labels={MANAGED_BY_LABEL: MANAGED_BY_VALUE, "haku.allegedly.works/harness": self._spec.harness_label},
                 annotations={},
                 shutdown_policy="DeleteForeground",
                 shutdown_time=expires_at,

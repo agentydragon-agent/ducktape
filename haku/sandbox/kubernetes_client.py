@@ -20,16 +20,11 @@ from kubernetes_asyncio.stream import WsApiClient
 from kubernetes_asyncio.stream.ws_client import ERROR_CHANNEL, STDERR_CHANNEL, STDOUT_CHANNEL
 
 from haku.sandbox.claims import (
-    CLAIM_GROUP,
-    CLAIMS_PLURAL,
     MANAGED_BY_LABEL,
     MANAGED_BY_VALUE,
+    SANDBOX_API_VERSION,
     SandboxAllocationSpec,
     SandboxClaimClient,
-    SANDBOX_API_VERSION,
-    SANDBOX_GROUP,
-    SANDBOXES_PLURAL,
-    POD_NAME_ANNOTATION,
 )
 from haku.sandbox.config import SandboxEnvironmentConfig
 from haku.sandbox.models import (
