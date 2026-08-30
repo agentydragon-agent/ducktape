@@ -42,10 +42,6 @@ logger = logging.getLogger(__name__)
 # against the controller's own status writes; a persistent conflict is a bug, not contention.
 _RENEW_ATTEMPTS = 3
 
-_CLAIM_API = (CLAIM_GROUP, CLAIM_API_VERSION)
-_CLAIMS_PLURAL = CLAIMS_PLURAL
-
-
 class ProvisioningStep(StrEnum):
     # Kubernetes does not have this session's claim: it was never created, or it has been reclaimed
     # (`session_runtime._cleanup_terminal_claim` deletes it once the session ends). Distinct from
@@ -201,7 +197,7 @@ class KubernetesSandboxClaims:
         for attempt in range(_RENEW_ATTEMPTS):
             try:
                 claim = await client.get_namespaced_custom_object(
-                    *_CLAIM_API, self._spec.namespace, _CLAIMS_PLURAL, name
+                    CLAIM_GROUP, CLAIM_API_VERSION, self._spec.namespace, CLAIMS_PLURAL, name
                 )
             except k8s_client.ApiException as error:
                 if error.status != 404:
@@ -217,9 +213,10 @@ class KubernetesSandboxClaims:
             ]
             try:
                 await client.patch_namespaced_custom_object(
-                    *_CLAIM_API,
+                    CLAIM_GROUP,
+                    CLAIM_API_VERSION,
                     self._spec.namespace,
-                    _CLAIMS_PLURAL,
+                    CLAIMS_PLURAL,
                     name,
                     patch,
                     _content_type="application/json-patch+json",
@@ -367,10 +364,10 @@ class KubernetesSandboxClaims:
                 asyncio.create_task(
                     watch_source(
                         clients.custom_objects.list_namespaced_custom_object,
-                        group=_CLAIM_API[0],
-                        version=_CLAIM_API[1],
+                        group=CLAIM_GROUP,
+                        version=CLAIM_API_VERSION,
                         namespace=self._spec.namespace,
-                        plural=_CLAIMS_PLURAL,
+                        plural=CLAIMS_PLURAL,
                         label_selector=(
                             "app.kubernetes.io/managed-by=haku-console,"
                             f"haku.allegedly.works/harness={self._spec.harness_label}"
