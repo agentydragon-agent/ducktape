@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Code, Group, Loader, Paper, Select, Stack, Text } from "@mantine/core";
+import { ActionIcon, Badge, Box, Button, Code, Group, Loader, Menu, Paper, Select, Stack, Text } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -15,6 +15,7 @@ import {
   type Session,
 } from "../client";
 import { AgentName } from "../agent_names";
+import { formatTimestamp } from "../time";
 import { useCoalescedRefresh } from "../coalesced_refresh";
 import {
   conversationLaunchOptions,
@@ -32,7 +33,7 @@ import { ToolCallView } from "./tool_call";
 import { ConversationComposer } from "./conversation_composer";
 import { Markdown } from "./markdown";
 import { SandboxProvisioning } from "./sandbox_provisioning";
-import { NewConversationIcon } from "../icons";
+import { InfoCircleIcon, NewConversationIcon } from "../icons";
 
 /** A session that has ended takes no more prompts, so it gets no composer. */
 const SETTLED = new Set<Session["status"]>(["closing", "closed", "failed"]);
@@ -52,8 +53,9 @@ function statusColor(status: Session["status"]): string {
   return "gray";
 }
 
-function timestamp(value: string): string {
-  return `${value.slice(0, 16).replace("T", " ")} UTC`;
+function timestamp(value: string): JSX.Element {
+  const display = formatTimestamp(value);
+  return <span title={display.title}>{display.text}</span>;
 }
 
 /** The channels holding a copy of this conversation, or that none do.
@@ -480,8 +482,58 @@ function EarlierSessions({ sessions }: { sessions: Conversation["earlier_session
   );
 }
 
+function ConversationDetailsMenu({
+  conversation,
+  session,
+  onRawFrames,
+  onTerminate,
+  terminating,
+}: {
+  conversation: Conversation;
+  session: Session;
+  onRawFrames: () => void;
+  onTerminate: () => void;
+  terminating: boolean;
+}) {
+  return (
+    <Menu position="bottom-end" withArrow shadow="md">
+      <Menu.Target>
+        <ActionIcon
+          variant="light"
+          aria-label="Conversation details"
+          title="Conversation details"
+          loading={terminating}
+        >
+          <InfoCircleIcon />
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown maw="calc(100vw - 2rem)">
+        <Menu.Label>Session details</Menu.Label>
+        <Box px="sm" pb="xs">
+          <Text size="xs" c="dimmed">
+            {conversation.attachments.length === 0 ? (
+              "No channel attached"
+            ) : (
+              <Attachments attachments={conversation.attachments} />
+            )}
+          </Text>
+          <Text size="xs" c="dimmed">
+            started {timestamp(conversation.created_at)}
+          </Text>
+        </Box>
+        <Menu.Item onClick={onRawFrames}>Raw frames</Menu.Item>
+        {!SETTLED.has(session.status) && (
+          <Menu.Item color="red" onClick={onTerminate} disabled={terminating}>
+            Terminate
+          </Menu.Item>
+        )}
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
 function ConversationDetailPage({ conversationId }: { conversationId: string }) {
-  const [closing, setClosing] = useState(false);
+  const [terminating, setTerminating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -543,15 +595,15 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
   // its newest items are still being written.
   const rows = [...conversation.items].sort((left, right) => left.opened_seq - right.opened_seq);
 
-  const close = async (sessionId: string) => {
-    setClosing(true);
+  const terminate = async (sessionId: string) => {
+    setTerminating(true);
     try {
-      // No refetch afterwards: closing writes rows, and the follow socket carries what they became.
+      // No refetch afterwards: terminating writes rows, and the follow socket carries what they became.
       await closeSession(sessionId);
     } catch (reason: unknown) {
       setActionError(displayableError(reason));
     } finally {
-      setClosing(false);
+      setTerminating(false);
     }
   };
 
@@ -573,32 +625,45 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
                 {conversation.harness_kind} session
               </Text>
             </Group>
-            <Attachments attachments={conversation.attachments} />
-            <Text c="dimmed" size="sm">
-              started {timestamp(conversation.created_at)}
-            </Text>
+            <div className="haku-conversation-detail-meta">
+              <Attachments attachments={conversation.attachments} />
+              <Text c="dimmed" size="sm">
+                started {timestamp(conversation.created_at)}
+              </Text>
+            </div>
           </div>
-          <Group gap="xs" wrap="wrap" align="center">
+          <Group gap="xs" wrap="wrap" align="center" className="haku-conversation-detail-actions">
             {/* The transcript is a lossy projection of the frame log, so an operator reading one
                 that looks wrong needs the record it was projected from — one click away. */}
-            <Button
-              variant="light"
-              size="compact-sm"
-              onClick={() => navigateToConsolePath(sessionFramesPath(session.session_id))}
-            >
-              Raw frames
-            </Button>
-            {!SETTLED.has(session.status) && (
+            <Group gap="xs" className="haku-conversation-detail-actions-desktop">
               <Button
                 variant="light"
-                color="red"
                 size="compact-sm"
-                onClick={() => void close(session.session_id)}
-                loading={closing}
+                onClick={() => navigateToConsolePath(sessionFramesPath(session.session_id))}
               >
-                Close session
+                Raw frames
               </Button>
-            )}
+              {!SETTLED.has(session.status) && (
+                <Button
+                  variant="light"
+                  color="red"
+                  size="compact-sm"
+                  onClick={() => void terminate(session.session_id)}
+                  loading={terminating}
+                >
+                  Terminate
+                </Button>
+              )}
+            </Group>
+            <div className="haku-conversation-detail-actions-mobile">
+              <ConversationDetailsMenu
+                conversation={conversation}
+                session={session}
+                onRawFrames={() => navigateToConsolePath(sessionFramesPath(session.session_id))}
+                onTerminate={() => void terminate(session.session_id)}
+                terminating={terminating}
+              />
+            </div>
             <Badge color={statusColor(session.status)} variant="light">
               {session.status}
             </Badge>

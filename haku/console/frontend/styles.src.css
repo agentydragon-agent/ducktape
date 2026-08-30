@@ -427,6 +427,16 @@
   align-items: flex-start;
 }
 
+.haku-conversation-detail-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.haku-conversation-detail-actions-mobile {
+  display: none;
+}
+
 .haku-conversation-detail-body {
   min-height: 0;
   flex: 1 1 auto;
@@ -619,9 +629,27 @@
 
 @media (max-width: 600px) {
   .haku-conversation-detail-header {
-    flex-direction: column;
     align-items: flex-start;
-    gap: 0.25rem;
+    gap: 0.5rem;
+  }
+
+  .haku-conversation-detail-header > :first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .haku-conversation-detail-meta,
+  .haku-conversation-detail-actions-desktop {
+    display: none;
+  }
+
+  .haku-conversation-detail-actions-mobile {
+    display: block;
+  }
+
+  .haku-conversation-detail-actions {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
   }
 
   .haku-conversation-detail-header h1 {

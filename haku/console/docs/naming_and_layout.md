@@ -299,9 +299,9 @@ canonical terms above.
   normalize its actions/verbs/request IDs under that name, and do not conflate it with the runner
   protocol. Package/path alignment with the haku-state consumer is a separate change, not a reason to
   remove the word “bridge” from this boundary.
-- **Dispatch/adaptation metaphors:** “journal bridge,” “bridge into durable vocabulary,” and generic
-  “bridge” prose. Use “journal dispatch,” “adapter,” “fold,” or “conversion,” according to the actual
-  operation.
+- **Dispatch/adaptation metaphors:** **Landed (C16f)**: current prose uses “journal dispatch,” “adapter,”
+  “fold,” or “conversion,” according to the actual operation. Any old “journal bridge” or “bridge into
+  durable vocabulary” references in this document are historical migration context.
 - **Old Agent SDK runner naming** — **landed (C16a)** up to tombstoned residue: the runner reads
   `HAKU_RUNNER_WEBSOCKET_URL` (legacy fallback tombstoned), and the SandboxTemplates carry both
   spellings until the pinned runner image converges. The `haku-agent-sdk-oauth-token` inner Secret
@@ -333,11 +333,10 @@ canonical terms above.
   it means a failed turn. Use `Item`/`Item…` and `TurnFailed.failure`. Keep `McpServerEntry`,
   `EgressCredentialEntry`, registry/policy entries, prompt-rejection reasons, lease-expiry reasons,
   Kubernetes condition reasons, and egress denial reasons because those are different concepts.
-- **Egress endpoint family:** `HAKU_EGRESS_FENCE_CREDENTIAL`, `fence_credential_env_var`,
-  `fence_credential`, `FENCE_CREDENTIAL`, “shared fence credential,” “fence credential,” and the
-  `fence-credential` Secret key. Rename these to the HTTP decision endpoint token names in one
-  deployment-coordinated change. “Egress proxy” remains the component name; “fence” is not the
-  authentication principal.
+- **Egress endpoint family:** **Landed (C16e)**: the old `HAKU_EGRESS_FENCE_CREDENTIAL` /
+  `fence_credential` / `FENCE_CREDENTIAL` spellings and `fence-credential` Secret key are historical
+  migration references only; current readers and writers use the HTTP decision endpoint token names.
+  “Egress proxy” remains the component name; “fence” is not the authentication principal.
 
 The names `AgentBearerAuthority`, `_SessionAgentBearerSource`, and `ResolvedAgentBearer` are not
 additional names for the session token: they are the authority, source, and resolved authorization
@@ -538,8 +537,9 @@ quiet gap.
   **Landed**: after the #5088 expand converged across the independently rolled Console and Matrix
   adapter images, `allowed_harnesses` became the only ConfigMap spelling; the Console and Matrix
   readers use that canonical field, and both expand-only compatibility aliases were removed.
-- **C6 · "entry" → item read model** _(semantic)_ — `*Entry` → `Item…`, into `conversation/item_reads.py`
-  (private to the conversation read surface, beside the store that produces it — not `mcp/`).
+- **C6 · "entry" → item read model** _(semantic)_ — **Landed**: `*Entry` → `Item…`, into
+  `conversation/item_reads.py` (private to the conversation read surface, beside the store that
+  produces it — not `mcp/`). Remaining “entry” mentions are historical plan context only.
 
 - **C16 · transport, session-token, and residual vocabulary closure (#5139 follow-up)** _(semantic;
   split into independently approvable change-units)_ — execute the target vocabulary in §3.6 and
@@ -575,16 +575,15 @@ quiet gap.
     expand aliases are gone. Remaining: `chat_models.py` deletion stays gated on `ChannelSurface`
     moving out with the C4 channels packaging; the `runtime_kind` attribute spellings ride C4d's
     stored-column contract. Keep `runtime` for live session/conversation lifecycle only.
-  - **C16e · HTTP decision endpoint token:** adopt the existing `haku/sandbox/TODO.md` direction:
-    rename `HAKU_EGRESS_FENCE_CREDENTIAL`, `fence_credential_env_var`, `fence_credential`,
-    `FENCE_CREDENTIAL`, and the `fence-credential` Secret key to the HTTP decision endpoint token
-    vocabulary in one proxy/Console deployment change. It must remain distinct from the session token
-    and from destination egress credentials.
+  - **C16e · HTTP decision endpoint token:** **Landed in stages 1–3**: readers accepted both token
+    spellings, manifest writers flipped to `HAKU_DECISION_ENDPOINT_TOKEN` / `decision-endpoint-token`,
+    and the compatibility readers were removed after the full-roll soak. The token remains distinct
+    from the session token and destination egress credentials; any future wire-field rename is still
+    a separate stage-3 contract change.
   - **C16f · wording and verification:** **Landed**: current dispatch/adaptation prose uses
     `journal dispatch`, `adapter`/`fold`, `Item`, and `failure`; the final search gate preserves only
     the documented historical, compatibility, Agent UI bridge, native-index, and cross-repository
-    package exceptions. Schema and deployment contract tests cover every renamed published or persisted
-    name. Remaining wording cleanup is tracked with the final #5164 sweep.
+    package exceptions. This cleanup closes the remaining current prose residue tracked by #5164.
 
 ### Identity lane — rides the #4836 compose PR
 
