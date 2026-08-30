@@ -142,6 +142,7 @@ py_test(
         "//haku/console/mcp:execution",
         "//haku/console/mcp:in_process_server_access",
         "//haku/console/session:session_frames",
+        "//haku/console/session:status",
         "@pypi//fastmcp_slim",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -151,9 +152,9 @@ py_test(
 )
 
 py_test(
-    name = "test_worker_result",
+    name = "test_session_outcome",
     size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_worker_result.py"],
+    srcs = ["test_session_outcome.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",

@@ -410,18 +410,17 @@ class SessionOutcome:
 
 
 @dataclass(frozen=True, slots=True)
-class WorkerOutcome:
-    """The facts `get_worker_result` maps to a `WorkerResult` (haku/console/conversation/reader.py).
+class SessionOutcomeRead:
+    """The facts `session_outcome` maps to its read model (haku/console/conversation/reader.py).
 
     Read together in one transaction so the status and the answer it reports cannot come from
     different points in time: the session's derived lifecycle and its failure surface, how the
-    session's most recent turn ended (`None` while one is in flight, or before any has run), and the
-    session's last complete assistant message — the answer, once there is one.
+    session's most recent turn, and the session's last complete assistant message when that turn answered.
     """
 
     session_status: SessionStatus
     error: str | None
-    latest_turn_end: conversation_event.TurnEnd | None
+    latest_turn: TurnRecord | None
     final_message: str | None
 
 
@@ -1936,8 +1935,8 @@ class Store:
             await _require_readable_conversation(db, conversation_id, scope)
             return await _item_page_rows(db, conversation_id, after_seq=after_seq, limit=limit)
 
-    async def worker_outcome(self, session_id: UUID, *, scope: ConversationReadScope) -> WorkerOutcome:
-        """The `get_worker_result` facts for one worker session, read together under one scope.
+    async def session_outcome(self, session_id: UUID, *, scope: ConversationReadScope) -> SessionOutcomeRead:
+        """The `session_outcome` facts for one session, read together under one scope.
 
         Refuses the way the other `haku_conversations` reads do: a session whose conversation is
         pinned to a profile outside *scope* is `conversation access denied` rather than reported, and
@@ -1967,20 +1966,37 @@ class Store:
                 .order_by(ConversationTurn.started_at.desc(), ConversationTurn.turn_id.desc())
                 .limit(1)
             )
-            final_message = await db.scalar(
-                select(ConversationItem.item_text)
-                .where(
-                    ConversationItem.session_id == session_id,
-                    ConversationItem.item_type == ItemType.MESSAGE,
-                    ConversationItem.status == ItemStatus.COMPLETE,
+            latest_turn_record = (
+                TurnRecord(
+                    turn_id=latest_turn.turn_id,
+                    first_frame_seq=latest_turn.first_frame_seq,
+                    last_frame_seq=latest_turn.last_frame_seq,
+                    started_at=latest_turn.started_at,
+                    ended_at=latest_turn.ended_at,
+                    end=turn_end_of(latest_turn),
                 )
-                .order_by(ConversationItem.opened_seq.desc())
-                .limit(1)
+                if latest_turn is not None
+                else None
             )
-        return WorkerOutcome(
+            final_message = (
+                await db.scalar(
+                    select(ConversationItem.item_text)
+                    .where(
+                        ConversationItem.session_id == session_id,
+                        ConversationItem.turn_id == latest_turn.turn_id,
+                        ConversationItem.item_type == ItemType.MESSAGE,
+                        ConversationItem.status == ItemStatus.COMPLETE,
+                    )
+                    .order_by(ConversationItem.opened_seq.desc())
+                    .limit(1)
+                )
+                if latest_turn is not None and latest_turn.outcome is conversation_event.TurnOutcome.ANSWERED
+                else None
+            )
+        return SessionOutcomeRead(
             session_status=session.status,
             error=session.error,
-            latest_turn_end=turn_end_of(latest_turn) if latest_turn is not None else None,
+            latest_turn=latest_turn_record,
             final_message=final_message,
         )
 
