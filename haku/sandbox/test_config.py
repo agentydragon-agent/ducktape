@@ -12,9 +12,9 @@ from haku.sandbox.config import SandboxEnvironmentConfig
 RAW_CONFIG: dict[str, Any] = {
     "sandbox": {
         "namespace": "agent-workspaces",
-        "warm_pool": "haku",
+        "warm_pool": "test-pool",
         "container": "workspace",
-        "default_cwd": "/workspace/haku-state",
+        "default_cwd": "/test/workspace/test-state",
         "initial_ttl_seconds": 28_800,
         "exec_ttl_extension_seconds": 7_200,
         "provisioning_timeout_seconds": 600,
@@ -22,7 +22,7 @@ RAW_CONFIG: dict[str, Any] = {
         "max_output_bytes": 100_000,
     },
     "bootstrap": {
-        "cwd": "/workspace",
+        "cwd": "/test/workspace",
         "timeout_seconds": 300,
         "script": "git clone http://forgejo/haku/haku-state.git",
     },

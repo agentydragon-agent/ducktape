@@ -62,8 +62,8 @@ def test_app_server_uses_the_configured_provider_environment_key(tmp_path: Path)
     codex_home.mkdir()
     home.mkdir()
     provider = CodexModelProvider(
-        provider_id="haku",
-        name="Haku OpenAI-compatible",
+        provider_id="test-provider",
+        name="Test OpenAI-compatible provider",
         base_url=f"http://127.0.0.1:{server.server_port}/v1",
         api_key_env_var="OPENAI_API_KEY",
     )
@@ -106,7 +106,7 @@ def test_app_server_uses_the_configured_provider_environment_key(tmp_path: Path)
                 "id": "thread",
                 "params": {
                     "cwd": str(tmp_path),
-                    "model": "codex-gpt-5.6-sol",
+                    "model": "test-codex-model",
                     "approvalPolicy": "never",
                     "sandbox": "danger-full-access",
                     "ephemeral": True,

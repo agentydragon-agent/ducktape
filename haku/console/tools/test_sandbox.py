@@ -20,16 +20,16 @@ def _environment(*, max_exec_timeout_seconds: int = 300, max_output_bytes: int =
         {
             "sandbox": {
                 "namespace": "agent-workspaces",
-                "warm_pool": "haku",
+                "warm_pool": "test-pool",
                 "container": "workspace",
-                "default_cwd": "/workspace/haku-state",
+                "default_cwd": "/test/workspace/test-state",
                 "initial_ttl_seconds": 28_800,
                 "exec_ttl_extension_seconds": 7_200,
                 "provisioning_timeout_seconds": 600,
                 "max_exec_timeout_seconds": max_exec_timeout_seconds,
                 "max_output_bytes": max_output_bytes,
             },
-            "bootstrap": {"cwd": "/workspace", "timeout_seconds": 300, "script": "echo ready"},
+                "bootstrap": {"cwd": "/test/workspace", "timeout_seconds": 300, "script": "echo ready"},
         }
     )
 
@@ -103,7 +103,7 @@ async def test_exec_dispatches_bash_inputs_in_seconds() -> None:
             {
                 "name": "task-one",
                 "script": "git status --short",
-                "cwd": "/workspace/haku-state",
+                "cwd": "/test/workspace/test-state",
                 "timeout_seconds": 30,
                 "max_output_bytes": 4096,
             },
@@ -114,7 +114,7 @@ async def test_exec_dispatches_bash_inputs_in_seconds() -> None:
     client.execute.assert_awaited_once_with(
         name="task-one",
         script="git status --short",
-        cwd="/workspace/haku-state",
+        cwd="/test/workspace/test-state",
         timeout_seconds=30,
         max_output_bytes=4096,
     )

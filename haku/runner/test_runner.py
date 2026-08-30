@@ -122,7 +122,7 @@ def test_environment_exposes_the_claim_owned_session_token(monkeypatch: pytest.M
     monkeypatch.setenv(LEGACY_SESSION_TOKEN_VARIABLE, "session-secret")
     launch = HarnessLaunch(
         arguments=(),
-        cwd="/workspace",
+        cwd="/test/workspace",
         environment={
             "CLAUDECODE": "injected-parent",
             SESSION_TOKEN_VARIABLE: "injected-secret",
@@ -141,7 +141,7 @@ def test_environment_uses_the_session_token_for_proxy_authentication(monkeypatch
     monkeypatch.setenv(SESSION_TOKEN_VARIABLE, "session bearer/with spaces")
     launch = HarnessLaunch(
         arguments=(),
-        cwd="/workspace",
+        cwd="/test/workspace",
         environment={
             "HTTP_PROXY": "http://egress-proxy.test:8888",
             "HTTPS_PROXY": "https://egress-proxy.test:8443",
@@ -160,7 +160,9 @@ def test_proxy_authentication_falls_back_to_the_legacy_token_variable(monkeypatc
     """A claim minted before the HAKU_SESSION_TOKEN rename carries only the legacy variable."""
     monkeypatch.delenv(SESSION_TOKEN_VARIABLE, raising=False)
     monkeypatch.setenv(LEGACY_SESSION_TOKEN_VARIABLE, "legacy-token")
-    launch = HarnessLaunch(arguments=(), cwd="/workspace", environment={"HTTP_PROXY": "http://egress-proxy.test:8888"})
+    launch = HarnessLaunch(
+        arguments=(), cwd="/test/workspace", environment={"HTTP_PROXY": "http://egress-proxy.test:8888"}
+    )
     assert child_environment(launch)["HTTP_PROXY"] == "http://:legacy-token@egress-proxy.test:8888"
 
 

@@ -47,16 +47,16 @@ def environment() -> SandboxEnvironmentConfig:
         {
             "sandbox": {
                 "namespace": "agent-workspaces",
-                "warm_pool": "haku",
+                "warm_pool": "test-pool",
                 "container": "workspace",
-                "default_cwd": "/workspace/haku-state",
+                "default_cwd": "/test/workspace/test-state",
                 "initial_ttl_seconds": 28_800,
                 "exec_ttl_extension_seconds": 7_200,
                 "provisioning_timeout_seconds": 10,
                 "max_exec_timeout_seconds": 300,
                 "max_output_bytes": 100_000,
             },
-            "bootstrap": {"cwd": "/workspace", "timeout_seconds": 30, "script": "echo bootstrap"},
+                "bootstrap": {"cwd": "/test/workspace", "timeout_seconds": 30, "script": "echo bootstrap"},
         }
     )
 
@@ -190,7 +190,7 @@ async def test_pod_describing_fields_each_warn_by_kind(environment: SandboxEnvir
         annotations={
             WARM_POOL_ANNOTATION: "retired-pool",
             CONTAINER_ANNOTATION: "old-workspace",
-            DEFAULT_CWD_ANNOTATION: "/workspace/old",
+            DEFAULT_CWD_ANNOTATION: "/test/workspace/old",
         },
     )
     custom = Mock()
@@ -295,7 +295,7 @@ async def test_exec_renews_near_deadline_before_running(environment: SandboxEnvi
         namespace="agent-workspaces",
         container="workspace",
         script="echo ok",
-        cwd="/workspace/haku-state",
+        cwd="/test/workspace/test-state",
         max_output_bytes=1000,
         timeout_seconds=30,
     )

@@ -55,34 +55,34 @@ def make_client(fake: FakeGrocy) -> httpx.Client:
 
 
 def test_converges_only_drifted_users():
-    # agentydragon already at its full explicit set (no PUT), haku wrongly elevated
-    # (PUT back to empty), auragon absent (auto-created, then PUT to its full set).
-    fake = FakeGrocy({"agentydragon": {1, 2}, "haku": {2}})
+    # test-admin already at its full explicit set (no PUT), test-user wrongly elevated
+    # (PUT back to empty), test-operator absent (auto-created, then PUT to its full set).
+    fake = FakeGrocy({"test-admin": {1, 2}, "test-user": {2}})
     reconcile(
         make_client(fake),
         Policy(
             users={
-                "agentydragon": {"ADMIN", "MASTER_DATA_EDIT"},
-                "auragon": {"ADMIN", "MASTER_DATA_EDIT"},
-                "haku": set(),
+                "test-admin": {"ADMIN", "MASTER_DATA_EDIT"},
+                "test-operator": {"ADMIN", "MASTER_DATA_EDIT"},
+                "test-user": set(),
             }
         ),
     )
-    assert fake.puts == {"auragon": [1, 2], "haku": []}
-    assert fake.user_permissions == {"agentydragon": {1, 2}, "auragon": {1, 2}, "haku": set()}
+    assert fake.puts == {"test-operator": [1, 2], "test-user": []}
+    assert fake.user_permissions == {"test-admin": {1, 2}, "test-operator": {1, 2}, "test-user": set()}
 
 
 def test_unlisted_users_untouched():
-    fake = FakeGrocy({"agentydragon": {1, 2}, "bystander": {2}})
-    reconcile(make_client(fake), Policy(users={"agentydragon": {"ADMIN", "MASTER_DATA_EDIT"}}))
+    fake = FakeGrocy({"test-admin": {1, 2}, "test-bystander": {2}})
+    reconcile(make_client(fake), Policy(users={"test-admin": {"ADMIN", "MASTER_DATA_EDIT"}}))
     assert fake.puts == {}
-    assert fake.user_permissions["bystander"] == {2}
+    assert fake.user_permissions["test-bystander"] == {2}
 
 
 def test_unknown_permission_name_rejected_before_any_write():
-    fake = FakeGrocy({"agentydragon": {1}, "haku": {2}})
+    fake = FakeGrocy({"test-admin": {1}, "test-user": {2}})
     with pytest.raises(ValueError, match="NOT_A_PERMISSION"):
-        reconcile(make_client(fake), Policy(users={"agentydragon": {"NOT_A_PERMISSION"}, "haku": set()}))
+        reconcile(make_client(fake), Policy(users={"test-admin": {"NOT_A_PERMISSION"}, "test-user": set()}))
     assert fake.puts == {}
 
 

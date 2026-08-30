@@ -15,12 +15,12 @@ _MODEL = "example-model"
 def test_thread_start_carries_the_selected_model_effort_and_instructions() -> None:
     launch = build_codex_launch(
         CodexAppServerSession(
-            cwd=Path("/workspace"), model=_MODEL, reasoning_effort="low", developer_instructions="you are Haku"
+            cwd=Path("/test/workspace"), model=_MODEL, reasoning_effort="low", developer_instructions="you are Haku"
         )
     )
 
     assert _thread_params(launch) == {
-        "cwd": "/workspace",
+        "cwd": "/test/workspace",
         "approvalPolicy": "never",
         "sandbox": "danger-full-access",
         "ephemeral": True,
@@ -31,7 +31,7 @@ def test_thread_start_carries_the_selected_model_effort_and_instructions() -> No
 
 
 def test_thread_start_omits_optional_effort_and_instructions_when_unset() -> None:
-    launch = build_codex_launch(CodexAppServerSession(cwd=Path("/workspace"), model=_MODEL))
+    launch = build_codex_launch(CodexAppServerSession(cwd=Path("/test/workspace"), model=_MODEL))
 
     params = _thread_params(launch)
 

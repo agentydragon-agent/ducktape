@@ -25,7 +25,7 @@ def introduction(*messages: HistoryMessage, earlier: tuple[UUID, ...] = ()) -> S
     return SessionIntroduction(
         session_id=SESSION,
         conversation_id=CONVERSATION,
-        workspace="/workspace",
+        workspace="/test/workspace",
         recent_messages=messages,
         earlier_session_ids=earlier,
     )
