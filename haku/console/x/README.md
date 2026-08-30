@@ -8,13 +8,13 @@ runner-incarnation machinery to <../session/>, the wake wires to <../notificatio
 channels to <../channels/> (#4772/#4924; target layout: <../docs/naming_and_layout.md> § 2).
 What remains is what is still being restructured:
 
-| Where                                   | What it is                                                                                                                                                             |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conversation_events.py`                | The neutral in-memory event vocabulary log writes are expressed in, and `stored`, its fold into the durable one (`../conversation/conversation_event.py`).           |
+| Where                                   | What it is                                                                                                                                                              |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversation_events.py`                | The neutral in-memory event vocabulary log writes are expressed in, and `stored`, its fold into the durable one (`../conversation/conversation_event.py`).              |
 | `runtime.py`, `runtime_catalog.py`      | Backend-neutral runtime catalog and its application composition; the harness _selection_ residue headed for `harnesses/` (<../docs/naming_and_layout.md> § 2).         |
-| `x/claude_code/`, `x/codex_app_server/` | **One CLI harness each, launch-only.** Named for the product whose binary they launch, not for the model. The native protocol and projection live runner-ward (#4667). |
-| `testing/`                              | Stand-ins a test stands something up _with_, importable by non-pytest processes too (<testing/recording_claims.py> for the rationale).                                 |
-| `conftest.py`                           | Fixture re-registrations for the tests below this directory; the definitions live in <../session/conftest.py>.                                                         |
+| `x/claude_code/`, `x/codex_app_server/` | **One CLI harness each, launch-only.** Named for the product whose binary they launch, not for the model. The native protocol and projection live runner-ward (#4667).  |
+| `testing/`                              | Stand-ins a test stands something up _with_, importable by non-pytest processes too (<testing/recording_claims.py> for the rationale).                                  |
+| `conftest.py`                           | Fixture re-registrations for the tests below this directory; the definitions live in <../session/conftest.py>.                                                          |
 
 How to place a module — the replace-the-other-axis test and the boundary cases — is
 <../docs/conversation_layers.md> § Placing something new.
