@@ -899,7 +899,7 @@ async def get_conversation(
 
 
 @router.get("/api/sessions/{session_id}/frames")
-async def read_session_frames(  # noqa: PLR0917
+async def read_session_frames(  # noqa: PLR0917, RUF100
     session_id: UUID,
     actor: OperatorActorDep,
     store: StoreDep,
