@@ -2460,7 +2460,9 @@ class Store:
 
     async def abort_requested(self, session_id: UUID) -> bool:
         async with self._sessions() as db:
-            return await db.scalar(select(Session.abort_requested_at).where(Session.session_id == session_id)) is not None
+            return await db.scalar(
+                select(Session.abort_requested_at).where(Session.session_id == session_id)
+            ) is not None
 
 
 def _expiry_detail(reason: LeaseExpiryReason, holder: str | None) -> str:
