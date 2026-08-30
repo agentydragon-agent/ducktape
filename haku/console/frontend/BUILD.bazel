@@ -704,11 +704,11 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":page_scroll",
         ":approval_state",
         ":client",
         ":coalesced_refresh",
         ":console_events",
+        ":page_scroll",
         ":pending_tool_call_actions",
         ":toast",
         ":tool_call_card",
@@ -758,7 +758,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":page_scroll",
         ":async_resource",
         ":client",
         ":console_events",
@@ -783,8 +782,8 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":page_scroll",
         ":client",
+        ":page_scroll",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

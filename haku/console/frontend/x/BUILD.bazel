@@ -160,6 +160,7 @@ ts_library(
         "//haku/console/frontend:console_events",
         "//haku/console/frontend:conversation_launch",
         "//haku/console/frontend:icons",
+        "//haku/console/frontend:page_scroll",
         "//haku/console/frontend:routing",
     ],
 )
