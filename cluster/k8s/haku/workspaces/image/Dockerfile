@@ -24,6 +24,7 @@
 # through `exec_sandbox` edits files with heredoc'd python, where one stray `import shutil`
 # kills the whole script. Stdlib only — the run's own python deps come from Bazel, never here.
 # jq: same class of gap, for the shell-side JSON the CLI and k8s recipes produce.
+# gh: GitHub's CLI for authenticated repository and pull-request workflows through the proxy.
 # tea: haku-state's `procedures/code_changes.md` routes code changes through Forgejo PRs, which
 # is a `tea` workflow; without it that procedure has no non-REST path from inside the sandbox.
 # Language toolchains (CPython, Node/pnpm) are fetched hermetically by Bazel, but the
@@ -44,7 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       default-jre-headless \
       build-essential \
       procps less \
-      python3 jq \
+      python3 jq gh \
     && rm -rf /var/lib/apt/lists/*
 
 # bazelisk pin matches haku-state's CI runner (.forgejo/actions/bazel-runner-setup):

@@ -14,7 +14,7 @@ Two builds of the same image exist right now:
 
 Both bake the same `haku-sandbox-setup.sh`, so the per-claim bootstrap cannot drift between
 them. The Nix build exists to end the recurring "the image is missing X" bug (`kubectl`,
-then a `python3-minimal` with no `json`, then `jq`/`tea`) by making the tool set one
+then a `python3-minimal` with no `json`, then `jq`/`gh`/`tea`) by making the tool set one
 reviewable list that shares a substrate with <../../../../../x/codex_pod_image/default.nix>.
 
 ## Probe results (2026-07-26) — Bazel works, 25/26
