@@ -39,7 +39,6 @@ ts_library(
         "//haku/console/frontend:client",
         "//haku/console/frontend:code_block",
         "//haku/console/frontend:icons",
-        "//haku/console/frontend:page_scroll",
     ],
 )
 
