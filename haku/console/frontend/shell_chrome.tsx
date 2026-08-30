@@ -4,17 +4,14 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   approvalDisplayFields,
   approvalQueueItems,
-  formatTimestamp,
   geolocationApprovalBody,
   geolocationApprovalTitle,
   recentToolCallCountdown,
   SCREENSHOT_APPROVAL_BODY,
   SCREENSHOT_APPROVAL_TITLE,
-  statusColor,
   type GeolocationApproval,
   type RecentToolCall,
   type ScreenshotApproval,
-  terminalStatusLabel,
 } from "./approval_state";
 import type { ToolCallRecord } from "./client";
 import { CodeBlock } from "./code_block";
@@ -35,6 +32,7 @@ import {
 import { PendingToolCallActions } from "./pending_tool_call_actions";
 import type { ConsoleNavigationView, ConsoleView } from "./routing";
 import { SUCCESS_COLOR } from "./theme";
+import { formatTimestamp } from "./time";
 import { ToolCallCard } from "./tool_call_card";
 import type { LiveStatus } from "./console_events";
 import { useVariant, VariantControl } from "./variant_control";
@@ -334,7 +332,7 @@ function ToolApprovalCard({
       variant={variant}
       onVariantChange={setVariant}
       containerRef={cardRef}
-      status={{ label: deciding ? "Running" : "Pending", color: deciding ? "blue" : "yellow" }}
+      status={deciding ? "running" : "pending_approval"}
       footer={<PendingToolCallActions busy={deciding} armed={armed} onApprove={onApprove} onDeny={onDeny} />}
     />
   );
@@ -465,7 +463,7 @@ function RecentToolCallCard({
       args={record.arguments}
       variant={variant}
       onVariantChange={setVariant}
-      status={{ label: terminalStatusLabel(record.status), color: statusColor(record.status) }}
+      status={record.status}
       error={record.error}
       result={record.result}
       footer={
@@ -608,20 +606,21 @@ function ApprovalsPanel(props: ShellChromeProps & { onClose: () => void }) {
               {pendingCount}
             </Badge>
           </Group>
-          <ActionIcon variant="subtle" color="gray" aria-label="Close approvals" onClick={props.onClose}>
-            <CloseIcon />
-          </ActionIcon>
+          <Group gap={2} wrap="nowrap">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              aria-label="Past tool calls"
+              title="Past tool calls"
+              onClick={() => props.onNavigate("toolCalls")}
+            >
+              <HistoryIcon />
+            </ActionIcon>
+            <ActionIcon variant="subtle" color="gray" aria-label="Close approvals" onClick={props.onClose}>
+              <CloseIcon />
+            </ActionIcon>
+          </Group>
         </Group>
-        <Button
-          size="xs"
-          variant="light"
-          color="gray"
-          fullWidth
-          leftSection={<HistoryIcon />}
-          onClick={() => props.onNavigate("toolCalls")}
-        >
-          Past tool calls
-        </Button>
       </section>
       <div className="haku-shell-scroll">
         <ApprovalsTab {...props} />

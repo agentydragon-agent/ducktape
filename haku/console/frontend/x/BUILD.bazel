@@ -38,6 +38,7 @@ ts_library(
         "//:node_modules/react",
         "//haku/console/frontend:client",
         "//haku/console/frontend:code_block",
+        "//haku/console/frontend:icons",
     ],
 )
 
@@ -51,6 +52,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend:client",
+        "//haku/console/frontend:time",
     ],
 )
 
@@ -146,6 +148,7 @@ ts_library(
         "//haku/console/frontend:coalesced_refresh",
         "//haku/console/frontend:console_events",
         "//haku/console/frontend:conversation_launch",
+        "//haku/console/frontend:icons",
         "//haku/console/frontend:routing",
     ],
 )

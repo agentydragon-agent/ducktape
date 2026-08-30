@@ -131,8 +131,10 @@ function sceneElement(scene: string) {
     case "settings-sessions":
     case "settings-sessions-mobile":
     case "settings-sessions-terminate":
+    case "settings-sessions-terminate-mobile":
     case "settings-notifications":
     case "settings-nodes":
+    case "settings-nodes-mobile":
     case "settings-system":
       return <ConsoleScene view="settings" />;
     case "conversations":
@@ -174,6 +176,8 @@ function sceneElement(scene: string) {
       return <IndicatorScene state="error" />;
     case "session-expiring":
       return <SessionExpiringScene />;
+    case "not-found":
+      return <ConsoleScene view="notFound" />;
     case "oauth-success":
     case "oauth-success-mobile":
       return (
