@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import Enum, String, Text
+from sqlalchemy import Dialect, Enum, String, Text
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.types import TypeDecorator
 
@@ -18,8 +18,7 @@ class RawJSON(JSON):
 
     cache_ok = True
 
-    def bind_processor(self, dialect: Any) -> None:
-        del dialect
+    def bind_processor(self, _dialect: Dialect) -> None:
         return None
 
 
