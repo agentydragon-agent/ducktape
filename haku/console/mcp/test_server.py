@@ -2151,5 +2151,6 @@ async def test_agent_tool_denylist_rejects_hand_built_dispatch(tmp_path: Path) -
             actor=agent,
         )
 
+
 if __name__ == "__main__":
     pytest_bazel.main()

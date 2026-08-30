@@ -404,11 +404,7 @@ def _exposed_metadata(
             }
         )
 
-    tools = [
-        exposed(tool)
-        for tool in metadata.state.tools
-        if not _is_agent_tool_blocked(server, actor, tool.name)
-    ]
+    tools = [exposed(tool) for tool in metadata.state.tools if not _is_agent_tool_blocked(server, actor, tool.name)]
     return metadata.model_copy(update={"state": metadata.state.model_copy(update={"tools": tools})})
 
 
