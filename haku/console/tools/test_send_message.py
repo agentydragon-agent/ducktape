@@ -86,13 +86,10 @@ async def test_approved_agent_enqueues_user_role_prompt_and_returns_prompt_id() 
         )
     assert result.data.session_id == _SESSION_ID
     assert result.data.prompt_id == _PROMPT_ID
-    sessions.enqueue_prompt.assert_awaited_once_with(
-        _OPERATOR_ID, _SESSION_ID, "continue the work", SPA_ORIGIN
-    )
+    sessions.enqueue_prompt.assert_awaited_once_with(_OPERATOR_ID, _SESSION_ID, "continue the work", SPA_ORIGIN)
 
 
 async def test_operator_can_send_directly() -> None:
-    sessions = _Sessions()
     async with Client(build_mcp(sessions, conversation_reads=ConversationReadAccessPolicy(()))) as client:
         result = await client.call_tool(
             "send_message",
