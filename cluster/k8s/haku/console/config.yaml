@@ -214,6 +214,14 @@ auto_approval_policies:
         - search_commits
         - search_repositories
         - search_users
+  # `get_me` returns only the authenticated caller's own GitHub identity and has no
+  # repository or mutation surface. Keep it separate so every configured Agent can
+  # use the identity read without widening repository-scoped GitHub policies.
+  - id: github_identity_reads
+    type: exact_tools
+    tools:
+      github:
+        - get_me
   # public-coder-agent may inspect this public source repository, but not use the Operator's GitHub
   # credential to read other public or private repositories. search_pull_requests is safe only
   # with its matching owner/repo arguments and no query-level `repo:` qualifier; search_code is
@@ -371,6 +379,7 @@ auto_approval_policies:
     type: any_of
     policies:
       - public_coder_github_reads
+      - github_identity_reads
       - kubernetes_reads
       - grants_self_introspection
       - grants_own_revoke
@@ -477,6 +486,7 @@ auto_approval_policies:
       - google_calendar_reads
       - grocy_reads
       - github_reads
+      - github_identity_reads
       - tana_safe_tools
       - postscanmail_reads
       - home_assistant_reads
