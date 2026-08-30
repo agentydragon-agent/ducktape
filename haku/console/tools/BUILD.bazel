@@ -324,6 +324,7 @@ py_test(
         "//haku/console/conversation:prompt_origin",
         "//haku/console/grants:principal",
         "//haku/console/mcp:execution",
+        "//haku/console/session:runtime",
         "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
