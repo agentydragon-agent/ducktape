@@ -736,10 +736,7 @@ export function ConversationsPage({
     <>
       <ConversationListPage hidden={hidden || conversationId !== null} />
       {mountedConversationId !== null && (
-        <ConversationDetailPage
-          conversationId={mountedConversationId}
-          hidden={hidden || conversationId === null}
-        />
+        <ConversationDetailPage conversationId={mountedConversationId} hidden={hidden || conversationId === null} />
       )}
     </>
   );
