@@ -187,7 +187,7 @@ def test_malformed_body_is_rejected_before_evaluation() -> None:
     service = _FakeDecideService(HttpAuthorizationDenied(reason="unreached"))
     incoherent = dict(_BODY, upstream_ip="198.51.100.9")  # pinned address outside the resolved set
     with _client(service) as client:
-        body_token = _post(client, body={"fence_credential": _DECISION_ENDPOINT_TOKEN})
+        body_token = _post(client, body={"unexpected_field": _DECISION_ENDPOINT_TOKEN})
         unresolved_pin = _post(client, body=incoherent)
     assert body_token.status_code == 422
     assert unresolved_pin.status_code == 422

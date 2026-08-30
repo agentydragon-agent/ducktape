@@ -1,13 +1,5 @@
 # TODO — Agent Sandbox client
 
-## Rename the shared HTTP decision-endpoint credential
-
-`HAKU_EGRESS_FENCE_CREDENTIAL` and the Secret key currently call the bearer a “fence”
-credential, which invites the wrong inference that it identifies the sandbox Agent. Rename the
-wire/config/Secret names to a role-based name such as `HAKU_HTTP_DECISION_ENDPOINT_TOKEN` in a
-follow-up, keeping clear that this token authenticates the shared sidecar endpoint only and the
-live session token supplies Agent/session identity.
-
 ## Bind the session bearer from a Secret
 
 When the upstream Agent Sandbox `SandboxClaim.spec.env` API supports Secret-backed
