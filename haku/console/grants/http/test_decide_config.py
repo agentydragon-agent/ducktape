@@ -47,10 +47,22 @@ def test_egress_decide_config_requires_distinct_env_references() -> None:
 
 
 def test_egress_decide_config_accepts_both_token_env_var_names() -> None:
-    assert EgressDecideConfig.model_validate({"fence_credential_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}).decision_endpoint_token_env_var == "EGRESS_DECISION_ENDPOINT_TOKEN"
-    assert EgressDecideConfig.model_validate({"decision_endpoint_token_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}).decision_endpoint_token_env_var == "EGRESS_DECISION_ENDPOINT_TOKEN"
+    assert (
+        EgressDecideConfig.model_validate(
+            {"fence_credential_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}
+        ).decision_endpoint_token_env_var
+        == "EGRESS_DECISION_ENDPOINT_TOKEN"
+    )
+    assert (
+        EgressDecideConfig.model_validate(
+            {"decision_endpoint_token_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}
+        ).decision_endpoint_token_env_var
+        == "EGRESS_DECISION_ENDPOINT_TOKEN"
+    )
     with pytest.raises(ValidationError, match="fence_credentials"):
-        EgressDecideConfig.model_validate({"fence_credentials": [], "decision_endpoint_token_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"})
+        EgressDecideConfig.model_validate(
+            {"fence_credentials": [], "decision_endpoint_token_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}
+        )
 
 
 def test_credential_entry_canonicalizes_and_validates_match_headers() -> None:
@@ -164,8 +176,7 @@ def test_config_grant_entries_validate_fail_loud() -> None:
         )
     with pytest.raises(ValueError, match="unknown credential handle"):
         EgressDecideConfig(
-            decision_endpoint_token_env_var="EGRESS_TOKEN",
-            grants=[_config_grant(credential_handle="ghost")],
+            decision_endpoint_token_env_var="EGRESS_TOKEN", grants=[_config_grant(credential_handle="ghost")]
         )
     with pytest.raises(ValueError, match="path_regex"):
         _config_grant(path_regex="([unclosed")
@@ -212,8 +223,7 @@ def test_config_grant_allow_prohibited_address_defaults_off_and_parses() -> None
 def test_load_egress_decide_passes_configuration_grants_through(monkeypatch: pytest.MonkeyPatch) -> None:
     """Configuration grants carry no secrets, so loading preserves the reviewed entry."""
     config = EgressDecideConfig(
-        decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN",
-        credentials=[_credential_entry()],
+        decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN", credentials=[_credential_entry()]
         grants=[_config_grant(credential_handle="github-bot")],
     )
     monkeypatch.setenv("EGRESS_DECISION_ENDPOINT_TOKEN", _DECISION_ENDPOINT_TOKEN)
