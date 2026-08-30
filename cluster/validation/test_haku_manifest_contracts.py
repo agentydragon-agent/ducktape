@@ -367,6 +367,12 @@ def test_haku_runtimes_and_access_profile_share_one_grant(k8s_dir: Path) -> None
     exec_target = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku.yaml").read_text())
     runner_template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
     assert runner_template["metadata"]["namespace"] == "haku-runtime-sandbox"
+    runner_environment = sandbox_env(runner_template)
+    assert runner_environment["GITHUB_TOKEN"] == {
+        "name": "GITHUB_TOKEN",
+        "value": "github-token-placeholder",
+    }
+    assert "HAKU_GITHUB_TOKEN" not in runner_environment
 
     for template in (exec_target, runner_template):
         pod = template["spec"]["podTemplate"]["spec"]
@@ -796,7 +802,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
         "value": "proxy-litellm-public-coder-placeholder",
     }
     assert environment["HAKU_RUNNER_SETUP"]["value"] == ""
-    assert not {"HAKU_GIT_USERNAME", "HAKU_GIT_PASSWORD", "HAKU_GITHUB_TOKEN"} & environment.keys()
+    assert not {"HAKU_GIT_USERNAME", "HAKU_GIT_PASSWORD"} & environment.keys()
     workspace = one(volume for volume in pod["volumes"] if volume["name"] == "workspace")
     assert workspace == {"name": "workspace", "emptyDir": {"sizeLimit": "10Gi"}}
     # The runner trusts the colocated Console egress fence it now routes through (#4670): the bundle

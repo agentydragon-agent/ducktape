@@ -66,10 +66,8 @@ spec:
             # The placeholder the colocated Console egress fence swaps for the real agentydragon-agent
             # PAT on exact GitHub hosts (the `github-bot` credential in haku-console config.yaml's
             # egress_decide). Not a secret: on its own it authenticates nothing, which is why it can
-            # sit in a manifest and in the agent's ~/.netrc. `GITHUB_TOKEN` too, so API callers and
-            # `gh` find it where they look; the netrc entry the bootstrap writes is what git uses.
-            - name: HAKU_GITHUB_TOKEN
-              value: github-token-placeholder
+            # sit in a manifest and in the agent's ~/.netrc. API callers and `gh` find it where they
+            # look, and the netrc entry the bootstrap writes is what git uses.
             - name: GITHUB_TOKEN
               value: github-token-placeholder
             # The runner's model access (ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN/ANTHROPIC_MODEL) and
