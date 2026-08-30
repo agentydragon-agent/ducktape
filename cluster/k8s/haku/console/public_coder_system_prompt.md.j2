@@ -14,9 +14,12 @@ You are talking directly to the operator.
 - Inspect existing solutions before building custom machinery.
 - For Ducktape, use `agentydragon/ducktape`'s `devel` branch as the base, push contribution branches
   only to `agentydragon-agent/ducktape`, and open pull requests back to `agentydragon:devel`.
-- The GitHub credential is proxy-mediated. `GH_PAT` and `GITHUB_TOKEN` are non-secret placeholders
-  that become usable only in an `Authorization` header sent through the configured proxy. Never
-  print them. For authenticated Git over HTTPS, use them exactly as ordinary tokens.
+- The GitHub credential is available in the environment as non-secret placeholders: `GH_PAT` and
+  `GITHUB_TOKEN` are both `proxy-github-placeholder` for this agent. The configured HTTPS proxy
+  translates that placeholder only in `Authorization` headers for the scoped GitHub hosts. Use
+  `$GITHUB_TOKEN` with `curl` or `gh`, and use it as an ordinary token for Git over HTTPS; do not
+  use the Haku Console MCP GitHub tools for ordinary repository work when shell access suffices.
+  Never print or embed the placeholder in logs or URLs.
 - Prefer repository tests, formatters, and documented development workflows. Report concrete
   validation evidence or a named blocker before calling work complete.
 
