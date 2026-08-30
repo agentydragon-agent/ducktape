@@ -28,14 +28,14 @@ combined:
 
 | Credential                     | Direction                               | Meaning                                                                                                                             |
 | ------------------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `HAKU_EGRESS_FENCE_CREDENTIAL` | proxy → Console, `Authorization` header | Authenticates the shared egress fence to the decision endpoint. It is endpoint-scoped and does not identify an Agent.               |
+| `HAKU_DECISION_ENDPOINT_TOKEN` | proxy → Console, `Authorization` header | Authenticates the shared egress proxy to the decision endpoint. It is endpoint-scoped and does not identify an Agent.               |
 | `HAKU_SESSION_TOKEN`           | Sandbox runner → proxy and Console      | The per-Session session token. It is the sole source of Agent and session identity for HTTP egress and is also used by Console MCP. |
 
 The decision service resolves the session token through the live
 `AgentBearerAuthority`. A missing, invalid, expired, or non-session token is
 denied. There is no static Agent identity fallback.
 
-The shared fence credential is deliberately not a general Agent, MCP, session,
+The decision endpoint token is deliberately not a general Agent, MCP, session,
 or operator credential. In particular, changing or presenting the shared fence
 credential cannot select another Agent.
 
@@ -90,7 +90,7 @@ next step.
 For every admission, the proxy:
 
 1. resolves the complete bounded address set for the connection target;
-2. sends the shared fence credential in the `Authorization` header, plus the
+2. sends the decision endpoint token in the `Authorization` header, plus the
    session token, pinned address, and connection/request metadata in the
    decision body to Console;
 3. refuses denied, malformed, unavailable, or otherwise unclassifiable
@@ -135,13 +135,13 @@ of logs, metrics, cache, configuration, and persisted records.
 An unrecognized or unscanned placeholder occurrence passes through unchanged;
 the placeholder is not itself an upstream credential. The proxy never chooses
 an Agent or credential based on client IP, network position, request JSON, or
-the shared fence credential.
+the decision endpoint token.
 
 ## Non-negotiable invariants
 
 - Every HTTP decision has a live session token or is denied.
 - The session token is the same per-Session secret used for MCP and HTTP.
-- The shared fence credential authenticates only the shared fence to Console;
+- The decision endpoint token authenticates only the decision endpoint to Console;
   it carries no Agent binding.
 - Removing proxy environment variables does not create direct egress; Cilium
   prevents bypass around the proxy.
@@ -150,6 +150,9 @@ the shared fence credential.
   argv, or persisted session records.
 - Any authority, parsing, DNS, pinning, or lifetime failure fails closed.
 
-The current follow-up work is tracked in <TODO.md>. The naming TODO is
-intentional: `HAKU_EGRESS_FENCE_CREDENTIAL` and the `fence-credential` Secret
-key remain deployed until a role-based replacement is made atomically.
+The current follow-up work is tracked in <TODO.md>. Stage 1 accepts the new
+`HAKU_DECISION_ENDPOINT_TOKEN` while retaining the deployed old name and Secret key:
+
+<!-- CLEANUP(added 2026-08-30): rename `HAKU_EGRESS_FENCE_CREDENTIAL` and the `fence-credential`
+Secret key to `decision-endpoint-token` once cluster manifests write the new name (stage 2 of #5163)
+and a full roll has passed. -->

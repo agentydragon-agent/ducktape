@@ -42,7 +42,7 @@ from haku.egress.addon import EgressGateAddon
 from haku.egress.decision import GrantScope, HttpAuthorizationDenied, RequestMeta
 from haku.egress.localhost_decide_client import DEFAULT_TIMEOUT_SECONDS
 from haku.egress.testing.proxy_test_harness import (
-    FENCE_CREDENTIAL,
+    DECISION_ENDPOINT_TOKEN,
     PLACEHOLDER,
     REAL_CREDENTIAL,
     SESSION_TOKEN,
@@ -295,14 +295,14 @@ class EndpointFailure:
     """One way the decide hop fails; each must refuse with zero upstream contact."""
 
     behavior: StubBehavior
-    fence_credential: str = FENCE_CREDENTIAL
+    decision_endpoint_token: str = DECISION_ENDPOINT_TOKEN
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
 
 
 ENDPOINT_FAILURES = [
     pytest.param(
-        EndpointFailure(behavior=allow_with_substitution(), fence_credential="not-the-fence-credential"),
-        id="rejected-fence-credential-401",
+        EndpointFailure(behavior=allow_with_substitution(), decision_endpoint_token="not-the-decision-endpoint-token"),
+        id="rejected-decision-endpoint-token-401",
     ),
     pytest.param(EndpointFailure(behavior=Unconfigured()), id="unconfigured-503"),
     pytest.param(EndpointFailure(behavior=Hang(), timeout_seconds=0.2), id="endpoint-timeout"),
@@ -317,7 +317,11 @@ async def test_localhost_decide_endpoint_failure_fails_closed(
     async with (
         stub_console(failure.behavior) as stub,
         aclosing(
-            stub_client(stub, fence_credential=failure.fence_credential, timeout_seconds=failure.timeout_seconds)
+            stub_client(
+                stub,
+                decision_endpoint_token=failure.decision_endpoint_token,
+                timeout_seconds=failure.timeout_seconds,
+            )
         ) as decide,
         make_proxy(decide, tmp_path) as proxy,
     ):

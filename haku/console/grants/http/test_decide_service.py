@@ -44,9 +44,9 @@ from haku.grants.authorization import GrantSourceKind
 
 _NOW = datetime(2026, 8, 27, 12, 0, tzinfo=UTC)
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=443)
-_FENCE = "shared-fence-credential"
+_DECISION_ENDPOINT_TOKEN = "shared-decision-endpoint-token"
 _SESSION_TOKEN = "test-session-token"
-# Configured shared-fence credential whose holder has no Agent identity: isolation must come from
+# Configured decision endpoint token whose holder has no Agent identity: isolation must come from
 # live session-token principal filtering.
 _UNGRANTED_AGENT = UUID("10000000-0000-4000-8000-000000000099")
 _GITHUB_VALUE = "ghp-real-bot-token"
@@ -140,7 +140,7 @@ def _harness(
             http_config_grants=tuple(config_grant_entries),
         ),
         credentials=LoadedEgressDecide(
-            fence_credential=SecretStr(_FENCE),
+            decision_endpoint_token=SecretStr(_DECISION_ENDPOINT_TOKEN),
             credentials=credentials(agent_id) if credentials is not None else [],
             grants=config_grant_entries,
         ),
@@ -193,9 +193,15 @@ def test_fence_bearer_gates_evaluation(make_client: Any) -> None:
         harness = _harness(client)
         service = harness.decide
 
-        assert service.authenticate_proxy(f"Bearer {_FENCE}")
-        assert service.authenticate_proxy(f"bearer {_FENCE}")
-        for rejected in ("", _FENCE, "Bearer", f"Bearer {_FENCE}x", f"Basic {_FENCE}"):
+        assert service.authenticate_proxy(f"Bearer {_DECISION_ENDPOINT_TOKEN}")
+        assert service.authenticate_proxy(f"bearer {_DECISION_ENDPOINT_TOKEN}")
+        for rejected in (
+            "",
+            _DECISION_ENDPOINT_TOKEN,
+            "Bearer",
+            f"Bearer {_DECISION_ENDPOINT_TOKEN}x",
+            f"Basic {_DECISION_ENDPOINT_TOKEN}",
+        ):
             assert not service.authenticate_proxy(rejected)
 
 
@@ -483,7 +489,7 @@ def test_configuration_grant_unresolvable_credential_degrades(
         harness = _harness(
             client,
             credentials=lambda agent_id: [
-                # Assigned to a different Agent than the one whose fence credential decides here.
+                # Assigned to a different Agent than the one whose decision endpoint token decides here.
                 _github_credential(_UNGRANTED_AGENT),
                 _github_credential(
                     agent_id, handle="origin-locked", placeholder="origin-locked-placeholder"
@@ -583,7 +589,7 @@ def test_unresolvable_credential_admits_without_substitution(
         harness = _harness(
             client,
             credentials=lambda agent_id: [
-                # Assigned to a different Agent than the one whose fence credential decides here.
+                # Assigned to a different Agent than the one whose decision endpoint token decides here.
                 _github_credential(_UNGRANTED_AGENT),
                 _github_credential(
                     agent_id, handle="origin-locked", placeholder="origin-locked-placeholder"
@@ -849,7 +855,7 @@ async def test_grant_authority_failure_raises_unavailable() -> None:
                 PostgresGrantRepository(unreachable), max_lifetime=timedelta(hours=1), clock=lambda: _NOW
             ),
         ),
-        credentials=LoadedEgressDecide(fence_credential=SecretStr(_FENCE)),
+        credentials=LoadedEgressDecide(decision_endpoint_token=SecretStr(_DECISION_ENDPOINT_TOKEN)),
         prohibited_cidrs=frozenset(),
         agent_bearer_authority=cast(Any, _UnavailableBridgeBearerAuthority()),
     )

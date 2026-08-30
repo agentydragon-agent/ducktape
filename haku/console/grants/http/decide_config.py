@@ -1,6 +1,6 @@
 """Deploy-time credentials and configuration grants of the internal HTTP egress decide endpoint (#4670).
 
-The ``egress_decide`` section of the console config file declares the shared-fence bearer the
+The ``egress_decide`` section of the console config file declares the decision endpoint token the
 colocated egress proxy presents, the Console-owned egress credential registry (#4885): per handle,
 the inert placeholder a sandbox presents, the headers the proxy scans for it, the principal
 allowed to redeem it, and the exact origins it may be redeemed at — and the configuration-file
@@ -21,7 +21,7 @@ import os
 import re
 from ipaddress import IPv4Network, IPv6Network
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.grants.http.models import CREDENTIAL_HANDLE_PATTERN, HttpOrigin, HttpRequestCoverage
 from haku.console.grants.principal import ConfigGrantPrincipal
@@ -146,15 +146,19 @@ class EgressConfigGrantEntry(BaseModel):
 
 
 class EgressDecideConfig(BaseModel):
-    """Wiring for ``POST /api/internal/http/decide``: the shared-fence bearer the colocated egress
+    """Wiring for ``POST /api/internal/http/decide``: the decision endpoint token the colocated egress
     proxy presents, the egress credential registry grants and configuration grants redeem from, and
     the configuration-file HTTP grants themselves.
     ``None`` on ``ConsoleConfigFile`` is the production-safe default — the endpoint stays 503
     and the proxy fails closed until a deploy deliberately wires it."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
-    fence_credential_env_var: EnvironmentVariableName
+    decision_endpoint_token_env_var: EnvironmentVariableName = Field(
+        # CLEANUP(added 2026-08-30): remove the old alias once cluster manifests write the new name (stage 2 of #5163)
+        # and a full roll has passed.
+        validation_alias=AliasChoices("decision_endpoint_token_env_var", "fence_credential_env_var")
+    )
     credentials: list[EgressCredentialEntry] = Field(default_factory=list)
     grants: list[EgressConfigGrantEntry] = Field(default_factory=list)
     prohibited_cidrs: frozenset[IPv4Network | IPv6Network] = Field(
@@ -170,7 +174,7 @@ class EgressDecideConfig(BaseModel):
 
     @model_validator(mode="after")
     def _distinct_env_references(self) -> EgressDecideConfig:
-        identity_env_vars = [self.fence_credential_env_var]
+        identity_env_vars = [self.decision_endpoint_token_env_var]
         # Credential entries may share a value_env_var with each other — that is how one credential
         # carries a second presentation — but never with an identity secret.
         if set(identity_env_vars) & {entry.value_env_var for entry in self.credentials}:
@@ -226,7 +230,7 @@ class LoadedEgressDecide(BaseModel):
     the evaluator's provenance names the literal reviewed entry.
     """
 
-    fence_credential: SecretStr
+    decision_endpoint_token: SecretStr
     credentials: list[LoadedEgressCredential] = Field(default_factory=list)
     grants: list[EgressConfigGrantEntry] = Field(default_factory=list)
 
@@ -234,7 +238,7 @@ class LoadedEgressDecide(BaseModel):
 def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
     """Read the decide endpoint's env-referenced secrets.
 
-    The endpoint authentication secret fails loud at startup: an unset fence-credential var
+    The endpoint authentication secret fails loud at startup: an unset decision-endpoint-token var
     raises, because without it the colocated fence cannot authenticate. A registry credential
     (``config.credentials``) whose value var is unset is instead
     skipped with a warning, and the endpoint still serves reachability verdicts and every other
@@ -247,10 +251,22 @@ def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
     value equal to any configured placeholder would make the "inert" placeholder itself the
     secret, so that is refused the same way.
     """
-    fence_credential = os.environ.get(config.fence_credential_env_var)
-    if not fence_credential:
-        raise RuntimeError(f"missing fence credential env var {config.fence_credential_env_var}")
-    identity_tokens = {fence_credential}
+    configured_env_var = str(config.decision_endpoint_token_env_var)
+    decision_endpoint_token = os.environ.get(configured_env_var)
+    if (
+        configured_env_var in {"HAKU_DECISION_ENDPOINT_TOKEN", "HAKU_EGRESS_FENCE_CREDENTIAL"}
+        and not decision_endpoint_token
+    ):
+        # CLEANUP(added 2026-08-30): remove once cluster manifests write the new name (stage 2 of #5163)
+        # and a full roll has passed.
+        decision_endpoint_token = os.environ.get(
+            "HAKU_EGRESS_FENCE_CREDENTIAL"
+            if configured_env_var == "HAKU_DECISION_ENDPOINT_TOKEN"
+            else "HAKU_DECISION_ENDPOINT_TOKEN"
+        )
+    if not decision_endpoint_token:
+        raise RuntimeError(f"missing decision endpoint token env var {configured_env_var}")
+    identity_tokens = {decision_endpoint_token}
     placeholders = {entry.placeholder for entry in config.credentials}
     loaded_credentials: list[LoadedEgressCredential] = []
     for credential in config.credentials:
@@ -278,5 +294,7 @@ def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
             )
         )
     return LoadedEgressDecide(
-        fence_credential=SecretStr(fence_credential), credentials=loaded_credentials, grants=config.grants
+        decision_endpoint_token=SecretStr(decision_endpoint_token),
+        credentials=loaded_credentials,
+        grants=config.grants
     )

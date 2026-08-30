@@ -47,7 +47,7 @@ from haku.grants.authorization import GrantSourceKind
 
 PLACEHOLDER = "test-github-token-placeholder"
 REAL_CREDENTIAL = "real-redeemed-credential"
-FENCE_CREDENTIAL = "shared-fence-credential"
+DECISION_ENDPOINT_TOKEN = "shared-decision-endpoint-token"
 SESSION_TOKEN = "test-session-token"
 
 
@@ -287,8 +287,8 @@ class StubConsole:
         behavior = self.behavior
         if isinstance(behavior, Unconfigured):
             return web.json_response({"detail": "HTTP egress decision is not configured"}, status=503)
-        if request.headers.get("Authorization") != f"Bearer {FENCE_CREDENTIAL}":
-            return web.json_response({"detail": "fence credential was rejected"}, status=401)
+        if request.headers.get("Authorization") != f"Bearer {DECISION_ENDPOINT_TOKEN}":
+            return web.json_response({"detail": "decision endpoint token was rejected"}, status=401)
         self.requests.append(DecideRequest.model_validate_json(await request.read()))
         match behavior:
             case HttpAuthorizationAllowed() | HttpAuthorizationDenied() as verdict:
@@ -325,11 +325,14 @@ async def stub_console(behavior: StubBehavior) -> AsyncIterator[StubConsole]:
 
 
 def stub_client(
-    stub: StubConsole, *, fence_credential: str = FENCE_CREDENTIAL, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    stub: StubConsole,
+    *,
+    decision_endpoint_token: str = DECISION_ENDPOINT_TOKEN,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> LocalhostDecideClient:
     return LocalhostDecideClient(
         base_url=f"http://127.0.0.1:{stub.port}",
-        fence_credential=SecretStr(fence_credential),
+        decision_endpoint_token=SecretStr(decision_endpoint_token),
         timeout_seconds=timeout_seconds,
     )
 
@@ -347,7 +350,7 @@ def dead_decide_client(*, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> L
     """A real decide client pointed at a closed port: every ``decide`` raises a connection error."""
     return LocalhostDecideClient(
         base_url=f"http://127.0.0.1:{closed_localhost_port()}",
-        fence_credential=SecretStr(FENCE_CREDENTIAL),
+        decision_endpoint_token=SecretStr(DECISION_ENDPOINT_TOKEN),
         timeout_seconds=timeout_seconds,
     )
 

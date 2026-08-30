@@ -12,9 +12,9 @@ deploy:
 
 - ``HAKU_EGRESS_DECIDE_URL`` — base URL of Console's loopback decide listener,
   e.g. ``http://127.0.0.1:8079``.
-- ``HAKU_EGRESS_FENCE_CREDENTIAL`` — the shared-fence credential this proxy presents
-  in the ``Authorization`` header to Console. It authenticates the shared fence only;
-  it is not the sandbox-to-proxy credential or an Agent identity.
+- ``HAKU_DECISION_ENDPOINT_TOKEN`` — the shared token this proxy presents in the
+  ``Authorization`` header to Console. It authenticates the decision endpoint only;
+  it is not the per-session token or a destination egress credential.
 - ``HAKU_EGRESS_CONFDIR`` — mitmproxy confdir holding the shared interception CA
   (``mitmproxy-ca.pem``); an init container assembles it from the deploy CA.
 - ``HAKU_EGRESS_LISTEN_HOST`` / ``HAKU_EGRESS_LISTEN_PORT`` — the fenced-workload
@@ -44,10 +44,18 @@ def _require(name: str) -> str:
     return value
 
 
+def _require_decision_endpoint_token() -> str:
+    if token := os.environ.get("HAKU_DECISION_ENDPOINT_TOKEN"):
+        return token
+    # CLEANUP(added 2026-08-30): remove once cluster manifests write the new name (stage 2 of #5163)
+    # and a full roll has passed.
+    return _require("HAKU_EGRESS_FENCE_CREDENTIAL")
+
+
 async def async_main() -> None:
     decide = LocalhostDecideClient(
         base_url=_require("HAKU_EGRESS_DECIDE_URL"),
-        fence_credential=SecretStr(_require("HAKU_EGRESS_FENCE_CREDENTIAL")),
+        decision_endpoint_token=SecretStr(_require_decision_endpoint_token()),
     )
     confdir = Path(_require("HAKU_EGRESS_CONFDIR"))
     listen_host = os.environ.get("HAKU_EGRESS_LISTEN_HOST", "0.0.0.0")
