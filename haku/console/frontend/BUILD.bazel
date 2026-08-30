@@ -766,6 +766,7 @@ ts_library(
         ":link",
         ":mcp_status_client",
         ":open_external",
+        ":page_scroll",
         ":push_subscription",
         ":session_sandboxes_client",
         ":time",
