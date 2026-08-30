@@ -348,7 +348,7 @@ nothing has ever exercised that — every claim in this repo about one is read f
 <../runner/docs/second_backend.md> rather than measured.
 
 **The seam is the frame protocol, not `CliBackend`.** A runner is anything that dials the console
-with the bridge credential and speaks frames, which is why <../runner/backend.py> can say
+with the session token and speaks frames over the runner protocol, which is why <../runner/backend.py> can say
 almost nothing below the envelope is Claude-specific. `CliBackend` answers one question — how to get
 frames out of a **child process** — so it is what a runner uses when it happens to wrap a CLI, and
 `second_backend.md`'s subprocess assumptions (a binary to resolve, argv, `replayable` over a child's

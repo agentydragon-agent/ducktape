@@ -14,7 +14,7 @@ This README is the component map, not a second copy of every contract:
 
 - <docs/agent_authority.md> — canonical Agent identity, credentials, enrollment, profiles, and
   actor-scoped authority.
-- <docs/containment.md> — iframe isolation, trusted chrome, bridge verbs, consent, and browser-side
+- <docs/containment.md> — iframe isolation, trusted chrome, frontend bridge actions, consent, and browser-side
   exfiltration bounds.
 - <docs/oauth_browser_surfaces.md> — account-link and Agent-enrollment browser boundaries.
 - <docs/conversation_layers.md>, <docs/conversation_schema.md>, and <x/README.md> — the experimental conversation
@@ -30,10 +30,10 @@ This README is the component map, not a second copy of every contract:
 `POST /api/capabilities/launch-routine`. It uses a console-only bearer and is protected by exact
 Origin admission, a tiny reviewed allowlist, trusted-shell confirmation showing the prompt
 verbatim, and audit logging in a namespace Haku cannot read. The framed Haku UI can only request a
-launch through the bridge; it cannot call the route or render the deciding control.
+launch through the frontend bridge; it cannot call the route or render the deciding control.
 
 This is transitional. `haku_routine.launch_routine` reaches the same routine through the standard
-MCP approval queue. Once haku-ui uses that path, the bridge verb and bespoke capability router can
+MCP approval queue. Once haku-ui uses that path, the frontend bridge action and bespoke capability router can
 retire. There is no low-privilege console write tier: haku-ui writes its own state, while the
 console's Recall mirror is read-only.
 
@@ -176,10 +176,10 @@ preview-only MCP tools or HTTP routes.
 
 The console frames `haku-ui.allegedly.works` full-page in a sandboxed cross-origin iframe and owns a
 narrow rail of trusted chrome. The frame cannot read console DOM, cookies, credentials, approvals,
-or capability routes. A schema-validated `postMessage` bridge carries only requests that need the
+or capability routes. A schema-validated `postMessage` frontend bridge carries only requests that need the
 trusted side; the shell origin-checks, decides, confirms where necessary, and owns revocation.
 
-The complete bridge and consent contract—including route/title mirroring, open-link checks,
+The complete frontend bridge and consent contract—including route/title mirroring, open-link checks,
 geolocation and screenshot grants, shell-owned kill switches, and residual exfiltration bounds—is
 <docs/containment.md>. Frontend ownership and routing are in <frontend/README.md>.
 

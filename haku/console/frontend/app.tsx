@@ -10,7 +10,7 @@ import { useOAuthResultAnnouncement } from "./oauth_result_announcement";
 import { useConsoleView } from "./routing";
 
 // The trusted outer shell: a full-page frame for Haku's own UI (a sandboxed cross-origin iframe)
-// plus the bridge that brokers the iframe's privileged requests (opening links, launching a run).
+// plus the frontend bridge that brokers the iframe's privileged requests (opening links, launching a run).
 // Product chrome lives in haku-ui; only the trusted confirm + capability firing are here.
 // Console-owned read surfaces have their own routes (routing.ts). See README + docs/containment.md.
 export default function App(): JSX.Element {

@@ -11,7 +11,7 @@ const STEP_LABELS: Record<Provisioning["step"], string> = {
   waiting_for_sandbox: "Waiting for Sandbox assignment",
   waiting_for_pod: "Waiting for the sandbox Pod",
   waiting_for_pod_ready: "Waiting for the Pod and runner container",
-  waiting_for_runner: "Pod is ready; waiting for the Claude bridge",
+  waiting_for_runner: "Pod is ready; waiting for the Claude runner connection",
 };
 
 const STEP_SUMMARIES: Record<Provisioning["step"], string> = {
@@ -92,7 +92,7 @@ export function SandboxProvisioning({ provisioning }: { provisioning: Provisioni
             readiness={readiness(provisioning.runner_ready, "not reported")}
             detail={provisioning.runner_state ?? undefined}
           />
-          <Resource label="Claude bridge" readiness={{ color: "blue", label: "waiting" }} />
+          <Resource label="Claude runner connection" readiness={{ color: "blue", label: "waiting" }} />
         </Table.Tbody>
       </Table>
       {provisioning.observation_error && (

@@ -9,7 +9,7 @@ server); the bearer never leaves this process. See `haku/docs/security.md` → e
 "Console privileged-action tier".
 
 CLEANUP(added 2026-07-11): Retire this whole launch-routine capability path (the endpoint +
-`LaunchRoutineRequest` + the `requestLaunch` bridge verb + the shell launch confirm) once
+`LaunchRoutineRequest` + the `requestLaunch` frontend bridge action + the shell launch confirm) once
 haku-ui submits `launch_routine` through its backend to the standard approval queue (the
 `haku_routine` MCP server, `tools/routine.py`) and the `requestLaunch` verb is dropped.
 """
@@ -47,7 +47,7 @@ async def launch_routine(
     """Fire the Haku claude-code-web routine. Same-origin gated; the bearer stays server-side.
 
     Superseded by the `haku_routine` MCP tool `launch_routine` (approval-queue gated); kept
-    while haku-ui still fires via the `requestLaunch` bridge verb (see the module tombstone)."""
+    while haku-ui still fires via the `requestLaunch` frontend bridge action (see the module tombstone)."""
     try:
         return await RoutineLauncher(config).launch(body.text if body else None)
     except RuntimeError as exc:
