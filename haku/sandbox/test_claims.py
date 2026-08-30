@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import pytest
 import pytest_bazel
 
-from haku.sandbox.claims import SandboxClaimSpec, build_sandbox_claim
+from haku.sandbox.claims import MANAGED_BY_LABEL, MANAGED_BY_VALUE, SandboxClaimSpec, build_sandbox_claim
 
 
 @pytest.mark.parametrize(
@@ -56,7 +56,7 @@ from haku.sandbox.claims import SandboxClaimSpec, build_sandbox_claim
                 namespace="agent-workspaces",
                 name="task-one",
                 warm_pool="test-pool",
-                labels={"app.kubernetes.io/managed-by": "haku-sandbox-mcp"},
+                labels={MANAGED_BY_LABEL: MANAGED_BY_VALUE},
                 annotations={
                     "haku.allegedly.works/sandbox-warm-pool": "test-pool",
                     "haku.allegedly.works/sandbox-container": "workspace",
@@ -71,7 +71,7 @@ from haku.sandbox.claims import SandboxClaimSpec, build_sandbox_claim
                 "kind": "SandboxClaim",
                 "metadata": {
                     "name": "task-one",
-                    "labels": {"app.kubernetes.io/managed-by": "haku-sandbox-mcp"},
+                    "labels": {MANAGED_BY_LABEL: MANAGED_BY_VALUE},
                     "annotations": {
                         "haku.allegedly.works/sandbox-warm-pool": "test-pool",
                         "haku.allegedly.works/sandbox-container": "workspace",

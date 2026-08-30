@@ -14,6 +14,8 @@ from util.kubernetes import CustomObjectsClient
 CLAIM_GROUP = "extensions.agents.x-k8s.io"
 CLAIM_API_VERSION = "v1beta1"
 CLAIMS_PLURAL = "sandboxclaims"
+MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
+MANAGED_BY_VALUE = "haku-console"
 
 
 class _ClaimMetadata(BaseModel):

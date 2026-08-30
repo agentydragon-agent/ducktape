@@ -30,6 +30,8 @@ from haku.sandbox.claims import (
     CLAIM_API_VERSION,
     CLAIM_GROUP,
     CLAIMS_PLURAL,
+    MANAGED_BY_LABEL,
+    MANAGED_BY_VALUE,
     SandboxClaimSpec as SharedSandboxClaimSpec,
     create_sandbox_claim,
     format_shutdown_time,
@@ -171,7 +173,7 @@ class KubernetesSandboxClaims:
                 name=self._claim_name(session_id),
                 warm_pool=self._spec.warm_pool,
                 labels={
-                    "app.kubernetes.io/managed-by": "haku-console",
+                    MANAGED_BY_LABEL: MANAGED_BY_VALUE,
                     "haku.allegedly.works/harness": self._spec.harness_label,
                 },
                 annotations={},
@@ -370,7 +372,7 @@ class KubernetesSandboxClaims:
                         namespace=self._spec.namespace,
                         plural=CLAIMS_PLURAL,
                         label_selector=(
-                            "app.kubernetes.io/managed-by=haku-console,"
+                            f"{MANAGED_BY_LABEL}={MANAGED_BY_VALUE},"
                             f"haku.allegedly.works/harness={self._spec.harness_label}"
                         ),
                     ),

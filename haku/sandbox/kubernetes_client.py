@@ -19,7 +19,14 @@ from kubernetes_asyncio.config.config_exception import ConfigException
 from kubernetes_asyncio.stream import WsApiClient
 from kubernetes_asyncio.stream.ws_client import ERROR_CHANNEL, STDERR_CHANNEL, STDOUT_CHANNEL
 
-from haku.sandbox.claims import CLAIM_GROUP, CLAIMS_PLURAL, SandboxClaimSpec, create_sandbox_claim
+from haku.sandbox.claims import (
+    CLAIM_GROUP,
+    CLAIMS_PLURAL,
+    MANAGED_BY_LABEL,
+    MANAGED_BY_VALUE,
+    SandboxClaimSpec,
+    create_sandbox_claim,
+)
 from haku.sandbox.config import SandboxEnvironmentConfig
 from haku.sandbox.models import (
     BootstrapState,
@@ -41,11 +48,6 @@ API_VERSION = "v1beta1"
 SANDBOXES_PLURAL = "sandboxes"
 POD_NAME_ANNOTATION = "agents.x-k8s.io/pod-name"
 
-MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
-# Ownership marker written on every claim and required by every mutation, so it is a stored
-# value rather than a name: changing it orphans live claims, which then match nothing and can
-# be neither adopted nor disposed. It still reads "-mcp" from when this ran as its own service.
-MANAGED_BY_VALUE = "haku-sandbox-mcp"
 WARM_POOL_ANNOTATION = "haku.allegedly.works/sandbox-warm-pool"
 CONTAINER_ANNOTATION = "haku.allegedly.works/sandbox-container"
 DEFAULT_CWD_ANNOTATION = "haku.allegedly.works/sandbox-default-cwd"
@@ -607,7 +609,7 @@ class KubernetesSandboxClient:
     def _require_owned(self, claim: dict[str, Any], name: str) -> None:
         labels = claim.get("metadata", {}).get("labels", {}) or {}
         if labels.get(MANAGED_BY_LABEL) != MANAGED_BY_VALUE:
-            raise ToolError(f"SandboxClaim {name!r} exists but is not owned by this MCP server")
+            raise ToolError(f"SandboxClaim {name!r} exists but is not owned by haku-console")
 
     # Annotated as tuples because `list` resolves to this class's `list` method in a signature.
     def _provenance_fields(self, bootstrap_state: BootstrapState) -> tuple[_ProvenanceField, ...]:
