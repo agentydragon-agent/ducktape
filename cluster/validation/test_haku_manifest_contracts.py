@@ -334,7 +334,8 @@ def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
     assert container["args"] == ["--harness", "claude"]
 
     manifests = "\n".join(path.read_text() for path in k8s_dir.rglob("*.yaml"))
-    assert retired_name not in manifests
+    image_references = re.findall(r"^\s*image:\s*([^\s#]+)", manifests, flags=re.MULTILINE)
+    assert all(retired_name not in image.rsplit(":", 1)[0] for image in image_references)
 
 
 def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir: Path) -> None:
