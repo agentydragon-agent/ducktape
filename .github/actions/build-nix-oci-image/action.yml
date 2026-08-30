@@ -11,9 +11,6 @@ inputs:
   image:
     description: Full destination image repository
     required: true
-  registry:
-    description: Registry kind, either ghcr or forgejo
-    required: true
   push:
     description: Publish the image when true
     required: false
@@ -22,10 +19,6 @@ inputs:
     description: Also publish the archive as the latest tag
     required: false
     default: "false"
-  github_token:
-    description: GitHub token used for GHCR authentication
-    required: false
-    default: ""
 
 runs:
   using: composite
@@ -52,35 +45,15 @@ runs:
       shell: bash
       env:
         IMAGE: ${{ inputs.image }}
-        REGISTRY: ${{ inputs.registry }}
-        GITHUB_TOKEN: ${{ inputs.github_token }}
       run: |
         set -euo pipefail
         ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
-        case "$REGISTRY" in
-          forgejo)
-            skopeo copy --insecure-policy \
-              --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
-              "docker-archive:$(readlink -f result)" "docker://$ref"
-            if [[ "${{ inputs.push_latest }}" == "true" ]]; then
-              skopeo copy --insecure-policy \
-                --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
-                "docker-archive:$(readlink -f result)" "docker://$IMAGE:latest"
-            fi
-            ;;
-          ghcr)
-            printf '%s\n' "$GITHUB_TOKEN" | skopeo login ghcr.io \
-              --username "${{ github.actor }}" --password-stdin
-            skopeo copy --insecure-policy \
-              "docker-archive:$(readlink -f result)" "docker://$ref"
-            if [[ "${{ inputs.push_latest }}" == "true" ]]; then
-              skopeo copy --insecure-policy \
-                "docker-archive:$(readlink -f result)" "docker://$IMAGE:latest"
-            fi
-            ;;
-          *)
-            echo "Unsupported registry kind: $REGISTRY" >&2
-            exit 1
-            ;;
-        esac
+        skopeo copy --insecure-policy \
+          --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+          "docker-archive:$(readlink -f result)" "docker://$ref"
+        if [[ "${{ inputs.push_latest }}" == "true" ]]; then
+          skopeo copy --insecure-policy \
+            --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+            "docker-archive:$(readlink -f result)" "docker://$IMAGE:latest"
+        fi
         echo "pushed \`$ref\`" >> "$GITHUB_STEP_SUMMARY"

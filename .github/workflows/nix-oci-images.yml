@@ -64,6 +64,5 @@ jobs:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
           flake_output: ${{ matrix.flake_output }}
           image: ${{ matrix.image }}
-          registry: forgejo
           push: ${{ github.ref_name == 'devel' }}
           push_latest: ${{ matrix.push_latest }}
