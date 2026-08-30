@@ -39,6 +39,7 @@ ts_library(
         "//haku/console/frontend:client",
         "//haku/console/frontend:code_block",
         "//haku/console/frontend:icons",
+        "//haku/console/frontend:page_scroll",
     ],
 )
 
@@ -86,13 +87,13 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        "//haku/console/frontend:page_scroll",
         ":frame_log",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//haku/console/frontend:client",
         "//haku/console/frontend:json_preview",
+        "//haku/console/frontend:page_scroll",
         "//haku/console/frontend:routing",
         "//haku/console/frontend:variant_control",
     ],
