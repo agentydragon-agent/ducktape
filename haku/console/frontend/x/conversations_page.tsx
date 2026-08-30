@@ -213,13 +213,7 @@ function ItemRunView({ run }: { run: ItemRun }) {
   if (run.kind === "single") return <ItemView item={run.item} />;
 
   const initiallyOpen = run.items[run.items.length - 1].status === "open";
-  return (
-    <ToolReasoningRunView
-      items={run.items}
-      summary={run.summary}
-      initiallyOpen={initiallyOpen}
-    />
-  );
+  return <ToolReasoningRunView items={run.items} summary={run.summary} initiallyOpen={initiallyOpen} />;
 }
 
 function ToolReasoningRunView({
