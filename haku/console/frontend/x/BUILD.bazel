@@ -142,7 +142,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        "//haku/console/frontend:page_scroll",
         ":bootstrap_narration",
         ":chat_scroll",
         ":conversation_composer",
