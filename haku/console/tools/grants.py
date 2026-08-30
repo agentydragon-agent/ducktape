@@ -27,7 +27,7 @@ import haku.console.grants.kubernetes.service as kubernetes_service
 import haku.console.tools.kubernetes as kubernetes_tools
 from haku.console.grants.catalog import Grant, GrantCatalog
 from haku.console.grants.envelope import GRANT_SET_LIMIT, GrantNotFoundError
-from haku.console.grants.principal import GrantPrincipal, require_applicable_grant_principal
+from haku.console.grants.principal import GrantPrincipalInput, resolve_grant_principal_input
 from haku.console.identity.enrollment import AgentEnrollmentService
 from haku.console.mcp.execution import (
     EXECUTION_CONTEXT_DEPENDENCY,
@@ -48,7 +48,6 @@ class GrantDomain(StrEnum):
 
 # Only the explicit `self` read auto-approves. Named and omitted reads are broader and require
 # Operator approval.
-type GrantReadScope = Literal["self"] | GrantPrincipal
 
 
 class KubernetesGrantRequest(BaseModel):
@@ -122,7 +121,7 @@ class GrantsToolsService:
         context: McpExecutionContext,
         requests: list[GrantRequest],
         duration_seconds: int | None,
-        principal: GrantPrincipal,
+        principal: GrantPrincipalInput,
     ) -> list[GrantView]:
         if context.tool_call_id is None:
             raise PermissionError("grant creation requires durable tool-call provenance")
@@ -134,7 +133,7 @@ class GrantsToolsService:
             raise ToolError("one create_grant call must create grants in a single domain")
 
         request_principal = context.request_principal
-        principal = require_applicable_grant_principal(principal, request_principal)
+        principal = resolve_grant_principal_input(principal, request_principal)
         expires_at = (
             datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=duration_seconds)
             if duration_seconds is not None
@@ -159,7 +158,11 @@ class GrantsToolsService:
         return [HttpGrantView(grant=grant) for grant in http_grants]
 
     async def list_grants(
-        self, *, context: McpExecutionContext, principal: GrantReadScope | None = None, include_inactive: bool = False
+        self,
+        *,
+        context: McpExecutionContext,
+        principal: GrantPrincipalInput | None = None,
+        include_inactive: bool = False,
     ) -> list[Grant]:
         request_principal = context.request_principal
         if principal == "self":
@@ -225,7 +228,7 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
     mcp = FastMCP(
         name=GRANTS_SERVER_ID,
         instructions=(
-            "Create/list/get/end explicit Agent- or session-scoped database grants across grant "
+            "Create/list/get/end explicit Agent-, session-, or access-profile-scoped database grants across grant "
             "domains. Each create item carries a 'domain' tag: 'kubernetes' for RBAC-like scope/rule coverage, "
             "'http' for one exact canonical public origin narrowed by method set and optional path regex. One "
             "create_grant call creates grants in a single domain, atomically, with one shared optional expiry. get_grant "
@@ -280,11 +283,12 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
             ),
         ],
         principal: Annotated[
-            GrantPrincipal,
+            GrantPrincipalInput,
             Field(
                 description=(
-                    "Principal this grant covers. It must be applicable to the authenticated caller; "
-                    "an Agent, exact live session, or access profile may be selected."
+                    "Principal this grant covers. Use 'self' for the current session, or current Agent when no "
+                    "session is active; otherwise name any valid Agent, live session, or access profile. "
+                    "Creation is subject to Operator approval."
                 )
             ),
         ],
@@ -308,7 +312,7 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
     @mcp.tool
     async def list_grants(
         principal: Annotated[
-            GrantReadScope | None,
+            GrantPrincipalInput | None,
             Field(
                 description=(
                     "Grant subject to list. 'self' resolves the caller's trusted request principal and is "

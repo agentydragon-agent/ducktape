@@ -12,10 +12,12 @@ from haku.console.grants.principal import (
     AccessProfileGrantPrincipal,
     AgentGrantPrincipal,
     GrantPrincipal,
+    GrantPrincipalInput,
     GrantPrincipalKind,
     RequestPrincipal,
     SessionGrantPrincipal,
     grant_principal_applies_to,
+    resolve_grant_principal_input,
 )
 from haku.console.tool_call_actor import AgentActor
 
@@ -125,6 +127,32 @@ def test_access_profile_grant_principal_covers_agents_assigned_to_that_profile()
     assert not grant_principal_applies_to(
         principal, RequestPrincipal(agent_id=AGENT_A, session_id=None, access_profile_id="other")
     )
+
+
+@pytest.mark.parametrize(
+    ("requested", "expected"),
+    [
+        ("self", AgentGrantPrincipal(agent_id=AGENT_A)),
+        (AgentGrantPrincipal(agent_id=AGENT_B), AgentGrantPrincipal(agent_id=AGENT_B)),
+        (SessionGrantPrincipal(session_id=SESSION_B), SessionGrantPrincipal(session_id=SESSION_B)),
+        (
+            AccessProfileGrantPrincipal(access_profile_id="other"),
+            AccessProfileGrantPrincipal(access_profile_id="other"),
+        ),
+    ],
+)
+def test_grant_principal_input_accepts_any_explicit_identity_or_self(
+    requested: GrantPrincipalInput, expected: GrantPrincipal
+) -> None:
+    request_principal = RequestPrincipal(agent_id=AGENT_A, session_id=None, access_profile_id="public-coder")
+
+    assert resolve_grant_principal_input(requested, request_principal) == expected
+
+
+def test_grant_principal_input_self_prefers_the_current_session() -> None:
+    request_principal = RequestPrincipal(agent_id=AGENT_A, session_id=SESSION_A, access_profile_id="public-coder")
+
+    assert resolve_grant_principal_input("self", request_principal) == SessionGrantPrincipal(session_id=SESSION_A)
 
 
 if __name__ == "__main__":
