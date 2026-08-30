@@ -7,9 +7,20 @@ from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import Enum, String, Text
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.types import TypeDecorator
 
 from util.enum_vocab import UnknownValue
+
+
+class RawJSON(JSON):
+    """PostgreSQL ``json`` column that binds already serialized JSON text."""
+
+    cache_ok = True
+
+    def bind_processor(self, dialect: Any) -> None:
+        del dialect
+        return None
 
 
 def _union_members(enum_classes: Sequence[type[StrEnum]]) -> dict[str, StrEnum]:
