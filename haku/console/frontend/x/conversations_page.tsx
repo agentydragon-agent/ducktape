@@ -251,7 +251,7 @@ function ToolReasoningRunView({
  * already loaded are kept and appended to; a live event refreshes only the newest page, the way the
  * tool-call history does.
  */
-function ConversationListPage({ hidden = false }: { hidden?: boolean }) {
+function ConversationListPage() {
   // Null until the first read lands: an empty inventory and an unread one look the same
   // otherwise, and the two want different things on screen.
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
@@ -339,7 +339,7 @@ function ConversationListPage({ hidden = false }: { hidden?: boolean }) {
   }
 
   return (
-    <section className="haku-page" aria-label="Conversations" hidden={hidden}>
+    <section className="haku-page" aria-label="Conversations">
       <header className="haku-page-header">
         <div className="haku-page-bar haku-conversation-list-header">
           <Group gap="xs" wrap="nowrap" className="haku-conversation-launcher">
@@ -532,7 +532,7 @@ function ConversationDetailsMenu({
   );
 }
 
-function ConversationDetailPage({ conversationId, hidden = false }: { conversationId: string; hidden?: boolean }) {
+function ConversationDetailPage({ conversationId }: { conversationId: string }) {
   const [terminating, setTerminating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
@@ -563,7 +563,7 @@ function ConversationDetailPage({ conversationId, hidden = false }: { conversati
 
   if (error) {
     return (
-      <section className="haku-page" aria-label="Conversation" hidden={hidden}>
+      <section className="haku-page" aria-label="Conversation">
         <header className="haku-page-header">
           <div className="haku-page-bar">
             <Button variant="subtle" onClick={backToConversations}>
@@ -580,7 +580,7 @@ function ConversationDetailPage({ conversationId, hidden = false }: { conversati
 
   if (!conversation) {
     return (
-      <section className="haku-page" aria-label="Conversation" hidden={hidden}>
+      <section className="haku-page" aria-label="Conversation">
         <div className="haku-page-list">
           <Loader size="sm" />
         </div>
@@ -608,7 +608,7 @@ function ConversationDetailPage({ conversationId, hidden = false }: { conversati
   };
 
   return (
-    <section className="haku-page" aria-label="Conversation" hidden={hidden}>
+    <section className="haku-page" aria-label="Conversation">
       <header className="haku-page-header">
         <div className="haku-page-bar haku-conversation-detail-header">
           <div>
@@ -719,27 +719,10 @@ function ConversationDetailPage({ conversationId, hidden = false }: { conversati
   );
 }
 
-export function ConversationsPage({
-  conversationId,
-  hidden = false,
-}: {
-  conversationId: string | null;
-  hidden?: boolean;
-}): JSX.Element {
-  const [mountedConversationId, setMountedConversationId] = useState(conversationId);
-  const [listMounted, setListMounted] = useState(() => conversationId === null);
-
-  useEffect(() => {
-    if (conversationId !== null) setMountedConversationId(conversationId);
-    else setListMounted(true);
-  }, [conversationId]);
-
-  return (
-    <>
-      {listMounted && <ConversationListPage hidden={hidden || conversationId !== null} />}
-      {mountedConversationId !== null && (
-        <ConversationDetailPage conversationId={mountedConversationId} hidden={hidden || conversationId === null} />
-      )}
-    </>
+export function ConversationsPage({ conversationId }: { conversationId: string | null }): JSX.Element {
+  return conversationId === null ? (
+    <ConversationListPage />
+  ) : (
+    <ConversationDetailPage conversationId={conversationId} />
   );
 }

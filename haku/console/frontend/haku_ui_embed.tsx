@@ -108,9 +108,6 @@ export function HakuUiEmbed({
   onNavigate: (view: ConsoleNavigationView) => void;
 }): JSX.Element {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [mountedViews, setMountedViews] = useState(() => new Set([view]));
-  const [mountedAgentEnrollmentId, setMountedAgentEnrollmentId] = useState(agentEnrollmentId);
-  const [mountedSessionFramesId, setMountedSessionFramesId] = useState(sessionFramesId);
   const viewRef = useRef(view);
   viewRef.current = view;
   const frameTitleRef = useRef("Haku");
@@ -126,18 +123,6 @@ export function HakuUiEmbed({
   const screenshotApprovalsRef = useRef<ScreenshotApproval[]>([]);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const approvalsOpenedAutomaticallyRef = useRef(false);
-  useEffect(() => {
-    setMountedViews((previous) => {
-      if (previous.has(view)) return previous;
-      return new Set(previous).add(view);
-    });
-  }, [view]);
-  useEffect(() => {
-    if (agentEnrollmentId !== null) setMountedAgentEnrollmentId(agentEnrollmentId);
-  }, [agentEnrollmentId]);
-  useEffect(() => {
-    if (sessionFramesId !== null && sessionFramesId !== undefined) setMountedSessionFramesId(sessionFramesId);
-  }, [sessionFramesId]);
   // A deep-linked call opens the drawer on arrival — following the link *is* the request to
   // decide it. Keyed on the id so navigating to a different call re-opens a drawer the operator
   // closed, while closing it on the same call leaves it closed.
@@ -674,22 +659,18 @@ export function HakuUiEmbed({
           sandbox="allow-scripts allow-same-origin allow-forms"
           className={`haku-ui-frame ${view === "embed" ? "" : "haku-ui-frame-hidden"}`}
         />
-        {(mountedViews.has("settings") || view === "settings") && <SettingsPanel hidden={view !== "settings"} />}
-        {mountedAgentEnrollmentId !== null && (
+        {view === "settings" && <SettingsPanel />}
+        {view === "agentEnrollment" && agentEnrollmentId !== null && (
           <AgentEnrollmentPanel
-            hidden={view !== "agentEnrollment"}
-            interactionId={mountedAgentEnrollmentId}
+            key={`${agentEnrollmentId}:${agentEnrollmentInitialChoice}`}
+            interactionId={agentEnrollmentId}
             initialChoice={agentEnrollmentInitialChoice}
             onReturnToSettings={() => onNavigate("settings")}
           />
         )}
-        {(mountedViews.has("toolCalls") || view === "toolCalls") && <ToolCallsPage hidden={view !== "toolCalls"} />}
-        {(mountedViews.has("conversations") || view === "conversations") && (
-          <ConversationsPage hidden={view !== "conversations"} conversationId={conversationId ?? null} />
-        )}
-        {mountedSessionFramesId != null && (
-          <SessionFramesPage hidden={view !== "sessionFrames"} sessionId={mountedSessionFramesId} />
-        )}
+        {view === "toolCalls" && <ToolCallsPage />}
+        {view === "conversations" && <ConversationsPage conversationId={conversationId ?? null} />}
+        {view === "sessionFrames" && sessionFramesId != null && <SessionFramesPage sessionId={sessionFramesId} />}
         {view === "notFound" && (
           <section className="haku-page" aria-label="Not found">
             <div className="haku-page-list">

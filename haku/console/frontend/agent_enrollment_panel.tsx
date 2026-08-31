@@ -16,12 +16,10 @@ export function AgentEnrollmentPanel({
   interactionId,
   initialChoice = "create",
   onReturnToSettings,
-  hidden = false,
 }: {
   interactionId: string;
   initialChoice?: EnrollmentChoice;
   onReturnToSettings: () => void;
-  hidden?: boolean;
 }): JSX.Element {
   const [enrollment, setEnrollment] = useState<EnrollmentView | null>(null);
   const [choice, setChoice] = useState<EnrollmentChoice>(initialChoice);
@@ -107,7 +105,7 @@ export function AgentEnrollmentPanel({
   }
 
   return (
-    <section className="haku-page" aria-label="Connect an Agent" hidden={hidden}>
+    <section className="haku-page" aria-label="Connect an Agent">
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <div>

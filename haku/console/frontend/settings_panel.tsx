@@ -842,7 +842,7 @@ function IndexStatusRow({ index }: { index: IndexState }) {
   );
 }
 
-export function SettingsPanel({ hidden = false }: { hidden?: boolean }): JSX.Element {
+export function SettingsPanel(): JSX.Element {
   const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTabFromLocation);
   const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
   const loadMcpServers = useCallback<AsyncResourceLoader<McpServerView[]>>(async (emit, previous) => {
@@ -1016,7 +1016,6 @@ export function SettingsPanel({ hidden = false }: { hidden?: boolean }): JSX.Ele
       color="haku"
       className="haku-page"
       aria-label="Settings"
-      hidden={hidden}
     >
       <header className="haku-page-header">
         <div className="haku-page-bar">

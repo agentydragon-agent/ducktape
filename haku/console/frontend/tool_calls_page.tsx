@@ -77,7 +77,7 @@ function ToolCallRow({
 // the approvals drawer's ephemeral "Recent" list, with the framed haku-ui still mounted behind it.
 // A pending call that streams in over the live WS signal can be decided here too, through the same
 // exact-Origin-gated endpoints the approvals panel uses.
-export function ToolCallsPage({ hidden = false }: { hidden?: boolean }): JSX.Element {
+export function ToolCallsPage(): JSX.Element {
   const [loaded, setLoaded] = useState<ToolCallPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -147,7 +147,7 @@ export function ToolCallsPage({ hidden = false }: { hidden?: boolean }): JSX.Ele
   const records = loaded?.records;
   const hasMore = loaded?.nextCursor != null;
   return (
-    <div className="haku-page" hidden={hidden}>
+    <div className="haku-page">
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <Group gap="xs" wrap="nowrap" align="center">
