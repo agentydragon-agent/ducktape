@@ -65,6 +65,7 @@ export type EnrollmentDecisionRequest =
 export type EnrollmentDecisionResponse =
   | components["schemas"]["EnrollmentContinues"]
   | components["schemas"]["EnrollmentWasDenied"];
+export type AiquotaView = components["schemas"]["AllQuotasView"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason, falling back when the
 // body isn't shaped that way. Shared with the per-integration client files.
@@ -88,6 +89,12 @@ export function displayableError(e: unknown): string | null {
 export async function fetchConfig(): Promise<ConfigResponse> {
   const { data, error } = await api.GET("/api/config");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load config"));
+  return data;
+}
+
+export async function fetchAiquotaQuotas(): Promise<AiquotaView> {
+  const { data, error } = await api.GET("/api/aiquota/quotas");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load aiquota"));
   return data;
 }
 
