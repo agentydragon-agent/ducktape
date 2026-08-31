@@ -529,6 +529,34 @@ async def test_method_only_native_frames_are_visible_and_filterable(session_stor
     assert [frame.payload for frame in _harness(exact)] == [inner]
 
 
+async def test_frame_payload_with_nul_survives_and_session_continues(
+    session_store, migrated_sessions, operator_id
+) -> None:
+    session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    payload = {"type": "commandExecution", "output": "before\x00after"}
+
+    first = await session_store.record_frame(
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, payload, runner_seq=1
+    )
+    second = await session_store.record_frame(
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "result"}, runner_seq=2
+    )
+
+    async with migrated_sessions() as db:
+        stored = await db.scalar(
+            text("SELECT payload::text FROM session_frames WHERE frame_seq = :frame_seq"),
+            {"frame_seq": first.frame_seq},
+        )
+
+    assert stored is not None
+    assert "\\u0000" in stored
+    frames = await session_store.read_session_frames(
+        session.session_id, cursor=None, limit=25, scope=UnrestrictedReads()
+    )
+    assert [frame.payload for frame in _harness(frames)] == [payload, {"type": "result"}]
+    assert second.frame_seq > first.frame_seq
+
+
 async def test_native_frames_without_a_known_discriminator_remain_in_the_default_and_exact_views(
     session_store, operator_id
 ) -> None:
