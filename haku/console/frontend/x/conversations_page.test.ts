@@ -56,6 +56,7 @@ function summary(conversationId: string, activity: string): ConversationSummary 
     attachments: [],
     live_session: null,
     preview: null,
+    harness_kind: "codex_app_server",
   } as ConversationSummary;
 }
 
@@ -94,11 +95,11 @@ describe("ConversationsPage live list refresh", () => {
       await vi.waitFor(() => expect(mocks.fetchConversations).toHaveBeenCalledTimes(1));
     });
 
-    const scroll = container.querySelector(".haku-page-scroll");
-    expect(scroll).not.toBeNull();
+    const scroll = container.querySelector<HTMLDivElement>(".haku-page-scroll");
+    if (!scroll) throw new Error("conversation list scroll container was not rendered");
     Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 1000 });
     Object.defineProperty(scroll, "clientHeight", { configurable: true, value: 320 });
-    scroll!.scrollTop = 240;
+    scroll.scrollTop = 240;
     const rowsBefore = container.querySelectorAll("button.haku-conversation-list-item");
     const rowA = rowsBefore[0];
 
@@ -108,7 +109,7 @@ describe("ConversationsPage live list refresh", () => {
     });
 
     expect(container.querySelector(".haku-page-scroll")).toBe(scroll);
-    expect(scroll!.scrollTop).toBe(240);
+    expect(scroll.scrollTop).toBe(240);
     expect(container.querySelectorAll("button.haku-conversation-list-item")[1]).toBe(rowA);
   });
 });
