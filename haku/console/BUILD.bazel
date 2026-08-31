@@ -445,7 +445,7 @@ py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
-        ":aiquota",
+        ":aiquota_proxy",
         ":capabilities",
         ":config",
         ":database_migrate",
