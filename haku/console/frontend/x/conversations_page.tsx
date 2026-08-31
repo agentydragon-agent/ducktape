@@ -727,14 +727,16 @@ export function ConversationsPage({
   hidden?: boolean;
 }): JSX.Element {
   const [mountedConversationId, setMountedConversationId] = useState(conversationId);
+  const [listMounted, setListMounted] = useState(() => conversationId === null);
 
   useEffect(() => {
     if (conversationId !== null) setMountedConversationId(conversationId);
+    else setListMounted(true);
   }, [conversationId]);
 
   return (
     <>
-      <ConversationListPage hidden={hidden || conversationId !== null} />
+      {listMounted && <ConversationListPage hidden={hidden || conversationId !== null} />}
       {mountedConversationId !== null && (
         <ConversationDetailPage conversationId={mountedConversationId} hidden={hidden || conversationId === null} />
       )}
