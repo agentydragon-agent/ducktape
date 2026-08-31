@@ -430,8 +430,8 @@ py_test(
 )
 
 py_library(
-    name = "aiquota",
-    srcs = ["aiquota.py"],
+    name = "aiquota_proxy",
+    srcs = ["aiquota_proxy.py"],
     deps = [
         "//aiquota:models",
         "//aiquota/render:view_model_lib",
