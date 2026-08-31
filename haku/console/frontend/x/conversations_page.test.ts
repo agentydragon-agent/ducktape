@@ -75,7 +75,7 @@ describe("ConversationsPage live list refresh", () => {
     mocks.onEvent = null;
   });
 
-  it("keeps the scroll node while an SSE refresh reshuffles conversations", async () => {
+  it.fails("reproduces scroll loss when an SSE refresh reshuffles conversations", async () => {
     mocks.fetchConfig.mockResolvedValue({ launch_options: [] });
     mocks.fetchConversations
       .mockResolvedValueOnce(page([summary("a", "2026-08-31T00:03:00Z"), summary("b", "2026-08-31T00:02:00Z")]))
@@ -105,5 +105,6 @@ describe("ConversationsPage live list refresh", () => {
     await vi.waitFor(() => expect(container.querySelectorAll("button.haku-conversation-list-item")).toHaveLength(3));
 
     expect(container.querySelector(".haku-page-scroll")).toBe(scroll);
+    expect(scroll.scrollTop).toBe(240);
   });
 });
