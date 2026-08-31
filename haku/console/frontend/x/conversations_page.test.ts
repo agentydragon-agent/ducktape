@@ -100,6 +100,9 @@ describe("ConversationsPage live list refresh", () => {
 
     const scroll = container.querySelector<HTMLDivElement>(".haku-page-scroll");
     if (!scroll) throw new Error("conversation list scroll container was not rendered");
+    Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(scroll, "clientHeight", { configurable: true, value: 320 });
+    scroll.scrollTop = 240;
 
     act(() => mocks.onEvent?.({ event_type: "conversation_changed", conversation_id: "b" }));
     await vi.waitFor(() => expect(container.querySelectorAll("button.haku-conversation-list-item")).toHaveLength(3));
