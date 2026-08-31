@@ -1230,7 +1230,6 @@ async def test_a_prompt_admitted_before_any_session_is_on_the_conversations_item
     assert (item.text, item.origin) == ("start", PromptOriginKind.SPA)
 
 
-
 async def test_submitted_prompt_is_read_as_queued_without_a_transcript_item(session_store, operator_id) -> None:
     view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
