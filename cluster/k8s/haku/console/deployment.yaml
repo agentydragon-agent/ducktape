@@ -127,6 +127,13 @@ spec:
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE_IMAGE_TAG
               value: devel-20260831024824-25bc91a # {"$imagepolicy": "flux-system:haku-console:tag"}
+            - name: HAKU_CONSOLE_AIQUOTA_URL
+              value: "http://aiquota-api.cli-proxy-api.svc.cluster.local:8080"
+            - name: HAKU_CONSOLE_AIQUOTA_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: aiquota-api-bearer-haku-console
+                  key: bearer-token
             # Capability tier: the launch-routine action. The console builds both the
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku
