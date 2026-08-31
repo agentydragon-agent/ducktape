@@ -5,6 +5,7 @@ resource "authentik_group" "grocy_sf_household" {
   users = [
     data.authentik_user.agentydragon.pk,
     data.authentik_user.auragon.pk,
+    tonumber(authentik_user.haku_grocy.id),
   ]
 }
 
@@ -113,5 +114,25 @@ resource "kubernetes_secret" "grocy_mcp_oidc_sf_source" {
     client_id             = authentik_provider_oauth2.grocy_mcp_sf.client_id
     client_secret         = authentik_provider_oauth2.grocy_mcp_sf.client_secret
     grocy_proxy_client_id = authentik_provider_proxy.grocy_sf.client_id
+  }
+}
+
+# Haku's client_credentials source for the read-only HTTP egress grant. The
+# provider is the same Grocy MCP OAuth provider used by the Console's
+# operator-linked MCP server; the proxy accepts its bearer after Authentik
+# federation and resolves it to the haku Grocy user.
+resource "kubernetes_secret" "haku_grocy_client_credentials" {
+  metadata {
+    name      = "haku-grocy-client-credentials"
+    namespace = "agents-infra"
+    annotations = {
+      description = "grocy-mcp-sf OAuth2 client credentials for Haku's read-only Grocy HTTP egress grant"
+    }
+  }
+
+  data = {
+    client_id = authentik_provider_oauth2.grocy_mcp_sf.client_id
+    username  = authentik_user.haku_grocy.username
+    password  = authentik_token.haku_grocy.key
   }
 }

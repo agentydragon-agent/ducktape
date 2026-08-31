@@ -77,6 +77,10 @@ spec:
             # inert value is all the runner and Claude process ever receive.
             - name: AW_READ_TOKEN
               value: activitywatch-read-token-placeholder
+            # The colocated Console egress fence swaps this inert bearer for
+            # Haku's rotating Grocy token on the Grocy origin and GET grant.
+            - name: GROCY_TOKEN
+              value: grocy-token-placeholder
             # The runner's model access (ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN/ANTHROPIC_MODEL) and
             # its GitHub identity are injected declaratively by Console from config.yaml's claude_code
             # implementation (haku/console/config.py). AIQuota remains a separate deferred path;

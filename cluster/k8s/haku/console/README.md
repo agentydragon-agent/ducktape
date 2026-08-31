@@ -326,6 +326,21 @@ enumerate every Console destination; deferred until that set is pinned.
   or `HttpDecideUnavailableError`; the sidecar logs per-request `deny …: <reason>`, values never
   logged), not by bypassing it. A full-fidelity audit stream is a separate #4670 item.
 
+### Grocy HTTP read migration
+
+The Console now exposes Haku a direct `GET`-only Grocy REST grant at `grocy-sf.allegedly.works`.
+The credential is rotated by `authentik-jwt-rotation`, held only by the Console, and substituted for
+`grocy-token-placeholder` at the egress fence. The grant covers `/api/` reads but excludes
+`/api/calendar/ical/sharing-link`, whose GET handler creates an API key. Grocy currently uses
+POST/PUT/DELETE for its other state-changing routes, so this is the narrow migration that can be
+expressed safely with the current route grant model; it is not a general proof that every future
+GET is nondestructive.
+
+`TODO(haku-grocy-http)`: after rollout, test representative reads and explicitly verify that POST,
+PUT, DELETE, and the sharing-link GET are denied through the Haku proxy. If direct HTTP works for
+Haku, remove the `grocy_reads` auto-approved MCP tools and later retire the dedicated Grocy MCP
+server; any remaining MCP-only workflows would need equivalent explicit HTTP routes or stay on MCP.
+
 ### Deferred
 
 The first GitHub egress validation passed in [PR #5223](https://github.com/agentydragon/ducktape/pull/5223), merged
