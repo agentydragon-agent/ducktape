@@ -361,6 +361,7 @@ const conversationDetail = {
   session: conversationSession,
   provisioning: null,
   narration: setupNarration,
+  queued_prompts: [],
   // The thread ran one session before this one: what a sandbox dying looks like from the
   // conversation's side, and the only place its frame log stays reachable from.
   earlier_sessions: [

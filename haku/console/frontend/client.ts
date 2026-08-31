@@ -38,6 +38,7 @@ export type AgentView = components["schemas"]["AgentView"];
 // The one conversation item-read vocabulary, shared with the MCP conversation reads: one item per
 // row, keyed by the position it opened at, its lifecycle carried as `status`.
 export type Item = components["schemas"]["Item"];
+export type QueuedPrompt = components["schemas"]["QueuedPrompt"];
 export type ToolCallItem = components["schemas"]["ToolCallItem"];
 export type ConversationSummary = components["schemas"]["ConversationSummary"];
 export type ConversationPage = components["schemas"]["ConversationPage"];
