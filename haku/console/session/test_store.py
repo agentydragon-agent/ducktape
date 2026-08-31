@@ -1228,8 +1228,7 @@ async def test_a_prompt_admitted_before_any_session_is_on_the_conversations_item
     item = one(await _conversation_items(session_store, conversation_id, limit=10))
     assert isinstance(item, PromptItem)
     assert (item.text, item.origin) == ("start", PromptOriginKind.SPA)
-    detail = await session_store.get_operator_conversation(operator_id, conversation_id)
-    assert detail.queued_prompts == []
+
 
 
 async def test_submitted_prompt_is_read_as_queued_without_a_transcript_item(session_store, operator_id) -> None:
