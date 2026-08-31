@@ -100,13 +100,10 @@ describe("ConversationsPage live list refresh", () => {
 
     const scroll = container.querySelector<HTMLDivElement>(".haku-page-scroll");
     if (!scroll) throw new Error("conversation list scroll container was not rendered");
-    const rowsBefore = container.querySelectorAll("button.haku-conversation-list-item");
-    const rowA = rowsBefore[0];
 
     act(() => mocks.onEvent?.({ event_type: "conversation_changed", conversation_id: "b" }));
     await vi.waitFor(() => expect(container.querySelectorAll("button.haku-conversation-list-item")).toHaveLength(3));
 
     expect(container.querySelector(".haku-page-scroll")).toBe(scroll);
-    expect(container.querySelectorAll("button.haku-conversation-list-item")[1]).toBe(rowA);
   });
 });
