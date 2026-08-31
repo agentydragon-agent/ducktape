@@ -97,6 +97,8 @@ describe("ConversationsPage live list refresh", () => {
       await vi.waitFor(() => expect(mocks.fetchConversations).toHaveBeenCalledTimes(1));
     });
 
+    await vi.waitFor(() => expect(container.querySelectorAll("button.haku-conversation-list-item")).toHaveLength(2));
+
     const scroll = container.querySelector<HTMLDivElement>(".haku-page-scroll");
     if (!scroll) throw new Error("conversation list scroll container was not rendered");
     Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 1000 });
@@ -107,7 +109,7 @@ describe("ConversationsPage live list refresh", () => {
 
     await act(async () => {
       mocks.onEvent?.({ event_type: "conversation_changed", conversation_id: "b" });
-      await vi.waitFor(() => expect(mocks.fetchConversations).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(container.querySelectorAll("button.haku-conversation-list-item")).toHaveLength(3));
     });
 
     expect(container.querySelector(".haku-page-scroll")).toBe(scroll);
