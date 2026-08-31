@@ -2723,12 +2723,7 @@ async def _queued_prompt_reads(db: AsyncSession, conversation_id: UUID) -> list[
         )
     ).all()
     return [
-        QueuedPrompt(
-            prompt_id=row.prompt_id,
-            text=row.text,
-            origin=row.origin.kind,
-            queued_at=row.submitted_at,
-        )
+        QueuedPrompt(prompt_id=row.prompt_id, text=row.text, origin=row.origin.kind, queued_at=row.submitted_at)
         for row in submitted
     ]
 
