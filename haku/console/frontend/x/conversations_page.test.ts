@@ -91,10 +91,7 @@ describe("ConversationsPage live list refresh", () => {
     root = appRoot;
 
     act(() => appRoot.render(createElement(ConversationsPage, { conversationId: null })));
-    await act(async () => {
-      mocks.onEvent?.({ event_type: "sync" });
-      await vi.waitFor(() => expect(mocks.fetchConversations).toHaveBeenCalledTimes(1));
-    });
+    await vi.waitFor(() => expect(mocks.fetchConversations).toHaveBeenCalledTimes(1));
 
     const scroll = container.querySelector<HTMLDivElement>(".haku-page-scroll");
     if (!scroll) throw new Error("conversation list scroll container was not rendered");
