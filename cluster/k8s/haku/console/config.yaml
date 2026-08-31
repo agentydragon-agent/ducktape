@@ -690,7 +690,6 @@ egress_decide:
     haku_grocy_token:
       handle: haku-grocy
       placeholder: grocy-token-placeholder
-      value_env_var: HAKU_EGRESS_CREDENTIAL_GROCY
       match_headers: [authorization]
       principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:

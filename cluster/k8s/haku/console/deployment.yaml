@@ -221,7 +221,7 @@ spec:
                   key: bearer-token
             # Rotating Grocy bearer substituted by the colocated egress fence;
             # the inner Haku workload receives only grocy-token-placeholder.
-            - name: HAKU_EGRESS_CREDENTIAL_GROCY
+            - name: HAKU_CONSOLE__EGRESS_DECIDE__CREDENTIALS__HAKU_GROCY_TOKEN__VALUE
               valueFrom:
                 secretKeyRef:
                   name: haku-grocy-token
