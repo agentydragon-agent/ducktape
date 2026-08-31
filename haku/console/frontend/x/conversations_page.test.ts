@@ -87,9 +87,10 @@ describe("ConversationsPage live list refresh", () => {
         ])
       );
     container = document.createElement("div");
-    root = createRoot(container);
+    const appRoot = createRoot(container);
+    root = appRoot;
 
-    act(() => root.render(createElement(ConversationsPage, { conversationId: null })));
+    act(() => appRoot.render(createElement(ConversationsPage, { conversationId: null })));
     await act(async () => {
       mocks.onEvent?.({ event_type: "sync" });
       await vi.waitFor(() => expect(mocks.fetchConversations).toHaveBeenCalledTimes(1));
