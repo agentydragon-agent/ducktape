@@ -687,7 +687,8 @@ egress_decide:
           port: 443
     # Haku's direct Grocy REST access. The sandbox only ever holds the inert
     # placeholder; the live JWT remains in this trusted Console pod.
-    - handle: haku-grocy
+    haku_grocy_token:
+      handle: haku-grocy
       placeholder: grocy-token-placeholder
       value_env_var: HAKU_EGRESS_CREDENTIAL_GROCY
       match_headers: [authorization]
