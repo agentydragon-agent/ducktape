@@ -92,10 +92,9 @@ describe("ConversationsPage live list refresh", () => {
     root = appRoot;
 
     act(() => appRoot.render(createElement(ConversationsPage, { conversationId: null })));
-    await act(async () => {
-      mocks.onEvent?.({ event_type: "sync" });
-      await vi.waitFor(() => expect(mocks.fetchConversations).toHaveBeenCalledTimes(1));
-    });
+    expect(mocks.onEvent).not.toBeNull();
+    act(() => mocks.onEvent?.({ event_type: "sync" }));
+    await vi.waitFor(() => expect(mocks.fetchConversations).toHaveBeenCalledTimes(1));
 
     await vi.waitFor(() => expect(container.querySelectorAll("button.haku-conversation-list-item")).toHaveLength(2));
 
@@ -107,10 +106,8 @@ describe("ConversationsPage live list refresh", () => {
     const rowsBefore = container.querySelectorAll("button.haku-conversation-list-item");
     const rowA = rowsBefore[0];
 
-    await act(async () => {
-      mocks.onEvent?.({ event_type: "conversation_changed", conversation_id: "b" });
-      await vi.waitFor(() => expect(container.querySelectorAll("button.haku-conversation-list-item")).toHaveLength(3));
-    });
+    act(() => mocks.onEvent?.({ event_type: "conversation_changed", conversation_id: "b" }));
+    await vi.waitFor(() => expect(container.querySelectorAll("button.haku-conversation-list-item")).toHaveLength(3));
 
     expect(container.querySelector(".haku-page-scroll")).toBe(scroll);
     expect(scroll.scrollTop).toBe(240);
