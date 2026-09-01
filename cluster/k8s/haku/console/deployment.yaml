@@ -48,22 +48,13 @@ metadata:
 spec:
   replicas: 2
   strategy:
-    # `maxUnavailable: 0` is the point of this: a replacement that never becomes Ready leaves the
-    # running version serving, so a bad release is a no-op rather than an outage. This replaced
-    # Recreate, which deleted every pod before starting one — on 2026-08-10 a transiently missing
-    # reflected Secret (`ha-mcp-bearer`, absent for ~2min while its source namespace churned) took
-    # the whole console down, where rolling would have been invisible.
-    #
-    # What Recreate bought and this gives up: an atomic version boundary. The static image keeps
-    # only its own fingerprinted assets, so during a roll a browser can load the new shell from one
-    # pod and 404 on its chunk against the other. That window is the roll's length, the blast
-    # radius is one page load, and a refresh after the roll fixes it — a worse failure than nothing,
-    # a much better one than every deploy being an outage. Session persistence would close it; see
-    # this directory's README § Rolling release compatibility for why that remains a follow-up.
+    # Keep one replica serving while allowing the controller to free capacity for
+    # its replacement. Requiring a surge pod deadlocked secret-triggered rollouts
+    # when the eligible nodes lacked spare CPU or memory.
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: haku-console

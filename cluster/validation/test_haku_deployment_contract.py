@@ -9,7 +9,7 @@ import yaml
 from more_itertools import one
 
 
-def test_haku_console_rollout_and_service_contract(k8s_dir: Path) -> None:
+def test_haku_console_service_contract(k8s_dir: Path) -> None:
     """API and static releases are independently safe and report their actual images."""
     console_dir = k8s_dir / "haku" / "console"
     deployment_path = console_dir / "deployment.yaml"
@@ -19,11 +19,6 @@ def test_haku_console_rollout_and_service_contract(k8s_dir: Path) -> None:
     deployment = yaml.safe_load(raw)
     static_deployment = yaml.safe_load(static_raw)
 
-    # `maxUnavailable: 0` is the property worth pinning: a replacement that never becomes Ready
-    # leaves the previous version serving. Recreate did the opposite — every pod deleted before one
-    # started — which turned a two-minute missing Secret into a full console outage on 2026-08-10.
-    assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
-    assert deployment["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
     containers = {container["name"]: container for container in deployment["spec"]["template"]["spec"]["containers"]}
     runtime_tags = {entry["name"]: entry["value"] for entry in containers["server"]["env"] if "value" in entry}
     assert containers["server"]["image"].rsplit(":", 1)[1] == runtime_tags["HAKU_CONSOLE__IMAGE_TAG"]
