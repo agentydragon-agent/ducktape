@@ -27,6 +27,13 @@ class ResponseChunkRecord(BaseModel):
     body: str
 
 
+class ConnectionDroppedRecord(BaseModel):
+    """One intentional upstream stream loss after visible assistant content."""
+
+    kind: Literal["connection_dropped"]
+    capture_request_id: str
+
+
 class ProxyErrorRecord(BaseModel):
     kind: Literal["proxy_error"]
     capture_request_id: str

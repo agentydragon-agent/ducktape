@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -9,15 +10,24 @@ from pathlib import Path
 from threading import Lock, Thread
 from typing import Any
 
-from x.agentplane.capture.records import RequestRecord, ResponseChunkRecord
+from x.agentplane.capture.records import ConnectionDroppedRecord, RequestRecord, ResponseChunkRecord
 
 
 def _requests(path: Path) -> list[RequestRecord]:
     return [RequestRecord.model_validate_json(line) for line in path.read_text().splitlines()]
 
 
-def _response_chunks(path: Path) -> list[ResponseChunkRecord]:
-    return [ResponseChunkRecord.model_validate_json(line) for line in path.read_text().splitlines()]
+def _response_events(path: Path) -> list[ResponseChunkRecord | ConnectionDroppedRecord]:
+    result: list[ResponseChunkRecord | ConnectionDroppedRecord] = []
+    for line in path.read_text().splitlines():
+        kind = json.loads(line).get("kind")
+        if kind == "response_chunk":
+            result.append(ResponseChunkRecord.model_validate_json(line))
+        elif kind == "connection_dropped":
+            result.append(ConnectionDroppedRecord.model_validate_json(line))
+        else:
+            raise ValueError(f"unexpected replay response record kind: {kind!r}")
+    return result
 
 
 @contextmanager
@@ -37,10 +47,16 @@ class ReplayServer(ThreadingHTTPServer):
     def __init__(self, fixture: Path):
         self.requests = _requests(fixture / "llm-requests.jsonl")
         chunks: dict[str, list[bytes]] = {}
-        for row in _response_chunks(fixture / "llm-responses.jsonl"):
-            chunks.setdefault(row.capture_request_id, []).append(row.body.encode("utf-8"))
-        self.responses = [chunks.get(row.capture_request_id, []) for row in self.requests]
-        if any(not response for response in self.responses):
+        dropped: set[str] = set()
+        for row in _response_events(fixture / "llm-responses.jsonl"):
+            if isinstance(row, ResponseChunkRecord):
+                chunks.setdefault(row.capture_request_id, []).append(row.body.encode("utf-8"))
+            else:
+                dropped.add(row.capture_request_id)
+        self.responses = [
+            (chunks.get(row.capture_request_id, []), row.capture_request_id in dropped) for row in self.requests
+        ]
+        if any(not chunks for chunks, _dropped in self.responses):
             raise ValueError("fixture has a request without captured response data")
         self.observed: list[dict[str, Any]] = []
         self._next = 0
@@ -68,16 +84,22 @@ class ReplayServer(ThreadingHTTPServer):
                 self.server.observed.append(  # type: ignore[attr-defined]
                     {"method": self.command, "path_query": self.path, "body": body}
                 )
-                chunks = self.server.responses[index]  # type: ignore[attr-defined]
+                chunks, disconnect_after_chunks = self.server.responses[index]  # type: ignore[attr-defined]
                 payload = b"".join(chunks)
                 content_type = "text/event-stream" if payload.startswith((b"event:", b"data:")) else "application/json"
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
-                self.send_header("Content-Length", str(len(payload)))
+                if not disconnect_after_chunks:
+                    self.send_header("Content-Length", str(len(payload)))
+                else:
+                    self.send_header("Connection", "close")
                 self.end_headers()
                 for chunk in chunks:
                     self.wfile.write(chunk)
                     self.wfile.flush()
+                if disconnect_after_chunks:
+                    self.connection.shutdown(2)  # SHUT_RDWR
+                    self.connection.close()
 
         super().__init__(("127.0.0.1", 0), Handler)
 

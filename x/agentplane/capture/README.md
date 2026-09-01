@@ -9,9 +9,15 @@ request/response `body` as a JSON string. The current protocols are textual, so 
 carry redundant base64 or parsed-JSON copies.
 
 The committed examples cover `baseline`, `shell`, `file_edits`, `steering`, `second_input`,
-`interrupt`, and `idle_resume` for both providers. `idle_resume` completes a seed turn, closes the
-native process, then resumes the saved native session/thread from a new process. They are raw
-protocol evidence, not a compatibility matrix.
+`interrupt`, `idle_resume`, and `connection_loss` for both providers. `idle_resume` completes a
+seed turn, closes the native process, then resumes the saved native session/thread from a new
+process. `connection_loss` closes one active model stream after a partial assistant chunk, then
+sends a new input once the same endpoint is reachable again. In the captured versions, Codex
+retries the interrupted model request; Claude completes the interrupted turn with an empty result
+and carries the original user input into the follow-up request. Claude Code 2.1.252 exposes no
+documented stream-retry or reconnect flag, so the capture deliberately records that behavior rather
+than configuring an undocumented retry policy. They are raw protocol evidence, not a compatibility
+matrix.
 
 Capture launches deliberately avoid host-specific prompt bulk: Claude uses safe mode with slash commands
 disabled and only the four scenario tools, while Codex supplies a short app-server `baseInstructions` value.

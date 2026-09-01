@@ -2,6 +2,8 @@ load("//devinfra/python:defs.bzl", "py_test")
 
 py_test(
     name = "test_native_replay",
+    # Native clients may wait through their own connection-recovery backoff.
+    timeout = "moderate",
     srcs = ["test_native_replay.py"],
     data = [
         "//x/agentplane/capture/testdata:native_replay_fixtures",

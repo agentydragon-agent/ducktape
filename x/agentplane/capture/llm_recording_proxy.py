@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
+from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from itertools import count
+from socket import SHUT_RDWR
 from threading import Lock
 from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener
 
-from x.agentplane.capture.records import ProxyErrorRecord, RequestRecord, ResponseChunkRecord
+from x.agentplane.capture.records import ConnectionDroppedRecord, ProxyErrorRecord, RequestRecord, ResponseChunkRecord
 
 _SAFE_HEADERS = frozenset({"content-type", "content-encoding", "accept", "user-agent"})
 _FORBIDDEN_HEADERS = frozenset({"authorization", "proxy-authorization", "cookie", "set-cookie"})
-Record = Callable[[RequestRecord | ResponseChunkRecord | ProxyErrorRecord], None]
+Record = Callable[[RequestRecord | ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord], None]
 
 
 class BudgetExceededError(RuntimeError):
@@ -31,12 +34,16 @@ def safe_headers(headers: Any) -> dict[str, str]:
     return result
 
 
-def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
+def recording_proxy(
+    *, upstream: str, record: Record, disconnect_once_after_partial_prompt: str | None = None
+) -> ThreadingHTTPServer:
     parsed = urlsplit(upstream)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("upstream must be an absolute HTTP(S) origin")
     request_ids = count(1)
     request_ids_lock = Lock()
+    disconnect_lock = Lock()
+    disconnect_available = True
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -45,9 +52,19 @@ def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
             return
 
         def do_POST(self) -> None:
+            nonlocal disconnect_available
             with request_ids_lock:
                 capture_request_id = f"llm-{next(request_ids)}"
             body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            disconnect_after_partial = False
+            if disconnect_once_after_partial_prompt and disconnect_once_after_partial_prompt.encode() in body:
+                # Session-title requests repeat the prompt but have no native tools. Drop the actual
+                # harness turn instead, after its partial assistant content has reached the native client.
+                is_harness_turn = bool(json.loads(body).get("tools"))
+                with disconnect_lock:
+                    if disconnect_available and is_harness_turn:
+                        disconnect_after_partial = True
+                        disconnect_available = False
             base_path = parsed.path.rstrip("/")
             target = (
                 f"{parsed.scheme}://{parsed.netloc}{self.path}"
@@ -75,7 +92,12 @@ def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
             try:
                 request = Request(target, data=body or None, headers=outgoing_headers, method="POST")
                 with build_opener().open(request, timeout=120) as response:
-                    self._relay(capture_request_id, response, safe_headers(response.headers))
+                    self._relay(
+                        capture_request_id,
+                        response,
+                        safe_headers(response.headers),
+                        disconnect_after_partial=disconnect_after_partial,
+                    )
             except HTTPError as error:
                 self._relay_bytes(capture_request_id, error.code, error.read(), safe_headers(error.headers))
             except Exception as error:
@@ -94,7 +116,9 @@ def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
             self.close_connection = True
             self.end_headers()
 
-        def _relay(self, capture_request_id: str, response: Any, headers: dict[str, str]) -> None:
+        def _relay(
+            self, capture_request_id: str, response: Any, headers: dict[str, str], *, disconnect_after_partial: bool
+        ) -> None:
             self._begin(response.status, headers)
             ordinal = 0
             while chunk := response.read1(65536):
@@ -107,8 +131,17 @@ def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
                         body=chunk.decode("utf-8"),
                     )
                 )
-                self.wfile.write(chunk)
-                self.wfile.flush()
+                try:
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                if disconnect_after_partial and (b'"text_delta"' in chunk or b"response.output_text.delta" in chunk):
+                    record(ConnectionDroppedRecord(kind="connection_dropped", capture_request_id=capture_request_id))
+                    with suppress(OSError):
+                        self.connection.shutdown(SHUT_RDWR)
+                    self.connection.close()
+                    return
 
         def _relay_bytes(self, capture_request_id: str, status: int, body: bytes, headers: dict[str, str]) -> None:
             self._begin(status, headers)

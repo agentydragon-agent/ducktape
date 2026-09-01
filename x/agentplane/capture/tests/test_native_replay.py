@@ -178,6 +178,26 @@ def test_claude_idle_resume_replays_through_the_pinned_native_cli(tmp_path: Path
             _assert_small_claude_policy(server)
 
 
+def test_claude_partial_stream_loss_completes_without_redispatch(tmp_path: Path) -> None:
+    fixture = _fixture("claude", "connection_loss")
+    config = tmp_path / ".claude"
+    config.mkdir()
+    binary = str(get_required_path("claude_code_cli_linux_x64/claude"))
+    with serve(ReplayServer(fixture)) as server:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        environment = _environment(
+            tmp_path, ANTHROPIC_AUTH_TOKEN="***", ANTHROPIC_BASE_URL=endpoint, CLAUDE_CONFIG_DIR=str(config)
+        )
+        with _capture(tmp_path, [_python_dynamic_loader(), *_claude_test_command(binary)], environment) as capture:
+            claude.launch_handshake(capture)
+            partial = claude.submit(capture, "Reply with exactly: CONNECTION_LOSS_FIRST_OK")
+            assert _claude_result_text(partial) == ""
+            followup = claude.submit(capture, "Reply with exactly: CONNECTION_LOSS_FOLLOWUP_OK")
+            assert _claude_result_text(followup)
+        server.assert_consumed()
+        assert len(server.observed) == 3
+
+
 def test_codex_idle_resume_replays_through_the_pinned_native_cli(tmp_path: Path) -> None:
     fixture = _fixture("codex", "idle_resume")
     root = tmp_path
@@ -211,6 +231,41 @@ def test_codex_idle_resume_replays_through_the_pinned_native_cli(tmp_path: Path)
             server.assert_consumed()
             _assert_request_shape(server, model="chatgpt/oai-responses/gpt-5.6-luna", protocol_key="input")
             _assert_codex_prompt_is_capture_scoped(server)
+
+
+def test_codex_partial_stream_loss_retries_the_native_request(tmp_path: Path) -> None:
+    fixture = _fixture("codex", "connection_loss")
+    codex_home = tmp_path / ".codex"
+    codex_home.mkdir()
+    with serve(ReplayServer(fixture)) as server:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        environment = _environment(
+            tmp_path, CODEX_HOME=str(codex_home), OPENAI_API_KEY="***", OPENAI_BASE_URL=f"{endpoint}/v1"
+        )
+        command = codex.command(
+            str(get_required_path("agentplane_codex_cli_linux_x64/bin/codex")), endpoint=f"{endpoint}/v1"
+        )
+        with _capture(tmp_path, command, environment) as capture:
+            handshake = codex.launch_handshake(
+                capture, cwd=str(tmp_path), model="chatgpt/oai-responses/gpt-5.6-luna", effort="low"
+            )
+            partial = codex.submit(
+                capture,
+                thread_start_response=handshake["thread_start_response"],
+                text="Reply with exactly: CONNECTION_LOSS_FIRST_OK",
+            )
+            assert _codex_result_text(partial)
+            followup = codex.submit_to_thread(
+                capture,
+                thread_id=partial["thread_id"],
+                request_id="capture-4",
+                text="Reply with exactly: CONNECTION_LOSS_FOLLOWUP_OK",
+            )
+            assert _codex_result_text(followup)
+        # The fixture routes one partial-stream loss, its native retry, and the recovered follow-up.
+        # Request bodies carry volatile provider metadata, so route consumption is the stable assertion.
+        server.assert_consumed()
+        assert len(server.observed) == 3
 
 
 if __name__ == "__main__":

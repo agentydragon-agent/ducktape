@@ -16,10 +16,26 @@ from x.agentplane.capture.llm_recording_proxy import recording_proxy
 from x.agentplane.capture.providers.claude import scenarios as claude
 from x.agentplane.capture.providers.codex import scenarios as codex
 from x.agentplane.capture.providers.shared_capture import NativeCapture, write_jsonl
-from x.agentplane.capture.records import CaptureMetadata, ProxyErrorRecord, RequestRecord, ResponseChunkRecord
+from x.agentplane.capture.records import (
+    CaptureMetadata,
+    ConnectionDroppedRecord,
+    ProxyErrorRecord,
+    RequestRecord,
+    ResponseChunkRecord,
+)
 from x.agentplane.capture.replay import ReplayServer, serve
 
-SCENARIOS = ("launch", "baseline", "shell", "file_edits", "steering", "second_input", "interrupt", "idle_resume")
+SCENARIOS = (
+    "launch",
+    "baseline",
+    "shell",
+    "file_edits",
+    "steering",
+    "second_input",
+    "interrupt",
+    "idle_resume",
+    "connection_loss",
+)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -50,13 +66,23 @@ def _prepare(workspace: Path) -> None:
     (workspace / "editable.txt").write_text("before\n")
 
 
-def _proxy(output: Path, upstream: str, provider: str, replay_from: Path | None) -> tuple[ThreadingHTTPServer, str]:
-    def record(event: RequestRecord | ResponseChunkRecord | ProxyErrorRecord) -> None:
+def _proxy(
+    output: Path, upstream: str, provider: str, replay_from: Path | None, *, connection_loss: bool
+) -> tuple[ThreadingHTTPServer, str]:
+    def record(event: RequestRecord | ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord) -> None:
         write_jsonl(
             output / ("llm-requests.jsonl" if isinstance(event, RequestRecord) else "llm-responses.jsonl"), event
         )
 
-    server = ReplayServer(replay_from) if replay_from else recording_proxy(upstream=upstream, record=record)
+    server = (
+        ReplayServer(replay_from)
+        if replay_from
+        else recording_proxy(
+            upstream=upstream,
+            record=record,
+            disconnect_once_after_partial_prompt="CONNECTION_LOSS_FIRST" if connection_loss else None,
+        )
+    )
     origin = f"http://127.0.0.1:{server.server_port}"
     return server, origin if provider == "claude" else origin + urlsplit(upstream).path.rstrip("/")
 
@@ -78,6 +104,7 @@ def _prompt(scenario: str) -> str:
             'printf "probe stderr before failure\\n" >&2; exit 23\'`; report outcomes.'
         ),
         "file_edits": "Read editable.txt, change it to exactly `after\\n`, reread it, then reply FILE_EDIT_DONE.",
+        "connection_loss": "Reply with exactly: CONNECTION_LOSS_FIRST_OK",
     }[scenario]
 
 
@@ -89,7 +116,9 @@ def run(args: argparse.Namespace) -> None:
     for name in ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl", "llm-requests.jsonl", "llm-responses.jsonl"):
         (args.output / name).touch(mode=0o600)
     key = _key(args.credential_file)
-    proxy, proxy_endpoint = _proxy(args.output, args.endpoint, args.provider, args.replay_from)
+    proxy, proxy_endpoint = _proxy(
+        args.output, args.endpoint, args.provider, args.replay_from, connection_loss=args.scenario == "connection_loss"
+    )
     environment = {**os.environ}
     if args.provider == "claude":
         environment.update(
@@ -125,13 +154,23 @@ def run(args: argparse.Namespace) -> None:
                     persist=args.scenario == "idle_resume",
                 )
             )
-            if args.scenario in {"baseline", "shell", "file_edits"}:
+            if args.scenario in {"baseline", "shell", "file_edits", "connection_loss"}:
                 if args.provider == "claude":
                     claude.submit(capture, _prompt(args.scenario))
                 else:
                     codex.submit(
                         capture, thread_start_response=handshake["thread_start_response"], text=_prompt(args.scenario)
                     )
+                if args.scenario == "connection_loss":
+                    if args.provider == "claude":
+                        claude.submit(capture, "Reply with exactly: CONNECTION_LOSS_FOLLOWUP_OK")
+                    else:
+                        codex.submit_to_thread(
+                            capture,
+                            thread_id=handshake["thread_start_response"]["result"]["thread"]["id"],
+                            request_id="capture-4",
+                            text="Reply with exactly: CONNECTION_LOSS_FOLLOWUP_OK",
+                        )
             elif args.scenario in {"steering", "second_input"}:
                 if args.provider == "claude":
                     claude.submit_while_active(
@@ -174,6 +213,10 @@ def run(args: argparse.Namespace) -> None:
         if args.replay_from:
             assert isinstance(proxy, ReplayServer)
             proxy.assert_consumed()
+        if args.scenario == "connection_loss" and not any(
+            '"connection_dropped"' in line for line in (args.output / "llm-responses.jsonl").read_text().splitlines()
+        ):
+            raise ValueError("connection-loss capture never reached partial assistant content")
         (args.output / "metadata.json").write_text(
             CaptureMetadata(provider=args.provider, scenario=args.scenario, model=args.model).model_dump_json() + "\n"
         )

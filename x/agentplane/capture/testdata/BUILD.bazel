@@ -3,8 +3,12 @@ filegroup(
     srcs = [
         "claude/baseline/llm-requests.jsonl",
         "claude/baseline/llm-responses.jsonl",
+        "claude/connection_loss/llm-requests.jsonl",
+        "claude/connection_loss/llm-responses.jsonl",
         "claude/idle_resume/llm-requests.jsonl",
         "claude/idle_resume/llm-responses.jsonl",
+        "codex/connection_loss/llm-requests.jsonl",
+        "codex/connection_loss/llm-responses.jsonl",
         "codex/idle_resume/llm-requests.jsonl",
         "codex/idle_resume/llm-responses.jsonl",
     ],
