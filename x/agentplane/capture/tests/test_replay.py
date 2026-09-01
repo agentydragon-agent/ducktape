@@ -11,7 +11,7 @@ from x.agentplane.capture.replay import ReplayServer
 
 def _fixture(provider: str) -> Path:
     root = Path(os.environ["TEST_SRCDIR"]) / os.environ["TEST_WORKSPACE"]
-    return root / "x/agentplane/testdata" / provider / "baseline"
+    return root / "x/agentplane/capture/testdata" / provider / "baseline"
 
 
 def test_replay_returns_the_first_recorded_response() -> None:

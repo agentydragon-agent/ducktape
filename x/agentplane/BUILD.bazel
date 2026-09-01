@@ -11,16 +11,3 @@
 # gazelle:resolve py x.agentplane.capture.providers.codex.scenarios //x/agentplane/capture/providers/codex:scenarios
 
 package(default_visibility = ["//visibility:public"])
-
-exports_files([
-    "testdata/claude/baseline/llm-requests.jsonl",
-    "testdata/claude/baseline/llm-responses.jsonl",
-    "testdata/claude/idle_resume/llm-requests.jsonl",
-    "testdata/claude/idle_resume/llm-responses.jsonl",
-    "testdata/codex/baseline/llm-requests.jsonl",
-    "testdata/codex/baseline/llm-responses.jsonl",
-    "testdata/codex/idle_resume/llm-requests.jsonl",
-    "testdata/codex/idle_resume/llm-responses.jsonl",
-    "testdata/codex/interrupt/llm-requests.jsonl",
-    "testdata/codex/interrupt/llm-responses.jsonl",
-])

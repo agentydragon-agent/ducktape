@@ -25,7 +25,7 @@ bazel run //x/agentplane/capture:live_capture -- \
   --credential-file "$key_file" --workspace "$tmp/workspace" --output "$tmp/capture"
 ```
 
-Pass `--replay-from x/agentplane/testdata/<provider>/<scenario>` to run the same native scenario
+Pass `--replay-from x/agentplane/capture/testdata/<provider>/<scenario>` to run the same native scenario
 against the recorded LiteLLM bodies rather than a live model endpoint. The credential stays in the
 native process environment and is neither recorded nor inspected by the replay server.
 

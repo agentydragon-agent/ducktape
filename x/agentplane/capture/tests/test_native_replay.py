@@ -24,7 +24,7 @@ _LOGS = ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl")
 
 def _fixture(provider: str, scenario: str) -> Path:
     root = Path(os.environ["TEST_SRCDIR"]) / os.environ["TEST_WORKSPACE"]
-    return root / "x/agentplane/testdata" / provider / scenario
+    return root / "x/agentplane/capture/testdata" / provider / scenario
 
 
 def _capture(root: Path, command: list[str], environment: dict[str, str]) -> NativeCapture:
