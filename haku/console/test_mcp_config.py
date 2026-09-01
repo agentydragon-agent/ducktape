@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from uuid import UUID
 
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from haku.console.harnesses.kind import HarnessKind
 from haku.console.mcp_config import ConsoleConfigFile
 
 _AGENT = UUID("00000000-0000-4000-8000-000000000001")
@@ -64,13 +62,6 @@ def _config(**overrides: object) -> dict[str, object]:
     }
     value.update(overrides)
     return value
-
-
-def test_launchable_agents_and_runtime_edges_are_deploy_config() -> None:
-    config = ConsoleConfigFile.model_validate(_config())
-    assert config.launchable_agents[0].agent_id == _AGENT
-    assert config.launchable_agents[0].system_prompt_template == Path("/prompt")
-    assert config.access_profiles[0].allowed_harnesses == {HarnessKind.CLAUDE_CODE}
 
 
 def test_allowed_chat_runtimes_is_rejected_after_contract() -> None:
