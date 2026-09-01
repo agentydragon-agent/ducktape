@@ -1,7 +1,18 @@
-# Subtask: prove sandbox egress proxy and workload identity
+# Subtask: research and prove sandbox egress proxy and workload identity
 
-Status: **deferred discovery spike**; needed support for a future credentialed Agentplane deployment, not a
-requirement for the first harness-driver slice.
+Status: **standalone research/experimentation task**; needed support for a future credentialed Agentplane
+deployment, not a requirement for the first harness-driver slice.
+
+## Agent task packet
+
+**Mission:** determine what sandbox composition the current pinned Agent Sandbox and cluster can actually
+support, then commit the smallest runnable manifests and evidence needed to reproduce it.
+
+**Primary question:** can we create one disposable, per-agent Sandbox whose runner has no real upstream
+credential and whose traffic is forced through a small proxy that can authenticate the intended workload?
+
+**Do not assume the answer is yes.** A useful result may be a proof that secret isolation works but workload
+identity or direct-egress confinement does not. Record that as a product decision, not as a failed demo.
 
 ## Smallest useful outcome
 
@@ -95,6 +106,30 @@ A failure of availability or proxy integrity may be acceptable for this slice if
 real credential or turn the proxy into an unrestricted egress/signing oracle. Report those properties
 separately.
 
+## Execution sequence
+
+1. Inspect the pinned Agent Sandbox CRDs, controller version, and current repository templates. Confirm the
+   actual fields for a standalone `Sandbox`, `SandboxTemplate`, sidecar containers, volumes, lifecycle, and
+   network-policy ownership before writing manifests.
+2. Inspect the target cluster's CNI/NetworkPolicy support and available identity services. Do not install a
+   cluster-wide identity system, service mesh, or CNI change as part of this task.
+3. Build the smallest disposable test images or reuse existing images where adequate: a runner that makes
+   fixed HTTP test calls, a constrained proxy, and an upstream verifier. The proxy and verifier must have
+   bounded logging and must never print credential material.
+4. Commit manifests for a namespaced, non-warm-pooled Sandbox with runner and proxy sidecar, a synthetic
+   Secret, the required NetworkPolicy, and the verifier route. Prefer sidecar-local communication so a
+   Service is not needed unless the experiment proves one is required.
+5. Apply only the disposable resources, run the positive and negative tests, inspect the resulting Pod,
+   mounts, environment, routes, and controller status, then clean up the live experiment without deleting
+   unrelated resources.
+6. Record results in `evidence.md`, separating **proven**, **unsupported**, **blocked by environment**, and
+   **inferred** claims. Commit the manifests, test harness, and evidence together so another agent can rerun
+   the experiment.
+
+If a required cluster capability is unavailable, commit the best faithful manifests plus the exact observed
+blocker. Do not replace a missing identity or network guarantee with a forged header, source-IP assertion, or
+an unreviewed cluster-wide installation.
+
 ## Dependencies
 
 - Pinned Agent Sandbox version and its actual `Sandbox`/`SandboxClaim`/`SandboxTemplate` PodSpec behavior.
@@ -113,17 +148,32 @@ Prefer a short experiment directory and an evidence memo, for example:
 
 ```text
 x/agentplane/sandbox-spike/
-  README.md
+  README.md                 # exact run and cleanup instructions
   manifests/
+    namespace.yaml          # disposable only, if needed
+    sandbox-template.yaml   # or standalone Sandbox podTemplate
+    sandbox.yaml
+    secret.example.yaml     # placeholder only; never real Secret data
+    network-policy.yaml
+    verifier-route.yaml     # only if a route/Service is actually needed
   proxy/
   verifier/
   tests/
   evidence.md
 ```
 
-Keep manifests and tests small and disposable. Do not add a production identity library, generic policy
-engine, credential registry, Thread persistence schema, or driver-protocol changes. Do not commit credentials,
-raw Secret data, HTTP Authorization headers, or private user data.
+The exact layout may differ, but the committed result must include the manifests actually used, the image
+build/run instructions for any custom proxy or verifier, and the observed evidence. Keep manifests and tests
+small and disposable. Do not modify the existing production `agent-workspaces` or Haku templates merely to
+make the experiment easier; copy the relevant shape into a clearly named test namespace.
+
+Do not add a production identity library, generic policy engine, credential registry, Thread persistence
+schema, or driver-protocol changes. Do not commit credentials, raw Secret data, HTTP Authorization headers,
+or private user data. An example Secret must contain only an obviously fake placeholder and must not be
+usable against LiteLLM, GitHub, or another real service.
+
+The agent must make a normal repository commit containing the experiment artifacts and evidence. The commit
+message should identify the experiment and should not mix unrelated cleanup or Agentplane implementation.
 
 ## Acceptance test and evidence
 
