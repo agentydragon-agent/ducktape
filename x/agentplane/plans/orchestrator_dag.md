@@ -48,13 +48,12 @@ C. Minimal Agentplane records       D. Runner/bridge seam       E. Agentplane ru
                                    v
 F. One-provider vertical slice
    create Thread -> start runner -> submit Input -> stream events -> terminal outcome
-                                   |
-                    +--------------+--------------+
+                    |                             |
                     v                             v
-G. Standalone web UI                           H. Second-provider integration
-   Thread list/detail, composer,               connect the already-proven adapter to
-   live timeline, error state,                 Agentplane records/runtime/UI
-   interrupt/steer controls
+G. Standalone web UI                           H. Second-provider parity check
+   Thread list/detail, composer,               connect the already-proven second adapter to
+   live timeline, error state,                 the same path; add only provider-specific wiring
+   interrupt/steer controls                    and an end-to-end test
                     \                             /
                      \___________________________/
                                    v
@@ -73,6 +72,10 @@ K. Explicit Haku Console integration (deferred)
    no shared internal runtime or persistence authority by accident
 ```
 
+B already owns both Claude and Codex adapters. H is therefore a small compatibility/parity check,
+not a second provider-protocol or adapter project. If F exercises both providers immediately, H can
+collapse into an additional acceptance test rather than remain a separate work item.
+
 ## Independent parallel track: sandbox egress identity
 
 This track is **needed support / deferred discovery**, not part of the critical path to the first
@@ -81,22 +84,19 @@ Sandbox version are available, but its result must not expand the native-driver 
 scope.
 
 ```text
-L. Standalone Sandbox proxy/identity spike
+L. Sandbox proxy/identity prototype and proof
    one non-warm-pooled Sandbox per experiment identity;
-   runner + proxy sidecar; Secret only in proxy; direct egress blocked
+   runner + proxy sidecar; Secret only in proxy; direct egress blocked;
+   verifier identity + cross-Sandbox, replay, lifecycle, rotation,
+   and proxy-oracle checks
                          |
                          v
-M. Boundary evidence
-   allowed operation, workload identity, cross-Sandbox copy,
-   replay, lifecycle, rotation, and proxy-oracle results
-                         |
-                         v
-N. Isolation decision
+M. Isolation decision record
    ordinary sidecar sufficient | external gateway | runner handoff |
    stronger runtime such as Firecracker/Kata required
 ```
 
-L–N do not gate A–I. They become relevant before a production Agentplane deployment is expected to
+L–M do not gate A–I. They become relevant before a production Agentplane deployment is expected to
 protect real credentials from an Agent. See [the detailed spike brief](subtasks/sandbox_proxy_identity_spike.md).
 
 ## Work packets
@@ -208,11 +208,14 @@ provider policy.
 browser surface without API tooling. A browser refresh preserves the Thread and completed response;
 live updates do not require manual refresh during a turn.
 
-### H — Second-provider integration
+### H — Second-provider parity check
 
 The shared protocol and both native adapters are already delivered by B. Connect the second provider
-to the Agentplane records, runner/runtime seam, deployment, and standalone UI without expanding the
-protocol spec unless a real captured requirement demands it.
+to the existing Agentplane path with only the provider-specific configuration or wiring that the
+vertical slice requires. Do not reopen adapter or protocol design here.
+
+If the first vertical slice already exercises both providers, replace this packet with one additional
+end-to-end parity test.
 
 **Acceptance:** the same standalone Agentplane workflow works for both providers, with
 provider-specific limitations visible rather than hidden behind fake equivalence.
@@ -262,8 +265,8 @@ lifecycles merely to avoid an HTTP boundary.
 - H can proceed alongside G after F, but must not force a premature universal abstraction or
   reopen the shared protocol without new evidence.
 - J begins only after I exposes the first real reliability bottleneck.
-- L–N can run in parallel with A–I as a bounded infrastructure/security spike, but they do not
-  justify changing the driver seam or block I. N must be resolved before a production deployment is
+- L–M can run in parallel with A–I as one bounded infrastructure/security spike, but it does not
+  justify changing the driver seam or block I. M must be resolved before a production deployment is
   trusted with real credentials.
 - K is explicitly downstream of an independently functioning Agentplane; it is not a hidden
   dependency of I.
