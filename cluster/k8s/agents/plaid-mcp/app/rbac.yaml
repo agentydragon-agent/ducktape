@@ -3,6 +3,8 @@ kind: ServiceAccount
 metadata:
   name: plaid-mcp
   namespace: plaid-mcp
+imagePullSecrets:
+  - name: forgejo-images-creds
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
