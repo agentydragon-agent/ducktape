@@ -8,52 +8,42 @@ tools.
 
 ## Image build
 
-`haku/openclaw_spike/default.nix` builds the image entirely with Nix, the same
-mechanism as the public-coder `openclaw` image. The OpenClaw gateway comes from
-`nix-openclaw`, and Claude Code plus the spike's authoring/runtime tools are
-layered from the repository's locked Nix package set — one controlled closure,
-one Node.
+`haku/openclaw_spike/default.nix` builds the image entirely with Nix, using the
+same `dockerTools.buildLayeredImage` approach as public-coder. The gateway is
+packaged through nix-openclaw's tested npm-package path, with the stable
+OpenClaw wrapper and lockfile spliced over nix-openclaw's older default. Claude
+Code and the spike's tools are layered from the locked Nix package set, so the
+image has one controlled runtime closure and one Node executable.
 
-Deviation: this spike uses Node 24 instead of public-coder's Node 22 because
-OpenClaw's SQLite WAL-safety guard rejects the SQLite bundled with the older
-Node. Both images now use the stable 2026.8.1 gateway. `nix-openclaw` still
-tracks an older stable source, so the build points its tested npm-package
-gateway path at the stable wrapper: `haku/openclaw_spike/npm_wrapper/` is
-spliced over `nix/npm/openclaw/`. Bump = regenerate `npm_wrapper/` (`npm install
-openclaw@<ver> --package-lock-only --omit=dev`), update `stableSourceInfo`
-(`releaseVersion`), and refresh `gatewayNpmDepsHash`.
+The current branch targets stable OpenClaw `2026.8.1`. Deployment image tags
+remain Flux-managed: they advance only after the corresponding image-publish
+workflow runs on `devel`. To bump the gateway, regenerate `npm_wrapper/`,
+update `stableSourceInfo.releaseVersion`, and refresh `gatewayNpmDepsHash`.
 
-Use the npm-package path, **not** a from-source `sourceInfo` override:
-`nix-openclaw`'s own stable is npm-package too, so its from-source pnpm build is
-unexercised and is missing fetcherVersion-4 store steps (`index.db`
-reconstruction), which makes the gateway's offline install fail
-(`ERR_PNPM_NO_OFFLINE_TARBALL`).
+Use this npm-package path, **not** a from-source `sourceInfo` override.
+The from-source nix-openclaw path is not the path validated for this image and
+lacks the offline store materialization needed by the gateway build.
 
-This replaced an earlier hybrid that pulled the upstream
+This replaced an earlier hybrid that used the upstream
 `ghcr.io/openclaw/openclaw` image as a Docker base and layered Nix tools on top.
-That shipped two Node runtimes; the base image's Node linked an unsafe system
-SQLite (3.51.2) that OpenClaw's WAL-safety guard rejects at startup, so the pod
-crash-looped.
+The current image owns its Node runtime and does not depend on a second base-image
+Node.
 
 ## Version constraints
 
 Why the gateway and Node are pinned this way:
 
-- **Stable 2026.8.1 is now shared by both images.** This includes the
-  compaction, transcript/state-repair, reset, lock, and memory-retention fixes
-  that motivated the upgrade, while known upstream memory-flush races still
-  need targeted regression coverage.
-- **Node / SQLite in nixpkgs.** `nodejs_22` = `22.23.2` → SQLite `3.51.2`
-  (rejected by the gateway's WAL-safety guard); `nodejs_24` = `24.19.0` →
-  SQLite `3.53.3` (safe). OpenClaw's supported engines include Node 24, so
-  nix-openclaw's hardcoded Node 22 is overridden here.
-- **Runtime plugins are bundled into the gateway dist.** The image copies
-  Matrix and Brave into OpenClaw's bundled extension tree, avoiding the
-  nix-openclaw ownership patch that no longer matches the 2026.8.1 source shape.
+- **Stable 2026.8.1 is the branch target for both images.** It includes the
+  fixes that motivated the upgrade, while known upstream memory-flush races
+  still need targeted regression coverage. This describes the image builds, not
+  an already-reconciled live deployment.
+- **Node selection is a packaging choice, not a current stable-release
+  requirement.** OpenClaw 2026.8.1 accepts supported Node 22 and Node 24
+  release lines. Haku retains the Node 24 override from the earlier WAL-related
+  incident; remove it only after validating startup and state access on Node 22.
 
-TODO: upstream a nix-openclaw change to bump the gateway Node (or make it
-configurable), then drop the local `nodejs_24` override — the Node hardcode
-affects the public-coder image too.
+TODO: validate whether Haku can return to the shared Node 22 package selection,
+then remove the override if the runtime and state checks remain green.
 
 ## Trust boundary
 
@@ -91,7 +81,9 @@ retested. Which CA variable each TLS backend actually honours was measured in
 
 ## Persistent workspace
 
-The 30 GiB PVC is mounted as `/home/openclaw`. It contains both:
+The Deployment mounts the current 40 GiB-requested `state-v2` PVC at
+`/home/openclaw` (the local-path request is capacity intent, not enforcement).
+It contains both:
 
 - OpenClaw state and the agent workspace at
   `/home/openclaw/.openclaw/workspace`; and

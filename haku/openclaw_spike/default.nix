@@ -5,20 +5,20 @@
 # command-line tooling -- everything a Nix package in one reviewable closure, no
 # second Node, no upstream Docker base.
 #
-# Deviation from public-coder: this image uses Node 24 for the SQLite WAL
-# safety guard, while public-coder stays on Node 22. Both images now consume
-# the stable OpenClaw 2026.8.1 gateway from an explicitly pinned npm wrapper.
-# nix-openclaw's own source pin still tracks an older stable, so the wrapper
-# lock and source metadata are spliced over its tested npm-package build path.
+# Deviation from public-coder: this image currently retains a Node 24 override
+# from the earlier WAL-related incident. Both images consume the stable
+# OpenClaw 2026.8.1 gateway from an explicitly pinned npm wrapper. nix-openclaw's
+# own source pin still tracks an older stable, so the wrapper lock and source
+# metadata are spliced over its tested npm-package build path.
 #
 # Gotcha: use this npm-package path, not a from-source `sourceInfo` override.
 # nix-openclaw's own stable is npm-package too, so its from-source pnpm build is
 # unexercised and is missing fetcherVersion-4 store steps (index.db
 # reconstruction), which makes the gateway's offline install fail.
 #
-# Not an upstream Docker base (the earlier approach): that shipped a second Node
-# whose system SQLite 3.51.2 the gateway's WAL guard rejects -- the crashloop this
-# fixes. Building the image ourselves keeps one Node in one Nix closure.
+# Not an upstream Docker base (the earlier approach): it shipped a second Node
+# and was the source of the original runtime compatibility failure. Building the
+# image ourselves keeps one Node in one Nix closure.
 {
   pkgs,
   nix-openclaw,
@@ -28,12 +28,10 @@ let
   system = pkgs.stdenv.hostPlatform.system;
 
   # nixpkgs + nix-openclaw's overlay (matching how nix-openclaw builds its own
-  # package set), plus a Node bump. nix-openclaw's build targets nodejs_22
-  # (22.23.2 -> SQLite 3.51.2), which the gateway's WAL-safety guard rejects at
-  # startup. Node 24 (24.19.0 -> SQLite 3.53.3) is WAL-safe and within OpenClaw's
-  # engines range; overriding nodejs_22 flows through the npm gateway build and
-  # the PATH Node below.
-  # TODO: upstream a configurable/bumped gateway Node to nix-openclaw, drop this.
+  # package set), with the current Node 24 compatibility override. OpenClaw
+  # 2026.8.1 accepts supported Node 22 and Node 24 release lines; retain this
+  # override until Haku startup and state access are validated on Node 22.
+  # TODO: validate Node 22 and remove this override if the runtime stays green.
   ocPkgs = import nix-openclaw.inputs.nixpkgs {
     inherit system;
     overlays = [

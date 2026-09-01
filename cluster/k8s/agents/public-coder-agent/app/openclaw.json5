@@ -203,9 +203,9 @@
         // Haku fans out to many upstream MCP servers and each call is independent,
         // so let the agent issue concurrent tool calls against it.
         supportsParallelToolCalls: true,
-        // Haku's tools/list is ~194 tools/~733 KB and exceeds OpenClaw's 1.5s
-        // catalog default. Haku can wait up to 60s for terminal results, so
-        // keep this timeout above that to avoid client-side MCP timeouts.
+        // Haku exposes a large tools catalog and can take longer than the
+        // default client timeout. Keep this above Haku's terminal-result wait
+        // so the client does not time out first.
         requestTimeoutMs: 70000,
         headers: {
           // Haku's token is an inert placeholder here; runtime interpolation

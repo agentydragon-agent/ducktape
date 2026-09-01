@@ -15,7 +15,6 @@ spec:
   storageClassName: local-path-home-ssd
   resources:
     requests:
-      # State is ~30 GiB; local-path does not enforce this as a quota, but 40 GiB
-      # records sensible headroom on optiplex's 256 GiB NVMe (shared with Home
-      # Assistant + the OS).
+      # local-path does not enforce PVC requests as quotas; this request leaves
+      # headroom for state growth on the worker's shared local storage.
       storage: 40Gi
