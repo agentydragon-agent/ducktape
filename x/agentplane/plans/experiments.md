@@ -16,7 +16,9 @@ For both providers, establish:
 4. how upstream model requests and streamed responses map to the native exchange;
 5. whether steering exists and where it is accepted;
 6. how interruption is requested and what native terminal evidence follows; and
-7. whether a completed turn can be resumed after killing only the idle native process.
+7. how the unchanged native harness behaves when one active upstream LLM stream is lost and the
+   model endpoint becomes reachable again; and
+8. whether a completed turn can be resumed after killing only the idle native process.
 
 The capture may use provider-native ids directly. It does not need to invent Thread, Turn, Input, or
 runtime-generation ids before the providers' behavior is understood.
@@ -82,11 +84,22 @@ inventories.
 | tool interaction       | yes     | yes     | native tool call/result, model requests, expected effect        |
 | steering               | attempt | attempt | accepted behavior or explicit unsupported result                |
 | interrupt              | attempt | attempt | request plus actual native terminal evidence                    |
+| upstream reconnect     | attempt | attempt | retry/reconnect requests, duplicate output, process/outcome     |
 | idle native resume     | attempt | attempt | native session/thread continuity or explicit unsupported result |
 | fake-model replay      | yes     | yes     | real harness driven from saved model exchange                   |
 
 The first useful fixture set can be one baseline/tool/replay capture per provider. Do not generate a
 fixture for every possible failure window before the core loop is working.
+
+For the upstream reconnect scenario, use one controlled cut after a valid partial assistant-content
+chunk and before terminal completion. Keep the harness process and native stdio connection alive;
+restore model-endpoint availability and observe rather than forcing a retry. Record the exact model
+request/chunks before loss, a minimal transport-loss marker, any subsequent request/chunks, native
+frames, bounded stderr, process survival, duplicated partial output, and terminal outcome.
+
+This is model-API transport behavior, not provider-native resume, central/bridge reconnect, or Input
+redispatch. Start without tools so a retry cannot repeat side effects. A result of immediate failure,
+retry then failure, successful retry, or explicit environment blocker is all useful provider evidence.
 
 ## Real-harness replay test
 

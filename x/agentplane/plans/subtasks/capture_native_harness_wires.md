@@ -13,6 +13,7 @@ For each provider, produce a small committed fixture and tests that establish:
 - the real launch and initialization sequence;
 - one normal streamed turn;
 - tool input and tool result handling;
+- behavior when one active upstream LLM stream is lost and the endpoint becomes reachable again;
 - steering and interruption where the provider supports them;
 - native session/thread resume after an idle process restart; and
 - the upstream LLM requests and streamed responses that make those interactions work.
@@ -121,8 +122,34 @@ Implement the following for both providers where the native surface supports the
 5. **interrupt** — interrupt a controlled active turn and assert the actual terminal evidence;
 6. **resume** — complete a no-tool turn, kill only the idle native child, use the provider's native
    resume function, and assert that a nonce in model context is recoverable;
-7. **replay** — run the real harness against the deterministic fake model loaded from the captured
+7. **upstream reconnect** — during a controlled no-tool turn, terminate one upstream streaming
+   response after partial assistant content, keep the native harness process alive, make the model
+   endpoint available again, and record whether the harness reconnects or retries, what request it
+   sends, whether partial native output is repeated, and which terminal outcome follows; and
+8. **replay** — run the real harness against the deterministic fake model loaded from the captured
    upstream exchange and assert both the upstream requests and native output.
+
+The reconnect scenario concerns the harness's HTTP connection to the model API. It is not provider-
+native session resume, central/bridge reconnect, Pod replacement, or permission to redispatch the
+user Input. The bridge must not resend the prompt to make the scenario succeed.
+
+Use one controlled loss window first: after at least one valid streamed assistant-content chunk and
+before the provider's terminal stream marker. Capture the request body, response chunks before the
+loss, the transport close, any subsequent request/connection, the resulting native frames, bounded
+stderr, and process exit status. A minimal transport-loss record in `llm.jsonl` is justified for this
+scenario; do not add a general network telemetry schema.
+
+The hand-authored expectation must explicitly classify, per provider/version:
+
+- automatic reconnect/retry with successful completion;
+- retry followed by a terminal failure;
+- immediate terminal failure without retry; or
+- environment-blocked/unsupported.
+
+If a retry occurs, compare the complete repeated request body and record provider-native request ids
+without inventing a common retry id. Assert whether partial assistant output, tool requests, or
+workspace effects are duplicated. Start with a no-tool turn so connection behavior is not confused
+with uncertain side effects; add a tool-boundary loss only as a later targeted experiment.
 
 The provider-specific tests must remain explicit. Do not force Claude's user-frame behavior and
 Codex's JSON-RPC behavior through a shared scenario abstraction before their differences are known.
@@ -137,6 +164,8 @@ The minimum useful test set is:
 - replay of each committed upstream transcript through the real harness when the binary is available;
 - tool call/result and workspace assertions;
 - steering and interrupt assertions or explicit provider-unsupported results;
+- upstream disconnect/reconnect assertions, including retry count, duplicate partial output, process
+  survival, and terminal outcome;
 - idle native resume assertions;
 - a simple fixture guard that rejects obvious credential material and serialized HTTP headers; and
 - a check that capture code has no import from `haku/*`.

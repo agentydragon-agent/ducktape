@@ -28,16 +28,19 @@ D. Claude baseline/tool       E. Codex baseline/tool
 F. Minimal fake model replay
    |  load saved model exchange; drive real harness; assert requests and native output
    v
-G. Steering + interrupt
+G. Upstream disconnect + reconnect
+   |  cut one active model stream; observe native retry/reconnect, duplication, and outcome
+   v
+H. Steering + interrupt
    |  provider-specific; unsupported is an honest result
    v
-H. Idle native resume
+I. Idle native resume
    |  kill idle child; invoke native resume; prove context continuity
    v
-I. Commit compact fixtures + Bazel replay tests
+J. Commit compact fixtures + Bazel replay tests
 ```
 
-A and B are support. C through H are behavior. I is only the minimum regression packaging for the
+A and B are support. C through I are behavior. J is only the minimum regression packaging for the
 behavior already proven.
 
 ## Gates
@@ -58,9 +61,12 @@ behavior already proven.
 - **D/E:** real baseline/tool transcript plus hand-authored expected behavior.
 - **F:** real Claude/Codex binaries driven against a deterministic fake upstream; captured model
   requests and native output both asserted.
-- **G:** actual steering/interrupt request and resulting native evidence, or explicit unsupported.
-- **H:** native session/thread continuity after idle child restart, or explicit unsupported.
-- **I:** offline replay passes with no network, credentials, Kubernetes, hashes, lengths, manifests,
+- **G:** one controlled upstream stream loss after partial response; exact chunks before loss,
+  subsequent connection/request behavior, native output, process survival, duplicate suppression or
+  duplication, and terminal outcome. Explicit no-retry/unsupported is valid evidence.
+- **H:** actual steering/interrupt request and resulting native evidence, or explicit unsupported.
+- **I:** native session/thread continuity after idle child restart, or explicit unsupported.
+- **J:** offline replay passes with no network, credentials, Kubernetes, hashes, lengths, manifests,
   or custom promotion/scanner system.
 
 ## Deferred branch
