@@ -17,6 +17,7 @@ driving loop with tests.
 - [A2A suitability evaluation](a2a.md)
 - [Focused experiments](experiments.md)
 - [P0 implementation task DAG](task_dag.md)
+- [First orchestrator task DAG](orchestrator_dag.md)
 - [Capture native Claude/Codex wires](subtasks/capture_native_harness_wires.md)
 
 ## v0 scope
