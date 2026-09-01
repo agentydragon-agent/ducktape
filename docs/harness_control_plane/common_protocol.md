@@ -1,20 +1,25 @@
 # Common harness protocol and timeline vocabulary
 
-Status: **initial v0 design**. Claude Code and Codex are the two required reference adapters. The
-common model describes their useful intersection without discarding provider-native records.
+Status: **post-capture design target**. Claude Code and Codex are the two required reference
+adapters. The common model describes their useful intersection without discarding provider-native
+records, but the first native-wire experiments do not implement or depend on this facade. Its queue,
+admission, steering, and operation semantics must be revised from captured behavior before becoming
+an implementation contract.
 
-This is the central product protocol used by the server, bridge, database, and UI. It is not a
-replacement for native provider protocols. Its relationship to A2A 1.0 is described in
-[A2A fit and protocol layering](a2a.md).
+This is the intended central product protocol used by the server, bridge, database, and UI. It is
+not a replacement for native provider protocols and is deliberately downstream of the raw capture
+matrix.
 
 ## Design rules
 
 1. **Two native adapters from the start.** A concept is common only when it has a defensible Claude
    and Codex mapping, or when it is explicitly a control-plane concept such as Sandbox lifecycle.
-2. **Wire evidence precedes projection.** The bridge sequences and durably records native units
-   before the server creates common events.
-3. **Common does not mean lossy.** Every projected event cites native evidence when native evidence
-   exists. Unknown provider records remain queryable.
+2. **The server receives the native wire.** Every bridge-to-harness and harness-to-bridge frame is
+   replicated to the server as an exact ordered record, not merely summarized inside a common
+   event.
+3. **Projection may be lossy; evidence is not.** Common events are convenient UI/orchestration
+   projections. Every projected event cites the exact native records it came from, and unknown
+   provider records remain available without a common mapping.
 4. **Inputs are independently admitted.** A turn has one initiating input and may have additional
    steering inputs; those inputs do not collapse into one boolean state.
 5. **Transport replay is not semantic replay.** Duplicate bridge delivery is deduplicated. Accepted
@@ -26,6 +31,10 @@ replacement for native provider protocols. Its relationship to A2A 1.0 is descri
 8. **Origin is explicit.** Human prompts, Agent messages, automations, subscriptions, and external
    events all enter through the same durable input path with a provenance envelope. A provider-facing
    user role does not imply that a human typed the content.
+9. **Translation follows evidence.** Claude/Codex protocol parsing and native-to-common mapping will
+   live inside provider adapters, but the first experiment drivers speak each native protocol
+   directly. Shared controller semantics are adopted only after the provider matrix shows that the
+   deduplication is real and does not obscure queue or delivery behavior.
 
 ## Identities and ordering
 
@@ -36,20 +45,27 @@ The initial stable identifiers are:
 - `runtime_id`: one bridge/Pod incarnation;
 - `runtime_generation`: monotonically increasing Sandbox-scoped ordinal and fencing epoch for the
   n-th authorized Runtime;
+- `harness_thread_id`: opaque resumable Thread identity returned by the active native harness after
+  a start (or minted by the optional direct adapter) and passed back unchanged on resume;
 - `native_process_generation`: child-process generation within one runtime;
-- `provider_continuity_id`: adapter-native continuity id (`session_id` for Claude, `thread.id` for
-  Codex), attached to the product Thread;
 - `input_id`: one accepted user input, whether initiating or steering;
 - `turn_id`: one common provider execution bracket;
-- `native_turn_id`: provider turn identity when one exists;
 - `item_id`: one common message, reasoning item, or operation;
 - `operation_id`: stable lifecycle identity for one operation;
 - `thread_seq`: Postgres-assigned durable order for common events and anchored wire records.
 
 `Runtime` names the concrete Pod/bridge incarnation; `runtime_generation` says which ordinal
-incarnation is authorized. The adapter-native continuity id is evidence attached to the Thread, not
-a second product-facing object. Agent identity, Sandbox identity, and any future authorization
-principal are distinct.
+incarnation is authorized. Adapter-native Claude session, Codex thread/turn/item, request, and tool
+ids remain inside the native frames. The server may derive query indexes from them, but they are not
+duplicated as authoritative fields in the bridge envelope. Agent identity, Sandbox identity, and
+any future authorization principal are distinct.
+
+The central server can create a product Thread before a harness exists. `harness_thread_id` is absent
+until the adapter emits `thread.harness_activated`; it is then stored as an opaque string associated
+with the product Thread. For Claude/Codex it is the resumable id returned by the harness, surfaced
+unchanged through the neutral facade; callers do not parse it. Common `turn_id`, `item_id`, and
+`operation_id` values are likewise minted by the adapter when those concepts become observable; the
+adapter privately retains any common-to-native routing map.
 
 The native sequence key is:
 
@@ -75,8 +91,7 @@ A timeline event uses a provenance union:
       "native_process_generation": 2,
       "first_native_seq": 41,
       "last_native_seq": 44,
-      "wire_record_ids": ["wr_..."],
-      "native_ids": { "turn_id": "...", "item_id": "..." }
+      "wire_record_ids": ["wr_..."]
     },
     "control_plane": { "command_id": "cmd_..." },
     "kubernetes": { "object_uid": "...", "resource_version": "..." }
@@ -87,13 +102,6 @@ A timeline event uses a provenance union:
 Only the member matching `source` is required. A centrally accepted input or uncertainty marker can
 have no runtime or native sequence. One native record may contribute to multiple semantic events;
 each projection stores its own `projection_key`, and replay upserts by that deterministic key.
-
-Evidence has two storage tiers:
-
-- **restricted raw**: short-retention encrypted native bytes plus pre-redaction hash;
-- **operational**: redacted native payload plus post-redaction hash and common projections.
-
-A record says which tier is available. “Raw” never means reconstructed or redacted content.
 
 ## Wire record envelope
 
@@ -109,21 +117,43 @@ A record says which tier is available. “Raw” never means reconstructed or re
   "direction": "bridge_to_native | native_to_bridge",
   "observed_at": "2026-08-31T20:14:12.123Z",
   "provider": "claude | codex | direct",
-  "provider_continuity_id": "optional",
-  "native_turn_id": "optional",
-  "native_item_id": "optional",
-  "payload_type": "provider-native type or method",
-  "payload_operational": {},
-  "restricted_raw_ref": "optional",
-  "pre_redaction_sha256": "optional",
-  "post_redaction_sha256": "...",
+  "native_frame": {
+    "encoding": "base64",
+    "bytes_base64": "eyJ0eXBlIjoiYXNzaXN0YW50In0K",
+    "byte_length": 21,
+    "sha256": "sha256 of the exact bytes",
+    "parsed": { "state": "parsed", "value": { "type": "assistant" } }
+  },
   "replay": { "bridge_replayed": false }
 }
 ```
 
-The bridge allocates `native_seq` before appending to its append-only PVC log. Postgres stores the record,
-assigns a thread anchor, and acknowledges the highest contiguous sequence for that process
-generation. Provider-native ids supplement the sequence but do not replace it.
+`native_frame.bytes_base64` decodes to the exact bytes read from or written to the native protocol,
+including its framing newline when present. It is not redacted, reconstructed, normalized, or
+reduced to selected fields. `parsed` is a required non-null diagnostic/indexing wrapper derived from
+those bytes; malformed input uses an explicit `not_json` state. Claude `session_id` values and Codex
+thread/turn/item/request ids therefore remain available in their original locations without
+redundant outer-envelope copies.
+
+The bridge allocates `native_seq` before appending the complete record to its append-only PVC log.
+Postgres stores the record, assigns a thread anchor, and acknowledges the highest contiguous
+sequence for that process generation. The adapter emits linked common events. The server may parse
+native JSON for debug views, derived indexes, and offline reprojection, but normal orchestration does
+not implement Claude/Codex translation and the exact bytes remain authoritative.
+
+The database must not collapse provider JSON `null` into SQL `NULL`. Store the exact frame in a
+non-null `TEXT`/`BYTEA` column. If parsed JSON is materialized in JSONB, store a non-null wrapper such
+as `{"state":"parsed","value":null}`; use a different explicit wrapper for parse failure. Do not use
+a nullable JSONB column whose Python `None` encoding can erase the distinction between an absent
+database value and a provider-supplied JSON `null`. Ducktape's existing
+[`JSONB(none_as_null=True)` precedent](../../haku/console/database_schema.py) demonstrates the bug to
+avoid, but the new implementation should make presence explicit rather than depend on ORM defaults.
+
+For the common facade, omit a member when it is not applicable or not yet known. Use JSON `null` only
+when the common schema assigns it an explicit meaning such as “observed no error.” In PostgreSQL,
+ordinary absent optional scalars use SQL `NULL`; arbitrary JSON values use a required wrapper or a
+separate presence/state column. Tests must round-trip all three cases independently: member absent,
+member present with JSON `null`, and member present with a non-null JSON value.
 
 Unknown payloads are still stored and projected as `provider.event` if they affect the visible
 Thread timeline.
@@ -133,7 +163,7 @@ Thread timeline.
 ```json
 {
   "event_id": "evt_...",
-  "projection_key": "projector-version:semantic-key",
+  "projection_key": "adapter-version:semantic-key",
   "thread_id": "thr_...",
   "thread_seq": 9001,
   "sandbox_id": "optional",
@@ -145,32 +175,43 @@ Thread timeline.
   "operation_id": "optional",
   "kind": "turn.started",
   "observed_at": "2026-08-31T20:14:12.456Z",
-  "projector_version": "...",
+  "adapter_projection_version": "...",
   "provenance": { "source": "native", "native": {} },
   "data": {},
-  "provider_extensions": {}
+  "provider_debug": {}
 }
 ```
 
 Identifiers that do not apply are omitted. Common clients consume `kind`, common ids, and `data`.
-Provider detail and diagnostic views also consume `provider_extensions` and provenance.
+Provider detail and diagnostic views may also consume `provider_debug` and provenance.
+`provider_debug` is informational only: common lifecycle, dispatch, retry, recovery, and authorization
+logic must not depend on it. The cited native frames remain the source for provider-specific facts.
+
+The adapter emits the common `kind`, common ids, `data`, `provider_debug`, and native-source links.
+Postgres adds `event_id`, immutable `thread_seq`, and central ingestion metadata. This preserves one
+global Thread order without moving Claude/Codex translation into the server.
 
 ## Bridge control and replication stream
 
 The bridge/server stream is an internal orchestration protocol, not the public agent-to-agent
 interface. Initial messages are:
 
-- `bridge.hello`: Sandbox and Runtime IDs, runtime generation, bridge/provider versions, native
-  process state, provider-continuity/native-turn ids, local-log ranges, and last central
+- `bridge.hello`: Sandbox and Runtime IDs, runtime generation, bridge/provider implementation and
+  best-effort resolved harness versions, native process state, local-log ranges, and last central
   acknowledgement;
 - `server.reconcile`: accepted generation, desired lifecycle, durable cursors, and replay request;
-- `input.offer`: committed input plus expected runtime generation;
+- `input.offer`: committed input, common delivery intent/target, and expected runtime generation;
+- `input.cancel`: request dequeue of a common `input_id` that has not been delivered;
 - `input.bridge_durable`: input persisted in the append-only bridge log;
-- `input.native_admitted`: native admission evidence and ids;
+- `input.native_admitted`: common admission state plus the exact native wire-record references that
+  support it;
 - `wire.append`: ordered batch of wire records;
+- `event.append`: ordered batch of provider-neutral events already translated by the adapter, each
+  linked to its source wire records when applicable;
 - `wire.ack`: highest contiguous sequence for one process generation;
-- `turn.steer`: target input and native/common turn;
-- `turn.interrupt`: target common/native turn;
+- `turn.steer`: target input and common turn; the adapter resolves any provider-native target from
+  retained native state;
+- `turn.interrupt`: target common turn; the adapter resolves the provider-native request;
 - `runtime.drain`: stop accepting new work and flush evidence;
 - `runtime.shutdown`: terminate the child/process group and report exit;
 - `heartbeat`: liveness plus current process/turn snapshot;
@@ -184,6 +225,18 @@ fencing rejects stale bridge writes; it is not a kill switch and cannot prevent 
 native process from continuing side effects.
 
 ## Lifecycle events
+
+### Harness Thread activation
+
+- `thread.harness_starting`;
+- `thread.harness_activated`: includes the harness-issued opaque `harness_thread_id`;
+- `thread.harness_resuming`;
+- `thread.harness_resumed`;
+- `thread.harness_activation_failed`.
+
+Starting a product Thread does not require a pre-existing native id. Starting the harness lets the
+provider mint `harness_thread_id`; resuming later supplies that same opaque id to the common
+adapter facade. Native Claude/Codex ids used underneath it remain adapter-owned state.
 
 ### Sandbox lifecycle
 
@@ -209,17 +262,33 @@ These describe durable environment lifecycle, not whether a turn is working.
 
 ### Input lifecycle
 
+The following is a candidate product lifecycle, not a prerequisite for native-wire capture. In
+particular, ownership of pending normal prompts is intentionally unresolved: the orchestrator,
+bridge/runner, or native harness may own the operative queue. The capture matrix must show which
+queues exist, when a write becomes native admission or delivery, and whether dequeue is supported
+before this state machine and the `submit` contract are frozen.
+
 - `input.accepted`: committed centrally;
 - `input.offered`: sent to the current runtime generation;
 - `input.bridge_durable`: persisted in the append-only bridge log;
-- `input.native_admitted`: provider evidence says it entered native processing/queueing;
+- `input.adapter_queued`: retained by the adapter but not yet written to the harness;
+- `input.native_offered`: its native request/frame was written;
+- `input.native_admitted`: provider evidence says it entered native processing or a native queue;
+- `input.native_delivered`: provider evidence says it reached an execution/model boundary; emitted
+  only when that distinction is observable;
 - `input.queued_for_future_turn`;
-- `input.cancelled`;
+- `input.dequeue_requested`;
+- `input.dequeued`;
+- `input.dequeue_unsupported`;
+- `input.too_late_to_dequeue`;
 - `input.rejected`;
 - `input.outcome_uncertain`.
 
-Each input has `role: initiating | steering`. Claude boundary-queued input and Codex targeted
-`turn/steer` can both be steering while retaining different native admission/timing fields.
+Each input has `delivery_intent: new_turn | steer` and, for steering, a common `target_turn_id`.
+The eventual adapter never exposes a native turn id to its caller. The final meaning of `submit`
+while active, queue ownership, and dequeue responsibility is selected only after the provider
+experiments. `steer` remains distinct from a future-turn prompt, and dequeue remains distinct from
+interrupt.
 
 An accepted input also has an origin envelope:
 
@@ -261,8 +330,8 @@ interrupt request acknowledgement is not a terminal event.
 - `operation.started`, `operation.output`, `operation.completed`, `operation.failed`;
 - `provider.event` for a visible native concept without a stable common mapping.
 
-High-frequency deltas can be coalesced in the operational tier after terminal state, but the event
-records retain exact source ranges and reconstruction hashes.
+High-frequency common deltas may be coalesced after terminal state, but the exact cited native
+frames remain available and ordered.
 
 ## Common operation model
 
@@ -272,7 +341,7 @@ An operation is visible work performed by the harness during a turn:
 {
   "operation_id": "op_...",
   "turn_id": "turn_...",
-  "kind": "shell | file.read | file.write | file.patch | search | tool | generic",
+  "kind": "shell | file.read | file.change | search | tool | generic",
   "name": "provider-native display name",
   "status": "pending | running | completed | failed | interrupted | unknown",
   "input": {},
@@ -280,7 +349,7 @@ An operation is visible work performed by the harness during a turn:
   "error": null,
   "started_at": "...",
   "completed_at": "...",
-  "provider_extensions": {}
+  "provider_debug": {}
 }
 ```
 
@@ -300,15 +369,22 @@ an operation is routed or governed.
 Claude `Bash` and Codex `commandExecution` map here. Shell output can stream through
 `operation.output`; the terminal event carries final exit information.
 
+Provider-only shell metadata such as Codex `commandActions`, provider item ids, execution-source
+labels, or Claude tool-use details may be copied into `provider_debug` for inspection. That field is
+not a control surface: dispatch, retry, interruption, success, and recovery decisions use common
+fields plus cited native evidence, never provider-debug metadata.
+
 ### File operations
 
-- `file.read`: path/range plus returned content metadata;
-- `file.write`: path plus resulting content/digest metadata;
-- `file.patch`: one or more path changes, kind, and diff;
+- `file.read`: path/range plus returned content metadata when the native record exposes it clearly;
+- `file.change`: best-effort paths and broad `created | modified | deleted | unknown` actions;
 - `search`: query, scope, match count, and bounded results.
 
-Claude `Read`, `Write`, `Edit`, `Glob`, and `Grep` map when semantics are clear. Codex
-`fileChange` maps to `file.patch`. Unknown or mixed operations remain `tool` or `generic` rather than
+The file-change projection is intentionally allowed to be lossy. Claude `Write`/`Edit` and Codex
+`fileChange` can report useful paths or broad actions without forcing their different patch,
+approval, and application semantics into one schema. Diffs, provider status, generated patches, and
+unknown fields remain in the cited native frames. Claude `Read`, `Glob`, and `Grep` map only when
+their semantics are clear; unknown or mixed operations remain `tool` or `generic` rather than
 claiming false equivalence.
 
 ### `tool`
@@ -325,14 +401,15 @@ claiming false equivalence.
 }
 ```
 
-The native provider name and payload remain in `provider_extensions`. The v0 protocol does not make
-the central server the execution router for these calls.
+The complete native provider name and payload remain in the cited native frames; selected
+informational fields may also appear in `provider_debug`. The v0 protocol does not make the central
+server the execution router for these calls.
 
 ## Provider mapping
 
 | Common concept        | Claude Code stream/control                                            | Codex app-server                                       |
 | --------------------- | --------------------------------------------------------------------- | ------------------------------------------------------ |
-| Provider continuity   | emitted Claude session id                                             | `thread.id`                                            |
+| Harness Thread id     | adapter exposes emitted Claude session id as opaque common id         | adapter exposes `thread.id` as opaque common id        |
 | Initiating input      | UUID-stamped user frame                                               | `turn/start` with client user-message id               |
 | Input admission       | UUID `command_lifecycle` queue/start evidence                         | accepted response plus `turn/started`                  |
 | Steering input        | additional UUID user frame observed at a provider boundary            | targeted `turn/steer`                                  |
@@ -340,7 +417,7 @@ the central server the execution router for these calls.
 | Assistant message     | assistant content and partial stream events                           | `agentMessage` item and delta/completion notifications |
 | Reasoning             | thinking content/events when exposed                                  | reasoning item and deltas                              |
 | Shell operation       | `Bash` tool use/result                                                | `commandExecution`                                     |
-| File operation        | `Read`, `Write`, `Edit`, `Glob`, `Grep` where semantics are known     | `fileChange`; other items stay provider-specific       |
+| File operation        | broad `file.read`/`file.change` projection where useful               | broad `file.change`; exact details stay native         |
 | Structured tool call  | named tool-use/result blocks                                          | structured tool-call item where exposed                |
 | Interrupt request     | interrupt control request/response                                    | `turn/interrupt` response                              |
 | Terminal turn outcome | terminal `result`, correlated to the current Claude execution bracket | `turn/completed` terminal status                       |
@@ -353,16 +430,17 @@ requires later provider evidence.
 
 ## Projection invariants
 
-1. The wire record is stored before native projection.
+1. The adapter/bridge durably records the wire record before emitting its linked common projection.
 2. Every native-derived common event cites exact process-generation sequence ranges.
-3. Control-plane/Kubernetes events use their own provenance member and can omit native ids.
+3. Control-plane/Kubernetes events use their own provenance member and can omit native provenance.
 4. Replaying a native record upserts the same `projection_key`; it does not duplicate semantics.
 5. A completed provider item supersedes partial snapshots for final rendering but does not erase
    the source deltas.
 6. One native record may produce several events only with deterministic, distinct projection keys.
 7. Common status never claims success when provider terminal evidence is absent.
 8. Unknown provider records are retained and do not block later records.
-9. Provider-native ids are never reused as global ids without provider/runtime scoping.
+9. Provider-native ids stay in native records; any derived query index is non-authoritative and
+   scoped by provider and Runtime.
 10. `thread_seq` is immutable once assigned; late replay appears at a new ingestion anchor while its
     original native timestamp/sequence remains visible.
 
@@ -375,34 +453,18 @@ The default Thread timeline merges common events by `thread_seq` and renders:
 - shell, file, structured-tool, and generic operation cards;
 - turn, interrupt, recovery, reconnect, suspension, and uncertainty markers.
 
-The raw-evidence view expands the same anchors. It can show native order within a process generation,
+The native-frame view expands the same anchors. It can show native order within a process generation,
 but it does not reorder the common timeline or hide late replay.
 
 Sandbox lifecycle and runtime/turn activity are rendered separately. “Suspended” means Pod absent
 with durable environment retained; “working” means a Runtime currently has an active turn.
-
-## Optional A2A projection
-
-The rich common timeline is an internal orchestration and UI model. An optional A2A facade projects
-only the opaque agent-to-agent subset:
-
-- private Thread <-> opaque A2A `context_id` through a server-side mapping;
-- private delegated Turn <-> opaque A2A `Task` id through a server-side mapping;
-- caller/agent content -> A2A `Message`;
-- coarse turn lifecycle -> A2A task status updates;
-- deliverable outputs and diffs -> A2A artifact updates.
-
-Operation input/output, native provenance, dispatch admission, fencing, and recovery evidence remain
-internal by default. Outbound A2A messages, artifacts, task metadata, and status contain no private
-Thread/Turn ids or bridge/common-protocol identifiers. A2A is not the harness-neutral control
-protocol. See [a2a.md](a2a.md).
 
 ## Deferred beyond v0
 
 - Cross-agent discovery/delegation and agent-card semantics.
 - Multiple product Threads multiplexed through one Runtime/native process. Codex app-server can
   host multiple native threads, but each Agent would still have a distinct product Thread and
-  native Codex thread. The Claude print-mode profile is not assumed to support equivalent
+  harness Thread. The tested Claude print-mode behavior is not assumed to support equivalent
   multiplexing; v0 keeps one Thread per bridge process.
 - A generic interactive-request family beyond ordinary steering input.
 - Rich operation taxonomies beyond the initial intersection.

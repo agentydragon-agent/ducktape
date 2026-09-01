@@ -12,13 +12,12 @@ One multi-mode `harness-bridge` process supervises the selected native harness i
 workload. Kubernetes and PVCs provide replaceable compute with explicit persisted state; they do
 not promise live-process hibernation.
 
-The architecture deliberately separates three surfaces:
+The architecture deliberately separates two surfaces:
 
 1. a private bridge control and evidence-replication protocol for admission, fencing, replay, and
    recovery;
-2. an internal harness-neutral timeline API for the product UI and orchestration;
-3. an optional opaque A2A facade for Agent-to-Agent tasks, messages, artifacts, cancellation, and
-   follow-up context.
+2. an internal harness-neutral timeline API for the product UI and orchestration, derived after the
+   first raw provider experiments establish the actual Claude/Codex behavior.
 
 Claude Code and Codex are parallel first adapters. Native harnesses remain the baseline because
 they already own provider-specific agent-loop behavior. A direct LLM API loop is a possible later
@@ -98,12 +97,15 @@ success and interruption that the provider never proved.
   states.
 - Transport redelivery is deduplicated, but uncertain provider input is never blindly replayed.
 - Stale workload generations are fenced from admitting input or appending authoritative records.
-- Exact provider evidence remains available under explicit retention and redaction tiers. Data is
-  never labeled raw if it was reconstructed or redacted.
+- Exact bidirectional provider frames are replicated to the server and retained as first-class
+  Thread evidence alongside any common projection. The bridge protocol does not redact,
+  reconstruct, or replace them with selected fields.
 - Suspension may retain Kubernetes and PVC identity while deleting the Pod. Process memory, PIDs,
   sockets, and in-flight computation are not assumed to survive.
 - Every supported behavior is labeled as a native contract, repository evidence, or experiment
-  required, and exact provider, bridge, model/configuration, and controller versions are pinned.
+  required. Runs record resolved provider, bridge, model/configuration, and controller versions when
+  known; support is demonstrated by adapter tests and captures rather than a formal exact-version
+  profile system.
 
 ### Scope constraints
 
@@ -112,8 +114,8 @@ success and interruption that the provider never proved.
   workload a configured model endpoint plus an inert placeholder; the egress fence substitutes the
   scoped LiteLLM virtual key. The existing LiteLLM -> CLIProxyAPI path owns Claude/Codex subscription
   login and refresh outside this control plane.
-- A2A is an optional opaque Agent-to-Agent facade. It does not expose private harness operations,
-  wire records, bridge-log state, or recovery internals.
+- A2A was evaluated and is not adopted for this control plane. It is not a protocol, facade,
+  implementation lane, or experiment target in this design.
 - Recovery claims must be promoted by deterministic, rerunnable experiments against the exact
   LiteLLM -> CLIProxyAPI routes used by Haku Console, with explicit failure points, correlated
   upstream LLM traffic, and saved bidirectional evidence. Paid inference is minimized and no
@@ -148,7 +150,7 @@ Runtimes, Sandboxes, MCP connections, approvals, grants, and traces. That is a p
 choice, not a reason to collapse the independently deployable services into one authority or
 binary.
 
-The authorization layer should not need to understand Thread, Turn, provider continuity, or Sandbox
+The authorization layer should not need to understand Thread, Turn, harness Thread, or Sandbox
 semantics. The orchestrator may bind a runtime to an opaque principal, but **Agent identity**,
 **runtime identity**, and **authorization principal** are deliberately separate concepts. The exact
 RBAC and approval model remains out of scope until concrete supported actions justify it.
@@ -167,8 +169,8 @@ RBAC and approval model remains out of scope until concrete supported actions ju
 - Make central-server failure, bridge failure, harness-process failure, Pod loss, and intentional
   suspension separate and observable recovery cases.
 - Keep a suspended sandbox's PVC-backed workspace without paying for a running Pod.
-- Promote recovery behavior to a product guarantee only after pinned, rerunnable provider
-  experiments prove it.
+- Promote recovery behavior to a product guarantee only after rerunnable provider experiments and
+  recorded native-wire captures prove it.
 - Preserve seams for future Agent delegation, spawning, and message delivery without making a
   multi-Agent role system part of v0.
 
@@ -190,11 +192,11 @@ RBAC and approval model remains out of scope until concrete supported actions ju
 | Harness integration     | Native structured protocols                                              | tmux, PTY automation, pane scraping                                                     |
 | Provider packaging      | One `harness-bridge --mode claude\|codex\|direct`                        | Separate unrelated bridge products or readers racing from sidecars                      |
 | Durable authority       | PostgreSQL                                                               | Pod-local state, Kubernetes CR status, or an event broker as the Thread source of truth |
-| Continuity identity     | Durable Thread with replaceable Runtimes and native process generations  | Treating a Pod, provider process, or provider continuity id as the product Thread       |
+| Continuity identity     | Durable Thread with replaceable Runtimes and native process generations  | Treating a Pod, provider process, or harness Thread id as the product Thread            |
 | Recovery policy         | Evidence-based reconciliation with explicit uncertainty                  | Blind prompt replay or inferred success/interruption after a crash                      |
 | Runtime lifecycle       | Agent Sandbox/Pod plus explicit PVC persistence and cold process restart | Claiming suspend is hibernation or that a detached process survives Pod deletion        |
 | Agent-loop baseline     | Native Claude Code and Codex                                             | Rebuilding both loops around direct model APIs in v0                                    |
-| External Agent protocol | Optional opaque A2A facade                                               | A2A as the private bridge protocol or as an export of harness/tool internals            |
+| External Agent protocol | None in this design; A2A evaluated and not adopted                       | Treating an opaque task protocol as the native harness supervision language             |
 
 ## Alternatives considered
 
@@ -205,13 +207,13 @@ guesses readiness, loses structured identifiers, and cannot prove provider admis
 outcomes. The selected non-interactive modes are diagnosed from their structured records and
 process/workload logs rather than by attaching to a terminal UI.
 
-| Terminal-driven integration   | Selected structured integration                  |
-| ----------------------------- | ------------------------------------------------ |
-| Sends keystrokes              | Sends native structured requests                 |
-| Guesses readiness             | Completes an explicit handshake                  |
-| Scrapes ANSI/pane text        | Receives correlated records and terminal events  |
-| Reattach means finding a pane | Reconciles durable state and provider continuity |
-| Cannot prove prompt admission | Records bridge and native admission evidence     |
+| Terminal-driven integration   | Selected structured integration                                |
+| ----------------------------- | -------------------------------------------------------------- |
+| Sends keystrokes              | Sends native structured requests                               |
+| Guesses readiness             | Completes an explicit handshake                                |
+| Scrapes ANSI/pane text        | Receives correlated records and terminal events                |
+| Reattach means finding a pane | Reconciles durable state and resumes the opaque harness Thread |
+| Cannot prove prompt admission | Records bridge and native admission evidence                   |
 
 ### Claude Agent SDK as a separate runtime architecture
 
@@ -276,7 +278,7 @@ native evidence, provider resume, or uncertain-dispatch semantics.
 Rejected as a portability assumption. A supervisor may reattach to a still-running child while its
 Pod survives, but ordinary Sandbox suspension and Pod replacement destroy process memory. Cross-Pod
 continuity therefore depends on central records, persisted native/workspace state, and provider
-resume behavior proven against pinned versions.
+resume behavior proven by adapter tests and captures for the harnesses being promoted.
 
 ### OpenClaw or another generic agent runtime as continuity authority
 
@@ -285,12 +287,14 @@ runtimes, but they do not replace exact Claude/Codex protocol ownership, admissi
 runtime fencing, Kubernetes recovery, and native reprojection. The control plane should preserve
 native harness affordances rather than rebuild them behind a broader chat abstraction.
 
-### A2A as the private harness protocol
+### A2A as a control-plane protocol or facade
 
 Rejected. A2A fits opaque Agent-to-Agent tasks, messages, artifacts, cancellation, and context
 continuation. It does not define bridge-log cursors, stale-writer fencing, provider admission,
-native process generations, exact wire evidence, or Kubernetes/PVC recovery. Those stay private;
-the internal UI timeline is also richer than the optional A2A projection.
+prompt-queue ownership, native process generations, exact wire evidence, or Kubernetes/PVC
+recovery. Adding enough private extensions to supply those semantics would defeat the purpose of
+adopting A2A as the neutral language. The evaluation is retained in [a2a.md](a2a.md); no A2A facade
+or experiment is planned.
 
 ## Working architectural vocabulary
 
@@ -315,16 +319,17 @@ rename the product object:
   This is the “n-th thing running this workload” concept; it is not a user Thread identity.
 - **Native process generation**: one child harness process within a Runtime. Restarting the child
   increments this generation without pretending the Pod or bridge changed.
-- **Provider continuity reference**: the provider's resumable identity attached to a Thread, for
-  example a Claude `session_id` or Codex `thread.id`. It is adapter evidence, not a second
-  product-facing object.
+- **Harness Thread id**: opaque resumable identity returned by the native harness after activation
+  (or minted by the optional direct adapter). It is the Claude `session_id` or Codex `thread.id`
+  surfaced through the neutral facade; the controller stores and returns it unchanged without
+  interpreting the provider-specific value.
 - **Wire record**: one exact line/message on the native protocol, plus direction and ordering
   metadata.
 - **Timeline event**: a durable common projection used by clients. It points back to one or more
   wire records.
 
-Kubernetes object names, Pod UIDs, bridge connection ids, provider continuity ids, and durable Thread
-ids are deliberately different identifiers.
+Kubernetes object names, Pod UIDs, bridge connection ids, harness Thread ids, and durable product
+Thread ids are deliberately different identifiers.
 
 ## Topology
 
@@ -336,20 +341,18 @@ flowchart LR
         API["Thread and sandbox API"]
         Reconciler["Workload reconciler"]
         Gateway["Bridge connection gateway"]
-        Projector["Native-to-common projector"]
         DB[("PostgreSQL: durable state, timeline, and wire records")]
 
         API --> DB
         API --> Reconciler
-        Gateway --> Projector
-        Projector --> DB
+        Gateway --> DB
     end
 
     Reconciler --> Kube["Kubernetes API"]
 
     subgraph Sandbox["Claimed Sandbox"]
         subgraph Pod["Ephemeral Pod / Runtime"]
-            Bridge["harness-bridge --mode claude|codex|direct"]
+            Bridge["harness-bridge plus provider driver; neutral facade follows captures"]
             Harness["Native harness or optional direct loop"]
             Bridge <--> Harness
         end
@@ -359,13 +362,14 @@ flowchart LR
     end
 
     Kube -- "reconcile Claim / Sandbox / Pod" --> Sandbox
-    Bridge -- "outbound control and replication stream" --> Gateway
+    Bridge -- "exact native frames; later linked common events" --> Gateway
 ```
 
 The central boxes are logical roles. The first implementation uses one replicated service and
-PostgreSQL. Metadata, accepted input, lifecycle, common events, and compressed wire-record segments
-all live in Postgres. The database, not one server process, is the continuity authority. Another
-storage system requires a demonstrated reason; it is not an open design choice.
+PostgreSQL. Metadata, accepted input, lifecycle, adapter-emitted common events, and losslessly stored
+wire records all live in Postgres. Claude/Codex translation lives in the adapter inside the bridge,
+not in a central projector service. The database, not one server process, is the continuity
+authority. Another storage system requires a demonstrated reason; it is not an open design choice.
 
 ## Detailed design
 
@@ -378,19 +382,23 @@ same durable Thread and, when storage survives, the same Sandbox.
 One live Runtime may serve several Turns while active. “One Runtime per Pod” does not mean one Pod
 per prompt.
 
-V0 gives each Runtime one product Thread. For Codex, that product Thread maps to one durable native
-Codex thread across Runtime generations; for Claude it maps to the recorded Claude resume identity.
-The mapping does not make Sandbox identity part of Thread identity. If a later profile hosts several
-Agents in one Codex app-server or Sandbox, each Agent still has a distinct product Thread and a
-distinct native Codex thread; only the Sandbox/Runtime cardinality changes.
+V0 gives each Runtime one product Thread. The product Thread may exist before a harness starts. The
+adapter's `start_thread` operation lets the provider mint an opaque `harness_thread_id`; later
+Runtimes pass that same id to `resume_thread`. The mapping does not make Sandbox identity part of
+Thread identity. If a later deployment hosts several Agents in one Codex app-server or Sandbox,
+each Agent still has a distinct product Thread and harness Thread; only the Sandbox/Runtime
+cardinality changes.
 
 ### The bridge is the workload entrypoint and child supervisor
 
 One `harness-bridge` executable launches the selected provider mode as its child, owns stdin/stdout
 or the local socket, performs the native handshake, emits health, and terminates the whole process
-group on shutdown. Provider-specific behavior is selected by configuration, not by deploying a
-different control-plane binary. This avoids PID discovery, competing readers, and sidecars racing
-to attach to process-local pipes.
+group on shutdown. The first evidence harness uses explicit provider-specific drivers and scenario
+code rather than assuming common `submit`/`steer`/queue semantics. After captures establish the
+intersection, the production bridge's Python adapters present the neutral facade and keep
+provider-specific behavior and native-id routing private. This avoids PID discovery, competing
+readers, sidecars racing to attach to process-local pipes, and eventual controller code branching on
+Claude/Codex JSON shapes without making the experiments depend on that abstraction prematurely.
 
 The bridge has provider adapters but is not the authority for Threads, scheduling, or final
 user-visible outcomes. It keeps a simple append-only local bridge log on the PVC so a server outage
@@ -405,45 +413,62 @@ ingress, PTY attachment, or `kubectl exec`. On reconnect the bridge announces:
 
 - runtime and sandbox identity;
 - the persisted runtime generation, which is also the fencing token;
-- provider, native version, bridge version, and compatibility profile;
+- provider, bridge implementation revision, and best-effort resolved native version;
 - native process generation, child identity, and current local state;
 - last server command durably accepted;
 - highest wire sequence durably retained and highest server acknowledgement observed;
-- provider-continuity and active-turn identifiers, when known.
+- adapter process state needed to reconcile safely.
+
+Provider-native Claude session and Codex thread/turn/item ids are parsed from retained native frames.
+The server may materialize them as derived debug/query indexes, but the bridge does not duplicate
+them as authoritative fields beside the raw frame. Resume uses the harness-issued opaque
+`harness_thread_id`; steering and interrupt use common `turn_id`, with native routing retained inside
+the adapter.
 
 The server answers with the durable cursor and desired runtime state. Only the current persisted
 runtime generation may admit input or append authoritative acknowledgements. A stale partitioned
 bridge can reconnect for diagnostics, but its writes are fenced. Replacement waits for confirmed
-old-workload termination before it opens provider continuity for writing. Both sides tolerate
+old-workload termination before it resumes the harness Thread for writing. Both sides tolerate
 duplicate transport delivery; semantic replay of provider input remains conservative.
 
 Generation fencing protects PostgreSQL authority; it does not stop an old native process from
 continuing tools, workspace writes, or provider-session activity while partitioned. The control
-plane therefore blocks replacement dispatch and provider-session resume until Kubernetes/process
+plane therefore blocks replacement dispatch and harness-Thread resume until Kubernetes/process
 evidence proves the prior workload cannot continue. If termination cannot be established, the
 sandbox remains unavailable in a terminating/recovery-blocked state rather than running two
 writers.
 
 ### The server commits input before dispatch
 
-The server assigns stable ids and commits accepted input before sending it to a Runtime. Dispatch
-progress is an explicit state machine, not a boolean:
+The server assigns stable ids and commits accepted input before sending it toward a Runtime. That
+central durability decision does **not** pre-decide who owns the operative prompt queue after
+acceptance. The queue may belong to the orchestrator, the bridge/runner, or the native harness; more
+than one layer may expose buffering, but the final design must choose one authoritative pending-input
+owner and avoid double-queue ambiguity.
 
-`accepted -> offered -> bridge_durable -> native_admitted -> terminal`
+The first provider matrix directly tests normal prompts written while a run is active, multiple
+pending prompts, native acknowledgements, admission and delivery boundaries, dequeue support,
+interrupt interactions, completion races, and process-death/resume behavior. From that evidence the
+neutral design chooses behavior that both harnesses tolerate. Candidate observations include:
 
-A disconnect in `accepted` is safe to retry. A disconnect after `native_admitted` may have produced
-side effects and must not be replayed automatically unless the provider exposes an operation id or
-resume contract that proves replay safe. “Outcome uncertain” is a valid terminal operator state.
+`accepted -> offered -> bridge_durable -> runner_queued? -> native_offered? -> native_admitted? -> native_delivered?`
+
+These labels are not frozen states yet. `native_delivered` exists only if a harness exposes evidence
+that distinguishes delivery from admission. A disconnect after a native write may have produced
+side effects even when no acknowledgement arrived and must not be replayed automatically unless
+native evidence proves replay safe. “Outcome uncertain” is a valid operator state.
 
 ### Native protocols are authoritative at the workload edge
 
-Provider adapters own initialization, prompt submission, steering, interruption, resumption, event
-interpretation, and native terminal-state detection. The common protocol is a projection for
-storage, control, and UI; raw native fields remain available and provider-specific features can pass
-through without inventing fake equivalence. See [provider adapters](provider_protocols.md) and the
-[common vocabulary](common_protocol.md). Its relationship to A2A 1.0 is evaluated separately in
-[A2A fit and protocol layering](a2a.md). Existing code and external prior art are evaluated in
-[implementation reuse](implementation_reuse.md).
+Provider adapters will eventually own initialization, prompt submission, queue/dequeue behavior,
+steering, interruption, resumption, event interpretation, and native terminal-state detection. The
+first experiment implementation deliberately precedes that common facade: explicit Claude and Codex
+scenario drivers exchange relatively raw JSON with each harness and record exact behavior. Only
+after the matrix runs do we choose queue ownership and extract a shared adapter contract. The
+central controller must not later translate Claude/Codex JSON or handle native turn/request ids.
+Provider-specific features remain available through native-frame views and informational debug
+metadata without inventing fake equivalence. See [provider adapters](provider_protocols.md), the
+[post-capture common vocabulary](common_protocol.md), and [implementation reuse](implementation_reuse.md).
 
 ### Persistent state is explicit
 
@@ -499,7 +524,7 @@ template migration that places `/workspace`, selected Claude state, and `CODEX_H
 Sandbox-owned PVCs. It must also set and validate `restartPolicy: Never` for the bridge-entrypoint
 Pod. The active templates currently omit it, so Kubernetes would otherwise restart a dead bridge
 container inside the same Pod UID and violate the v0 one-Runtime-per-Pod model. The controller
-profile rejects templates that do not meet these persistence and restart prerequisites.
+rejects templates that do not meet these persistence and restart prerequisites.
 
 The current Codex warm pool keeps one spare Sandbox. Claimed-sandbox suspension remains new behavior
 to exercise, not a claim that the existing warm pool is configured to scale to zero. The design
@@ -596,15 +621,15 @@ The suspension path is:
 1. stop admitting new turns;
 2. require the runtime to be idle;
 3. flush native records and the append-only bridge log through a durable acknowledgement;
-4. record provider continuity id and compatibility metadata;
+4. record the opaque `harness_thread_id`, adapter revision, and resolved harness version when known;
 5. terminate the child cleanly within a deadline;
 6. set the Sandbox to `Suspended`;
 7. wait for the controller's suspended condition and Pod absence;
 8. mark the product sandbox `Suspended`.
 
 Resume reverses compute state, not process state: create the Pod, start a new runtime, verify the
-PVC, perform the provider handshake, and then either resume provider continuity or start a new native
-session with an explicit continuity break.
+PVC, perform the provider handshake, and then either call `resume_thread(harness_thread_id)` or call
+`start_thread` and record an explicit continuity break.
 
 ### Disposal policy
 
@@ -630,18 +655,20 @@ sequenceDiagram
     S->>D: Commit input + stable ids
     S->>K: Ensure claimed Sandbox is running
     K-->>B: Start Pod and mount PVC
-    B->>H: Launch + native initialize/resume
+    B->>H: Adapter launch + native initialize
+    H-->>B: Native Thread/session id
+    B-->>S: common thread.harness_activated(harness_thread_id)
     B->>S: Authenticate; announce runtime and cursors
     S->>B: Offer committed input
     B->>B: Persist local acceptance in append-only PVC log
     B-->>S: bridge_durable acknowledgement
-    B->>H: Native prompt / turn request
-    H-->>B: Native admission id / event
-    B-->>S: native_admitted evidence
+    B->>H: Adapter translates common submit to native request
+    H-->>B: Exact native admission frame
+    B-->>S: Exact frame + linked common input.native_admitted
     H-->>B: Stream native records
-    B-->>S: Forward sequenced records
-    S->>D: Append wire log + project timeline
-    S-->>U: Stream Thread timeline with raw-frame drill-down
+    B-->>S: Forward exact frames + adapter-emitted common events
+    S->>D: Append wire log + common timeline
+    S-->>U: Stream Thread timeline with native-frame drill-down
     H-->>B: Native terminal event
     B-->>S: Terminal evidence
     S->>D: Commit proven outcome
@@ -663,10 +690,10 @@ log or invents a complete turn across missing evidence.
 
 ### Harness child process failure while the Pod survives
 
-The bridge records exit code/signal, stderr tail, last wire position, provider continuity id, and active
-turn id. It must not assume the active turn failed before side effects. Recovery starts a new child
+The bridge records exit code/signal, stderr tail, last wire position, opaque `harness_thread_id`, and
+active common turn id. It must not assume the active turn failed before side effects. Recovery starts a new child
 inside the same Pod with an incremented `native_process_generation`, or starts a replacement
-runtime. Native resume is used only if the compatibility suite has proven the exact case.
+runtime. Native resume is used only if adapter tests/captures have proven the case.
 
 Process supervision APIs can detach and reattach while the containing Pod survives, but cannot keep
 a PID alive after that Pod is deleted.
@@ -696,7 +723,7 @@ backup. It must not claim native continuity from a coincidentally reused name.
 
 If a provider may have admitted a turn but terminal evidence is absent, the UI shows the accepted
 input, last proven provider event, known workspace facts, and an uncertain outcome. Recovery choices
-are explicit: inspect, resume provider continuity, start a new follow-up without automatically
+are explicit: inspect, resume the harness Thread, start a new follow-up without automatically
 redispatching the original input, or abandon the turn. A follow-up can still cause new side effects;
 it is not presented as a safety guarantee. Blindly resending the original prompt is not the default.
 
@@ -728,7 +755,7 @@ Default groups are derived from those axes:
 
 - **Active**: a Pod is expected or present; activity shows whether it is idle, working, or
   recovering.
-- **Suspended**: Pod absent by policy; PVC retained; last provider continuity and activity shown.
+- **Suspended**: Pod absent by policy; PVC retained; last harness Thread and activity shown.
 - **Needs attention**: failed, evidence gap, uncertain turn, storage mismatch, or recovery blocked.
 - **Disposed**: Sandbox storage is gone; central audit metadata remains available.
 
@@ -748,58 +775,56 @@ The Thread page renders the common timeline:
 - interrupt/steer inputs and whether they were admitted;
 - runtime, reconnect, suspension, resume, and uncertainty markers.
 
-A “native frames” toggle interleaves restricted raw evidence or redacted/coalesced provider records
-at their exact timeline anchors. Drill-down shows direction, native sequence range, provider ids,
-evidence tier, projection version, and whether the frame was live, replayed, or recovered from the
+A “native frames” toggle interleaves the exact provider records at their Thread timeline anchors.
+Drill-down shows direction, native sequence, any provider ids parsed for convenience, the linked
+common events, adapter version, and whether the frame was live, replayed, or recovered from the
 bridge log. Provider detail never changes the ordering of the Thread timeline.
 
-### Raw-frame retention and coalescing
+### Exact native frames and common-event compaction
 
 Every native input/output record receives a sequence within `(runtime_id,
 native_process_generation)` before projection and a central `thread_seq` when Postgres accepts it.
-The store may coalesce high-frequency text, reasoning, command-output, or tool-input deltas into
-compressed segments after a turn becomes terminal, provided that it preserves:
+Every bridge-to-harness and harness-to-bridge JSON frame is stored centrally exactly as observed.
+The common event is an additional linked projection, never a substitute for the frame. V0 does not
+redact, discard, or semantically coalesce native frames. Lossless physical compression is acceptable
+only if retrieval preserves exact UTF-8 bytes, frame boundaries, order, direction, sequence, and
+timestamps.
 
-- exact post-redaction bytes or JSON values and ordering;
-- first/last native sequence and timestamps;
-- item/turn correlation;
-- content hash and redaction metadata;
-- the ability to reconstruct the logical stream used by the projector.
+Common text/reasoning/output deltas may be compacted after terminal state because their cited native
+frames remain available. Tool starts/completions, errors, interruption results, provider terminal
+events, and the common input-admission/dequeue observations remain individually addressable.
 
-Tool starts/completions, errors, interruption results, and provider terminal events remain
-individually addressable. Coalescing is storage compaction, not semantic loss.
-
-Evidence has two explicit tiers:
-
-- **Restricted raw evidence**: encrypted native bytes for short-retention diagnosis and exact
-  reprojection. Pre-redaction hashes cover this tier.
-- **Operational evidence**: redacted native records and common events used by routine UI and
-  long-term history. Post-redaction hashes cover this tier.
+Store exact frame text/bytes in a non-null `TEXT` or `BYTEA` column. If parsed JSON is materialized,
+use a non-null wrapper such as `{"state":"parsed","value":null}` so a provider-supplied JSON `null`
+cannot collapse into SQL `NULL`; absence and parse failure use explicit states. This repeats the
+lesson from Ducktape's earlier nullable-JSONB bug without importing Haku's schema into the new
+implementation.
 
 The append-only bridge log remains on encrypted Sandbox storage until explicit archival or disposal.
-V0 does not independently cap or coalesce it. A record never claims to be “exact raw” if only the
-redacted central tier is retained.
+V0 does not independently cap or coalesce it. Central Thread evidence survives Sandbox disposal.
 
 ## Implementation lanes
 
-1. **Evidence harness**: implement the version-pinned provider experiment runner and golden native
-   fixtures before making recovery promises.
-2. **Durable core**: define Thread, Sandbox, Runtime, native process generation, fencing token,
+1. **Evidence harness**: implement the standalone non-Haku, provider-specific capture matrix and
+   committed native-wire fixtures before making recovery promises or freezing a neutral facade.
+2. **Protocol extraction**: compare the Claude/Codex captures, decide prompt-queue ownership, and
+   define the smallest common submit/steer/dequeue/admission contract that neither harness fights.
+3. **Durable core**: define Thread, Sandbox, Runtime, native process generation, fencing token,
    input admission, native wire log, and common timeline tables in PostgreSQL with explicit
    uncertain outcomes.
-3. **Claude vertical slice**: one Sandbox, bridge-supervised Claude process, one turn, wire storage,
+4. **Claude vertical slice**: one Sandbox, bridge-supervised Claude process, one turn, wire storage,
    normalized Thread timeline, interrupt, and clean provider resume.
-4. **Codex vertical slice**: durable non-ephemeral Codex thread, app-server resume, operation
+5. **Codex vertical slice**: durable non-ephemeral Codex thread, app-server resume, operation
    normalization, interrupt, and steering.
-5. **Server reconnect**: append-only bridge log, cursor handshake, replay/deduplication, and replica
+6. **Server reconnect**: append-only bridge log, cursor handshake, replay/deduplication, and replica
    adoption.
-6. **Sandbox recovery**: Pod delete, process kill, suspend/resume, PVC sentinels, and UI states.
-7. **Operator UI**: active/suspended inventory, Thread timeline, raw-frame toggle, uncertain
+7. **Sandbox recovery**: Pod delete, process kill, suspend/resume, PVC sentinels, and UI states.
+8. **Operator UI**: active/suspended inventory, Thread timeline, raw-frame toggle, uncertain
    outcome recovery controls.
-8. **Direct-loop spike**: after both native adapters pass, prove that an API-driven loop can emit the
+9. **Direct-loop spike**: after both native adapters pass, prove that an API-driven loop can emit the
    same common protocol without making it the default.
-9. **Production hardening**: backups, central evidence retention, capacity alerts, version gates,
-   metrics, and controlled provider upgrades.
+10. **Production hardening**: backups, central evidence capacity alerts, adapter regression tests,
+    metrics, and controlled provider upgrades.
 
 The Claude and Codex slices proceed in parallel. The common protocol does not stabilize from one
 adapter and retrofit the other later.
@@ -810,11 +835,17 @@ adapter and retrofit the other later.
 - Should acknowledged bridge-log segments remain for the full Sandbox lifetime or move to a simple
   explicit archival action later?
 - Which Claude state directories are both necessary and safe to persist?
+- Which minimal adapter checkpoint fields are required to reconstruct common-to-native turn/item
+  routing and pending-input state after bridge restart, versus replaying the append-only bridge log?
+- Who owns the authoritative pending-prompt queue after central acceptance: the orchestrator,
+  bridge/runner, or native harness? Which native queues exist, and at what boundaries can inputs be
+  admitted, delivered, or dequeued without ambiguity?
 - Should provider state share the project PVC or use an independently retained volume?
-- What exact event subset is retained indefinitely versus compacted or expired?
+- Which common projected deltas are compacted after terminal state? Exact native frames remain
+  retained in v0.
 - Is automatic active-turn recovery ever safe, or should all mid-turn process loss require an
   explicit continuation?
-- Which controller conditions and timeouts define “suspended” and “resumed” for each pinned Agent
+- Which controller conditions and timeouts define “suspended” and “resumed” for each tested Agent
   Sandbox release?
 
 The experiment plan is the promotion gate for these decisions, not an appendix to implementation.
