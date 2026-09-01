@@ -13,52 +13,51 @@ native output, tool I/O, and workspace effects.
 
 - **S0 is complete:** the sandbox proxy and workload-identity spike has committed manifests and live
   evidence. It informs later credentialed egress work but does not gate the native capture path.
-- **A–J are complete on capture branch PR #15:** both providers have native captures, replay tests,
-  steering/interrupt evidence, idle resume evidence, and upstream disconnect/reconnect evidence. The
-  capture branch still needs to be integrated into the branch behind PR #5342.
+- **Native capture is complete on PR #15:** one agent delivered the Claude and Codex captures, replay
+  tests, steering/interrupt evidence, idle resume evidence, and upstream disconnect/reconnect evidence.
+  The capture branch still needs to be integrated into the branch behind PR #5342.
 - **Next:** integrate the capture branch, then implement the thin shared stdio protocol and both
   provider adapters.
 
 ## DAG
 
 ```mermaid
-flowchart LR
+flowchart TB
     classDef completed fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:2px
     classDef captureComplete fill:#fef3c7,stroke:#b45309,color:#78350f,stroke-width:2px
     classDef next fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:2px
+    classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
     classDef deferred fill:#f3f4f6,stroke:#6b7280,color:#374151
 
-    S0["S0<br/>Sandbox proxy/identity evidence"]:::completed
+    S0["Sandbox proxy/identity<br/>completed evidence"]:::completed
+    A["Native capture + replay<br/>Claude and Codex"]:::captureComplete
+    I["Integrate capture branch<br/>into PR #5342"]:::next
+    B["Shared stdio protocol<br/>+ both provider adapters"]:::next
+    C["Standalone Agentplane service seam<br/>records, runner bridge, REST/SSE"]:::next
+    D["First functioning credentialless Agentplane<br/>live updates, persisted history, honest outcomes"]:::milestone
+    E["Separate conversation app/UI<br/>Thread naming, archive, timeline, live control"]:::next
+    F["Secure egress integration<br/>fixed sidecar + trusted external gateway"]:::deferred
+    G["Credentialed production readiness<br/>freshness, replay, rotation, failure semantics"]:::deferred
+    H["Reliability hardening<br/>only from observed failures"]:::deferred
+    J["Explicit Haku Console integration"]:::deferred
 
-    subgraph P0["P0 native capture — evidence complete on PR #15"]
-        direction LR
-        A["A<br/>Experiment contract"]:::captureComplete --> B["B<br/>Process + transcript harness"]:::captureComplete
-        B --> C["C<br/>Provider launch/handshake"]:::captureComplete
-        C --> D["D<br/>Claude baseline/tool"]:::captureComplete
-        C --> E["E<br/>Codex baseline/tool"]:::captureComplete
-        D --> F["F<br/>Fake-model replay"]:::captureComplete
-        E --> F
-        F --> G["G<br/>Upstream disconnect/reconnect"]:::captureComplete
-        G --> H["H<br/>Steering/interrupt"]:::captureComplete
-        H --> I["I<br/>Idle native resume"]:::captureComplete
-        I --> J["J<br/>Compact fixtures + Bazel replay"]:::captureComplete
-    end
-
-    J --> M["Integrate capture branch<br/>into PR #5342"]:::next
-    M --> K["K<br/>Thin shared stdio protocol<br/>+ Claude/Codex adapters"]:::next
-    K --> L["L<br/>Small standalone Agentplane<br/>API/service slice"]:::deferred
-
-    S0 -. informs later egress .-> L
+    A --> I --> B --> C --> D
+    D --> E
+    D --> F --> G
+    D --> H
+    D --> J
+    S0 -. informs .-> F
 
 ```
 
 Legend: green is completed evidence already accepted as a separate spike; amber is completed native
-capture work that is still awaiting integration into PR #5342; blue is the next focused work; gray is
-downstream or deferred work.
+capture work that is still awaiting integration into PR #5342; blue is the next focused work; purple is
+the first functioning-product milestone; gray is downstream or deferred work.
 See [S0 sandbox proxy and identity evidence](../sandbox-spike/README.md).
 
-A and B are support. C through I are behavior. J is only the minimum regression packaging for the
-behavior already proven.
+This overview intentionally uses one box for the native capture package and one box for the shared
+protocol/adapters. The detailed provider/scenario matrix and acceptance evidence remain in
+[`experiments.md`](experiments.md) and the [capture task packet](subtasks/capture_native_harness_wires.md).
 
 ## Gates
 
@@ -72,19 +71,20 @@ behavior already proven.
 
 ## Evidence by node
 
-- **A:** documented command and endpoint assumptions; no credentials committed.
-- **B:** one test proving partial pipe reads and complete ordered payload capture.
-- **C:** actual initialize/handshake exchange for each provider.
-- **D/E:** real baseline/tool transcript plus hand-authored expected behavior.
-- **F:** real Claude/Codex binaries driven against a deterministic fake upstream; captured model
-  requests and native output both asserted.
-- **G:** one controlled upstream stream loss after partial response; exact chunks before loss,
-  subsequent connection/request behavior, native output, process survival, duplicate suppression or
-  duplication, and terminal outcome. Explicit no-retry/unsupported is valid evidence.
-- **H:** actual steering/interrupt request and resulting native evidence, or explicit unsupported.
-- **I:** native session/thread continuity after idle child restart, or explicit unsupported.
-- **J:** offline replay passes with no network, credentials, Kubernetes, hashes, lengths, manifests,
-  or custom promotion/scanner system.
+- **S0:** live sandbox/proxy evidence, including the proven credential boundary and the unsupported
+  same-Pod route-confinement result.
+- **Native capture + replay:** real Claude and Codex launch, baseline/tool driving, steering/interrupt,
+  idle resume, upstream reconnect behavior, exact transcripts, and replay tests.
+- **Integrate capture branch:** PR #15's captured implementation is present on the branch behind PR
+  #5342, with its original provider-specific evidence intact.
+- **Shared protocol + adapters:** one stdio contract whose commands/events are justified by captured
+  native frames, exercised through both real providers.
+- **Standalone service seam:** the smallest API/service path that starts a runner, accepts an Input,
+  streams events, persists enough history for refresh, and reports an honest terminal outcome.
+- **First functioning Agentplane:** end-to-end credentialless operation through the standalone service
+  and separate conversation app.
+- **Deferred branches:** secure egress, credentialed readiness, reliability hardening, and explicit
+  Haku Console integration each require their own observed evidence and acceptance test.
 
 ## Deferred branch
 
