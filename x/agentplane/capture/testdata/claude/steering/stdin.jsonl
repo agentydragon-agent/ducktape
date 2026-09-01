@@ -1,0 +1,3 @@
+{"time_ns":5038102288410014,"text":"{\"type\":\"control_request\",\"request_id\":\"capture-c3b82dd1c0304c88976a7f1b35f853c5\",\"request\":{\"subtype\":\"initialize\"}}"}
+{"time_ns":5038102915138310,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Use the Bash tool to run `sh -c 'printf \\\"wait_started\\\\n\\\"; sleep 20; printf \\\"wait_finished\\\\n\\\"'`; after it finishes reply ONLY WAIT_DONE.\"},\"parent_tool_use_id\":null,\"uuid\":\"c1ee7d79-05a1-4bc9-8657-ac8a6d04c3f4\"}"}
+{"time_ns":5038103648678619,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply ONLY SECOND_INPUT_OBSERVED after your current work.\"},\"parent_tool_use_id\":null,\"uuid\":\"6f063a7a-9305-4668-86c5-b680375ad068\"}"}

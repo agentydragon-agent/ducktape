@@ -1,0 +1,33 @@
+filegroup(
+    name = "native_replay_fixtures",
+    srcs = [
+        "claude/baseline/llm-requests.jsonl",
+        "claude/baseline/llm-responses.jsonl",
+        "claude/connection_retry/llm-requests.jsonl",
+        "claude/connection_retry/llm-responses.jsonl",
+        "claude/idle_resume/llm-requests.jsonl",
+        "claude/idle_resume/llm-responses.jsonl",
+        "claude/post_failure_follow_up/llm-requests.jsonl",
+        "claude/post_failure_follow_up/llm-responses.jsonl",
+        "codex/connection_retry/llm-requests.jsonl",
+        "codex/connection_retry/llm-responses.jsonl",
+        "codex/idle_resume/llm-requests.jsonl",
+        "codex/idle_resume/llm-responses.jsonl",
+        "codex/post_exhaustion_follow_up/llm-requests.jsonl",
+        "codex/post_exhaustion_follow_up/llm-responses.jsonl",
+        "codex/post_failure_follow_up/llm-requests.jsonl",
+        "codex/post_failure_follow_up/llm-responses.jsonl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "replay_fixtures",
+    srcs = [
+        "codex/baseline/llm-requests.jsonl",
+        "codex/baseline/llm-responses.jsonl",
+        "codex/interrupt/llm-requests.jsonl",
+        "codex/interrupt/llm-responses.jsonl",
+    ],
+    visibility = ["//visibility:public"],
+)
