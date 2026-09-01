@@ -38,10 +38,11 @@ shell/file/tool traffic, ordinary prompts while active, multiple pending prompts
 dequeue/cancellation discovery, interruption, and direct native process resume. It uses no common
 facade or projector.
 
-Central reconnect, dispatch crash windows, Runtime fencing, Pod replacement, suspension, and UI
-timeline assertions are later control-plane experiments. They consume the accepted raw fixtures and
-the neutral contract derived from them; they are not prerequisites for building the first capture
-drivers.
+Central reconnect, dispatch crash windows, Pod replacement, suspension, and UI timeline assertions
+are later control-plane experiments. They consume the accepted raw fixtures and the neutral contract
+derived from them; they are not prerequisites for building the first capture drivers. Connection
+direction, natural Pod/process identity, and any lease/fencing mechanism remain open until that
+control-channel work has evidence to justify them.
 
 ## Proposed code layout
 
@@ -101,14 +102,15 @@ Every live run requires:
 - explicit provider;
 - best-effort harness version plus binary/image digest when available;
 - verified Sandbox-owned PVC mounts for workspace and selected provider state;
-- verified `restartPolicy: Never` for the bridge-entrypoint Pod;
+- recorded Sandbox/Pod/process restart behavior; no particular Kubernetes restart policy is a v0
+  prerequisite;
 - explicit model name;
 - explicit lowest accepted reasoning/effort setting;
 - maximum provider calls/tokens and estimated spend ceiling;
 - unique isolated workspace path;
 - scenario allowlist;
 - artifact output directory;
-- recording-proxy endpoint and scoped test-credential policy id;
+- model endpoint and recording configuration supplied by the surrounding experiment deployment;
 - acknowledgement if the scenario will delete a Pod, suspend a Sandbox, or explicitly dispose of
   Sandbox storage.
 
@@ -117,23 +119,15 @@ probe class is the cheapest supported Haiku-class model. For Codex the runner di
 the lowest-cost allowlisted Responses-compatible model and uses the lowest reasoning effort it
 accepts. The selected model and any provider reroute are recorded in the manifest.
 
-Live semantic probes use the same in-cluster LiteLLM -> CLIProxyAPI Messages/Responses paths as Haku
-Console, with capture integrated at the model-gateway boundary. CLIProxyAPI owns the Claude and
-Codex consumer OAuth sessions and refreshes them outside the experiment workload. The runner
-preferably uses the same configured endpoint plus inert-placeholder/egress-fence substitution as
-Haku Console; it never performs consumer login or mounts OAuth state.
+Live semantic probes may use the same in-cluster LiteLLM -> CLIProxyAPI Messages/Responses paths as
+Haku Console, with capture integrated at the model-gateway boundary, but Agentplane does not own
+credential delivery. The surrounding experiment deployment supplies whatever endpoint access is
+needed; the runner never performs consumer login or mounts OAuth state. Credential/grant plumbing is
+experiment infrastructure and must not become a dependency of the Agentplane controller.
 
-The preferred unattended credential is a dedicated virtual key restricted to the allowlisted cheap
-test models and a hard budget. Ducktape PR
-[#5348](https://github.com/agentydragon/ducktape/pull/5348) provides the initial
-`cheap-experiments` LiteLLM key and makes its dedicated Secret eligible for an exact temporary Haku
-Console grant. An active grant still requires operator approval through the ordinary grant
-mechanism; that temporary-grant path is the selected first delivery mechanism. The experiment
-artifacts record the virtual-key policy id, LiteLLM/CLIProxyAPI route, and proxy/config digests,
-never any key or OAuth material. A standalone runner outside the Haku Console fence may use that
-temporary exact grant; the manifest records `credential_delivery: egress_fence | temporary_grant`.
-The model route is capture metadata, not a separate consumer-OAuth test surface or a formal
-compatibility-profile object.
+The manifest records the model route and recording configuration without recording keys or OAuth
+material. The model route is capture metadata, not a separate consumer-OAuth test surface or a
+formal compatibility-profile object.
 
 No scenario edits a real repository or relies on external side effects. All operation work is
 confined to a unique temporary directory on the test PVC.
@@ -165,7 +159,7 @@ run-<timestamp>-<provider>-<scenario>/
 - provider, harness version, binary/image digest, and sanitized launch argv;
 - capture runner and provider-specific driver/parser version;
 - model, reasoning effort, endpoint family, token usage, and measured/estimated cost;
-- recording-proxy version/config digest and scoped virtual-key policy id;
+- recording-proxy version/config digest and other non-secret route metadata, when a proxy is used;
 - Agent Sandbox controller version, SandboxTemplate digest, storage class, Claim/Sandbox/Pod UIDs;
 - scenario seed, nonce, kill point, timing deadlines, and environment capabilities.
 
@@ -334,8 +328,8 @@ Before either provider launches:
 
 - reject the template unless `/workspace` and selected provider-state paths resolve to
   Sandbox-owned PVCs rather than `emptyDir`;
-- reject the template unless the bridge-entrypoint Pod has `restartPolicy: Never`;
-- record the resolved PVC/PV identities and effective Pod spec in the artifact manifest.
+- record the resolved PVC/PV identities, effective Pod spec, Pod UID, and process-start behavior in
+  the artifact manifest.
 
 Claude:
 
@@ -469,13 +463,11 @@ alive. Request replacement and assert that the control plane blocks new dispatch
 harness-Thread resume, and replacement activation while the old workload can still run. Central fencing alone is
 not a passing result.
 
-Then terminate bridge PID 1 while idle and during the active-turn kill window. Assert
-`restartPolicy: Never` prevents an in-place container restart. After the old Pod/process is observed
-terminated, let the reconciler delete/recreate the Pod, allocate a new Runtime ID, and increment the
-runtime generation.
-Finally reconnect a captured old-generation client while the replacement is active. The server may
-retain its diagnostics, but must reject stale input admission, wire append, cursor advancement, and
-terminal updates.
+Then terminate bridge PID 1 while idle and during the active-turn kill window. Record whether
+Kubernetes restarts the container in place or Agent Sandbox recreates the Pod, and whether the
+replacement successfully uses native resume against the same PVC. If stale-writer protection is
+needed, record the observed failure and defer the choice of lease/fencing mechanism rather than
+assuming a generated runtime token.
 
 ### I1/I2: interrupt
 
@@ -587,7 +579,8 @@ not a reason to block all other capabilities.
 ## Initial economical sequence
 
 1. Build offline artifact, exact-wire, provider-specific parser, and fixture tests.
-2. Provision the scoped cheap-model virtual key and recording proxy in a separate small change.
+2. Provision whatever scoped cheap-model access and recording proxy the surrounding experiment
+   deployment requires in a separate small change; this is not Agentplane credential-delivery work.
 3. Add P0 for both real binaries with no paid inference where possible.
 4. Spend one minimal turn per provider to capture baseline raw shell/file/tool traffic plus
    correlated LLM request/response recording.

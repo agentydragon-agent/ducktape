@@ -14,8 +14,8 @@ not promise live-process hibernation.
 
 The architecture deliberately separates two surfaces:
 
-1. a private bridge control and evidence-replication protocol for admission, fencing, replay, and
-   recovery;
+1. a future private bridge control and evidence-replication protocol for admission, replay, and
+   recovery, derived from the native captures;
 2. an internal harness-neutral timeline API for the product UI and orchestration, derived after the
    first raw provider experiments establish the actual Claude/Codex behavior.
 
@@ -35,7 +35,8 @@ The product need is not merely “run a coding CLI in Kubernetes.” It is:
 - avoid making expensive metered model APIs the mandatory baseline when consumer subscriptions are
   the economical path already available to the operator;
 - keep Agents useful for days, or eventually for an effectively unbounded Thread receiving a
-  stream of human, automation, subscription, and external-event inputs;
+  stream of messages. A higher layer may later turn subscriptions and external events into
+  explicitly enveloped messages sent to an Agent;
 - later let Agents delegate to, spawn, and communicate with other Agents without replacing the
   durable single-Agent Thread model;
 - survive central-service, bridge, harness-process, and Pod failure without silently losing or
@@ -81,9 +82,10 @@ success and interruption that the provider never proved.
   overflow handling, steering, interruption, and resume behavior.
 - One bridge executable supports provider modes rather than creating unrelated control-plane
   implementations.
-- PostgreSQL is the sole first-version central authority for durable orchestration state and
-  evidence. Kubernetes objects describe and realize workload state; they are not the Thread
-  timeline.
+- PostgreSQL is the default durable authority for product interaction state and control-plane
+  evidence. Kubernetes/Agent Sandbox remains authoritative for Sandbox, Claim, Pod, PVC, readiness,
+  suspension, and workload lifecycle; native harnesses remain authoritative for native continuity
+  and execution semantics. Agentplane records observations without reimplementing those owners.
 - The product-facing identity is one durable Thread. A Pod or native process is a replaceable
   Runtime, not the Thread identity.
 - Agent Sandbox is the preferred first Kubernetes backend, but the central protocol cannot depend
@@ -95,8 +97,10 @@ success and interruption that the provider never proved.
   timing, pane scraping, prompt detection, and `kubectl exec` are not harness integration paths.
 - Central acceptance, bridge durability, provider admission, and terminal evidence are separate
   states.
-- Transport redelivery is deduplicated, but uncertain provider input is never blindly replayed.
-- Stale workload generations are fenced from admitting input or appending authoritative records.
+- Transport redelivery is deduplicated. Blind semantic replay remains a conservative default until
+  experiments establish provider delivery/acknowledgement and dequeue semantics.
+- Natural Kubernetes/process identities are preferred over a separately injected workload-generation
+  token. Add a lease or fencing epoch only if observed failure modes require it.
 - Exact bidirectional provider frames are replicated to the server and retained as first-class
   Thread evidence alongside any common projection. The bridge protocol does not redact,
   reconstruct, or replace them with selected fields.
@@ -109,11 +113,10 @@ success and interruption that the provider never proved.
 
 ### Scope constraints
 
-- This design does not specify consumer OAuth, credentials, identity/access control, tool
-  governance, approval policy, or external tool routing. The proven Haku Console profile gives the
-  workload a configured model endpoint plus an inert placeholder; the egress fence substitutes the
-  scoped LiteLLM virtual key. The existing LiteLLM -> CLIProxyAPI path owns Claude/Codex subscription
-  login and refresh outside this control plane.
+- Agentplane v0 does not specify credential delivery, consumer OAuth, identity/access control, tool
+  governance, approval policy, external tool routing, or subscription/event adapters. It assumes a
+  configured model endpoint supplied by the surrounding deployment and treats credentials as an
+  adjacent concern, not an Agentplane feature.
 - A2A was evaluated and is not adopted for this control plane. It is not a protocol, facade,
   implementation lane, or experiment target in this design.
 - Recovery claims must be promoted by deterministic, rerunnable experiments against the exact
@@ -131,9 +134,10 @@ owner.
 ### Adjacent layers that should stay separate
 
 The first deployable unit may be one **orchestrator** service plus PostgreSQL: it owns Thread/Turn
-state, Sandbox lifecycle, bridge connections, native logs, projection, and recovery. It does not
-host MCP tools or decide tool authorization. The web UI can be deployed separately and consume the
-same orchestrator API.
+state, the Agent Sandbox relationship, bridge connections, native logs, projection, and recovery.
+It consumes Sandbox/Kubernetes lifecycle rather than reimplementing it. It does not host MCP tools
+or decide tool authorization. The web UI can be deployed separately and consume the same
+orchestrator API.
 
 Later systems should remain independently versioned and deployable:
 
@@ -142,8 +146,9 @@ Later systems should remain independently versioned and deployable:
 - a stateless MCP gateway that accepts an opaque authorization principal, applies tool-level
   policy, and can turn an operator-approved escalation into a narrow temporary grant without an
   Agent or Sandbox rollout;
-- inbound adapters for GitHub, personal notifications, schedules, and Agent-to-Agent messages that
-  commit ordinary accepted inputs with explicit provenance envelopes.
+- a higher layer for GitHub, personal notifications, schedules, and Agent-to-Agent messages that
+  sends explicitly enveloped messages to this controller; those subscriptions and adapters are not
+  Agentplane responsibilities.
 
 A future integrated Agent Console may compose these APIs into one application showing Threads,
 Runtimes, Sandboxes, MCP connections, approvals, grants, and traces. That is a product composition
@@ -157,9 +162,9 @@ RBAC and approval model remains out of scope until concrete supported actions ju
 
 ## Goals
 
-- Run each live Runtime in a bounded Pod or sandbox-backed workload.
-- Let a central server own durable Thread identity, accepted input, workload desired state,
-  recovery decisions, normalized Thread timeline, and user-visible status.
+- Run each live runner in a bounded Pod or sandbox-backed workload.
+- Let a central server own durable Thread identity, accepted input, recovery decisions, normalized
+  Thread timeline, and user-visible status while consuming Kubernetes/Agent Sandbox workload state.
 - Put one small `harness-bridge` binary in each workload. Provider modes launch and supervise
   Claude Code, Codex, or an optional direct-LLM loop behind the same central protocol.
 - Preserve native Claude Code and Codex behavior as the default path. A direct-LLM loop is an
@@ -312,13 +317,12 @@ rename the product object:
   inputs. Every input remains independently identified and admitted.
 - **Sandbox record**: durable environment/storage identity, desired operating mode, provider, PVC
   policy, and current Kubernetes references. It is neither the Agent nor the Thread.
-- **Runtime**: one bridge/Pod incarnation with a unique `runtime_id`. It is the concrete thing
-  currently or historically running the workload.
-- **Runtime generation**: the Sandbox-scoped monotonically increasing ordinal and fencing epoch for
-  Runtimes. Generation `n+1` is authorized only after generation `n` is proven unable to continue.
-  This is the “n-th thing running this workload” concept; it is not a user Thread identity.
-- **Native process generation**: one child harness process within a Runtime. Restarting the child
-  increments this generation without pretending the Pod or bridge changed.
+- **Runner Pod ID**: the Kubernetes Pod UID for the concrete Pod running Agentplane. It is observed
+  from Kubernetes rather than injected by patching a suspended Sandbox CR.
+- **Runner process**: one bridge/native process instance inside that Pod, identified by ordinary
+  process start/exit evidence and, where available, Kubernetes container restart metadata.
+- **Runner connection**: the central control-channel instance associated with a Runner Pod ID and
+  process-start observation. A separate Sandbox-scoped generation token is not a v0 requirement.
 - **Harness Thread id**: opaque resumable identity returned by the native harness after activation
   (or minted by the optional direct adapter). It is the Claude `session_id` or Codex `thread.id`
   surfaced through the neutral facade; the controller stores and returns it unchanged without
@@ -341,7 +345,7 @@ flowchart LR
         API["Thread and sandbox API"]
         Reconciler["Workload reconciler"]
         Gateway["Bridge connection gateway"]
-        DB[("PostgreSQL: durable state, timeline, and wire records")]
+        DB[("PostgreSQL: product state, observations, timeline, and wire records")]
 
         API --> DB
         API --> Reconciler
@@ -352,7 +356,7 @@ flowchart LR
 
     subgraph Sandbox["Claimed Sandbox"]
         subgraph Pod["Ephemeral Pod / Runtime"]
-            Bridge["harness-bridge plus provider driver; neutral facade follows captures"]
+            Bridge["harness-bridge plus provider driver"]
             Harness["Native harness or optional direct loop"]
             Bridge <--> Harness
         end
@@ -365,22 +369,24 @@ flowchart LR
     Bridge -- "exact native frames; later linked common events" --> Gateway
 ```
 
-The central boxes are logical roles. The first implementation uses one replicated service and
-PostgreSQL. Metadata, accepted input, lifecycle, adapter-emitted common events, and losslessly stored
-wire records all live in Postgres. Claude/Codex translation lives in the adapter inside the bridge,
-not in a central projector service. The database, not one server process, is the continuity
-authority. Another storage system requires a demonstrated reason; it is not an open design choice.
+The central boxes are logical roles. The first implementation uses one service and PostgreSQL for
+product state, accepted inputs, cross-system observations, common events, and exact wire records.
+Kubernetes/Agent Sandbox remains the source of truth for Kubernetes-managed workload state, while
+native harnesses remain the source of truth for native continuity. Claude/Codex translation lives in
+provider drivers at the workload edge, not in a central projector service. Another storage system is
+welcome when it is the natural authority for its own data.
 
 ## Detailed design
 
-### One runtime per Pod; one Thread across runtimes
+### One runner process per Pod; one provider Thread across replacements
 
-A live Runtime gets its own process tree, resource limits, and Pod identity. The Thread and Sandbox
-record do not disappear when that Pod does. Replacing a failed Runtime is a state transition on the
-same durable Thread and, when storage survives, the same Sandbox.
+A live runner gets its own process tree, resource limits, and Kubernetes Pod UID. The Thread and
+Sandbox record do not disappear when that Pod does. Replacing a failed runner is a state transition
+on the same durable Thread and, when storage survives, the same Sandbox.
 
-One live Runtime may serve several Turns while active. “One Runtime per Pod” does not mean one Pod
-per prompt.
+One live runner may serve several Turns while active. “One runner process per Pod” does not mean one
+Pod per prompt. The provider/harness family is fixed for a Thread; model changes within that
+provider are a later Turn-boundary feature, not a v0 requirement.
 
 V0 gives each Runtime one product Thread. The product Thread may exist before a harness starts. The
 adapter's `start_thread` operation lets the provider mint an opaque `harness_thread_id`; later
@@ -406,15 +412,20 @@ does not force RAM buffering. V0 does not add cap, truncation, coalescing, or ov
 this log: native LLM traffic is modest, the PVC is already durable, and storage growth is easier to
 observe than a second lossy retention policy.
 
-### The bridge dials outward
+### The control channel is an open implementation question
 
-The bridge opens an outbound stream to the central gateway. The server does not need per-Pod
-ingress, PTY attachment, or `kubectl exec`. On reconnect the bridge announces:
+The first implementation should not freeze connection direction or authentication before the native
+experiments and Sandbox inspection are complete. A leading candidate is for the central service to
+watch Agent Sandbox/Kubernetes, discover a runner Pod or Sandbox-exposed Service, and connect to the
+bridge. A bridge-initiated stream remains possible. The v0 control channel may initially run without
+application authentication inside the trusted personal cluster; mTLS and credential injection are
+not Agentplane prerequisites.
 
-- runtime and sandbox identity;
-- the persisted runtime generation, which is also the fencing token;
+Whichever direction is selected, a runner connection reports:
+
+- Sandbox and Runner Pod identity;
+- process start evidence, child identity, and current local state;
 - provider, bridge implementation revision, and best-effort resolved native version;
-- native process generation, child identity, and current local state;
 - last server command durably accepted;
 - highest wire sequence durably retained and highest server acknowledgement observed;
 - adapter process state needed to reconcile safely.
@@ -425,22 +436,16 @@ them as authoritative fields beside the raw frame. Resume uses the harness-issue
 `harness_thread_id`; steering and interrupt use common `turn_id`, with native routing retained inside
 the adapter.
 
-The server answers with the durable cursor and desired runtime state. Only the current persisted
-runtime generation may admit input or append authoritative acknowledgements. A stale partitioned
-bridge can reconnect for diagnostics, but its writes are fenced. Replacement waits for confirmed
-old-workload termination before it resumes the harness Thread for writing. Both sides tolerate
-duplicate transport delivery; semantic replay of provider input remains conservative.
-
-Generation fencing protects PostgreSQL authority; it does not stop an old native process from
-continuing tools, workspace writes, or provider-session activity while partitioned. The control
-plane therefore blocks replacement dispatch and harness-Thread resume until Kubernetes/process
-evidence proves the prior workload cannot continue. If termination cannot be established, the
-sandbox remains unavailable in a terminating/recovery-blocked state rather than running two
-writers.
+The server answers with the durable cursor and desired runner state. Kubernetes/Agent Sandbox owns
+whether a Pod is present, ready, suspended, or replaced. If a stale connection can still write after
+the Pod is believed dead, add a lease or connection-fencing mechanism based on observed evidence;
+do not assume a hand-delivered generation token. Replacement and native resume still require
+evidence that the prior process cannot continue, but the exact proof belongs to the Kubernetes and
+process lifecycle integration rather than a preselected fencing vocabulary.
 
 ### The server commits input before dispatch
 
-The server assigns stable ids and commits accepted input before sending it toward a Runtime. That
+The server assigns stable ids and commits accepted input before sending it toward a runner. That
 central durability decision does **not** pre-decide who owns the operative prompt queue after
 acceptance. The queue may belong to the orchestrator, the bridge/runner, or the native harness; more
 than one layer may expose buffering, but the final design must choose one authoritative pending-input
@@ -484,9 +489,9 @@ The container root filesystem is disposable. The PVC contains only deliberate co
 Exact paths are image configuration, not protocol. Provider state and workspace can be separate
 PVCs later if their retention or backup needs diverge.
 
-PostgreSQL retains identities, lifecycle, accepted input, normalized timeline, compressed wire
-records, and proven/uncertain outcomes. Large frame streams use partitioned append-only tables and
-compressed `bytea`/JSON payloads.
+PostgreSQL retains product identities, accepted input, normalized timeline, cross-system
+observations, exact wire records, and proven/uncertain outcomes. Keep the frames uncompressed in v0;
+storage optimization and retention are later deployment questions.
 
 ### Native harnesses are the default; a direct agent loop is an option
 
@@ -519,12 +524,12 @@ The active `haku-claude` and `haku-public-coder-codex` templates currently mount
 active Haku runtime. The current Haku templates therefore lose workspace and native state on Pod
 replacement or suspension and cannot satisfy this design as written.
 
-Before any continuity experiment, the Harness Control Plane needs a dedicated template or explicit
-template migration that places `/workspace`, selected Claude state, and `CODEX_HOME` on
-Sandbox-owned PVCs. It must also set and validate `restartPolicy: Never` for the bridge-entrypoint
-Pod. The active templates currently omit it, so Kubernetes would otherwise restart a dead bridge
-container inside the same Pod UID and violate the v0 one-Runtime-per-Pod model. The controller
-rejects templates that do not meet these persistence and restart prerequisites.
+Before any continuity experiment, Agentplane needs a dedicated template or explicit template
+migration that places `/workspace`, selected Claude state, and `CODEX_HOME` on Sandbox-owned PVCs.
+The bridge remains one active process at a time in a Pod, but the plan does not yet mandate a
+particular `restartPolicy`: either an in-place container restart or a Sandbox-managed replacement
+Pod may recover through native resume. The experiment records Pod UID and process-start changes so
+the choice can be made from observed behavior.
 
 The current Codex warm pool keeps one spare Sandbox. Claimed-sandbox suspension remains new behavior
 to exercise, not a claim that the existing warm pool is configured to scale to zero. The design
@@ -540,8 +545,14 @@ aliasing either Kubernetes object.
 The relevant ownership shape is:
 
 ```text
-SandboxClaim -> Sandbox -> Pod, PVC, optional Service
+SandboxClaim -> Sandbox -> Pod, PVC
 ```
+
+A separate Kubernetes Service may select the runner Pod when a central-initiated control channel
+needs a stable endpoint. Agent Sandbox's documented networking example composes such a Service and
+NetworkPolicy around the Sandbox; the pinned local controller manifests do not show Agent Sandbox
+creating a Service as part of the Sandbox CR itself. Treat Service creation/selection and endpoint
+stability as an integration experiment, not as a built-in CR guarantee.
 
 A claim may adopt a warm-pool Sandbox, in which case the Sandbox keeps its pool-generated name, or
 cold-create one. The control plane therefore stores both Claim identity and the resolved Sandbox
@@ -550,8 +561,8 @@ name/UID; it never derives one from the other.
 ### Suspension is compute-off, not process freeze
 
 For v0.5.5, setting `Sandbox.spec.operatingMode: Suspended` gracefully deletes the Pod while
-retaining the Sandbox CR, PVCs, and requested Service. `Suspended=True` is reported only after the
-Pod is gone. Setting the mode back to the running state creates a new Pod wired to the same
+retaining the Sandbox CR and PVCs. `Suspended=True` is reported only after the Pod is gone; any
+separate Service must be managed and observed as a distinct Kubernetes object. Setting the mode back to the running state creates a new Pod wired to the same
 Sandbox-owned PVC. This is the pinned
 [suspend/resume contract](https://github.com/kubernetes-sigs/agent-sandbox/blob/3ea199b8b910f8e838a6000796c29536d592fbdd/docs/keps/694-kep-for-suspend-and-resume-for-beta/README.md#L117-L129),
 implemented by the controller's
@@ -658,7 +669,7 @@ sequenceDiagram
     B->>H: Adapter launch + native initialize
     H-->>B: Native Thread/session id
     B-->>S: common thread.harness_activated(harness_thread_id)
-    B->>S: Authenticate; announce runtime and cursors
+    B->>S: Connect; announce Pod/process identity and cursors
     S->>B: Offer committed input
     B->>B: Persist local acceptance in append-only PVC log
     B-->>S: bridge_durable acknowledgement
@@ -691,24 +702,23 @@ log or invents a complete turn across missing evidence.
 ### Harness child process failure while the Pod survives
 
 The bridge records exit code/signal, stderr tail, last wire position, opaque `harness_thread_id`, and
-active common turn id. It must not assume the active turn failed before side effects. Recovery starts a new child
-inside the same Pod with an incremented `native_process_generation`, or starts a replacement
-runtime. Native resume is used only if adapter tests/captures have proven the case.
+active common turn id. It must not assume the active turn failed before side effects. Recovery starts a new
+child inside the same Pod or a replacement Pod, records the new process-start evidence, and uses native
+resume only when adapter tests/captures have proven the case.
 
 Process supervision APIs can detach and reattach while the containing Pod survives, but cannot keep
 a PID alive after that Pod is deleted.
 
 ### Bridge process failure
 
-Because the bridge is PID 1/entrypoint and the v0 template requires `restartPolicy: Never`, its
-failure terminates the runtime without an in-place container restart. The central server observes
-the terminated Pod/process, deletes the failed Pod if needed so Agent Sandbox reconciles a new one,
-and only then issues a replacement generation. The replacement reuses the PVC and reconciles the
-bridge log before dispatching more input.
+The bridge is PID 1/entrypoint and remains one active process at a time in the Pod. Whether a bridge
+failure causes an in-place container restart or an Agent Sandbox-managed replacement Pod remains an
+implementation choice. Either path starts a new process instance, reuses the PVC, reconciles the
+bridge log, and uses the harness's native resume function before dispatching more input.
 
 ### Pod loss while Sandbox and PVC survive
 
-The controller recreates a new Pod against the same PVC. The server creates a new Runtime ID,
+The controller recreates a new Pod against the same PVC. The server observes the new Runner Pod ID,
 verifies the Sandbox UID and PVC sentinel, starts the native harness, and attempts provider-native
 resume. Workspace persistence and Thread-context resumption are separate assertions: one may work
 while the other does not.
@@ -733,7 +743,7 @@ it is not presented as a safety guarantee. Blindly resending the original prompt
 | -------------------------- | ------------------------------------- | -------------------------------------------- | ----------------------------------------- |
 | Central replica restart    | Pod, bridge, harness, PVC, local log  | Reconnect and replay wire gap                | Show reconnect only if it delays output   |
 | Bridge-server network loss | Child and PVC                         | Append locally, reconnect, replay            | Alert if storage itself becomes unhealthy |
-| Harness process exits idle | Pod and PVC                           | Restart child; native resume if proven       | New native process generation             |
+| Harness process exits idle | Pod and PVC                           | Restart child; native resume if proven       | New process-start evidence                |
 | Harness exits mid-turn     | PVC; perhaps provider history         | Resume or replace only per experiment result | Turn may be interrupted or uncertain      |
 | Bridge/Pod dies            | Sandbox and PVC                       | Recreate Pod and runtime                     | Process memory is gone                    |
 | Intentional suspend        | Sandbox, PVC, central history         | Delete Pod; later create new runtime         | Resume is cold process start              |
@@ -782,13 +792,13 @@ bridge log. Provider detail never changes the ordering of the Thread timeline.
 
 ### Exact native frames and common-event compaction
 
-Every native input/output record receives a sequence within `(runtime_id,
-native_process_generation)` before projection and a central `thread_seq` when Postgres accepts it.
+Every native input/output record receives a sequence within `(runner_pod_id,
+process_start_observation)` before projection and a central `thread_seq` when Postgres accepts it.
 Every bridge-to-harness and harness-to-bridge JSON frame is stored centrally exactly as observed.
 The common event is an additional linked projection, never a substitute for the frame. V0 does not
-redact, discard, or semantically coalesce native frames. Lossless physical compression is acceptable
-only if retrieval preserves exact UTF-8 bytes, frame boundaries, order, direction, sequence, and
-timestamps.
+redact, discard, semantically coalesce, or compress native frames. Storage optimization is a later
+deployment concern; retrieval must preserve exact UTF-8 bytes, frame boundaries, order, direction,
+sequence, and timestamps.
 
 Common text/reasoning/output deltas may be compacted after terminal state because their cited native
 frames remain available. Tool starts/completions, errors, interruption results, provider terminal
@@ -809,7 +819,7 @@ V0 does not independently cap or coalesce it. Central Thread evidence survives S
    committed native-wire fixtures before making recovery promises or freezing a neutral facade.
 2. **Protocol extraction**: compare the Claude/Codex captures, decide prompt-queue ownership, and
    define the smallest common submit/steer/dequeue/admission contract that neither harness fights.
-3. **Durable core**: define Thread, Sandbox, Runtime, native process generation, fencing token,
+3. **Durable core**: define Thread, Sandbox, Runner Pod, process observations,
    input admission, native wire log, and common timeline tables in PostgreSQL with explicit
    uncertain outcomes.
 4. **Claude vertical slice**: one Sandbox, bridge-supervised Claude process, one turn, wire storage,

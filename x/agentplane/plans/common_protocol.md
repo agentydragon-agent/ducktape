@@ -22,15 +22,18 @@ matrix.
    provider records remain available without a common mapping.
 4. **Inputs are independently admitted.** A turn has one initiating input and may have additional
    steering inputs; those inputs do not collapse into one boolean state.
-5. **Transport replay is not semantic replay.** Duplicate bridge delivery is deduplicated. Accepted
-   user input is not automatically resent to a provider after an uncertain crash.
+5. **Transport replay is not semantic replay.** Duplicate bridge delivery is deduplicated. Blind
+   semantic replay remains a conservative default until native delivery/acknowledgement behavior is
+   understood; accepted input must remain durably queued rather than silently discarded.
 6. **Lifecycle and activity are separate axes.** Sandbox existence, Runtime and process state, and turn
    activity are not one overloaded status field.
-7. **PostgreSQL is authoritative.** A globally ordered thread timeline is assigned when Postgres
-   accepts records/events; runtime-local native sequences alone do not order replacement runtimes.
-8. **Origin is explicit.** Human prompts, Agent messages, automations, subscriptions, and external
-   events all enter through the same durable input path with a provenance envelope. A provider-facing
-   user role does not imply that a human typed the content.
+7. **One owner per fact.** PostgreSQL orders product events and control-plane evidence, while
+   Kubernetes/Agent Sandbox owns workload lifecycle and native harnesses own native continuity.
+   Cross-system observations retain their natural object identities rather than replacing those
+   authorities.
+8. **Origin is explicit.** A higher layer may send an Agentplane controller an enveloped message
+   from a human, Agent, automation, subscription, or external event. Agentplane does not own those
+   subscriptions or adapters, and a provider-facing user role does not imply that a human typed it.
 9. **Translation follows evidence.** Claude/Codex protocol parsing and native-to-common mapping will
    live inside provider adapters, but the first experiment drivers speak each native protocol
    directly. Shared controller semantics are adopted only after the provider matrix shows that the
@@ -42,23 +45,22 @@ The initial stable identifiers are:
 
 - `thread_id`: durable ordered interaction identity for one speaking Agent/harness;
 - `sandbox_id`: durable environment record;
-- `runtime_id`: one bridge/Pod incarnation;
-- `runtime_generation`: monotonically increasing Sandbox-scoped ordinal and fencing epoch for the
-  n-th authorized Runtime;
+- `runner_pod_id`: Kubernetes Pod UID for the concrete runner Pod;
+- `runner_process_id`: ordinary process start/exit identity for one bridge/native process instance;
 - `harness_thread_id`: opaque resumable Thread identity returned by the active native harness after
   a start (or minted by the optional direct adapter) and passed back unchanged on resume;
-- `native_process_generation`: child-process generation within one runtime;
 - `input_id`: one accepted user input, whether initiating or steering;
 - `turn_id`: one common provider execution bracket;
 - `item_id`: one common message, reasoning item, or operation;
 - `operation_id`: stable lifecycle identity for one operation;
 - `thread_seq`: Postgres-assigned durable order for common events and anchored wire records.
 
-`Runtime` names the concrete Pod/bridge incarnation; `runtime_generation` says which ordinal
-incarnation is authorized. Adapter-native Claude session, Codex thread/turn/item, request, and tool
-ids remain inside the native frames. The server may derive query indexes from them, but they are not
-duplicated as authoritative fields in the bridge envelope. Agent identity, Sandbox identity, and
-any future authorization principal are distinct.
+`runner_pod_id` and `runner_process_id` use natural Kubernetes/process identities; Agentplane does
+not require a separately minted generation token in v0. Adapter-native Claude session, Codex
+thread/turn/item, request, and tool ids remain inside the native frames. The server may derive query
+indexes from them, but they are not duplicated as authoritative fields in the bridge envelope.
+Agent identity, Sandbox identity, Runner Pod identity, and any future authorization principal are
+distinct.
 
 The central server can create a product Thread before a harness exists. `harness_thread_id` is absent
 until the adapter emits `thread.harness_activated`; it is then stored as an opaque string associated
@@ -70,11 +72,11 @@ adapter privately retains any common-to-native routing map.
 The native sequence key is:
 
 ```text
-(runtime_id, native_process_generation, native_seq)
+(runner_pod_id, runner_process_id, native_seq)
 ```
 
-It is dense only within one child process generation. `thread_seq` supplies the total durable order
-across control-plane events, process restarts, replacement runtimes, and native records. When events
+It is dense only within one runner process instance. `thread_seq` supplies the total durable order
+across control-plane events, process restarts, replacement Pods, and native records. When events
 are received concurrently, Postgres commit order is the canonical presentation order; provider
 sequence and timestamps remain available for diagnosis.
 
@@ -87,8 +89,8 @@ A timeline event uses a provenance union:
   "provenance": {
     "source": "native | control_plane | kubernetes",
     "native": {
-      "runtime_id": "rt_...",
-      "native_process_generation": 2,
+      "runner_pod_id": "pod_uid_...",
+      "runner_process_id": "process_started_at_...",
       "first_native_seq": 41,
       "last_native_seq": 44,
       "wire_record_ids": ["wr_..."]
@@ -110,9 +112,8 @@ each projection stores its own `projection_key`, and replay upserts by that dete
   "wire_record_id": "wr_...",
   "thread_id": "thr_...",
   "sandbox_id": "sbx_...",
-  "runtime_id": "rt_...",
-  "runtime_generation": 7,
-  "native_process_generation": 2,
+  "runner_pod_id": "pod_uid_...",
+  "runner_process_id": "process_started_at_...",
   "native_seq": 41,
   "direction": "bridge_to_native | native_to_bridge",
   "observed_at": "2026-08-31T20:14:12.123Z",
@@ -137,7 +138,7 @@ redundant outer-envelope copies.
 
 The bridge allocates `native_seq` before appending the complete record to its append-only PVC log.
 Postgres stores the record, assigns a thread anchor, and acknowledges the highest contiguous
-sequence for that process generation. The adapter emits linked common events. The server may parse
+sequence for that runner process. The adapter emits linked common events. The server may parse
 native JSON for debug views, derived indexes, and offline reprojection, but normal orchestration does
 not implement Claude/Codex translation and the exact bytes remain authoritative.
 
@@ -167,8 +168,8 @@ Thread timeline.
   "thread_id": "thr_...",
   "thread_seq": 9001,
   "sandbox_id": "optional",
-  "runtime_id": "optional",
-  "native_process_generation": 2,
+  "runner_pod_id": "optional",
+  "runner_process_id": "optional",
   "turn_id": "optional",
   "input_id": "optional",
   "item_id": "optional",
@@ -196,11 +197,12 @@ global Thread order without moving Claude/Codex translation into the server.
 The bridge/server stream is an internal orchestration protocol, not the public agent-to-agent
 interface. Initial messages are:
 
-- `bridge.hello`: Sandbox and Runtime IDs, runtime generation, bridge/provider implementation and
+- `bridge.hello`: Sandbox and Runner Pod IDs, bridge/provider implementation and
   best-effort resolved harness versions, native process state, local-log ranges, and last central
   acknowledgement;
-- `server.reconcile`: accepted generation, desired lifecycle, durable cursors, and replay request;
-- `input.offer`: committed input, common delivery intent/target, and expected runtime generation;
+- `server.reconcile`: desired lifecycle, durable cursors, and replay request;
+- `input.offer`: committed input, common delivery intent/target, and expected Runner Pod/process
+  identity when one is known;
 - `input.cancel`: request dequeue of a common `input_id` that has not been delivered;
 - `input.bridge_durable`: input persisted in the append-only bridge log;
 - `input.native_admitted`: common admission state plus the exact native wire-record references that
@@ -208,21 +210,19 @@ interface. Initial messages are:
 - `wire.append`: ordered batch of wire records;
 - `event.append`: ordered batch of provider-neutral events already translated by the adapter, each
   linked to its source wire records when applicable;
-- `wire.ack`: highest contiguous sequence for one process generation;
+- `wire.ack`: highest contiguous sequence for one runner process;
 - `turn.steer`: target input and common turn; the adapter resolves any provider-native target from
   retained native state;
 - `turn.interrupt`: target common turn; the adapter resolves the provider-native request;
-- `runtime.drain`: stop accepting new work and flush evidence;
-- `runtime.shutdown`: terminate the child/process group and report exit;
+- `runner.drain`: stop accepting new work and flush evidence;
+- `runner.shutdown`: terminate the child/process group and report exit;
 - `heartbeat`: liveness plus current process/turn snapshot;
 - `error`: structured protocol, adapter, storage, or lifecycle failure.
 
-Every command includes `command_id` and `runtime_generation`. A stale generation cannot admit input,
-advance dispatch, or append authoritative records. Duplicate messages are idempotent by stable id.
-A replacement generation is issued only after the previous workload is confirmed unable to keep
-running, normally by observing that its Pod and child process are terminated. Central generation
-fencing rejects stale bridge writes; it is not a kill switch and cannot prevent a partitioned
-native process from continuing side effects.
+Every command includes `command_id` and the natural Runner Pod/process identity when applicable.
+Duplicate messages are idempotent by stable id. If observed failure modes require stale-writer
+protection, add a lease or connection epoch later; it is not a v0 identity prerequisite and cannot
+serve as a kill switch for a partitioned native process.
 
 ## Lifecycle events
 
@@ -269,7 +269,7 @@ queues exist, when a write becomes native admission or delivery, and whether deq
 before this state machine and the `submit` contract are frozen.
 
 - `input.accepted`: committed centrally;
-- `input.offered`: sent to the current runtime generation;
+- `input.offered`: sent to the current Runner Pod/process connection;
 - `input.bridge_durable`: persisted in the append-only bridge log;
 - `input.adapter_queued`: retained by the adapter but not yet written to the harness;
 - `input.native_offered`: its native request/frame was written;
@@ -290,7 +290,8 @@ while active, queue ownership, and dequeue responsibility is selected only after
 experiments. `steer` remains distinct from a future-turn prompt, and dequeue remains distinct from
 interrupt.
 
-An accepted input also has an origin envelope:
+When a higher layer sends an accepted input, it may include an origin envelope; Agentplane does
+not manage the subscription or external-event source itself:
 
 ```json
 {
@@ -431,7 +432,7 @@ requires later provider evidence.
 ## Projection invariants
 
 1. The adapter/bridge durably records the wire record before emitting its linked common projection.
-2. Every native-derived common event cites exact process-generation sequence ranges.
+2. Every native-derived common event cites exact runner-process sequence ranges.
 3. Control-plane/Kubernetes events use their own provenance member and can omit native provenance.
 4. Replaying a native record upserts the same `projection_key`; it does not duplicate semantics.
 5. A completed provider item supersedes partial snapshots for final rendering but does not erase
@@ -440,7 +441,7 @@ requires later provider evidence.
 7. Common status never claims success when provider terminal evidence is absent.
 8. Unknown provider records are retained and do not block later records.
 9. Provider-native ids stay in native records; any derived query index is non-authoritative and
-   scoped by provider and Runtime.
+   scoped by provider and Runner Pod/process.
 10. `thread_seq` is immutable once assigned; late replay appears at a new ingestion anchor while its
     original native timestamp/sequence remains visible.
 
@@ -453,8 +454,8 @@ The default Thread timeline merges common events by `thread_seq` and renders:
 - shell, file, structured-tool, and generic operation cards;
 - turn, interrupt, recovery, reconnect, suspension, and uncertainty markers.
 
-The native-frame view expands the same anchors. It can show native order within a process generation,
-but it does not reorder the common timeline or hide late replay.
+The native-frame view expands the same anchors. It can show native order within a runner process
+instance, but it does not reorder the common timeline or hide late replay.
 
 Sandbox lifecycle and runtime/turn activity are rendered separately. “Suspended” means Pod absent
 with durable environment retained; “working” means a Runtime currently has an active turn.

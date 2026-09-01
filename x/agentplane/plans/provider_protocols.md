@@ -265,9 +265,12 @@ replacement with:
 }
 ```
 
-The control plane independently fences runtimes and waits for the prior workload to terminate before resuming a durable thread for writing. Whether Codex also enforces a single writer is treated as an experiment result, not relied on as the fence. Read APIs can inspect history without loading it.
+The control plane records Pod/process identity and waits for the prior workload to terminate before
+resuming a durable thread for writing. Whether Codex also enforces a single writer is treated as an
+experiment result, not relied on as the fence. Read APIs can inspect history without loading it.
 
-In v0 the product Thread maps one-to-one to this durable Codex thread across Runtime generations.
+In v0 the product Thread maps one-to-one to this durable Codex thread across Pod/process
+replacements.
 The Pod, bridge, and Sandbox placement may change; the product and native Codex thread identities do
 not change merely because compute was replaced. A future shared app-server may host several Agents,
 but each Agent still maps to a distinct product Thread and distinct Codex thread.

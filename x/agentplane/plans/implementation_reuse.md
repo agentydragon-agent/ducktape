@@ -194,12 +194,12 @@ provider behavior, `harness-bridge` and the central service must still own:
 
 - provider-neutral Python adapter facade and tested initialization behavior;
 - stable input IDs and multiple admission-evidence levels;
-- runtime and native-process-generation fencing;
+- natural Runner Pod/process identity and, only if needed later, lease/fencing semantics;
 - complete exact native evidence with direction, local sequence, timing, and links to common events;
 - simple append-only local bridge log plus central acknowledgements and reconnect cursors;
 - conservative reconciliation after child, bridge, connection, Pod, or storage loss;
-- explicit uncertain outcomes instead of blind semantic replay or fabricated cancellation;
-- one PostgreSQL-ordered private timeline across replacement runtimes.
+- explicit uncertain outcomes instead of premature duplicate delivery or fabricated cancellation;
+- one PostgreSQL-ordered private timeline across Pod/process replacements.
 
 External code is accepted only behind those invariants and the experiments in
 [`experiments.md`](experiments.md).

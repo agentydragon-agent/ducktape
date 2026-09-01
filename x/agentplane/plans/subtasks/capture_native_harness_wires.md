@@ -98,22 +98,24 @@ silently attribute observations from one binary digest to another.
 
 ## Credential and network boundary
 
-Live provider scenarios must use the recently merged `cheap-experiments` LiteLLM virtual-key policy
-through one of the already selected Haku Console delivery paths:
+Live provider scenarios may use the recently merged `cheap-experiments` LiteLLM virtual-key policy
+through one of the existing Haku/deployment delivery paths:
 
 1. the existing exact, operator-approved temporary grant; or
 2. the existing inert-placeholder plus egress-fence substitution path.
 
-Do not invent another secret-distribution mechanism. The runner may receive the scoped virtual key
-through the approved temporary-grant path when the egress-fence placeholder path is unavailable, but
-credential plumbing must keep it out of argv and outside every capture/log/exception/manifest path.
-The capture code must never read a Kubernetes Secret object, consumer OAuth state, or CLIProxyAPI
-login files. An exact temporary grant still follows the ordinary Haku Console approval path and
-remains narrowly scoped to the approved origin/method/path and cheap-model policy.
+Do not invent another secret-distribution mechanism. Credential delivery is experiment/deployment
+plumbing, not an Agentplane controller feature: the fresh `x/agentplane/` code accepts an externally
+provided endpoint/auth environment and does not call Kubernetes Secret APIs. If the approved
+temporary-grant path is used because egress substitution is unavailable, keep the scoped virtual key
+out of argv and outside every capture/log/exception/manifest path. The capture code must never read
+consumer OAuth state or CLIProxyAPI login files. An exact temporary grant still follows the ordinary
+Haku Console approval path and remains narrowly scoped to the approved origin/method/path and
+cheap-model policy.
 
 The manifest records only:
 
-- `credential_delivery: temporary_grant | egress_fence`;
+- `credential_delivery: external_experiment_plumbing`;
 - the non-secret virtual-key policy identifier;
 - the LiteLLM/CLIProxyAPI route family and endpoint origin;
 - grant id and expiry if safe to disclose; and

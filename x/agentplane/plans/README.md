@@ -6,8 +6,9 @@ name and not a Haku component.
 This document set proposes a Kubernetes-hosted control plane for coding agents. The required first
 adapters run native Claude Code and Codex harnesses in Pod or sandbox-backed workloads. One
 multi-mode `harness-bridge` binary supervises the selected harness and speaks its structured machine
-protocol. A central PostgreSQL-backed server owns durable Threads, workload lifecycle, recovery
-decisions, and the common timeline; the web UI consumes that API and may deploy separately.
+protocol. A central PostgreSQL-backed server owns durable Threads, accepted Inputs, recovery
+decisions, and the common timeline; Agent Sandbox/Kubernetes remains authoritative for workload
+lifecycle and the web UI consumes the resulting API.
 
 The motivating product is a fleet of reliable headless Agents that can use both Claude and ChatGPT
 subscription-backed routes, run for days or longer, receive streaming updates, and eventually
@@ -37,9 +38,11 @@ agent-to-agent facade, implementation target, or experiment lane.
 
 - Native Claude Code and Codex adapters are both required.
 - One bridge executable has per-provider modes.
-- PostgreSQL is the central durable store.
-- Runtime is one Pod/bridge incarnation; a monotonically increasing runtime generation is the
-  Sandbox-scoped ordinal and fencing epoch for the n-th authorized incarnation.
+- PostgreSQL is the default durable store for product interaction state and control-plane evidence;
+  Kubernetes/Agent Sandbox and the native harness remain authoritative for the facts they own.
+- One active bridge/native process serves a Pod at a time. Use natural Kubernetes and process
+  identities (such as Pod UID and process start/exit evidence) rather than requiring a separately
+  minted or injected runtime-generation identity.
 - Every bidirectional native frame is stored exactly. Initial experiments drive each provider's
   JSON protocol directly and do not depend on a finished common facade or operation projection.
 - The common protocol for orchestration, messages, turns, steering, interrupts, operation progress,
@@ -59,11 +62,10 @@ A future integrated Agent Console can compose those smaller services into one ap
 Threads, Runtimes, Sandboxes, MCP connections, approvals, grants, and traces without making
 them one deployment or authority.
 
-**Thread** is the shared UI, API, and storage noun. In v0 one Runtime serves one Thread, and the
-adapter lets the harness mint an opaque `harness_thread_id` after activation. The same product
-Thread passes that id back to `resume_thread` across Runtime generations. A later Codex app-server
-may host several Agents, but each Agent still owns a separate product Thread and harness Thread;
-only its Sandbox/Runtime placement is shared.
+**Thread** is the shared UI, API, and storage noun. In v0 one active runner serves one Thread, and
+the adapter lets the harness mint an opaque `harness_thread_id` after activation. The same product
+Thread passes that id back to native resume after a Pod or process replacement. Provider identity is
+fixed for a Thread; model changes within one provider may become a later Turn-boundary feature.
 
 ## Evidence standard
 
