@@ -5,7 +5,7 @@ bundles**, not only design notes or documentation.
 
 ## Goal
 
-Build a standalone capture harness under top-level `harness_control_plane/` that launches recent
+Build a standalone capture harness under top-level `x/agentplane/` that launches recent
 installed or otherwise resolved Claude Code and Codex app-server binaries, drives each native
 machine protocol directly, records exact bidirectional evidence, and promotes safe captures into
 deterministic Bazel regression fixtures. This slice discovers the protocols; it does not implement
@@ -16,14 +16,14 @@ This is a new Harness Control Plane implementation seam. It is deliberately outs
 root and must not import, wrap, or assume implementation details from `haku/console`, `haku/runner`,
 or other `haku/*` code. Those paths and the existing Harness Control Plane documents are
 **evidence/reference only**. Implement the subprocess ownership, provider drivers, capture formats,
-proxy, scanner, replay, and tests under `harness_control_plane/`.
+proxy, scanner, replay, and tests under `x/agentplane/`.
 
 ## Required deliverables
 
 Add implementation and tests with a layout equivalent to:
 
 ```text
-harness_control_plane/
+x/agentplane/
   BUILD.bazel
   capture/
     __init__.py
@@ -285,7 +285,7 @@ SHA256SUMS
 - scanner version, rule-set digest, outcome, and promotion timestamp.
 
 Promoted fixtures live under
-`harness_control_plane/testdata/<provider>/<capture-set>/<scenario>/` and retain the exact accepted raw
+`x/agentplane/testdata/<provider>/<capture-set>/<scenario>/` and retain the exact accepted raw
 files unchanged. Do not hand-edit ids, timestamps, chunks, malformed records, or bodies to make tests
 pass. Derived summaries are clearly labeled and reproducible from raw records. Common projections
 are not part of this slice.
@@ -423,14 +423,14 @@ using a fake model as a substitute for the real cheap-provider captures required
 
 The task is complete only when all of the following are true:
 
-1. `harness_control_plane/` contains standalone working capture code and no production dependency or
+1. `x/agentplane/` contains standalone working capture code and no production dependency or
    import from `haku/*`.
 2. The live runner launches resolved real Claude Code and Codex app-server binaries and records their
    actual version/path/digest without a version hard gate.
 3. Every required local scenario is implemented for both providers and produces a complete bundle;
    Pod replacement runs when the approved backend is available and is otherwise honestly reported.
 4. At least one scanner-approved, exact raw fixture bundle for **each provider and each implemented
-   scenario** is committed under `harness_control_plane/testdata/`; no fixture contains credentials,
+   scenario** is committed under `x/agentplane/testdata/`; no fixture contains credentials,
    personal workspace data, auth headers, cookies, or OAuth material.
 5. Native stdin and stdout are both complete and byte-exact, stderr and lifecycle events are present,
    and every parsed JSON value uses the non-null wrapper with raw bytes authoritative.

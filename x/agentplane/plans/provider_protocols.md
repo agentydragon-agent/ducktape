@@ -40,8 +40,8 @@ subscription gateway:
   to CLIProxyAPI's Codex/ChatGPT subscription session.
 
 The deployed route is configured in
-[`cluster/k8s/haku/console/config.yaml`](../../cluster/k8s/haku/console/config.yaml) and asserted by
-[`cluster/k8s/litellm/app/test_litellm_config.py`](../../cluster/k8s/litellm/app/test_litellm_config.py).
+[`cluster/k8s/haku/console/config.yaml`](../../../cluster/k8s/haku/console/config.yaml) and asserted by
+[`cluster/k8s/litellm/app/test_litellm_config.py`](../../../cluster/k8s/litellm/app/test_litellm_config.py).
 CLIProxyAPI owns login, OAuth files, and refresh. In the proven Haku Console profile, the bridge sees
 only a configured endpoint and an inert placeholder; the Console egress fence substitutes the real
 scoped LiteLLM virtual key. Consumer OAuth handling is therefore not part of either provider adapter
@@ -72,8 +72,8 @@ Code binary as a subprocess with stream-JSON input and output. It is useful prio
 message routing, and compatibility tests. The bridge nevertheless owns the CLI wire directly so
 native records, initialization, admission evidence, interruption, and reconnect behavior are not
 hidden behind an SDK abstraction. See Ducktape's
-[CLI protocol ownership decision](../../haku/plans/cli_protocol_ownership.md) and
-[pinned SDK/CLI wire analysis](../../haku/runner/docs/mid_turn_input.md#claude-code-stream-json-protocol).
+[CLI protocol ownership decision](../../../haku/plans/cli_protocol_ownership.md) and
+[pinned SDK/CLI wire analysis](../../../haku/runner/docs/mid_turn_input.md#claude-code-stream-json-protocol).
 
 ### Initialization
 
