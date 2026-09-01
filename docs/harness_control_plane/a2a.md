@@ -13,7 +13,7 @@ agent as an opaque peer.
 
 The product keeps two private/internal surfaces:
 
-- the bridge control/replication protocol for attempts, dispatch, native frames, and recovery;
+- the bridge control/replication protocol for runtimes, dispatch, native frames, and recovery;
 - the common harness timeline for the web UI and orchestration logic, including messages,
   operations, steering, interrupts, and provider provenance.
 
@@ -75,7 +75,7 @@ but is not part of the v0 design or a prerequisite for A2A interoperability.
 A2A does not define the private semantics needed to recover one supervised harness safely:
 
 - central input commit versus bridge durability versus native admission;
-- attempt generation/fencing and stale-writer rejection;
+- runtime-generation fencing and stale-writer rejection;
 - bridge-log sequence/ack exchange;
 - native process generation inside a surviving Pod;
 - exact native-frame storage and replay;
@@ -104,7 +104,7 @@ It is not the harness supervisor for this architecture. Its Claude paths use ACP
 SDK. The Agent SDK itself launches the Claude Code binary, so this is not a different underlying
 agent loop; the relevant difference is that `a2acode` does not expose or own the exact CLI
 stream/control profile and recovery evidence required by this design. It also does not supply our
-Kubernetes attempt fencing, bridge log, native-frame provenance, or crash-window recovery model.
+Kubernetes runtime fencing, bridge log, native-frame provenance, or crash-window recovery model.
 Those differences require native bridge adapters even if an external caller uses A2A.
 
 ## Proposed layering

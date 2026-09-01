@@ -42,6 +42,8 @@ experiments/harness_control_plane/
   fixtures/
     operation_probe.py          # deterministic workspace-local side-effect probe
     workspace_probe.sh         # safe marker operations
+  testdata/<provider>/<profile>/<scenario>/
+    *.jsonl                     # promoted full-wire regression fixtures
   providers/
     base.py
     claude.py                   # stream/control adapter for probes
@@ -89,10 +91,28 @@ accepts. The selected model and any provider reroute are recorded in the manifes
 
 Live semantic probes route model traffic through a small recording proxy such as LiteLLM. The
 preferred unattended credential is a dedicated virtual key restricted to the allowlisted cheap test
-models and a hard budget; temporary Haku Console grant delivery is also acceptable. Credential
-provisioning is a separate small change from this architecture. The experiment artifacts record the
-virtual-key policy id and proxy/config digest, never the key itself. Consumer subscription
-credentials are not relayed through the proxy.
+models and a hard budget. Ducktape PR
+[#5348](https://github.com/agentydragon/ducktape/pull/5348) provides the initial
+`cheap-experiments` LiteLLM key and makes its dedicated Secret eligible for an exact temporary Haku
+Console grant. An active grant still requires operator approval through the ordinary grant
+mechanism; that temporary-grant path is the selected first delivery mechanism. The experiment
+artifacts record the virtual-key policy id and proxy/config digest, never the key itself. Consumer
+subscription credentials are not relayed through the proxy.
+
+The suite has two explicit live profiles:
+
+1. **Proxy-backed semantic/recovery profile**: uses the scoped cheap key, records every upstream LLM
+   request and streamed response, and is required before promoting protocol, projector, or recovery
+   behavior.
+2. **Native consumer-subscription compatibility profile**: uses the provider's native subscription
+   authentication path and validates binary launch, handshake, one minimal turn, and native wire
+   evidence. If upstream capture is unavailable without relaying the subscription credential, the
+   manifest records `upstream_capture: unavailable_by_profile` and the reason. This profile proves
+   subscription-path compatibility, not the complete upstream-correlated recovery contract.
+
+A compatibility release requires both applicable profiles: the proxy-backed profile proves the
+semantic/recovery machinery, while the native-subscription profile proves the economical access
+path still works. Neither is silently substituted for the other.
 
 No scenario edits a real repository or relies on external side effects. All operation work is
 confined to a unique temporary directory on the test PVC.
@@ -129,16 +149,65 @@ run-<timestamp>-<provider>-<scenario>/
 - scenario seed, nonce, kill point, timing deadlines, and environment capabilities.
 
 Every bidirectional native record is saved with direction, monotonic timestamp, native sequence,
-and redaction metadata. Assertions are machine-readable and include `pass`, `fail`, `unsupported`, or
-`inconclusive`; “no exception” is not a passing recovery assertion.
+and redaction metadata. A fixture is invalid if it captures only what the harness emitted: it must
+also contain every captured bridge-to-harness request/control record in `native-stdin.jsonl` and the
+full harness-to-bridge stream in `native-stdout.jsonl`. Assertions are machine-readable and include
+`pass`, `fail`, `unsupported`, or `inconclusive`; “no exception” is not a passing recovery assertion.
 
-Every upstream LLM request and streamed response is captured with a correlation id that links it to
-the native session/turn and bridge records. Authorization headers and provider secrets are scrubbed;
-request bodies, response chunks, usage, finish reasons, timing, retry, and proxy-routing metadata are
-retained. This evidence distinguishes harness behavior from provider/proxy behavior during recovery.
+For the proxy-backed profile, every upstream LLM request and streamed response is captured with a
+correlation id that links it to the native session/turn and bridge records. Authorization headers
+and provider secrets are scrubbed; request bodies, response chunks, usage, finish reasons, timing,
+retry, and proxy-routing metadata are retained. This evidence distinguishes harness behavior from
+provider/proxy behavior during recovery. Native-subscription profiles use the explicit unavailable
+marker above rather than fabricating an empty upstream trace.
 
-A small scrubbed subset of successful runs is committed as golden projection fixtures. Full
-sensitive artifacts remain in an access-controlled artifact store with retention policy.
+Synthetic runs should be promoted into the repository as complete, wire-faithful JSONL fixture
+bundles rather than reduced to hand-written summaries. The intended layout is:
+
+```text
+experiments/harness_control_plane/testdata/<provider>/<profile>/<scenario>/
+  manifest.json
+  bridge-wire.jsonl
+  native-stdin.jsonl
+  native-stdout.jsonl
+  llm-requests.jsonl
+  llm-responses.jsonl
+  expected-common-timeline.jsonl
+  process-events.jsonl
+  kubernetes-events.jsonl
+  assertions.json
+  summary.md
+```
+
+CI replays the captured input and output wire in both directions, projects it into the expected
+common timeline, and checks the machine-readable assertions without provider inference. The
+captured payload structure, ordering, chunk boundaries, and bodies are preserved rather than
+reconstructed or summarized. Before commit, an automated promotion gate must prove the run used an
+isolated synthetic workspace and replace authorization headers, credentials, and any other secret
+fields with stable typed placeholders. The manifest records those substitutions and hashes of the
+pre-substitution captures. Because that substitution is a redaction, the repository copy is labeled
+**wire-faithful fixture**, not the common protocol's **restricted raw** evidence tier. A promoted
+fixture must not contain personal context or production workspace data. Captures that cannot pass
+this gate remain in an access-controlled artifact store.
+
+Promotion is a deterministic build step, not manual editing:
+
+1. retain the original capture in restricted storage and record its whole-file hashes;
+2. validate the native-wire, upstream-traffic, process-event, Kubernetes-event, and manifest
+   schemas plus cross-stream correlation references;
+3. scrub only schema-declared secret paths, mapping equal values to equal typed placeholders within
+   the bundle and rejecting unknown secret-bearing fields;
+4. canonicalize nondeterministic values with stable rules: timestamps become offsets from the run
+   origin, generated identifiers map by first appearance while preserving referential equality,
+   and ordered counters such as `thread_seq` are renumbered densely without changing order;
+5. recompute post-redaction hashes and validate every correlation/reference again;
+6. replay the production projector from the canonicalized bidirectional wire to generate
+   `expected-common-timeline.jsonl`, then generate `assertions.json` from that result; and
+7. rerun promotion from the restricted source and require byte-for-byte identical repository
+   output before accepting the fixture.
+
+CI treats the wire and upstream files as inputs. It does not trust a separately hand-edited expected
+timeline or assertion file.
 
 ## Deterministic fixtures
 
@@ -292,7 +361,7 @@ and use the provider-native session id and required state paths. A runner frame 
 
 Repeat R1 but delete the Pod while retaining the Sandbox. Assert:
 
-- connection and attempt end are observed;
+- connection and runtime end are observed;
 - Sandbox UID and PVC sentinel survive;
 - Pod UID changes;
 - replacement bridge reconciles the append-only log before new dispatch;
@@ -371,7 +440,7 @@ honest, and `operation_probe.py count` did not repeat without an explicit new in
 expected outcome may be safe retry, native-session reconciliation, or `outcome_uncertain`; silence
 and blind redispatch both fail.
 
-### B1/B2: bridge death and attempt fencing
+### B1/B2: bridge death and runtime fencing
 
 First partition the old bridge from the central service while leaving its Pod and native child
 alive. Request replacement and assert that the control plane blocks new dispatch, native-session
@@ -380,7 +449,8 @@ not a passing result.
 
 Then terminate bridge PID 1 while idle and during the active-turn kill window. Assert
 `restartPolicy: Never` prevents an in-place container restart. After the old Pod/process is observed
-terminated, let the reconciler delete/recreate the Pod and issue a new Attempt/fencing generation.
+terminated, let the reconciler delete/recreate the Pod, allocate a new Runtime ID, and increment the
+runtime generation.
 Finally reconnect a captured old-generation client while the replacement is active. The server may
 retain its diagnostics, but must reject stale input admission, wire append, cursor advancement, and
 terminal updates.

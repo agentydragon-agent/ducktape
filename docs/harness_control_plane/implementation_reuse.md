@@ -82,7 +82,7 @@ Claude binary.
   correlated writer/router tasks;
 - preserve every native record instead of discarding non-terminal frames;
 - add exact initialization, input UUIDs, control-response routing, interrupt, mid-turn steering,
-  bridge-log acknowledgements, attempt fencing, and native resume;
+  bridge-log acknowledgements, runtime fencing, and native resume;
 - make waiting/backpressure bounded and durable rather than an in-memory lock or semaphore.
 
 ### Do not copy
@@ -134,12 +134,12 @@ These behaviors should inform clean-room implementation and tests. BSL 1.1 hoste
 require explicit license review before code reuse, and the architecture remains weaker than the
 selected control-plane contract:
 
-- no attempt-generation fencing;
+- no runtime-generation fencing;
 - no bridge log and replay cursor;
 - no centrally committed `accepted -> offered -> bridge_durable -> native_admitted -> terminal`
   input lifecycle;
 - no dense native-record sequence anchored into one PostgreSQL timeline;
-- no exact replay/deduplication contract across replacement attempts.
+- no exact replay/deduplication contract across replacement runtimes.
 
 One semantic mismatch must be rejected: an interrupt request must not immediately fabricate a
 terminal cancelled state. The control plane waits for native terminal evidence or records an
@@ -154,7 +154,7 @@ IDs, concurrent response handling, server-request support, stale-waiter cleanup,
 interrupt, process-group shutdown, and protocol cleanup.
 
 It is an Ask-AI provider, not a persistent orchestration bridge. It has no `turn/steer`, notification
-subscriptions, reconnect reconciliation, bridge durability, or replacement-attempt fencing. Borrow
+subscriptions, reconnect reconciliation, bridge durability, or replacement-runtime fencing. Borrow
 small transport/parser utilities and tests where they fit; do not make its one-operation provider
 lifecycle the control-plane model.
 
@@ -183,12 +183,12 @@ must still own:
 
 - exact versioned initialization and compatibility profiles;
 - stable input IDs and multiple admission-evidence levels;
-- attempt and native-process-generation fencing;
+- runtime and native-process-generation fencing;
 - complete native evidence with direction, local sequence, hashes, and retention tier;
 - simple append-only local bridge log plus central acknowledgements and reconnect cursors;
 - conservative reconciliation after child, bridge, connection, Pod, or storage loss;
 - explicit uncertain outcomes instead of blind semantic replay or fabricated cancellation;
-- one PostgreSQL-ordered private timeline across replacement attempts.
+- one PostgreSQL-ordered private timeline across replacement runtimes.
 
 External code is accepted only behind those invariants and the experiments in
 [`experiments.md`](experiments.md).

@@ -26,9 +26,26 @@ adapter, not the abstraction around which the native adapters are designed.
 
 ## Problem
 
-Coding-agent products need to start, observe, steer, interrupt, suspend, resume, replace, and debug
-native harnesses such as Claude Code and Codex. A terminal multiplexer is useful for a human, but it
-is a poor machine integration boundary.
+The product need is not merely “run a coding CLI in Kubernetes.” It is:
+
+- run many headless Agents concurrently;
+- use Claude Code because Anthropic consumer-subscription access requires the native Claude binary
+  path rather than a custom direct-API loop;
+- use Codex so ChatGPT subscription-backed Agents are also a first-class workload;
+- avoid making expensive metered model APIs the mandatory baseline when consumer subscriptions are
+  the economical path already available to the operator;
+- keep Agents useful for days, or eventually for an effectively unbounded Thread receiving a
+  stream of human, automation, subscription, and external-event inputs;
+- later let Agents delegate to, spawn, and communicate with other Agents without replacing the
+  durable single-Agent Thread model;
+- survive central-service, bridge, harness-process, and Pod failure without silently losing or
+  duplicating accepted work; and
+- leave enough correlated evidence that delivery, recovery, and provider bugs can be diagnosed and
+  turned into regression fixtures rather than recurring mysteries.
+
+That requires starting, observing, steering, interrupting, suspending, resuming, replacing, and
+debugging native harnesses such as Claude Code and Codex. A terminal multiplexer is useful for a
+human, but it is a poor machine integration boundary.
 
 [Gas Town's provider integration guide](https://github.com/gastownhall/gastown/blob/main/docs/agent-provider-integration.md)
 describes a zero-integration path based on launching a harness in tmux, using `send-keys`, guessing
@@ -68,7 +85,7 @@ success and interruption that the provider never proved.
   evidence. Kubernetes objects describe and realize workload state; they are not the conversation
   log.
 - The product-facing identity is one durable Thread. A Pod or native process is a replaceable
-  runtime attempt, not the conversation identity.
+  Runtime, not the conversation identity.
 - Agent Sandbox is the preferred first Kubernetes backend, but the central protocol cannot depend
   on one controller's object names or implementation details.
 
@@ -93,8 +110,10 @@ success and interruption that the provider never proved.
   policy, or external tool routing.
 - A2A is an optional opaque Agent-to-Agent facade. It does not expose private harness operations,
   wire records, bridge-log state, or recovery internals.
-- Recovery claims must be promoted by deterministic, rerunnable experiments with explicit failure
-  points and saved bidirectional evidence. Paid inference is minimized.
+- Recovery claims must be promoted by deterministic, rerunnable proxy-backed experiments with
+  explicit failure points, correlated upstream LLM traffic, and saved bidirectional evidence.
+  Native consumer-subscription authentication compatibility is a separate profile whose upstream
+  traffic may be unavailable for capture. Paid inference is minimized.
 
 ### Adjacent layers that should stay separate
 
@@ -113,6 +132,11 @@ Later systems should remain independently versioned and deployable:
 - inbound adapters for GitHub, personal notifications, schedules, and Agent-to-Agent messages that
   commit ordinary accepted inputs with explicit provenance envelopes.
 
+A future integrated Agent Console may compose these APIs into one application showing Threads,
+Runtimes, Sandboxes, MCP connections, approvals, grants, and traces. That is a product composition
+choice, not a reason to collapse the independently deployable services into one authority or
+binary.
+
 The authorization layer should not need to understand Thread, Turn, native Session, or Sandbox
 semantics. The orchestrator may bind a runtime to an opaque principal, but **Agent identity**,
 **runtime identity**, and **authorization principal** are deliberately separate concepts. The exact
@@ -120,7 +144,7 @@ RBAC and approval model remains out of scope until concrete supported actions ju
 
 ## Goals
 
-- Run each live harness attempt in a bounded Pod or sandbox-backed workload.
+- Run each live Runtime in a bounded Pod or sandbox-backed workload.
 - Let a central server own durable thread identity, accepted input, workload desired state,
   recovery decisions, normalized rollout history, and user-visible status.
 - Put one small `harness-bridge` binary in each workload. Provider modes launch and supervise
@@ -134,6 +158,8 @@ RBAC and approval model remains out of scope until concrete supported actions ju
 - Keep a suspended sandbox's PVC-backed workspace without paying for a running Pod.
 - Promote recovery behavior to a product guarantee only after pinned, rerunnable provider
   experiments prove it.
+- Preserve seams for future Agent delegation, spawning, and message delivery without making a
+  multi-Agent role system part of v0.
 
 ## Non-goals
 
@@ -153,7 +179,7 @@ RBAC and approval model remains out of scope until concrete supported actions ju
 | Harness integration     | Native structured protocols                                              | tmux, PTY automation, pane scraping                                                           |
 | Provider packaging      | One `harness-bridge --mode claude\|codex\|direct`                        | Separate unrelated bridge products or readers racing from sidecars                            |
 | Durable authority       | PostgreSQL                                                               | Pod-local state, Kubernetes CR status, or an event broker as the conversation source of truth |
-| Continuity identity     | Durable Thread with replaceable Attempts and native process generations  | Treating a Pod, provider process, or current Session id as the product conversation           |
+| Continuity identity     | Durable Thread with replaceable Runtimes and native process generations  | Treating a Pod, provider process, or current Session id as the product conversation           |
 | Recovery policy         | Evidence-based reconciliation with explicit uncertainty                  | Blind prompt replay or inferred success/interruption after a crash                            |
 | Runtime lifecycle       | Agent Sandbox/Pod plus explicit PVC persistence and cold process restart | Claiming suspend is hibernation or that a detached process survives Pod deletion              |
 | Agent-loop baseline     | Native Claude Code and Codex                                             | Rebuilding both loops around direct model APIs in v0                                          |
@@ -245,7 +271,7 @@ resume behavior proven against pinned versions.
 
 Rejected for this layer. Such runtimes can be clients, operator tools, or experimental brain
 runtimes, but they do not replace exact Claude/Codex protocol ownership, admission evidence,
-attempt fencing, Kubernetes recovery, and native reprojection. The control plane should preserve
+runtime fencing, Kubernetes recovery, and native reprojection. The control plane should preserve
 native harness affordances rather than rebuild them behind a broader chat abstraction.
 
 ### A2A as the private harness protocol
@@ -270,10 +296,12 @@ These names are intentionally narrow working terms, not a commitment to final UI
   inputs. Every input remains independently identified and admitted.
 - **Sandbox record**: durable environment/storage identity, desired operating mode, provider, PVC
   policy, and current Kubernetes references. It is neither the Agent nor the Thread.
-- **Attempt**: one bridge/Pod incarnation. This is the internal/API term; operator UI should prefer
-  **runtime attempt** or simply **runtime**. Avoid bare **run**, which is overloaded across model,
-  workflow, and harness systems.
-- **Native process generation**: one child harness process within an attempt. Restarting the child
+- **Runtime**: one bridge/Pod incarnation with a unique `runtime_id`. It is the concrete thing
+  currently or historically running the workload.
+- **Runtime generation**: the Sandbox-scoped monotonically increasing ordinal and fencing epoch for
+  Runtimes. Generation `n+1` is authorized only after generation `n` is proven unable to continue.
+  This is the “n-th thing running this workload” concept; it is not a user conversation identity.
+- **Native process generation**: one child harness process within a Runtime. Restarting the child
   increments this generation without pretending the Pod or bridge changed.
 - **Native session**: the provider's resumable conversation identity, for example a Claude session
   id or Codex thread id. **Session** is reserved for this provider-native concept rather than used
@@ -308,7 +336,7 @@ flowchart LR
     Reconciler --> Kube["Kubernetes API"]
 
     subgraph Sandbox["Claimed Sandbox"]
-        subgraph Pod["Ephemeral Pod / attempt"]
+        subgraph Pod["Ephemeral Pod / Runtime"]
             Bridge["harness-bridge --mode claude|codex|direct"]
             Harness["Native harness or optional direct loop"]
             Bridge <--> Harness
@@ -329,13 +357,13 @@ storage system requires a demonstrated reason; it is not an open design choice.
 
 ## Detailed design
 
-### One attempt per Pod; one thread across attempts
+### One runtime per Pod; one thread across runtimes
 
-A live attempt gets its own process tree, resource limits, and Pod identity. The thread and sandbox
-record do not disappear when that Pod does. Replacing a failed attempt is a state transition on the
+A live runtime gets its own process tree, resource limits, and Pod identity. The thread and sandbox
+record do not disappear when that Pod does. Replacing a failed runtime is a state transition on the
 same durable thread and, when storage survives, the same sandbox.
 
-One live attempt may serve several turns while active. “One attempt per Pod” does not mean one Pod
+One live runtime may serve several turns while active. “One runtime per Pod” does not mean one Pod
 per prompt.
 
 ### The bridge is the workload entrypoint and child supervisor
@@ -357,16 +385,16 @@ observe than a second lossy retention policy.
 The bridge opens an outbound stream to the central gateway. The server does not need per-Pod
 ingress, PTY attachment, or `kubectl exec`. On reconnect the bridge announces:
 
-- attempt and sandbox identity;
-- the persisted attempt generation/fencing token;
+- runtime and sandbox identity;
+- the persisted runtime generation, which is also the fencing token;
 - provider, native version, bridge version, and compatibility profile;
 - native process generation, child identity, and current local state;
 - last server command durably accepted;
 - highest wire sequence durably retained and highest server acknowledgement observed;
 - native session and active-turn identifiers, when known.
 
-The server answers with the durable cursor and desired attempt state. Only the current persisted
-attempt generation may admit input or append authoritative acknowledgements. A stale partitioned
+The server answers with the durable cursor and desired runtime state. Only the current persisted
+runtime generation may admit input or append authoritative acknowledgements. A stale partitioned
 bridge can reconnect for diagnostics, but its writes are fenced. Replacement waits for confirmed
 old-workload termination before it opens a provider-native session for writing. Both sides tolerate
 duplicate transport delivery; semantic replay of provider input remains conservative.
@@ -380,7 +408,7 @@ writers.
 
 ### The server commits input before dispatch
 
-The server assigns stable ids and commits accepted input before sending it to an attempt. Dispatch
+The server assigns stable ids and commits accepted input before sending it to a Runtime. Dispatch
 progress is an explicit state machine, not a boolean:
 
 `accepted -> offered -> bridge_durable -> native_admitted -> terminal`
@@ -407,7 +435,7 @@ The container root filesystem is disposable. The PVC contains only deliberate co
 /workspace/project/               checked-out project and generated artifacts
 /workspace/.harness/claude/       Claude native state selected for persistence
 /workspace/.harness/codex/        CODEX_HOME / rollout state selected for persistence
-/workspace/.bridge/               attempt manifest and append-only bridge log
+/workspace/.bridge/               runtime manifest and append-only bridge log
 ```
 
 Exact paths are image configuration, not protocol. Provider state and workspace can be separate
@@ -452,7 +480,7 @@ Before any continuity experiment, the Harness Control Plane needs a dedicated te
 template migration that places `/workspace`, selected Claude state, and `CODEX_HOME` on
 Sandbox-owned PVCs. It must also set and validate `restartPolicy: Never` for the bridge-entrypoint
 Pod. The active templates currently omit it, so Kubernetes would otherwise restart a dead bridge
-container inside the same Pod UID and violate the v0 one-Attempt-per-Pod model. The controller
+container inside the same Pod UID and violate the v0 one-Runtime-per-Pod model. The controller
 profile rejects templates that do not meet these persistence and restart prerequisites.
 
 The current Codex warm pool keeps one spare Sandbox. Claimed-sandbox suspension remains new behavior
@@ -515,13 +543,13 @@ stateDiagram-v2
     Active --> Suspending: explicit operator request while idle
     Suspending --> Suspended: Pod absent; Sandbox + PVC retained
     Suspended --> Resuming: new input or operator request
-    Resuming --> Active: new Pod + native resume/new attempt
+    Resuming --> Active: new Pod + native resume/new runtime
 
     Active --> Recovering: bridge, harness, or Pod lost
-    Recovering --> Active: replacement attempt reconciled
+    Recovering --> Active: replacement runtime reconciled
     Recovering --> NeedsAttention: continuity or dispatch uncertain
 
-    Active --> Failed: unrecoverable attempt failure
+    Active --> Failed: unrecoverable runtime failure
     Failed --> Recovering: retry requested
     NeedsAttention --> Recovering: operator chooses recovery
 
@@ -548,7 +576,7 @@ admission or a future Turn.
 The suspension path is:
 
 1. stop admitting new turns;
-2. require the attempt to be idle;
+2. require the runtime to be idle;
 3. flush native records and the append-only bridge log through a durable acknowledgement;
 4. record native session id and compatibility metadata;
 5. terminate the child cleanly within a deadline;
@@ -556,7 +584,7 @@ The suspension path is:
 7. wait for the controller's suspended condition and Pod absence;
 8. mark the product sandbox `Suspended`.
 
-Resume reverses compute state, not process state: create the Pod, start a new attempt, verify the
+Resume reverses compute state, not process state: create the Pod, start a new runtime, verify the
 PVC, perform the provider handshake, and then either resume the native session or start a new native
 session with an explicit continuity break.
 
@@ -585,7 +613,7 @@ sequenceDiagram
     S->>K: Ensure claimed Sandbox is running
     K-->>B: Start Pod and mount PVC
     B->>H: Launch + native initialize/resume
-    B->>S: Authenticate; announce attempt and cursors
+    B->>S: Authenticate; announce runtime and cursors
     S->>B: Offer committed input
     B->>B: Persist local acceptance in append-only PVC log
     B-->>S: bridge_durable acknowledgement
@@ -610,7 +638,7 @@ commit or timeline.
 
 The harness and bridge may continue while the server is unavailable. The bridge appends wire
 records to its PVC log. After a new server replica accepts the outbound reconnect, both sides
-exchange cursors, the bridge retransmits missing records, and the server deduplicates by attempt and
+exchange cursors, the bridge retransmits missing records, and the server deduplicates by runtime and
 wire sequence. V0 does not impose a separate logical bridge-log cap. Filesystem exhaustion is an ordinary
 storage failure that must be alerted and surfaced honestly; the bridge never silently truncates the
 log or invents a complete turn across missing evidence.
@@ -620,7 +648,7 @@ log or invents a complete turn across missing evidence.
 The bridge records exit code/signal, stderr tail, last wire position, native session id, and active
 turn id. It must not assume the active turn failed before side effects. Recovery starts a new child
 inside the same Pod with an incremented `native_process_generation`, or starts a replacement
-attempt. Native resume is used only if the compatibility suite has proven the exact case.
+runtime. Native resume is used only if the compatibility suite has proven the exact case.
 
 Process supervision APIs can detach and reattach while the containing Pod survives, but cannot keep
 a PID alive after that Pod is deleted.
@@ -628,21 +656,21 @@ a PID alive after that Pod is deleted.
 ### Bridge process failure
 
 Because the bridge is PID 1/entrypoint and the v0 template requires `restartPolicy: Never`, its
-failure terminates the attempt without an in-place container restart. The central server observes
+failure terminates the runtime without an in-place container restart. The central server observes
 the terminated Pod/process, deletes the failed Pod if needed so Agent Sandbox reconciles a new one,
 and only then issues a replacement generation. The replacement reuses the PVC and reconciles the
 bridge log before dispatching more input.
 
 ### Pod loss while Sandbox and PVC survive
 
-The controller recreates a new Pod against the same PVC. The server creates a new attempt id,
+The controller recreates a new Pod against the same PVC. The server creates a new Runtime ID,
 verifies the Sandbox UID and PVC sentinel, starts the native harness, and attempts provider-native
 resume. Workspace persistence and conversation resumption are separate assertions: one may work
 while the other does not.
 
 ### Sandbox CR or PVC loss
 
-This is environment loss, not ordinary attempt recovery. The control plane opens a new Sandbox,
+This is environment loss, not ordinary runtime recovery. The control plane opens a new Sandbox,
 marks the previous workspace unavailable, and requires an explicit restoration path from Git or
 backup. It must not claim native continuity from a coincidentally reused name.
 
@@ -662,8 +690,8 @@ it is not presented as a safety guarantee. Blindly resending the original prompt
 | Bridge-server network loss | Child and PVC                         | Append locally, reconnect, replay            | Alert if storage itself becomes unhealthy |
 | Harness process exits idle | Pod and PVC                           | Restart child; native resume if proven       | New native process generation             |
 | Harness exits mid-turn     | PVC; perhaps provider history         | Resume or replace only per experiment result | Turn may be interrupted or uncertain      |
-| Bridge/Pod dies            | Sandbox and PVC                       | Recreate Pod and attempt                     | Process memory is gone                    |
-| Intentional suspend        | Sandbox, PVC, central history         | Delete Pod; later create new attempt         | Resume is cold process start              |
+| Bridge/Pod dies            | Sandbox and PVC                       | Recreate Pod and runtime                     | Process memory is gone                    |
+| Intentional suspend        | Sandbox, PVC, central history         | Delete Pod; later create new runtime         | Resume is cold process start              |
 | Sandbox CR deleted         | Central history only unless backed up | Allocate fresh environment                   | Workspace/provider state lost             |
 | PVC unavailable/corrupt    | Central history and wire records      | Stop; restoration workflow                   | No false continuity claim                 |
 
@@ -676,7 +704,7 @@ axes:
 
 - **Sandbox lifecycle**: allocating, active, suspending, suspended, resuming, failed, disposing,
   disposed.
-- **Attempt/turn activity**: idle, starting, working, steering, interrupting, recovering, uncertain.
+- **Runtime/turn activity**: idle, starting, working, steering, interrupting, recovering, uncertain.
 
 Default groups are derived from those axes:
 
@@ -700,7 +728,7 @@ The thread page renders the common timeline as a conversation:
 - assistant messages and readable reasoning summaries;
 - operation cards for shell, file changes, and generic tool/provider operations;
 - interrupt/steer inputs and whether they were admitted;
-- attempt, reconnect, suspension, resume, and uncertainty markers.
+- runtime, reconnect, suspension, resume, and uncertainty markers.
 
 A “native frames” toggle interleaves restricted raw evidence or redacted/coalesced provider records
 at their exact timeline anchors. Drill-down shows direction, native sequence range, provider ids,
@@ -709,7 +737,7 @@ bridge log. Provider detail never changes the ordering of the common rollout.
 
 ### Raw-frame retention and coalescing
 
-Every native input/output record receives a sequence within `(attempt_id,
+Every native input/output record receives a sequence within `(runtime_id,
 native_process_generation)` before projection and a central `thread_seq` when Postgres accepts it.
 The store may coalesce high-frequency text, reasoning, command-output, or tool-input deltas into
 compressed segments after a turn becomes terminal, provided that it preserves:
@@ -738,7 +766,7 @@ redacted central tier is retained.
 
 1. **Evidence harness**: implement the version-pinned provider experiment runner and golden native
    fixtures before making recovery promises.
-2. **Durable core**: define Thread, Sandbox, Attempt, native process generation, fencing token,
+2. **Durable core**: define Thread, Sandbox, Runtime, native process generation, fencing token,
    input admission, native wire log, and common timeline tables in PostgreSQL with explicit
    uncertain outcomes.
 3. **Claude vertical slice**: one Sandbox, bridge-supervised Claude process, one turn, wire storage,
@@ -770,6 +798,6 @@ adapter and retrofit the other later.
   explicit continuation?
 - Which controller conditions and timeouts define “suspended” and “resumed” for each pinned Agent
   Sandbox release?
-- Which final UI labels replace the protocol's working nouns `Thread`, `Turn`, and `Attempt`?
+- Which final UI labels replace the protocol's working nouns `Thread`, `Turn`, and `Runtime`?
 
 The experiment plan is the promotion gate for these decisions, not an appendix to implementation.
