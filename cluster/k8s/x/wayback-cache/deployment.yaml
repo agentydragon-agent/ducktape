@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: archive
-          image: git.allegedly.works/ducktape-ci/wayback-archive:devel-20260827014809-8427d07 # {"$imagepolicy": "flux-system:wayback-archive"}
+          image: git.allegedly.works/ducktape-ci/wayback-archive:devel-20260901115746-93ff613 # {"$imagepolicy": "flux-system:wayback-archive"}
           imagePullPolicy: Always
           env:
             - name: RUST_LOG
