@@ -35,14 +35,14 @@ A. Native capture task (in progress)
    real provider frames + upstream model exchanges + driver/replay evidence
                          |
                          v
-B. Capture review and minimum Agentplane contract
-   choose only the shared operations proven by both providers
-   (start/resume, submit, events, interrupt/steer where supported)
+B. Shared protocol + both stdio adapters
+   one owner derives the thin shared contract from captures,
+   wires Claude and Codex to it, and links shared items to native frames
           |                         |                         |
           v                         v                         v
 C. Minimal Agentplane records       D. Runner/bridge seam       E. Agentplane runtime seam
-   Thread, Input, Turn,             provider driver lifecycle,   separate service/process,
-   native event, outcome             bidirectional events         own config and API boundary
+   Thread, Input, Turn,             protocol-facing driver      separate service/process,
+   native event, outcome             lifecycle over stdio        own config and API boundary
           \                         |                         /
            \_______________________|________________________/
                                    v
@@ -51,9 +51,9 @@ F. One-provider vertical slice
                                    |
                     +--------------+--------------+
                     v                             v
-G. Standalone web UI                           H. Second-provider adapter
-   Thread list/detail, composer,               same user-visible behavior using
-   live timeline, error state,                 provider-specific native driver
+G. Standalone web UI                           H. Second-provider integration
+   Thread list/detail, composer,               connect the already-proven adapter to
+   live timeline, error state,                 Agentplane records/runtime/UI
    interrupt/steer controls
                     \                             /
                      \___________________________/
@@ -83,15 +83,27 @@ K. Explicit Haku Console integration (deferred)
 transcripts, fake-model replay, and provider-specific assertions. No persistence or orchestrator
 framework is required here.
 
-### B — Capture review and minimum Agentplane contract
+### B — Shared protocol and both stdio adapters
 
-Read the captures and write a short decision record containing only operations both providers
-actually support or explicit provider-specific alternatives. Do not design the full Thread/Turn
-schema first.
+Give one agent end-to-end ownership of the shared harness interaction seam. Starting from the native
+captures, that agent should:
 
-**Acceptance:** each proposed operation cites a real capture/test; unsupported operations are listed
-as such; no speculative queue or recovery semantics are normative; the contract has no dependency on
-Haku Console nouns or routes.
+- define the smallest shared protocol for the proven operations;
+- implement both Claude and Codex adapters behind it;
+- keep the adapters runnable over stdio, without Kubernetes wiring;
+- link each shared protocol item to the native Claude/Codex frame(s) that implement it;
+- preserve provider-specific fields and unsupported operations rather than forcing false symmetry;
+- drive both adapters through the same scenario corpus; and
+- add deterministic fake-model/replay tests plus provider-specific wire assertions.
+
+This is not a general Agentplane protocol, Thread API, database schema, bridge transport, or
+lifecycle controller. It is a testable harness-driver seam. The owner is accountable for making the
+shared layer genuinely wireable into both providers, not merely documenting an abstract interface.
+
+**Acceptance:** the same shared scenario can be executed against both stdio adapters; tests prove
+bidirectional native input/output, model exchange/tool frames where captured, terminal outcomes, and
+provider-specific unsupported behavior. The mapping from shared events/commands to native frames is
+reviewable in code or compact fixtures. No test imports `haku/console` or requires Kubernetes.
 
 ### C — Minimal Agentplane records
 
@@ -170,10 +182,11 @@ provider policy.
 browser surface without API tooling. A browser refresh preserves the Thread and completed response;
 live updates do not require manual refresh during a turn.
 
-### H — Second-provider adapter
+### H — Second-provider integration
 
-Port the proven vertical behavior to the other native provider using its own driver. Reuse only
-behavior that the capture review established as genuinely common.
+The shared protocol and both native adapters are already delivered by B. Connect the second provider
+to the Agentplane records, runner/runtime seam, deployment, and standalone UI without expanding the
+protocol spec unless a real captured requirement demands it.
 
 **Acceptance:** the same standalone Agentplane workflow works for both providers, with
 provider-specific limitations visible rather than hidden behind fake equivalence.
@@ -216,10 +229,12 @@ lifecycles merely to avoid an HTTP boundary.
 ## Parallelism and sequencing
 
 - A can continue independently.
-- B should happen immediately after the first useful captures, before broad schema or API design.
+- B should happen immediately after the first useful captures, before broad schema or API design;
+  one agent should own both the shared layer and both adapters.
 - C, D, and E can be designed in parallel after B, but their first implementations should meet F.
 - G should start only once F has a real Agentplane API/event shape to render.
-- H can proceed alongside G after F, but must not force a premature universal abstraction.
+- H can proceed alongside G after F, but must not force a premature universal abstraction or
+  reopen the shared protocol without new evidence.
 - J begins only after I exposes the first real reliability bottleneck.
 - K is explicitly downstream of an independently functioning Agentplane; it is not a hidden
   dependency of I.
@@ -228,7 +243,7 @@ lifecycles merely to avoid an HTTP boundary.
 
 The following are not blockers for I:
 
-- complete common protocol formalization;
+- a protocol broader than the captured Claude/Codex interaction seam;
 - multi-Agent rooms/delegation;
 - subscriptions and external-event adapters;
 - credential/approval redesign;
