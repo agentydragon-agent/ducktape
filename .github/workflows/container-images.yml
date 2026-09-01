@@ -1,4 +1,5 @@
-# Build and push container images to GHCR in parallel, then pin digests atomically.
+# Build and push standalone container images in parallel, then pin digests atomically.
+# Most images still target GHCR; RTL-TCP targets the private Forgejo registry.
 #
 # Images:
 #   bbr-runner    — the `bb remote` runner: RBE worker base + the Nix devtools
@@ -159,6 +160,8 @@ jobs:
     name: RTL-TCP
     # Only push from devel — Flux ImagePolicy filters on devel-* tags.
     if: github.ref_name == 'devel'
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
