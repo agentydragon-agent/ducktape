@@ -18,6 +18,7 @@ driving loop with tests.
 - [Focused experiments](experiments.md)
 - [P0 implementation task DAG](task_dag.md)
 - [First orchestrator task DAG](orchestrator_dag.md)
+- [Product-surface inventory](product_surface.md)
 - [Capture native Claude/Codex wires](subtasks/capture_native_harness_wires.md)
 
 ## v0 scope
