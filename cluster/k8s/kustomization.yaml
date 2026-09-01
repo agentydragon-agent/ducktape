@@ -335,11 +335,8 @@ resources:
   # --- proxmox-proxy ---
   - proxmox-proxy/flux-kustomization.yaml
 
-  # --- archived: wayback-cache ---
-  - x/wayback-cache/namespace/flux-kustomization.yaml
-  - x/wayback-cache/agent-rbac/flux-kustomization.yaml
-  - x/wayback-cache/db/flux-kustomization.yaml
-  - x/wayback-cache/flux-kustomization.yaml
+  # --- wayback-cache (archived; flip cluster/k8s/wayback-cache.yaml suspend to revive) ---
+  - wayback-cache.yaml
 
   # --- user-agentydragon ---
   - user-agentydragon/flux-kustomization.yaml

@@ -249,8 +249,8 @@ creation_rules:
           - *iguana-agentydragon
           - *gecko-agentydragon
 
-  # Cluster and Props deployment secrets (Flux + admin can decrypt).
-  - path_regex: (cluster/k8s|props/deploy/secrets)/.*\.sops\.yaml$
+  # Cluster, Props, and Wayback deployment secrets (Flux + admin can decrypt).
+  - path_regex: (cluster/k8s|props/deploy/secrets|loom/wayback/deploy/secrets)/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:

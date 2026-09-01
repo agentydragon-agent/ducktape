@@ -74,9 +74,11 @@ volume shared read-only with the agent.
 
 ## Using the shared cluster cache service
 
-`cluster/k8s/x/wayback-cache/` runs the shared write-through cache service
-(ClusterIP only) so repeated lookups reuse stored metadata and replay bodies
-without re-hitting IA. Point the proxy at it through a port-forward:
+`loom/wayback/deploy/` contains the archived shared write-through cache service.
+Flux registers the suspended package through `cluster/k8s/wayback-cache.yaml`.
+When restored, its ClusterIP service lets repeated lookups reuse stored metadata
+and replay bodies without re-hitting IA. Point the proxy at it through a
+port-forward:
 
 ```bash
 # --address 0.0.0.0: host.docker.internal resolves to the docker bridge
