@@ -739,6 +739,36 @@ filegroup(
     urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.144.1-linux-x64.tgz"],
 )
 
+# Native Claude Code CLI used by Agentplane's hermetic wire-replay tests. The test only
+# grants it a loopback scripted LiteLLM endpoint; no runtime credential is present in Bazel.
+http_archive(
+    name = "claude_code_cli_linux_x64",
+    build_file_content = 'exports_files(["claude"])',
+    sha256 = "ecce38cb26f10215a98608c23ddaf4db6fe07bce651c0367617f8829569824fb",
+    strip_prefix = "package",
+    urls = ["https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.252.tgz"],
+)
+
+# Match the Codex app-server version used to produce Agentplane's capture examples.
+# Keep Haku's 0.144.1 distribution above isolated from this test-only pin.
+http_archive(
+    name = "agentplane_codex_cli_linux_x64",
+    build_file_content = """
+filegroup(
+    name = "files",
+    srcs = glob([
+        "bin/**",
+        "codex-path/**",
+        "codex-resources/**",
+    ]) + ["codex-package.json"],
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "9e4c4a25b88d9c93ce0ee4f64fba23fc55949f66d9ecb79e419c541b64b80997",
+    strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
+    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.152.0-linux-x64.tgz"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
