@@ -1,0 +1,75 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "capture",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = ["tests/**"],
+    ),
+)
+
+py_binary(
+    name = "live_capture",
+    main_module = "x.agentplane.capture.main",
+    deps = [":capture"],
+)
+
+py_test(
+    name = "test_records",
+    srcs = ["tests/test_records.py"],
+    deps = [
+        ":capture",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_artifacts",
+    srcs = ["tests/test_artifacts.py"],
+    deps = [
+        ":capture",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_drivers",
+    srcs = ["tests/test_drivers.py"],
+    deps = [
+        ":capture",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_no_haku_dependency",
+    srcs = ["tests/test_no_haku_dependency.py"],
+    data = glob(
+        ["**/*.py"],
+        exclude = ["tests/**"],
+    ),
+    deps = ["@pypi//pytest_bazel"],
+)
+
+py_test(
+    name = "test_proxy",
+    srcs = ["tests/test_proxy.py"],
+    deps = [
+        ":capture",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+test_suite(
+    name = "tests",
+    tests = [
+        ":test_artifacts",
+        ":test_drivers",
+        ":test_no_haku_dependency",
+        ":test_proxy",
+        ":test_records",
+    ],
+)
