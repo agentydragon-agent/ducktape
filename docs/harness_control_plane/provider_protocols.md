@@ -39,6 +39,24 @@ pass.
 Operational native records are retained for routine projection. A restricted, short-retention raw
 evidence tier can preserve exact bytes for reprojection and protocol diagnosis.
 
+### Model endpoint and subscription authentication boundary
+
+**Repository evidence.** Haku Console already runs both adapters through the cluster's existing
+subscription gateway:
+
+- Claude Code speaks Anthropic Messages to LiteLLM, which forwards the native Messages surface to
+  CLIProxyAPI's Claude subscription session.
+- Codex app-server speaks OpenAI Responses to LiteLLM, which forwards the native Responses surface
+  to CLIProxyAPI's Codex/ChatGPT subscription session.
+
+The deployed route is configured in
+[`cluster/k8s/haku/console/config.yaml`](../../cluster/k8s/haku/console/config.yaml) and asserted by
+[`cluster/k8s/litellm/app/test_litellm_config.py`](../../cluster/k8s/litellm/app/test_litellm_config.py).
+CLIProxyAPI owns login, OAuth files, and refresh. In the proven Haku Console profile, the bridge sees
+only a configured endpoint and an inert placeholder; the Console egress fence substitutes the real
+scoped LiteLLM virtual key. Consumer OAuth handling is therefore not part of either provider adapter
+or the common control-plane protocol.
+
 ## Claude Code adapter
 
 ### Launch and transport
@@ -174,9 +192,9 @@ Console. It does **not** restart the Claude process with provider-native session
 The new adapter must store the provider session id and deliberately select the native state
 locations needed by the pinned Claude version. Resumption claims are split:
 
-- **completed-turn memory**: after process/Pod death, resume and answer from prior conversational
+- **completed-turn memory**: after process/Pod death, resume and answer from prior model
   context without relying on workspace files;
-- **workspace survival**: PVC files survive independently of conversation state;
+- **workspace survival**: PVC files survive independently of provider context state;
 - **in-flight recovery**: determine how a partially executed turn appears after resume and whether
   side effects might repeat;
 - **queued input recovery**: determine whether unadmitted/admitted mid-turn input survives process
@@ -196,7 +214,7 @@ codex app-server --listen stdio://
 
 The local wire is JSON-RPC-shaped newline-delimited JSON over stdio. The parser accepts optional `jsonrpc` fields and is fail-soft around unknown envelopes.
 
-A committed real-binary test starts the pinned app-server against a local fake OpenAI-compatible HTTP endpoint and proves the app-server transport without paid inference. It does not prove conversation semantics.
+A committed real-binary test starts the pinned app-server against a local fake OpenAI-compatible HTTP endpoint and proves the app-server transport without paid inference. It does not prove model-context semantics.
 
 ### Initialization
 
@@ -243,6 +261,11 @@ replacement with:
 
 The control plane independently fences runtimes and waits for the prior workload to terminate before resuming a durable thread for writing. Whether Codex also enforces a single writer is treated as an experiment result, not relied on as the fence. Read APIs can inspect history without loading it.
 
+In v0 the product Thread maps one-to-one to this durable Codex thread across Runtime generations.
+The Pod, bridge, and Sandbox placement may change; the product and native Codex thread identities do
+not change merely because compute was replaced. A future shared app-server may host several Agents,
+but each Agent still maps to a distinct product Thread and distinct Codex thread.
+
 ### Prompt and turn flow
 
 A new turn uses a request such as:
@@ -284,7 +307,7 @@ result. `turn/completed` is terminal for the turn but is not a substitute for co
 item stream.
 
 Ducktape currently has synthetic projection coverage for messages, reasoning, commands, and
-terminal turns, but no committed real-provider Codex conversation capture equivalent to Claude's
+terminal turns, but no committed real-provider Codex Thread capture equivalent to Claude's
 fixture. Creating one is a priority experiment artifact.
 
 ### Tool mapping
@@ -362,25 +385,26 @@ This mode is intentionally after the two native vertical slices. It exists to su
 | Shell                | `Bash` tool use/result                     | `commandExecution`                    | `shell` operation                      |
 | File edits           | `Write` / `Edit` tool use/result           | `fileChange`                          | file operation                         |
 | Structured tool call | named tool use/result                      | structured tool-call item             | `tool`                                 |
-| Session identity     | Claude session id                          | Codex thread id                       | provider-native session reference      |
+| Provider continuity  | Claude session id                          | Codex thread id                       | adapter evidence attached to Thread    |
 | Cold resume          | CLI-native resume; exact behavior to prove | durable `thread/resume`               | new runtime with continuity evidence   |
 | Current runner gap   | no native process restart/resume           | starts ephemeral thread; no steer     | new design must change both            |
 
-V0 runs one native provider session per bridge process. Codex app-server can host multiple
-independent threads, but multiplexing them would couple failure, resource, and fencing domains.
-Claude's selected print-mode process is not assumed to offer the same multiplexing contract. A
-future compatibility profile may relax this only after both lifecycle and isolation semantics are
-specified and measured.
+V0 runs one product Thread and one provider continuity context per bridge process. Codex app-server
+can host multiple independent native threads, but multiplexing them would couple failure, resource,
+and fencing domains. If a future profile accepts that coupling, each Agent still has a distinct
+product Thread and Codex thread even when several share one Sandbox or process. Claude's selected
+print-mode process is not assumed to offer the same multiplexing contract. Any relaxation requires
+specified and measured lifecycle and isolation semantics.
 
 ## Adapter contract to the bridge
 
 Each provider adapter implements these phases:
 
 ```text
-prepare_launch(start | resume, native_session_id, config, persistent_paths) -> launch_plan
+prepare_launch(start | resume, provider_continuity_id, config, persistent_paths) -> launch_plan
 launch(launch_plan) -> child
 initialize(child) -> native_capabilities
-activate_session(start | resume, native_session_id) -> native_session
+activate_provider_context(start | resume, provider_continuity_id) -> provider_context
 submit(input_id, content) -> admission_observation
 steer(input_id, native_turn_id, content) -> admission_observation
 interrupt(native_turn_id) -> request_observation

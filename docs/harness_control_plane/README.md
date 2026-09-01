@@ -6,16 +6,18 @@ name and not a Haku component.
 This document set proposes a Kubernetes-hosted control plane for coding agents. The required first
 adapters run native Claude Code and Codex harnesses in Pod or sandbox-backed workloads. One
 multi-mode `harness-bridge` binary supervises the selected harness and speaks its structured machine
-protocol. A central PostgreSQL-backed server owns durable threads, workload lifecycle, recovery
-decisions, the common timeline, and the web UI.
+protocol. A central PostgreSQL-backed server owns durable Threads, workload lifecycle, recovery
+decisions, and the common timeline; the web UI consumes that API and may deploy separately.
 
 The motivating product is a fleet of reliable headless Agents that can use both Claude and ChatGPT
-consumer-subscription paths, run for days or longer, receive streaming updates, and eventually
+subscription-backed routes, run for days or longer, receive streaming updates, and eventually
 delegate to and communicate with other Agents. Native harnesses are the default because they
-preserve provider behavior, keep those economical subscription-compatible paths, and avoid making
-metered direct APIs the mandatory baseline. The Claude Agent SDK is a wrapper around the Claude
-binary rather than a separate agent loop; this design drives the stream/control wire directly. A
-direct LLM API agent loop is documented as an optional later adapter, not the baseline.
+preserve provider behavior, work through the existing LiteLLM -> CLIProxyAPI Messages/Responses
+paths, and avoid making metered direct APIs the mandatory baseline. CLIProxyAPI, not this control
+plane or its workloads, owns consumer login and token refresh. The Claude Agent SDK is a wrapper
+around the Claude binary rather than a separate agent loop; this design drives the stream/control
+wire directly. A direct LLM API agent loop is documented as an optional later adapter, not the
+baseline.
 
 The design deliberately rejects terminal keystrokes and pane scraping as its correctness boundary.
 It evaluates A2A 1.0 only as a future opaque agent-to-agent facade; the rich harness-neutral common
@@ -48,11 +50,16 @@ timeline and private bridge/recovery stream remain internal.
 
 The orchestrator, web UI, model-capability/router layer, and future stateless MCP authorization
 gateway should be separately deployable. This proposal owns only orchestration/runtime/logging; it
-does not bind tool RBAC or approval escalation to Thread, Session, or Sandbox concepts.
+does not bind tool RBAC or approval escalation to Thread, provider-continuity, or Sandbox concepts.
 
 A future integrated Agent Console can compose those smaller services into one application for
-conversations, Runtimes, Sandboxes, MCP connections, approvals, grants, and traces without making
+Threads, Runtimes, Sandboxes, MCP connections, approvals, grants, and traces without making
 them one deployment or authority.
+
+**Thread** is the shared UI, API, and storage noun. In v0 one Runtime serves one Thread, and the
+same product Thread maps across Runtime generations to one durable Codex native thread or one Claude
+resume identity. A later Codex app-server may host several Agents, but each Agent still owns a
+separate Thread; only its Sandbox/Runtime placement is shared.
 
 ## Evidence standard
 

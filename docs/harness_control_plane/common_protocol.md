@@ -37,7 +37,8 @@ The initial stable identifiers are:
 - `runtime_generation`: monotonically increasing Sandbox-scoped ordinal and fencing epoch for the
   n-th authorized Runtime;
 - `native_process_generation`: child-process generation within one runtime;
-- `native_session_id`: provider conversation identity;
+- `provider_continuity_id`: adapter-native continuity id (`session_id` for Claude, `thread.id` for
+  Codex), attached to the product Thread;
 - `input_id`: one accepted user input, whether initiating or steering;
 - `turn_id`: one common provider execution bracket;
 - `native_turn_id`: provider turn identity when one exists;
@@ -46,8 +47,9 @@ The initial stable identifiers are:
 - `thread_seq`: Postgres-assigned durable order for common events and anchored wire records.
 
 `Runtime` names the concrete Pod/bridge incarnation; `runtime_generation` says which ordinal
-incarnation is authorized. `Session` is reserved for the provider-native resumable identity. Agent
-identity, Sandbox identity, and any future authorization principal are distinct.
+incarnation is authorized. The adapter-native continuity id is evidence attached to the Thread, not
+a second product-facing object. Agent identity, Sandbox identity, and any future authorization
+principal are distinct.
 
 The native sequence key is:
 
@@ -107,7 +109,7 @@ A record says which tier is available. “Raw” never means reconstructed or re
   "direction": "bridge_to_native | native_to_bridge",
   "observed_at": "2026-08-31T20:14:12.123Z",
   "provider": "claude | codex | direct",
-  "native_session_id": "optional",
+  "provider_continuity_id": "optional",
   "native_turn_id": "optional",
   "native_item_id": "optional",
   "payload_type": "provider-native type or method",
@@ -124,7 +126,7 @@ assigns a thread anchor, and acknowledges the highest contiguous sequence for th
 generation. Provider-native ids supplement the sequence but do not replace it.
 
 Unknown payloads are still stored and projected as `provider.event` if they affect the visible
-rollout.
+Thread timeline.
 
 ## Timeline event envelope
 
@@ -159,7 +161,8 @@ The bridge/server stream is an internal orchestration protocol, not the public a
 interface. Initial messages are:
 
 - `bridge.hello`: Sandbox and Runtime IDs, runtime generation, bridge/provider versions, native
-  process state, native session/turn ids, local-log ranges, and last central acknowledgement;
+  process state, provider-continuity/native-turn ids, local-log ranges, and last central
+  acknowledgement;
 - `server.reconcile`: accepted generation, desired lifecycle, durable cursors, and replay request;
 - `input.offer`: committed input plus expected runtime generation;
 - `input.bridge_durable`: input persisted in the append-only bridge log;
@@ -250,7 +253,7 @@ model and UI never misrepresent an automated or Agent-authored delivery as Rai's
 A turn starts with one initiating input and contains zero or more admitted steering inputs. An
 interrupt request acknowledgement is not a terminal event.
 
-### Conversation items
+### Thread items
 
 - `message.started`, `message.delta`, `message.completed`;
 - `reasoning.started`, `reasoning.delta`, `reasoning.completed`;
@@ -329,7 +332,7 @@ the central server the execution router for these calls.
 
 | Common concept        | Claude Code stream/control                                            | Codex app-server                                       |
 | --------------------- | --------------------------------------------------------------------- | ------------------------------------------------------ |
-| Native session        | emitted Claude session id                                             | `thread.id`                                            |
+| Provider continuity   | emitted Claude session id                                             | `thread.id`                                            |
 | Initiating input      | UUID-stamped user frame                                               | `turn/start` with client user-message id               |
 | Input admission       | UUID `command_lifecycle` queue/start evidence                         | accepted response plus `turn/started`                  |
 | Steering input        | additional UUID user frame observed at a provider boundary            | targeted `turn/steer`                                  |
@@ -365,7 +368,7 @@ requires later provider evidence.
 
 ## Client rendering
 
-The default rollout merges common events by `thread_seq` and renders:
+The default Thread timeline merges common events by `thread_seq` and renders:
 
 - user inputs with initiating/steering admission state;
 - assistant messages, reasoning summaries, and plans;
@@ -397,9 +400,10 @@ protocol. See [a2a.md](a2a.md).
 ## Deferred beyond v0
 
 - Cross-agent discovery/delegation and agent-card semantics.
-- Multiple independent provider Threads/Sessions multiplexed through one native process. Codex
-  app-server supports multiple threads, but the Claude print-mode profile is not assumed to do so;
-  v0 keeps one native session per bridge process.
+- Multiple product Threads multiplexed through one Runtime/native process. Codex app-server can
+  host multiple native threads, but each Agent would still have a distinct product Thread and
+  native Codex thread. The Claude print-mode profile is not assumed to support equivalent
+  multiplexing; v0 keeps one Thread per bridge process.
 - A generic interactive-request family beyond ordinary steering input.
 - Rich operation taxonomies beyond the initial intersection.
 - Cross-thread operation graphs or multi-agent rooms.

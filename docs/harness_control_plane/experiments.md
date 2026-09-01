@@ -12,7 +12,7 @@ filesystem markers and the lowest-cost explicitly configured model.
 
 Prove separately:
 
-1. native completed-turn conversation resumption after harness-process death;
+1. native completed-turn Thread-context resumption after harness-process death;
 2. workspace/PVC persistence after process death, Pod deletion, and Sandbox suspension;
 3. the observable result of harness death during an active turn;
 4. interrupt request and terminal-state semantics;
@@ -24,8 +24,8 @@ Prove separately:
 10. correlation of native harness records with the corresponding upstream LLM HTTP requests and
     streamed responses.
 
-The suite must not conflate a surviving file with a surviving conversation, or runner journal replay
-with provider-native session resume.
+The suite must not conflate a surviving file with surviving Thread/model context, or runner journal
+replay with provider-native resume.
 
 ## Proposed code layout
 
@@ -36,7 +36,7 @@ experiments/harness_control_plane/
   runner.py                    # CLI and scenario orchestration
   model_budget.py              # explicit model/effort/cost limits
   llm_capture.py               # correlation with the recording proxy
-  artifacts.py                 # manifest, JSONL, assertions, redaction
+  artifacts.py                 # manifest, exact JSONL capture, promotion
   a2a_spike.py                 # common-turn to A2A interoperability probe
   fault_injection.py           # signals, process kill, network cut, Pod delete, suspend
   fixtures/
@@ -89,30 +89,23 @@ probe class is the cheapest supported Haiku-class model. For Codex the runner di
 the lowest-cost allowlisted Responses-compatible model and uses the lowest reasoning effort it
 accepts. The selected model and any provider reroute are recorded in the manifest.
 
-Live semantic probes route model traffic through a small recording proxy such as LiteLLM. The
-preferred unattended credential is a dedicated virtual key restricted to the allowlisted cheap test
-models and a hard budget. Ducktape PR
+Live semantic probes use the same in-cluster LiteLLM -> CLIProxyAPI Messages/Responses paths as Haku
+Console, with capture integrated at the model-gateway boundary. CLIProxyAPI owns the Claude and
+Codex consumer OAuth sessions and refreshes them outside the experiment workload. The runner
+preferably uses the same configured endpoint plus inert-placeholder/egress-fence substitution as
+Haku Console; it never performs consumer login or mounts OAuth state.
+
+The preferred unattended credential is a dedicated virtual key restricted to the allowlisted cheap
+test models and a hard budget. Ducktape PR
 [#5348](https://github.com/agentydragon/ducktape/pull/5348) provides the initial
 `cheap-experiments` LiteLLM key and makes its dedicated Secret eligible for an exact temporary Haku
 Console grant. An active grant still requires operator approval through the ordinary grant
 mechanism; that temporary-grant path is the selected first delivery mechanism. The experiment
-artifacts record the virtual-key policy id and proxy/config digest, never the key itself. Consumer
-subscription credentials are not relayed through the proxy.
-
-The suite has two explicit live profiles:
-
-1. **Proxy-backed semantic/recovery profile**: uses the scoped cheap key, records every upstream LLM
-   request and streamed response, and is required before promoting protocol, projector, or recovery
-   behavior.
-2. **Native consumer-subscription compatibility profile**: uses the provider's native subscription
-   authentication path and validates binary launch, handshake, one minimal turn, and native wire
-   evidence. If upstream capture is unavailable without relaying the subscription credential, the
-   manifest records `upstream_capture: unavailable_by_profile` and the reason. This profile proves
-   subscription-path compatibility, not the complete upstream-correlated recovery contract.
-
-A compatibility release requires both applicable profiles: the proxy-backed profile proves the
-semantic/recovery machinery, while the native-subscription profile proves the economical access
-path still works. Neither is silently substituted for the other.
+artifacts record the virtual-key policy id, LiteLLM/CLIProxyAPI route, and proxy/config digests,
+never any key or OAuth material. A standalone runner outside the Haku Console fence may use that
+temporary exact grant; the manifest records `credential_delivery: egress_fence | temporary_grant`.
+The exact model route is part of the compatibility profile, not a separate consumer-OAuth test
+surface.
 
 No scenario edits a real repository or relies on external side effects. All operation work is
 confined to a unique temporary directory on the test PVC.
@@ -149,19 +142,19 @@ run-<timestamp>-<provider>-<scenario>/
 - scenario seed, nonce, kill point, timing deadlines, and environment capabilities.
 
 Every bidirectional native record is saved with direction, monotonic timestamp, native sequence,
-and redaction metadata. A fixture is invalid if it captures only what the harness emitted: it must
+and capture metadata. A fixture is invalid if it captures only what the harness emitted: it must
 also contain every captured bridge-to-harness request/control record in `native-stdin.jsonl` and the
 full harness-to-bridge stream in `native-stdout.jsonl`. Assertions are machine-readable and include
 `pass`, `fail`, `unsupported`, or `inconclusive`; “no exception” is not a passing recovery assertion.
 
-For the proxy-backed profile, every upstream LLM request and streamed response is captured with a
-correlation id that links it to the native session/turn and bridge records. Authorization headers
-and provider secrets are scrubbed; request bodies, response chunks, usage, finish reasons, timing,
-retry, and proxy-routing metadata are retained. This evidence distinguishes harness behavior from
-provider/proxy behavior during recovery. Native-subscription profiles use the explicit unavailable
-marker above rather than fabricating an empty upstream trace.
+Every upstream LLM request and streamed response is captured with a correlation id that links it to
+the provider continuity reference, Turn, and bridge records. The recorder captures exact JSON
+request/response bodies and stream chunks but excludes HTTP authorization headers, cookies, proxy
+credentials, and OAuth material by construction. Usage, finish reasons, timing, retry, and
+proxy-routing metadata are retained. This evidence distinguishes harness behavior from
+LiteLLM/CLIProxyAPI or provider behavior during recovery.
 
-Synthetic runs should be promoted into the repository as complete, wire-faithful JSONL fixture
+Synthetic runs should be promoted into the repository as complete exact-payload JSONL fixture
 bundles rather than reduced to hand-written summaries. The intended layout is:
 
 ```text
@@ -172,7 +165,7 @@ experiments/harness_control_plane/testdata/<provider>/<profile>/<scenario>/
   native-stdout.jsonl
   llm-requests.jsonl
   llm-responses.jsonl
-  expected-common-timeline.jsonl
+  projected-common-timeline.snapshot.jsonl
   process-events.jsonl
   kubernetes-events.jsonl
   assertions.json
@@ -181,41 +174,52 @@ experiments/harness_control_plane/testdata/<provider>/<profile>/<scenario>/
 
 CI replays the captured input and output wire in both directions, projects it into the expected
 common timeline, and checks the machine-readable assertions without provider inference. The
-captured payload structure, ordering, chunk boundaries, and bodies are preserved rather than
-reconstructed or summarized. Before commit, an automated promotion gate must prove the run used an
-isolated synthetic workspace and replace authorization headers, credentials, and any other secret
-fields with stable typed placeholders. The manifest records those substitutions and hashes of the
-pre-substitution captures. Because that substitution is a redaction, the repository copy is labeled
-**wire-faithful fixture**, not the common protocol's **restricted raw** evidence tier. A promoted
-fixture must not contain personal context or production workspace data. Captures that cannot pass
-this gate remain in an access-controlled artifact store.
+captured payload structure, ordering, generated ids, timestamps, chunk boundaries, and bodies are
+preserved rather than reconstructed, canonicalized, or summarized.
+
+The preferred promotion path performs **no payload scrubbing**. The capture runs in a fresh isolated
+container and synthetic workspace, receives no personal Agent memory or production repository data,
+and records only credential-free protocol bodies at capture points that exclude HTTP headers and
+OAuth state. An automated scanner inventories account/provider identifiers and rejects bearer
+tokens, cookies, refresh tokens, authorization headers, private keys, API/client keys, client
+secrets, Basic-auth values, access/session tokens, signing/webhook secrets, known private
+Agent/workspace identifiers, and unexpected personal text. The promotion schema classifies every
+captured field as allowed content, allowed identifier, or forbidden credential material; an unknown
+field or unknown high-entropy credential-shaped value blocks promotion until the schema is reviewed.
+An opaque provider account id is not treated as a secret by itself, but it must be a declared
+identifier and the manifest records its presence so repository review can make the privacy decision
+explicitly.
+
+If a useful capture fails that gate, the default is to fix the recorder or isolation and rerun it.
+A deterministic schema-declared substitution path remains available as a fallback; any transformed
+copy is labeled **wire-faithful fixture**, not **restricted raw**, and records pre/post hashes plus
+all substitutions.
 
 Promotion is a deterministic build step, not manual editing:
 
-1. retain the original capture in restricted storage and record its whole-file hashes;
-2. validate the native-wire, upstream-traffic, process-event, Kubernetes-event, and manifest
-   schemas plus cross-stream correlation references;
-3. scrub only schema-declared secret paths, mapping equal values to equal typed placeholders within
-   the bundle and rejecting unknown secret-bearing fields;
-4. canonicalize nondeterministic values with stable rules: timestamps become offsets from the run
-   origin, generated identifiers map by first appearance while preserving referential equality,
-   and ordered counters such as `thread_seq` are renumbered densely without changing order;
-5. recompute post-redaction hashes and validate every correlation/reference again;
-6. replay the production projector from the canonicalized bidirectional wire to generate
-   `expected-common-timeline.jsonl`, then generate `assertions.json` from that result; and
-7. rerun promotion from the restricted source and require byte-for-byte identical repository
+1. record whole-file hashes for the immutable capture;
+2. validate native-wire, upstream-traffic, process-event, Kubernetes-event, and manifest schemas
+   plus cross-stream correlation references;
+3. run the credential/personal-data scanner and either accept the exact payload files unchanged,
+   reject and rerun, or invoke the explicit fallback substitution path;
+4. replay the production projector from the accepted fixture input to generate
+   `projected-common-timeline.snapshot.jsonl`;
+5. apply the scenario's independently authored `assertions.json` to that generated timeline; and
+6. regenerate all derived files from the fixed captured input and require byte-for-byte identical
    output before accepting the fixture.
 
-CI treats the wire and upstream files as inputs. It does not trust a separately hand-edited expected
-timeline or assertion file.
+CI treats the captured wire and upstream files as inputs. The projected timeline is a generated
+regression snapshot, not an independent correctness oracle. Independently authored assertions are
+the semantic oracle, and promotion of a new fixture requires review of the native-to-common mapping
+diff. Scenario assertions are never generated from the observed result they are meant to test.
 
 ## Deterministic fixtures
 
-### Conversation-memory nonce
+### Thread-memory nonce
 
 Generate a random nonce such as `violet-7f3a2c`. In a no-tool completed turn, ask the harness to
 remember the nonce and reply only `ACK`. Do not write the nonce into the workspace or system prompt.
-After restart/resume, ask for the nonce. Exact recovery proves provider conversational continuity;
+After restart/resume, ask for the nonce. Exact recovery proves provider model-context continuity;
 finding a workspace file cannot satisfy this assertion.
 
 ### Workspace sentinel
@@ -262,30 +266,30 @@ generic structured-tool projection.
 
 ## Scenario matrix
 
-| ID  | Scenario                            | Claude         | Codex        |       Paid calls | Core assertion                                    |
-| --- | ----------------------------------- | -------------- | ------------ | ---------------: | ------------------------------------------------- |
-| P0  | Binary launch and handshake         | yes            | yes          | 0 where possible | exact profile initializes                         |
-| P1  | Baseline no-tool turn               | yes            | yes          |                1 | one admitted and terminal turn                    |
-| P2  | Shell + file + tool projection      | yes            | yes          |                1 | equivalent common operations, native provenance   |
-| R1  | Kill harness idle, resume           | yes            | yes          |                2 | memory nonce survives or is honestly unsupported  |
-| R2  | Delete Pod idle, resume PVC/session | yes            | yes          |                2 | new Pod, same workspace, native continuity result |
-| R3  | Manual idle suspend, resume         | yes            | yes          |                2 | active request rejected; PVC/session result       |
-| R4  | Kill harness mid-turn               | yes            | yes          |              1-2 | partial side effect and native history classified |
-| R5  | Delete Pod mid-turn                 | yes            | yes          |              1-2 | no false clean interruption/replay                |
-| R6  | Explicit Sandbox disposal           | cluster-only   | cluster-only |                0 | only confirmed action destroys Sandbox-owned PVC  |
-| C1  | Restart central server mid-turn     | yes            | yes          |                1 | no missing/duplicate wire/common events           |
-| D1  | Crash at each dispatch transition   | yes            | yes          |              1-2 | no blind replay or lost durable input             |
-| B1  | Kill bridge/PID 1 while idle        | yes            | yes          |              1-2 | replacement only after old workload termination   |
-| B2  | Kill bridge/PID 1 mid-turn          | yes            | yes          |              1-2 | uncertain/terminal evidence is honest             |
-| F1  | Old and new bridge reconnect        | yes            | yes          |                0 | stale generation cannot admit or append           |
-| I1  | Interrupt during command            | yes            | yes          |                1 | request correlated; terminal state observed       |
-| I2  | Interrupt racing completion         | yes            | yes          |                1 | one honest terminal classification                |
-| S1  | Mid-turn steering during tool wait  | boundary input | `turn/steer` |                1 | provider-specific admission evidence              |
-| S2  | Steering during prose/reasoning     | boundary input | `turn/steer` |                1 | timing and race documented                        |
-| S3  | Steering racing completion          | yes            | yes          |                1 | admitted current/future/rejected, never lost      |
-| V1  | Unknown native event replay         | fixture        | fixture      |                0 | generic event preserves payload                   |
-| V2  | Delta coalescing equivalence        | fixture        | fixture      |                0 | reconstructed content/hash matches exact stream   |
-| A1  | Delegated task through A2A facade   | fixture        | fixture      |                0 | context, artifacts, status survive opaque mapping |
+| ID  | Scenario                            | Claude         | Codex        |       Paid calls | Core assertion                                      |
+| --- | ----------------------------------- | -------------- | ------------ | ---------------: | --------------------------------------------------- |
+| P0  | Binary launch and handshake         | yes            | yes          | 0 where possible | exact profile initializes                           |
+| P1  | Baseline no-tool turn               | yes            | yes          |                1 | one admitted and terminal turn                      |
+| P2  | Shell + file + tool projection      | yes            | yes          |                1 | equivalent common operations, native provenance     |
+| R1  | Kill harness idle, resume           | yes            | yes          |                2 | memory nonce survives or is honestly unsupported    |
+| R2  | Delete Pod idle, resume PVC/context | yes            | yes          |                2 | new Pod, same workspace, provider continuity result |
+| R3  | Manual idle suspend, resume         | yes            | yes          |                2 | active request rejected; PVC/continuity result      |
+| R4  | Kill harness mid-turn               | yes            | yes          |              1-2 | partial side effect and native history classified   |
+| R5  | Delete Pod mid-turn                 | yes            | yes          |              1-2 | no false clean interruption/replay                  |
+| R6  | Explicit Sandbox disposal           | cluster-only   | cluster-only |                0 | only confirmed action destroys Sandbox-owned PVC    |
+| C1  | Restart central server mid-turn     | yes            | yes          |                1 | no missing/duplicate wire/common events             |
+| D1  | Crash at each dispatch transition   | yes            | yes          |              1-2 | no blind replay or lost durable input               |
+| B1  | Kill bridge/PID 1 while idle        | yes            | yes          |              1-2 | replacement only after old workload termination     |
+| B2  | Kill bridge/PID 1 mid-turn          | yes            | yes          |              1-2 | uncertain/terminal evidence is honest               |
+| F1  | Old and new bridge reconnect        | yes            | yes          |                0 | stale generation cannot admit or append             |
+| I1  | Interrupt during command            | yes            | yes          |                1 | request correlated; terminal state observed         |
+| I2  | Interrupt racing completion         | yes            | yes          |                1 | one honest terminal classification                  |
+| S1  | Mid-turn steering during tool wait  | boundary input | `turn/steer` |                1 | provider-specific admission evidence                |
+| S2  | Steering during prose/reasoning     | boundary input | `turn/steer` |                1 | timing and race documented                          |
+| S3  | Steering racing completion          | yes            | yes          |                1 | admitted current/future/rejected, never lost        |
+| V1  | Unknown native event replay         | fixture        | fixture      |                0 | generic event preserves payload                     |
+| V2  | Delta coalescing equivalence        | fixture        | fixture      |                0 | reconstructed content/hash matches exact stream     |
+| A1  | Delegated task through A2A facade   | fixture        | fixture      |                0 | context, artifacts, status survive opaque mapping   |
 
 Paid-call counts are targets, not a reason to exceed the manifest ceiling. Related assertions should
 share one provider turn where that does not make the result ambiguous.
@@ -348,14 +352,14 @@ This is an interoperability test for an opaque agent-to-agent facade, not a subs
 ### R1: idle harness-process death
 
 1. complete the no-tool memory nonce turn;
-2. record native session id and flush all logs;
+2. record the provider continuity id and flush all logs;
 3. kill only the native harness child, leaving bridge/Pod/PVC alive;
 4. launch a new child and invoke provider-native resume;
 5. ask for the nonce;
 6. assert exact response and changed process identity.
 
 For Codex, use a durable non-ephemeral thread and the same persisted `CODEX_HOME`. For Claude, record
-and use the provider-native session id and required state paths. A runner frame cursor does not count.
+and use its provider continuity id and required state paths. A runner frame cursor does not count.
 
 ### R2: idle Pod death
 
@@ -380,7 +384,7 @@ Repeat R1 but delete the Pod while retaining the Sandbox. Assert:
 8. prove Sandbox CR, PVC, and optional Service remain;
 9. wait at least one reconciliation interval and prove no automatic disposal occurs;
 10. resume the Sandbox and wait for a new Pod/bridge handshake;
-11. run both workspace-sentinel and conversation-memory assertions.
+11. run both workspace-sentinel and Thread-memory assertions.
 
 Also verify that scaling a WarmPool to zero is not used as suspension: unclaimed pool Sandbox/PVC
 loss is a separate controller test.
@@ -437,13 +441,15 @@ transition:
 
 For every point, restart/reconnect and assert the durable input is visible, the dispatch state is
 honest, and `operation_probe.py count` did not repeat without an explicit new instruction. The
-expected outcome may be safe retry, native-session reconciliation, or `outcome_uncertain`; silence
+expected outcome may be safe retry, provider-continuity reconciliation, or `outcome_uncertain`;
+silence
 and blind redispatch both fail.
 
 ### B1/B2: bridge death and runtime fencing
 
 First partition the old bridge from the central service while leaving its Pod and native child
-alive. Request replacement and assert that the control plane blocks new dispatch, native-session
+alive. Request replacement and assert that the control plane blocks new dispatch,
+provider-continuity
 resume, and replacement activation while the old workload can still run. Central fencing alone is
 not a passing result.
 
@@ -484,8 +490,8 @@ mid-turn steering works.
 
 | Boundary                          | Must not be used as proof           |
 | --------------------------------- | ----------------------------------- |
-| Central reconnect                 | Provider session resume             |
-| Runner/bridge-log replay          | Provider conversational memory      |
+| Central reconnect                 | Provider continuity resume          |
+| Runner/bridge-log replay          | Provider model-context memory       |
 | PVC sentinel survival             | Native thread/session survival      |
 | Interrupt request acknowledgement | Turn actually interrupted           |
 | Process exit                      | No side effect occurred             |
@@ -518,7 +524,7 @@ Provider/profile: codex <version> / <model> / agent-sandbox v0.5.5
 Baseline protocol: PASS
 Completed-turn cold resume: PASS
 Pod replacement workspace: PASS
-Pod replacement conversation: PASS
+Pod replacement Thread context: PASS
 Active-turn process loss: INCONCLUSIVE -> production behavior: outcome_uncertain
 Interrupt during command: PASS
 Mid-turn steer: PASS

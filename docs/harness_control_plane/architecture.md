@@ -29,9 +29,10 @@ adapter, not the abstraction around which the native adapters are designed.
 The product need is not merely “run a coding CLI in Kubernetes.” It is:
 
 - run many headless Agents concurrently;
-- use Claude Code because Anthropic consumer-subscription access requires the native Claude binary
-  path rather than a custom direct-API loop;
-- use Codex so ChatGPT subscription-backed Agents are also a first-class workload;
+- use Claude Code and Codex because their native harnesses already work against the cluster's
+  subscription-backed LiteLLM -> CLIProxyAPI Messages and Responses routes;
+- keep subscription login, token refresh, and credential ownership in CLIProxyAPI rather than
+  teaching each workload or the Harness Control Plane to manage consumer OAuth;
 - avoid making expensive metered model APIs the mandatory baseline when consumer subscriptions are
   the economical path already available to the operator;
 - keep Agents useful for days, or eventually for an effectively unbounded Thread receiving a
@@ -82,10 +83,10 @@ success and interruption that the provider never proved.
 - One bridge executable supports provider modes rather than creating unrelated control-plane
   implementations.
 - PostgreSQL is the sole first-version central authority for durable orchestration state and
-  evidence. Kubernetes objects describe and realize workload state; they are not the conversation
-  log.
+  evidence. Kubernetes objects describe and realize workload state; they are not the Thread
+  timeline.
 - The product-facing identity is one durable Thread. A Pod or native process is a replaceable
-  Runtime, not the conversation identity.
+  Runtime, not the Thread identity.
 - Agent Sandbox is the preferred first Kubernetes backend, but the central protocol cannot depend
   on one controller's object names or implementation details.
 
@@ -106,14 +107,24 @@ success and interruption that the provider never proved.
 
 ### Scope constraints
 
-- This design does not specify credentials, identity/access control, tool governance, approval
-  policy, or external tool routing.
+- This design does not specify consumer OAuth, credentials, identity/access control, tool
+  governance, approval policy, or external tool routing. The proven Haku Console profile gives the
+  workload a configured model endpoint plus an inert placeholder; the egress fence substitutes the
+  scoped LiteLLM virtual key. The existing LiteLLM -> CLIProxyAPI path owns Claude/Codex subscription
+  login and refresh outside this control plane.
 - A2A is an optional opaque Agent-to-Agent facade. It does not expose private harness operations,
   wire records, bridge-log state, or recovery internals.
-- Recovery claims must be promoted by deterministic, rerunnable proxy-backed experiments with
-  explicit failure points, correlated upstream LLM traffic, and saved bidirectional evidence.
-  Native consumer-subscription authentication compatibility is a separate profile whose upstream
-  traffic may be unavailable for capture. Paid inference is minimized.
+- Recovery claims must be promoted by deterministic, rerunnable experiments against the exact
+  LiteLLM -> CLIProxyAPI routes used by Haku Console, with explicit failure points, correlated
+  upstream LLM traffic, and saved bidirectional evidence. Paid inference is minimized and no
+  experiment workload handles consumer OAuth.
+
+Current repository evidence already proves the routing shape: Haku Console's
+[`config.yaml`](../../cluster/k8s/haku/console/config.yaml) selects the Anthropic Messages route for
+Claude and the OpenAI Responses route for Codex, while LiteLLM's
+[`test_litellm_config.py`](../../cluster/k8s/litellm/app/test_litellm_config.py) pins both native
+surfaces to CLIProxyAPI. The control plane reuses that boundary instead of adding another OAuth
+owner.
 
 ### Adjacent layers that should stay separate
 
@@ -137,7 +148,7 @@ Runtimes, Sandboxes, MCP connections, approvals, grants, and traces. That is a p
 choice, not a reason to collapse the independently deployable services into one authority or
 binary.
 
-The authorization layer should not need to understand Thread, Turn, native Session, or Sandbox
+The authorization layer should not need to understand Thread, Turn, provider continuity, or Sandbox
 semantics. The orchestrator may bind a runtime to an opaque principal, but **Agent identity**,
 **runtime identity**, and **authorization principal** are deliberately separate concepts. The exact
 RBAC and approval model remains out of scope until concrete supported actions justify it.
@@ -145,13 +156,13 @@ RBAC and approval model remains out of scope until concrete supported actions ju
 ## Goals
 
 - Run each live Runtime in a bounded Pod or sandbox-backed workload.
-- Let a central server own durable thread identity, accepted input, workload desired state,
-  recovery decisions, normalized rollout history, and user-visible status.
+- Let a central server own durable Thread identity, accepted input, workload desired state,
+  recovery decisions, normalized Thread timeline, and user-visible status.
 - Put one small `harness-bridge` binary in each workload. Provider modes launch and supervise
   Claude Code, Codex, or an optional direct-LLM loop behind the same central protocol.
 - Preserve native Claude Code and Codex behavior as the default path. A direct-LLM loop is an
   explicit alternative, not the baseline implementation.
-- Retain native traffic evidence as provenance while presenting common conversation and operation
+- Retain native traffic evidence as provenance while presenting common Thread and operation
   concepts in the UI.
 - Make central-server failure, bridge failure, harness-process failure, Pod loss, and intentional
   suspension separate and observable recovery cases.
@@ -174,16 +185,16 @@ RBAC and approval model remains out of scope until concrete supported actions ju
 
 ## Decision summary
 
-| Decision                | Selected approach                                                        | Alternative not selected                                                                      |
-| ----------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Harness integration     | Native structured protocols                                              | tmux, PTY automation, pane scraping                                                           |
-| Provider packaging      | One `harness-bridge --mode claude\|codex\|direct`                        | Separate unrelated bridge products or readers racing from sidecars                            |
-| Durable authority       | PostgreSQL                                                               | Pod-local state, Kubernetes CR status, or an event broker as the conversation source of truth |
-| Continuity identity     | Durable Thread with replaceable Runtimes and native process generations  | Treating a Pod, provider process, or current Session id as the product conversation           |
-| Recovery policy         | Evidence-based reconciliation with explicit uncertainty                  | Blind prompt replay or inferred success/interruption after a crash                            |
-| Runtime lifecycle       | Agent Sandbox/Pod plus explicit PVC persistence and cold process restart | Claiming suspend is hibernation or that a detached process survives Pod deletion              |
-| Agent-loop baseline     | Native Claude Code and Codex                                             | Rebuilding both loops around direct model APIs in v0                                          |
-| External Agent protocol | Optional opaque A2A facade                                               | A2A as the private bridge protocol or as an export of harness/tool internals                  |
+| Decision                | Selected approach                                                        | Alternative not selected                                                                |
+| ----------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| Harness integration     | Native structured protocols                                              | tmux, PTY automation, pane scraping                                                     |
+| Provider packaging      | One `harness-bridge --mode claude\|codex\|direct`                        | Separate unrelated bridge products or readers racing from sidecars                      |
+| Durable authority       | PostgreSQL                                                               | Pod-local state, Kubernetes CR status, or an event broker as the Thread source of truth |
+| Continuity identity     | Durable Thread with replaceable Runtimes and native process generations  | Treating a Pod, provider process, or provider continuity id as the product Thread       |
+| Recovery policy         | Evidence-based reconciliation with explicit uncertainty                  | Blind prompt replay or inferred success/interruption after a crash                      |
+| Runtime lifecycle       | Agent Sandbox/Pod plus explicit PVC persistence and cold process restart | Claiming suspend is hibernation or that a detached process survives Pod deletion        |
+| Agent-loop baseline     | Native Claude Code and Codex                                             | Rebuilding both loops around direct model APIs in v0                                    |
+| External Agent protocol | Optional opaque A2A facade                                               | A2A as the private bridge protocol or as an export of harness/tool internals            |
 
 ## Alternatives considered
 
@@ -194,13 +205,13 @@ guesses readiness, loses structured identifiers, and cannot prove provider admis
 outcomes. The selected non-interactive modes are diagnosed from their structured records and
 process/workload logs rather than by attaching to a terminal UI.
 
-| Terminal-driven integration   | Selected structured integration                 |
-| ----------------------------- | ----------------------------------------------- |
-| Sends keystrokes              | Sends native structured requests                |
-| Guesses readiness             | Completes an explicit handshake                 |
-| Scrapes ANSI/pane text        | Receives correlated records and terminal events |
-| Reattach means finding a pane | Reconciles durable state and a native session   |
-| Cannot prove prompt admission | Records bridge and native admission evidence    |
+| Terminal-driven integration   | Selected structured integration                  |
+| ----------------------------- | ------------------------------------------------ |
+| Sends keystrokes              | Sends native structured requests                 |
+| Guesses readiness             | Completes an explicit handshake                  |
+| Scrapes ANSI/pane text        | Receives correlated records and terminal events  |
+| Reattach means finding a pane | Reconciles durable state and provider continuity |
+| Cannot prove prompt admission | Records bridge and native admission evidence     |
 
 ### Claude Agent SDK as a separate runtime architecture
 
@@ -232,11 +243,11 @@ A sidecar cannot safely discover and attach to process-local stdin/stdout after 
 readers can race. One executable with provider adapters shares the durable bridge contract while
 keeping native protocol code isolated by mode.
 
-### Kubernetes CRs as the conversation authority
+### Kubernetes CRs as the Thread authority
 
 Rejected. Kubernetes is excellent at desired/observed workload reconciliation but is not the right
 append-only, totally ordered store for accepted inputs, native evidence, and a long-lived
-conversation timeline. Agent-oriented CRDs can inform the workload API shape, conditions, and
+Thread timeline. Agent-oriented CRDs can inform the workload API shape, conditions, and
 ownership model; PostgreSQL remains authoritative for Thread and Turn continuity.
 
 ### kagent `SandboxAgent`, `AgentInstance`, or Agent Substrate as the runtime model
@@ -283,12 +294,13 @@ the internal UI timeline is also richer than the optional A2A projection.
 
 ## Working architectural vocabulary
 
-These names are intentionally narrow working terms, not a commitment to final UI labels:
+These are the shared product, API, storage, and UI nouns. Provider adapters may display exact native
+terms such as Claude `session_id` or Codex `thread.id` in diagnostic detail, but clients do not
+rename the product object:
 
 - **Agent**: configured model-facing persona/brain identity. It is not itself an RBAC principal.
 - **Thread**: durable ordered interaction context for one speaking Agent/harness identity. It
-  survives workload replacement. A UI may label it “conversation,” but the protocol avoids the
-  overloaded `Session` noun.
+  survives workload replacement and is labeled **Thread** in the UI as well as the API.
 - **Input**: one durably accepted inbound delivery. It may originate from a human, another Agent,
   an automation, or an external event. A provenance envelope distinguishes those sources even if
   the provider must receive the content in a model-facing user role.
@@ -300,18 +312,18 @@ These names are intentionally narrow working terms, not a commitment to final UI
   currently or historically running the workload.
 - **Runtime generation**: the Sandbox-scoped monotonically increasing ordinal and fencing epoch for
   Runtimes. Generation `n+1` is authorized only after generation `n` is proven unable to continue.
-  This is the “n-th thing running this workload” concept; it is not a user conversation identity.
+  This is the “n-th thing running this workload” concept; it is not a user Thread identity.
 - **Native process generation**: one child harness process within a Runtime. Restarting the child
   increments this generation without pretending the Pod or bridge changed.
-- **Native session**: the provider's resumable conversation identity, for example a Claude session
-  id or Codex thread id. **Session** is reserved for this provider-native concept rather than used
-  as a generic product identity.
+- **Provider continuity reference**: the provider's resumable identity attached to a Thread, for
+  example a Claude `session_id` or Codex `thread.id`. It is adapter evidence, not a second
+  product-facing object.
 - **Wire record**: one exact line/message on the native protocol, plus direction and ordering
   metadata.
 - **Timeline event**: a durable common projection used by clients. It points back to one or more
   wire records.
 
-Kubernetes object names, Pod UIDs, bridge connection ids, provider session ids, and durable thread
+Kubernetes object names, Pod UIDs, bridge connection ids, provider continuity ids, and durable Thread
 ids are deliberately different identifiers.
 
 ## Topology
@@ -357,14 +369,20 @@ storage system requires a demonstrated reason; it is not an open design choice.
 
 ## Detailed design
 
-### One runtime per Pod; one thread across runtimes
+### One runtime per Pod; one Thread across runtimes
 
-A live runtime gets its own process tree, resource limits, and Pod identity. The thread and sandbox
-record do not disappear when that Pod does. Replacing a failed runtime is a state transition on the
-same durable thread and, when storage survives, the same sandbox.
+A live Runtime gets its own process tree, resource limits, and Pod identity. The Thread and Sandbox
+record do not disappear when that Pod does. Replacing a failed Runtime is a state transition on the
+same durable Thread and, when storage survives, the same Sandbox.
 
-One live runtime may serve several turns while active. “One runtime per Pod” does not mean one Pod
+One live Runtime may serve several Turns while active. “One Runtime per Pod” does not mean one Pod
 per prompt.
+
+V0 gives each Runtime one product Thread. For Codex, that product Thread maps to one durable native
+Codex thread across Runtime generations; for Claude it maps to the recorded Claude resume identity.
+The mapping does not make Sandbox identity part of Thread identity. If a later profile hosts several
+Agents in one Codex app-server or Sandbox, each Agent still has a distinct product Thread and a
+distinct native Codex thread; only the Sandbox/Runtime cardinality changes.
 
 ### The bridge is the workload entrypoint and child supervisor
 
@@ -374,7 +392,7 @@ group on shutdown. Provider-specific behavior is selected by configuration, not 
 different control-plane binary. This avoids PID discovery, competing readers, and sidecars racing
 to attach to process-local pipes.
 
-The bridge has provider adapters but is not the authority for threads, scheduling, or final
+The bridge has provider adapters but is not the authority for Threads, scheduling, or final
 user-visible outcomes. It keeps a simple append-only local bridge log on the PVC so a server outage
 does not force RAM buffering. V0 does not add cap, truncation, coalescing, or overflow machinery to
 this log: native LLM traffic is modest, the PVC is already durable, and storage growth is easier to
@@ -391,12 +409,12 @@ ingress, PTY attachment, or `kubectl exec`. On reconnect the bridge announces:
 - native process generation, child identity, and current local state;
 - last server command durably accepted;
 - highest wire sequence durably retained and highest server acknowledgement observed;
-- native session and active-turn identifiers, when known.
+- provider-continuity and active-turn identifiers, when known.
 
 The server answers with the durable cursor and desired runtime state. Only the current persisted
 runtime generation may admit input or append authoritative acknowledgements. A stale partitioned
 bridge can reconnect for diagnostics, but its writes are fenced. Replacement waits for confirmed
-old-workload termination before it opens a provider-native session for writing. Both sides tolerate
+old-workload termination before it opens provider continuity for writing. Both sides tolerate
 duplicate transport delivery; semantic replay of provider input remains conservative.
 
 Generation fencing protects PostgreSQL authority; it does not stop an old native process from
@@ -451,7 +469,7 @@ The first release supports Claude Code and Codex as native harnesses. For Claude
 integration and the Claude Agent SDK ultimately run the Claude Code binary; the bridge chooses to
 own that binary's stream/control wire directly. This preserves the validated native path while
 avoiding another wrapper as the recovery boundary. For both providers, native harnesses avoid
-rebuilding context compaction, tool-output overflow handling, native session history, steering,
+rebuilding context compaction, tool-output overflow handling, provider context history, steering,
 interrupts, provider-specific tools, and upgrade compatibility.
 
 The same bridge binary may later run `--mode direct` against an LLM API. That mode would implement
@@ -578,14 +596,14 @@ The suspension path is:
 1. stop admitting new turns;
 2. require the runtime to be idle;
 3. flush native records and the append-only bridge log through a durable acknowledgement;
-4. record native session id and compatibility metadata;
+4. record provider continuity id and compatibility metadata;
 5. terminate the child cleanly within a deadline;
 6. set the Sandbox to `Suspended`;
 7. wait for the controller's suspended condition and Pod absence;
 8. mark the product sandbox `Suspended`.
 
 Resume reverses compute state, not process state: create the Pod, start a new runtime, verify the
-PVC, perform the provider handshake, and then either resume the native session or start a new native
+PVC, perform the provider handshake, and then either resume provider continuity or start a new native
 session with an explicit continuity break.
 
 ### Disposal policy
@@ -608,7 +626,7 @@ sequenceDiagram
     participant B as harness-bridge + PVC log
     participant H as Native harness
 
-    U->>S: Submit input to durable thread
+    U->>S: Submit input to durable Thread
     S->>D: Commit input + stable ids
     S->>K: Ensure claimed Sandbox is running
     K-->>B: Start Pod and mount PVC
@@ -623,7 +641,7 @@ sequenceDiagram
     H-->>B: Stream native records
     B-->>S: Forward sequenced records
     S->>D: Append wire log + project timeline
-    S-->>U: Stream common rollout with raw-frame drill-down
+    S-->>U: Stream Thread timeline with raw-frame drill-down
     H-->>B: Native terminal event
     B-->>S: Terminal evidence
     S->>D: Commit proven outcome
@@ -645,7 +663,7 @@ log or invents a complete turn across missing evidence.
 
 ### Harness child process failure while the Pod survives
 
-The bridge records exit code/signal, stderr tail, last wire position, native session id, and active
+The bridge records exit code/signal, stderr tail, last wire position, provider continuity id, and active
 turn id. It must not assume the active turn failed before side effects. Recovery starts a new child
 inside the same Pod with an incremented `native_process_generation`, or starts a replacement
 runtime. Native resume is used only if the compatibility suite has proven the exact case.
@@ -665,7 +683,7 @@ bridge log before dispatching more input.
 
 The controller recreates a new Pod against the same PVC. The server creates a new Runtime ID,
 verifies the Sandbox UID and PVC sentinel, starts the native harness, and attempts provider-native
-resume. Workspace persistence and conversation resumption are separate assertions: one may work
+resume. Workspace persistence and Thread-context resumption are separate assertions: one may work
 while the other does not.
 
 ### Sandbox CR or PVC loss
@@ -678,7 +696,7 @@ backup. It must not claim native continuity from a coincidentally reused name.
 
 If a provider may have admitted a turn but terminal evidence is absent, the UI shows the accepted
 input, last proven provider event, known workspace facts, and an uncertain outcome. Recovery choices
-are explicit: inspect, resume provider session, start a new follow-up without automatically
+are explicit: inspect, resume provider continuity, start a new follow-up without automatically
 redispatching the original input, or abandon the turn. A follow-up can still cause new side effects;
 it is not presented as a safety guarantee. Blindly resending the original prompt is not the default.
 
@@ -710,19 +728,19 @@ Default groups are derived from those axes:
 
 - **Active**: a Pod is expected or present; activity shows whether it is idle, working, or
   recovering.
-- **Suspended**: Pod absent by policy; PVC retained; last native session and last activity shown.
+- **Suspended**: Pod absent by policy; PVC retained; last provider continuity and activity shown.
 - **Needs attention**: failed, evidence gap, uncertain turn, storage mismatch, or recovery blocked.
 - **Disposed**: Sandbox storage is gone; central audit metadata remains available.
 
-Each row shows provider/version, thread, desired/observed mode, Claim and resolved Sandbox identity,
+Each row shows provider/version, Thread, desired/observed mode, Claim and resolved Sandbox identity,
 Pod age when present, workspace/PVC status, active turn, last durable event, and available actions.
 The UI must not render a suspended sandbox as a failed Pod. **Suspend** is enabled only when the
 runtime is idle. **Dispose** is a separately confirmed destructive action, never a retention-window
 side effect.
 
-### Conversation rollout
+### Thread timeline
 
-The thread page renders the common timeline as a conversation:
+The Thread page renders the common timeline:
 
 - accepted user prompts;
 - assistant messages and readable reasoning summaries;
@@ -733,7 +751,7 @@ The thread page renders the common timeline as a conversation:
 A “native frames” toggle interleaves restricted raw evidence or redacted/coalesced provider records
 at their exact timeline anchors. Drill-down shows direction, native sequence range, provider ids,
 evidence tier, projection version, and whether the frame was live, replayed, or recovered from the
-bridge log. Provider detail never changes the ordering of the common rollout.
+bridge log. Provider detail never changes the ordering of the Thread timeline.
 
 ### Raw-frame retention and coalescing
 
@@ -770,13 +788,13 @@ redacted central tier is retained.
    input admission, native wire log, and common timeline tables in PostgreSQL with explicit
    uncertain outcomes.
 3. **Claude vertical slice**: one Sandbox, bridge-supervised Claude process, one turn, wire storage,
-   normalized rollout, interrupt, and clean native resume.
+   normalized Thread timeline, interrupt, and clean provider resume.
 4. **Codex vertical slice**: durable non-ephemeral Codex thread, app-server resume, operation
    normalization, interrupt, and steering.
 5. **Server reconnect**: append-only bridge log, cursor handshake, replay/deduplication, and replica
    adoption.
 6. **Sandbox recovery**: Pod delete, process kill, suspend/resume, PVC sentinels, and UI states.
-7. **Operator UI**: active/suspended inventory, conversation rollout, raw-frame toggle, uncertain
+7. **Operator UI**: active/suspended inventory, Thread timeline, raw-frame toggle, uncertain
    outcome recovery controls.
 8. **Direct-loop spike**: after both native adapters pass, prove that an API-driven loop can emit the
    same common protocol without making it the default.
@@ -798,6 +816,5 @@ adapter and retrofit the other later.
   explicit continuation?
 - Which controller conditions and timeouts define “suspended” and “resumed” for each pinned Agent
   Sandbox release?
-- Which final UI labels replace the protocol's working nouns `Thread`, `Turn`, and `Runtime`?
 
 The experiment plan is the promotion gate for these decisions, not an appendix to implementation.

@@ -74,7 +74,7 @@ Claude binary.
 - independent stderr draining to prevent pipe blockage;
 - configurable NDJSON line limits and bounded diagnostic tails;
 - typed timeout, crash, oversized-record, and broken-pipe diagnostics;
-- fake CLI, scrubbed native fixtures, and lifecycle race scenarios.
+- fake CLI, isolated synthetic native fixtures, and lifecycle race scenarios.
 
 ### Adapt substantially
 
@@ -173,7 +173,7 @@ kagent demonstrates two useful design directions without supplying a stable CRD 
 
 Borrow the database-backed logical-instance pattern, explicit suspend/resume operations, immutable
 runtime-template revisions, and status-condition vocabulary. Do not equate actor snapshots with
-native Claude/Codex process hibernation, and do not move conversation authority into Kubernetes CR
+native Claude/Codex process hibernation, and do not move Thread authority into Kubernetes CR
 status.
 
 ## Bridge-owned contract
