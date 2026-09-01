@@ -103,7 +103,7 @@ personal context.
   Pod/Sandbox authentication, replay/lifecycle behavior, and unsupported same-Pod route confinement.
 - **Native capture + replay:** real Claude and Codex binaries, exact native/model transcripts, compact
   fixtures, fake-model replay, steering/interrupt, idle resume, and upstream reconnect evidence. The
-  detailed matrix is in [`experiments.md`](experiments.md) and the [capture task packet](subtasks/capture_native_harness_wires.md).
+  detailed matrix is in [`experiments.md`](experiments.md) and the [capture harness README](../capture/README.md).
 - **Integrate capture branch:** PR #15's implementation is present on the branch behind PR #5342;
   preserve provider-specific evidence and unsupported behavior while integrating it.
 - **Shared protocol + adapters:** one stdio contract justified by captured native frames, with both
@@ -150,7 +150,7 @@ personal context.
 ## Detailed plans
 
 - Native provider scenarios and exact evidence: [`experiments.md`](experiments.md) and the [capture
-  task packet](subtasks/capture_native_harness_wires.md).
+  harness README](../capture/README.md).
 - Sandbox identity and egress evidence: [sandbox spike README](../sandbox-spike/README.md) and [egress
   ADR](adr_sandbox_proxy_gateway.md).
 - Product/API layering and deferred capabilities: [`product_surface.md`](product_surface.md) and

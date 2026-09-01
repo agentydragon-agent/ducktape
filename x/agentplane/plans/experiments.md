@@ -3,10 +3,11 @@
 Status: **focused experiment plan; capture implementation present on PR #15, strict review pending**.
 
 The capture branch contains the Claude/Codex drivers, fixtures, replay tests, and the reconnect
-scenario. Do not call the capture P0 fully accepted until reconnect replay compares the repeated
-request body and provider-native request identity, and asserts duplicate or non-duplicate partial
-native output, process survival, and exact terminal frames. These are review gaps, not reasons to
-expand the capture into a generic protocol or artifact framework.
+scenario. The [capture harness README](../capture/README.md) is the implementation-facing record
+of its layout and run commands. Do not call the capture P0 fully accepted until reconnect replay
+compares the repeated request body and provider-native request identity, and asserts duplicate or
+non-duplicate partial native output, process survival, and exact terminal frames. These are review
+gaps, not reasons to expand the capture into a generic protocol or artifact framework.
 
 The first experiment is not a control-plane validation suite. It answers one practical question:
 can a small bridge reliably drive native Claude Code and Codex processes, including the interactions
@@ -48,22 +49,23 @@ simple failure or unsupported result, but it should not implement these systems 
 Keep the implementation under `x/agentplane/capture/` and keep provider scenario code separate.
 A small shared process/transcript helper is appropriate; a shared protocol state machine is not.
 
-Each scenario fixture should contain only:
+Each recorded scenario currently contains only the ordered evidence needed by the capture and
+replay code:
 
 ```text
 metadata.json
-native.jsonl
-llm.jsonl
-stderr.log
-expected.json
-workspace/              # only when the scenario has a workspace effect
+stdin.jsonl
+stdout.jsonl
+stderr.jsonl
+llm-requests.jsonl
+llm-responses.jsonl
 ```
 
-`native.jsonl` is an ordered transcript of complete native frames with direction and exact payload.
-`llm.jsonl` is an ordered transcript of model request bodies and streamed response chunks.
-`expected.json` is hand-authored and states the behavior the test is intended to prove. File order is
-sufficient ordering; do not add hashes, lengths, timestamps, process generations, or manifest
-inventories.
+The native files preserve exact JSON frames by direction. The LLM files preserve complete request
+bodies and streamed response chunks, including a minimal connection-loss marker where applicable.
+The hand-authored semantic assertions live in the tests rather than being generated into each
+fixture directory. File order is sufficient ordering; do not add hashes, lengths, timestamps,
+process generations, or manifest inventories.
 
 ## Capture rules
 
