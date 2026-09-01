@@ -5,11 +5,11 @@
 # command-line tooling -- everything a Nix package in one reviewable closure, no
 # second Node, no upstream Docker base.
 #
-# Deviation from public-coder: this image currently retains a Node 24 override
-# from the earlier WAL-related incident. Both images consume the stable
-# OpenClaw 2026.8.1 gateway from an explicitly pinned npm wrapper. nix-openclaw's
-# own source pin still tracks an older stable, so the wrapper lock and source
-# metadata are spliced over its tested npm-package build path.
+# Both images consume the stable OpenClaw 2026.8.1 gateway from the shared
+# npm wrapper. This image keeps the same Node 22 package selection as public-coder;
+# its earlier Node 24/WAL workaround is no longer needed by the stable runtime.
+# nix-openclaw's own source pin still tracks an older stable, so the wrapper lock
+# and source metadata are spliced over its tested npm-package build path.
 #
 # Gotcha: use this npm-package path, not a from-source `sourceInfo` override.
 # nix-openclaw's own stable is npm-package too, so its from-source pnpm build is
@@ -27,17 +27,12 @@
 let
   system = pkgs.stdenv.hostPlatform.system;
 
-  # nixpkgs + nix-openclaw's overlay (matching how nix-openclaw builds its own
-  # package set), with the current Node 24 compatibility override. OpenClaw
-  # 2026.8.1 accepts supported Node 22 and Node 24 release lines; retain this
-  # override until Haku startup and state access are validated on Node 22.
-  # TODO: validate Node 22 and remove this override if the runtime stays green.
+  # Use the same nix-openclaw package set and Node 22 selection as public-coder.
+  # OpenClaw 2026.8.1 accepts the pinned Node 22 release line; the old Haku-only
+  # Node 24 override was retained from a pre-stable WAL diagnosis.
   ocPkgs = import nix-openclaw.inputs.nixpkgs {
     inherit system;
-    overlays = [
-      nix-openclaw.overlays.default
-      (_final: prev: { nodejs_22 = prev.nodejs_24; })
-    ];
+    overlays = [ nix-openclaw.overlays.default ];
   };
 
   # Stable version for nix-openclaw's npm-package gateway build. Mirrors
@@ -71,8 +66,8 @@ let
 
   # nix-openclaw's npm wrapper (nix/npm/openclaw/) pins openclaw to an older
   # stable release, and openclaw-gateway-npm.nix asserts the lock version equals
-  # `sourceInfo.releaseVersion`. Splice our stable-pinned wrapper (npm_wrapper/)
-  # over it so the same buildNpmPackage path installs 2026.8.1.
+  # `sourceInfo.releaseVersion`. Splice the shared stable wrapper
+  # (`openclaw/npm_wrapper/`) over it so both images use one lockfile.
   #
   # Regenerate npm_wrapper/ with:
   #   npm install openclaw@<ver> --package-lock-only --omit=dev --install-strategy=nested
@@ -86,8 +81,8 @@ let
   patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-openclaw-stable-wrapper" { } ''
     cp -r ${nix-openclaw} "$out"
     chmod -R u+w "$out"
-    cp ${./npm_wrapper/package.json} "$out/nix/npm/openclaw/package.json"
-    cp ${./npm_wrapper/package-lock.json} "$out/nix/npm/openclaw/package-lock.json"
+    cp ${../../openclaw/npm_wrapper/package.json} "$out/nix/npm/openclaw/package.json"
+    cp ${../../openclaw/npm_wrapper/package-lock.json} "$out/nix/npm/openclaw/package-lock.json"
     cp ${../../openclaw/patch-openclaw-npm-dist.mjs} "$out/nix/scripts/patch-openclaw-npm-dist.mjs"
     # 2026.8.1 rejects an ACPX package root that is a symlink outside the
     # bundled extension tree. Copy the generated plugin into the dist instead.
@@ -102,9 +97,9 @@ let
       sourceInfo = stableSourceInfo;
     }).openclaw-gateway;
 
-  # The single Node runtime (Node 24, per the overlay above) on PATH -- the same
-  # Node the gateway build uses, so there is one Node in the image, not two.
-  nodejs = ocPkgs.nodejs_24;
+  # The same Node 22 runtime as public-coder, and the one used by the gateway
+  # build, so there is one Node in the image, not two.
+  nodejs = ocPkgs.nodejs_22;
 
   # The old Dockerfile installed Bazelisk as `bazel`; keep that command name for
   # the haku-state tooling while using the upstream Bazelisk version selection.
@@ -145,28 +140,14 @@ let
     ]
     ++ [ nodejs ];
 
-  # The proxy preload imports `undici` (EnvHttpProxyAgent + setGlobalDispatcher).
-  # nix-openclaw's npm gateway hoists undici out of node_modules/openclaw -- the
-  # The package ships no npm-shrinkwrap to nest it, unlike the stable release the
-  # public-coder image consumes -- so it is NOT in ${gateway}/lib/openclaw/
-  # node_modules. Fetch it standalone (version pinned to npm_wrapper's lock) and
-  # place it beside the preload. setGlobalDispatcher writes undici's shared global
-  # symbol, so this separate instance still redirects the gateway's own bundled
-  # fetch through the proxy.
-  undici = pkgs.runCommand "undici-8.9.0" { } ''
-    mkdir -p "$out"
-    tar -xzf ${
-      pkgs.fetchurl {
-        url = "https://registry.npmjs.org/undici/-/undici-8.9.0.tgz";
-        hash = "sha256-9VSrs+k1LgS8MlIIBmolwikWPYQIux1RYds9eTRF1pw=";
-      }
-    } -C "$out" --strip-components=1
-  '';
-
+  # The preload imports the same pinned `undici` dependency as the gateway.
+  # The shared nested npm lock places it under node_modules/openclaw, which the
+  # Nix install copies into the gateway root. Reuse that tree instead of fetching
+  # a second, potentially divergent undici package for the preload.
   proxySetup = pkgs.runCommand "openclaw-spike-proxy-setup" { } ''
-    mkdir -p "$out/lib/openclaw/node_modules"
+    mkdir -p "$out/lib/openclaw"
     cp ${../../openclaw/proxy-setup.mjs} "$out/lib/openclaw/proxy-setup.mjs"
-    ln -s ${undici} "$out/lib/openclaw/node_modules/undici"
+    ln -s ${gateway}/lib/openclaw/node_modules "$out/lib/openclaw/node_modules"
   '';
 
   path = pkgs.lib.makeBinPath ([ gateway ] ++ tools);

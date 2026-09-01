@@ -17,8 +17,9 @@ image has one controlled runtime closure and one Node executable.
 
 The current branch targets stable OpenClaw `2026.8.1`. Deployment image tags
 remain Flux-managed: they advance only after the corresponding image-publish
-workflow runs on `devel`. To bump the gateway, regenerate `npm_wrapper/`,
-update `stableSourceInfo.releaseVersion`, and refresh `gatewayNpmDepsHash`.
+workflow runs on `devel`. Both images use the shared wrapper at
+`openclaw/npm_wrapper/`; regenerate it once per gateway bump, then update
+`stableSourceInfo.releaseVersion` and `gatewayNpmDepsHash`.
 
 Use this npm-package path, **not** a from-source `sourceInfo` override.
 The from-source nix-openclaw path is not the path validated for this image and
@@ -37,13 +38,10 @@ Why the gateway and Node are pinned this way:
   fixes that motivated the upgrade, while known upstream memory-flush races
   still need targeted regression coverage. This describes the image builds, not
   an already-reconciled live deployment.
-- **Node selection is a packaging choice, not a current stable-release
-  requirement.** OpenClaw 2026.8.1 accepts supported Node 22 and Node 24
-  release lines. Haku retains the Node 24 override from the earlier WAL-related
-  incident; remove it only after validating startup and state access on Node 22.
-
-TODO: validate whether Haku can return to the shared Node 22 package selection,
-then remove the override if the runtime and state checks remain green.
+- **Both images use the shared Node 22 package selection.** OpenClaw 2026.8.1
+  accepts the pinned Node 22 release line. The Haku-only Node 24 override and
+  its hard-coded SQLite check were removed after reviewing the stable runtime
+  guard, which applies the WAL-reset SQLite requirement to Bun rather than Node.
 
 ## Trust boundary
 
