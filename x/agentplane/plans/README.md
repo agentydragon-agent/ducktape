@@ -19,6 +19,7 @@ driving loop with tests.
 - [P0 implementation task DAG](task_dag.md)
 - [First orchestrator task DAG](orchestrator_dag.md)
 - [Product-surface inventory](product_surface.md)
+- [Sandbox egress identity option survey](sandbox_egress_identity_research.md)
 - [Capture native Claude/Codex wires](subtasks/capture_native_harness_wires.md)
 
 ## v0 scope
