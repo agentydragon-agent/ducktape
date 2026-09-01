@@ -172,7 +172,10 @@ therefore constrain destinations, operations, and request shapes, and direct egr
 
 The implementation consequence is deliberate separation: capture and adapter features can be
 implemented and tested without solving credential isolation; the later isolation proof can wrap the
-same runner/driver seam without changing native harness semantics.
+same runner/driver seam without changing native harness semantics. Warm pools are not a near-term
+requirement. If a later threat model demands a harder boundary than ordinary containers and sidecars,
+evaluate a Firecracker microVM or comparable VM isolation as a deployment/runtime option; do not
+assume Agent Sandbox currently provides that integration, and do not couple the driver protocol to it.
 
 The current Agent Sandbox shape appears able to carry this composition. Its `SandboxTemplate` embeds a
 Kubernetes PodSpec, and the repository's current sandbox documentation explicitly describes mirroring
