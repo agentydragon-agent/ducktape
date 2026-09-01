@@ -82,7 +82,10 @@ def submit_while_active(
     initial = driver.turn_start(
         "capture-3",
         thread_id=thread_id,
-        text="Use shell to run `python operation_probe.py wait --seconds 20`; do not answer early.",
+        text=(
+            'Use shell to run `sh -c \'printf "wait_started\\n"; sleep 20; '
+            'printf "wait_finished\\n"\'`; do not answer early.'
+        ),
     )
     capture.write(initial, action=f"codex_{scenario}_initial_turn_start")
     started = capture.await_frame(lambda item: item.get("id") == "capture-3", timeout=30)
@@ -117,7 +120,10 @@ def interrupt(
     start = driver.turn_start(
         "capture-3",
         thread_id=thread_id,
-        text="Use shell to run `python operation_probe.py wait --seconds 20`; do not answer early.",
+        text=(
+            'Use shell to run `sh -c \'printf "wait_started\\n"; sleep 20; '
+            'printf "wait_finished\\n"\'`; do not answer early.'
+        ),
     )
     capture.write(start, action="codex_interrupt_initial_turn_start")
     started = capture.await_frame(lambda item: item.get("id") == "capture-3", timeout=30)

@@ -50,7 +50,8 @@ def submit_while_active(capture: NativeCapture, *, scenario: str) -> dict[str, A
     fact rather than inventing a neutral operation.
     """
     first = driver.user_frame(
-        "Use the Bash tool to run `python operation_probe.py wait --seconds 20`; after it finishes reply ONLY WAIT_DONE."
+        'Use the Bash tool to run `sh -c \'printf "wait_started\\n"; sleep 20; '
+        'printf "wait_finished\\n"\'`; after it finishes reply ONLY WAIT_DONE.'
     )
     capture.write(first, action=f"claude_{scenario}_initial_wait")
     active = capture.await_frame(lambda item: item.get("type") == "stream_event", timeout=60)
@@ -62,7 +63,8 @@ def submit_while_active(capture: NativeCapture, *, scenario: str) -> dict[str, A
 
 def interrupt(capture: NativeCapture, *, with_queued_input: bool) -> dict[str, Any]:
     first = driver.user_frame(
-        "Use the Bash tool to run `python operation_probe.py wait --seconds 20`; do not answer early."
+        'Use the Bash tool to run `sh -c \'printf "wait_started\\n"; sleep 20; '
+        'printf "wait_finished\\n"\'`; do not answer early.'
     )
     capture.write(first, action="claude_interrupt_initial_wait")
     active = capture.await_frame(lambda item: item.get("type") == "stream_event", timeout=60)

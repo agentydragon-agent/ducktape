@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 from pathlib import Path
 from threading import Thread
 from urllib.parse import urlsplit
@@ -48,7 +47,6 @@ def _prepare(workspace: Path) -> None:
     # Both native harnesses require their explicitly isolated state roots to exist.
     (workspace / ".claude").mkdir(mode=0o700)
     (workspace / ".codex").mkdir(mode=0o700)
-    shutil.copyfile(Path(__file__).with_name("fixtures") / "operation_probe.py", workspace / "operation_probe.py")
     (workspace / "editable.txt").write_text("before\n")
 
 
@@ -79,7 +77,11 @@ def _command(provider: str, binary: str, model: str, endpoint: str, *, resume_id
 def _prompt(scenario: str) -> str:
     return {
         "baseline": "Reply with exactly: CAPTURE_BASELINE_OK",
-        "shell": "Use shell to run `python operation_probe.py echo --value PROBE_STDOUT`, `python operation_probe.py fail`, and `python operation_probe.py count`; report outcomes.",
+        "shell": (
+            "Use shell to run `printf 'PROBE_STDOUT\\n'` and "
+            '`sh -c \'printf "probe stdout before failure\\n"; '
+            'printf "probe stderr before failure\\n" >&2; exit 23\'`; report outcomes.'
+        ),
         "file_edits": "Read editable.txt, change it to exactly `after\\n`, reread it, then reply FILE_EDIT_DONE.",
     }[scenario]
 
