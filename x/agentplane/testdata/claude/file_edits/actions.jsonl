@@ -1,0 +1,2 @@
+{"action":"claude_initialize","frame":{"type":"control_request","request_id":"capture-0e266df5eff74c3b859edac659acc864","request":{"subtype":"initialize"}},"time_ns":5014905789423992}
+{"action":"claude_file_edits","frame":{"type":"user","message":{"role":"user","content":"Read editable.txt, change it to exactly `after\\n`, reread it, then reply FILE_EDIT_DONE."},"parent_tool_use_id":null,"uuid":"21e283a6-a6ac-4392-8227-68c926fc1e0a"},"time_ns":5014906293168156}

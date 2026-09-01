@@ -18,6 +18,7 @@ from x.agentplane.capture.llm_recording_proxy import recording_proxy
 from x.agentplane.capture.providers.claude import scenarios as claude
 from x.agentplane.capture.providers.codex import scenarios as codex
 from x.agentplane.capture.providers.shared_capture import NativeCapture, raw, write_jsonl
+from x.agentplane.capture.replay import ReplayServer
 
 SCENARIOS = ("launch", "baseline", "shell", "file_edits", "steering", "second_input", "interrupt")
 
@@ -32,6 +33,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--credential-file", type=Path, required=True)
     result.add_argument("--workspace", type=Path, required=True)
     result.add_argument("--output", type=Path, required=True)
+    result.add_argument("--replay-from", type=Path, help="serve saved LiteLLM bodies instead of calling --endpoint")
     return result
 
 
@@ -47,7 +49,7 @@ def _prepare(workspace: Path) -> None:
     (workspace / "editable.txt").write_text("before\n")
 
 
-def _proxy(output: Path, upstream: str, provider: str) -> tuple[object, Thread, str]:
+def _proxy(output: Path, upstream: str, provider: str, replay_from: Path | None) -> tuple[object, Thread, str]:
     def record(kind: str, event: dict[str, object]) -> None:
         body = event.pop("body", b"")
         assert isinstance(body, bytes)
@@ -56,7 +58,7 @@ def _proxy(output: Path, upstream: str, provider: str) -> tuple[object, Thread, 
             {"kind": kind, **event, "body": raw(body)},
         )
 
-    server = recording_proxy(upstream=upstream, record=record)
+    server = ReplayServer(replay_from) if replay_from else recording_proxy(upstream=upstream, record=record)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     origin = f"http://127.0.0.1:{server.server_port}"
@@ -90,7 +92,7 @@ def run(args: argparse.Namespace) -> None:
     ):
         (args.output / name).touch(mode=0o600)
     key = _key(args.credential_file)
-    proxy, proxy_thread, proxy_endpoint = _proxy(args.output, args.endpoint, args.provider)
+    proxy, proxy_thread, proxy_endpoint = _proxy(args.output, args.endpoint, args.provider, args.replay_from)
     environment = {**os.environ}
     if args.provider == "claude":
         environment.update({"ANTHROPIC_AUTH_TOKEN": key, "ANTHROPIC_BASE_URL": proxy_endpoint})
@@ -137,6 +139,9 @@ def run(args: argparse.Namespace) -> None:
                 codex.interrupt(
                     capture, thread_start_response=handshake["thread_start_response"], with_queued_input=False
                 )
+        if args.replay_from:
+            assert isinstance(proxy, ReplayServer)
+            proxy.assert_consumed()
         (args.output / "metadata.json").write_text(
             json.dumps({"provider": args.provider, "scenario": args.scenario, "model": args.model}) + "\n"
         )

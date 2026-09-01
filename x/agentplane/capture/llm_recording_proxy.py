@@ -1,8 +1,4 @@
-"""Header-blind local reverse proxy for correlation with LiteLLM traffic.
-
-Forwarding temporarily sees request headers, but only a fixed safe subset reaches the
-capture callback.  No full header map exists in any recordable object.
-"""
+"""Header-blind local LiteLLM proxy that records bodies and preserves response streaming."""
 
 from __future__ import annotations
 
@@ -28,9 +24,7 @@ def safe_headers(headers: Any) -> dict[str, str]:
     result: dict[str, str] = {}
     for key, value in headers.items():
         lowered = key.lower()
-        if lowered in _FORBIDDEN_HEADERS:
-            continue
-        if lowered in _SAFE_HEADERS:
+        if lowered not in _FORBIDDEN_HEADERS and lowered in _SAFE_HEADERS:
             result[lowered] = value
     return result
 
@@ -39,7 +33,6 @@ def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
     parsed = urlsplit(upstream)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("upstream must be an absolute HTTP(S) origin")
-
     request_ids = count(1)
     request_ids_lock = Lock()
 
@@ -47,41 +40,22 @@ def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
         protocol_version = "HTTP/1.1"
 
         def log_message(self, _format: str, *_args: object) -> None:
-            # BaseHTTPRequestHandler would log headers/paths in failure cases; never do that.
             return
 
-        def do_GET(self) -> None:
-            self._forward()
-
         def do_POST(self) -> None:
-            self._forward()
-
-        def do_PUT(self) -> None:
-            self._forward()
-
-        def do_PATCH(self) -> None:
-            self._forward()
-
-        def _forward(self) -> None:
             with request_ids_lock:
                 capture_request_id = f"llm-{next(request_ids)}"
-            length = int(self.headers.get("Content-Length", "0"))
-            body = self.rfile.read(length)
+            body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
             base_path = parsed.path.rstrip("/")
-            if base_path and self.path.startswith(f"{base_path}/"):
-                target = f"{parsed.scheme}://{parsed.netloc}{self.path}"
-            else:
-                target = upstream.rstrip("/") + self.path
+            target = (
+                f"{parsed.scheme}://{parsed.netloc}{self.path}"
+                if base_path and self.path.startswith(f"{base_path}/")
+                else upstream.rstrip("/") + self.path
+            )
             try:
                 record(
                     "request",
-                    {
-                        "capture_request_id": capture_request_id,
-                        "method": self.command,
-                        "path_query": self.path,
-                        "headers": safe_headers(self.headers),
-                        "body": body,
-                    },
+                    {"capture_request_id": capture_request_id, "method": "POST", "path_query": self.path, "body": body},
                 )
             except BudgetExceededError:
                 self.send_error(429, "capture provider-call ceiling exceeded")
@@ -92,30 +66,35 @@ def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
                 if key.lower() not in {"host", "connection", "content-length"}
             }
             try:
-                request = Request(target, data=body or None, headers=outgoing_headers, method=self.command)
+                request = Request(target, data=body or None, headers=outgoing_headers, method="POST")
                 with build_opener().open(request, timeout=120) as response:
-                    self._relay_response(
-                        capture_request_id, response.status, safe_headers(response.headers), response.read()
-                    )
+                    self._relay(capture_request_id, response, safe_headers(response.headers))
             except HTTPError as error:
-                self._relay_response(capture_request_id, error.code, safe_headers(error.headers), error.read())
-            except Exception as error:  # error body must not capture upstream detail/credentials
+                self._relay_bytes(capture_request_id, error.code, error.read(), safe_headers(error.headers))
+            except Exception as error:
                 record("proxy_error", {"capture_request_id": capture_request_id, "kind": type(error).__name__})
                 self.send_error(502, "recording proxy upstream failure")
 
-        def _relay_response(
-            self, capture_request_id: str, status: int, safe: dict[str, str], response_body: bytes
-        ) -> None:
-            record("response_chunk", {"capture_request_id": capture_request_id, "ordinal": 1, "body": response_body})
-            record(
-                "response",
-                {"capture_request_id": capture_request_id, "status": status, "headers": safe, "body": response_body},
-            )
+        def _begin(self, status: int, headers: dict[str, str]) -> None:
             self.send_response(status)
-            self.send_header("Content-Length", str(len(response_body)))
-            for key, value in safe.items():
+            for key, value in headers.items():
                 self.send_header(key, value)
+            self.send_header("Connection", "close")
+            self.close_connection = True
             self.end_headers()
-            self.wfile.write(response_body)
+
+        def _relay(self, capture_request_id: str, response: Any, headers: dict[str, str]) -> None:
+            self._begin(response.status, headers)
+            ordinal = 0
+            while chunk := response.read1(65536):
+                ordinal += 1
+                record("response_chunk", {"capture_request_id": capture_request_id, "ordinal": ordinal, "body": chunk})
+                self.wfile.write(chunk)
+                self.wfile.flush()
+
+        def _relay_bytes(self, capture_request_id: str, status: int, body: bytes, headers: dict[str, str]) -> None:
+            self._begin(status, headers)
+            record("response_chunk", {"capture_request_id": capture_request_id, "ordinal": 1, "body": body})
+            self.wfile.write(body)
 
     return ThreadingHTTPServer(("127.0.0.1", 0), Handler)

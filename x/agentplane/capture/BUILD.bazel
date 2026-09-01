@@ -26,6 +26,16 @@ py_test(
 )
 
 py_test(
+    name = "test_replay",
+    srcs = ["tests/test_replay.py"],
+    data = ["//x/agentplane:native_capture_examples"],
+    deps = [
+        ":capture",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_proxy",
     srcs = ["tests/test_proxy.py"],
     deps = [
@@ -39,5 +49,6 @@ test_suite(
     tests = [
         ":test_proxy",
         ":test_records",
+        ":test_replay",
     ],
 )
