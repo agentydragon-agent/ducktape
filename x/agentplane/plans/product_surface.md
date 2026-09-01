@@ -174,6 +174,25 @@ The implementation consequence is deliberate separation: capture and adapter fea
 implemented and tested without solving credential isolation; the later isolation proof can wrap the
 same runner/driver seam without changing native harness semantics.
 
+The current Agent Sandbox shape appears able to carry this composition. Its `SandboxTemplate` embeds a
+Kubernetes PodSpec, and the repository's current sandbox documentation explicitly describes mirroring
+a Secret into the Sandbox namespace and referencing it from the template. A current Codex template
+already uses a Secret key reference for an LLM virtual key. A later disposable validation should test
+the file-volume form and mount the Secret only into a trusted proxy container, not into the runner
+container. The runner can then reach a local proxy without receiving the Secret bytes.
+
+This is not automatically per-Thread credential provisioning: warm-pool Pods may already exist before
+a Claim is adopted, and a template-level Secret is shared by every Pod using that template. Claim-
+specific credentials require a separate injection or provisioning mechanism, and Secret rotation must
+be tested for both mounted files and proxy reload behavior.
+
+If policy or lifecycle constraints prevent Secret mounting into the proxy container, a fallback is for
+a trusted runner to receive a short-lived credential from the control service and hand it to the proxy
+through a one-shot private channel, then erase its copy. That still requires the runner to be a real
+security boundary from the Agent; otherwise the fallback merely moves the exposure from the proxy to
+the runner. The Agent may be able to interrupt or misuse a narrowly constrained proxy, but it must not
+be able to turn it into a generic forwarding or signing oracle.
+
 ## Decisions deliberately left open
 
 - Authentik forward-auth versus Agentplane's own OIDC session handling;
