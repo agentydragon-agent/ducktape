@@ -41,7 +41,7 @@ PVC-era data was discarded).
   empty `--wifi-interface` and uses the in-cluster gateway VM. The manifest replaces the
   PVC-era stat check (git discards mtimes); recording the _stored_ byte count
   makes mid-write downloads self-heal on the next run.
-- Image: `ghcr.io/agentydragon/cpap-sync` (`//cpap:image`,
+- Image: `git.allegedly.works/ducktape-ci/cpap-sync` (`//cpap:image`,
   `debian:trixie-slim` + `wpa_supplicant` + `iw` + `iproute2` + `dhclient` + `git` + `ca-certificates` via
   apt manifest), built by `push-images.yml`, tagged `devel-*` for Flux image
   automation.

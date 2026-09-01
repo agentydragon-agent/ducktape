@@ -26,3 +26,9 @@ resources:
   - grocy-user-perms-provisioner-image.yaml
   - osm-mcp-image.yaml
   - cpap-gateway-image.yaml
+  - cpap-sync-image.yaml
+  - plaid-mcp-sync-image.yaml
+  - forgejo-token-rotation-image.yaml
+  - matrix-user-provisioner-image.yaml
+  - token-provisioner-image.yaml
+  - ha-mcp-token-provisioner-image.yaml

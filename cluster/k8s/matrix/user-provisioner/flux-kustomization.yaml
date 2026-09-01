@@ -23,5 +23,7 @@ spec:
       name: matrix-synapse
       namespace: matrix
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: matrix # Synapse is deployed and healthy
     - name: matrix-secrets # registration shared secret, admin and bot passwords

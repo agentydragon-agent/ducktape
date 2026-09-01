@@ -130,7 +130,8 @@
     },
     "plaid-mcp-sync": {
       "target": "//finance/plaid/sync:sync_image",
-      "test": "//finance/plaid/..."
+      "test": "//finance/plaid/...",
+      "registry": "forgejo"
     },
     "budget-exporter": {
       "target": "//finance/beancount_export:image",
@@ -159,17 +160,20 @@
     },
     "forgejo-token-rotation": {
       "target": "//cluster/rotators/forgejo_token_rotation:image",
-      "test": "//cluster/rotators/forgejo_token_rotation/..."
+      "test": "//cluster/rotators/forgejo_token_rotation/...",
+      "registry": "forgejo"
     },
     "attic-jwt-rotation": {
       "target": "//cluster/rotators/attic_jwt_rotation:image"
     },
     "inventree-token-provisioner": {
-      "target": "//cluster/provisioners/inventree_token_provisioner:image"
+      "target": "//cluster/provisioners/inventree_token_provisioner:image",
+      "registry": "forgejo"
     },
     "ha-mcp-token-provisioner": {
       "target": "//cluster/provisioners/ha_mcp_token_provisioner:image",
-      "test": "//cluster/provisioners/ha_mcp_token_provisioner/..."
+      "test": "//cluster/provisioners/ha_mcp_token_provisioner/...",
+      "registry": "forgejo"
     },
     "grocy-user-perms-provisioner": {
       "target": "//cluster/provisioners/grocy_user_perms:image",
@@ -178,7 +182,8 @@
     },
     "matrix-user-provisioner": {
       "target": "//cluster/provisioners/matrix_user_provisioner:image",
-      "test": "//cluster/provisioners/matrix_user_provisioner/..."
+      "test": "//cluster/provisioners/matrix_user_provisioner/...",
+      "registry": "forgejo"
     },
     "firecracker-manager": {
       "target": "//devinfra/firecracker/manager:image"
@@ -194,7 +199,8 @@
       "registry": "forgejo"
     },
     "cpap-sync": {
-      "target": "//cpap:image"
+      "target": "//cpap:image",
+      "registry": "forgejo"
     }
   }
 }
