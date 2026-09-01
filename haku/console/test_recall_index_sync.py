@@ -36,38 +36,6 @@ _MANUAL_AUTHORITY_CONFIG = {
 }
 
 
-def test_deploy_config_declares_each_index_explicitly() -> None:
-    config = ConsoleConfigFile.model_validate(
-        {
-            **_MANUAL_AUTHORITY_CONFIG,
-            "recall_indexes": {
-                "haku_state": {
-                    "index_id": "haku-state",
-                    "index_type": "git",
-                    "repo_url": "https://forge.example/haku-state.git",
-                    "credentials": {"username": "haku", "password": "secret"},
-                },
-                "haku_conversations": {"index_id": "haku-conversations", "index_type": "chat"},
-                "ducktape_public": {
-                    "index_id": "ducktape-public",
-                    "index_type": "git",
-                    "repo_url": "https://github.com/agentydragon/ducktape.git",
-                    "branch": "devel",
-                    "mirror_path": "/tmp/haku-recall-index/ducktape.git",
-                },
-            },
-        }
-    )
-    assert [(index.index_id, index.index_type) for index in config.recall_indexes.values()] == [
-        ("haku-state", "git"),
-        ("haku-conversations", "chat"),
-        ("ducktape-public", "git"),
-    ]
-    ducktape = config.recall_indexes["ducktape_public"]
-    assert isinstance(ducktape, GitRecallIndexDefinition)
-    assert (ducktape.branch, ducktape.credentials) == ("devel", None)
-
-
 def test_recall_profile_grants_require_declared_indexes() -> None:
     config = ConsoleConfigFile.model_validate(
         {

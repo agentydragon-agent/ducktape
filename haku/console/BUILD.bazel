@@ -900,7 +900,6 @@ py_test(
         ":conftest",
         ":mcp_config",
         "//:conftest",
-        "//haku/console/harnesses:kind",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
