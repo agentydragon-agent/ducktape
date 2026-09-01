@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,16 +35,67 @@ def safe_headers(headers: Any) -> dict[str, str]:
     return result
 
 
+def _sse_frames(buffer: bytes) -> tuple[list[bytes], bytes]:
+    """Return complete SSE packets, retaining an incomplete trailing packet."""
+    frames: list[bytes] = []
+    while True:
+        boundaries = [
+            (index, delimiter) for delimiter in (b"\r\n\r\n", b"\n\n") if (index := buffer.find(delimiter)) >= 0
+        ]
+        if not boundaries:
+            return frames, buffer
+        index, delimiter = min(boundaries, key=lambda item: item[0])
+        end = index + len(delimiter)
+        frames.append(buffer[:end])
+        buffer = buffer[end:]
+
+
+def _sse_event_name(frame: bytes) -> str | None:
+    data_lines: list[bytes] = []
+    for line in frame.splitlines():
+        if line.startswith(b"event:"):
+            return line.removeprefix(b"event:").strip().decode("ascii")
+        if line.startswith(b"data:"):
+            data_lines.append(line.removeprefix(b"data:").lstrip())
+    if not data_lines:
+        return None
+    try:
+        data = json.loads(b"\n".join(data_lines))
+    except json.JSONDecodeError:
+        return None
+    return data.get("type") if isinstance(data, dict) and isinstance(data.get("type"), str) else None
+
+
+def _sse_packet_matches(frame: bytes, target: str) -> bool:
+    if _sse_event_name(frame) == target:
+        return True
+    data_lines = [line.removeprefix(b"data:").lstrip() for line in frame.splitlines() if line.startswith(b"data:")]
+    try:
+        data = json.loads(b"\n".join(data_lines))
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    if data.get("type") == target:
+        return True
+    delta = data.get("delta")
+    return isinstance(delta, dict) and delta.get("type") == target
+
+
 def recording_proxy(
-    *, upstream: str, record: Record, disconnect_once_after_partial_prompt: str | None = None
+    *, upstream: str, record: Record, disconnect_after_events: tuple[str, ...] = ()
 ) -> ThreadingHTTPServer:
     parsed = urlsplit(upstream)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("upstream must be an absolute HTTP(S) origin")
     request_ids = count(1)
-    request_ids_lock = Lock()
+    record_lock = Lock()
     disconnect_lock = Lock()
-    disconnect_available = True
+    remaining_disconnect_events = list(disconnect_after_events)
+
+    def emit(event: RequestRecord | ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord) -> None:
+        with record_lock:
+            record(event)
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -52,38 +104,36 @@ def recording_proxy(
             return
 
         def do_POST(self) -> None:
-            nonlocal disconnect_available
-            with request_ids_lock:
-                capture_request_id = f"llm-{next(request_ids)}"
             body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
-            disconnect_after_partial = False
-            if disconnect_once_after_partial_prompt and disconnect_once_after_partial_prompt.encode() in body:
-                # Session-title requests repeat the prompt but have no native tools. Drop the actual
-                # harness turn instead, after its partial assistant content has reached the native client.
-                is_harness_turn = bool(json.loads(body).get("tools"))
-                with disconnect_lock:
-                    if disconnect_available and is_harness_turn:
-                        disconnect_after_partial = True
-                        disconnect_available = False
+            with record_lock:
+                capture_request_id = f"llm-{next(request_ids)}"
+                try:
+                    record(
+                        RequestRecord(
+                            kind="request",
+                            capture_request_id=capture_request_id,
+                            method="POST",
+                            path_query=self.path,
+                            body=body.decode("utf-8"),
+                            time_ns=time.monotonic_ns(),
+                        )
+                    )
+                except BudgetExceededError:
+                    self.send_error(429, "capture provider-call ceiling exceeded")
+                    return
+            disconnect_after_event = None
+            # Session-title requests can repeat user text but have no native tools. Fault only an
+            # actual harness turn, at the configured native-response boundary.
+            is_harness_turn = bool(json.loads(body).get("tools"))
+            with disconnect_lock:
+                if is_harness_turn and remaining_disconnect_events:
+                    disconnect_after_event = remaining_disconnect_events.pop(0)
             base_path = parsed.path.rstrip("/")
             target = (
                 f"{parsed.scheme}://{parsed.netloc}{self.path}"
                 if base_path and self.path.startswith(f"{base_path}/")
                 else upstream.rstrip("/") + self.path
             )
-            try:
-                record(
-                    RequestRecord(
-                        kind="request",
-                        capture_request_id=capture_request_id,
-                        method="POST",
-                        path_query=self.path,
-                        body=body.decode("utf-8"),
-                    )
-                )
-            except BudgetExceededError:
-                self.send_error(429, "capture provider-call ceiling exceeded")
-                return
             outgoing_headers = {
                 key: value
                 for key, value in self.headers.items()
@@ -96,12 +146,12 @@ def recording_proxy(
                         capture_request_id,
                         response,
                         safe_headers(response.headers),
-                        disconnect_after_partial=disconnect_after_partial,
+                        disconnect_after_event=disconnect_after_event,
                     )
             except HTTPError as error:
                 self._relay_bytes(capture_request_id, error.code, error.read(), safe_headers(error.headers))
             except Exception as error:
-                record(
+                emit(
                     ProxyErrorRecord(
                         kind="proxy_error", capture_request_id=capture_request_id, error_kind=type(error).__name__
                     )
@@ -112,42 +162,81 @@ def recording_proxy(
             self.send_response(status)
             for key, value in headers.items():
                 self.send_header(key, value)
-            self.send_header("Connection", "close")
+            # The response is close-delimited only after upstream streaming finishes. Advertising
+            # Connection: close here makes Codex abandon the stream after response.created.
             self.close_connection = True
             self.end_headers()
 
         def _relay(
-            self, capture_request_id: str, response: Any, headers: dict[str, str], *, disconnect_after_partial: bool
+            self, capture_request_id: str, response: Any, headers: dict[str, str], *, disconnect_after_event: str | None
         ) -> None:
+            if disconnect_after_event == "response_headers":
+                emit(
+                    ConnectionDroppedRecord(
+                        kind="connection_dropped",
+                        capture_request_id=capture_request_id,
+                        after_event=disconnect_after_event,
+                        time_ns=time.monotonic_ns(),
+                    )
+                )
+                with suppress(OSError):
+                    self.connection.shutdown(SHUT_RDWR)
+                self.connection.close()
+                return
             self._begin(response.status, headers)
             ordinal = 0
-            while chunk := response.read1(65536):
+            pending = b""
+
+            def relay_frame(frame: bytes) -> bool:
+                nonlocal ordinal
                 ordinal += 1
-                record(
+                emit(
                     ResponseChunkRecord(
                         kind="response_chunk",
                         capture_request_id=capture_request_id,
                         ordinal=ordinal,
-                        body=chunk.decode("utf-8"),
+                        body=frame.decode("utf-8"),
+                        time_ns=time.monotonic_ns(),
                     )
                 )
                 try:
-                    self.wfile.write(chunk)
+                    self.wfile.write(frame)
                     self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError):
-                    return
-                if disconnect_after_partial and (b'"text_delta"' in chunk or b"response.output_text.delta" in chunk):
-                    record(ConnectionDroppedRecord(kind="connection_dropped", capture_request_id=capture_request_id))
-                    with suppress(OSError):
-                        self.connection.shutdown(SHUT_RDWR)
-                    self.connection.close()
-                    return
+                    return False
+                return True
+
+            while chunk := response.read1(65536):
+                pending += chunk
+                frames, pending = _sse_frames(pending)
+                for frame in frames:
+                    if not relay_frame(frame):
+                        return
+                    if disconnect_after_event and _sse_packet_matches(frame, disconnect_after_event):
+                        emit(
+                            ConnectionDroppedRecord(
+                                kind="connection_dropped",
+                                capture_request_id=capture_request_id,
+                                after_event=disconnect_after_event,
+                                time_ns=time.monotonic_ns(),
+                            )
+                        )
+                        with suppress(OSError):
+                            self.connection.shutdown(SHUT_RDWR)
+                        self.connection.close()
+                        return
+            if pending:
+                relay_frame(pending)
 
         def _relay_bytes(self, capture_request_id: str, status: int, body: bytes, headers: dict[str, str]) -> None:
             self._begin(status, headers)
-            record(
+            emit(
                 ResponseChunkRecord(
-                    kind="response_chunk", capture_request_id=capture_request_id, ordinal=1, body=body.decode("utf-8")
+                    kind="response_chunk",
+                    capture_request_id=capture_request_id,
+                    ordinal=1,
+                    body=body.decode("utf-8"),
+                    time_ns=time.monotonic_ns(),
                 )
             )
             self.wfile.write(body)

@@ -27,11 +27,11 @@ def baseline(capture: NativeCapture) -> dict[str, Any]:
     return submit(capture, "Reply with exactly: CAPTURE_BASELINE_OK")
 
 
-def submit(capture: NativeCapture, prompt: str) -> dict[str, Any]:
+def submit(capture: NativeCapture, prompt: str, *, timeout_s: float = 120) -> dict[str, Any]:
     """Send one native user frame and retain the raw provider terminal evidence."""
     frame = driver.user_frame(prompt)
     capture.write(frame)
-    terminal = capture.await_frame(lambda item: item.get("type") == "result", timeout=120)
+    terminal = capture.await_frame(lambda item: item.get("type") == "result", timeout=timeout_s)
     return {"prompt_uuid": frame["uuid"], "terminal": terminal}
 
 

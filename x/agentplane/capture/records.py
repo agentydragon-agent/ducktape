@@ -18,6 +18,7 @@ class RequestRecord(BaseModel):
     method: Literal["POST"]
     path_query: str
     body: str
+    time_ns: int | None = Field(default=None, ge=0)
 
 
 class ResponseChunkRecord(BaseModel):
@@ -25,13 +26,16 @@ class ResponseChunkRecord(BaseModel):
     capture_request_id: str
     ordinal: int = Field(ge=1)
     body: str
+    time_ns: int | None = Field(default=None, ge=0)
 
 
 class ConnectionDroppedRecord(BaseModel):
-    """One intentional upstream stream loss after visible assistant content."""
+    """One intentional stream loss at the recorded native-response boundary."""
 
     kind: Literal["connection_dropped"]
     capture_request_id: str
+    after_event: str = Field(min_length=1)
+    time_ns: int | None = Field(default=None, ge=0)
 
 
 class ProxyErrorRecord(BaseModel):

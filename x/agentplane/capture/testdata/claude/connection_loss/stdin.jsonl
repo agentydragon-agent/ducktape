@@ -1,3 +1,0 @@
-{"time_ns":5039447295414471,"text":"{\"type\":\"control_request\",\"request_id\":\"capture-e4ae8822622441f780a0df0267baaaa4\",\"request\":{\"subtype\":\"initialize\"}}"}
-{"time_ns":5039448749868115,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: CONNECTION_LOSS_FIRST_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"d80ab2a4-e24a-4eab-8b69-dabb54e66f69\"}"}
-{"time_ns":5039450216074881,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: CONNECTION_LOSS_FOLLOWUP_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"1d4e2020-dc03-405d-bfe9-4d5a5dae1605\"}"}

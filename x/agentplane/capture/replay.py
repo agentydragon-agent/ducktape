@@ -46,17 +46,11 @@ class ReplayServer(ThreadingHTTPServer):
 
     def __init__(self, fixture: Path):
         self.requests = _requests(fixture / "llm-requests.jsonl")
-        chunks: dict[str, list[bytes]] = {}
-        dropped: set[str] = set()
+        events: dict[str, list[ResponseChunkRecord | ConnectionDroppedRecord]] = {}
         for row in _response_events(fixture / "llm-responses.jsonl"):
-            if isinstance(row, ResponseChunkRecord):
-                chunks.setdefault(row.capture_request_id, []).append(row.body.encode("utf-8"))
-            else:
-                dropped.add(row.capture_request_id)
-        self.responses = [
-            (chunks.get(row.capture_request_id, []), row.capture_request_id in dropped) for row in self.requests
-        ]
-        if any(not chunks for chunks, _dropped in self.responses):
+            events.setdefault(row.capture_request_id, []).append(row)
+        self.responses = [events.get(row.capture_request_id, []) for row in self.requests]
+        if any(not response for response in self.responses):
             raise ValueError("fixture has a request without captured response data")
         self.observed: list[dict[str, Any]] = []
         self._next = 0
@@ -84,22 +78,38 @@ class ReplayServer(ThreadingHTTPServer):
                 self.server.observed.append(  # type: ignore[attr-defined]
                     {"method": self.command, "path_query": self.path, "body": body}
                 )
-                chunks, disconnect_after_chunks = self.server.responses[index]  # type: ignore[attr-defined]
+                events = self.server.responses[index]  # type: ignore[attr-defined]
+                header_drop = next(
+                    (
+                        event
+                        for event in events
+                        if isinstance(event, ConnectionDroppedRecord) and event.after_event == "response_headers"
+                    ),
+                    None,
+                )
+                if header_drop:
+                    self.connection.shutdown(2)  # SHUT_RDWR
+                    self.connection.close()
+                    return
+                chunks = [event.body.encode("utf-8") for event in events if isinstance(event, ResponseChunkRecord)]
                 payload = b"".join(chunks)
                 content_type = "text/event-stream" if payload.startswith((b"event:", b"data:")) else "application/json"
+                drops_after_chunks = any(isinstance(event, ConnectionDroppedRecord) for event in events)
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
-                if not disconnect_after_chunks:
+                if not drops_after_chunks:
                     self.send_header("Content-Length", str(len(payload)))
                 else:
                     self.send_header("Connection", "close")
                 self.end_headers()
-                for chunk in chunks:
-                    self.wfile.write(chunk)
-                    self.wfile.flush()
-                if disconnect_after_chunks:
-                    self.connection.shutdown(2)  # SHUT_RDWR
-                    self.connection.close()
+                for event in events:
+                    if isinstance(event, ResponseChunkRecord):
+                        self.wfile.write(event.body.encode("utf-8"))
+                        self.wfile.flush()
+                    else:
+                        self.connection.shutdown(2)  # SHUT_RDWR
+                        self.connection.close()
+                        return
 
         super().__init__(("127.0.0.1", 0), Handler)
 

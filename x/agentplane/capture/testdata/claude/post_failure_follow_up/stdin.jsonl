@@ -1,0 +1,3 @@
+{"time_ns":5047324789309731,"text":"{\"type\":\"control_request\",\"request_id\":\"capture-6ef565f223ac42108c105d58fd0f6941\",\"request\":{\"subtype\":\"initialize\"}}"}
+{"time_ns":5047325295936502,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: POST_FAILURE_FIRST_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"07f0c02a-1758-4a7f-8451-918d6a9fc82a\"}"}
+{"time_ns":5047326381799797,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: POST_FAILURE_FOLLOW_UP_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"05cda66c-f82e-4772-8089-38d05a64295d\"}"}

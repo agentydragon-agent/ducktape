@@ -7,6 +7,7 @@ not a general runner, fixture framework, or provider-neutral API.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -34,8 +35,29 @@ SCENARIOS = (
     "second_input",
     "interrupt",
     "idle_resume",
-    "connection_loss",
+    "connection_retry",
+    "connection_exhaustion",
+    "post_failure_follow_up",
+    "post_exhaustion_follow_up",
 )
+
+# The first loss is mid-stream. Subsequent response-header losses also catch Claude's
+# non-streaming fallback. Claude 2.1.252 failed after 12 losses; Codex 0.144.1 after 26.
+_FAULT_PLANS = {
+    "connection_retry": ("message_start",),
+    "post_failure_follow_up": ("text_delta",),
+    "connection_exhaustion": ("message_start", *("response_headers",) * 11),
+    "post_exhaustion_follow_up": ("message_start", *("response_headers",) * 11),
+}
+
+
+def _fault_plan(provider: str, scenario: str) -> tuple[str, ...]:
+    if provider == "codex" and scenario in {"connection_exhaustion", "post_exhaustion_follow_up"}:
+        return ("response.created", *("response_headers",) * 25)
+    if provider == "claude":
+        return _FAULT_PLANS.get(scenario, ())
+    codex_events = {"message_start": "response.created", "text_delta": "response.output_text.delta"}
+    return tuple(codex_events.get(event, event) for event in _FAULT_PLANS.get(scenario, ()))
 
 
 def parser() -> argparse.ArgumentParser:
@@ -67,7 +89,7 @@ def _prepare(workspace: Path) -> None:
 
 
 def _proxy(
-    output: Path, upstream: str, provider: str, replay_from: Path | None, *, connection_loss: bool
+    output: Path, upstream: str, provider: str, replay_from: Path | None, *, scenario: str
 ) -> tuple[ThreadingHTTPServer, str]:
     def record(event: RequestRecord | ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord) -> None:
         write_jsonl(
@@ -77,11 +99,7 @@ def _proxy(
     server = (
         ReplayServer(replay_from)
         if replay_from
-        else recording_proxy(
-            upstream=upstream,
-            record=record,
-            disconnect_once_after_partial_prompt="CONNECTION_LOSS_FIRST" if connection_loss else None,
-        )
+        else recording_proxy(upstream=upstream, record=record, disconnect_after_events=_fault_plan(provider, scenario))
     )
     origin = f"http://127.0.0.1:{server.server_port}"
     return server, origin if provider == "claude" else origin + urlsplit(upstream).path.rstrip("/")
@@ -104,7 +122,10 @@ def _prompt(scenario: str) -> str:
             'printf "probe stderr before failure\\n" >&2; exit 23\'`; report outcomes.'
         ),
         "file_edits": "Read editable.txt, change it to exactly `after\\n`, reread it, then reply FILE_EDIT_DONE.",
-        "connection_loss": "Reply with exactly: CONNECTION_LOSS_FIRST_OK",
+        "connection_retry": "Reply with exactly: CONNECTION_RETRY_OK",
+        "connection_exhaustion": "Reply with exactly: CONNECTION_EXHAUSTION_OK",
+        "post_failure_follow_up": "Reply with exactly: POST_FAILURE_FIRST_OK",
+        "post_exhaustion_follow_up": "Reply with exactly: POST_EXHAUSTION_FIRST_OK",
     }[scenario]
 
 
@@ -116,9 +137,7 @@ def run(args: argparse.Namespace) -> None:
     for name in ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl", "llm-requests.jsonl", "llm-responses.jsonl"):
         (args.output / name).touch(mode=0o600)
     key = _key(args.credential_file)
-    proxy, proxy_endpoint = _proxy(
-        args.output, args.endpoint, args.provider, args.replay_from, connection_loss=args.scenario == "connection_loss"
-    )
+    proxy, proxy_endpoint = _proxy(args.output, args.endpoint, args.provider, args.replay_from, scenario=args.scenario)
     environment = {**os.environ}
     if args.provider == "claude":
         environment.update(
@@ -154,22 +173,37 @@ def run(args: argparse.Namespace) -> None:
                     persist=args.scenario == "idle_resume",
                 )
             )
-            if args.scenario in {"baseline", "shell", "file_edits", "connection_loss"}:
+            if args.scenario in {
+                "baseline",
+                "shell",
+                "file_edits",
+                "connection_retry",
+                "connection_exhaustion",
+                "post_failure_follow_up",
+                "post_exhaustion_follow_up",
+            }:
                 if args.provider == "claude":
-                    claude.submit(capture, _prompt(args.scenario))
+                    claude.submit(
+                        capture, _prompt(args.scenario), timeout_s=600 if "exhaustion" in args.scenario else 120
+                    )
                 else:
                     codex.submit(
                         capture, thread_start_response=handshake["thread_start_response"], text=_prompt(args.scenario)
                     )
-                if args.scenario == "connection_loss":
+                if args.scenario in {"post_failure_follow_up", "post_exhaustion_follow_up"}:
+                    follow_up = (
+                        "Reply with exactly: POST_FAILURE_FOLLOW_UP_OK"
+                        if args.scenario == "post_failure_follow_up"
+                        else "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
+                    )
                     if args.provider == "claude":
-                        claude.submit(capture, "Reply with exactly: CONNECTION_LOSS_FOLLOWUP_OK")
+                        claude.submit(capture, follow_up)
                     else:
                         codex.submit_to_thread(
                             capture,
                             thread_id=handshake["thread_start_response"]["result"]["thread"]["id"],
                             request_id="capture-4",
-                            text="Reply with exactly: CONNECTION_LOSS_FOLLOWUP_OK",
+                            text=follow_up,
                         )
             elif args.scenario in {"steering", "second_input"}:
                 if args.provider == "claude":
@@ -213,10 +247,16 @@ def run(args: argparse.Namespace) -> None:
         if args.replay_from:
             assert isinstance(proxy, ReplayServer)
             proxy.assert_consumed()
-        if args.scenario == "connection_loss" and not any(
-            '"connection_dropped"' in line for line in (args.output / "llm-responses.jsonl").read_text().splitlines()
-        ):
-            raise ValueError("connection-loss capture never reached partial assistant content")
+        response_rows = [json.loads(line) for line in (args.output / "llm-responses.jsonl").read_text().splitlines()]
+        dropped = next((row for row in response_rows if row["kind"] == "connection_dropped"), None)
+        if args.scenario in _FAULT_PLANS and dropped is None:
+            raise ValueError("connection capture never reached its configured stream boundary")
+        if args.scenario == "connection_retry":
+            assert dropped is not None
+            request_rows = [json.loads(line) for line in (args.output / "llm-requests.jsonl").read_text().splitlines()]
+            dropped_number = int(dropped["capture_request_id"].removeprefix("llm-"))
+            if len(request_rows) <= dropped_number:
+                raise ValueError("connection-retry capture did not observe a native retry request")
         (args.output / "metadata.json").write_text(
             CaptureMetadata(provider=args.provider, scenario=args.scenario, model=args.model).model_dump_json() + "\n"
         )

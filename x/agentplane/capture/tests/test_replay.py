@@ -41,7 +41,7 @@ def test_replay_preserves_a_recorded_connection_drop(tmp_path: Path) -> None:
     (tmp_path / "llm-responses.jsonl").write_text(
         json.dumps({"kind": "response_chunk", "capture_request_id": "llm-1", "ordinal": 1, "body": "data: partial\n\n"})
         + "\n"
-        + json.dumps({"kind": "connection_dropped", "capture_request_id": "llm-1"})
+        + json.dumps({"kind": "connection_dropped", "capture_request_id": "llm-1", "after_event": "text_delta"})
         + "\n"
     )
     with serve(ReplayServer(tmp_path)) as server:

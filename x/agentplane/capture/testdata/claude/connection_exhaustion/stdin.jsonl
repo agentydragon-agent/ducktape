@@ -1,0 +1,2 @@
+{"time_ns":5048069226810143,"text":"{\"type\":\"control_request\",\"request_id\":\"capture-cfe179a22b244b67b70cdae099e3cb43\",\"request\":{\"subtype\":\"initialize\"}}"}
+{"time_ns":5048069733451208,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: CONNECTION_EXHAUSTION_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"8856a7b6-a9ab-40c4-8f18-f0d2f767306f\"}"}
