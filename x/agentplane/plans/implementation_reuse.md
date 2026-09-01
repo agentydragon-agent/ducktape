@@ -1,205 +1,83 @@
 # Implementation reuse and prior art
 
-Status: **proposal evidence**. This document identifies behavioral evidence and external patterns
-worth studying without making the new system a Haku refactor.
+Status: **focused evidence notes**.
 
-## Evaluation rules
+The new implementation starts under `x/agentplane/`. Existing Haku code is behavioral evidence, not a
+library dependency. The first slice should be clean-room, small, and centered on native process
+launch, protocol driving, transcript capture, and replay tests.
 
-A reference is evaluated on four separate axes:
+## Existing Ducktape evidence
 
-1. **protocol fidelity**: does it own the native structured Claude or Codex wire rather than a PTY;
-2. **lifecycle coverage**: does it supervise processes, preserve sessions, and handle shutdown;
-3. **recovery semantics**: does it prove admission, fence stale writers, persist evidence, and
-   reconcile uncertain outcomes;
-4. **reuse rights**: can code be copied or modified for this product under its pinned license.
+Read these for measured behavior and fixtures, but do not import them into Agentplane:
 
-Passing one axis does not imply the others. A useful parser or test fixture is not automatically a
-safe continuity authority.
-
-## Pinned references
-
-| Reference                                                                                                                       | Pin                                                 | License                                    | Recommended role                                       |
-| ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------ |
-| Ducktape Haku Claude and Codex runners                                                                                          | This PR's repository revision                       | Repository license                         | Behavioral evidence only; no implementation dependency |
-| [`plotarmordev/claude-pool`](https://github.com/plotarmordev/claude-pool/tree/05754a3a3e4fe5ccc1226de29cf295bcb4746e27)         | `05754a3a3e4fe5ccc1226de29cf295bcb4746e27`          | MIT                                        | Claude process-supervision and test patterns           |
-| [`openai/symphony`](https://github.com/openai/symphony/tree/8001b52e3062495a16e520e4ceaf8f9de868c4d0)                           | `8001b52e3062495a16e520e4ceaf8f9de868c4d0`          | Apache-2.0                                 | Small Codex handshake and compatibility reference      |
-| [`backnotprop/orchestrator`](https://github.com/backnotprop/orchestrator/tree/583acf4b469b91131f96ae2136797749c788b4c7)         | `583acf4b469b91131f96ae2136797749c788b4c7`          | BSL 1.1; Apache-2.0 change date 2029-07-09 | Behavioral prior art only unless licensing is reviewed |
-| [`backnotprop/plannotator`](https://github.com/backnotprop/plannotator/tree/9f9ee275294a978d8c46cafc8eace96eb04dd6d3)           | `9f9ee275294a978d8c46cafc8eace96eb04dd6d3`          | MIT OR Apache-2.0                          | Permissive TypeScript Codex parser/provider reference  |
-| [Kubernetes SIGs Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox/tree/3ea199b8b910f8e838a6000796c29536d592fbdd) | v0.5.5 / `3ea199b8b910f8e838a6000796c29536d592fbdd` | Apache-2.0                                 | First workload lifecycle backend                       |
-| [`kagent-dev/kagent`](https://github.com/kagent-dev/kagent/tree/8905d1ca417e4094e6c6fc55a045dd6842d58ec9)                       | `8905d1ca417e4094e6c6fc55a045dd6842d58ec9`          | Apache-2.0                                 | Durable-instance and runtime-reconciliation prior art  |
-
-Pins are evidence anchors, not automatic vendoring decisions. Real adapter behavior must still be
-recorded against the harness versions actually resolved by the capture environment.
-
-## Start in a new non-Haku tree
-
-The new implementation starts under a new top-level `x/agentplane/` tree (renamable when
-the product name is chosen). It must not live under `haku/console`, import `haku/runner`, or make
-existing Haku Session/frame/database semantics its foundation. This is a deliberate clean boundary,
-not a claim that the existing work is valueless.
-
-The nearest evidence is already in this repository:
-
-- [`haku/cli_protocol`](../../../haku/cli_protocol/) owns Claude stream/control framing and probes;
-- [`haku/runner/claude/harness.py`](../../../haku/runner/claude/harness.py) launches and reads Claude;
-- [`haku/runner/claude/projection.py`](../../../haku/runner/claude/projection.py) projects native frames;
-- [`haku/runner/codex/protocol.py`](../../../haku/runner/codex/protocol.py) models Codex app-server
-  messages;
-- [`haku/runner/codex/harness.py`](../../../haku/runner/codex/harness.py) owns the current app-server
-  subprocess;
-- [`haku/runner/codex/projection.py`](../../../haku/runner/codex/projection.py) and
-  [`neutral_operations.py`](../../../haku/runner/neutral_operations.py) show the current neutral
-  projection seam;
+- [`haku/cli_protocol`](../../../haku/cli_protocol/) — Claude stream/control framing and probes;
+- [`haku/runner/claude/harness.py`](../../../haku/runner/claude/harness.py) — Claude subprocess I/O;
+- [`haku/runner/codex/protocol.py`](../../../haku/runner/codex/protocol.py) — Codex app-server message shapes;
+- [`haku/runner/codex/harness.py`](../../../haku/runner/codex/harness.py) — Codex subprocess lifecycle;
+- [`haku/runner/claude/testdata/diverse_session.jsonl`](../../../haku/runner/claude/testdata/diverse_session.jsonl)
+  — scrubbed Claude message/tool examples; and
 - [`haku/console/docs/harness_frame_log_v3.md`](../../../haku/console/docs/harness_frame_log_v3.md)
-  demonstrates complete native-frame capture rather than selected-field logging;
-- [`haku/console/database_schema.py`](../../../haku/console/database_schema.py) contains the
-  `JSONB(none_as_null=True)` precedent from the earlier JSON-null/SQL-NULL bug.
+  — earlier exact-frame capture precedent.
 
-Use these files to understand measured protocol behavior, test cases, and mistakes to avoid. Do not
-extract, wrap, or import them into the new implementation. The first slice should implement
-independent, explicit Python Claude and Codex capture drivers and a harness-by-scenario matrix, with
-committed recordings and offline tests as their contract. The common facade and operation
-projection come later, after the captures reveal a real intersection.
+Do not import `haku/runner`, `haku/cli_protocol`, or `haku/console`, and do not carry their Session,
+database, projection, or recovery assumptions into the new code.
 
-## Claude: `plotarmordev/claude-pool`
+## Useful external references
 
-The default backend starts one long-lived subprocess with:
+- [`plotarmordev/claude-pool`](https://github.com/plotarmordev/claude-pool) — MIT-licensed Claude
+  subprocess, process-group, stderr-drain, fake-CLI, and lifecycle-test patterns.
+- [`openai/symphony`](https://github.com/openai/symphony) — Apache-2.0 Codex app-server handshake,
+  partial-line parsing, and terminal-settlement examples.
+- [`backnotprop/plannotator`](https://github.com/backnotprop/plannotator) — permissively licensed
+  Codex transport/parser patterns.
+- [`kubernetes-sigs/agent-sandbox`](https://github.com/kubernetes-sigs/agent-sandbox) — use as the
+  workload backend rather than recreating Sandbox/Pod/PVC lifecycle.
 
-```text
-claude -p --input-format stream-json --output-format stream-json --verbose
-```
+Pin exact revisions in implementation comments or a later dependency note only if code is actually
+borrowed. A URL and a short behavioral note are enough for this experiment.
 
-It owns dedicated stdin/stdout/stderr pipes, continuously drains stderr, uses a separate POSIX
-process group, tolerates malformed or unknown NDJSON records, and keeps a checked-out process alive
-across multiple turns. Its fake Claude executable and frozen stream-JSON fixtures exercise
-persistent session identity, large records, malformed input, timeout, cancellation, process-tree
-cleanup, replenishment, and shutdown races.
+## Borrow and adapt
 
-The protocol notes were captured against Claude Code `2.1.175`. It is a small alpha project, and its
-ordinary CI does not run the real Claude binary. The version is useful capture provenance, not a
-target the new adapter must adopt.
+Appropriate patterns to reuse conceptually:
 
-### Borrow directly, retaining the MIT notice
+- launch one native child with dedicated stdin/stdout/stderr pipes;
+- continuously drain stderr;
+- isolate the child in a process group so the test can stop it without stopping the driver;
+- parse newline-delimited records across arbitrary pipe-read boundaries;
+- route correlated JSON-RPC responses for Codex; and
+- use fake binaries or fake model servers for deterministic tests.
 
-- subprocess and whole-process-group supervision;
-- independent stderr draining to prevent pipe blockage;
-- configurable NDJSON line limits and bounded diagnostic tails;
-- typed timeout, crash, oversized-record, and broken-pipe diagnostics;
-- fake CLI, isolated synthetic native fixtures, and lifecycle race scenarios.
+Adapt these to preserve the complete native transcript and to keep Claude and Codex scenario logic
+separate. Do not hide provider behavior behind a common state machine before the capture tests show
+that the behavior is shared.
 
-### Adapt substantially
+## Do not copy
 
-- split its coupled `write prompt -> read until result` method into independent reader and
-  correlated writer/router tasks;
-- preserve every native record instead of discarding non-terminal frames;
-- add exact initialization, input UUIDs, control-response routing, interrupt, mid-turn steering,
-  bridge-log acknowledgements, runtime fencing, and native resume;
-- make waiting/backpressure bounded and durable rather than an in-memory lock or semaphore.
+- PTY, tmux, pane scraping, or prompt-detection integration;
+- automatic prompt retry after uncertain native process death;
+- a process-lifetime session id presented as durable provider resume;
+- a sequential JSON-RPC waiter that cannot handle concurrent messages; or
+- a large artifact/promotion, checksum, DLP, persistence, or fencing framework.
 
-### Do not copy
+## Agent Sandbox boundary
 
-- automatic retry of the same prompt after a warm worker crashes: without provider-admission
-  evidence this is blind semantic replay and may duplicate side effects;
-- process-lifetime `Session` continuity as a claim of crash, daemon-restart, or Pod-replacement
-  recovery;
-- the Unix-socket daemon's positional, request-ID-free NDJSON protocol;
-- its optional PTY/TUI backend as a production correctness path.
+Agent Sandbox is the preferred first provisioning backend. Reuse its Claim -> Sandbox -> Pod/PVC
+lifecycle rather than implementing a parallel workload controller. The native capture slice may run
+locally or in a disposable Sandbox, but it does not need to own Kubernetes reconciliation.
 
-## Codex references
+The upstream documentation supports composing a separate Kubernetes Service around Sandbox ports;
+the pinned local manifests do not prove that the Sandbox CR creates that Service. Keep Service
+selection and control-channel security out of the capture implementation.
 
-### Symphony: small compatibility reference
+## Later, only if the product needs it
 
-[`app_server.ex`](https://github.com/openai/symphony/blob/8001b52e3062495a16e520e4ceaf8f9de868c4d0/elixir/lib/symphony_elixir/codex/app_server.ex)
-shows a compact Apache-2.0 implementation of:
+After useful Claude and Codex captures exist, evaluate whether to add:
 
-- app-server launch through local or SSH stdio;
-- `initialize`, `initialized`, `thread/start`, and `turn/start`;
-- stream-driven inactivity timeouts and `turn/completed` settlement;
-- partial-line and malformed-output handling;
-- server requests for approvals, user input, and dynamic tools;
-- path-safety and process-exit handling.
+- a small provider-neutral bridge interface;
+- durable product Thread/Input/Turn records;
+- central recovery decisions and explicit uncertain outcomes;
+- reconnect handling; or
+- a UI projection.
 
-Its
-[`app_server_test.exs`](https://github.com/openai/symphony/blob/8001b52e3062495a16e520e4ceaf8f9de868c4d0/elixir/test/symphony_elixir/app_server_test.exs)
-is useful for handshake, timeout, malformed-record, blocker, and dynamic-tool compatibility cases.
-
-Do not adopt its fixed request IDs or sequential response waiter. It does not provide general
-out-of-order correlation, resume, steering, interrupt, reconnect, or durable recovery.
-
-### `backnotprop/orchestrator`: behavioral prior art, not a vendoring source
-
-This is the richest inspected Codex app-server design. Useful patterns include:
-
-- concurrent JSON-RPC request routing with monotonically allocated IDs;
-- per-request timeouts, server-request handlers, parse/protocol errors, and bounded stderr;
-- method/thread/turn notification filters with bounded early-notification buffering;
-- `thread/start`, `thread/resume`, `thread/read`, `turn/start`, `turn/steer`, and
-  `turn/interrupt`;
-- a shared Unix-socket app-server with startup locking, health checks, atomic PID/endpoint metadata,
-  stale-socket replacement, and PID start-time ownership checks;
-- detached operation monitoring that reconnects, resumes the thread, and reconciles through
-  `thread/read` after an original subscriber disappears;
-- strong transport, controller race, active-turn steering, resume, and detached-monitor tests.
-
-These behaviors should inform clean-room implementation and tests. BSL 1.1 hosted-service terms
-require explicit license review before code reuse, and the architecture remains weaker than the
-selected control-plane contract:
-
-- no runtime-generation fencing;
-- no bridge log and replay cursor;
-- no centrally committed `accepted -> offered -> bridge_durable -> native_admitted -> terminal`
-  input lifecycle;
-- no dense native-record sequence anchored into one PostgreSQL timeline;
-- no exact replay/deduplication contract across replacement runtimes.
-
-One semantic mismatch must be rejected: an interrupt request must not immediately fabricate a
-terminal cancelled state. The control plane waits for native terminal evidence or records an
-uncertain outcome.
-
-### Plannotator: permissive parser/provider reference
-
-Plannotator's
-[`codex-app-server.ts`](https://github.com/backnotprop/plannotator/blob/9f9ee275294a978d8c46cafc8eace96eb04dd6d3/packages/ai/providers/codex-app-server.ts)
-is an actively maintained, permissively licensed TypeScript implementation with correlated request
-IDs, concurrent response handling, server-request support, stale-waiter cleanup, thread resume,
-interrupt, process-group shutdown, and protocol cleanup.
-
-It is an Ask-AI provider, not a persistent orchestration bridge. It has no `turn/steer`, notification
-subscriptions, reconnect reconciliation, bridge durability, or replacement-runtime fencing. Borrow
-small transport/parser utilities and tests where they fit; do not make its one-operation provider
-lifecycle the control-plane model.
-
-## Kubernetes lifecycle prior art
-
-Agent Sandbox v0.5.5 should be reused as the first provisioning backend rather than recreating a
-Sandbox/Pod/PVC controller. The bridge still owns provider process supervision and evidence; the
-central service still owns Thread identity and accepted input.
-
-kagent demonstrates two useful design directions without supplying a stable CRD to adopt:
-
-- the older `SandboxAgent` CRD moved between Agent Sandbox and Agent Substrate backends and is being
-  retired;
-- current `AgentInstance` stores durable logical instances, tasks, events, and exact snapshot
-  identities in SQL while reconciling suspendable runtime actors underneath.
-
-Borrow the database-backed logical-instance pattern, explicit suspend/resume operations, immutable
-runtime-template revisions, and status-condition vocabulary. Do not equate actor snapshots with
-native Claude/Codex process hibernation, and do not move Thread authority into Kubernetes CR
-status.
-
-## Later bridge-owned contract
-
-No inspected reference provides the full selected contract. After the native matrix establishes
-provider behavior, `harness-bridge` and the central service must still own:
-
-- provider-neutral Python adapter facade and tested initialization behavior;
-- stable input IDs and multiple admission-evidence levels;
-- natural Runner Pod/process identity and, only if needed later, lease/fencing semantics;
-- complete exact native evidence with direction, local sequence, timing, and links to common events;
-- simple append-only local bridge log plus central acknowledgements and reconnect cursors;
-- conservative reconciliation after child, bridge, connection, Pod, or storage loss;
-- explicit uncertain outcomes instead of premature duplicate delivery or fabricated cancellation;
-- one PostgreSQL-ordered private timeline across Pod/process replacements.
-
-External code is accepted only behind those invariants and the experiments in
-[`experiments.md`](experiments.md).
+Do not implement those as speculative prerequisites. The first test that cannot pass without one is
+the right place to introduce it.

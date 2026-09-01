@@ -1,82 +1,68 @@
-# Harness Control Plane
+# Agentplane
 
-Status: **proposal**. “Harness Control Plane” is a descriptive working name, not a final product
-name and not a Haku component.
+Status: **focused proposal**. “Agentplane” is the deliberately boring working name for the native
+harness bridge/controller; it is not a Haku implementation refactor.
 
-This document set proposes a Kubernetes-hosted control plane for coding agents. The required first
-adapters run native Claude Code and Codex harnesses in Pod or sandbox-backed workloads. One
-multi-mode `harness-bridge` binary supervises the selected harness and speaks its structured machine
-protocol. A central PostgreSQL-backed server owns durable Threads, accepted Inputs, recovery
-decisions, and the common timeline; Agent Sandbox/Kubernetes remains authoritative for workload
-lifecycle and the web UI consumes the resulting API.
-
-The motivating product is a fleet of reliable headless Agents that can use both Claude and ChatGPT
-subscription-backed routes, run for days or longer, receive streaming updates, and eventually
-delegate to and communicate with other Agents. Native harnesses are the default because they
-preserve provider behavior, work through the existing LiteLLM -> CLIProxyAPI Messages/Responses
-paths, and avoid making metered direct APIs the mandatory baseline. CLIProxyAPI, not this control
-plane or its workloads, owns consumer login and token refresh. The Claude Agent SDK is a wrapper
-around the Claude binary rather than a separate agent loop; this design drives the stream/control
-wire directly. A direct LLM API agent loop is documented as an optional later adapter, not the
-baseline.
-
-The design deliberately rejects terminal keystrokes and pane scraping as its correctness boundary.
-It also records an evaluation of A2A 1.0, but does not adopt A2A as a control-plane protocol,
-agent-to-agent facade, implementation target, or experiment lane.
+Agentplane runs native Claude Code and Codex harnesses in replaceable Kubernetes workloads and
+speaks their structured machine protocols. The first useful slice is a provider-specific capture and
+replay experiment: drive real harnesses, capture native and upstream LLM exchanges, and prove the
+driving loop with tests.
 
 ## Documents
 
-- [Main design: problem, constraints, decisions, alternatives, and sandbox lifecycle](architecture.md)
-- [Claude Code and Codex protocol adapters](provider_protocols.md)
-- [Common harness protocol and timeline vocabulary](common_protocol.md)
-- [Implementation boundaries and prior art](implementation_reuse.md)
-- [A2A suitability evaluation: not adopted](a2a.md)
-- [Rerunnable protocol and recovery experiments](experiments.md)
-- [Subtask: capture native Claude/Codex wires](subtasks/capture_native_harness_wires.md)
+- [Focused architecture](architecture.md)
+- [Claude and Codex protocol notes](provider_protocols.md)
+- [Deferred common protocol notes](common_protocol.md)
+- [Implementation reuse and prior art](implementation_reuse.md)
+- [A2A suitability evaluation](a2a.md)
+- [Focused experiments](experiments.md)
+- [Capture native Claude/Codex wires](subtasks/capture_native_harness_wires.md)
 
-## Fixed first-version choices
+## v0 scope
 
-- Native Claude Code and Codex adapters are both required.
-- One bridge executable has per-provider modes.
-- PostgreSQL is the default durable store for product interaction state and control-plane evidence;
-  Kubernetes/Agent Sandbox and the native harness remain authoritative for the facts they own.
-- One active bridge/native process serves a Pod at a time. Use natural Kubernetes and process
-  identities (such as Pod UID and process start/exit evidence) rather than requiring a separately
-  minted or injected runtime-generation identity.
-- Every bidirectional native frame is stored exactly. Initial experiments drive each provider's
-  JSON protocol directly and do not depend on a finished common facade or operation projection.
-- The common protocol for orchestration, messages, turns, steering, interrupts, operation progress,
-  native provenance, and recovery evidence is derived after the captures establish both providers'
-  real behavior.
-- Suspension starts as an explicit idle-only operator action; Sandbox disposal is explicit and
-  confirmed rather than retention-window driven.
-- The bridge uses a simple append-only PVC log for reconnect replay rather than a separately bounded
-  overflow policy.
-- A direct LLM loop is optional and must emit the same common protocol.
+Required:
 
-The orchestrator, web UI, model-capability/router layer, and future stateless MCP authorization
-gateway should be separately deployable. This proposal owns only orchestration/runtime/logging; it
-does not bind tool RBAC or approval escalation to Thread, harness-Thread, or Sandbox concepts.
+- native Claude Code and Codex drivers;
+- real stdin/stdout protocol traffic, never PTY/tmux integration;
+- messages, tool calls/results, streaming output, interrupts, and steering where supported;
+- provider-native resume after an idle process restart where supported;
+- upstream LLM request bodies and streamed response capture;
+- deterministic fake-model replay through real harnesses; and
+- small, hand-authored behavior assertions with synthetic workspaces.
 
-A future integrated Agent Console can compose those smaller services into one application for
-Threads, Runtimes, Sandboxes, MCP connections, approvals, grants, and traces without making
-them one deployment or authority.
+Not required for the capture slice:
 
-**Thread** is the shared UI, API, and storage noun. In v0 one active runner serves one Thread, and
-the adapter lets the harness mint an opaque `harness_thread_id` after activation. The same product
-Thread passes that id back to native resume after a Pod or process replacement. Provider identity is
-fixed for a Thread; model changes within one provider may become a later Turn-boundary feature.
+- PostgreSQL or a common Thread/Turn/Input schema;
+- neutral operation projection or UI timeline;
+- Kubernetes reconciliation or Service management;
+- runtime-generation/fencing identities;
+- artifact promotion, checksum manifests, custom DLP scanning, or package-integrity metadata;
+- credentials, OAuth, approvals, MCP routing, subscriptions, or external-event adapters.
+
+## Design boundaries
+
+- Kubernetes/Agent Sandbox owns Claim, Sandbox, Pod, PVC, readiness, suspension, and workload
+  lifecycle.
+- Native harnesses own native history, execution semantics, and native resume.
+- The bridge owns native process supervision and protocol I/O.
+- A future central service may own product interaction state and a user-facing timeline while
+  consuming those observations.
+
+Use natural Pod UID and process start/exit evidence first. Do not require `restartPolicy: Never`,
+mutual TLS, or a separately injected runtime-generation identity for v0. A separately managed
+Kubernetes Service may be useful for a central-initiated channel, but the Sandbox CR is not assumed
+to create one automatically.
 
 ## Evidence standard
 
-These documents separate three levels of confidence:
+The first fixtures preserve complete ordered native frames and the upstream model bodies/chunks.
+They omit HTTP headers, cookies, environment variables, credentials, and private user data. Use
+ordinary repository secret checks and a small obvious-token guard rather than building a promotion or
+DLP subsystem.
 
-- **Native contract**: stated by provider protocol documentation or a negotiated schema/capability.
-- **Repository evidence**: implemented or measured in the current Ducktape tree, but not necessarily
-  a provider compatibility promise.
-- **Experiment required**: plausible behavior that must not become a recovery guarantee until the
-  real-harness capture/experiment suite passes.
+The native transcript and model transcript are the evidence. Do not add redundant body lengths,
+SHA fields, timestamps, parsed copies, checksum files, or manifest inventories. File order supplies
+ordering; provider-native ids remain in the provider transcript.
 
-Provider protocol surfaces change. Runs record resolved Claude Code, Codex, bridge, model-route, and
-sandbox-controller versions when known. Provider upgrades rerun focused adapter tests and capture
-scenarios before rollout; an unfamiliar version string alone is not a compatibility failure.
+The common protocol and central persistence model are intentionally deferred until the captures show
+what Claude and Codex actually have in common.
