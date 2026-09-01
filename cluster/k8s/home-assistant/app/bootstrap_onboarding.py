@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from http import HTTPStatus
 from urllib import error, parse, request
 
 BASE_URL = os.environ.get("HOME_ASSISTANT_URL", "http://home-assistant.home-assistant.svc.cluster.local:8123")
@@ -12,6 +13,7 @@ CLIENT_ID = "https://home.allegedly.works/"
 REDIRECT_URI = CLIENT_ID
 USERNAME = "ha-local-admin"
 DISPLAY_NAME = "Home Assistant Local Administrator"
+REQUIRED_STEPS = frozenset({"user", "core_config", "integration", "analytics"})
 
 
 def request_json(
@@ -33,20 +35,36 @@ def request_json(
         return json.load(response)
 
 
-def wait_for_home_assistant() -> None:
-    """Wait until the onboarding endpoint is available."""
+def wait_for_home_assistant() -> set[str] | None:
+    """Wait for the API and return onboarding state, or None when complete."""
     for _ in range(60):
         try:
-            request_json("/api/onboarding")
-            return
+            verify_api_ready()
+            return onboarding_status()
         except (error.URLError, TimeoutError):
             time.sleep(5)
     raise TimeoutError("Home Assistant did not become available within 5 minutes")
 
 
-def onboarding_status() -> set[str]:
-    """Return the completed onboarding step names."""
-    response = request_json("/api/onboarding")
+def verify_api_ready() -> None:
+    """Require Home Assistant's unauthenticated API response."""
+    try:
+        request_json("/api/")
+    except error.HTTPError as exc:
+        if exc.code == HTTPStatus.UNAUTHORIZED:
+            return
+        raise
+    raise RuntimeError("Home Assistant API unexpectedly allowed an unauthenticated request")
+
+
+def onboarding_status() -> set[str] | None:
+    """Return completed steps, or None when onboarding views are absent."""
+    try:
+        response = request_json("/api/onboarding")
+    except error.HTTPError as exc:
+        if exc.code == HTTPStatus.NOT_FOUND:
+            return None
+        raise
     if not isinstance(response, list):
         raise TypeError("Home Assistant returned an invalid onboarding status")
     return {
@@ -116,9 +134,8 @@ def exchange_token(auth_code: str) -> str:
 
 def provision(password: str) -> None:
     """Create the owner if necessary and finish all onboarding steps."""
-    wait_for_home_assistant()
-    completed = onboarding_status()
-    if completed == {"user", "core_config", "integration", "analytics"}:
+    completed = wait_for_home_assistant()
+    if completed is None or completed >= REQUIRED_STEPS:
         print("Home Assistant onboarding is already complete")
         return
 

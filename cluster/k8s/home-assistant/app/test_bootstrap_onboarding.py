@@ -1,5 +1,13 @@
+from email.message import Message
+from http import HTTPStatus
+from urllib import error
+
 import bootstrap_onboarding
 import pytest_bazel
+
+
+def http_error(path: str, code: HTTPStatus) -> error.HTTPError:
+    return error.HTTPError(f"http://home-assistant{path}", code, code.phrase, Message(), None)
 
 
 def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch):
@@ -9,6 +17,8 @@ def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch):
         path: str, *, data: dict[str, object] | None = None, token: str | None = None, form: bool = False
     ) -> object:
         calls.append((path, data, token, form))
+        if path == "/api/":
+            raise http_error(path, HTTPStatus.UNAUTHORIZED)
         if path == "/api/onboarding":
             return [{"step": "user", "done": False}]
         if path == "/api/onboarding/users":
@@ -21,7 +31,7 @@ def test_fresh_install_creates_owner_and_completes_onboarding(monkeypatch):
     bootstrap_onboarding.provision("secret-password")
 
     assert calls == [
-        ("/api/onboarding", None, None, False),
+        ("/api/", None, None, False),
         ("/api/onboarding", None, None, False),
         (
             "/api/onboarding/users",
@@ -59,6 +69,8 @@ def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch):
         path: str, *, data: dict[str, object] | None = None, token: str | None = None, form: bool = False
     ) -> object:
         calls.append(path)
+        if path == "/api/":
+            raise http_error(path, HTTPStatus.UNAUTHORIZED)
         if path == "/api/onboarding":
             return [
                 {"step": "user", "done": True},
@@ -78,7 +90,7 @@ def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch):
     bootstrap_onboarding.provision("secret-password")
 
     assert calls == [
-        "/api/onboarding",
+        "/api/",
         "/api/onboarding",
         "/auth/login_flow",
         "/auth/login_flow/login-flow",
@@ -89,24 +101,63 @@ def test_partial_run_logs_in_and_finishes_remaining_steps(monkeypatch):
 
 
 def test_completed_onboarding_is_a_noop(monkeypatch):
-    calls = 0
+    calls: list[str] = []
 
     def fake_request(
         path: str, *, data: dict[str, object] | None = None, token: str | None = None, form: bool = False
     ) -> object:
-        nonlocal calls
-        calls += 1
-        return [
-            {"step": "user", "done": True},
-            {"step": "core_config", "done": True},
-            {"step": "integration", "done": True},
-            {"step": "analytics", "done": True},
-        ]
+        calls.append(path)
+        if path == "/api/":
+            raise http_error(path, HTTPStatus.UNAUTHORIZED)
+        if path == "/api/onboarding":
+            raise http_error(path, HTTPStatus.NOT_FOUND)
+        raise AssertionError(f"unexpected request: {path}")
 
     monkeypatch.setattr(bootstrap_onboarding, "request_json", fake_request)
     bootstrap_onboarding.provision("secret-password")
 
-    assert calls == 2
+    assert calls == ["/api/", "/api/onboarding"]
+
+
+def test_onboarding_404_is_only_accepted_after_the_api_is_ready(monkeypatch):
+    calls: list[str] = []
+
+    def fake_request(
+        path: str, *, data: dict[str, object] | None = None, token: str | None = None, form: bool = False
+    ) -> object:
+        calls.append(path)
+        if calls == ["/api/"]:
+            raise http_error(path, HTTPStatus.NOT_FOUND)
+        if path == "/api/":
+            raise http_error(path, HTTPStatus.UNAUTHORIZED)
+        if path == "/api/onboarding":
+            raise http_error(path, HTTPStatus.NOT_FOUND)
+        raise AssertionError(f"unexpected request: {path}")
+
+    monkeypatch.setattr(bootstrap_onboarding, "request_json", fake_request)
+    monkeypatch.setattr(bootstrap_onboarding.time, "sleep", lambda _: None)
+    bootstrap_onboarding.provision("secret-password")
+
+    assert calls == ["/api/", "/api/", "/api/onboarding"]
+
+
+def test_completed_onboarding_steps_allow_future_additions(monkeypatch):
+    calls: list[str] = []
+
+    def fake_request(
+        path: str, *, data: dict[str, object] | None = None, token: str | None = None, form: bool = False
+    ) -> object:
+        calls.append(path)
+        if path == "/api/":
+            raise http_error(path, HTTPStatus.UNAUTHORIZED)
+        if path == "/api/onboarding":
+            return [{"step": step, "done": True} for step in [*bootstrap_onboarding.REQUIRED_STEPS, "future_step"]]
+        raise AssertionError(f"unexpected request: {path}")
+
+    monkeypatch.setattr(bootstrap_onboarding, "request_json", fake_request)
+    bootstrap_onboarding.provision("secret-password")
+
+    assert calls == ["/api/", "/api/onboarding"]
 
 
 if __name__ == "__main__":

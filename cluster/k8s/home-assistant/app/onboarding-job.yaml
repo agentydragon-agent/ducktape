@@ -9,6 +9,9 @@ spec:
   backoffLimit: 3
   template:
     metadata:
+      annotations:
+        # Bump when bootstrap behavior changes so Flux replaces the immutable Job.
+        home-assistant.allegedly.works/bootstrap-revision: "2"
       labels:
         app.kubernetes.io/name: home-assistant-onboarding
     spec:
