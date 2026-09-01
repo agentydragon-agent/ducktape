@@ -16,11 +16,10 @@ real upstream credentials are a later gate.
 - **Sandbox proxy/identity evidence is complete:** the standalone spike proved proxy-only Secret
   delivery, Pod/Sandbox workload authentication, replay rejection, and the same-Pod route-confinement
   limitation. It informs later egress work but does not gate the native path.
-- **Native capture + replay is complete on PR #15:** one agent delivered both providers' launch,
-  baseline/tool, steering/interrupt, idle-resume, upstream reconnect, and replay evidence. That branch
-  still needs to be integrated into the branch behind PR #5342.
-- **Next:** integrate the capture branch, then give one agent end-to-end ownership of the shared stdio
-  protocol and both provider adapters.
+- **Native capture + replay is integrated:** PR #15's implementation and fixtures are now present on
+  the branch behind PR #5342. The capture README records the remaining strict reconnect and replay-gate
+  gaps; those are review work, not a reason to add a generic framework.
+- **Next:** give one agent end-to-end ownership of the shared stdio protocol and both provider adapters.
 - **Access-control scope is intentionally deferred:** the current Ducktape work can use its existing
   broad internet boundary and scoped GitHub credential for `agentydragon-agent`; that convenience is
   not a policy model for the private, high-context Haku agent.
@@ -37,8 +36,7 @@ flowchart TB
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
 
     S0["Sandbox proxy/identity<br/>completed evidence"]:::completed
-    A["Native capture + replay<br/>Claude and Codex"]:::captureComplete
-    I["Integrate capture branch<br/>into PR #5342"]:::next
+    A["Native capture + replay<br/>integrated; review pending"]:::captureComplete
     B["Shared stdio protocol<br/>+ both provider adapters"]:::next
     C["Standalone Agentplane service seam<br/>records, runner bridge, REST/SSE"]:::next
     D["Rai decision<br/>initial conversation-app hosting boundary"]:::decision
@@ -66,7 +64,7 @@ flowchart TB
     AC["Stretch<br/>Haku-ready policy enforcement<br/>private context, least privilege, resilient controls"]:::future
     W["Stretch<br/>hardened Kubernetes/Authentik deployment"]:::future
 
-    A --> I --> B --> C --> D --> E --> F
+    A --> B --> C --> D --> E --> F
     F --> J --> P
     P -->|yes| K --> R
     P -->|no| R
@@ -81,8 +79,8 @@ flowchart TB
     S0 -. informs .-> J
 ```
 
-Legend: green is completed evidence accepted as a separate spike; amber is completed native-capture
-work still awaiting integration into PR #5342; blue is the next focused work; purple is the first
+Legend: green is completed evidence accepted as a separate spike; amber is integrated native-capture
+work with bounded review gaps; blue is the next focused work; purple is the first
 functioning-product milestone; orange diamonds are unresolved decisions requiring Rai's product or
 design input; gray is conditional or stretch work.
 
@@ -104,8 +102,9 @@ personal context.
 - **Native capture + replay:** real Claude and Codex binaries, exact native/model transcripts, compact
   fixtures, fake-model replay, steering/interrupt, idle resume, and upstream reconnect evidence. The
   detailed matrix is in [`experiments.md`](experiments.md) and the [capture harness README](../capture/README.md).
-- **Integrate capture branch:** PR #15's implementation is present on the branch behind PR #5342;
-  preserve provider-specific evidence and unsupported behavior while integrating it.
+- **Capture integration:** PR #15's implementation and fixtures are present on the branch behind PR
+  #5342; preserve provider-specific evidence and unsupported behavior while closing the bounded review
+  gaps in the [capture harness README](../capture/README.md).
 - **Shared protocol + adapters:** one stdio contract justified by captured native frames, with both
   Claude and Codex adapters exercised through the same shared seam. This is one agent-owned package,
   not separate provider projects.
