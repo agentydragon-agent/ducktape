@@ -9,6 +9,7 @@ import shutil
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from x.agentplane.capture.records import RawRecord, sha256
@@ -49,6 +50,7 @@ class CaptureBundle:
         self.manifest = {**manifest, "capture_schema_version": 1, "artifacts": {}}
         self._run_sequence = 0
         self._stream_sequences: dict[str, int] = {}
+        self._append_lock = Lock()
         for name in _REQUIRED - {"manifest.json", "SHA256SUMS"}:
             (self.root / name).touch(mode=0o600)
 
@@ -60,12 +62,13 @@ class CaptureBundle:
     def append_json(self, filename: str, payload: dict[str, Any]) -> None:
         if filename not in _REQUIRED or not filename.endswith(".jsonl"):
             raise ValueError(f"unexpected JSONL artifact: {filename}")
-        sequence, stream_sequence = self._next(filename)
-        record = {"run_sequence": sequence, "stream_sequence": stream_sequence, **payload}
-        with (self.root / filename).open("ab") as output:
-            output.write(json.dumps(record, sort_keys=True, separators=(",", ":")).encode() + b"\n")
-            output.flush()
-            os.fsync(output.fileno())
+        with self._append_lock:
+            sequence, stream_sequence = self._next(filename)
+            record = {"run_sequence": sequence, "stream_sequence": stream_sequence, **payload}
+            with (self.root / filename).open("ab") as output:
+                output.write(json.dumps(record, sort_keys=True, separators=(",", ":")).encode() + b"\n")
+                output.flush()
+                os.fsync(output.fileno())
 
     def append_raw(self, filename: str, record: RawRecord) -> None:
         now = datetime.now(UTC).isoformat()

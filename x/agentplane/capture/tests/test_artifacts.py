@@ -45,6 +45,14 @@ def test_scanner_catches_forbidden_header_name(tmp_path: Path) -> None:
         scan_files([path])
 
 
+def test_scanner_accepts_declared_sse_response_id_but_not_unknown_opaque_field() -> None:
+    opaque = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+    accepted = f'data: {{"response":{{"id":"{opaque}"}}}}\n\n'.encode()
+    rejected = f'data: {{"response":{{"secret":"{opaque}"}}}}\n\n'.encode()
+    assert not scan_payload(accepted, "response.sse")
+    assert any("high_entropy" in failure for failure in scan_payload(rejected, "response.sse"))
+
+
 if __name__ == "__main__":
     import pytest_bazel
 

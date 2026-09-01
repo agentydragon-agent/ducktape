@@ -1,0 +1,4 @@
+{"action":"codex_initialize","native_frame":{"id":"capture-1","method":"initialize","params":{"capabilities":null,"clientInfo":{"name":"agentplane-capture","version":"0.1"}}},"run_sequence":3,"stream_sequence":1}
+{"action":"codex_initialized","native_frame":{"method":"initialized"},"run_sequence":9,"stream_sequence":2}
+{"action":"codex_thread_start","native_frame":{"id":"capture-2","method":"thread/start","params":{"approvalPolicy":"never","config":{"model_reasoning_effort":"low"},"cwd":"/tmp/agentplane-live-codex.PACOuO/workspace-baseline-oss","ephemeral":false,"model":"gpt-oss-20b-128k-openai-chat","sandbox":"danger-full-access"}},"run_sequence":12,"stream_sequence":3}
+{"action":"codex_baseline_turn_start","native_frame":{"id":"capture-3","method":"turn/start","params":{"input":[{"text":"Reply with exactly: CAPTURE_BASELINE_OK","text_elements":[],"type":"text"}],"threadId":"01a05bcb-ffad-7522-8c6c-02b0537843ae"}},"run_sequence":15,"stream_sequence":4}

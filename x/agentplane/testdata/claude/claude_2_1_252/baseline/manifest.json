@@ -1,0 +1,107 @@
+{
+  "artifacts": {
+    "assertions.json": {
+      "record_count": null,
+      "sha256": "4113331dcf55fb46e63c8dda8f13b17ff4abeedaad6210b75a1bf6248bb276cb",
+      "size": 24302
+    },
+    "correlation.jsonl": {
+      "record_count": 2,
+      "sha256": "7621ed8deedce6e1331f0ce0f3f07ff9f989dae4441cdb34e4c517e1fd73db99",
+      "size": 264
+    },
+    "llm-requests.jsonl": {
+      "record_count": 2,
+      "sha256": "0758844e989c3448604437c59dad76e532b1ca91c91afb91730049487db5758a",
+      "size": 289142
+    },
+    "llm-response-chunks.jsonl": {
+      "record_count": 2,
+      "sha256": "e99317aba44e3252ea1e893efc624a375ff722fde1335a85db5ad2c9f17ea989",
+      "size": 6174
+    },
+    "llm-responses.jsonl": {
+      "record_count": 2,
+      "sha256": "946a9029265148e5f92dcc4f0a9d9295fcbbb4fa676fee6546682bae5032389b",
+      "size": 6300
+    },
+    "native-stderr.chunks.jsonl": {
+      "record_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "native-stdin.frames.jsonl": {
+      "record_count": 2,
+      "sha256": "2e2457a621048f8414b02d387e482509cdc0bce25adc3378f6ab94326e502626",
+      "size": 1922
+    },
+    "native-stdout.frames.jsonl": {
+      "record_count": 25,
+      "sha256": "7931a16699907b3e07d4ca465441db4070f220edb2cc442036185f6918c9e263",
+      "size": 105648
+    },
+    "process-events.jsonl": {
+      "record_count": 6,
+      "sha256": "3384414fbece583bd9d2c07179ee87387ac7eff58351c4b6e0fa013a80fdaece",
+      "size": 685
+    },
+    "scenario-actions.jsonl": {
+      "record_count": 2,
+      "sha256": "26ba7f01624f1916bf29e043d244eeb66a5a11bb4236ae6c02d667f7ed4d1821",
+      "size": 455
+    },
+    "summary.md": {
+      "record_count": null,
+      "sha256": "762522c5536b669aa782106a9de7e7299fae8601fb47dbd8e406dac371f14542",
+      "size": 42
+    },
+    "workspace-after.json": {
+      "record_count": null,
+      "sha256": "068a3c1cd408b09d2145dfc5f977a87897f84c80f527b0fb1421eb4caa22c1a9",
+      "size": 105
+    },
+    "workspace-before.json": {
+      "record_count": null,
+      "sha256": "068a3c1cd408b09d2145dfc5f977a87897f84c80f527b0fb1421eb4caa22c1a9",
+      "size": 105
+    },
+    "workspace-diff.json": {
+      "record_count": null,
+      "sha256": "b784898527352b2ea46539f3fc294d50b6931070366278b3d6285d3c845e6c3f",
+      "size": 52
+    }
+  },
+  "binary": {
+    "requested_command": "claude",
+    "resolved_path": "/tmp/agentplane-live-claude.XmnI3F/claude",
+    "resolver_method": "override",
+    "sha256": "8cb722590743ce5450e8c5aff549908f20fca23410b4f55e254d23e58201013c",
+    "size": 193,
+    "version_exit_code": 0,
+    "version_stderr": "",
+    "version_stdout": "2.1.252 (Claude Code)\n"
+  },
+  "budgets": {
+    "max_calls": 2,
+    "max_spend_usd": 0.02,
+    "max_tokens": 256
+  },
+  "capture_schema_version": 1,
+  "credential_delivery": "temporary_grant",
+  "effort": "low",
+  "endpoint_origin": "http://litellm.litellm.svc.cluster.local:4000",
+  "launch_environment_allowlist": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:41681"
+  },
+  "model": "anthropic-api/ant-messages/claude-haiku-4-5-20251001",
+  "process_exit_code": 0,
+  "provider": "claude",
+  "recording_proxy": {
+    "endpoint": "http://127.0.0.1:41681",
+    "upstream_origin": "http://litellm.litellm.svc.cluster.local:4000"
+  },
+  "result": "pass",
+  "result_reason": "native_scenario_observed",
+  "scenario": "baseline",
+  "virtual_key_policy": "cheap-experiments"
+}

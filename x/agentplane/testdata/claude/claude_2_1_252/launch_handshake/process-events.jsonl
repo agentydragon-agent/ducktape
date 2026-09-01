@@ -1,0 +1,6 @@
+{"command":["/tmp/agentplane-live-claude.XmnI3F/claude","--output-format","stream-json","--verbose","--permission-mode","bypassPermissions","--include-partial-messages","--input-format","stream-json"],"event":"spawn_requested","run_sequence":1,"stream_sequence":1}
+{"event":"spawn_succeeded","pid":11743,"process_group":11743,"run_sequence":2,"stream_sequence":2}
+{"event":"stdin_closed","run_sequence":6,"stream_sequence":3}
+{"event":"stdout_eof","run_sequence":7,"stream_sequence":4}
+{"event":"stderr_eof","run_sequence":8,"stream_sequence":5}
+{"event":"exited","exit_code":0,"run_sequence":9,"stream_sequence":6}
