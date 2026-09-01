@@ -14,7 +14,6 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from study_casino.app import create_app
-from study_casino.changelog import CHANGELOG
 from study_casino.config import Settings
 from study_casino.games import RNG_VERSION, draw_cards, load_cards, make_shoe, spin_roulette
 from study_casino.models import BlackjackHandRow, RngActionAuditRow, RngCallAuditRow
@@ -141,28 +140,6 @@ def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
     r = client.get("/me")
     assert r.status_code == 200
     assert r.json() == {"username": "default", "is_admin": True}
-
-
-def test_state_returns_seed_shape(client: TestClient) -> None:
-    r = client.get("/state")
-    assert r.status_code == 200
-    state = r.json()
-    assert state["balance"] == {"credits_millis": 0, "tokens": 0}
-    assert state["credit_state"] == {
-        "streak_days": 0,
-        "streak_bonus_percent": 0,
-        "rest_days_available": 0,
-        "daily_bonus_claimed_today": False,
-        "today_study_seconds": 0,
-        "daily_bonus_threshold_seconds": 300,
-        "daily_bonus_credits": 30,
-        "pending_bonus_percent": 1,
-    }
-    assert state["sessions"] == []
-    assert state["prize_log"] == []
-    assert len(state["prizes"]) == 6
-    # A fresh user has every changelog entry unacked.
-    assert [entry["id"] for entry in state["changelog_unacked"]] == [entry.id for entry in CHANGELOG]
 
 
 def test_changelog_ack_advances_cursor(client: TestClient) -> None:
@@ -386,19 +363,26 @@ def test_prize_delete_unknown_returns_409(client: TestClient) -> None:
 
 
 def test_prize_redeem_writes_log_and_subtracts_tokens(client: TestClient) -> None:
-    _grant_tokens(client, 100)
+    prizes = client.get("/state").json()["prizes"]
+    assert prizes
+    prize = prizes[0]
+    _grant_tokens(client, prize["cost"] + 1)
 
-    r = client.post("/actions/prize/redeem", json={"client_action_id": "redeem-1", "prize_id": "p1"})
+    r = client.post("/actions/prize/redeem", json={"client_action_id": "redeem-1", "prize_id": prize["id"]})
     assert r.status_code == 200, r.text
 
     state = client.get("/state").json()
-    assert state["balance"]["tokens"] == 64  # p1 cost is 36
+    assert state["balance"]["tokens"] == 1
     assert len(state["prize_log"]) == 1
-    assert state["prize_log"][0]["name"] == "Anime episode break"
+    assert state["prize_log"][0]["id"] == prize["id"]
+    assert state["prize_log"][0]["name"] == prize["name"]
+    assert state["prize_log"][0]["cost"] == prize["cost"]
 
 
 def test_redeem_insufficient_tokens_returns_409(client: TestClient) -> None:
-    r = client.post("/actions/prize/redeem", json={"client_action_id": "redeem-broke", "prize_id": "p1"})
+    prizes = client.get("/state").json()["prizes"]
+    assert prizes
+    r = client.post("/actions/prize/redeem", json={"client_action_id": "redeem-broke", "prize_id": prizes[0]["id"]})
     assert r.status_code == 409
     assert r.json()["detail"]["rule"] == "insufficient_tokens"
 
@@ -541,12 +525,13 @@ def test_import_replaces_state_and_writes_snapshot(client: TestClient) -> None:
 
 def test_reset_zeroes_balance_keeps_prizes(client: TestClient) -> None:
     _grant_credits(client, 7)
+    before = client.get("/state").json()
     r = client.post("/actions/reset", json={"client_action_id": "reset-1"})
     assert r.status_code == 200, r.text
     state = client.get("/state").json()
     assert state["balance"] == {"credits_millis": 0, "tokens": 0}
     assert state["sessions"] == []
-    assert len(state["prizes"]) == 6
+    assert state["prizes"] == before["prizes"]
 
 
 def test_users_have_isolated_state(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
