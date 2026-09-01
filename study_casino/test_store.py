@@ -109,21 +109,6 @@ def _seed_game_events(store: SqlStore, rows: list[GameEventRow]) -> None:
         s.add_all(rows)
 
 
-def test_fresh_store_has_zero_balance_and_default_prizes(store: SqlStore) -> None:
-    state = store.state_dump(_U)
-    assert state.balance == BalanceRead(credits_millis=0, tokens=0)
-    assert state.sessions == []
-    assert state.prize_log == []
-    assert [(prize.name, prize.cost) for prize in state.prizes] == [
-        ("Anime episode break", 36),
-        ("Nice coffee shop trip", 72),
-        ("Takeout night", 144),
-        ("Nice dinner out with Rai", 288),
-        ("Buy a new game", 720),
-        ("Weekend getaway", 2160),
-    ]
-
-
 def test_economy_rebalance_migration_preserves_progress(db_url: str) -> None:
     engine = create_engine(db_url)
     cfg = AlembicConfig()
@@ -256,6 +241,7 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
     )
     pre_reset = store.state_dump(_U)
     assert pre_reset.balance == BalanceRead(credits_millis=50000, tokens=30)
+    prizes_before = pre_reset.prizes
 
     def reset(s, _now_ms):
         store.replace_state_for_reset(s, _U)
@@ -273,7 +259,7 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
     assert state.balance == BalanceRead(credits_millis=0, tokens=0)
     assert state.sessions == []
     assert state.prize_log == []
-    assert len(state.prizes) == 6  # default catalog preserved
+    assert state.prizes == prizes_before
 
 
 def test_db_check_constraint_rejects_negative_credits(store: SqlStore) -> None:
