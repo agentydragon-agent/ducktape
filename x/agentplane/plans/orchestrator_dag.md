@@ -73,6 +73,32 @@ K. Explicit Haku Console integration (deferred)
    no shared internal runtime or persistence authority by accident
 ```
 
+## Independent parallel track: sandbox egress identity
+
+This track is **needed support / deferred discovery**, not part of the critical path to the first
+functioning orchestrator. It can begin independently once a disposable namespace and pinned Agent
+Sandbox version are available, but its result must not expand the native-driver or Agentplane API
+scope.
+
+```text
+L. Standalone Sandbox proxy/identity spike
+   one non-warm-pooled Sandbox per experiment identity;
+   runner + proxy sidecar; Secret only in proxy; direct egress blocked
+                         |
+                         v
+M. Boundary evidence
+   allowed operation, workload identity, cross-Sandbox copy,
+   replay, lifecycle, rotation, and proxy-oracle results
+                         |
+                         v
+N. Isolation decision
+   ordinary sidecar sufficient | external gateway | runner handoff |
+   stronger runtime such as Firecracker/Kata required
+```
+
+L–N do not gate A–I. They become relevant before a production Agentplane deployment is expected to
+protect real credentials from an Agent. See [the detailed spike brief](subtasks/sandbox_proxy_identity_spike.md).
+
 ## Work packets
 
 ### A — Native capture (in progress)
@@ -236,6 +262,9 @@ lifecycles merely to avoid an HTTP boundary.
 - H can proceed alongside G after F, but must not force a premature universal abstraction or
   reopen the shared protocol without new evidence.
 - J begins only after I exposes the first real reliability bottleneck.
+- L–N can run in parallel with A–I as a bounded infrastructure/security spike, but they do not
+  justify changing the driver seam or block I. N must be resolved before a production deployment is
+  trusted with real credentials.
 - K is explicitly downstream of an independently functioning Agentplane; it is not a hidden
   dependency of I.
 
