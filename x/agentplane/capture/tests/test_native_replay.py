@@ -63,7 +63,9 @@ def _python_dynamic_loader() -> str:
 
 def _claude_test_command(binary: str, *, resume_id: str | None = None) -> list[str]:
     """Keep the native stream protocol while avoiding Claude's root-only bypass guard in RBE."""
-    command = claude.command(binary, model="anthropic-api/ant-messages/claude-haiku-4-5-20251001", resume_id=resume_id)
+    command = claude.command(
+        binary, model="anthropic-max20/ant-messages/claude-haiku-4-5-20251001", resume_id=resume_id
+    )
     permission_mode = command.index("--permission-mode")
     del command[permission_mode : permission_mode + 2]
     return command
@@ -141,7 +143,7 @@ def test_claude_baseline_replays_through_the_pinned_native_cli(tmp_path: Path) -
             assert _claude_result_text(claude.baseline(capture)) == "CAPTURE_BASELINE_OK"
             server.assert_consumed()
             _assert_request_shape(
-                server, model="anthropic-api/ant-messages/claude-haiku-4-5-20251001", protocol_key="messages"
+                server, model="anthropic-max20/ant-messages/claude-haiku-4-5-20251001", protocol_key="messages"
             )
             _assert_small_claude_policy(server)
 
@@ -171,7 +173,7 @@ def test_claude_idle_resume_replays_through_the_pinned_native_cli(tmp_path: Path
             assert _claude_result_text(followup) == "IDLE_RESUME_OK"
             server.assert_consumed()
             _assert_request_shape(
-                server, model="anthropic-api/ant-messages/claude-haiku-4-5-20251001", protocol_key="messages"
+                server, model="anthropic-max20/ant-messages/claude-haiku-4-5-20251001", protocol_key="messages"
             )
             _assert_small_claude_policy(server)
 
@@ -191,7 +193,7 @@ def test_codex_idle_resume_replays_through_the_pinned_native_cli(tmp_path: Path)
         )
         with _capture(root, command, environment) as first:
             handshake = codex.launch_handshake(
-                first, cwd=str(root), model="gpt-oss-20b-128k-openai-chat", effort="low", persist=True
+                first, cwd=str(root), model="chatgpt/oai-responses/gpt-5.6-luna", effort="low", persist=True
             )
             seed = codex.submit(
                 first,
@@ -207,7 +209,7 @@ def test_codex_idle_resume_replays_through_the_pinned_native_cli(tmp_path: Path)
             )
             assert _codex_result_text(followup) == "IDLE_RESUME_OK"
             server.assert_consumed()
-            _assert_request_shape(server, model="gpt-oss-20b-128k-openai-chat", protocol_key="input")
+            _assert_request_shape(server, model="chatgpt/oai-responses/gpt-5.6-luna", protocol_key="input")
             _assert_codex_prompt_is_capture_scoped(server)
 
 

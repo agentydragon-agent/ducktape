@@ -1,2 +1,2 @@
-{"time_ns":5014895423414494,"text":"{\"type\":\"control_request\",\"request_id\":\"capture-2ec6db9117d34c67bccc13a30aa8abfd\",\"request\":{\"subtype\":\"initialize\"}}"}
-{"time_ns":5014895922261207,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: CAPTURE_BASELINE_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"1707e548-368f-4def-a45f-480ed069e5e0\"}"}
+{"time_ns":5038059508494041,"text":"{\"type\":\"control_request\",\"request_id\":\"capture-298c0c7b511445f4bc59beef6c23d960\",\"request\":{\"subtype\":\"initialize\"}}"}
+{"time_ns":5038060147976463,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: CAPTURE_BASELINE_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"ec859573-c384-4e7c-a180-b344b0ae1ecc\"}"}
