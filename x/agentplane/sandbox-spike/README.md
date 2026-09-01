@@ -49,6 +49,32 @@ still share a network namespace, Pod IP, ServiceAccount identity, kernel, node, 
 The verifier's source-IP check is combined with TokenReview and a live Pod lookup; source IP alone is
 not treated as identity.
 
+## Resulting deployment architecture
+
+The spike points to a two-proxy design for a credentialed production route; it does not implement
+this external gateway:
+
+```text
+runner/Agent
+  -> unauthenticated fixed-operation request to its local sidecar
+  -> sidecar attaches its hidden audience-scoped Pod token
+  -> trusted external gateway authenticates and authorizes the live Pod/Sandbox
+  -> gateway makes the allowlisted upstream request and adds any real upstream credential
+```
+
+Cilium policy permits the Sandbox Pod to reach only DNS and the trusted gateway, while only the
+gateway may reach the protected upstream. Because runner and sidecar share a Pod network identity,
+the runner can still open TCP directly to the gateway. The gateway therefore rejects every request
+without the sidecar-held token; this is application-level enforcement, not proof that the runner has
+no route.
+
+The local sidecar exposes only the capability intentionally granted to the Agent. The gateway remains
+the final authority: it validates the token audience, ServiceAccount, live Pod UID/source IP, Sandbox
+owner, destination, method, path, redirects, and private-address exclusions before issuing a request.
+It must not become an arbitrary forward proxy, `CONNECT` tunnel, or signing oracle. A public origin
+such as `http://example.com` needs no upstream credential, but follows the same authenticated and
+authorized route; credentialed origins add the real credential only at the gateway.
+
 ## Files
 
 - `manifests/`: standalone Sandboxes, verifier, scoped RBAC, Secret, and NetworkPolicies actually

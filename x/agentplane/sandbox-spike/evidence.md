@@ -110,14 +110,24 @@ Agentplane Agent or Thread.
 
 ## Recommendation
 
-**Use a trusted external gateway instead** before treating the Agent as hostile. The exact remaining
-gap is that a proxy sidecar and runner share one Pod network/Cilium identity, so the cluster cannot
-force the runner's L3/L4 traffic through that sidecar even though container-specific mounts keep the
-credential out of the runner and application authentication rejects direct calls.
+**Use a trusted external gateway instead** before treating the Agent as hostile. Keep a local sidecar
+in the Sandbox, but give it only an audience-scoped Pod token—not the real upstream credential. The
+intended request path is:
 
-Put the credentialed fixed-operation proxy in a separately selected trusted Pod or stronger runtime,
-allow the Sandbox Pod to reach only that gateway, and allow only the gateway to reach the protected
-upstream. Retain the narrow operation schema and explicit replay control. If the proxy must remain a
-sidecar, its result is suitable only for a trusted personal-workload threat model where ordinary runc
-container isolation and application-level rejection are sufficient; it is not a forced-egress
-boundary.
+```text
+Agent -> unauthenticated local operation -> token-authenticated external gateway -> upstream
+```
+
+The external gateway uses TokenReview plus live Pod UID/source and Sandbox-owner checks, authorizes
+the requested origin/method/path, applies redirect and private-address restrictions, and then makes
+the upstream request. It adds a real upstream credential only when that origin requires one. Cilium
+policy allows the Sandbox Pod to reach DNS and this gateway; only the gateway may reach the protected
+upstream.
+
+The exact remaining gap is that sidecar and runner share one Pod network/Cilium identity. The Agent
+can therefore open TCP directly to the gateway, but it cannot read the sidecar token, so the gateway
+rejects the direct request. This is an application-authentication boundary, not forced traffic through
+the sidecar. It is sufficient for the accepted threat model as long as the local API and gateway are
+narrow capabilities rather than an arbitrary forward proxy, `CONNECT` tunnel, or signing oracle.
+Retain explicit replay control; add a request-bound Agent/Thread assertion later only if that identity
+is required.
