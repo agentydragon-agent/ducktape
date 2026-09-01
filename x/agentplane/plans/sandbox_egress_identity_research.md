@@ -1,7 +1,7 @@
 # Sandbox egress identity: option survey
 
 This is an unscheduled research note for a possible future Agentplane capability. It does not add a
-requirement to the first orchestrator.
+requirement to the first credentialless Agentplane service.
 
 Confidence labels:
 
@@ -45,7 +45,7 @@ A credible later design will probably compose four controls:
    short-lived proof bound to its authoritative Agent/Thread/Sandbox mapping and, where needed, the
    request.
 
-The first orchestrator should not implement this in anticipation of later needs.
+The first credentialless Agentplane service should not implement this in anticipation of later needs.
 
 ## Claude Code Web pattern
 

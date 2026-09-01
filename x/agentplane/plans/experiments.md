@@ -1,6 +1,12 @@
 # Agentplane experiments
 
-Status: **focused experiment plan**.
+Status: **focused experiment plan; capture implementation present on PR #15, strict review pending**.
+
+The capture branch contains the Claude/Codex drivers, fixtures, replay tests, and the reconnect
+scenario. Do not call the capture P0 fully accepted until reconnect replay compares the repeated
+request body and provider-native request identity, and asserts duplicate or non-duplicate partial
+native output, process survival, and exact terminal frames. These are review gaps, not reasons to
+expand the capture into a generic protocol or artifact framework.
 
 The first experiment is not a control-plane validation suite. It answers one practical question:
 can a small bridge reliably drive native Claude Code and Codex processes, including the interactions

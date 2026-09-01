@@ -1,7 +1,7 @@
 # Agentplane product-surface inventory
 
 This document records desired capabilities without assigning priority or implementation sequence. The
-orchestrator DAG decides sequencing only after native-driver evidence exists.
+[Agentplane task DAG](task_dag.md) decides sequencing only after native-driver evidence exists.
 
 ## Product shape
 
@@ -142,6 +142,13 @@ eventually host the conversation app or provide an integration surface, but it s
 Agentplane API rather than merge runtime, route, frontend, or persistence ownership. When any of these
 capabilities become important, define an explicit integration contract and ownership boundary first.
 
+The current Ducktape-only agent lane is intentionally broader: internet access plus the scoped GitHub
+credential used for `agentydragon-agent` is acceptable for that work. This is a lane-specific
+operational boundary, not a reusable permission model. A private Haku agent with access to Rai's
+personal context needs a separate Agent Console design track for tool execution, HTTP/API calls,
+credential handling, approvals, and policies that remain reliable under pressure. Routine per-action
+approval clicks are not the foundation for that design.
+
 ## Deferred sandbox-bound request identity
 
 A useful future capability would let a downstream MCP server or Kubernetes service authenticate that
@@ -195,8 +202,8 @@ When this is eventually scheduled, start with the smallest external-gateway impl
 end-to-end proof of sandbox-bound authentication and secret exclusion. Agentplane should supply the
 authoritative Pod -> Sandbox -> Thread/Agent mapping once it exists; an Access Controller may consume
 that identity for allow/deny/escalation decisions without owning workload lifecycle or upstream
-credentials. Do not add a generic identity/fencing protocol to the first orchestrator in anticipation
-of this work.
+credentials. Do not add a generic identity/fencing protocol to the first credentialless Agentplane
+service in anticipation of this work.
 
 ### Isolation is a separate boundary from harness driving
 

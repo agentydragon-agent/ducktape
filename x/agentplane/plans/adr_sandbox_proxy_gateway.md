@@ -4,7 +4,7 @@
 - **Date:** 2026-09-01
 - **Scope:** Agentplane's future Kubernetes/Sandbox egress composition
 - **Not a v0 prerequisite:** This decision does not expand the native Claude/Codex capture slice or
-  require the first standalone Agentplane orchestrator to carry production credentials.
+  require the first standalone credentialless Agentplane service to carry production credentials.
 
 ## Decision
 

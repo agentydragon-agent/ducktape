@@ -208,6 +208,13 @@ justifies it. The conversation app—or a later Haku Console surface—should pr
 approval interaction without CLI copy/paste. Conservative defaults with a high explicit-approval
 ceiling are a future product property, not a v0 bridge dependency.
 
+This narrow egress/access-controller path must not be mistaken for the eventual general permission
+model for private Haku. The current Ducktape-only lane can accept broad internet access plus the
+scoped GitHub credential used by `agentydragon-agent`; that is a local operational convenience, not a
+safe default for an agent with Rai's personal context. A later Agent Console track must separately
+design permissions for tool execution, HTTP/API calls, credential handling, approvals, and resilient
+Haku policy enforcement.
+
 ## Deferred product layers
 
 Out of Agentplane v0:

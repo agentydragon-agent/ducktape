@@ -1,6 +1,12 @@
 # Subtask: capture native Claude Code and Codex wires
 
-Status: **implementation task**.
+Status: **implementation present on PR #15; strict reconnect review pending**.
+
+The branch contains the real-provider drivers, committed fixtures, fake-model replay, and the
+upstream connection-loss scenario. Final acceptance still requires the reconnect assertions to
+compare repeated request bodies and provider-native request identity, and to prove duplicate or
+non-duplicate partial native output, process survival, and exact terminal frames. Keep these checks
+provider-specific and bounded; do not add a general retry or telemetry framework.
 
 Build the smallest useful experiment: launch real Claude Code and Codex processes, drive their
 native JSON protocols, capture the native exchange and upstream model exchange, and prove the
