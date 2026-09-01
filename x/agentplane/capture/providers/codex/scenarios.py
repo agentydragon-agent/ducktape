@@ -151,6 +151,9 @@ def command(binary: str, *, endpoint: str) -> list[str]:
     )
     # Remove automatic skill discovery and its <skills_instructions> prompt block.
     skills = "skills = { bundled = { enabled = false }, include_instructions = false }"
+    # These captures use a fixed native approval policy, so omit its redundant permissions
+    # instructions rather than recording policy prose beside every tool description.
+    permissions_instructions = "include_permissions_instructions = false"
     # These captures do not use app, collaboration, or environment-context features, so omit
     # their corresponding prompt blocks instead of recording unrelated harness guidance.
     app_instructions = "include_apps_instructions = false"
@@ -164,6 +167,8 @@ def command(binary: str, *, endpoint: str) -> list[str]:
         providers,
         "-c",
         skills,
+        "-c",
+        permissions_instructions,
         "-c",
         app_instructions,
         "-c",

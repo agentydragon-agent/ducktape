@@ -93,6 +93,7 @@ def _assert_codex_prompt_is_capture_scoped(server: ReplayServer) -> None:
         assert body["instructions"] == codex_driver.BASE_INSTRUCTIONS
         serialized = observed["body"].decode("utf-8")
         assert "<skills_instructions>" not in serialized
+        assert "<permissions instructions>" not in serialized
         assert "<apps_instructions>" not in serialized
         assert "<collaboration_mode>" not in serialized
         assert "<environment_context>" not in serialized
