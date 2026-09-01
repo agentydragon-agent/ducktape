@@ -1,0 +1,107 @@
+{
+  "artifacts": {
+    "assertions.json": {
+      "record_count": null,
+      "sha256": "64867c6ab5e7637ee0ac35035ea6b733977b16ce9c90c879d10aa86d8cded03a",
+      "size": 25082
+    },
+    "correlation.jsonl": {
+      "record_count": 2,
+      "sha256": "87f875fb1210a22e52e79c32c2b6a616dfe97e60a77586ae2cc3234b3d7240c0",
+      "size": 264
+    },
+    "llm-requests.jsonl": {
+      "record_count": 2,
+      "sha256": "70e1beba475017ae26c5b00e2711b0767b0723ba0f6779b23d3376f23713cd36",
+      "size": 289653
+    },
+    "llm-response-chunks.jsonl": {
+      "record_count": 2,
+      "sha256": "6eb041162fcf5dd0b4eb93490d129197e4a0c158073c5a1acd2f0508567d7250",
+      "size": 9350
+    },
+    "llm-responses.jsonl": {
+      "record_count": 2,
+      "sha256": "ce4a37378dcc1c78d2044087e00d349a15863617f81950e39b78d964f5b6a5f4",
+      "size": 9444
+    },
+    "native-stderr.chunks.jsonl": {
+      "record_count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "native-stdin.frames.jsonl": {
+      "record_count": 2,
+      "sha256": "67c7d14e979776c9ae51d60e5111dc3e9afa412ddd9256d68b171d4d3190534e",
+      "size": 2410
+    },
+    "native-stdout.frames.jsonl": {
+      "record_count": 8,
+      "sha256": "437c6035d627fdd1d7c08d2308d9e7a2c03885e25679d8ff1c017f2ed56322f5",
+      "size": 85552
+    },
+    "process-events.jsonl": {
+      "record_count": 6,
+      "sha256": "3c705e3f6f30472e9e841cad8c8bf9208ad09bd557f7e711a4a56a76ff7fb576",
+      "size": 647
+    },
+    "scenario-actions.jsonl": {
+      "record_count": 2,
+      "sha256": "ca5e3a24d82ca08461ad36045582b28649b5faa027227c40fe4227a8f4e06211",
+      "size": 598
+    },
+    "summary.md": {
+      "record_count": null,
+      "sha256": "762522c5536b669aa782106a9de7e7299fae8601fb47dbd8e406dac371f14542",
+      "size": 42
+    },
+    "workspace-after.json": {
+      "record_count": null,
+      "sha256": "86aac2020b28451e29f68f0f43a9d4b3359c6b719e10b0d7a6b20fe75ce5b796",
+      "size": 492
+    },
+    "workspace-before.json": {
+      "record_count": null,
+      "sha256": "86aac2020b28451e29f68f0f43a9d4b3359c6b719e10b0d7a6b20fe75ce5b796",
+      "size": 492
+    },
+    "workspace-diff.json": {
+      "record_count": null,
+      "sha256": "b784898527352b2ea46539f3fc294d50b6931070366278b3d6285d3c845e6c3f",
+      "size": 52
+    }
+  },
+  "binary": {
+    "requested_command": "claude",
+    "resolved_path": "/tmp/agentplane-claude-current",
+    "resolver_method": "override",
+    "sha256": "e072d54ffa9168c9f5d05ef03f730fb4b628a69d136e273a482f2788681e71d4",
+    "size": 193,
+    "version_exit_code": 0,
+    "version_stderr": "",
+    "version_stdout": "2.1.252 (Claude Code)\n"
+  },
+  "budgets": {
+    "max_calls": 4,
+    "max_spend_usd": 0.04,
+    "max_tokens": 1024
+  },
+  "capture_schema_version": 1,
+  "credential_delivery": "temporary_grant",
+  "effort": "low",
+  "endpoint_origin": "http://litellm.litellm.svc.cluster.local:4000/v1",
+  "launch_environment_allowlist": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:43741"
+  },
+  "model": "claude-haiku-4-5-20251001",
+  "process_exit_code": 1,
+  "provider": "claude",
+  "recording_proxy": {
+    "endpoint": "http://127.0.0.1:43741",
+    "upstream_origin": "http://litellm.litellm.svc.cluster.local:4000/v1"
+  },
+  "result": "pass",
+  "result_reason": "native_scenario_observed",
+  "scenario": "shell",
+  "virtual_key_policy": "cheap-experiments"
+}

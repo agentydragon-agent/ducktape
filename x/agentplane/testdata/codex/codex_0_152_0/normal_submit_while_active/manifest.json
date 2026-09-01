@@ -1,0 +1,107 @@
+{
+  "artifacts": {
+    "assertions.json": {
+      "record_count": null,
+      "sha256": "093eb084dfc0adc94c7d4d562f2a7444202a066d35cf35dabc030bb631400d8e",
+      "size": 4202
+    },
+    "correlation.jsonl": {
+      "record_count": 3,
+      "sha256": "898cd5a35f8fb4cb63efd7b0319f18f70e0737b5428304b6806ce4fc8c58f172",
+      "size": 397
+    },
+    "llm-requests.jsonl": {
+      "record_count": 3,
+      "sha256": "1e361ec483aa4b898232abdb0c677c7496e566a1858efa806e6df7550dd50387",
+      "size": 286799
+    },
+    "llm-response-chunks.jsonl": {
+      "record_count": 3,
+      "sha256": "f488e542193becc189a8045b245ecb141a03eff27de9b25c8831f362fb7fcbdf",
+      "size": 342755
+    },
+    "llm-responses.jsonl": {
+      "record_count": 3,
+      "sha256": "f832e9052e6abb5903dffde7bbbd138bd6985b64d1fe35830aa012b728bce5ea",
+      "size": 342944
+    },
+    "native-stderr.chunks.jsonl": {
+      "record_count": 2,
+      "sha256": "dff33e6a6dc6e3813c248b892b4a5312ba1ae9687868c397771d09202ea0b9d8",
+      "size": 2265
+    },
+    "native-stdin.frames.jsonl": {
+      "record_count": 5,
+      "sha256": "83b0f91e5ff1f4505541012c4700dc0c4626b559b56da8ca568e309a4c6bfa31",
+      "size": 5396
+    },
+    "native-stdout.frames.jsonl": {
+      "record_count": 122,
+      "sha256": "4d5427c8a476b564c824d4ff359dc47967dc138d584bb2a9252d2c5f15e209a1",
+      "size": 173901
+    },
+    "process-events.jsonl": {
+      "record_count": 6,
+      "sha256": "90d6ca80dd0ab012cd55da898cc657f3fb6272fae4a5ef696e807799ee3e6b66",
+      "size": 756
+    },
+    "scenario-actions.jsonl": {
+      "record_count": 5,
+      "sha256": "3c4ceb0432ca10426129700745cc65e5b1dfbdccebb29d51f66bcd988c0fd973",
+      "size": 1362
+    },
+    "summary.md": {
+      "record_count": null,
+      "sha256": "762522c5536b669aa782106a9de7e7299fae8601fb47dbd8e406dac371f14542",
+      "size": 42
+    },
+    "workspace-after.json": {
+      "record_count": null,
+      "sha256": "86aac2020b28451e29f68f0f43a9d4b3359c6b719e10b0d7a6b20fe75ce5b796",
+      "size": 492
+    },
+    "workspace-before.json": {
+      "record_count": null,
+      "sha256": "86aac2020b28451e29f68f0f43a9d4b3359c6b719e10b0d7a6b20fe75ce5b796",
+      "size": 492
+    },
+    "workspace-diff.json": {
+      "record_count": null,
+      "sha256": "b784898527352b2ea46539f3fc294d50b6931070366278b3d6285d3c845e6c3f",
+      "size": 52
+    }
+  },
+  "binary": {
+    "requested_command": "codex",
+    "resolved_path": "/tmp/agentplane-harness-bin-10726/node_modules/@openai/codex/bin/codex.js",
+    "resolver_method": "override",
+    "sha256": "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477",
+    "size": 7236,
+    "version_exit_code": 0,
+    "version_stderr": "(node:27238) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+    "version_stdout": "codex-cli 0.152.0\n"
+  },
+  "budgets": {
+    "max_calls": 3,
+    "max_spend_usd": 0.03,
+    "max_tokens": 1024
+  },
+  "capture_schema_version": 1,
+  "credential_delivery": "temporary_grant",
+  "effort": "low",
+  "endpoint_origin": "http://litellm.litellm.svc.cluster.local:4000/v1",
+  "launch_environment_allowlist": {
+    "OPENAI_BASE_URL": "http://127.0.0.1:35031/v1"
+  },
+  "model": "gpt-oss-20b-128k-openai-chat",
+  "process_exit_code": 0,
+  "provider": "codex",
+  "recording_proxy": {
+    "endpoint": "http://127.0.0.1:35031/v1",
+    "upstream_origin": "http://litellm.litellm.svc.cluster.local:4000/v1"
+  },
+  "result": "pass",
+  "result_reason": "native_scenario_observed",
+  "scenario": "normal_submit_while_active",
+  "virtual_key_policy": "cheap-experiments"
+}

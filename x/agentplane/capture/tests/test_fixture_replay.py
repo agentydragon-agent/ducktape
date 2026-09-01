@@ -27,7 +27,7 @@ def test_accepted_fixture_bundles_validate_and_replay_raw_json() -> None:
 
 
 def test_live_handshake_fixtures_cover_both_native_protocols() -> None:
-    fixtures = {path.parts[-3]: path for path in _fixture_roots()}
+    fixtures = {path.parts[-3]: path for path in _fixture_roots() if path.name == "launch_handshake"}
     claude_in = (fixtures["claude"] / "native-stdin.frames.jsonl").read_text()
     codex_in = (fixtures["codex"] / "native-stdin.frames.jsonl").read_text()
     assert '"subtype":"initialize"' in claude_in

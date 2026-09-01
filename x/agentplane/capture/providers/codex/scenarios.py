@@ -20,6 +20,15 @@ def launch_handshake(capture: NativeCapture, *, cwd: str, model: str, effort: st
 
 
 def baseline(capture: NativeCapture, *, thread_start_response: dict[str, Any]) -> dict[str, Any]:
+    return submit(
+        capture,
+        thread_start_response=thread_start_response,
+        text="Reply with exactly: CAPTURE_BASELINE_OK",
+        action="codex_baseline_turn_start",
+    )
+
+
+def _thread_id(thread_start_response: dict[str, Any]) -> str:
     result = thread_start_response.get("result")
     if (
         not isinstance(result, dict)
@@ -27,9 +36,13 @@ def baseline(capture: NativeCapture, *, thread_start_response: dict[str, Any]) -
         or not isinstance(result["thread"].get("id"), str)
     ):
         raise ValueError("Codex thread/start did not return a durable thread id")
-    thread_id = result["thread"]["id"]
-    start = driver.turn_start("capture-3", thread_id=thread_id, text="Reply with exactly: CAPTURE_BASELINE_OK")
-    capture.write(start, action="codex_baseline_turn_start")
+    return result["thread"]["id"]
+
+
+def submit(capture: NativeCapture, *, thread_start_response: dict[str, Any], text: str, action: str) -> dict[str, Any]:
+    thread_id = _thread_id(thread_start_response)
+    start = driver.turn_start("capture-3", thread_id=thread_id, text=text)
+    capture.write(start, action=action)
     started = capture.await_frame(lambda item: item.get("id") == "capture-3", timeout=30)
     turn_result = started.get("result")
     if (
@@ -43,6 +56,73 @@ def baseline(capture: NativeCapture, *, thread_start_response: dict[str, Any]) -
         lambda item: item.get("method") == "turn/completed" and isinstance(item.get("params"), dict), timeout=120
     )
     return {"thread_id": thread_id, "turn_id": turn_id, "terminal": terminal}
+
+
+def submit_while_active(
+    capture: NativeCapture, *, thread_start_response: dict[str, Any], scenario: str
+) -> dict[str, Any]:
+    thread_id = _thread_id(thread_start_response)
+    initial = driver.turn_start(
+        "capture-3",
+        thread_id=thread_id,
+        text="Use shell to run `python operation_probe.py wait --seconds 20`; do not answer early.",
+    )
+    capture.write(initial, action=f"codex_{scenario}_initial_turn_start")
+    started = capture.await_frame(lambda item: item.get("id") == "capture-3", timeout=30)
+    turn_id = started["result"]["turn"]["id"]
+    active = capture.await_frame(lambda item: item.get("method") == "turn/started", timeout=30)
+    if scenario == "steering":
+        followup = driver.steer(
+            "capture-4", thread_id=thread_id, turn_id=turn_id, text="Reply ONLY STEERED after the current tool action."
+        )
+        action = "codex_steering_turn_steer"
+    else:
+        followup = driver.turn_start(
+            "capture-4", thread_id=thread_id, text="Reply ONLY SECOND_INPUT_OBSERVED after current work."
+        )
+        action = f"codex_{scenario}_second_turn_start"
+    capture.write(followup, action=action)
+    response = capture.await_frame(lambda item: item.get("id") == "capture-4", timeout=30)
+    terminal = capture.await_frame(lambda item: item.get("method") == "turn/completed", timeout=120)
+    return {
+        "thread_id": thread_id,
+        "turn_id": turn_id,
+        "active_evidence": active,
+        "followup_response": response,
+        "terminal": terminal,
+    }
+
+
+def interrupt(
+    capture: NativeCapture, *, thread_start_response: dict[str, Any], with_queued_input: bool
+) -> dict[str, Any]:
+    thread_id = _thread_id(thread_start_response)
+    start = driver.turn_start(
+        "capture-3",
+        thread_id=thread_id,
+        text="Use shell to run `python operation_probe.py wait --seconds 20`; do not answer early.",
+    )
+    capture.write(start, action="codex_interrupt_initial_turn_start")
+    started = capture.await_frame(lambda item: item.get("id") == "capture-3", timeout=30)
+    turn_id = started["result"]["turn"]["id"]
+    active = capture.await_frame(lambda item: item.get("method") == "turn/started", timeout=30)
+    queued_response = None
+    if with_queued_input:
+        queued = driver.turn_start("capture-4", thread_id=thread_id, text="Queued input: reply only if admitted.")
+        capture.write(queued, action="codex_interrupt_queued_turn_start")
+        queued_response = capture.await_frame(lambda item: item.get("id") == "capture-4", timeout=30)
+    request = driver.interrupt("capture-5", thread_id=thread_id, turn_id=turn_id)
+    capture.write(request, action="codex_interrupt_turn_interrupt")
+    response = capture.await_frame(lambda item: item.get("id") == "capture-5", timeout=30)
+    terminal = capture.await_frame(lambda item: item.get("method") == "turn/completed", timeout=120)
+    return {
+        "thread_id": thread_id,
+        "turn_id": turn_id,
+        "active_evidence": active,
+        "queued_response": queued_response,
+        "interrupt_response": response,
+        "terminal": terminal,
+    }
 
 
 def command(binary: str, *, endpoint: str) -> list[str]:

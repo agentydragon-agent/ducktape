@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from threading import Thread
@@ -53,10 +54,20 @@ def _validate(args: argparse.Namespace) -> None:
         raise ValueError("finite positive token/spend ceilings and nonnegative call ceiling are required")
     if args.scenario == "pod_replacement" and not args.acknowledge_destructive:
         raise ValueError("pod_replacement requires --acknowledge-destructive")
-    if args.scenario not in {"launch_handshake", "baseline"}:
+    supported = {
+        "launch_handshake",
+        "baseline",
+        "shell",
+        "file_edits",
+        "steering",
+        "normal_submit_while_active",
+        "interrupt",
+        "interrupt_with_queued_input",
+    }
+    if args.scenario not in supported:
         raise ValueError(f"live scenario driver not yet implemented: {args.provider}/{args.scenario}")
-    if args.scenario == "baseline" and args.max_calls < 1:
-        raise ValueError("baseline requires at least one allowed provider call")
+    if args.scenario != "launch_handshake" and args.max_calls < 1:
+        raise ValueError("inference scenarios require at least one allowed provider call")
     if not args.workspace.is_dir():
         raise ValueError("workspace must already be a fresh synthetic directory")
     if args.artifact_dir.exists():
@@ -76,15 +87,50 @@ def _handshake(args: argparse.Namespace, capture: NativeCapture) -> dict[str, An
     return codex_scenarios.launch_handshake(capture, cwd=str(args.workspace), model=args.model, effort=args.effort)
 
 
-def _baseline(args: argparse.Namespace, capture: NativeCapture, handshake: dict[str, Any]) -> dict[str, Any]:
+def _prepare_workspace(workspace: Path) -> None:
+    source = Path(__file__).with_name("fixtures") / "operation_probe.py"
+    target = workspace / "operation_probe.py"
+    shutil.copyfile(source, target)
+    target.chmod(0o700)
+    (workspace / "editable.txt").write_text("before\n", encoding="utf-8")
+
+
+def _inference_scenario(args: argparse.Namespace, capture: NativeCapture, handshake: dict[str, Any]) -> dict[str, Any]:
+    prompts = {
+        "baseline": "Reply with exactly: CAPTURE_BASELINE_OK",
+        "shell": (
+            "Use the shell tool to run `python operation_probe.py echo --value PROBE_STDOUT`, "
+            "`python operation_probe.py fail`, and `python operation_probe.py count`; summarize their exact outcomes."
+        ),
+        "file_edits": (
+            "Read editable.txt, then edit it to contain exactly `after\\n`, re-read it, and reply only FILE_EDIT_DONE."
+        ),
+    }
     if args.provider == "claude":
-        return claude_scenarios.baseline(capture)
+        if args.scenario in prompts:
+            return claude_scenarios.submit(capture, prompts[args.scenario], action=f"claude_{args.scenario}_prompt")
+        if args.scenario in {"steering", "normal_submit_while_active"}:
+            return claude_scenarios.submit_while_active(capture, scenario=args.scenario)
+        return claude_scenarios.interrupt(capture, with_queued_input=args.scenario == "interrupt_with_queued_input")
     started = handshake["thread_start_response"]
     assert isinstance(started, dict)
-    return codex_scenarios.baseline(capture, thread_start_response=started)
+    if args.scenario in prompts:
+        return codex_scenarios.submit(
+            capture,
+            thread_start_response=started,
+            text=prompts[args.scenario],
+            action=f"codex_{args.scenario}_turn_start",
+        )
+    if args.scenario in {"steering", "normal_submit_while_active"}:
+        return codex_scenarios.submit_while_active(capture, thread_start_response=started, scenario=args.scenario)
+    return codex_scenarios.interrupt(
+        capture, thread_start_response=started, with_queued_input=args.scenario == "interrupt_with_queued_input"
+    )
 
 
-def _start_recording_proxy(bundle: CaptureBundle, upstream: str, *, max_calls: int) -> tuple[Any, Thread, str]:
+def _start_recording_proxy(
+    bundle: CaptureBundle, upstream: str, *, max_calls: int, provider: str
+) -> tuple[Any, Thread, str]:
     """Start a loopback, header-blind proxy and return its path-preserving base URL."""
 
     calls = 0
@@ -123,7 +169,11 @@ def _start_recording_proxy(bundle: CaptureBundle, upstream: str, *, max_calls: i
     thread = Thread(target=server.serve_forever, name="agentplane-llm-recorder", daemon=True)
     thread.start()
     path = urlsplit(upstream).path.rstrip("/")
-    return server, thread, f"http://127.0.0.1:{server.server_port}{path}"
+    origin = f"http://127.0.0.1:{server.server_port}"
+    # Claude appends its own `/v1/messages` to ANTHROPIC_BASE_URL, while Codex
+    # expects its configured Responses base path to be retained. The proxy itself
+    # forwards either request path unchanged to its upstream `/v1` route.
+    return server, thread, origin if provider == "claude" else f"{origin}{path}"
 
 
 def run(args: argparse.Namespace) -> Path:
@@ -131,6 +181,7 @@ def run(args: argparse.Namespace) -> Path:
     require_scenario(args.provider, args.scenario)
     binary = resolve_binary(args.provider, getattr(args, f"{args.provider}_bin"))
     key = read_runtime_key(args.credential_file)
+    _prepare_workspace(args.workspace)
     before = snapshot(args.workspace)
     manifest: dict[str, Any] = {
         "provider": args.provider,
@@ -149,8 +200,10 @@ def run(args: argparse.Namespace) -> Path:
     proxy = None
     proxy_thread = None
     harness_endpoint = args.endpoint
-    if args.scenario == "baseline":
-        proxy, proxy_thread, harness_endpoint = _start_recording_proxy(bundle, args.endpoint, max_calls=args.max_calls)
+    if args.scenario != "launch_handshake":
+        proxy, proxy_thread, harness_endpoint = _start_recording_proxy(
+            bundle, args.endpoint, max_calls=args.max_calls, provider=args.provider
+        )
         bundle.manifest["recording_proxy"] = {"upstream_origin": args.endpoint, "endpoint": harness_endpoint}
     provider_environment = credential_environment(key=key, provider=args.provider, endpoint=harness_endpoint)
     bundle.manifest["launch_environment_allowlist"] = sanitize_environment(provider_environment)
@@ -164,8 +217,8 @@ def run(args: argparse.Namespace) -> Path:
     try:
         capture.start()
         result = {"handshake": _handshake(args, capture)}
-        if args.scenario == "baseline":
-            result["baseline"] = _baseline(args, capture, result["handshake"])
+        if args.scenario != "launch_handshake":
+            result[args.scenario] = _inference_scenario(args, capture, result["handshake"])
         bundle.manifest["result"] = "pass"
         bundle.manifest["result_reason"] = "native_scenario_observed"
     except Exception as error:

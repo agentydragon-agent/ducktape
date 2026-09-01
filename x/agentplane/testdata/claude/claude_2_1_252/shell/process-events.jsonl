@@ -1,0 +1,6 @@
+{"command":["/tmp/agentplane-claude-current","--output-format","stream-json","--verbose","--permission-mode","bypassPermissions","--include-partial-messages","--input-format","stream-json","--model","claude-haiku-4-5-20251001"],"event":"spawn_requested","run_sequence":1,"stream_sequence":1}
+{"event":"spawn_succeeded","pid":25779,"process_group":25779,"run_sequence":2,"stream_sequence":2}
+{"event":"stdin_closed","run_sequence":23,"stream_sequence":3}
+{"event":"stderr_eof","run_sequence":24,"stream_sequence":4}
+{"event":"stdout_eof","run_sequence":25,"stream_sequence":5}
+{"event":"exited","exit_code":1,"run_sequence":26,"stream_sequence":6}

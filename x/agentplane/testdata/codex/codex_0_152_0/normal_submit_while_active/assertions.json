@@ -1,0 +1,128 @@
+{
+  "evidence": {
+    "handshake": {
+      "initialize_response": {
+        "id": "capture-1",
+        "result": {
+          "codexHome": "/home/openclaw/.codex",
+          "platformFamily": "unix",
+          "platformOs": "linux",
+          "userAgent": "agentplane-capture/0.152.0 (Linux Unknown; x86_64) unknown (agentplane-capture; 0.1)"
+        }
+      },
+      "thread_start_response": {
+        "id": "capture-2",
+        "result": {
+          "activePermissionProfile": null,
+          "approvalPolicy": "never",
+          "approvalsReviewer": "user",
+          "cwd": "/tmp/agentplane-capture-codex-normal.0wKx9l/workspace",
+          "instructionSources": [],
+          "model": "gpt-oss-20b-128k-openai-chat",
+          "modelProvider": "agentplane",
+          "multiAgentMode": "explicitRequestOnly",
+          "reasoningEffort": "low",
+          "runtimeWorkspaceRoots": ["/tmp/agentplane-capture-codex-normal.0wKx9l/workspace"],
+          "sandbox": {
+            "type": "dangerFullAccess"
+          },
+          "serviceTier": null,
+          "thread": {
+            "agentNickname": null,
+            "agentRole": null,
+            "canAcceptDirectInput": true,
+            "cliVersion": "0.152.0",
+            "createdAt": 1788249197,
+            "cwd": "/tmp/agentplane-capture-codex-normal.0wKx9l/workspace",
+            "ephemeral": false,
+            "extra": null,
+            "forkedFromId": null,
+            "gitInfo": null,
+            "historyMode": "paginated",
+            "id": "01a05bf5-4c64-7fb2-9f8b-7f67219d62a3",
+            "modelProvider": "agentplane",
+            "name": null,
+            "parentThreadId": null,
+            "path": "/home/openclaw/.codex/sessions/2026/09/01/rollout-2026-09-01T07-53-17-01a05bf5-4c64-7fb2-9f8b-7f67219d62a3.jsonl",
+            "preview": "",
+            "projectId": null,
+            "recencyAt": 1788249197,
+            "section": null,
+            "sectionEnteredAt": null,
+            "sessionId": "01a05bf5-4c64-7fb2-9f8b-7f67219d62a3",
+            "source": "vscode",
+            "status": {
+              "type": "idle"
+            },
+            "threadSource": null,
+            "turns": [],
+            "updatedAt": 1788249197
+          }
+        }
+      }
+    },
+    "normal_submit_while_active": {
+      "active_evidence": {
+        "emittedAtMs": 1788249197823,
+        "method": "turn/started",
+        "params": {
+          "threadId": "01a05bf5-4c64-7fb2-9f8b-7f67219d62a3",
+          "turn": {
+            "completedAt": null,
+            "durationMs": null,
+            "error": null,
+            "id": "01a05bf5-4cb5-7942-80f3-1401c2bed6f7",
+            "items": [],
+            "itemsView": "notLoaded",
+            "startedAt": 1788249197,
+            "status": "inProgress"
+          }
+        }
+      },
+      "followup_response": {
+        "id": "capture-4",
+        "result": {
+          "turn": {
+            "completedAt": null,
+            "durationMs": null,
+            "error": null,
+            "id": "01a05bf5-4cb5-7942-80f3-1401c2bed6f7",
+            "items": [],
+            "itemsView": "notLoaded",
+            "startedAt": null,
+            "status": "inProgress"
+          }
+        }
+      },
+      "terminal": {
+        "emittedAtMs": 1788249218783,
+        "method": "turn/completed",
+        "params": {
+          "threadId": "01a05bf5-4c64-7fb2-9f8b-7f67219d62a3",
+          "turn": {
+            "completedAt": 1788249218,
+            "durationMs": 21031,
+            "error": {
+              "additionalDetails": null,
+              "codexErrorInfo": {
+                "responseTooManyFailedAttempts": {
+                  "httpStatusCode": 429
+                }
+              },
+              "message": "exceeded retry limit, last status: 429 Too Many Requests",
+              "misalignment": null
+            },
+            "id": "01a05bf5-4cb5-7942-80f3-1401c2bed6f7",
+            "items": [],
+            "itemsView": "notLoaded",
+            "startedAt": 1788249197,
+            "status": "failed"
+          }
+        }
+      },
+      "thread_id": "01a05bf5-4c64-7fb2-9f8b-7f67219d62a3",
+      "turn_id": "01a05bf5-4cb5-7942-80f3-1401c2bed6f7"
+    }
+  },
+  "result": "pass"
+}
