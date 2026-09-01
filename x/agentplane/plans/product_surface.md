@@ -156,6 +156,24 @@ When this is eventually scheduled, start with a threat-model and current-roadmap
 then a small end-to-end proof of sandbox-bound authentication and secret exclusion. Do not add a
 generic identity/fencing protocol to the first orchestrator in anticipation of this work.
 
+### Isolation is a separate boundary from harness driving
+
+The harness driver should not be responsible for protecting egress credentials. Its job is to drive
+the native Claude/Codex protocol and record provider behavior. Credential confidentiality belongs to
+the sandbox/runner/egress composition around that driver.
+
+A local proxy with an unauthenticated transport can be reasonable in a strongly isolated sandbox:
+the placement boundary says which sandbox can reach the proxy, while the proxy enforces a narrow,
+non-generic operation policy and substitutes the real credential. But “localhost” or an unauthenticated
+socket is not protection when Agent-controlled code shares the proxy's process/container/security
+domain. A generic forward proxy would also be an exfiltration oracle: the Agent could ask it to send
+the credential to an attacker-controlled destination or abuse a signing operation. The proxy must
+therefore constrain destinations, operations, and request shapes, and direct egress must be blocked.
+
+The implementation consequence is deliberate separation: capture and adapter features can be
+implemented and tested without solving credential isolation; the later isolation proof can wrap the
+same runner/driver seam without changing native harness semantics.
+
 ## Decisions deliberately left open
 
 - Authentik forward-auth versus Agentplane's own OIDC session handling;
