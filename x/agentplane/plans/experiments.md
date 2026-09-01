@@ -46,7 +46,7 @@ drivers.
 ## Proposed code layout
 
 ```text
-harness_control_plane/experiments/
+x/agentplane/experiments/
   BUILD.bazel
   README.md
   runner.py                    # CLI and scenario selection
@@ -192,7 +192,7 @@ Synthetic runs should be promoted into the repository as complete exact-payload 
 bundles rather than reduced to hand-written summaries. The intended layout is:
 
 ```text
-harness_control_plane/experiments/testdata/<provider>/<capture-set>/<scenario>/
+x/agentplane/experiments/testdata/<provider>/<capture-set>/<scenario>/
   manifest.json
   native-stdin.jsonl
   native-stdout.jsonl

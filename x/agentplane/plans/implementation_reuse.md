@@ -33,26 +33,26 @@ recorded against the harness versions actually resolved by the capture environme
 
 ## Start in a new non-Haku tree
 
-The new implementation starts under a new top-level `harness_control_plane/` tree (renamable when
+The new implementation starts under a new top-level `x/agentplane/` tree (renamable when
 the product name is chosen). It must not live under `haku/console`, import `haku/runner`, or make
 existing Haku Session/frame/database semantics its foundation. This is a deliberate clean boundary,
 not a claim that the existing work is valueless.
 
 The nearest evidence is already in this repository:
 
-- [`haku/cli_protocol`](../../haku/cli_protocol/) owns Claude stream/control framing and probes;
-- [`haku/runner/claude/harness.py`](../../haku/runner/claude/harness.py) launches and reads Claude;
-- [`haku/runner/claude/projection.py`](../../haku/runner/claude/projection.py) projects native frames;
-- [`haku/runner/codex/protocol.py`](../../haku/runner/codex/protocol.py) models Codex app-server
+- [`haku/cli_protocol`](../../../haku/cli_protocol/) owns Claude stream/control framing and probes;
+- [`haku/runner/claude/harness.py`](../../../haku/runner/claude/harness.py) launches and reads Claude;
+- [`haku/runner/claude/projection.py`](../../../haku/runner/claude/projection.py) projects native frames;
+- [`haku/runner/codex/protocol.py`](../../../haku/runner/codex/protocol.py) models Codex app-server
   messages;
-- [`haku/runner/codex/harness.py`](../../haku/runner/codex/harness.py) owns the current app-server
+- [`haku/runner/codex/harness.py`](../../../haku/runner/codex/harness.py) owns the current app-server
   subprocess;
-- [`haku/runner/codex/projection.py`](../../haku/runner/codex/projection.py) and
-  [`neutral_operations.py`](../../haku/runner/neutral_operations.py) show the current neutral
+- [`haku/runner/codex/projection.py`](../../../haku/runner/codex/projection.py) and
+  [`neutral_operations.py`](../../../haku/runner/neutral_operations.py) show the current neutral
   projection seam;
-- [`haku/console/docs/harness_frame_log_v3.md`](../../haku/console/docs/harness_frame_log_v3.md)
+- [`haku/console/docs/harness_frame_log_v3.md`](../../../haku/console/docs/harness_frame_log_v3.md)
   demonstrates complete native-frame capture rather than selected-field logging;
-- [`haku/console/database_schema.py`](../../haku/console/database_schema.py) contains the
+- [`haku/console/database_schema.py`](../../../haku/console/database_schema.py) contains the
   `JSONB(none_as_null=True)` precedent from the earlier JSON-null/SQL-NULL bug.
 
 Use these files to understand measured protocol behavior, test cases, and mistakes to avoid. Do not

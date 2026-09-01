@@ -146,7 +146,7 @@ non-null `TEXT`/`BYTEA` column. If parsed JSON is materialized in JSONB, store a
 as `{"state":"parsed","value":null}`; use a different explicit wrapper for parse failure. Do not use
 a nullable JSONB column whose Python `None` encoding can erase the distinction between an absent
 database value and a provider-supplied JSON `null`. Ducktape's existing
-[`JSONB(none_as_null=True)` precedent](../../haku/console/database_schema.py) demonstrates the bug to
+[`JSONB(none_as_null=True)` precedent](../../../haku/console/database_schema.py) demonstrates the bug to
 avoid, but the new implementation should make presence explicit rather than depend on ORM defaults.
 
 For the common facade, omit a member when it is not applicable or not yet known. Use JSON `null` only

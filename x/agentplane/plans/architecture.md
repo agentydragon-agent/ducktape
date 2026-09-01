@@ -122,9 +122,9 @@ success and interruption that the provider never proved.
   experiment workload handles consumer OAuth.
 
 Current repository evidence already proves the routing shape: Haku Console's
-[`config.yaml`](../../cluster/k8s/haku/console/config.yaml) selects the Anthropic Messages route for
+[`config.yaml`](../../../cluster/k8s/haku/console/config.yaml) selects the Anthropic Messages route for
 Claude and the OpenAI Responses route for Codex, while LiteLLM's
-[`test_litellm_config.py`](../../cluster/k8s/litellm/app/test_litellm_config.py) pins both native
+[`test_litellm_config.py`](../../../cluster/k8s/litellm/app/test_litellm_config.py) pins both native
 surfaces to CLIProxyAPI. The control plane reuses that boundary instead of adding another OAuth
 owner.
 
@@ -220,8 +220,8 @@ process/workload logs rather than by attaching to a terminal UI.
 This is not actually a distinct alternative to the Claude binary. The pinned Python Agent SDK
 launches `claude` as a subprocess with stream-JSON input/output and implements convenience routing
 around that wire. Ducktape already records this in the
-[mid-turn input analysis](../../haku/runner/docs/mid_turn_input.md#claude-code-stream-json-protocol)
-and [CLI protocol ownership decision](../../haku/plans/cli_protocol_ownership.md).
+[mid-turn input analysis](../../../haku/runner/docs/mid_turn_input.md#claude-code-stream-json-protocol)
+and [CLI protocol ownership decision](../../../haku/plans/cli_protocol_ownership.md).
 
 The SDK can remain a source of protocol evidence, fixtures, and implementation patterns. The bridge
 still owns the CLI wire directly because it needs exact native records, explicit initialization,
