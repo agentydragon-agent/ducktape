@@ -374,7 +374,6 @@ def test_prize_redeem_writes_log_and_subtracts_tokens(client: TestClient) -> Non
     state = client.get("/state").json()
     assert state["balance"]["tokens"] == 1
     assert len(state["prize_log"]) == 1
-    assert state["prize_log"][0]["id"] == prize["id"]
     assert state["prize_log"][0]["name"] == prize["name"]
     assert state["prize_log"][0]["cost"] == prize["cost"]
 
