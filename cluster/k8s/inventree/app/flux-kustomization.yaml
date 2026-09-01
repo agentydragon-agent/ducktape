@@ -21,6 +21,8 @@ spec:
       name: inventree
       namespace: inventree
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: inventree-namespace
       namespace: ducktape-flux
     - name: inventree-db

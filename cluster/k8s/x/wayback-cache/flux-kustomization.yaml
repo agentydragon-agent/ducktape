@@ -26,6 +26,8 @@ spec:
       name: wayback-cache
       namespace: wayback-cache
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: wayback-cache-namespace
       namespace: ducktape-flux
     - name: wayback-archive-db

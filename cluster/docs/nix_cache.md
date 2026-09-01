@@ -214,7 +214,7 @@ Attic uses serde defaults for env var fallback — values must be **absent** fro
 
 The Attic image is busybox-based (no bash on PATH for runc startup, no
 default `/tmp`); the bootstrap Job runs the rotator image
-(`ghcr.io/agentydragon/attic-jwt-rotation`) instead, kubectl-execing into
+(`git.allegedly.works/ducktape-ci/attic-jwt-rotation`) instead, kubectl-execing into
 the live attic pod to mint JWTs and curling the REST API for cache CRUD.
 
 The previous incarnation of this repo had a plaintext private signing key

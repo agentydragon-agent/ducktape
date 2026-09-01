@@ -1,22 +1,24 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: haku-managed-agent
+  name: authentik-jwt-rotation
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/haku-managed-agent
+  image: git.allegedly.works/ducktape-ci/authentik-jwt-rotation
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds
 ---
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImagePolicy
 metadata:
-  name: haku-managed-agent
+  name: authentik-jwt-rotation
   namespace: flux-system
 spec:
   imageRepositoryRef:
-    name: haku-managed-agent
+    name: authentik-jwt-rotation
   filterTags:
-    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical == chronological
+    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical order == chronological
     pattern: '^devel-\d{14}-[0-9a-f]{7}$'
   policy:
     alphabetical:

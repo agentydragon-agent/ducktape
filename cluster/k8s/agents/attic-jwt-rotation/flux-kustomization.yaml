@@ -14,6 +14,8 @@ spec:
 
     namespace: ducktape-flux
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     # nix-cache provides the attic deployment that the rotators kubectl-exec into.
     - name: nix-cache
       namespace: ducktape-flux

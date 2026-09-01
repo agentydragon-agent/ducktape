@@ -6,7 +6,7 @@ Anthropic's work queue (`ant beta:worker poll`) and executes tool calls inside
 the component: <../../../../haku/runtime/managed_agent/self_hosted/README.md>.
 
 The image is the full-NixOS `.#haku-managed-agent-image`, built and pushed to
-`ghcr.io/agentydragon/haku-managed-agent` by
+`git.allegedly.works/ducktape-ci/haku-managed-agent` by
 `.github/workflows/haku-managed-agent-image.yml`; Flux tracks the tag via the
 `haku-managed-agent` ImagePolicy. We don't boot the image (no systemd): the pod
 runs the worker closure directly as non-root `haku` — see `deployment.yaml` and

@@ -1,12 +1,12 @@
 # Build the Haku Managed Agents self-hosted worker image (Runtime B) with Nix
-# and push it to GHCR.
+# and push it to the private Forgejo registry.
 #
 # Unlike the Dockerfile images in container-images.yml (docker/build-push-action
 # via the ghcr-build-push composite), this is a Nix flake output: an
 # uncompressed full-NixOS rootfs tar (`.#haku-managed-agent-image`), so it is
 # `podman import`-ed (which compresses the layer once) and pushed rather than
 # buildx-built. Flux picks up the pushed `devel-<ts>-<sha7>` tag via
-# the haku-managed-agent ImagePolicy (cluster/k8s/flux-image-automation-ghcr/).
+# the haku-managed-agent ImagePolicy (cluster/k8s/flux-image-automation-forgejo/).
 name: haku-managed-agent image
 
 on:
@@ -23,7 +23,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build-push:
@@ -31,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/haku-managed-agent
+      IMAGE: git.allegedly.works/ducktape-ci/haku-managed-agent
     steps:
       - uses: actions/checkout@v7
 
@@ -50,10 +49,10 @@ jobs:
 
       # Gate the push to devel so feature branches don't publish tags the Flux
       # ImagePolicy would immediately deploy (matches push-images.yml).
-      - name: Import + push to GHCR
+      - name: Import + push to Forgejo
         if: github.ref_name == 'devel'
         run: |
-          echo "${{ github.token }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "$FORGEJO_IMAGES_PASSWORD" | podman login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
           # NixOS system.build.tarball is a flat rootfs tar (not an OCI
           # archive): import it, baking the systemd init as CMD, then push.
           ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"

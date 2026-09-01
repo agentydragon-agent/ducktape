@@ -20,6 +20,8 @@ spec:
         app.kubernetes.io/instance: props
         app.kubernetes.io/name: props-llm-proxy
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       # The proxy never touches the k8s API (unlike the backend's orchestration).
       automountServiceAccountToken: false
       nodeSelector:
@@ -33,7 +35,7 @@ spec:
                     operator: DoesNotExist
       containers:
         - name: llm-proxy
-          image: ghcr.io/agentydragon/props-llm-proxy:devel-20260828025324-2ef464f # {"$imagepolicy": "flux-system:props-llm-proxy"}
+          image: git.allegedly.works/ducktape-ci/props-llm-proxy:devel-20260828025324-2ef464f # {"$imagepolicy": "flux-system:props-llm-proxy"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

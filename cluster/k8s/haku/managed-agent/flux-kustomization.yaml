@@ -25,6 +25,8 @@ spec:
       name: haku-managed-agent
       namespace: haku-sandbox
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: agent-shared-secrets # provides ankiweb-credentials in claude-sandbox
       namespace: ducktape-flux
     - name: external-secrets-config # provides the claude-sandbox SecretStore

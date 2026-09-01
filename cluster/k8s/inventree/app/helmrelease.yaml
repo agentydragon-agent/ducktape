@@ -29,8 +29,11 @@ spec:
         namespace: inventree
 
   values:
+    imagePullSecrets:
+      - name: forgejo-images-creds
+
     image:
-      repository: ghcr.io/agentydragon/inventree
+      repository: git.allegedly.works/ducktape-ci/inventree
       tag: latest
       pullPolicy: Always
 

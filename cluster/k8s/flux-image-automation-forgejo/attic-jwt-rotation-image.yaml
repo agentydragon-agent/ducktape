@@ -1,20 +1,22 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: props-registry-proxy
+  name: attic-jwt-rotation
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/props-registry-proxy
+  image: git.allegedly.works/ducktape-ci/attic-jwt-rotation
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds
 ---
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImagePolicy
 metadata:
-  name: props-registry-proxy
+  name: attic-jwt-rotation
   namespace: flux-system
 spec:
   imageRepositoryRef:
-    name: props-registry-proxy
+    name: attic-jwt-rotation
   filterTags:
     # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical order == chronological
     pattern: '^devel-\d{14}-[0-9a-f]{7}$'

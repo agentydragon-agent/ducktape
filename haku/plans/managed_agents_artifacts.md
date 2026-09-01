@@ -317,7 +317,7 @@ spec:
       securityContext: { runAsNonRoot: true, runAsUser: 1000 }
       containers:
         - name: worker
-          image: ghcr.io/agentydragon/haku-managed-agent # Flux image automation pins the tag
+          image: git.allegedly.works/ducktape-ci/haku-managed-agent # Flux image automation pins the tag
           env:
             - { name: K8S_JWT_SOPS_PATH, value: secrets/haku-k8s-jwt.yaml }
             - { name: K8S_USER, value: haku }

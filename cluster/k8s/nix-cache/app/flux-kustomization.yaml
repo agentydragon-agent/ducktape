@@ -24,6 +24,8 @@ spec:
       name: attic
       namespace: nix-cache
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: attic-db
       namespace: ducktape-flux
     - name: gateway
