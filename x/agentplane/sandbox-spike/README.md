@@ -27,6 +27,21 @@ Agentplane capability:
 The proof had to test the actual pinned Agent Sandbox and cluster rather than assume that a Sandbox CR,
 NetworkPolicy, ServiceAccount, SPIFFE, or service mesh automatically supplies the desired guarantees.
 
+## Scope and acceptance
+
+This is a completed security-boundary experiment, not a production identity framework or an Agentplane
+runtime task. Its acceptance boundary is the evidence below: a standalone Sandbox creates the intended
+runner/proxy Pod; only the proxy receives the synthetic Secret and Pod-bound token; the fixed operation
+works through the authenticated gateway; direct, forged, copied, stale, and replayed proofs are rejected;
+and restart, rotation, replacement, and suspension behavior is recorded. The evidence must distinguish
+what is proven from what is unsupported, blocked by the environment, or inferred.
+
+The spike deliberately does not implement Claude/Codex driving, Agentplane Thread/Input/Turn persistence,
+production credential provisioning, warm pools, a generic identity or fencing protocol, a service mesh,
+or stronger runtime isolation. In particular, it does not claim that a sidecar plus NetworkPolicy can
+prevent direct runner TCP access within the same Pod; the trusted gateway's application authentication is
+the enforcement boundary.
+
 ## Constraints and things deliberately avoided
 
 The experiment used two standalone, non-warm-pooled Sandboxes in a disposable namespace, with no native

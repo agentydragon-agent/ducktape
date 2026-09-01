@@ -21,7 +21,7 @@ driving loop with tests.
 - [Product-surface inventory](product_surface.md)
 - [Sandbox egress identity option survey](sandbox_egress_identity_research.md)
 - [ADR: credentialless Sandbox egress](adr_sandbox_proxy_gateway.md)
-- [Sandbox proxy and identity spike](subtasks/sandbox_proxy_identity_spike.md)
+- [Sandbox proxy and identity spike](../sandbox-spike/README.md)
 - [Capture native Claude/Codex wires](subtasks/capture_native_harness_wires.md)
 
 ## v0 scope
