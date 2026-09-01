@@ -176,7 +176,12 @@ Once native captures establish a real intersection, a central service may add:
 - a small provider-neutral bridge interface;
 - recovery decisions and explicit uncertain outcomes;
 - persistence of exact native evidence; and
-- a web UI over those records.
+- a deliberate headless API consumed by a conversation-style app.
+
+The app may begin as a separate Agentplane client and may later be built into or hosted by Haku
+Console. LLM-generated Thread names, name persistence, archive presentation, and similar product
+behavior belong above the native bridge; they may use an explicit Agentplane metadata API if more than
+one client needs them.
 
 The common model should preserve links to native evidence but should not require every provider
 feature to collapse into a lowest-common-denominator operation taxonomy.
@@ -185,6 +190,23 @@ A future central-to-runner channel may be central-initiated through a separately
 bridge-initiated. Do not freeze that decision before connection and Sandbox experiments. Likewise,
 add authentication or fencing only when the deployment threat/failure model and observed behavior
 justify it.
+
+## Future policy and credential layers
+
+If secure HTTP egress or privileged tool calls are added later, keep the layers separate:
+
+- Agentplane owns the live `Pod -> Sandbox -> Thread -> Agent` mapping and may expose a narrow internal
+  identity-resolution endpoint;
+- an eventual Access Controller owns allow/deny/`user_approval_required` policy decisions;
+- a local fixed-operation proxy presents an audience-scoped Pod-bound token; and
+- a trusted external gateway validates workload identity, executes only the authorized operation, and
+  holds/substitutes real upstream credentials.
+
+Prefer the gateway to verify the Kubernetes token before asking Agentplane to resolve the verified Pod
+identity. Do not make Agentplane a general token introspection oracle unless a concrete requirement
+justifies it. The conversation app—or a later Haku Console surface—should provide the explicit user
+approval interaction without CLI copy/paste. Conservative defaults with a high explicit-approval
+ceiling are a future product property, not a v0 bridge dependency.
 
 ## Deferred product layers
 

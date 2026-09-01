@@ -5,8 +5,10 @@ orchestrator DAG decides sequencing only after native-driver evidence exists.
 
 ## Product shape
 
-Agentplane should be a standalone, headless orchestrator service. A separate UI or integration app
-should consume its API and own the user-facing presentation.
+Agentplane should be a standalone, headless orchestrator service. A conversation-style UI or
+integration app should consume its API and own the user-facing presentation. The app may initially be
+separate and may later be built into or hosted by Haku Console; that hosting choice is deliberately
+open and must not become an accidental shared runtime or persistence dependency.
 
 ```text
 Claude/Codex native adapters
@@ -17,7 +19,7 @@ Claude/Codex native adapters
       |                 |
  user/control API     live events
       |                 |
- separate Agentplane UI / integration app
+ conversation app / integration app
           |
  Kubernetes deployment behind Authentik
 ```
@@ -45,12 +47,16 @@ The service should eventually expose a deliberate API for the app in front of it
 - retrieve a Thread timeline and current status;
 - submit Inputs;
 - observe live assistant, tool, provisioning, and terminal events;
-- interrupt or steer where the provider supports it;
-- assign or change a user-facing name; and
-- archive and unarchive Threads.
+- interrupt or steer where the provider supports it; and
+- expose stable Thread metadata needed by clients.
 
 Archiving should initially mean “remove from the active view while retaining history,” not deletion
 or an automatic retention policy.
+
+The app layer may own LLM-generated Thread names, name-generation prompts, name persistence, archive
+presentation, and other presentation/product behavior. A name can later be persisted through an
+explicit Agentplane metadata API if multiple clients need it, but naming is not a native-driver or
+bridge concern.
 
 The API should expose stable Agentplane concepts such as Thread, Input, Turn, Event, status, and
 outcome. It should not require clients to understand native Claude or Codex frame shapes.
@@ -68,7 +74,8 @@ A separate app in front of Agentplane should eventually provide:
 - controls for supported interrupt/steering operations.
 
 The first UI may be intentionally small. Its value is proving that the API supports a real user
-workflow, not demonstrating a complete dashboard.
+workflow, not demonstrating a complete dashboard. It is a client of Agentplane, not a second owner of
+runner lifecycle or native continuity.
 
 ## API transport direction
 
@@ -92,6 +99,34 @@ A useful future option is REST/OpenAPI at the user boundary and gRPC internally,
 introduced only after a concrete internal service boundary or streaming limitation appears. Do not
 make the native stdio driver protocol resemble gRPC merely for symmetry.
 
+## Layering for identity, policy, and execution
+
+If secure HTTP egress and privileged tool calls are added later, keep the responsibilities separate:
+
+```text
+Agent/runner
+    -> local fixed-operation proxy
+    -> trusted egress gateway
+       -> Agentplane identity resolution: Pod -> Sandbox -> Thread -> Agent
+       -> Access Controller policy: allow | deny | user approval required
+       -> allowlisted upstream operation with real credential at gateway only
+```
+
+Agentplane should remain the authority for the live workload-to-Thread mapping. A narrowly scoped
+internal endpoint may resolve a verified Pod identity to its current Thread/Agent. Prefer having the
+gateway verify the Kubernetes token first and pass a verified Pod identity to Agentplane; do not turn
+Agentplane into a general Kubernetes-token introspection oracle unless that is actually required.
+
+An eventual **Access Controller** is a separate, conditional component for decisions such as whether
+this Thread may perform a requested operation and whether the operation requires explicit user
+approval. It should not own Pod/Sandbox lifecycle or hold upstream credentials. The egress gateway
+executes only the controller's authorized decision and remains responsible for narrow destination,
+method, path, payload, redirect, private-address, and replay enforcement.
+
+The conversation app—or a later Haku Console surface—should present `user_approval_required` requests
+and return Rai's explicit decision without requiring copy/paste through a CLI. Conservative defaults
+with a high explicit-approval ceiling are a desired future property, not an Agentplane v0 dependency.
+
 ## Deferred Haku Console-adjacent capabilities
 
 Haku Console already contains or may eventually provide capabilities that Agentplane could consume,
@@ -102,8 +137,10 @@ but they are deliberately not on the current schedule:
 - per-Agent auto-approval policy; and
 - explicit integration between the Agentplane API and Haku Console authority.
 
-These should not leak into the first Agentplane service as accidental dependencies. When they become
-important, define an explicit integration contract and ownership boundary first.
+These should not leak into the first Agentplane service as accidental dependencies. Haku Console may
+eventually host the conversation app or provide an integration surface, but it should consume the
+Agentplane API rather than merge runtime, route, frontend, or persistence ownership. When any of these
+capabilities become important, define an explicit integration contract and ownership boundary first.
 
 ## Deferred sandbox-bound request identity
 
@@ -125,8 +162,10 @@ proxy/service validates the proof as belonging to this Thread/sandbox
 proxy substitutes the real credential only at the egress/service boundary
 ```
 
-This is a capability inventory, not a design commitment. The following questions must be answered
-before scheduling implementation:
+The sandbox egress composition is now accepted in [the ADR](adr_sandbox_proxy_gateway.md) and
+validated by the [practical spike](../sandbox-spike/README.md): the local proxy holds only an
+audience-scoped Pod-bound token, while a trusted external gateway holds real upstream credentials.
+The following questions remain before scheduling the production implementation:
 
 - What authority binds Agent, Thread, Sandbox Claim, Pod, and credential without trusting agent-
   supplied claims?
@@ -152,9 +191,12 @@ research inputs. We should inspect their actual guarantees before choosing betwe
 sidecar, gateway, or another proof mechanism; do not assume the roadmap provides a current product
 contract.
 
-When this is eventually scheduled, start with a threat-model and current-roadmap discovery spike,
-then a small end-to-end proof of sandbox-bound authentication and secret exclusion. Do not add a
-generic identity/fencing protocol to the first orchestrator in anticipation of this work.
+When this is eventually scheduled, start with the smallest external-gateway implementation and an
+end-to-end proof of sandbox-bound authentication and secret exclusion. Agentplane should supply the
+authoritative Pod -> Sandbox -> Thread/Agent mapping once it exists; an Access Controller may consume
+that identity for allow/deny/escalation decisions without owning workload lifecycle or upstream
+credentials. Do not add a generic identity/fencing protocol to the first orchestrator in anticipation
+of this work.
 
 ### Isolation is a separate boundary from harness driving
 

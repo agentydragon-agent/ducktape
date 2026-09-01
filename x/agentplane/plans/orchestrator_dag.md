@@ -20,9 +20,9 @@ pattern is acceptable, coupling the products is not.
 
 The first user-visible outcome is:
 
-> Rai can open the standalone Agentplane UI, create a Thread, start one Claude or Codex runner,
-> send an Input, watch native/model-backed response and tool activity arrive, and see an honest
-> terminal outcome.
+> Rai can use a conversation-style app backed by the standalone Agentplane API to create a Thread,
+> start one Claude or Codex runner, send an Input, watch native/model-backed response and tool
+> activity arrive, and see an honest terminal outcome.
 
 The first slice should work for one provider first, then add the second provider through the same
 behavioral contract. It should not wait for multi-Agent collaboration, subscriptions, approvals,
@@ -51,23 +51,24 @@ C. Minimal Agentplane records       D. Runner/bridge seam       E. Agentplane ru
           \                         |                         /
            \_______________________|________________________/
                                    v
-F. One-provider vertical slice
-   create Thread -> start runner -> submit Input -> stream events -> terminal outcome
+F. One-provider API vertical slice
+   Agentplane API: create Thread -> start runner -> submit Input -> stream events -> terminal outcome
                     |                             |
                     v                             v
-G. Standalone web UI                           H. Second-provider parity check
-   Thread list/detail, composer,               connect the already-proven second adapter to
-   live timeline, error state,                 the same path; add only provider-specific wiring
-   interrupt/steer controls                    and an end-to-end test
+G. Conversation app client                       H. Second-provider parity check
+   conversation UI over the API;                 connect the already-proven second adapter to
+   names/archive/timeline/live control            the same path; add only provider-specific wiring
+   may live separately or later in                and an end-to-end test
+   Haku Console; no decision yet
                     \                             /
                      \___________________________/
                                    v
-I. First functioning Agentplane orchestrator
-   separate Agentplane deployment + separate UI, one Thread at a time, both providers,
+I. First functioning Agentplane
+   separate Agentplane API/service + conversation app, one Thread at a time, both providers,
    honest failures, live updates, and an end-to-end test; no real upstream credentials yet
                          |                         |
                          v                         v
-J. Secure egress integration                  K. Hardening from observed failures
+J. Secure egress integration                  M. Hardening from observed failures
    local fixed-operation sidecar              idle native resume, accepted-input recovery,
    -> external gateway;                       Pod replacement, reconnect, queue semantics
    Pod -> Sandbox -> Thread                    only as demanded by evidence
@@ -75,14 +76,20 @@ J. Secure egress integration                  K. Hardening from observed failure
    real credentials only at gateway
                          |
                          v
+K. Access controller, if needed
+   identity resolution -> allow/deny/
+   explicit user approval; policy authority
+   remains separate from Agentplane and gateway
+                         |
+                         v
 L. Credentialed production readiness
    narrow gateway policy, request freshness/replay controls,
    per-Sandbox/per-Thread binding, rotation, and escape evidence
                          |
                          v
-M. Explicit Haku Console integration (deferred)
-   adapter/enveloped messages, cross-product links, or selected operator controls;
-   no shared internal runtime or persistence authority by accident
+N. Explicit Haku Console integration (deferred)
+   host or consume the conversation app, or add an adapter/enveloped
+   message path; no shared internal runtime or persistence authority by accident
 ```
 
 B already owns both Claude and Codex adapters. H is therefore a small compatibility/parity check,
@@ -91,7 +98,8 @@ collapse into an additional acceptance test rather than remain a separate work i
 
 S0 is now completed evidence and an architectural input, not an open parallel workstream. It does not
 gate A–I. J–L are the downstream path to trusting a production Agentplane deployment with real
-credentials; they are deliberately separate from native harness semantics.
+credentials; K is conditional on dynamic policy or explicit approval needs. They are deliberately
+separate from native harness semantics.
 
 ## Work packets
 
@@ -181,11 +189,12 @@ Choose the provider with the lowest current integration risk from the capture ev
 UI-facing API path. It must exercise the real bridge seam, not call provider code directly from the
 API handler.
 
-### G — Standalone Agentplane web UI
+### G — Conversation app client
 
-Build a small UI owned by Agentplane. It may follow proven interaction patterns, but its code and
-route/API client remain in the Agentplane namespace and deployment. Do not mount it inside the Haku
-Console shell or make the Haku Console SPA its host.
+Build a small conversation-style app against the Agentplane API. Keep the app/API relationship
+explicit, but leave its hosting choice open: it may begin as a separate Agentplane app and may later
+be built into or hosted by Haku Console if that is the best product choice. That later choice must not
+create a shared Agentplane/Haku Console runtime or persistence dependency.
 
 Add only:
 
@@ -195,12 +204,16 @@ Add only:
 - live update subscription with reconnect/refetch behavior; and
 - visible provisioning, running, failed, and uncertain states.
 
+LLM-generated Thread names, name persistence, archive presentation, and other product-level UI
+behavior belong above the core Agentplane API unless the API later needs to own a specific stable
+metadata field. Do not make naming a native-driver concern.
+
 Do not build a dashboard for every Sandbox, a generic operation-card taxonomy, or settings for future
 provider policy.
 
-**Acceptance:** Rai can perform the first functioning workflow from the standalone Agentplane
-browser surface without API tooling. A browser refresh preserves the Thread and completed response;
-live updates do not require manual refresh during a turn.
+**Acceptance:** Rai can perform the first functioning workflow from the conversation app without API
+tooling. A browser refresh preserves the Thread and completed response; live updates do not require
+manual refresh during a turn.
 
 ### H — Second-provider parity check
 
@@ -214,9 +227,10 @@ end-to-end parity test.
 **Acceptance:** the same standalone Agentplane workflow works for both providers, with
 provider-specific limitations visible rather than hidden behind fake equivalence.
 
-### I — First functioning Agentplane orchestrator
+### I — First functioning Agentplane API and conversation app
 
-The first product gate is one separately deployed Agentplane instance where both providers can:
+The first product gate is one separately deployed Agentplane API/service plus a conversation-style
+client app where both providers can:
 
 - start a Thread;
 - receive an Input;
@@ -250,7 +264,29 @@ a direct runner request is rejected; a copied token from another Sandbox is reje
 and stale identity are rejected; and no real credential appears in the runner, native frames, logs, or
 workspace.
 
-### K — Credentialed production readiness
+### K — Access controller, if needed
+
+Do not create this component until there is a real need for dynamic per-Thread policy or an explicit
+approval/escalation path. If needed, keep the ownership split clear:
+
+- Agentplane is the authority for the live `Pod → Sandbox → Thread → Agent` mapping and may expose a
+  narrowly scoped internal identity-resolution endpoint;
+- the Access Controller is the authority for policy decisions such as allow, deny, or
+  `user_approval_required` for a requested operation; and
+- the egress gateway/proxy executes only an authorized decision and remains the only holder of real
+  upstream credentials.
+
+The first identity-resolution interface should preferably accept a verified Pod identity from the
+gateway rather than turning Agentplane into a general Kubernetes-token introspection oracle. If a
+token-based endpoint is required, it must be internal, audience-scoped, non-logging, and return only
+the minimum opaque binding needed for the decision.
+
+An explicit user approval path is a product capability, not an accidental gateway timeout. The app
+above Agentplane should be able to present the request, let Rai approve or deny it, and deliver that
+decision back to the Access Controller without requiring copy/paste through a CLI. Conservative default
+policy with a high explicit-approval ceiling is the intended shape.
+
+### L — Credentialed production readiness
 
 Before enabling real credentials, add only the controls required by the chosen threat model:
 
@@ -264,7 +300,7 @@ If the threat model requires a harder boundary than ordinary container/sidecar i
 runtime-hardening decision for gVisor, Kata, Firecracker, or an equivalent mechanism. Do not silently
 couple that runtime to the native driver protocol.
 
-### L — Hardening from observed failures
+### M — Hardening from observed failures
 
 After I, choose the next failure with the highest user cost. Candidates include:
 
@@ -278,7 +314,7 @@ After I, choose the next failure with the highest user cost. Candidates include:
 Do not implement all candidates in advance. Each gets its own observed failure, smallest test, and
 implementation packet. L can proceed in parallel with J/K when the failures are independent.
 
-### M — Explicit Haku Console integration (deferred)
+### N — Explicit Haku Console integration (deferred)
 
 Only after Agentplane works independently should we decide whether Haku Console needs to expose it.
 Possible integrations include a link, an enveloped message adapter, or a narrow operator control
