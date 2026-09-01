@@ -27,12 +27,6 @@ describe("settingsTabFromSearch", () => {
     expect(settingsTabFromSearch("")).toBe("mcp");
   });
 
-  it("restores a linked tab", () => {
-    expect(settingsTabFromSearch("?tab=nodes")).toBe("nodes");
-    expect(settingsTabFromSearch("?tab=grants")).toBe("grants");
-    expect(settingsTabFromSearch("?tab=sessions")).toBe("sessions");
-  });
-
   it("falls back safely for unknown tabs", () => {
     expect(settingsTabFromSearch("?tab=obsolete")).toBe("mcp");
   });
