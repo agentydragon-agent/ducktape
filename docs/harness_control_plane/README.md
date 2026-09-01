@@ -9,10 +9,13 @@ multi-mode `harness-bridge` binary supervises the selected harness and speaks it
 protocol. A central PostgreSQL-backed server owns durable threads, workload lifecycle, recovery
 decisions, the common timeline, and the web UI.
 
-Native harnesses are the default because they preserve provider behavior and, for Claude, keep the
-validated Claude Code binary path. The Claude Agent SDK is a wrapper around that binary rather than
-a separate agent loop; this design drives the stream/control wire directly. A direct LLM API agent
-loop is documented as an optional later adapter, not the baseline.
+The motivating product is a fleet of reliable headless Agents that can use both Claude and ChatGPT
+consumer-subscription paths, run for days or longer, receive streaming updates, and eventually
+delegate to and communicate with other Agents. Native harnesses are the default because they
+preserve provider behavior, keep those economical subscription-compatible paths, and avoid making
+metered direct APIs the mandatory baseline. The Claude Agent SDK is a wrapper around the Claude
+binary rather than a separate agent loop; this design drives the stream/control wire directly. A
+direct LLM API agent loop is documented as an optional later adapter, not the baseline.
 
 The design deliberately rejects terminal keystrokes and pane scraping as its correctness boundary.
 It evaluates A2A 1.0 only as a future opaque agent-to-agent facade; the rich harness-neutral common
@@ -32,6 +35,8 @@ timeline and private bridge/recovery stream remain internal.
 - Native Claude Code and Codex adapters are both required.
 - One bridge executable has per-provider modes.
 - PostgreSQL is the central durable store.
+- Runtime is one Pod/bridge incarnation; a monotonically increasing runtime generation is the
+  Sandbox-scoped ordinal and fencing epoch for the n-th authorized incarnation.
 - The common protocol covers orchestration, messages, turns, steering, interrupts, operation
   progress, native provenance, and recovery evidence.
 - Native frames remain available for diagnosis and reprojection.
@@ -44,6 +49,10 @@ timeline and private bridge/recovery stream remain internal.
 The orchestrator, web UI, model-capability/router layer, and future stateless MCP authorization
 gateway should be separately deployable. This proposal owns only orchestration/runtime/logging; it
 does not bind tool RBAC or approval escalation to Thread, Session, or Sandbox concepts.
+
+A future integrated Agent Console can compose those smaller services into one application for
+conversations, Runtimes, Sandboxes, MCP connections, approvals, grants, and traces without making
+them one deployment or authority.
 
 ## Evidence standard
 

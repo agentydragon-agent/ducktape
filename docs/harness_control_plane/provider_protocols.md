@@ -79,7 +79,7 @@ The adapter sends a correlated control request:
 
 Control responses correlate through `response.request_id`. The current runner writes initialize
 first but does not await its response before entering the command loop; it relies on stdin ordering.
-The new bridge should capture the response and expose initialization as an explicit attempt state.
+The new bridge should capture the response and expose initialization as an explicit runtime state.
 It may still pipeline later writes only if the pinned compatibility test proves that safe.
 
 ### Prompt submission
@@ -209,7 +209,7 @@ Codex requires an explicit stateful handshake on each app-server connection:
 5. subscribe to and process server requests/notifications.
 
 Requests before initialization are rejected. The bridge records the returned server metadata and
-negotiated capabilities in the attempt compatibility profile.
+negotiated capabilities in the workload compatibility profile.
 
 ### Durable versus ephemeral threads
 
@@ -241,7 +241,7 @@ replacement with:
 }
 ```
 
-The control plane independently fences attempts and waits for the prior workload to terminate before resuming a durable thread for writing. Whether Codex also enforces a single writer is treated as an experiment result, not relied on as the fence. Read APIs can inspect history without loading it.
+The control plane independently fences runtimes and waits for the prior workload to terminate before resuming a durable thread for writing. Whether Codex also enforces a single writer is treated as an experiment result, not relied on as the fence. Read APIs can inspect history without loading it.
 
 ### Prompt and turn flow
 
@@ -353,7 +353,7 @@ This mode is intentionally after the two native vertical slices. It exists to su
 
 | Capability           | Claude Code stream/control                 | Codex app-server                      | Common product behavior                |
 | -------------------- | ------------------------------------------ | ------------------------------------- | -------------------------------------- |
-| Connection handshake | initialize control request/response        | `initialize` then `initialized`       | attempt initialized                    |
+| Connection handshake | initialize control request/response        | `initialize` then `initialized`       | runtime initialized                    |
 | New turn input       | user stream frame with UUID                | `turn/start` with client/native ids   | accepted, dispatched, admitted         |
 | Mid-turn input       | queued user frame observed at a boundary   | targeted `turn/steer`                 | steering with provider-specific timing |
 | Future input         | provider queue/lifecycle behavior          | central queue then later `turn/start` | queued future turn                     |
@@ -363,7 +363,7 @@ This mode is intentionally after the two native vertical slices. It exists to su
 | File edits           | `Write` / `Edit` tool use/result           | `fileChange`                          | file operation                         |
 | Structured tool call | named tool use/result                      | structured tool-call item             | `tool`                                 |
 | Session identity     | Claude session id                          | Codex thread id                       | provider-native session reference      |
-| Cold resume          | CLI-native resume; exact behavior to prove | durable `thread/resume`               | new attempt with continuity evidence   |
+| Cold resume          | CLI-native resume; exact behavior to prove | durable `thread/resume`               | new runtime with continuity evidence   |
 | Current runner gap   | no native process restart/resume           | starts ephemeral thread; no steer     | new design must change both            |
 
 V0 runs one native provider session per bridge process. Codex app-server can host multiple

@@ -19,10 +19,10 @@ replacement for native provider protocols. Its relationship to A2A 1.0 is descri
    steering inputs; those inputs do not collapse into one boolean state.
 5. **Transport replay is not semantic replay.** Duplicate bridge delivery is deduplicated. Accepted
    user input is not automatically resent to a provider after an uncertain crash.
-6. **Lifecycle and activity are separate axes.** Sandbox existence, attempt/process state, and turn
+6. **Lifecycle and activity are separate axes.** Sandbox existence, Runtime and process state, and turn
    activity are not one overloaded status field.
 7. **PostgreSQL is authoritative.** A globally ordered thread timeline is assigned when Postgres
-   accepts records/events; attempt-local native sequences alone do not order replacement attempts.
+   accepts records/events; runtime-local native sequences alone do not order replacement runtimes.
 8. **Origin is explicit.** Human prompts, Agent messages, automations, subscriptions, and external
    events all enter through the same durable input path with a provenance envelope. A provider-facing
    user role does not imply that a human typed the content.
@@ -33,9 +33,10 @@ The initial stable identifiers are:
 
 - `thread_id`: durable ordered interaction identity for one speaking Agent/harness;
 - `sandbox_id`: durable environment record;
-- `attempt_id`: one bridge/Pod incarnation;
-- `attempt_generation`: monotonically increasing fencing generation for that Sandbox;
-- `native_process_generation`: child-process generation within one attempt;
+- `runtime_id`: one bridge/Pod incarnation;
+- `runtime_generation`: monotonically increasing Sandbox-scoped ordinal and fencing epoch for the
+  n-th authorized Runtime;
+- `native_process_generation`: child-process generation within one runtime;
 - `native_session_id`: provider conversation identity;
 - `input_id`: one accepted user input, whether initiating or steering;
 - `turn_id`: one common provider execution bracket;
@@ -44,18 +45,18 @@ The initial stable identifiers are:
 - `operation_id`: stable lifecycle identity for one operation;
 - `thread_seq`: Postgres-assigned durable order for common events and anchored wire records.
 
-The protocol term `attempt` is intentionally internal; UI may render it as **runtime**. `Session` is
-reserved for the provider-native resumable identity. Agent identity, Sandbox identity, and any
-future authorization principal are distinct.
+`Runtime` names the concrete Pod/bridge incarnation; `runtime_generation` says which ordinal
+incarnation is authorized. `Session` is reserved for the provider-native resumable identity. Agent
+identity, Sandbox identity, and any future authorization principal are distinct.
 
 The native sequence key is:
 
 ```text
-(attempt_id, native_process_generation, native_seq)
+(runtime_id, native_process_generation, native_seq)
 ```
 
 It is dense only within one child process generation. `thread_seq` supplies the total durable order
-across control-plane events, process restarts, replacement attempts, and native records. When events
+across control-plane events, process restarts, replacement runtimes, and native records. When events
 are received concurrently, Postgres commit order is the canonical presentation order; provider
 sequence and timestamps remain available for diagnosis.
 
@@ -68,7 +69,7 @@ A timeline event uses a provenance union:
   "provenance": {
     "source": "native | control_plane | kubernetes",
     "native": {
-      "attempt_id": "att_...",
+      "runtime_id": "rt_...",
       "native_process_generation": 2,
       "first_native_seq": 41,
       "last_native_seq": 44,
@@ -82,7 +83,7 @@ A timeline event uses a provenance union:
 ```
 
 Only the member matching `source` is required. A centrally accepted input or uncertainty marker can
-have no attempt or native sequence. One native record may contribute to multiple semantic events;
+have no runtime or native sequence. One native record may contribute to multiple semantic events;
 each projection stores its own `projection_key`, and replay upserts by that deterministic key.
 
 Evidence has two storage tiers:
@@ -99,8 +100,8 @@ A record says which tier is available. “Raw” never means reconstructed or re
   "wire_record_id": "wr_...",
   "thread_id": "thr_...",
   "sandbox_id": "sbx_...",
-  "attempt_id": "att_...",
-  "attempt_generation": 7,
+  "runtime_id": "rt_...",
+  "runtime_generation": 7,
   "native_process_generation": 2,
   "native_seq": 41,
   "direction": "bridge_to_native | native_to_bridge",
@@ -134,7 +135,7 @@ rollout.
   "thread_id": "thr_...",
   "thread_seq": 9001,
   "sandbox_id": "optional",
-  "attempt_id": "optional",
+  "runtime_id": "optional",
   "native_process_generation": 2,
   "turn_id": "optional",
   "input_id": "optional",
@@ -157,22 +158,22 @@ Provider detail and diagnostic views also consume `provider_extensions` and prov
 The bridge/server stream is an internal orchestration protocol, not the public agent-to-agent
 interface. Initial messages are:
 
-- `bridge.hello`: Sandbox/attempt ids, attempt fencing generation, bridge/provider versions, native
+- `bridge.hello`: Sandbox and Runtime IDs, runtime generation, bridge/provider versions, native
   process state, native session/turn ids, local-log ranges, and last central acknowledgement;
 - `server.reconcile`: accepted generation, desired lifecycle, durable cursors, and replay request;
-- `input.offer`: committed input plus expected attempt generation;
+- `input.offer`: committed input plus expected runtime generation;
 - `input.bridge_durable`: input persisted in the append-only bridge log;
 - `input.native_admitted`: native admission evidence and ids;
 - `wire.append`: ordered batch of wire records;
 - `wire.ack`: highest contiguous sequence for one process generation;
 - `turn.steer`: target input and native/common turn;
 - `turn.interrupt`: target common/native turn;
-- `attempt.drain`: stop accepting new work and flush evidence;
-- `attempt.shutdown`: terminate the child/process group and report exit;
+- `runtime.drain`: stop accepting new work and flush evidence;
+- `runtime.shutdown`: terminate the child/process group and report exit;
 - `heartbeat`: liveness plus current process/turn snapshot;
 - `error`: structured protocol, adapter, storage, or lifecycle failure.
 
-Every command includes `command_id` and `attempt_generation`. A stale generation cannot admit input,
+Every command includes `command_id` and `runtime_generation`. A stale generation cannot admit input,
 advance dispatch, or append authoritative records. Duplicate messages are idempotent by stable id.
 A replacement generation is issued only after the previous workload is confirmed unable to keep
 running, normally by observing that its Pod and child process are terminated. Central generation
@@ -195,9 +196,9 @@ native process from continuing side effects.
 
 These describe durable environment lifecycle, not whether a turn is working.
 
-### Attempt and process lifecycle
+### Runtime and process lifecycle
 
-- `attempt.started`, `attempt.ready`, `attempt.recovering`, `attempt.ended`;
+- `runtime.started`, `runtime.ready`, `runtime.recovering`, `runtime.ended`;
 - `native_process.started`, `native_process.initialized`, `native_process.exited`;
 - `bridge.connected`, `bridge.disconnected`, `bridge.replayed`;
 - `evidence.gap_detected`;
@@ -206,7 +207,7 @@ These describe durable environment lifecycle, not whether a turn is working.
 ### Input lifecycle
 
 - `input.accepted`: committed centrally;
-- `input.offered`: sent to the current attempt generation;
+- `input.offered`: sent to the current runtime generation;
 - `input.bridge_durable`: persisted in the append-only bridge log;
 - `input.native_admitted`: provider evidence says it entered native processing/queueing;
 - `input.queued_for_future_turn`;
@@ -358,7 +359,7 @@ requires later provider evidence.
 6. One native record may produce several events only with deterministic, distinct projection keys.
 7. Common status never claims success when provider terminal evidence is absent.
 8. Unknown provider records are retained and do not block later records.
-9. Provider-native ids are never reused as global ids without provider/attempt scoping.
+9. Provider-native ids are never reused as global ids without provider/runtime scoping.
 10. `thread_seq` is immutable once assigned; late replay appears at a new ingestion anchor while its
     original native timestamp/sequence remains visible.
 
@@ -374,8 +375,8 @@ The default rollout merges common events by `thread_seq` and renders:
 The raw-evidence view expands the same anchors. It can show native order within a process generation,
 but it does not reorder the common timeline or hide late replay.
 
-Sandbox lifecycle and attempt/turn activity are rendered separately. “Suspended” means Pod absent
-with durable environment retained; “working” means an attempt currently has an active turn.
+Sandbox lifecycle and runtime/turn activity are rendered separately. “Suspended” means Pod absent
+with durable environment retained; “working” means a Runtime currently has an active turn.
 
 ## Optional A2A projection
 
