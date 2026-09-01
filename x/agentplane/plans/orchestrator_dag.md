@@ -31,6 +31,11 @@ retention policy, or a generalized control plane.
 ## DAG
 
 ```text
+S0. Sandbox proxy/identity spike [complete]
+    proxy-only Secret + Pod-bound token + TokenReview/Sandbox correlation;
+    same-Pod route limitation and external-gateway decision recorded
+    (independent evidence; informs J only; does not gate A–I)
+
 A. Native capture task (in progress)
    real provider frames + upstream model exchanges + driver/replay evidence
                          |
@@ -59,15 +64,23 @@ G. Standalone web UI                           H. Second-provider parity check
                                    v
 I. First functioning Agentplane orchestrator
    separate Agentplane deployment + separate UI, one Thread at a time, both providers,
-   honest failures, live updates, and an end-to-end test
-                                   |
-                                   v
-J. Narrow hardening from observed failures
-   idle native resume, accepted-input recovery, Pod replacement,
-   reconnect, queue semantics — only as demanded by evidence
-                                   |
-                                   v
-K. Explicit Haku Console integration (deferred)
+   honest failures, live updates, and an end-to-end test; no real upstream credentials yet
+                         |                         |
+                         v                         v
+J. Secure egress integration                  K. Hardening from observed failures
+   local fixed-operation sidecar              idle native resume, accepted-input recovery,
+   -> external gateway;                       Pod replacement, reconnect, queue semantics
+   Pod -> Sandbox -> Thread                    only as demanded by evidence
+   correlation when required;
+   real credentials only at gateway
+                         |
+                         v
+L. Credentialed production readiness
+   narrow gateway policy, request freshness/replay controls,
+   per-Sandbox/per-Thread binding, rotation, and escape evidence
+                         |
+                         v
+M. Explicit Haku Console integration (deferred)
    adapter/enveloped messages, cross-product links, or selected operator controls;
    no shared internal runtime or persistence authority by accident
 ```
@@ -76,28 +89,9 @@ B already owns both Claude and Codex adapters. H is therefore a small compatibil
 not a second provider-protocol or adapter project. If F exercises both providers immediately, H can
 collapse into an additional acceptance test rather than remain a separate work item.
 
-## Independent parallel track: sandbox egress identity
-
-This track is **needed support / deferred discovery**, not part of the critical path to the first
-functioning orchestrator. It can begin independently once a disposable namespace and pinned Agent
-Sandbox version are available, but its result must not expand the native-driver or Agentplane API
-scope.
-
-```text
-L. Sandbox proxy/identity prototype and proof
-   one non-warm-pooled Sandbox per experiment identity;
-   runner + proxy sidecar; Secret only in proxy; direct egress blocked;
-   verifier identity + cross-Sandbox, replay, lifecycle, rotation,
-   and proxy-oracle checks
-                         |
-                         v
-M. Isolation decision record
-   ordinary sidecar sufficient | external gateway | runner handoff |
-   stronger runtime such as Firecracker/Kata required
-```
-
-L–M do not gate A–I. They become relevant before a production Agentplane deployment is expected to
-protect real credentials from an Agent. See [the detailed spike brief](subtasks/sandbox_proxy_identity_spike.md).
+S0 is now completed evidence and an architectural input, not an open parallel workstream. It does not
+gate A–I. J–L are the downstream path to trusting a production Agentplane deployment with real
+credentials; they are deliberately separate from native harness semantics.
 
 ## Work packets
 
@@ -234,7 +228,43 @@ The first product gate is one separately deployed Agentplane instance where both
 A single-Thread/single-runner limitation is acceptable. Multi-Agent, subscriptions, Haku Console
 integration, and advanced recovery are not part of this gate.
 
-### J — Hardening from evidence
+### J — Secure egress integration
+
+Once Agentplane can authoritatively map the active runner Pod to its Sandbox and Thread, implement the
+smallest production-shaped credentialless egress path described by
+[the ADR](adr_sandbox_proxy_gateway.md):
+
+- a local fixed-operation proxy sidecar with no real upstream credential;
+- an audience-scoped, Pod-bound Kubernetes token available only to that sidecar;
+- a trusted external gateway that performs TokenReview and live Pod/Sandbox correlation;
+- explicit destination, method, path, payload, redirect, and private-address policy; and
+- real upstream credentials held and substituted only at the gateway.
+
+The first implementation should support one synthetic operation and use the spike's committed manifests
+as evidence, not as an excuse to build a generic identity framework. It must preserve the known
+same-Pod limitation: the runner may reach the gateway at TCP level, but requests without the valid
+sidecar-held token must fail.
+
+**Acceptance:** an Agentplane-launched Sandbox can complete one allowlisted credentialed operation;
+a direct runner request is rejected; a copied token from another Sandbox is rejected; Pod replacement
+and stale identity are rejected; and no real credential appears in the runner, native frames, logs, or
+workspace.
+
+### K — Credentialed production readiness
+
+Before enabling real credentials, add only the controls required by the chosen threat model:
+
+- per-Sandbox/per-Thread binding where the downstream needs Thread identity;
+- request freshness and durable replay control;
+- Secret rotation/reload behavior;
+- gateway availability and failure semantics; and
+- escape/proxy-oracle tests against the actual deployment composition.
+
+If the threat model requires a harder boundary than ordinary container/sidecar isolation, open a separate
+runtime-hardening decision for gVisor, Kata, Firecracker, or an equivalent mechanism. Do not silently
+couple that runtime to the native driver protocol.
+
+### L — Hardening from observed failures
 
 After I, choose the next failure with the highest user cost. Candidates include:
 
@@ -246,9 +276,9 @@ After I, choose the next failure with the highest user cost. Candidates include:
 - native queue/dequeue behavior.
 
 Do not implement all candidates in advance. Each gets its own observed failure, smallest test, and
-implementation packet.
+implementation packet. L can proceed in parallel with J/K when the failures are independent.
 
-### K — Explicit Haku Console integration (deferred)
+### M — Explicit Haku Console integration (deferred)
 
 Only after Agentplane works independently should we decide whether Haku Console needs to expose it.
 Possible integrations include a link, an enveloped message adapter, or a narrow operator control
@@ -264,18 +294,21 @@ lifecycles merely to avoid an HTTP boundary.
 - G should start only once F has a real Agentplane API/event shape to render.
 - H can proceed alongside G after F, but must not force a premature universal abstraction or
   reopen the shared protocol without new evidence.
-- J begins only after I exposes the first real reliability bottleneck.
-- L–M can run in parallel with A–I as one bounded infrastructure/security spike, but it does not
-  justify changing the driver seam or block I. M must be resolved before a production deployment is
-  trusted with real credentials.
-- K is explicitly downstream of an independently functioning Agentplane; it is not a hidden
-  dependency of I.
+- J is downstream of I because Agentplane must own the authoritative Pod → Sandbox → Thread mapping
+  before it can bind credentialed requests to a Thread. The completed S0 spike supplies its deployment
+  shape and boundary evidence.
+- K is downstream of J and is the gate before real upstream credentials are enabled.
+- L begins after I and should be selected from the first real reliability bottleneck; it can proceed in
+  parallel with J/K when the failures are independent.
+- M is explicitly downstream of an independently functioning Agentplane; it is not a hidden dependency
+  of I or J.
 
 ## Explicit cuts
 
 The following are not blockers for I:
 
 - a protocol broader than the captured Claude/Codex interaction seam;
+- secure egress or production credential substitution;
 - multi-Agent rooms/delegation;
 - subscriptions and external-event adapters;
 - credential/approval redesign;
@@ -284,3 +317,6 @@ The following are not blockers for I:
 - automatic retention/disposal policy;
 - mTLS or elaborate control-channel authentication; and
 - Haku Console reuse or a shared Haku Console persistence/runtime boundary.
+
+J–K are the required downstream gate before a production deployment receives real upstream
+credentials, not prerequisites for the first credentialless Agentplane workflow.
