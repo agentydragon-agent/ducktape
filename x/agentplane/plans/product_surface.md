@@ -92,14 +92,68 @@ A useful future option is REST/OpenAPI at the user boundary and gRPC internally,
 introduced only after a concrete internal service boundary or streaming limitation appears. Do not
 make the native stdio driver protocol resemble gRPC merely for symmetry.
 
+## Deferred Haku Console-adjacent capabilities
+
+Haku Console already contains or may eventually provide capabilities that Agentplane could consume,
+but they are deliberately not on the current schedule:
+
+- Agent credential management and egress-time credential substitution;
+- user-approved tool calls;
+- per-Agent auto-approval policy; and
+- explicit integration between the Agentplane API and Haku Console authority.
+
+These should not leak into the first Agentplane service as accidental dependencies. When they become
+important, define an explicit integration contract and ownership boundary first.
+
+## Deferred sandbox-bound request identity
+
+A useful future capability would let a downstream MCP server or Kubernetes service authenticate that
+a request came from the specific Agent or Thread running in a specific sandbox, while ensuring the
+Agent never receives the real credential.
+
+A possible future flow is:
+
+```text
+integration app requests Thread + selected MCP server/credential binding
+        |
+Agentplane records the binding and starts the Thread's sandbox
+        |
+sandbox-side runner or Agent Gateway obtains a non-secret, scoped identity proof
+        |
+proxy/service validates the proof as belonging to this Thread/sandbox
+        |
+proxy substitutes the real credential only at the egress/service boundary
+```
+
+This is a capability inventory, not a design commitment. The following questions must be answered
+before scheduling implementation:
+
+- What authority binds Agent, Thread, Sandbox Claim, Pod, and credential without trusting agent-
+  supplied claims?
+- Is the proof minted by Agentplane, the Sandbox controller, an Agent Gateway, or a separate
+  identity service?
+- How does the verifier detect replay, copying to another sandbox, Pod replacement, and stale
+  Threads?
+- Does the proof identify a Thread, an Agent, a runner instance, or a narrower request capability?
+- Where is the real credential substituted, and how do we prove it never reaches the Agent,
+  environment, native frames, logs, or workspace?
+- Can an MCP server validate the proof directly, or must all such traffic pass through a trusted
+  gateway?
+- What does Agent Sandbox's roadmap or Agent Gateway actually guarantee, versus merely propose?
+
+When this is eventually scheduled, start with a threat-model and current-roadmap discovery spike,
+then a small end-to-end proof of sandbox-bound authentication and secret exclusion. Do not add a
+generic identity/fencing protocol to the first orchestrator in anticipation of this work.
+
 ## Decisions deliberately left open
 
 - Authentik forward-auth versus Agentplane's own OIDC session handling;
 - REST event polling versus SSE versus WebSocket for the first client;
 - whether the API and UI ship in one Agentplane deployment or as separate deployments;
 - PostgreSQL schema and migration packaging;
-- whether a future internal runner boundary benefits from gRPC; and
-- which provider controls are exposed in the first UI.
+- whether a future internal runner boundary benefits from gRPC;
+- which provider controls are exposed in the first UI; and
+- the eventual authority and proof format for sandbox-bound request identity.
 
 These are requirements and design questions, not a priority ordering. The immediate implementation
 constraint remains: prove the shared protocol and both native adapters before building broad API or
