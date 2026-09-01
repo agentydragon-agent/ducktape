@@ -1,7 +1,7 @@
 # Implementation reuse and prior art
 
-Status: **proposal evidence**. This document identifies code and behavioral patterns worth reusing
-without outsourcing the Harness Control Plane's durability or recovery contract.
+Status: **proposal evidence**. This document identifies behavioral evidence and external patterns
+worth studying without making the new system a Haku refactor.
 
 ## Evaluation rules
 
@@ -20,7 +20,7 @@ safe continuity authority.
 
 | Reference                                                                                                                       | Pin                                                 | License                                    | Recommended role                                       |
 | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------ |
-| Ducktape Claude and Codex runners                                                                                               | This PR's repository revision                       | Repository license                         | Primary local implementation base                      |
+| Ducktape Haku Claude and Codex runners                                                                                          | This PR's repository revision                       | Repository license                         | Behavioral evidence only; no implementation dependency |
 | [`plotarmordev/claude-pool`](https://github.com/plotarmordev/claude-pool/tree/05754a3a3e4fe5ccc1226de29cf295bcb4746e27)         | `05754a3a3e4fe5ccc1226de29cf295bcb4746e27`          | MIT                                        | Claude process-supervision and test patterns           |
 | [`openai/symphony`](https://github.com/openai/symphony/tree/8001b52e3062495a16e520e4ceaf8f9de868c4d0)                           | `8001b52e3062495a16e520e4ceaf8f9de868c4d0`          | Apache-2.0                                 | Small Codex handshake and compatibility reference      |
 | [`backnotprop/orchestrator`](https://github.com/backnotprop/orchestrator/tree/583acf4b469b91131f96ae2136797749c788b4c7)         | `583acf4b469b91131f96ae2136797749c788b4c7`          | BSL 1.1; Apache-2.0 change date 2029-07-09 | Behavioral prior art only unless licensing is reviewed |
@@ -28,12 +28,17 @@ safe continuity authority.
 | [Kubernetes SIGs Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox/tree/3ea199b8b910f8e838a6000796c29536d592fbdd) | v0.5.5 / `3ea199b8b910f8e838a6000796c29536d592fbdd` | Apache-2.0                                 | First workload lifecycle backend                       |
 | [`kagent-dev/kagent`](https://github.com/kagent-dev/kagent/tree/8905d1ca417e4094e6c6fc55a045dd6842d58ec9)                       | `8905d1ca417e4094e6c6fc55a045dd6842d58ec9`          | Apache-2.0                                 | Durable-instance and runtime-reconciliation prior art  |
 
-Pins are evidence anchors, not automatic vendoring decisions. Provider and controller behavior must
-still be reprobed against the exact production profile.
+Pins are evidence anchors, not automatic vendoring decisions. Real adapter behavior must still be
+recorded against the harness versions actually resolved by the capture environment.
 
-## Reuse the existing Ducktape adapters first
+## Start in a new non-Haku tree
 
-The nearest implementation is already in this repository:
+The new implementation starts under a new top-level `harness_control_plane/` tree (renamable when
+the product name is chosen). It must not live under `haku/console`, import `haku/runner`, or make
+existing Haku Session/frame/database semantics its foundation. This is a deliberate clean boundary,
+not a claim that the existing work is valueless.
+
+The nearest evidence is already in this repository:
 
 - [`haku/cli_protocol`](../../haku/cli_protocol/) owns Claude stream/control framing and probes;
 - [`haku/runner/claude/harness.py`](../../haku/runner/claude/harness.py) launches and reads Claude;
@@ -43,12 +48,18 @@ The nearest implementation is already in this repository:
 - [`haku/runner/codex/harness.py`](../../haku/runner/codex/harness.py) owns the current app-server
   subprocess;
 - [`haku/runner/codex/projection.py`](../../haku/runner/codex/projection.py) and
-  [`neutral_operations.py`](../../haku/runner/neutral_operations.py) provide the current neutral
-  projection seam.
+  [`neutral_operations.py`](../../haku/runner/neutral_operations.py) show the current neutral
+  projection seam;
+- [`haku/console/docs/harness_frame_log_v3.md`](../../haku/console/docs/harness_frame_log_v3.md)
+  demonstrates complete native-frame capture rather than selected-field logging;
+- [`haku/console/database_schema.py`](../../haku/console/database_schema.py) contains the
+  `JSONB(none_as_null=True)` precedent from the earlier JSON-null/SQL-NULL bug.
 
-The first bridge slice should extract or wrap these seams rather than introduce independent provider
-clients. External projects supply missing tests and lifecycle patterns; they do not replace the
-repository's already pinned behavior.
+Use these files to understand measured protocol behavior, test cases, and mistakes to avoid. Do not
+extract, wrap, or import them into the new implementation. The first slice should implement
+independent, explicit Python Claude and Codex capture drivers and a harness-by-scenario matrix, with
+committed recordings and offline tests as their contract. The common facade and operation
+projection come later, after the captures reveal a real intersection.
 
 ## Claude: `plotarmordev/claude-pool`
 
@@ -64,9 +75,9 @@ across multiple turns. Its fake Claude executable and frozen stream-JSON fixture
 persistent session identity, large records, malformed input, timeout, cancellation, process-tree
 cleanup, replenishment, and shutdown races.
 
-The protocol notes were captured against Claude Code `2.1.175`, not the proposed workspace image's
-direct `2.1.198` package pin. It is a small alpha project, and its ordinary CI does not run the real
-Claude binary.
+The protocol notes were captured against Claude Code `2.1.175`. It is a small alpha project, and its
+ordinary CI does not run the real Claude binary. The version is useful capture provenance, not a
+target the new adapter must adopt.
 
 ### Borrow directly, retaining the MIT notice
 
@@ -176,15 +187,15 @@ runtime-template revisions, and status-condition vocabulary. Do not equate actor
 native Claude/Codex process hibernation, and do not move Thread authority into Kubernetes CR
 status.
 
-## Bridge-owned contract
+## Later bridge-owned contract
 
-No inspected reference provides the full selected contract. `harness-bridge` and the central service
-must still own:
+No inspected reference provides the full selected contract. After the native matrix establishes
+provider behavior, `harness-bridge` and the central service must still own:
 
-- exact versioned initialization and compatibility profiles;
+- provider-neutral Python adapter facade and tested initialization behavior;
 - stable input IDs and multiple admission-evidence levels;
 - runtime and native-process-generation fencing;
-- complete native evidence with direction, local sequence, hashes, and retention tier;
+- complete exact native evidence with direction, local sequence, timing, and links to common events;
 - simple append-only local bridge log plus central acknowledgements and reconnect cursors;
 - conservative reconciliation after child, bridge, connection, Pod, or storage loss;
 - explicit uncertain outcomes instead of blind semantic replay or fabricated cancellation;

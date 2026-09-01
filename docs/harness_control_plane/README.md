@@ -20,17 +20,18 @@ wire directly. A direct LLM API agent loop is documented as an optional later ad
 baseline.
 
 The design deliberately rejects terminal keystrokes and pane scraping as its correctness boundary.
-It evaluates A2A 1.0 only as a future opaque agent-to-agent facade; the rich harness-neutral common
-timeline and private bridge/recovery stream remain internal.
+It also records an evaluation of A2A 1.0, but does not adopt A2A as a control-plane protocol,
+agent-to-agent facade, implementation target, or experiment lane.
 
 ## Documents
 
 - [Main design: problem, constraints, decisions, alternatives, and sandbox lifecycle](architecture.md)
 - [Claude Code and Codex protocol adapters](provider_protocols.md)
 - [Common harness protocol and timeline vocabulary](common_protocol.md)
-- [Implementation reuse and pinned prior art](implementation_reuse.md)
-- [A2A fit and protocol layering](a2a.md)
+- [Implementation boundaries and prior art](implementation_reuse.md)
+- [A2A suitability evaluation: not adopted](a2a.md)
 - [Rerunnable protocol and recovery experiments](experiments.md)
+- [Subtask: capture native Claude/Codex wires](subtasks/capture_native_harness_wires.md)
 
 ## Fixed first-version choices
 
@@ -39,9 +40,11 @@ timeline and private bridge/recovery stream remain internal.
 - PostgreSQL is the central durable store.
 - Runtime is one Pod/bridge incarnation; a monotonically increasing runtime generation is the
   Sandbox-scoped ordinal and fencing epoch for the n-th authorized incarnation.
-- The common protocol covers orchestration, messages, turns, steering, interrupts, operation
-  progress, native provenance, and recovery evidence.
-- Native frames remain available for diagnosis and reprojection.
+- Every bidirectional native frame is stored exactly. Initial experiments drive each provider's
+  JSON protocol directly and do not depend on a finished common facade or operation projection.
+- The common protocol for orchestration, messages, turns, steering, interrupts, operation progress,
+  native provenance, and recovery evidence is derived after the captures establish both providers'
+  real behavior.
 - Suspension starts as an explicit idle-only operator action; Sandbox disposal is explicit and
   confirmed rather than retention-window driven.
 - The bridge uses a simple append-only PVC log for reconnect replay rather than a separately bounded
@@ -50,27 +53,28 @@ timeline and private bridge/recovery stream remain internal.
 
 The orchestrator, web UI, model-capability/router layer, and future stateless MCP authorization
 gateway should be separately deployable. This proposal owns only orchestration/runtime/logging; it
-does not bind tool RBAC or approval escalation to Thread, provider-continuity, or Sandbox concepts.
+does not bind tool RBAC or approval escalation to Thread, harness-Thread, or Sandbox concepts.
 
 A future integrated Agent Console can compose those smaller services into one application for
 Threads, Runtimes, Sandboxes, MCP connections, approvals, grants, and traces without making
 them one deployment or authority.
 
 **Thread** is the shared UI, API, and storage noun. In v0 one Runtime serves one Thread, and the
-same product Thread maps across Runtime generations to one durable Codex native thread or one Claude
-resume identity. A later Codex app-server may host several Agents, but each Agent still owns a
-separate Thread; only its Sandbox/Runtime placement is shared.
+adapter lets the harness mint an opaque `harness_thread_id` after activation. The same product
+Thread passes that id back to `resume_thread` across Runtime generations. A later Codex app-server
+may host several Agents, but each Agent still owns a separate product Thread and harness Thread;
+only its Sandbox/Runtime placement is shared.
 
 ## Evidence standard
 
 These documents separate three levels of confidence:
 
-- **Native contract**: stated by a provider's version-pinned protocol documentation or schema.
+- **Native contract**: stated by provider protocol documentation or a negotiated schema/capability.
 - **Repository evidence**: implemented or measured in the current Ducktape tree, but not necessarily
   a provider compatibility promise.
 - **Experiment required**: plausible behavior that must not become a recovery guarantee until the
-  pinned-harness experiment suite passes.
+  real-harness capture/experiment suite passes.
 
-Provider protocol surfaces change. Every production image records exact Claude Code, Codex, bridge,
-and sandbox-controller versions, and provider upgrades rerun the compatibility suite before
-rollout.
+Provider protocol surfaces change. Runs record resolved Claude Code, Codex, bridge, model-route, and
+sandbox-controller versions when known. Provider upgrades rerun focused adapter tests and capture
+scenarios before rollout; an unfamiliar version string alone is not a compatibility failure.

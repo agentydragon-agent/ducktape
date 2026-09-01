@@ -1,43 +1,33 @@
 # Claude Code and Codex protocol adapters
 
-Status: **evidence-backed adapter design**. Exact behavior is version-pinned and must be revalidated by
-the [experiment suite](experiments.md). This document distinguishes provider capability from the
-current Ducktape runner's implementation choices. Pinned implementation references and
-license-aware guidance are in [Implementation reuse and prior art](implementation_reuse.md).
+Status: **native evidence inventory plus post-capture adapter target**. The first experiment code
+drives Claude and Codex directly with explicit provider-specific JSON scenario tests. Adapter
+behavior is extracted only after those captures show the real intersection. This document
+distinguishes provider capability from the current Ducktape runner's implementation choices.
+License-aware references are in
+[Implementation reuse and prior art](implementation_reuse.md).
 
-## Compatibility policy
+## Adapter and version policy
 
-The v0 compatibility targets are Claude Code `2.1.198` and Codex `0.144.1`, but only the Codex pin
-is already authoritative in the active Haku runner image. That image extracts its Claude executable
-from the `claude-agent-sdk==0.2.141` wheel, so the CLI version is currently pinned only indirectly by
-SDK packaging. Separate workspace and dispatch Dockerfiles install Claude Code `2.1.198` directly,
-but they are not the active Harness Control Plane runtime.
+V0 does not require a declarative compatibility-profile subsystem. Each provider mode is a Python
+adapter with unit tests, offline fixture replay, and a small set of real-harness captures. The code
+must fail clearly on malformed required responses and preserve unknown native frames, but it should
+not reject an otherwise working harness merely because its version string is new or unavailable.
 
-Before the Claude adapter can claim a passing profile, the runner image must source the CLI from an
-explicit direct package pin and verify its self-reported version and digest. Ducktape's existing
-Claude evidence corpus spans `2.1.198`, `2.1.220`, and `2.1.233`; evidence from one version does not
-establish behavior for another.
+Use recent resolved Claude Code and Codex versions available in the test environment. Record the
+self-reported version, package/image digest, launch arguments, capabilities, model route, and native
+state paths when they are known. A capture proves behavior for the recorded binary and
+configuration; it is evidence, not a formal product matrix or a reason to overengineer version
+selection.
 
-Each supported adapter declares a compatibility profile containing:
+Ducktape's existing evidence spans several Claude versions and currently packages Codex `0.144.1`.
+Those facts are useful provenance, not required target pins for the new tree. Version changes should
+prompt capture/test review when practical. Correctness gates are protocol behavior and test
+evidence, not equality among package metadata, self-report, and a predeclared profile.
 
-- harness binary and package version;
-- launch arguments and relevant environment switches;
-- protocol/schema version or capability response;
-- provider/model configuration family;
-- bridge adapter version;
-- persistent native-state layout;
-- experiment-suite result and artifact digest.
-
-An unknown harness version may run in an explicit experimental mode, but it does not inherit the
-resume, interrupt, steering, or projection guarantees of a passing profile.
-
-At launch the bridge records the executable's self-reported version and image/binary digest. The
-direct package pin, runtime report, and digest must agree before the profile passes. All detailed
-Claude behavior below remains experiment-required for that exact profile until the pinned probes
-pass.
-
-Operational native records are retained for routine projection. A restricted, short-retention raw
-evidence tier can preserve exact bytes for reprojection and protocol diagnosis.
+The implementation begins in a new top-level, non-Haku tree. Existing `haku/runner`,
+`haku/cli_protocol`, and `haku/console` code and fixtures are behavior evidence only; the new adapters
+must not import them or make Haku storage/session assumptions part of the control-plane contract.
 
 ### Model endpoint and subscription authentication boundary
 
@@ -71,7 +61,9 @@ claude
   --input-format stream-json
 ```
 
-Other launch configuration is intentionally outside this orchestration document. Protocol probes also pass `--print`; this argv discrepancy must be resolved or deliberately included in the compatibility profile before probe results are treated as production evidence.
+Other launch configuration is intentionally outside this orchestration document. Protocol probes
+also pass `--print`; the capture harness should record the actual argv and test both relevant modes
+instead of turning the difference into a formal compatibility profile.
 
 The local wire is newline-delimited JSON over child stdin/stdout. Conversation frames and control frames share that ordered stream.
 
@@ -98,7 +90,8 @@ The adapter sends a correlated control request:
 Control responses correlate through `response.request_id`. The current runner writes initialize
 first but does not await its response before entering the command loop; it relies on stdin ordering.
 The new bridge should capture the response and expose initialization as an explicit runtime state.
-It may still pipeline later writes only if the pinned compatibility test proves that safe.
+It may still pipeline later writes only if adapter tests and recorded harness behavior prove that
+safe.
 
 ### Prompt submission
 
@@ -130,8 +123,8 @@ Observed native classes include:
 - correlated control responses.
 
 Completed assistant/tool blocks are authoritative snapshots. Partial deltas exist for live display
-and exact provenance; the projector deduplicates completed copies rather than emitting duplicate
-messages or operations.
+and exact provenance; the adapter's projector deduplicates completed copies rather than emitting
+duplicate messages or operations.
 
 Ducktape includes a scrubbed real Claude capture with `Write`, `Read`, successful `Bash`, and failed
 `Bash` behavior at `haku/runner/claude/testdata/diverse_session.jsonl`. This is valuable projection
@@ -145,10 +138,12 @@ Initial mappings:
 
 - `Bash` -> common `shell`;
 - `Read` -> `file.read`;
-- `Write` -> `file.write`;
-- `Edit` or patch tool -> `file.patch`;
+- `Write`/`Edit` -> a deliberately broad `file.change` projection when useful;
 - `Glob` / `Grep` -> file `search` when their exact semantics are known;
-- any other named structured call -> common `tool`, retaining the original name and blocks.
+- any other named structured call -> common `tool`.
+
+The projection need not reproduce Claude's patch/application semantics. Exact tool names, inputs,
+results, ids, and unknown fields remain in the cited native frames.
 
 ### Interrupt
 
@@ -166,14 +161,17 @@ Connection loss or process kill is not rendered as a successful interrupt.
 
 ### Mid-turn steering
 
-**Repository measurement.** Sending another user frame during an active tool-using turn is admitted
-and observed at a later tool boundary. Continuous prose generation may have no such boundary, so
-input can remain waiting until the turn completes. This is not the same contract as an RPC targeted
-at an explicit turn id.
+**Repository measurement.** Sending another user frame during an active tool-using turn has been
+observed at a later tool boundary. Continuous prose generation may have no such boundary, so input
+can remain waiting until the turn completes. The wire frame itself does not declare whether the
+sender intended “steer this run” or “submit the next prompt,” and it is not the same contract as an
+RPC targeted at an explicit turn id.
 
-The adapter therefore represents Claude steering as `boundary_queued_input` with its UUID and
-command lifecycle, not as immediate mutation of the currently sampled model response. The UI can
-say “queued for the next Claude boundary” and later “admitted” when evidence arrives.
+Do not freeze this observation into a neutral `boundary_queued_input` contract yet. The raw matrix
+must determine whether Claude exposes one native queue or several, how ordinary active-run prompts
+differ from intended steering if at all, which lifecycle records indicate queued/admitted/delivered,
+and whether pending frames can be cancelled. Only then can the later adapter label the behavior
+without inventing certainty.
 
 The experiment suite must test at least:
 
@@ -181,7 +179,11 @@ The experiment suite must test at least:
 - delivery between two tool calls;
 - delivery during continuous prose;
 - delivery racing terminal result;
-- interruption while a steering input is queued.
+- interruption while a steering input is queued;
+- normal user-frame submission while active, separately from steering intent;
+- multiple queued inputs and their delivery order; and
+- whether any queued command can be dequeued before admission or delivery, including the exact
+  evidence for supported, too-late, and unsupported outcomes.
 
 ### Native resumption
 
@@ -189,8 +191,9 @@ Claude emits a native session identity and supports session-resume functionality
 runner's `resume_from` argument is only a cursor for replaying runner journal frames to the central
 Console. It does **not** restart the Claude process with provider-native session resumption.
 
-The new adapter must store the provider session id and deliberately select the native state
-locations needed by the pinned Claude version. Resumption claims are split:
+The new adapter must discover and persist the native state locations needed by the tested Claude
+version. The provider session id remains in the native stream and may be indexed from there.
+Resumption claims are split:
 
 - **completed-turn memory**: after process/Pod death, resume and answer from prior model
   context without relying on workspace files;
@@ -214,7 +217,10 @@ codex app-server --listen stdio://
 
 The local wire is JSON-RPC-shaped newline-delimited JSON over stdio. The parser accepts optional `jsonrpc` fields and is fail-soft around unknown envelopes.
 
-A committed real-binary test starts the pinned app-server against a local fake OpenAI-compatible HTTP endpoint and proves the app-server transport without paid inference. It does not prove model-context semantics.
+A committed real-binary test starts the app-server against a local fake OpenAI-compatible HTTP
+endpoint and proves the app-server transport without paid inference. It does not prove model-context
+semantics. A future cross-provider harness-in-the-loop fake-LLM test is tracked in the experiment
+plan.
 
 ### Initialization
 
@@ -226,8 +232,8 @@ Codex requires an explicit stateful handshake on each app-server connection:
 4. start or resume a thread;
 5. subscribe to and process server requests/notifications.
 
-Requests before initialization are rejected. The bridge records the returned server metadata and
-negotiated capabilities in the workload compatibility profile.
+Requests before initialization are rejected. The bridge records returned server metadata and
+negotiated capabilities as native/debug evidence for the tested adapter run.
 
 ### Durable versus ephemeral threads
 
@@ -286,8 +292,10 @@ The response supplies an initial turn object. `turn/started` is execution admiss
 notifications stream work, and `turn/completed` supplies terminal status. The adapter uses both the
 JSON-RPC request id and native thread/turn/item ids.
 
-Only one ordinary turn runs per thread. Additional normal inputs can be centrally queued as future
-turns; they must not be presented as mid-turn steering.
+Only one ordinary turn is expected to execute per thread at a time. The initial matrix must still
+send another ordinary `turn/start` while one is active and record whether app-server rejects it,
+queues it, accepts it for later, or behaves differently. Do not assume in advance that the central
+service must own that queue merely because the current Ducktape runner does.
 
 ### Streaming output
 
@@ -312,12 +320,20 @@ fixture. Creating one is a priority experiment artifact.
 
 ### Tool mapping
 
-- `commandExecution` -> common `shell`, preserving command, cwd, status, output, exit code, duration, source, and native `commandActions`.
-- `fileChange` -> `file.patch`, preserving per-path kind and diff.
-- any other named structured call -> common `tool`, preserving arguments, result/error, and native context as extensions.
-- unknown item types -> common `generic` plus full operational native payload.
+- `commandExecution` -> common `shell`, preserving stable common fields such as command, cwd,
+  status, output, exit code, and duration when they are exposed unambiguously;
+- provider-only fields such as `commandActions`, execution source, and item ids may be copied into
+  `provider_debug` for display/diagnosis, but common control logic must not depend on them;
+- `fileChange` -> deliberately broad `file.change` path/action summaries when useful; exact patch
+  and application semantics remain in native frames;
+- any other named structured call -> common `tool`;
+- unknown item types -> common `generic` only when useful, while the complete native frame remains
+  independently stored.
 
-Codex app-server can issue JSON-RPC requests to the client as well as notifications. An initial compatibility profile must either support each enabled request type or reject that profile during initialization; treating stdout as notifications only would deadlock an active turn. A general interactive-request protocol is deferred beyond v0.
+Codex app-server can issue JSON-RPC requests to the client as well as notifications. The adapter
+must either handle each request type enabled by its initialization or return an explicit unsupported
+response; treating stdout as notifications only would deadlock an active turn. A general
+interactive-request protocol is deferred beyond v0.
 
 ### Interrupt
 
@@ -333,19 +349,28 @@ accepted only after the JSON-RPC response; the resulting user item and continued
 then normal timeline evidence.
 
 The current Ducktape runner does not call `turn/steer`; it queues every additional prompt for a later
-`turn/start`. The new adapter must keep these operations distinct:
+`turn/start`. That is repository behavior, not yet the control-plane decision. The raw tests keep
+these actions explicit and separate:
 
-- **steer active turn** -> `turn/steer`;
-- **queue future turn** -> central durable queue, later `turn/start`;
-- **interrupt** -> `turn/interrupt`.
+- call native `turn/steer` against an active turn;
+- call native `turn/start` again while a turn is active;
+- attempt any documented or discovered native cancellation/dequeue path;
+- stop sending a not-yet-written request in the test driver as a distinct local control; and
+- call native `turn/interrupt`.
+
+The result determines whether the eventual future-turn queue belongs in the orchestrator,
+bridge/runner, or app-server and whether any dequeue operation can honestly cross that boundary.
 
 The experiment suite covers steering during command execution, reasoning/message streaming, and a
-race with turn completion.
+race with turn completion. It separately captures standard submission while active, app-server
+queue behavior if any, dequeue timing, multiple-input ordering, and queued-input fate across
+interrupt and app-server death.
 
 ### Native resumption
 
 Codex has the clearest provider-native cold-resume contract of the two adapters: durable rollout
-state plus `thread/resume`. The product still must prove, for the exact binary and persistent layout:
+state plus `thread/resume`. The product still must prove, for each recorded/tested binary and
+persistent layout:
 
 - completed-turn memory after app-server kill;
 - cold resume after Pod replacement;
@@ -353,7 +378,7 @@ state plus `thread/resume`. The product still must prove, for the exact binary a
 - active-turn history after app-server or Pod kill;
 - whether resume exposes an interrupted marker, partial items, or an uncertain active state;
 - continuity after Sandbox suspend/resume;
-- no accidental use of `ephemeral: true` in a resumable compatibility profile.
+- no accidental use of `ephemeral: true` when a run claims durable resume.
 
 ## Optional direct-LLM adapter
 
@@ -374,61 +399,110 @@ This mode is intentionally after the two native vertical slices. It exists to su
 
 ## Side-by-side semantics
 
-| Capability           | Claude Code stream/control                 | Codex app-server                      | Common product behavior                |
-| -------------------- | ------------------------------------------ | ------------------------------------- | -------------------------------------- |
-| Connection handshake | initialize control request/response        | `initialize` then `initialized`       | runtime initialized                    |
-| New turn input       | user stream frame with UUID                | `turn/start` with client/native ids   | accepted, dispatched, admitted         |
-| Mid-turn input       | queued user frame observed at a boundary   | targeted `turn/steer`                 | steering with provider-specific timing |
-| Future input         | provider queue/lifecycle behavior          | central queue then later `turn/start` | queued future turn                     |
-| Interrupt            | interrupt control request                  | `turn/interrupt`                      | request plus observed terminal outcome |
-| Assistant stream     | partial events plus completed blocks       | item deltas plus completed item       | message/reasoning items                |
-| Shell                | `Bash` tool use/result                     | `commandExecution`                    | `shell` operation                      |
-| File edits           | `Write` / `Edit` tool use/result           | `fileChange`                          | file operation                         |
-| Structured tool call | named tool use/result                      | structured tool-call item             | `tool`                                 |
-| Provider continuity  | Claude session id                          | Codex thread id                       | adapter evidence attached to Thread    |
-| Cold resume          | CLI-native resume; exact behavior to prove | durable `thread/resume`               | new runtime with continuity evidence   |
-| Current runner gap   | no native process restart/resume           | starts ephemeral thread; no steer     | new design must change both            |
+| Capability                | Claude Code stream/control                           | Codex app-server                                                 | Common product behavior                     |
+| ------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------- |
+| Connection handshake      | initialize control request/response                  | `initialize` then `initialized`                                  | runtime initialized                         |
+| New turn input            | user stream frame with UUID                          | `turn/start` with client message id                              | future common submit shape follows captures |
+| Mid-turn input            | queued user frame observed at a boundary             | targeted `turn/steer`                                            | steering with provider-specific timing      |
+| Normal input while active | native queue/lifecycle behavior to capture           | active-run `turn/start` behavior to capture                      | queue owner remains an experiment result    |
+| Dequeue pending input     | lifecycle cancellation if exposed; otherwise unknown | native cancellation if any; otherwise not-yet-written local stop | final common behavior follows captures      |
+| Interrupt                 | interrupt control request                            | `turn/interrupt`                                                 | request plus observed terminal outcome      |
+| Assistant stream          | partial events plus completed blocks                 | item deltas plus completed item                                  | message/reasoning items                     |
+| Shell                     | `Bash` tool use/result                               | `commandExecution`                                               | `shell` operation                           |
+| File edits                | `Write` / `Edit` tool use/result                     | `fileChange`                                                     | file operation                              |
+| Structured tool call      | named tool use/result                                | structured tool-call item                                        | `tool`                                      |
+| Harness Thread id         | Claude session id                                    | Codex thread id                                                  | opaque harness-issued `harness_thread_id`   |
+| Cold resume               | CLI-native resume; exact behavior to prove           | durable `thread/resume`                                          | new runtime with continuity evidence        |
+| Current runner gap        | no native process restart/resume                     | starts ephemeral thread; no steer                                | new design must change both                 |
 
-V0 runs one product Thread and one provider continuity context per bridge process. Codex app-server
-can host multiple independent native threads, but multiplexing them would couple failure, resource,
-and fencing domains. If a future profile accepts that coupling, each Agent still has a distinct
-product Thread and Codex thread even when several share one Sandbox or process. Claude's selected
-print-mode process is not assumed to offer the same multiplexing contract. Any relaxation requires
-specified and measured lifecycle and isolation semantics.
+V0 runs one product Thread and one active harness Thread per bridge process. The controller may
+create the product Thread before any harness starts. On `start_thread`, the adapter lets Claude or
+Codex mint its native resumable identity and emits it through the common facade as an opaque
+`harness_thread_id`. On `resume_thread`, the controller returns that same opaque id without knowing
+whether it is a Claude session id or Codex thread id.
 
-## Adapter contract to the bridge
+Codex app-server can host multiple independent native threads, but multiplexing them would couple
+failure, resource, and fencing domains. If a future deployment accepts that coupling, each Agent
+still has a distinct product Thread and harness Thread even when several share one Sandbox or
+process. Claude's selected print-mode process is not assumed to offer the same multiplexing
+contract. Any relaxation requires measured lifecycle and isolation semantics.
 
-Each provider adapter implements these phases:
+## Post-capture adapter contract target
+
+The following is a design target, not an API that the initial capture suite must implement. The
+first tests use provider-specific JSON and native ids directly so they can test-drive unknown
+protocol behavior without hiding it behind the abstraction under investigation. Revise this facade
+after the harness-by-scenario matrix answers queue ownership and delivery/admission questions.
+
+The bridge calls a provider-neutral asynchronous facade:
 
 ```text
-prepare_launch(start | resume, provider_continuity_id, config, persistent_paths) -> launch_plan
-launch(launch_plan) -> child
-initialize(child) -> native_capabilities
-activate_provider_context(start | resume, provider_continuity_id) -> provider_context
-submit(input_id, content) -> admission_observation
-steer(input_id, native_turn_id, content) -> admission_observation
-interrupt(native_turn_id) -> request_observation
-read_native_record() -> exact record
-classify_terminal(record) -> optional terminal observation
-shutdown(deadline) -> exit observation
+start_thread(config, persistent_paths) -> thread_activation(harness_thread_id)
+resume_thread(harness_thread_id, config, persistent_paths) -> thread_activation(harness_thread_id)
+submit(input_id, content) -> accepted_by_adapter
+steer(input_id, turn_id, content) -> accepted_by_adapter | unsupported | too_late
+cancel_input(input_id) -> dequeued | already_delivered | unsupported | unknown
+interrupt(turn_id) -> request_accepted | unsupported | too_late
+events() -> async stream<adapter_emission>
+shutdown(deadline) -> exit_observation
 ```
 
-Claude can make native resume a launch-time choice; Codex initializes app-server first and then starts or resumes a thread. The split above supports both. Methods can return provider-specific extensions. The bridge does not synthesize a provider admission or terminal state when the adapter lacks evidence.
+`turn_id` is the common id previously emitted by that adapter, never a native Claude/Codex id.
+Likewise, the adapter mints common item/operation ids when native concepts become observable and
+keeps any provider-specific mapping private. Claude can make native resume a launch-time choice;
+Codex initializes app-server first and then starts or resumes a thread. Those differences remain
+inside the adapter implementation.
 
-## Compatibility gates
+`adapter_emission` is a tagged union with two externally persisted forms:
 
-A provider image is eligible for automatic recovery only when all required scenarios for its
-profile pass:
+- `native.frame`: the exact bridge-to-harness or harness-to-bridge JSON frame, direction, sequence,
+  and timing;
+- `common.event`: a provider-neutral Thread/Turn/Input/message/reasoning/operation/lifecycle event
+  with source native sequence or wire-record references.
 
-- baseline turn and projection fixture;
+The adapter emits native frames even when they have no common projection. Common projections may
+be lossy, especially for file edits, but they always link back to the exact native evidence. The
+bridge durably appends emissions in order before forwarding them to the controller.
+
+### Adapter-owned state
+
+Native request ids, Claude command UUID lifecycle state, Codex thread/turn/item ids, outstanding
+JSON-RPC correlations, and common-to-native turn/item mappings are adapter implementation state, not
+controller API fields. The adapter also tracks whether each input is only queued locally, written to
+the native wire, acknowledged/admitted by the harness, or observably delivered at a provider
+boundary.
+
+State transitions needed after bridge/process restart are appended to the existing bridge log and
+may be compacted into an adapter checkpoint on the PVC. The controller stores the opaque
+`harness_thread_id`, common ids, input states, and emitted evidence; it never steers or interrupts by
+native id. If an adapter cannot reconstruct a safe mapping after recovery, it emits an explicit
+unsupported or uncertain observation rather than asking the controller to understand the native
+protocol.
+
+`steer` is intended to target an active common turn, and dequeue must remain distinct from turn
+interruption. The exact meaning of `submit` while active, which component owns pending prompts, and
+whether `cancel_input` can cross into a native queue are intentionally unresolved. The provider
+matrix answers those questions before the facade becomes normative.
+
+The bridge does not synthesize provider admission, delivery, or terminal state when the adapter
+lacks evidence.
+
+## Regression gates
+
+An adapter/image combination is eligible for automatic recovery only when all required scenarios
+pass for a recorded harness run:
+
+- baseline native-wire fixture;
 - idle process restart and native resume;
 - completed-turn memory after cold resume;
 - interrupt lifecycle;
 - provider-specific steering semantics;
 - Pod replacement with PVC continuity;
-- central disconnect/replay without duplicate common events;
-- shell, file, and structured-tool normalization;
+- central disconnect/replay without duplicate exact records;
+- raw shell, file, and structured-tool protocol coverage;
 - active-turn loss classified honestly.
 
-A binary upgrade invalidates the gate until the suite is rerun. Golden fixtures catch parser and
-projection changes; live probes catch behavior not guaranteed by schemas.
+A binary upgrade should rerun the focused capture suite before promotion. Golden fixtures first
+catch framing/parser changes; later projector tests can consume the accepted fixtures. Live probes
+catch behavior not guaranteed by schemas. An unknown version string alone is not a failure when the
+protocol behavior and tests pass.
