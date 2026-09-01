@@ -1,45 +1,91 @@
-# Native wire examples
+# Native wire capture harness
+
+**Status:** implementation and fixtures are present; strict reconnect review remains open.
 
 `//x/agentplane/capture:live_capture` runs one explicit Claude or Codex probe against a fresh
-workspace. It records direct stdin/stdout/stderr JSONL and LiteLLM request/response bodies; the
-proxy never writes HTTP headers. There is no artifact registry or promotion step.
+synthetic workspace. It drives the real native process over structured JSON on direct stdin/stdout
+pipes, drains stderr, and records the native exchange plus upstream LiteLLM request/response bodies.
+It is a discovery harness for provider behavior, not the Agentplane service, a generic runner, or a
+provider-neutral protocol.
 
-The observed native wire records use UTF-8 `text` fields and LiteLLM records keep each UTF-8
-request/response `body` as a JSON string. The current protocols are textual, so fixtures do not
-carry redundant base64 or parsed-JSON copies.
+## Scope and acceptance
+
+The capture task is complete enough to support the next Agentplane slice when the following evidence
+is present for both providers, or an explicit provider-specific unsupported/environment-blocked result
+is recorded:
+
+- real binary launch and native handshake;
+- one streamed baseline turn;
+- one deterministic shell or file-edit tool interaction with native tool I/O and expected workspace effect;
+- steering and interruption behavior;
+- native session/thread resume after killing only an idle native process;
+- upstream connection-loss behavior with the native harness process kept alive; and
+- deterministic fake-model replay through the real native binary, asserting upstream requests and native output.
 
 The committed examples cover `baseline`, `shell`, `file_edits`, `steering`, `second_input`,
 `interrupt`, `idle_resume`, `connection_retry`, `connection_exhaustion`,
-`post_failure_follow_up`, and `post_exhaustion_follow_up` for both providers. The connection
-examples are recorded only after real LiteLLM requests, never synthesized by the proxy.
+`post_failure_follow_up`, and `post_exhaustion_follow_up` for both providers. These are provider
+captures, not a compatibility matrix or an Agentplane retry policy.
+
+## Evidence format
+
+Each capture output keeps the evidence boring and inspectable:
+
+```text
+metadata.json          # provider, scenario, model/version context
+stdin.jsonl            # ordered native frames written to the process
+stdout.jsonl           # ordered native frames read from the process
+stderr.jsonl           # bounded diagnostics
+llm-requests.jsonl     # ordered upstream request bodies
+llm-responses.jsonl    # ordered upstream response chunks and loss markers
+testdata/<provider>/<scenario>/  # committed replay inputs
+```
+
+Native and upstream payloads are stored as UTF-8 text because these protocols are textual. The
+recording boundary excludes HTTP headers, cookies, environment variables, OAuth state, credentials,
+and private user data. Do not add redundant base64, parsed-JSON copies, hashes, lengths, timestamps,
+manifest inventories, or a promotion/DLP framework.
+
+`expected.json`-style semantic expectations belong in hand-authored tests, not generated from the
+observed output. Provider-native request/session/thread/turn ids remain in the provider evidence.
+The harness deliberately does not invent Thread, Turn, Input, runtime-generation, retry, or common
+operation ids.
+
+## Scenario notes
+
 `idle_resume` completes a seed turn, closes the native process, then resumes the saved native
-session/thread from a new process. `connection_retry` closes a model stream at `message_start` and
-records only native automatic recovery: request order, streaming mode, and monotonic proxy times.
-`post_failure_follow_up` instead closes after a `text_delta`, waits for the first terminal native
-frame, and only then supplies a separate user input. This distinction matters for Claude Code
-2.1.252: it retries a drop before stream content, including one non-streaming retry after a response
-has started, but after a visible text delta it returns an empty terminal result with no automatic
-reconnect observed.
+session/thread from a new process using Claude `--resume` or Codex `thread/resume`. This proves
+provider-native continuity, not transcript replay or prompt redispatch.
 
-`connection_exhaustion` keeps closing each native recovery request until the client itself stops.
-In the recorded versions, Claude Code 2.1.252 stops after 12 losses, produces a `result` with
-`is_error: true` and `API Error: Connection dropped (ECONNRESET)`, and accepts a new user frame in
-the same process afterward. Codex 0.144.1 stops after 26 losses, emits `turn/completed` with
-`status: failed`, and accepts a new `turn/start` on the same thread afterward. The corresponding
-`post_exhaustion_follow_up` fixtures preserve those recovery paths. Claude exposes no documented
-retry control; these are raw version-specific wire observations, not Agentplane retry policy or a
-compatibility matrix.
+The connection examples isolate model-API transport behavior from tools. `connection_retry` closes a
+model stream at a named complete SSE packet and records native automatic recovery. `post_failure_follow_up`
+closes after a visible text delta, waits for the first native terminal frame, and only then sends a
+separate user input. `connection_exhaustion` repeats controlled losses until the client stops, while
+`post_exhaustion_follow_up` records whether the same process accepts another input afterward.
 
-The recording proxy buffers only enough upstream data to identify complete SSE packets, then
-forwards and records each packet. A configured loss occurs immediately after the named complete
-SSE packet reaches the native client—not after an arbitrary socket read that happens to contain
-the event name. For Anthropic messages, packet matching also recognizes the nested delta type
-(such as `text_delta`) inside the native `content_block_delta` event.
+The recorded versions show provider-specific behavior: Claude Code 2.1.252 can retry before visible
+stream content but, after a visible text delta, returns an empty terminal result with no automatic
+reconnect observed; Codex 0.144.1 retries and eventually reports a failed turn after repeated losses.
+These are raw observations, not semantics the bridge should manufacture.
 
-Capture launches deliberately avoid host-specific prompt bulk: Claude uses safe mode with slash commands
-disabled and only the four scenario tools, while Codex supplies a short app-server `baseInstructions` value.
-This keeps fixtures about native protocol behavior rather than locally installed skills, plugins, or project
-instructions.
+Strict reconnect acceptance is still pending. Before treating this behavior as fully proven, review
+must compare repeated request bodies and provider-native request identity, and assert duplicate or
+non-duplicate partial native output, process survival, and exact terminal frames. Do not hide this gap
+by adding a generic retry or telemetry framework.
+
+## Prompt and environment isolation
+
+Capture launches avoid host-specific prompt bulk. Claude uses safe mode with slash commands disabled,
+only the four scenario tools, and empty settings sources. Codex supplies a short app-server
+`baseInstructions` value and disables unrelated instruction blocks. This keeps fixtures about native
+protocol behavior rather than locally installed skills, plugins, or project instructions.
+
+The upstream recording proxy buffers only enough data to identify complete SSE packets, then forwards
+and records each packet. A configured loss occurs immediately after the named complete packet reaches
+the native client, including nested Anthropic delta types such as `text_delta`; it is not triggered by
+an arbitrary socket read boundary.
+
+## Run a live capture
 
 ```sh
 bazel run //x/agentplane/capture:live_capture -- \
@@ -48,10 +94,37 @@ bazel run //x/agentplane/capture:live_capture -- \
   --credential-file "$key_file" --workspace "$tmp/workspace" --output "$tmp/capture"
 ```
 
-Pass `--replay-from x/agentplane/capture/testdata/<provider>/<scenario>` to run the same native scenario
-against the recorded LiteLLM bodies rather than a live model endpoint. The credential stays in the
-native process environment and is neither recorded nor inspected by the replay server.
+The live capture uses a finite model-call ceiling and timeout. The credential is supplied to the
+native process only for the configured experiment and is neither recorded nor inspected by the replay
+server. No capture path uses a PTY, tmux, terminal scraper, prompt heuristic, Kubernetes mutation, or
+`kubectl exec` protocol path.
 
-`//x/agentplane/capture:test_native_replay` runs pinned Claude and Codex binaries in Bazel against
-that loopback replay server. It asserts terminal native frames, ordered mock consumption, and a few
-stable request-shape fields; it has no live credentials or external model dependency.
+## Replay through the real harness
+
+```sh
+bazel test //x/agentplane/capture/tests:test_native_replay
+```
+
+The replay test runs pinned Claude and Codex binaries against a loopback server loaded from the saved
+LiteLLM bodies. It asserts terminal native frames, ordered mock consumption, and stable request-shape
+fields without live credentials or an external model dependency.
+
+For the live-capture entry point, pass
+`--replay-from x/agentplane/capture/testdata/<provider>/<scenario>` to serve the saved upstream
+exchange instead of calling the live endpoint. Replay does not resend an uncertain user Input; it
+replays only the captured model exchange through the native harness.
+
+## Deliberately out of scope
+
+This harness does not implement:
+
+- the shared Agentplane stdio protocol or a neutral operation projector;
+- Thread/Input/Turn persistence, PostgreSQL, or a user-facing timeline;
+- Kubernetes/Agent Sandbox reconciliation, Services, suspension, or Pod replacement;
+- bridge reconnect cursors, leases, fencing, or automatic uncertain-input retry;
+- credentials, OAuth ownership, approval policy, subscriptions, or external-event adapters; or
+- artifact registries, generated summaries, integrity manifests, or custom DLP/promotion machinery.
+
+Those are separate work packages in the [Agentplane task DAG](../plans/task_dag.md). The capture
+fixtures and tests are the behavioral evidence the shared protocol and adapters must consume next,
+not a framework to expand before the evidence is understood.
