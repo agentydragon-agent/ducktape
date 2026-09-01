@@ -15,11 +15,11 @@ import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
 from x.agentplane.capture.providers.claude import scenarios as claude
-from x.agentplane.capture.providers.codex import scenarios as codex
+from x.agentplane.capture.providers.codex import driver as codex_driver, scenarios as codex
 from x.agentplane.capture.providers.shared_capture import NativeCapture
 from x.agentplane.capture.replay import ReplayServer
 
-_LOGS = ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl", "actions.jsonl")
+_LOGS = ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl")
 
 
 def _fixture(provider: str, scenario: str) -> Path:
@@ -89,6 +89,22 @@ def _assert_request_shape(server: ReplayServer, *, model: str, protocol_key: str
     assert protocol_key in body
 
 
+def _assert_small_claude_policy(server: ReplayServer) -> None:
+    """The pinned CLI must not inherit host skills or broad project instructions."""
+    for observed in server.observed:
+        body = json.loads(observed["body"])
+        for block in body.get("system", []):
+            if isinstance(block, dict):
+                assert len(block.get("text", "")) < 15_000
+
+
+def _assert_codex_base_instructions(server: ReplayServer) -> None:
+    assert server.observed
+    for observed in server.observed:
+        body = json.loads(observed["body"])
+        assert body["instructions"] == codex_driver.BASE_INSTRUCTIONS
+
+
 def _claude_result_text(submission: dict[str, Any]) -> str:
     terminal = submission["terminal"]
     assert isinstance(terminal, dict)
@@ -134,6 +150,7 @@ def test_claude_baseline_replays_through_the_pinned_native_cli() -> None:
             _assert_request_shape(
                 server, model="anthropic-api/ant-messages/claude-haiku-4-5-20251001", protocol_key="messages"
             )
+            _assert_small_claude_policy(server)
         finally:
             capture.close()
             server.shutdown()
@@ -155,9 +172,7 @@ def test_claude_idle_resume_replays_through_the_pinned_native_cli() -> None:
         second: NativeCapture | None = None
         try:
             claude.launch_handshake(first)
-            seed = claude.submit(
-                first, "Reply with exactly: IDLE_RESUME_SEED_OK", action="claude_idle_resume_seed_prompt"
-            )
+            seed = claude.submit(first, "Reply with exactly: IDLE_RESUME_SEED_OK")
             assert _claude_result_text(seed) == "IDLE_RESUME_SEED_OK"
             first.close()
             second = _capture(
@@ -166,14 +181,13 @@ def test_claude_idle_resume_replays_through_the_pinned_native_cli() -> None:
                 environment,
             )
             claude.launch_handshake(second)
-            followup = claude.submit(
-                second, "Reply with exactly: IDLE_RESUME_OK", action="claude_idle_resume_resumed_prompt"
-            )
+            followup = claude.submit(second, "Reply with exactly: IDLE_RESUME_OK")
             assert _claude_result_text(followup) == "IDLE_RESUME_OK"
             server.assert_consumed()
             _assert_request_shape(
                 server, model="anthropic-api/ant-messages/claude-haiku-4-5-20251001", protocol_key="messages"
             )
+            _assert_small_claude_policy(server)
         finally:
             if second is not None:
                 second.close()
@@ -203,7 +217,6 @@ def test_codex_idle_resume_replays_through_the_pinned_native_cli() -> None:
                 first,
                 thread_start_response=handshake["thread_start_response"],
                 text="Reply with exactly: IDLE_RESUME_SEED_OK",
-                action="codex_idle_resume_seed_turn_start",
             )
             assert _codex_result_text(seed) == "IDLE_RESUME_SEED_OK"
             first.close()
@@ -211,15 +224,12 @@ def test_codex_idle_resume_replays_through_the_pinned_native_cli() -> None:
             resumed = codex.resume_handshake(second, thread_id=seed["thread_id"])
             assert resumed["thread_resume_response"]["result"]["thread"]["id"] == seed["thread_id"]
             followup = codex.submit_to_thread(
-                second,
-                thread_id=seed["thread_id"],
-                request_id="capture-6",
-                text="Reply with exactly: IDLE_RESUME_OK",
-                action="codex_idle_resume_resumed_turn_start",
+                second, thread_id=seed["thread_id"], request_id="capture-6", text="Reply with exactly: IDLE_RESUME_OK"
             )
             assert _codex_result_text(followup) == "IDLE_RESUME_OK"
             server.assert_consumed()
             _assert_request_shape(server, model="gpt-oss-20b-128k-openai-chat", protocol_key="input")
+            _assert_codex_base_instructions(server)
         finally:
             if second is not None:
                 second.close()

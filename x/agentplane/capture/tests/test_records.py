@@ -1,7 +1,11 @@
+import json
+from pathlib import Path
+
+import pytest
 import pytest_bazel
 
 from x.agentplane.capture.framing import NewlineFramer
-from x.agentplane.capture.providers.shared_capture import text, text_record
+from x.agentplane.capture.providers.shared_capture import NativeCapture
 
 
 def test_framer_preserves_crlf_and_eof_tail() -> None:
@@ -11,12 +15,11 @@ def test_framer_preserves_crlf_and_eof_tail() -> None:
     assert framer.finish() == [(b"malformed", b"", True)]
 
 
-def test_text_evidence_needs_no_base64_or_parsed_json_copy() -> None:
-    assert text(b'{"value":null}') == '{"value":null}'
-    record = text_record(b'{"value":null}')
-    assert record["text"] == '{"value":null}'
-    assert "base64" not in record
-    assert "json" not in record
+def test_invalid_native_stdout_is_not_ignored(tmp_path: Path) -> None:
+    capture = NativeCapture(tmp_path, [], cwd=tmp_path, environment={})
+    capture.frames.put("not-json")
+    with pytest.raises(json.JSONDecodeError):
+        capture.await_frame(lambda _frame: True, timeout=0.1)
 
 
 if __name__ == "__main__":

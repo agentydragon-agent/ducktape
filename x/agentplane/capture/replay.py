@@ -2,34 +2,37 @@
 
 from __future__ import annotations
 
-import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
 from typing import Any
 
-
-def _rows(path: Path) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in path.read_text().splitlines() if line]
+from x.agentplane.capture.records import RequestRecord, ResponseChunkRecord
 
 
-def _body(record: dict[str, Any]) -> bytes:
-    value = record["body"]
-    if not isinstance(value, str):
-        raise ValueError("fixture body is not UTF-8 text")
-    return value.encode("utf-8")
+def _requests(path: Path) -> list[RequestRecord]:
+    return [
+        RequestRecord.model_validate_json(line) for line in path.read_text().splitlines() if '"kind":"request"' in line
+    ]
+
+
+def _response_chunks(path: Path) -> list[ResponseChunkRecord]:
+    return [
+        ResponseChunkRecord.model_validate_json(line)
+        for line in path.read_text().splitlines()
+        if '"kind":"response_chunk"' in line
+    ]
 
 
 class ReplayServer(ThreadingHTTPServer):
     """Serve each captured upstream response to the next matching request."""
 
     def __init__(self, fixture: Path):
-        self.requests = [row for row in _rows(fixture / "llm-requests.jsonl") if row["kind"] == "request"]
+        self.requests = _requests(fixture / "llm-requests.jsonl")
         chunks: dict[str, list[bytes]] = {}
-        for row in _rows(fixture / "llm-responses.jsonl"):
-            if row["kind"] == "response_chunk":
-                chunks.setdefault(str(row["capture_request_id"]), []).append(_body(row))
-        self.responses = [chunks.get(str(row["capture_request_id"]), []) for row in self.requests]
+        for row in _response_chunks(fixture / "llm-responses.jsonl"):
+            chunks.setdefault(row.capture_request_id, []).append(row.body.encode("utf-8"))
+        self.responses = [chunks.get(row.capture_request_id, []) for row in self.requests]
         if any(not response for response in self.responses):
             raise ValueError("fixture has a request without captured response data")
         self.observed: list[dict[str, Any]] = []
@@ -52,7 +55,7 @@ class ReplayServer(ThreadingHTTPServer):
                     self.send_error(500, "unexpected replay request")
                     return
                 expected = self.server.requests[index]  # type: ignore[attr-defined]
-                if self.path != expected["path_query"]:
+                if self.path != expected.path_query:
                     self.send_error(500, "replay request path mismatch")
                     return
                 self.server.observed.append(  # type: ignore[attr-defined]

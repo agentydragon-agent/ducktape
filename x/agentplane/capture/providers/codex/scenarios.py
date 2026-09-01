@@ -10,33 +10,28 @@ from x.agentplane.capture.providers.shared_capture import NativeCapture
 
 def launch_handshake(capture: NativeCapture, *, cwd: str, model: str, effort: str) -> dict[str, Any]:
     initialize = driver.initialize("capture-1")
-    capture.write(initialize, action="codex_initialize")
+    capture.write(initialize)
     init_response = capture.await_frame(lambda item: item.get("id") == "capture-1", timeout=30)
-    capture.write(driver.initialized(), action="codex_initialized")
+    capture.write(driver.initialized())
     start = driver.thread_start("capture-2", cwd=cwd, model=model, effort=effort)
-    capture.write(start, action="codex_thread_start")
+    capture.write(start)
     started = capture.await_frame(lambda item: item.get("id") == "capture-2", timeout=30)
     return {"initialize_response": init_response, "thread_start_response": started}
 
 
 def resume_handshake(capture: NativeCapture, *, thread_id: str) -> dict[str, Any]:
     """Initialize a fresh app-server process and load its on-disk thread."""
-    capture.write(driver.initialize("capture-4"), action="codex_resume_initialize")
+    capture.write(driver.initialize("capture-4"))
     init_response = capture.await_frame(lambda item: item.get("id") == "capture-4", timeout=30)
-    capture.write(driver.initialized(), action="codex_resume_initialized")
+    capture.write(driver.initialized())
     resume = driver.thread_resume("capture-5", thread_id=thread_id)
-    capture.write(resume, action="codex_thread_resume")
+    capture.write(resume)
     resumed = capture.await_frame(lambda item: item.get("id") == "capture-5", timeout=30)
     return {"initialize_response": init_response, "thread_resume_response": resumed, "thread_id": thread_id}
 
 
 def baseline(capture: NativeCapture, *, thread_start_response: dict[str, Any]) -> dict[str, Any]:
-    return submit(
-        capture,
-        thread_start_response=thread_start_response,
-        text="Reply with exactly: CAPTURE_BASELINE_OK",
-        action="codex_baseline_turn_start",
-    )
+    return submit(capture, thread_start_response=thread_start_response, text="Reply with exactly: CAPTURE_BASELINE_OK")
 
 
 def _thread_id(thread_start_response: dict[str, Any]) -> str:
@@ -50,16 +45,14 @@ def _thread_id(thread_start_response: dict[str, Any]) -> str:
     return result["thread"]["id"]
 
 
-def submit(capture: NativeCapture, *, thread_start_response: dict[str, Any], text: str, action: str) -> dict[str, Any]:
+def submit(capture: NativeCapture, *, thread_start_response: dict[str, Any], text: str) -> dict[str, Any]:
     thread_id = _thread_id(thread_start_response)
-    return submit_to_thread(capture, thread_id=thread_id, request_id="capture-3", text=text, action=action)
+    return submit_to_thread(capture, thread_id=thread_id, request_id="capture-3", text=text)
 
 
-def submit_to_thread(
-    capture: NativeCapture, *, thread_id: str, request_id: str, text: str, action: str
-) -> dict[str, Any]:
+def submit_to_thread(capture: NativeCapture, *, thread_id: str, request_id: str, text: str) -> dict[str, Any]:
     start = driver.turn_start(request_id, thread_id=thread_id, text=text)
-    capture.write(start, action=action)
+    capture.write(start)
     started = capture.await_frame(lambda item: item.get("id") == request_id, timeout=30)
     turn_result = started.get("result")
     if (
@@ -87,7 +80,7 @@ def submit_while_active(
             'printf "wait_finished\\n"\'`; do not answer early.'
         ),
     )
-    capture.write(initial, action=f"codex_{scenario}_initial_turn_start")
+    capture.write(initial)
     started = capture.await_frame(lambda item: item.get("id") == "capture-3", timeout=30)
     turn_id = started["result"]["turn"]["id"]
     active = capture.await_frame(lambda item: item.get("method") == "turn/started", timeout=30)
@@ -95,13 +88,11 @@ def submit_while_active(
         followup = driver.steer(
             "capture-4", thread_id=thread_id, turn_id=turn_id, text="Reply ONLY STEERED after the current tool action."
         )
-        action = "codex_steering_turn_steer"
     else:
         followup = driver.turn_start(
             "capture-4", thread_id=thread_id, text="Reply ONLY SECOND_INPUT_OBSERVED after current work."
         )
-        action = f"codex_{scenario}_second_turn_start"
-    capture.write(followup, action=action)
+    capture.write(followup)
     response = capture.await_frame(lambda item: item.get("id") == "capture-4", timeout=30)
     terminal = capture.await_frame(lambda item: item.get("method") == "turn/completed", timeout=120)
     return {
@@ -125,17 +116,17 @@ def interrupt(
             'printf "wait_finished\\n"\'`; do not answer early.'
         ),
     )
-    capture.write(start, action="codex_interrupt_initial_turn_start")
+    capture.write(start)
     started = capture.await_frame(lambda item: item.get("id") == "capture-3", timeout=30)
     turn_id = started["result"]["turn"]["id"]
     active = capture.await_frame(lambda item: item.get("method") == "turn/started", timeout=30)
     queued_response = None
     if with_queued_input:
         queued = driver.turn_start("capture-4", thread_id=thread_id, text="Queued input: reply only if admitted.")
-        capture.write(queued, action="codex_interrupt_queued_turn_start")
+        capture.write(queued)
         queued_response = capture.await_frame(lambda item: item.get("id") == "capture-4", timeout=30)
     request = driver.interrupt("capture-5", thread_id=thread_id, turn_id=turn_id)
-    capture.write(request, action="codex_interrupt_turn_interrupt")
+    capture.write(request)
     response = capture.await_frame(lambda item: item.get("id") == "capture-5", timeout=30)
     terminal = capture.await_frame(lambda item: item.get("method") == "turn/completed", timeout=120)
     return {

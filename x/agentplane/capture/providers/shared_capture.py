@@ -11,10 +11,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
 
-def write_jsonl(path: Path, value: dict[str, Any]) -> None:
+from x.agentplane.capture.records import TextRecord
+
+
+def write_jsonl(path: Path, value: BaseModel) -> None:
     with path.open("ab") as output:
-        output.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode() + b"\n")
+        output.write(value.model_dump_json().encode() + b"\n")
         output.flush()
 
 
@@ -26,8 +30,8 @@ def text(data: bytes) -> str:
         raise ValueError("native capture evidence must be UTF-8 text") from error
 
 
-def text_record(data: bytes) -> dict[str, Any]:
-    return {"time_ns": time.monotonic_ns(), "text": text(data)}
+def text_record(data: bytes) -> TextRecord:
+    return TextRecord(time_ns=time.monotonic_ns(), text=text(data))
 
 
 class NativeCapture:
@@ -36,7 +40,7 @@ class NativeCapture:
     def __init__(self, output: Path, command: list[str], *, cwd: Path, environment: dict[str, str]):
         self.output, self.command, self.cwd, self.environment = output, command, cwd, environment
         self.process: subprocess.Popen[bytes] | None = None
-        self.frames: queue.Queue[dict[str, Any]] = queue.Queue()
+        self.frames: queue.Queue[str] = queue.Queue()
         self.threads: list[threading.Thread] = []
 
     def start(self) -> None:
@@ -58,11 +62,10 @@ class NativeCapture:
         for thread in self.threads:
             thread.start()
 
-    def write(self, frame: dict[str, Any], *, action: str) -> None:
+    def write(self, frame: dict[str, Any]) -> None:
         assert self.process is not None
         assert self.process.stdin is not None
         payload = json.dumps(frame, separators=(",", ":")).encode()
-        write_jsonl(self.output / "actions.jsonl", {"action": action, "frame": frame, "time_ns": time.monotonic_ns()})
         write_jsonl(self.output / "stdin.jsonl", text_record(payload))
         self.process.stdin.write(payload + b"\n")
         self.process.stdin.flush()
@@ -71,9 +74,12 @@ class NativeCapture:
         end = time.monotonic() + timeout
         while (remaining := end - time.monotonic()) > 0:
             try:
-                frame = self.frames.get(timeout=remaining)
+                raw_frame = self.frames.get(timeout=remaining)
             except queue.Empty:
                 break
+            frame = json.loads(raw_frame)
+            if not isinstance(frame, dict):
+                raise ValueError("native stdout frame must be a JSON object")
             if predicate(frame):
                 return frame
         raise TimeoutError("expected native frame was not observed")
@@ -97,13 +103,9 @@ class NativeCapture:
         assert self.process.stdout is not None
         for line in self.process.stdout:
             data = line.rstrip(b"\r\n")
-            write_jsonl(self.output / "stdout.jsonl", text_record(data))
-            try:
-                parsed = json.loads(data)
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                continue
-            if isinstance(parsed, dict):
-                self.frames.put(parsed)
+            value = text(data)
+            write_jsonl(self.output / "stdout.jsonl", TextRecord(time_ns=time.monotonic_ns(), text=value))
+            self.frames.put(value)
 
     def _stderr(self) -> None:
         assert self.process is not None

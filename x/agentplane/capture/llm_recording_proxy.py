@@ -11,9 +11,11 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener
 
+from x.agentplane.capture.records import ProxyErrorRecord, RequestRecord, ResponseChunkRecord
+
 _SAFE_HEADERS = frozenset({"content-type", "content-encoding", "accept", "user-agent"})
 _FORBIDDEN_HEADERS = frozenset({"authorization", "proxy-authorization", "cookie", "set-cookie"})
-Record = Callable[[str, dict[str, Any]], None]
+Record = Callable[[RequestRecord | ResponseChunkRecord | ProxyErrorRecord], None]
 
 
 class BudgetExceededError(RuntimeError):
@@ -54,8 +56,13 @@ def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
             )
             try:
                 record(
-                    "request",
-                    {"capture_request_id": capture_request_id, "method": "POST", "path_query": self.path, "body": body},
+                    RequestRecord(
+                        kind="request",
+                        capture_request_id=capture_request_id,
+                        method="POST",
+                        path_query=self.path,
+                        body=body.decode("utf-8"),
+                    )
                 )
             except BudgetExceededError:
                 self.send_error(429, "capture provider-call ceiling exceeded")
@@ -72,7 +79,11 @@ def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
             except HTTPError as error:
                 self._relay_bytes(capture_request_id, error.code, error.read(), safe_headers(error.headers))
             except Exception as error:
-                record("proxy_error", {"capture_request_id": capture_request_id, "kind": type(error).__name__})
+                record(
+                    ProxyErrorRecord(
+                        kind="proxy_error", capture_request_id=capture_request_id, error_kind=type(error).__name__
+                    )
+                )
                 self.send_error(502, "recording proxy upstream failure")
 
         def _begin(self, status: int, headers: dict[str, str]) -> None:
@@ -88,13 +99,24 @@ def recording_proxy(*, upstream: str, record: Record) -> ThreadingHTTPServer:
             ordinal = 0
             while chunk := response.read1(65536):
                 ordinal += 1
-                record("response_chunk", {"capture_request_id": capture_request_id, "ordinal": ordinal, "body": chunk})
+                record(
+                    ResponseChunkRecord(
+                        kind="response_chunk",
+                        capture_request_id=capture_request_id,
+                        ordinal=ordinal,
+                        body=chunk.decode("utf-8"),
+                    )
+                )
                 self.wfile.write(chunk)
                 self.wfile.flush()
 
         def _relay_bytes(self, capture_request_id: str, status: int, body: bytes, headers: dict[str, str]) -> None:
             self._begin(status, headers)
-            record("response_chunk", {"capture_request_id": capture_request_id, "ordinal": 1, "body": body})
+            record(
+                ResponseChunkRecord(
+                    kind="response_chunk", capture_request_id=capture_request_id, ordinal=1, body=body.decode("utf-8")
+                )
+            )
             self.wfile.write(body)
 
     return ThreadingHTTPServer(("127.0.0.1", 0), Handler)

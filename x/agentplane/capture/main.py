@@ -7,7 +7,6 @@ not a general runner, fixture framework, or provider-neutral API.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 from threading import Thread
@@ -16,7 +15,8 @@ from urllib.parse import urlsplit
 from x.agentplane.capture.llm_recording_proxy import recording_proxy
 from x.agentplane.capture.providers.claude import scenarios as claude
 from x.agentplane.capture.providers.codex import scenarios as codex
-from x.agentplane.capture.providers.shared_capture import NativeCapture, text, write_jsonl
+from x.agentplane.capture.providers.shared_capture import NativeCapture, write_jsonl
+from x.agentplane.capture.records import CaptureMetadata, ProxyErrorRecord, RequestRecord, ResponseChunkRecord
 from x.agentplane.capture.replay import ReplayServer
 
 SCENARIOS = ("launch", "baseline", "shell", "file_edits", "steering", "second_input", "interrupt", "idle_resume")
@@ -51,12 +51,9 @@ def _prepare(workspace: Path) -> None:
 
 
 def _proxy(output: Path, upstream: str, provider: str, replay_from: Path | None) -> tuple[object, Thread, str]:
-    def record(kind: str, event: dict[str, object]) -> None:
-        body = event.pop("body", b"")
-        assert isinstance(body, bytes)
+    def record(event: RequestRecord | ResponseChunkRecord | ProxyErrorRecord) -> None:
         write_jsonl(
-            output / ("llm-requests.jsonl" if kind == "request" else "llm-responses.jsonl"),
-            {"kind": kind, **event, "body": text(body)},
+            output / ("llm-requests.jsonl" if isinstance(event, RequestRecord) else "llm-responses.jsonl"), event
         )
 
     server = ReplayServer(replay_from) if replay_from else recording_proxy(upstream=upstream, record=record)
@@ -91,14 +88,7 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError("output must not exist")
     _prepare(args.workspace)
     args.output.mkdir(mode=0o700)
-    for name in (
-        "stdin.jsonl",
-        "stdout.jsonl",
-        "stderr.jsonl",
-        "actions.jsonl",
-        "llm-requests.jsonl",
-        "llm-responses.jsonl",
-    ):
+    for name in ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl", "llm-requests.jsonl", "llm-responses.jsonl"):
         (args.output / name).touch(mode=0o600)
     key = _key(args.credential_file)
     proxy, proxy_thread, proxy_endpoint = _proxy(args.output, args.endpoint, args.provider, args.replay_from)
@@ -136,13 +126,10 @@ def run(args: argparse.Namespace) -> None:
         )
         if args.scenario in {"baseline", "shell", "file_edits"}:
             if args.provider == "claude":
-                claude.submit(capture, _prompt(args.scenario), action=f"claude_{args.scenario}")
+                claude.submit(capture, _prompt(args.scenario))
             else:
                 codex.submit(
-                    capture,
-                    thread_start_response=handshake["thread_start_response"],
-                    text=_prompt(args.scenario),
-                    action=f"codex_{args.scenario}",
+                    capture, thread_start_response=handshake["thread_start_response"], text=_prompt(args.scenario)
                 )
         elif args.scenario in {"steering", "second_input"}:
             if args.provider == "claude":
@@ -164,20 +151,17 @@ def run(args: argparse.Namespace) -> None:
                 )
         elif args.scenario == "idle_resume":
             if args.provider == "claude":
-                initial = claude.submit(
-                    capture, "Reply with exactly: IDLE_RESUME_SEED_OK", action="claude_idle_resume_seed_prompt"
-                )
+                initial = claude.submit(capture, "Reply with exactly: IDLE_RESUME_SEED_OK")
                 session_id = claude.session_id(initial)
                 capture.close()
                 capture = start_capture(resume_id=session_id)
                 claude.launch_handshake(capture)
-                claude.submit(capture, "Reply with exactly: IDLE_RESUME_OK", action="claude_idle_resume_resumed_prompt")
+                claude.submit(capture, "Reply with exactly: IDLE_RESUME_OK")
             else:
                 initial = codex.submit(
                     capture,
                     thread_start_response=handshake["thread_start_response"],
                     text="Reply with exactly: IDLE_RESUME_SEED_OK",
-                    action="codex_idle_resume_seed_turn_start",
                 )
                 capture.close()
                 capture = start_capture()
@@ -187,13 +171,12 @@ def run(args: argparse.Namespace) -> None:
                     thread_id=initial["thread_id"],
                     request_id="capture-6",
                     text="Reply with exactly: IDLE_RESUME_OK",
-                    action="codex_idle_resume_resumed_turn_start",
                 )
         if args.replay_from:
             assert isinstance(proxy, ReplayServer)
             proxy.assert_consumed()
         (args.output / "metadata.json").write_text(
-            json.dumps({"provider": args.provider, "scenario": args.scenario, "model": args.model}) + "\n"
+            CaptureMetadata(provider=args.provider, scenario=args.scenario, model=args.model).model_dump_json() + "\n"
         )
     finally:
         if capture is not None:

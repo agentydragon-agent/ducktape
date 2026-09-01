@@ -1,2 +1,0 @@
-{"action":"claude_initialize","frame":{"type":"control_request","request_id":"capture-c8f073f71f6d42e4a1b2bc4acc339627","request":{"subtype":"initialize"}},"time_ns":5014898220918094}
-{"action":"claude_shell","frame":{"type":"user","message":{"role":"user","content":"Use shell to run `python operation_probe.py echo --value PROBE_STDOUT`, `python operation_probe.py fail`, and `python operation_probe.py count`; report outcomes."},"parent_tool_use_id":null,"uuid":"071c851a-5c8a-459d-a7b1-57126d032c91"},"time_ns":5014898652575246}

@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+# Keep recorded requests about the native app-server protocol rather than the
+# broad default coding-agent policy. This still lets each scenario invoke its
+# normal native tool calls.
+BASE_INSTRUCTIONS = "You are a concise test assistant. Follow user requests using the available tools."
+
 
 def initialize(request_id: str) -> dict[str, Any]:
     return {
@@ -27,6 +32,7 @@ def thread_start(request_id: str, *, cwd: str, model: str, effort: str) -> dict[
             "sandbox": "danger-full-access",
             "ephemeral": False,
             "model": model,
+            "baseInstructions": BASE_INSTRUCTIONS,
             "config": {"model_reasoning_effort": effort},
         },
     }

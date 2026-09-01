@@ -1,0 +1,71 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_native_replay",
+    srcs = ["test_native_replay.py"],
+    data = [
+        # keep: native harnesses and recorded response bodies are runtime-only.
+        "//x/agentplane:testdata/claude/baseline/llm-requests.jsonl",
+        "//x/agentplane:testdata/claude/baseline/llm-responses.jsonl",
+        "//x/agentplane:testdata/claude/idle_resume/llm-requests.jsonl",
+        "//x/agentplane:testdata/claude/idle_resume/llm-responses.jsonl",
+        "//x/agentplane:testdata/codex/idle_resume/llm-requests.jsonl",
+        "//x/agentplane:testdata/codex/idle_resume/llm-responses.jsonl",
+        "@agentplane_codex_cli_linux_x64//:files",
+        "@claude_code_cli_linux_x64//:claude",
+    ],
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "//x/agentplane/capture:replay",
+        "//x/agentplane/capture/providers:shared_capture",
+        "//x/agentplane/capture/providers/claude:scenarios",
+        "//x/agentplane/capture/providers/codex:driver",
+        "//x/agentplane/capture/providers/codex:scenarios",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    deps = [
+        "//:conftest",
+        "//x/agentplane/capture:llm_recording_proxy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_records",
+    srcs = ["test_records.py"],
+    deps = [
+        "//:conftest",
+        "//x/agentplane/capture:framing",
+        "//x/agentplane/capture/providers:shared_capture",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_replay",
+    srcs = ["test_replay.py"],
+    data = [
+        # keep: replay fixtures are runtime-only.
+        "//x/agentplane:testdata/codex/baseline/llm-requests.jsonl",
+        "//x/agentplane:testdata/codex/baseline/llm-responses.jsonl",
+        "//x/agentplane:testdata/codex/interrupt/llm-requests.jsonl",
+        "//x/agentplane:testdata/codex/interrupt/llm-responses.jsonl",
+    ],
+    deps = [
+        "//:conftest",
+        "//x/agentplane/capture:replay",
+        "@pypi//pytest_bazel",
+    ],
+)

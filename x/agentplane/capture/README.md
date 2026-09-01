@@ -13,6 +13,11 @@ The committed examples cover `baseline`, `shell`, `file_edits`, `steering`, `sec
 native process, then resumes the saved native session/thread from a new process. They are raw
 protocol evidence, not a compatibility matrix.
 
+Capture launches deliberately avoid host-specific prompt bulk: Claude uses safe mode with slash commands
+disabled and only the four scenario tools, while Codex supplies a short app-server `baseInstructions` value.
+This keeps fixtures about native protocol behavior rather than locally installed skills, plugins, or project
+instructions.
+
 ```sh
 bazel run //x/agentplane/capture:live_capture -- \
   --provider codex --scenario shell --binary /path/to/codex \
