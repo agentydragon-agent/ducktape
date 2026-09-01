@@ -18,6 +18,8 @@ spec:
         app.kubernetes.io/instance: props
         app.kubernetes.io/name: props
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       serviceAccountName: props-executor
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
@@ -28,12 +30,12 @@ spec:
               - matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
-      # Props main image is on GHCR (public, no pull secret needed).
-      # Agent images live in Forgejo's registry (git.allegedly.works/props/*),
+      # Props runtime images use the ducktape-ci Forgejo tenant. Agent images
+      # live in a separate Forgejo namespace (git.allegedly.works/props/*),
       # reached through the standalone props-registry-proxy service.
       containers:
         - name: props
-          image: ghcr.io/agentydragon/props-backend:devel-20260828085445-cda562b # {"$imagepolicy": "flux-system:props-backend"}
+          image: git.allegedly.works/ducktape-ci/props-backend:devel-20260828085445-cda562b # {"$imagepolicy": "flux-system:props-backend"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

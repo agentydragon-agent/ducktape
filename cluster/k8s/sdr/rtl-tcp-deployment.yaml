@@ -15,11 +15,13 @@ spec:
       labels:
         app.kubernetes.io/name: rtl-tcp
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       nodeSelector:
         kubernetes.io/hostname: wyrm2
       containers:
         - name: rtl-tcp
-          image: ghcr.io/agentydragon/rtl-tcp:devel-20260901005616-69c7cac # {"$imagepolicy": "flux-system:rtl-tcp"}
+          image: git.allegedly.works/ducktape-ci/rtl-tcp:devel-20260901005616-69c7cac # {"$imagepolicy": "flux-system:rtl-tcp"}
           ports:
             - containerPort: 1234
               name: iq-stream

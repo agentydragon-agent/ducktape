@@ -166,12 +166,26 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      - uses: ./.github/actions/ghcr-build-push
+      - uses: ./.github/actions/setup-ci-secrets
         with:
-          image: ghcr.io/${{ github.repository_owner }}/rtl-tcp
-          context: x/rtl_tcp
-          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rtl-tcp:buildcache
-          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rtl-tcp:buildcache,mode=max
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Login to Forgejo registry
+        run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+
+      - name: Build and push
+        env:
+          IMAGE: git.allegedly.works/ducktape-ci/rtl-tcp
+        run: |
+          set -euo pipefail
+          ts="$(date -u +%Y%m%d%H%M%S)"
+          pin_tag="${GITHUB_REF_NAME}-${ts}-${GITHUB_SHA:0:7}"
+          docker buildx build \
+            --push \
+            --tag "$IMAGE:$GITHUB_SHA" \
+            --tag "$IMAGE:$pin_tag" \
+            --tag "$IMAGE:latest" \
+            x/rtl_tcp
 
   loom-gym-sandbox:
     name: Loom Gym Sandbox

@@ -17,6 +17,8 @@ spec:
     namespace: ducktape-flux
   timeout: 5m
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: authentik

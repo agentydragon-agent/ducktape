@@ -19,6 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: haku-managed-agent
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       # Shared Haku compute identity (cluster/k8s/haku/rbac/serviceaccount-haku.yaml),
       # the same SA the sandbox exec-target pods run as.
       serviceAccountName: haku
@@ -40,7 +42,7 @@ spec:
         fsGroup: 100
       containers:
         - name: worker
-          image: ghcr.io/agentydragon/haku-managed-agent:devel-20260829002825-fe5244a # {"$imagepolicy": "flux-system:haku-managed-agent"}
+          image: git.allegedly.works/ducktape-ci/haku-managed-agent:devel-20260829002825-fe5244a # {"$imagepolicy": "flux-system:haku-managed-agent"}
           imagePullPolicy: Always
           command: ["/sw/bin/haku-managed-agent-run"] # run the worker closure directly (no systemd)
           securityContext:

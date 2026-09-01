@@ -1,22 +1,24 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: props-backend
+  name: haku-managed-agent
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/props-backend
+  image: git.allegedly.works/ducktape-ci/haku-managed-agent
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds
 ---
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImagePolicy
 metadata:
-  name: props-backend
+  name: haku-managed-agent
   namespace: flux-system
 spec:
   imageRepositoryRef:
-    name: props-backend
+    name: haku-managed-agent
   filterTags:
-    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical order == chronological
+    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical == chronological
     pattern: '^devel-\d{14}-[0-9a-f]{7}$'
   policy:
     alphabetical:

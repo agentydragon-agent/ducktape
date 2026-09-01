@@ -1,22 +1,24 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: budget-exporter
+  name: wayback-archive
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/budget-exporter
+  image: git.allegedly.works/ducktape-ci/wayback-archive
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds
 ---
-apiVersion: image.toolkit.fluxcd.io/v1
+apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImagePolicy
 metadata:
-  name: budget-exporter
+  name: wayback-archive
   namespace: flux-system
 spec:
   imageRepositoryRef:
-    name: budget-exporter
+    name: wayback-archive
   filterTags:
-    pattern: "^devel-[0-9]{14}-[0-9a-f]{7}$"
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
   policy:
     alphabetical:
       order: asc

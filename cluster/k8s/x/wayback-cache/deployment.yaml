@@ -19,6 +19,8 @@ spec:
         app.kubernetes.io/name: wayback-cache
         app.kubernetes.io/component: input
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -28,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: archive
-          image: ghcr.io/agentydragon/wayback-archive:devel-20260827014809-8427d07 # {"$imagepolicy": "flux-system:wayback-archive"}
+          image: git.allegedly.works/ducktape-ci/wayback-archive:devel-20260827014809-8427d07 # {"$imagepolicy": "flux-system:wayback-archive"}
           imagePullPolicy: Always
           env:
             - name: RUST_LOG

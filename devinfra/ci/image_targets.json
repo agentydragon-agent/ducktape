@@ -51,15 +51,18 @@
     },
     "props-backend": {
       "target": "//props/backend:image",
-      "test": "//props/backend/..."
+      "test": "//props/backend/...",
+      "registry": "forgejo"
     },
     "props-llm-proxy": {
       "target": "//props/llm_proxy:image",
-      "test": "//props/llm_proxy/..."
+      "test": "//props/llm_proxy/...",
+      "registry": "forgejo"
     },
     "props-registry-proxy": {
       "target": "//props/registry_proxy:image",
-      "test": "//props/registry_proxy/..."
+      "test": "//props/registry_proxy/...",
+      "registry": "forgejo"
     },
     "tana-firebase-resigner": {
       "target": "//tana/firebase_resigner:image",
@@ -135,7 +138,8 @@
     },
     "budget-exporter": {
       "target": "//finance/beancount_export:image",
-      "test": "//finance/beancount_export/..."
+      "test": "//finance/beancount_export/...",
+      "registry": "forgejo"
     },
     "study-casino": {
       "target": "//study_casino:image",
@@ -152,11 +156,13 @@
     },
     "wayback-archive": {
       "target": "//loom/wayback/cache:image",
-      "test": "//loom/wayback/cache:wayback_cache_test"
+      "test": "//loom/wayback/cache:wayback_cache_test",
+      "registry": "forgejo"
     },
     "authentik-jwt-rotation": {
       "target": "//cluster/rotators/authentik_jwt_rotation:image",
-      "test": "//cluster/rotators/authentik_jwt_rotation/..."
+      "test": "//cluster/rotators/authentik_jwt_rotation/...",
+      "registry": "forgejo"
     },
     "forgejo-token-rotation": {
       "target": "//cluster/rotators/forgejo_token_rotation:image",
@@ -164,7 +170,8 @@
       "registry": "forgejo"
     },
     "attic-jwt-rotation": {
-      "target": "//cluster/rotators/attic_jwt_rotation:image"
+      "target": "//cluster/rotators/attic_jwt_rotation:image",
+      "registry": "forgejo"
     },
     "inventree-token-provisioner": {
       "target": "//cluster/provisioners/inventree_token_provisioner:image",
@@ -192,7 +199,8 @@
       "target": "//devinfra/firecracker/vm_pod:image"
     },
     "inventree": {
-      "target": "//inventree_utils/rai_plugin:image"
+      "target": "//inventree_utils/rai_plugin:image",
+      "registry": "forgejo"
     },
     "stalwart": {
       "target": "//cluster/k8s/haku/mailbox/image:image",

@@ -39,12 +39,6 @@ spec:
       namespace: ducktape-flux
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: authentik-jwt-rotation
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: attic-jwt-rotation
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: haku-console
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
@@ -60,28 +54,7 @@ spec:
       name: haku-indexer
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: haku-managed-agent
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: haku-openclaw-spike
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: openclaw
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: props-backend
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: props-llm-proxy
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: props-registry-proxy
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: budget-exporter
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: wayback-archive
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: rtl-tcp

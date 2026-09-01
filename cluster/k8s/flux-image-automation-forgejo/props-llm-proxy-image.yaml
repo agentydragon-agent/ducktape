@@ -4,8 +4,10 @@ metadata:
   name: props-llm-proxy
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/props-llm-proxy
+  image: git.allegedly.works/ducktape-ci/props-llm-proxy
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds
 ---
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImagePolicy

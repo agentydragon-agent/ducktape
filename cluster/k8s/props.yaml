@@ -22,6 +22,8 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
     - name: gateway

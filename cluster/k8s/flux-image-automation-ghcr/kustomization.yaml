@@ -2,19 +2,10 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ducktape-write-source.yaml
-  - props-backend-image.yaml
-  - props-llm-proxy-image.yaml
-  - props-registry-proxy-image.yaml
   - image-update-automation.yaml
   - openclaw-image.yaml
-  - budget-exporter-image.yaml
-  - authentik-jwt-rotation-image.yaml
-  - attic-jwt-rotation-image.yaml
   - haku-console-image.yaml
   - haku-egress-proxy-image.yaml
   - haku-kube-api-proxy-image.yaml
   - haku-console-static-image.yaml
   - haku-indexer-image.yaml
-  - haku-managed-agent-image.yaml
-  - rtl-tcp-image.yaml
-  - wayback-archive-image.yaml
