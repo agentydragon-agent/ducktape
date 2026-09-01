@@ -23,12 +23,15 @@ replacement for native provider protocols. Its relationship to A2A 1.0 is descri
    activity are not one overloaded status field.
 7. **PostgreSQL is authoritative.** A globally ordered thread timeline is assigned when Postgres
    accepts records/events; attempt-local native sequences alone do not order replacement attempts.
+8. **Origin is explicit.** Human prompts, Agent messages, automations, subscriptions, and external
+   events all enter through the same durable input path with a provenance envelope. A provider-facing
+   user role does not imply that a human typed the content.
 
 ## Identities and ordering
 
 The initial stable identifiers are:
 
-- `thread_id`: durable conversation identity;
+- `thread_id`: durable ordered interaction identity for one speaking Agent/harness;
 - `sandbox_id`: durable environment record;
 - `attempt_id`: one bridge/Pod incarnation;
 - `attempt_generation`: monotonically increasing fencing generation for that Sandbox;
@@ -40,6 +43,10 @@ The initial stable identifiers are:
 - `item_id`: one common message, reasoning item, or operation;
 - `operation_id`: stable lifecycle identity for one operation;
 - `thread_seq`: Postgres-assigned durable order for common events and anchored wire records.
+
+The protocol term `attempt` is intentionally internal; UI may render it as **runtime**. `Session` is
+reserved for the provider-native resumable identity. Agent identity, Sandbox identity, and any
+future authorization principal are distinct.
 
 The native sequence key is:
 
@@ -111,7 +118,7 @@ A record says which tier is available. “Raw” never means reconstructed or re
 }
 ```
 
-The bridge allocates `native_seq` before appending to its PVC WAL. Postgres stores the record,
+The bridge allocates `native_seq` before appending to its append-only PVC log. Postgres stores the record,
 assigns a thread anchor, and acknowledges the highest contiguous sequence for that process
 generation. Provider-native ids supplement the sequence but do not replace it.
 
@@ -151,10 +158,10 @@ The bridge/server stream is an internal orchestration protocol, not the public a
 interface. Initial messages are:
 
 - `bridge.hello`: Sandbox/attempt ids, attempt fencing generation, bridge/provider versions, native
-  process state, native session/turn ids, WAL ranges, and last central acknowledgement;
+  process state, native session/turn ids, local-log ranges, and last central acknowledgement;
 - `server.reconcile`: accepted generation, desired lifecycle, durable cursors, and replay request;
 - `input.offer`: committed input plus expected attempt generation;
-- `input.bridge_durable`: input persisted in bridge WAL;
+- `input.bridge_durable`: input persisted in the append-only bridge log;
 - `input.native_admitted`: native admission evidence and ids;
 - `wire.append`: ordered batch of wire records;
 - `wire.ack`: highest contiguous sequence for one process generation;
@@ -167,8 +174,10 @@ interface. Initial messages are:
 
 Every command includes `command_id` and `attempt_generation`. A stale generation cannot admit input,
 advance dispatch, or append authoritative records. Duplicate messages are idempotent by stable id.
-A replacement generation is issued only after the previous workload is confirmed terminated or
-explicitly fenced.
+A replacement generation is issued only after the previous workload is confirmed unable to keep
+running, normally by observing that its Pod and child process are terminated. Central generation
+fencing rejects stale bridge writes; it is not a kill switch and cannot prevent a partitioned
+native process from continuing side effects.
 
 ## Lifecycle events
 
@@ -198,7 +207,7 @@ These describe durable environment lifecycle, not whether a turn is working.
 
 - `input.accepted`: committed centrally;
 - `input.offered`: sent to the current attempt generation;
-- `input.bridge_durable`: persisted in the bridge WAL;
+- `input.bridge_durable`: persisted in the append-only bridge log;
 - `input.native_admitted`: provider evidence says it entered native processing/queueing;
 - `input.queued_for_future_turn`;
 - `input.cancelled`;
@@ -207,6 +216,25 @@ These describe durable environment lifecycle, not whether a turn is working.
 
 Each input has `role: initiating | steering`. Claude boundary-queued input and Codex targeted
 `turn/steer` can both be steering while retaining different native admission/timing fields.
+
+An accepted input also has an origin envelope:
+
+```json
+{
+  "origin": {
+    "kind": "human | agent | automation | external_event",
+    "source_id": "opaque source identity",
+    "caused_by": ["optional input/message/event ids"],
+    "subscription_id": "optional",
+    "received_at": "2026-08-31T20:14:12.123Z"
+  }
+}
+```
+
+For a future Agent-to-Agent tool or GitHub/personal-notification adapter, receipt first commits this
+ordinary input. If a Turn is active, provider capability and delivery intent decide whether it is
+offered as steering or queued for the next Turn. The provenance envelope remains visible so the
+model and UI never misrepresent an automated or Agent-authored delivery as Rai's own words.
 
 ### Turn lifecycle
 
@@ -349,24 +377,28 @@ but it does not reorder the common timeline or hide late replay.
 Sandbox lifecycle and attempt/turn activity are rendered separately. “Suspended” means Pod absent
 with durable environment retained; “working” means an attempt currently has an active turn.
 
-## A2A projection
+## Optional A2A projection
 
-The common model intentionally uses concepts that can project cleanly to A2A 1.0:
+The rich common timeline is an internal orchestration and UI model. An optional A2A facade projects
+only the opaque agent-to-agent subset:
 
-- Thread -> A2A `context_id`;
-- Turn -> A2A `Task`;
-- input/assistant message -> A2A `Message`;
-- turn lifecycle -> A2A task status updates;
-- streamed outputs and diffs -> A2A artifact updates.
+- private Thread <-> opaque A2A `context_id` through a server-side mapping;
+- private delegated Turn <-> opaque A2A `Task` id through a server-side mapping;
+- caller/agent content -> A2A `Message`;
+- coarse turn lifecycle -> A2A task status updates;
+- deliverable outputs and diffs -> A2A artifact updates.
 
-Operation input/output, native provenance, dispatch admission, fencing, and recovery evidence require
-a coding-agent extension or remain on the private orchestration stream. The detailed decision is in
-[a2a.md](a2a.md).
+Operation input/output, native provenance, dispatch admission, fencing, and recovery evidence remain
+internal by default. Outbound A2A messages, artifacts, task metadata, and status contain no private
+Thread/Turn ids or bridge/common-protocol identifiers. A2A is not the harness-neutral control
+protocol. See [a2a.md](a2a.md).
 
 ## Deferred beyond v0
 
-- A public extension URI and finalized A2A operation-part schema.
 - Cross-agent discovery/delegation and agent-card semantics.
+- Multiple independent provider Threads/Sessions multiplexed through one native process. Codex
+  app-server supports multiple threads, but the Claude print-mode profile is not assumed to do so;
+  v0 keeps one native session per bridge process.
 - A generic interactive-request family beyond ordinary steering input.
 - Rich operation taxonomies beyond the initial intersection.
 - Cross-thread operation graphs or multi-agent rooms.

@@ -2,11 +2,23 @@
 
 Status: **evidence-backed adapter design**. Exact behavior is version-pinned and must be revalidated by
 the [experiment suite](experiments.md). This document distinguishes provider capability from the
-current Ducktape runner's implementation choices.
+current Ducktape runner's implementation choices. Pinned implementation references and
+license-aware guidance are in [Implementation reuse and prior art](implementation_reuse.md).
 
 ## Compatibility policy
 
-The initial Ducktape image pins Claude Code `2.1.198` and Codex `0.144.1`. Each supported adapter declares a compatibility profile containing:
+The v0 compatibility targets are Claude Code `2.1.198` and Codex `0.144.1`, but only the Codex pin
+is already authoritative in the active Haku runner image. That image extracts its Claude executable
+from the `claude-agent-sdk==0.2.141` wheel, so the CLI version is currently pinned only indirectly by
+SDK packaging. Separate workspace and dispatch Dockerfiles install Claude Code `2.1.198` directly,
+but they are not the active Harness Control Plane runtime.
+
+Before the Claude adapter can claim a passing profile, the runner image must source the CLI from an
+explicit direct package pin and verify its self-reported version and digest. Ducktape's existing
+Claude evidence corpus spans `2.1.198`, `2.1.220`, and `2.1.233`; evidence from one version does not
+establish behavior for another.
+
+Each supported adapter declares a compatibility profile containing:
 
 - harness binary and package version;
 - launch arguments and relevant environment switches;
@@ -18,6 +30,11 @@ The initial Ducktape image pins Claude Code `2.1.198` and Codex `0.144.1`. Each 
 
 An unknown harness version may run in an explicit experimental mode, but it does not inherit the
 resume, interrupt, steering, or projection guarantees of a passing profile.
+
+At launch the bridge records the executable's self-reported version and image/binary digest. The
+direct package pin, runtime report, and digest must agree before the profile passes. All detailed
+Claude behavior below remains experiment-required for that exact profile until the pinned probes
+pass.
 
 Operational native records are retained for routine projection. A restricted, short-retention raw
 evidence tier can preserve exact bytes for reprojection and protocol diagnosis.
@@ -39,6 +56,14 @@ claude
 Other launch configuration is intentionally outside this orchestration document. Protocol probes also pass `--print`; this argv discrepancy must be resolved or deliberately included in the compatibility profile before probe results are treated as production evidence.
 
 The local wire is newline-delimited JSON over child stdin/stdout. Conversation frames and control frames share that ordered stream.
+
+The Claude Agent SDK is not a separate provider runtime: the pinned Python SDK launches the Claude
+Code binary as a subprocess with stream-JSON input and output. It is useful prior art for framing,
+message routing, and compatibility tests. The bridge nevertheless owns the CLI wire directly so
+native records, initialization, admission evidence, interruption, and reconnect behavior are not
+hidden behind an SDK abstraction. See Ducktape's
+[CLI protocol ownership decision](../../haku/plans/cli_protocol_ownership.md) and
+[pinned SDK/CLI wire analysis](../../haku/runner/docs/mid_turn_input.md#claude-code-stream-json-protocol).
 
 ### Initialization
 
@@ -340,6 +365,12 @@ This mode is intentionally after the two native vertical slices. It exists to su
 | Session identity     | Claude session id                          | Codex thread id                       | provider-native session reference      |
 | Cold resume          | CLI-native resume; exact behavior to prove | durable `thread/resume`               | new attempt with continuity evidence   |
 | Current runner gap   | no native process restart/resume           | starts ephemeral thread; no steer     | new design must change both            |
+
+V0 runs one native provider session per bridge process. Codex app-server can host multiple
+independent threads, but multiplexing them would couple failure, resource, and fencing domains.
+Claude's selected print-mode process is not assumed to offer the same multiplexing contract. A
+future compatibility profile may relax this only after both lifecycle and isolation semantics are
+specified and measured.
 
 ## Adapter contract to the bridge
 

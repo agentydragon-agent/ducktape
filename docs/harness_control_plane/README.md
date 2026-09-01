@@ -9,19 +9,21 @@ multi-mode `harness-bridge` binary supervises the selected harness and speaks it
 protocol. A central PostgreSQL-backed server owns durable threads, workload lifecycle, recovery
 decisions, the common timeline, and the web UI.
 
-Native harnesses are the default because they preserve provider behavior and, for Claude, support
-the required subscription-compatible path. A direct LLM API agent loop is documented as an optional
-later adapter, not the baseline.
+Native harnesses are the default because they preserve provider behavior and, for Claude, keep the
+validated Claude Code binary path. The Claude Agent SDK is a wrapper around that binary rather than
+a separate agent loop; this design drives the stream/control wire directly. A direct LLM API agent
+loop is documented as an optional later adapter, not the baseline.
 
 The design deliberately rejects terminal keystrokes and pane scraping as its correctness boundary.
-It also evaluates A2A 1.0 as a future public harness-neutral interface while keeping the private
-bridge/recovery stream separate.
+It evaluates A2A 1.0 only as a future opaque agent-to-agent facade; the rich harness-neutral common
+timeline and private bridge/recovery stream remain internal.
 
 ## Documents
 
-- [Architecture and sandbox lifecycle](architecture.md)
+- [Main design: problem, constraints, decisions, alternatives, and sandbox lifecycle](architecture.md)
 - [Claude Code and Codex protocol adapters](provider_protocols.md)
 - [Common harness protocol and timeline vocabulary](common_protocol.md)
+- [Implementation reuse and pinned prior art](implementation_reuse.md)
 - [A2A fit and protocol layering](a2a.md)
 - [Rerunnable protocol and recovery experiments](experiments.md)
 
@@ -33,7 +35,15 @@ bridge/recovery stream separate.
 - The common protocol covers orchestration, messages, turns, steering, interrupts, operation
   progress, native provenance, and recovery evidence.
 - Native frames remain available for diagnosis and reprojection.
+- Suspension starts as an explicit idle-only operator action; Sandbox disposal is explicit and
+  confirmed rather than retention-window driven.
+- The bridge uses a simple append-only PVC log for reconnect replay rather than a separately bounded
+  overflow policy.
 - A direct LLM loop is optional and must emit the same common protocol.
+
+The orchestrator, web UI, model-capability/router layer, and future stateless MCP authorization
+gateway should be separately deployable. This proposal owns only orchestration/runtime/logging; it
+does not bind tool RBAC or approval escalation to Thread, Session, or Sandbox concepts.
 
 ## Evidence standard
 
