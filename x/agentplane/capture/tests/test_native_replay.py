@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import struct
@@ -53,7 +52,7 @@ def _environment(root: Path, **overrides: str) -> dict[str, str]:
 
 def _stderr(root: Path) -> str:
     records = (root / "capture" / "stderr.jsonl").read_text().splitlines()
-    return b"".join(base64.b64decode(json.loads(line)["base64"]) for line in records).decode(errors="replace")
+    return "".join(json.loads(line)["text"] for line in records)
 
 
 def _python_dynamic_loader() -> str:

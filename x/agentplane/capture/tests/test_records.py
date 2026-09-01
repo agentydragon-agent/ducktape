@@ -1,9 +1,7 @@
-import base64
-
 import pytest_bazel
 
 from x.agentplane.capture.framing import NewlineFramer
-from x.agentplane.capture.providers.shared_capture import raw
+from x.agentplane.capture.providers.shared_capture import text, text_record
 
 
 def test_framer_preserves_crlf_and_eof_tail() -> None:
@@ -13,10 +11,12 @@ def test_framer_preserves_crlf_and_eof_tail() -> None:
     assert framer.finish() == [(b"malformed", b"", True)]
 
 
-def test_raw_example_is_decodable_and_optional_json_is_diagnostic() -> None:
-    record = raw(b'{"value":null}')
-    assert base64.b64decode(record["base64"], validate=True) == b'{"value":null}'
-    assert record["json"] == {"value": None}
+def test_text_evidence_needs_no_base64_or_parsed_json_copy() -> None:
+    assert text(b'{"value":null}') == '{"value":null}'
+    record = text_record(b'{"value":null}')
+    assert record["text"] == '{"value":null}'
+    assert "base64" not in record
+    assert "json" not in record
 
 
 if __name__ == "__main__":

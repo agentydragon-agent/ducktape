@@ -4,6 +4,10 @@
 workspace. It records direct stdin/stdout/stderr JSONL and LiteLLM request/response bodies; the
 proxy never writes HTTP headers. There is no artifact registry or promotion step.
 
+The observed native wire records use UTF-8 `text` fields and LiteLLM records keep each UTF-8
+request/response `body` as a JSON string. The current protocols are textual, so fixtures do not
+carry redundant base64 or parsed-JSON copies.
+
 The committed examples cover `baseline`, `shell`, `file_edits`, `steering`, `second_input`,
 `interrupt`, and `idle_resume` for both providers. `idle_resume` completes a seed turn, closes the
 native process, then resumes the saved native session/thread from a new process. They are raw

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,9 +15,9 @@ def _rows(path: Path) -> list[dict[str, Any]]:
 
 def _body(record: dict[str, Any]) -> bytes:
     value = record["body"]
-    if not isinstance(value, dict) or not isinstance(value.get("base64"), str):
-        raise ValueError("fixture body is not base64 data")
-    return base64.b64decode(value["base64"], validate=True)
+    if not isinstance(value, str):
+        raise ValueError("fixture body is not UTF-8 text")
+    return value.encode("utf-8")
 
 
 class ReplayServer(ThreadingHTTPServer):

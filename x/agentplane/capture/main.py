@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 from x.agentplane.capture.llm_recording_proxy import recording_proxy
 from x.agentplane.capture.providers.claude import scenarios as claude
 from x.agentplane.capture.providers.codex import scenarios as codex
-from x.agentplane.capture.providers.shared_capture import NativeCapture, raw, write_jsonl
+from x.agentplane.capture.providers.shared_capture import NativeCapture, text, write_jsonl
 from x.agentplane.capture.replay import ReplayServer
 
 SCENARIOS = ("launch", "baseline", "shell", "file_edits", "steering", "second_input", "interrupt", "idle_resume")
@@ -56,7 +56,7 @@ def _proxy(output: Path, upstream: str, provider: str, replay_from: Path | None)
         assert isinstance(body, bytes)
         write_jsonl(
             output / ("llm-requests.jsonl" if kind == "request" else "llm-responses.jsonl"),
-            {"kind": kind, **event, "body": raw(body)},
+            {"kind": kind, **event, "body": text(body)},
         )
 
     server = ReplayServer(replay_from) if replay_from else recording_proxy(upstream=upstream, record=record)

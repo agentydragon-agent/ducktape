@@ -2,29 +2,32 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import queue
 import subprocess
 import threading
 import time
 from collections.abc import Callable
-from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
 
 def write_jsonl(path: Path, value: dict[str, Any]) -> None:
     with path.open("ab") as output:
-        output.write(json.dumps(value, separators=(",", ":")).encode() + b"\n")
+        output.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode() + b"\n")
         output.flush()
 
 
-def raw(data: bytes) -> dict[str, Any]:
-    value: dict[str, Any] = {"time_ns": time.monotonic_ns(), "base64": base64.b64encode(data).decode()}
-    with suppress(UnicodeDecodeError, json.JSONDecodeError):
-        value["json"] = json.loads(data)
-    return value
+def text(data: bytes) -> str:
+    """Store capture evidence as its UTF-8 wire text, not a redundant base64 copy."""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("native capture evidence must be UTF-8 text") from error
+
+
+def text_record(data: bytes) -> dict[str, Any]:
+    return {"time_ns": time.monotonic_ns(), "text": text(data)}
 
 
 class NativeCapture:
@@ -60,7 +63,7 @@ class NativeCapture:
         assert self.process.stdin is not None
         payload = json.dumps(frame, separators=(",", ":")).encode()
         write_jsonl(self.output / "actions.jsonl", {"action": action, "frame": frame, "time_ns": time.monotonic_ns()})
-        write_jsonl(self.output / "stdin.jsonl", raw(payload))
+        write_jsonl(self.output / "stdin.jsonl", text_record(payload))
         self.process.stdin.write(payload + b"\n")
         self.process.stdin.flush()
 
@@ -94,7 +97,7 @@ class NativeCapture:
         assert self.process.stdout is not None
         for line in self.process.stdout:
             data = line.rstrip(b"\r\n")
-            write_jsonl(self.output / "stdout.jsonl", raw(data))
+            write_jsonl(self.output / "stdout.jsonl", text_record(data))
             try:
                 parsed = json.loads(data)
             except (UnicodeDecodeError, json.JSONDecodeError):
@@ -106,4 +109,4 @@ class NativeCapture:
         assert self.process is not None
         assert self.process.stderr is not None
         while chunk := self.process.stderr.read1(65536):
-            write_jsonl(self.output / "stderr.jsonl", raw(chunk))
+            write_jsonl(self.output / "stderr.jsonl", text_record(chunk))
