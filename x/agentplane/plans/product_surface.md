@@ -181,10 +181,11 @@ already uses a Secret key reference for an LLM virtual key. A later disposable v
 the file-volume form and mount the Secret only into a trusted proxy container, not into the runner
 container. The runner can then reach a local proxy without receiving the Secret bytes.
 
-This is not automatically per-Thread credential provisioning: warm-pool Pods may already exist before
-a Claim is adopted, and a template-level Secret is shared by every Pod using that template. Claim-
-specific credentials require a separate injection or provisioning mechanism, and Secret rotation must
-be tested for both mounted files and proxy reload behavior.
+With no warm pools, there is no pre-warmed-Pod adoption or credential-reassignment ambiguity in
+this design. A per-Thread Secret still requires a per-Thread provisioning path: a template-level
+Secret reference remains shared by every Pod using that template, while a Claim-specific Secret or
+PodSpec must be created and bound before the sandbox starts. Secret rotation must also be tested for
+both mounted files and proxy reload behavior.
 
 If policy or lifecycle constraints prevent Secret mounting into the proxy container, a fallback is for
 a trusted runner to receive a short-lived credential from the control service and hand it to the proxy
