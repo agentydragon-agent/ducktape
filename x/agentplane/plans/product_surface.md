@@ -141,6 +141,17 @@ before scheduling implementation:
   gateway?
 - What does Agent Sandbox's roadmap or Agent Gateway actually guarantee, versus merely propose?
 
+A token held in a harness-runner process could be part of the solution only if that runner is a
+trusted process isolated from the Agent. Process memory alone is not a security boundary when the
+Agent can inspect the same container, user, PID/IPC namespace, filesystem, inherited descriptors, or
+local sockets. A future design must establish what prevents the Agent from observing or invoking the
+credential-bearing process.
+
+This makes the Agent Sandbox team's roadmap and any Agent Gateway design especially relevant
+research inputs. We should inspect their actual guarantees before choosing between a trusted runner,
+sidecar, gateway, or another proof mechanism; do not assume the roadmap provides a current product
+contract.
+
 When this is eventually scheduled, start with a threat-model and current-roadmap discovery spike,
 then a small end-to-end proof of sandbox-bound authentication and secret exclusion. Do not add a
 generic identity/fencing protocol to the first orchestrator in anticipation of this work.
