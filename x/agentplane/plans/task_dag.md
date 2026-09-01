@@ -21,6 +21,9 @@ real upstream credentials are a later gate.
   still needs to be integrated into the branch behind PR #5342.
 - **Next:** integrate the capture branch, then give one agent end-to-end ownership of the shared stdio
   protocol and both provider adapters.
+- **Access-control scope is intentionally deferred:** the current Ducktape work can use its existing
+  broad internet boundary and scoped GitHub credential for `agentydragon-agent`; that convenience is
+  not a policy model for the private, high-context Haku agent.
 
 ## DAG
 
@@ -58,6 +61,9 @@ flowchart TB
     Y["Stretch<br/>delivery envelopes, subscriptions, external events"]:::future
     Z["Rai decision<br/>what explicit Haku Console integration is needed?"]:::decision
     U["Stretch<br/>Haku Console link, adapter, or enveloped message path"]:::future
+    AA["Rai decision<br/>what permission and policy model is acceptable for private Haku?"]:::decision
+    AB["Stretch<br/>Agent Console access-control track<br/>tool/API permissions, credentials, approvals"]:::future
+    AC["Stretch<br/>Haku-ready policy enforcement<br/>private context, least privilege, resilient controls"]:::future
     W["Stretch<br/>hardened Kubernetes/Authentik deployment"]:::future
 
     A --> I --> B --> C --> D --> E --> F
@@ -70,6 +76,7 @@ flowchart TB
     F --> H --> N
     F --> X --> Y
     E --> Z --> U
+    F --> AA --> AB --> AC
     L --> W
     S0 -. informs .-> J
 ```
@@ -81,8 +88,14 @@ design input; gray is conditional or stretch work.
 
 The orange nodes are deliberately limited to choices that change downstream implementation ordering:
 initial app hosting, dynamic policy/approval, stronger isolation, reliability priority, collaboration
-semantics, external-event scope, and Haku Console integration mode. A “no” choice should close or defer
-that branch rather than create speculative scaffolding.
+semantics, external-event scope, Haku Console integration mode, and private-Haku permission policy. A
+“no” choice should close or defer that branch rather than create speculative scaffolding.
+
+The `P`/`K` path is only the narrow access decision needed for a credentialed Agentplane egress
+deployment. It is not the general Agent Console permission model represented by `AA`/`AB`, and it must
+not be reused as a private-Haku policy language by default. The existing broad Ducktape lane is a
+scoped operational convenience, not evidence that the same grants are safe for an agent with Rai's
+personal context.
 
 ## Work-package acceptance
 
@@ -113,8 +126,10 @@ that branch rather than create speculative scaffolding.
   product. Each hardening slice needs its own reproduction and acceptance test; do not implement every
   candidate in advance.
 - **Stretch branches:** collaboration, external events, Haku Console integration, stronger runtimes,
-  and hardened deployment each begin only after the corresponding decision node and dependencies are
-  resolved.
+  hardened deployment, and the private-Haku access-control track each begin only after the
+  corresponding decision node and dependencies are resolved. The private-Haku track must cover tool
+  execution, HTTP/API calls, credential handling, approvals, and policy behavior without assuming that
+  routine per-action approval clicks are a reliable safety mechanism.
 
 ## Ownership and sequencing rules
 
