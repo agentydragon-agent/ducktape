@@ -50,7 +50,7 @@ in
     dest = {
       url = "https://activitywatch-write.allegedly.works";
       device = "atlas";
-      tokenSopsFile = ../../../cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml;
+      tokenSopsFile = ../../../cluster/k8s/activitywatch/activitywatch-write-token.sops.yaml;
     };
   };
 

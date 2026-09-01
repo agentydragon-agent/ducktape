@@ -33,7 +33,7 @@ separate bearer-gated read route. Records from that era, kept for their lessons:
 
 ## Design
 
-One pod (`cluster/k8s/x/activitywatch/`, namespace `activitywatch`, `Recreate`), pinned
+One pod (`cluster/k8s/activitywatch/`, namespace `activitywatch`, `Recreate`), pinned
 to the Proxmox region next to its PVC: `aw-server` (`git.allegedly.works/ducktape-ci/aw-server`,
 Bazel-built `@ducktape_activitywatch//:image`) with device id `activitywatch-cluster` and
 SQLite at `/data/db.sqlite3` on `activitywatch-data` (`local-path-proxmox`, 10Gi), plus
@@ -87,7 +87,7 @@ bearer the sandbox never actually holds.
 
 - The read route is gated on its own token and allows read methods only — GET plus POST
   to `/api/0/query/` — so even a leaked read token can't write. The token is minted and
-  SOPS-encrypted at `cluster/k8s/x/activitywatch/activitywatch-read-token.sops.yaml`, and
+  SOPS-encrypted at `cluster/k8s/activitywatch/activitywatch-read-token.sops.yaml`, and
   the emberstack reflector mirrors it into both `haku-console` and the legacy
   `haku-egress-proxy` namespace.
 - The sandbox template sets only the inert placeholder
