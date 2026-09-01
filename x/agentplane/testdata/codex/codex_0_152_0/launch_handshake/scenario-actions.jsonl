@@ -1,3 +1,0 @@
-{"action":"codex_initialize","native_frame":{"id":"capture-1","method":"initialize","params":{"capabilities":null,"clientInfo":{"name":"agentplane-capture","version":"0.1"}}},"run_sequence":3,"stream_sequence":1}
-{"action":"codex_initialized","native_frame":{"method":"initialized"},"run_sequence":8,"stream_sequence":2}
-{"action":"codex_thread_start","native_frame":{"id":"capture-2","method":"thread/start","params":{"approvalPolicy":"never","config":{"model_reasoning_effort":"low"},"cwd":"/tmp/agentplane-live-codex.PACOuO/workspace-2","ephemeral":false,"model":"chatgpt/oai-responses/gpt-5.6-luna","sandbox":"danger-full-access"}},"run_sequence":12,"stream_sequence":3}

@@ -1,2 +1,0 @@
-{"action":"claude_initialize","native_frame":{"request":{"subtype":"initialize"},"request_id":"capture-211d6181c77a4c8b86df0ef5d5a9eb4e","type":"control_request"},"run_sequence":3,"stream_sequence":1}
-{"action":"claude_baseline_prompt","native_frame":{"message":{"content":"Reply with exactly: CAPTURE_BASELINE_OK","role":"user"},"parent_tool_use_id":null,"type":"user","uuid":"f7b2c835-31ad-463f-9835-e902779607f3"},"run_sequence":6,"stream_sequence":2}

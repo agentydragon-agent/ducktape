@@ -1,0 +1,4 @@
+{"action":"codex_initialize","frame":{"method":"initialize","id":"capture-1","params":{"clientInfo":{"name":"agentplane-capture","version":"0.1"},"capabilities":null}},"time_ns":5013417455403109}
+{"action":"codex_initialized","frame":{"method":"initialized"},"time_ns":5013419975138307}
+{"action":"codex_thread_start","frame":{"method":"thread/start","id":"capture-2","params":{"cwd":"/tmp/agentplane-simple-codex.XjcSqW/workspace","approvalPolicy":"never","sandbox":"danger-full-access","ephemeral":false,"model":"gpt-oss-20b-128k-openai-chat","config":{"model_reasoning_effort":"low"}}},"time_ns":5013419975522406}
+{"action":"codex_baseline","frame":{"method":"turn/start","id":"capture-3","params":{"threadId":"01a05c0c-8952-7e71-9d36-b1f90a31bbe1","input":[{"type":"text","text":"Reply with exactly: CAPTURE_BASELINE_OK","text_elements":[]}]}},"time_ns":5013420191990486}

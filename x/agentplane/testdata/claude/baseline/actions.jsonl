@@ -1,0 +1,2 @@
+{"action":"claude_initialize","frame":{"type":"control_request","request_id":"capture-9c71d65801f94f1da2b65e5c3e4c3b34","request":{"subtype":"initialize"}},"time_ns":5013443583292020}
+{"action":"claude_baseline","frame":{"type":"user","message":{"role":"user","content":"Reply with exactly: CAPTURE_BASELINE_OK"},"parent_tool_use_id":null,"uuid":"1d72e831-8e12-4436-b278-5d5a758d6903"},"time_ns":5013445941889832}

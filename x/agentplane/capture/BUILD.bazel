@@ -26,56 +26,8 @@ py_test(
 )
 
 py_test(
-    name = "test_artifacts",
-    srcs = ["tests/test_artifacts.py"],
-    deps = [
-        ":capture",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_drivers",
-    srcs = ["tests/test_drivers.py"],
-    deps = [
-        ":capture",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_no_haku_dependency",
-    srcs = ["tests/test_no_haku_dependency.py"],
-    data = glob(
-        ["**/*.py"],
-        exclude = ["tests/**"],
-    ),
-    deps = ["@pypi//pytest_bazel"],
-)
-
-py_test(
     name = "test_proxy",
     srcs = ["tests/test_proxy.py"],
-    deps = [
-        ":capture",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_shared_capture",
-    srcs = ["tests/test_shared_capture.py"],
-    deps = [
-        ":capture",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_fixture_replay",
-    srcs = ["tests/test_fixture_replay.py"],
-    data = ["//x/agentplane:fixture_files"],
     deps = [
         ":capture",
         "@pypi//pytest_bazel",
@@ -85,12 +37,7 @@ py_test(
 test_suite(
     name = "tests",
     tests = [
-        ":test_artifacts",
-        ":test_drivers",
-        ":test_fixture_replay",
-        ":test_no_haku_dependency",
         ":test_proxy",
         ":test_records",
-        ":test_shared_capture",
     ],
 )

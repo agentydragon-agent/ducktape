@@ -1,8 +1,3 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files(["__init__.py"])
-
-filegroup(
-    name = "fixture_files",
-    srcs = glob(["testdata/**"]),
-)

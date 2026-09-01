@@ -1,6 +1,0 @@
-{"command":["/tmp/agentplane-harness-bin-10726/node_modules/@openai/codex/bin/codex.js","-c","model_provider = \"agentplane\"","-c","model_providers = {agentplane = {name = \"Agentplane LiteLLM\", base_url = \"http://127.0.0.1:41375/v1\", env_key = \"OPENAI_API_KEY\", wire_api = \"responses\"}}","app-server","--listen","stdio://"],"event":"spawn_requested","run_sequence":1,"stream_sequence":1}
-{"event":"spawn_succeeded","pid":14416,"process_group":14416,"run_sequence":2,"stream_sequence":2}
-{"event":"stdin_closed","run_sequence":55,"stream_sequence":3}
-{"event":"stdout_eof","run_sequence":56,"stream_sequence":4}
-{"event":"stderr_eof","run_sequence":57,"stream_sequence":5}
-{"event":"exited","exit_code":0,"run_sequence":58,"stream_sequence":6}

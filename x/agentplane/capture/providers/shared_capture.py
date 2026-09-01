@@ -1,117 +1,109 @@
-"""Exact direct-pipe capture shared by provider-specific scenario drivers only."""
+"""Small direct-pipe recorder used by the two provider-specific drivers."""
 
 from __future__ import annotations
 
+import base64
 import json
 import queue
 import subprocess
 import threading
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from x.agentplane.capture.artifacts import CaptureBundle
-from x.agentplane.capture.framing import NewlineFramer
-from x.agentplane.capture.process import NativeProcess
-from x.agentplane.capture.records import RawRecord, json_wrapper
+
+def write_jsonl(path: Path, value: dict[str, Any]) -> None:
+    with path.open("ab") as output:
+        output.write(json.dumps(value, separators=(",", ":")).encode() + b"\n")
+        output.flush()
+
+
+def raw(data: bytes) -> dict[str, Any]:
+    value: dict[str, Any] = {"time_ns": time.monotonic_ns(), "base64": base64.b64encode(data).decode()}
+    with suppress(UnicodeDecodeError, json.JSONDecodeError):
+        value["json"] = json.loads(data)
+    return value
 
 
 class NativeCapture:
-    """A no-PTY native child with flush-before-interpret evidence collection."""
+    """Capture direct stdin/stdout/stderr pipes. No PTY, facade, or lifecycle model."""
 
-    def __init__(self, bundle: CaptureBundle, command: list[str], *, cwd: Path, environment: dict[str, str]):
-        self.bundle = bundle
-        self.command = command
-        self.cwd = cwd
-        self.environment = environment
-        self.process: NativeProcess | None = None
-        self._frames: queue.Queue[dict[str, Any]] = queue.Queue()
-        self._threads: list[threading.Thread] = []
+    def __init__(self, output: Path, command: list[str], *, cwd: Path, environment: dict[str, str]):
+        self.output, self.command, self.cwd, self.environment = output, command, cwd, environment
+        self.process: subprocess.Popen[bytes] | None = None
+        self.frames: queue.Queue[dict[str, Any]] = queue.Queue()
+        self.threads: list[threading.Thread] = []
 
     def start(self) -> None:
-        self.bundle.append_json("process-events.jsonl", {"event": "spawn_requested", "command": self.command})
-        self.process = NativeProcess.start(self.command, cwd=self.cwd, environment=self.environment)
-        self.bundle.append_json(
-            "process-events.jsonl",
-            {"event": "spawn_succeeded", "pid": self.process.process.pid, "process_group": self.process.process_group},
+        self.process = subprocess.Popen(
+            self.command,
+            cwd=self.cwd,
+            env=self.environment,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
         )
-        assert self.process.process.stdout is not None
-        assert self.process.process.stderr is not None
-        self._threads = [
-            threading.Thread(target=self._read_stdout, name="native-stdout", daemon=True),
-            threading.Thread(target=self._read_stderr, name="native-stderr", daemon=True),
+        assert self.process.stdout is not None
+        assert self.process.stderr is not None
+        self.threads = [
+            threading.Thread(target=self._stdout, daemon=True),
+            threading.Thread(target=self._stderr, daemon=True),
         ]
-        for thread in self._threads:
+        for thread in self.threads:
             thread.start()
 
     def write(self, frame: dict[str, Any], *, action: str) -> None:
-        if self.process is None or self.process.process.stdin is None:
-            raise RuntimeError("native process is not running")
-        payload = json.dumps(frame, separators=(",", ":")).encode("utf-8")
-        self.bundle.append_json("scenario-actions.jsonl", {"action": action, "native_frame": frame})
-        self.bundle.append_raw(
-            "native-stdin.frames.jsonl", RawRecord(payload, 0, 0, "harness_stdin", 1, delimiter=b"\n")
-        )
-        self.process.process.stdin.write(payload + b"\n")
-        self.process.process.stdin.flush()
+        assert self.process is not None
+        assert self.process.stdin is not None
+        payload = json.dumps(frame, separators=(",", ":")).encode()
+        write_jsonl(self.output / "actions.jsonl", {"action": action, "frame": frame, "time_ns": time.monotonic_ns()})
+        write_jsonl(self.output / "stdin.jsonl", raw(payload))
+        self.process.stdin.write(payload + b"\n")
+        self.process.stdin.flush()
 
     def await_frame(self, predicate: Callable[[dict[str, Any]], bool], *, timeout: float) -> dict[str, Any]:
-        deadline = time.monotonic() + timeout
-        while (remaining := deadline - time.monotonic()) > 0:
+        end = time.monotonic() + timeout
+        while (remaining := end - time.monotonic()) > 0:
             try:
-                item = self._frames.get(timeout=remaining)
+                frame = self.frames.get(timeout=remaining)
             except queue.Empty:
                 break
-            if predicate(item):
-                return item
-        raise TimeoutError("native frame predicate was not observed")
+            if predicate(frame):
+                return frame
+        raise TimeoutError("expected native frame was not observed")
 
     def close(self) -> int | None:
         if self.process is None:
             return None
-        process = self.process.process
-        if process.stdin is not None and not process.stdin.closed:
-            process.stdin.close()
-            self.bundle.append_json("process-events.jsonl", {"event": "stdin_closed"})
+        if self.process.stdin is not None:
+            self.process.stdin.close()
         try:
-            exit_code = self.process.wait(timeout=5)
+            result = self.process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            self.bundle.append_json("process-events.jsonl", {"event": "signal_requested", "signal": "SIGTERM"})
             self.process.terminate()
-            try:
-                exit_code = self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.bundle.append_json("process-events.jsonl", {"event": "signal_requested", "signal": "SIGKILL"})
-                self.process.kill()
-                exit_code = self.process.wait(timeout=5)
-        for thread in self._threads:
+            result = self.process.wait(timeout=5)
+        for thread in self.threads:
             thread.join(timeout=5)
-        self.bundle.append_json("process-events.jsonl", {"event": "exited", "exit_code": exit_code})
-        return exit_code
+        return result
 
-    def _read_stdout(self) -> None:
+    def _stdout(self) -> None:
         assert self.process is not None
-        assert self.process.process.stdout is not None
-        framer = NewlineFramer()
-        while chunk := self.process.process.stdout.read1(65536):
-            for data, delimiter, eof_frame in framer.feed(chunk):
-                self._record_stdout(data, delimiter, eof_frame)
-        for data, delimiter, eof_frame in framer.finish():
-            self._record_stdout(data, delimiter, eof_frame)
-        self.bundle.append_json("process-events.jsonl", {"event": "stdout_eof"})
+        assert self.process.stdout is not None
+        for line in self.process.stdout:
+            data = line.rstrip(b"\r\n")
+            write_jsonl(self.output / "stdout.jsonl", raw(data))
+            try:
+                parsed = json.loads(data)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if isinstance(parsed, dict):
+                self.frames.put(parsed)
 
-    def _record_stdout(self, data: bytes, delimiter: bytes, eof_frame: bool) -> None:
-        self.bundle.append_raw(
-            "native-stdout.frames.jsonl", RawRecord(data, 0, 0, "harness_stdout", 1, delimiter, eof_frame)
-        )
-        parsed = json_wrapper(data)
-        if parsed["state"] == "parsed" and isinstance(parsed["value"], dict):
-            self._frames.put(parsed["value"])
-
-    def _read_stderr(self) -> None:
+    def _stderr(self) -> None:
         assert self.process is not None
-        assert self.process.process.stderr is not None
-        while chunk := self.process.process.stderr.read1(65536):
-            self.bundle.append_raw("native-stderr.chunks.jsonl", RawRecord(chunk, 0, 0, "harness_stderr", 1))
-        self.bundle.append_json("process-events.jsonl", {"event": "stderr_eof"})
+        assert self.process.stderr is not None
+        while chunk := self.process.stderr.read1(65536):
+            write_jsonl(self.output / "stderr.jsonl", raw(chunk))
