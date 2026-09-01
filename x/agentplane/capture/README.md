@@ -4,8 +4,10 @@
 workspace. It records direct stdin/stdout/stderr JSONL and LiteLLM request/response bodies; the
 proxy never writes HTTP headers. There is no artifact registry or promotion step.
 
-The committed examples cover `baseline`, `shell`, `file_edits`, `steering`, `second_input`, and
-`interrupt` for both providers. They are raw protocol evidence, not a compatibility matrix.
+The committed examples cover `baseline`, `shell`, `file_edits`, `steering`, `second_input`,
+`interrupt`, and `idle_resume` for both providers. `idle_resume` completes a seed turn, closes the
+native process, then resumes the saved native session/thread from a new process. They are raw
+protocol evidence, not a compatibility matrix.
 
 ```sh
 bazel run //x/agentplane/capture:live_capture -- \

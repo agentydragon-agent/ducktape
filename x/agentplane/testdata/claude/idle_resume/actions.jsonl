@@ -1,0 +1,4 @@
+{"action":"claude_initialize","frame":{"type":"control_request","request_id":"capture-4d757c38b28a4be2b06d9d977dd37b2b","request":{"subtype":"initialize"}},"time_ns":5016989585904882}
+{"action":"claude_idle_resume_seed_prompt","frame":{"type":"user","message":{"role":"user","content":"Reply with exactly: IDLE_RESUME_SEED_OK"},"parent_tool_use_id":null,"uuid":"9ae9efc5-0901-4df8-b5f0-05887c3aaff1"},"time_ns":5016990258991784}
+{"action":"claude_initialize","frame":{"type":"control_request","request_id":"capture-500f7327bd1e43e992064f8a4f465f2c","request":{"subtype":"initialize"}},"time_ns":5016993721135389}
+{"action":"claude_idle_resume_resumed_prompt","frame":{"type":"user","message":{"role":"user","content":"Reply with exactly: IDLE_RESUME_OK"},"parent_tool_use_id":null,"uuid":"0ec3cfb5-0f50-4bcc-a27e-6645a50c63e6"},"time_ns":5016994404592290}

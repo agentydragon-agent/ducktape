@@ -35,6 +35,13 @@ def submit(capture: NativeCapture, prompt: str, *, action: str) -> dict[str, Any
     return {"prompt_uuid": frame["uuid"], "terminal": terminal}
 
 
+def session_id(submission: dict[str, Any]) -> str:
+    terminal = submission.get("terminal")
+    if not isinstance(terminal, dict) or not isinstance(terminal.get("session_id"), str):
+        raise ValueError("Claude result did not return a durable session id")
+    return terminal["session_id"]
+
+
 def submit_while_active(capture: NativeCapture, *, scenario: str) -> dict[str, Any]:
     """Deliberately write a second user frame while a deterministic shell wait is active.
 
@@ -83,8 +90,8 @@ def interrupt(capture: NativeCapture, *, with_queued_input: bool) -> dict[str, A
     }
 
 
-def command(binary: str, *, model: str) -> list[str]:
-    return [
+def command(binary: str, *, model: str, resume_id: str | None = None) -> list[str]:
+    result = [
         binary,
         "--output-format",
         "stream-json",
@@ -97,3 +104,6 @@ def command(binary: str, *, model: str) -> list[str]:
         "--model",
         model,
     ]
+    if resume_id:
+        result.extend(["--resume", resume_id])
+    return result

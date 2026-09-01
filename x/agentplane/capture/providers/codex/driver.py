@@ -32,6 +32,11 @@ def thread_start(request_id: str, *, cwd: str, model: str, effort: str) -> dict[
     }
 
 
+def thread_resume(request_id: str, *, thread_id: str) -> dict[str, Any]:
+    """Load a persisted thread after a new app-server process starts."""
+    return {"method": "thread/resume", "id": request_id, "params": {"threadId": thread_id}}
+
+
 def turn_start(request_id: str, *, thread_id: str, text: str) -> dict[str, Any]:
     return {
         "method": "turn/start",

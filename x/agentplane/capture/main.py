@@ -20,7 +20,7 @@ from x.agentplane.capture.providers.codex import scenarios as codex
 from x.agentplane.capture.providers.shared_capture import NativeCapture, raw, write_jsonl
 from x.agentplane.capture.replay import ReplayServer
 
-SCENARIOS = ("launch", "baseline", "shell", "file_edits", "steering", "second_input", "interrupt")
+SCENARIOS = ("launch", "baseline", "shell", "file_edits", "steering", "second_input", "interrupt", "idle_resume")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -45,6 +45,9 @@ def _key(path: Path) -> str:
 
 def _prepare(workspace: Path) -> None:
     workspace.mkdir(mode=0o700, parents=True, exist_ok=False)
+    # Both native harnesses require their explicitly isolated state roots to exist.
+    (workspace / ".claude").mkdir(mode=0o700)
+    (workspace / ".codex").mkdir(mode=0o700)
     shutil.copyfile(Path(__file__).with_name("fixtures") / "operation_probe.py", workspace / "operation_probe.py")
     (workspace / "editable.txt").write_text("before\n")
 
@@ -65,8 +68,12 @@ def _proxy(output: Path, upstream: str, provider: str, replay_from: Path | None)
     return server, thread, origin if provider == "claude" else origin + urlsplit(upstream).path.rstrip("/")
 
 
-def _command(provider: str, binary: str, model: str, endpoint: str) -> list[str]:
-    return claude.command(binary, model=model) if provider == "claude" else codex.command(binary, endpoint=endpoint)
+def _command(provider: str, binary: str, model: str, endpoint: str, *, resume_id: str | None = None) -> list[str]:
+    return (
+        claude.command(binary, model=model, resume_id=resume_id)
+        if provider == "claude"
+        else codex.command(binary, endpoint=endpoint)
+    )
 
 
 def _prompt(scenario: str) -> str:
@@ -95,17 +102,31 @@ def run(args: argparse.Namespace) -> None:
     proxy, proxy_thread, proxy_endpoint = _proxy(args.output, args.endpoint, args.provider, args.replay_from)
     environment = {**os.environ}
     if args.provider == "claude":
-        environment.update({"ANTHROPIC_AUTH_TOKEN": key, "ANTHROPIC_BASE_URL": proxy_endpoint})
+        environment.update(
+            {
+                "ANTHROPIC_AUTH_TOKEN": key,
+                "ANTHROPIC_BASE_URL": proxy_endpoint,
+                "CLAUDE_CONFIG_DIR": str(args.workspace / ".claude"),
+            }
+        )
     else:
-        environment.update({"OPENAI_API_KEY": key, "OPENAI_BASE_URL": proxy_endpoint})
-    capture = NativeCapture(
-        args.output,
-        _command(args.provider, args.binary, args.model, proxy_endpoint),
-        cwd=args.workspace,
-        environment=environment,
-    )
+        environment.update(
+            {"OPENAI_API_KEY": key, "OPENAI_BASE_URL": proxy_endpoint, "CODEX_HOME": str(args.workspace / ".codex")}
+        )
+
+    def start_capture(*, resume_id: str | None = None) -> NativeCapture:
+        result = NativeCapture(
+            args.output,
+            _command(args.provider, args.binary, args.model, proxy_endpoint, resume_id=resume_id),
+            cwd=args.workspace,
+            environment=environment,
+        )
+        result.start()
+        return result
+
+    capture: NativeCapture | None = None
     try:
-        capture.start()
+        capture = start_capture()
         handshake = (
             claude.launch_handshake(capture)
             if args.provider == "claude"
@@ -139,6 +160,33 @@ def run(args: argparse.Namespace) -> None:
                 codex.interrupt(
                     capture, thread_start_response=handshake["thread_start_response"], with_queued_input=False
                 )
+        elif args.scenario == "idle_resume":
+            if args.provider == "claude":
+                initial = claude.submit(
+                    capture, "Reply with exactly: IDLE_RESUME_SEED_OK", action="claude_idle_resume_seed_prompt"
+                )
+                session_id = claude.session_id(initial)
+                capture.close()
+                capture = start_capture(resume_id=session_id)
+                claude.launch_handshake(capture)
+                claude.submit(capture, "Reply with exactly: IDLE_RESUME_OK", action="claude_idle_resume_resumed_prompt")
+            else:
+                initial = codex.submit(
+                    capture,
+                    thread_start_response=handshake["thread_start_response"],
+                    text="Reply with exactly: IDLE_RESUME_SEED_OK",
+                    action="codex_idle_resume_seed_turn_start",
+                )
+                capture.close()
+                capture = start_capture()
+                codex.resume_handshake(capture, thread_id=initial["thread_id"])
+                codex.submit_to_thread(
+                    capture,
+                    thread_id=initial["thread_id"],
+                    request_id="capture-6",
+                    text="Reply with exactly: IDLE_RESUME_OK",
+                    action="codex_idle_resume_resumed_turn_start",
+                )
         if args.replay_from:
             assert isinstance(proxy, ReplayServer)
             proxy.assert_consumed()
@@ -146,7 +194,8 @@ def run(args: argparse.Namespace) -> None:
             json.dumps({"provider": args.provider, "scenario": args.scenario, "model": args.model}) + "\n"
         )
     finally:
-        capture.close()
+        if capture is not None:
+            capture.close()
         proxy.shutdown()
         proxy_thread.join(timeout=5)
 

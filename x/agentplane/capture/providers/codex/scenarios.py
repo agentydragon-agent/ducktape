@@ -19,6 +19,17 @@ def launch_handshake(capture: NativeCapture, *, cwd: str, model: str, effort: st
     return {"initialize_response": init_response, "thread_start_response": started}
 
 
+def resume_handshake(capture: NativeCapture, *, thread_id: str) -> dict[str, Any]:
+    """Initialize a fresh app-server process and load its on-disk thread."""
+    capture.write(driver.initialize("capture-4"), action="codex_resume_initialize")
+    init_response = capture.await_frame(lambda item: item.get("id") == "capture-4", timeout=30)
+    capture.write(driver.initialized(), action="codex_resume_initialized")
+    resume = driver.thread_resume("capture-5", thread_id=thread_id)
+    capture.write(resume, action="codex_thread_resume")
+    resumed = capture.await_frame(lambda item: item.get("id") == "capture-5", timeout=30)
+    return {"initialize_response": init_response, "thread_resume_response": resumed, "thread_id": thread_id}
+
+
 def baseline(capture: NativeCapture, *, thread_start_response: dict[str, Any]) -> dict[str, Any]:
     return submit(
         capture,
@@ -41,9 +52,15 @@ def _thread_id(thread_start_response: dict[str, Any]) -> str:
 
 def submit(capture: NativeCapture, *, thread_start_response: dict[str, Any], text: str, action: str) -> dict[str, Any]:
     thread_id = _thread_id(thread_start_response)
-    start = driver.turn_start("capture-3", thread_id=thread_id, text=text)
+    return submit_to_thread(capture, thread_id=thread_id, request_id="capture-3", text=text, action=action)
+
+
+def submit_to_thread(
+    capture: NativeCapture, *, thread_id: str, request_id: str, text: str, action: str
+) -> dict[str, Any]:
+    start = driver.turn_start(request_id, thread_id=thread_id, text=text)
     capture.write(start, action=action)
-    started = capture.await_frame(lambda item: item.get("id") == "capture-3", timeout=30)
+    started = capture.await_frame(lambda item: item.get("id") == request_id, timeout=30)
     turn_result = started.get("result")
     if (
         not isinstance(turn_result, dict)
