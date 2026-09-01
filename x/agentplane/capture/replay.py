@@ -2,26 +2,33 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from typing import Any
 
 from x.agentplane.capture.records import RequestRecord, ResponseChunkRecord
 
 
 def _requests(path: Path) -> list[RequestRecord]:
-    return [
-        RequestRecord.model_validate_json(line) for line in path.read_text().splitlines() if '"kind":"request"' in line
-    ]
+    return [RequestRecord.model_validate_json(line) for line in path.read_text().splitlines()]
 
 
 def _response_chunks(path: Path) -> list[ResponseChunkRecord]:
-    return [
-        ResponseChunkRecord.model_validate_json(line)
-        for line in path.read_text().splitlines()
-        if '"kind":"response_chunk"' in line
-    ]
+    return [ResponseChunkRecord.model_validate_json(line) for line in path.read_text().splitlines()]
+
+
+@contextmanager
+def serve[Server: ThreadingHTTPServer](server: Server) -> Iterator[Server]:
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
 
 
 class ReplayServer(ThreadingHTTPServer):

@@ -8,12 +8,14 @@ from x.agentplane.capture.providers.codex import driver
 from x.agentplane.capture.providers.shared_capture import NativeCapture
 
 
-def launch_handshake(capture: NativeCapture, *, cwd: str, model: str, effort: str) -> dict[str, Any]:
+def launch_handshake(
+    capture: NativeCapture, *, cwd: str, model: str, effort: str, persist: bool = False
+) -> dict[str, Any]:
     initialize = driver.initialize("capture-1")
     capture.write(initialize)
     init_response = capture.await_frame(lambda item: item.get("id") == "capture-1", timeout=30)
     capture.write(driver.initialized())
-    start = driver.thread_start("capture-2", cwd=cwd, model=model, effort=effort)
+    start = driver.thread_start("capture-2", cwd=cwd, model=model, effort=effort, persist=persist)
     capture.write(start)
     started = capture.await_frame(lambda item: item.get("id") == "capture-2", timeout=30)
     return {"initialize_response": init_response, "thread_start_response": started}
@@ -147,4 +149,28 @@ def command(binary: str, *, endpoint: str) -> list[str]:
         'model_providers = {agentplane = {name = "Agentplane LiteLLM", '
         f'base_url = "{endpoint}", env_key = "OPENAI_API_KEY", wire_api = "responses"}}}}'
     )
-    return [binary, "-c", provider, "-c", providers, "app-server", "--listen", "stdio://"]
+    # Remove automatic skill discovery and its <skills_instructions> prompt block.
+    skills = "skills = { bundled = { enabled = false }, include_instructions = false }"
+    # These captures do not use app, collaboration, or environment-context features, so omit
+    # their corresponding prompt blocks instead of recording unrelated harness guidance.
+    app_instructions = "include_apps_instructions = false"
+    collaboration_instructions = "include_collaboration_mode_instructions = false"
+    environment_context = "include_environment_context = false"
+    return [
+        binary,
+        "-c",
+        provider,
+        "-c",
+        providers,
+        "-c",
+        skills,
+        "-c",
+        app_instructions,
+        "-c",
+        collaboration_instructions,
+        "-c",
+        environment_context,
+        "app-server",
+        "--listen",
+        "stdio://",
+    ]

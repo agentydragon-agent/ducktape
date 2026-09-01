@@ -53,6 +53,7 @@ py_test(
     data = ["//x/agentplane/capture/testdata:replay_fixtures"],
     deps = [
         "//:conftest",
+        "//util/bazel:runfiles",
         "//x/agentplane/capture:replay",
         "@pypi//pytest_bazel",
     ],

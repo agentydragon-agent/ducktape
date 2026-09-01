@@ -6,9 +6,7 @@ import json
 import os
 import struct
 import sys
-import tempfile
 from pathlib import Path
-from threading import Thread
 from typing import Any
 
 import pytest_bazel
@@ -17,14 +15,13 @@ from util.bazel.runfiles import get_required_path
 from x.agentplane.capture.providers.claude import scenarios as claude
 from x.agentplane.capture.providers.codex import driver as codex_driver, scenarios as codex
 from x.agentplane.capture.providers.shared_capture import NativeCapture
-from x.agentplane.capture.replay import ReplayServer
+from x.agentplane.capture.replay import ReplayServer, serve
 
 _LOGS = ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl")
 
 
 def _fixture(provider: str, scenario: str) -> Path:
-    root = Path(os.environ["TEST_SRCDIR"]) / os.environ["TEST_WORKSPACE"]
-    return root / "x/agentplane/capture/testdata" / provider / scenario
+    return get_required_path(f"{os.environ['TEST_WORKSPACE']}/x/agentplane/capture/testdata/{provider}/{scenario}")
 
 
 def _capture(root: Path, command: list[str], environment: dict[str, str]) -> NativeCapture:
@@ -32,16 +29,7 @@ def _capture(root: Path, command: list[str], environment: dict[str, str]) -> Nat
     output.mkdir(exist_ok=True)
     for name in _LOGS:
         (output / name).touch()
-    capture = NativeCapture(output, command, cwd=root, environment=environment)
-    capture.start()
-    return capture
-
-
-def _server(fixture: Path) -> tuple[ReplayServer, Thread, str]:
-    server = ReplayServer(fixture)
-    thread = Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    return server, thread, f"http://127.0.0.1:{server.server_port}"
+    return NativeCapture(output, command, cwd=root, environment=environment)
 
 
 def _environment(root: Path, **overrides: str) -> dict[str, str]:
@@ -98,11 +86,16 @@ def _assert_small_claude_policy(server: ReplayServer) -> None:
                 assert len(block.get("text", "")) < 15_000
 
 
-def _assert_codex_base_instructions(server: ReplayServer) -> None:
+def _assert_codex_prompt_is_capture_scoped(server: ReplayServer) -> None:
     assert server.observed
     for observed in server.observed:
         body = json.loads(observed["body"])
         assert body["instructions"] == codex_driver.BASE_INSTRUCTIONS
+        serialized = observed["body"].decode("utf-8")
+        assert "<skills_instructions>" not in serialized
+        assert "<apps_instructions>" not in serialized
+        assert "<collaboration_mode>" not in serialized
+        assert "<environment_context>" not in serialized
 
 
 def _claude_result_text(submission: dict[str, Any]) -> str:
@@ -123,14 +116,14 @@ def _codex_result_text(submission: dict[str, Any]) -> str:
     return text
 
 
-def test_claude_baseline_replays_through_the_pinned_native_cli() -> None:
+def test_claude_baseline_replays_through_the_pinned_native_cli(tmp_path: Path) -> None:
     fixture = _fixture("claude", "baseline")
-    with tempfile.TemporaryDirectory() as temporary:
-        root = Path(temporary)
-        config = root / ".claude"
-        config.mkdir()
-        server, thread, endpoint = _server(fixture)
-        capture = _capture(
+    root = tmp_path
+    config = root / ".claude"
+    config.mkdir()
+    with serve(ReplayServer(fixture)) as server:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        with _capture(
             root,
             [
                 _python_dynamic_loader(),
@@ -139,8 +132,7 @@ def test_claude_baseline_replays_through_the_pinned_native_cli() -> None:
             _environment(
                 root, ANTHROPIC_AUTH_TOKEN="test-key", ANTHROPIC_BASE_URL=endpoint, CLAUDE_CONFIG_DIR=str(config)
             ),
-        )
-        try:
+        ) as capture:
             try:
                 claude.launch_handshake(capture)
             except TimeoutError as error:
@@ -151,35 +143,28 @@ def test_claude_baseline_replays_through_the_pinned_native_cli() -> None:
                 server, model="anthropic-api/ant-messages/claude-haiku-4-5-20251001", protocol_key="messages"
             )
             _assert_small_claude_policy(server)
-        finally:
-            capture.close()
-            server.shutdown()
-            thread.join(timeout=5)
 
 
-def test_claude_idle_resume_replays_through_the_pinned_native_cli() -> None:
+def test_claude_idle_resume_replays_through_the_pinned_native_cli(tmp_path: Path) -> None:
     fixture = _fixture("claude", "idle_resume")
-    with tempfile.TemporaryDirectory() as temporary:
-        root = Path(temporary)
-        config = root / ".claude"
-        config.mkdir()
-        server, thread, endpoint = _server(fixture)
+    root = tmp_path
+    config = root / ".claude"
+    config.mkdir()
+    binary = str(get_required_path("claude_code_cli_linux_x64/claude"))
+    with serve(ReplayServer(fixture)) as server:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
         environment = _environment(
             root, ANTHROPIC_AUTH_TOKEN="test-key", ANTHROPIC_BASE_URL=endpoint, CLAUDE_CONFIG_DIR=str(config)
         )
-        binary = str(get_required_path("claude_code_cli_linux_x64/claude"))
-        first = _capture(root, [_python_dynamic_loader(), *_claude_test_command(binary)], environment)
-        second: NativeCapture | None = None
-        try:
+        with _capture(root, [_python_dynamic_loader(), *_claude_test_command(binary)], environment) as first:
             claude.launch_handshake(first)
             seed = claude.submit(first, "Reply with exactly: IDLE_RESUME_SEED_OK")
             assert _claude_result_text(seed) == "IDLE_RESUME_SEED_OK"
-            first.close()
-            second = _capture(
-                root,
-                [_python_dynamic_loader(), *_claude_test_command(binary, resume_id=claude.session_id(seed))],
-                environment,
-            )
+        with _capture(
+            root,
+            [_python_dynamic_loader(), *_claude_test_command(binary, resume_id=claude.session_id(seed))],
+            environment,
+        ) as second:
             claude.launch_handshake(second)
             followup = claude.submit(second, "Reply with exactly: IDLE_RESUME_OK")
             assert _claude_result_text(followup) == "IDLE_RESUME_OK"
@@ -188,39 +173,32 @@ def test_claude_idle_resume_replays_through_the_pinned_native_cli() -> None:
                 server, model="anthropic-api/ant-messages/claude-haiku-4-5-20251001", protocol_key="messages"
             )
             _assert_small_claude_policy(server)
-        finally:
-            if second is not None:
-                second.close()
-            first.close()
-            server.shutdown()
-            thread.join(timeout=5)
 
 
-def test_codex_idle_resume_replays_through_the_pinned_native_cli() -> None:
+def test_codex_idle_resume_replays_through_the_pinned_native_cli(tmp_path: Path) -> None:
     fixture = _fixture("codex", "idle_resume")
-    with tempfile.TemporaryDirectory() as temporary:
-        root = Path(temporary)
-        codex_home = root / ".codex"
-        codex_home.mkdir()
-        server, thread, endpoint = _server(fixture)
+    root = tmp_path
+    codex_home = root / ".codex"
+    codex_home.mkdir()
+    with serve(ReplayServer(fixture)) as server:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
         environment = _environment(
             root, CODEX_HOME=str(codex_home), OPENAI_API_KEY="test-key", OPENAI_BASE_URL=f"{endpoint}/v1"
         )
         command = codex.command(
             str(get_required_path("agentplane_codex_cli_linux_x64/bin/codex")), endpoint=f"{endpoint}/v1"
         )
-        first = _capture(root, command, environment)
-        second: NativeCapture | None = None
-        try:
-            handshake = codex.launch_handshake(first, cwd=str(root), model="gpt-oss-20b-128k-openai-chat", effort="low")
+        with _capture(root, command, environment) as first:
+            handshake = codex.launch_handshake(
+                first, cwd=str(root), model="gpt-oss-20b-128k-openai-chat", effort="low", persist=True
+            )
             seed = codex.submit(
                 first,
                 thread_start_response=handshake["thread_start_response"],
                 text="Reply with exactly: IDLE_RESUME_SEED_OK",
             )
             assert _codex_result_text(seed) == "IDLE_RESUME_SEED_OK"
-            first.close()
-            second = _capture(root, command, environment)
+        with _capture(root, command, environment) as second:
             resumed = codex.resume_handshake(second, thread_id=seed["thread_id"])
             assert resumed["thread_resume_response"]["result"]["thread"]["id"] == seed["thread_id"]
             followup = codex.submit_to_thread(
@@ -229,13 +207,7 @@ def test_codex_idle_resume_replays_through_the_pinned_native_cli() -> None:
             assert _codex_result_text(followup) == "IDLE_RESUME_OK"
             server.assert_consumed()
             _assert_request_shape(server, model="gpt-oss-20b-128k-openai-chat", protocol_key="input")
-            _assert_codex_base_instructions(server)
-        finally:
-            if second is not None:
-                second.close()
-            first.close()
-            server.shutdown()
-            thread.join(timeout=5)
+            _assert_codex_prompt_is_capture_scoped(server)
 
 
 if __name__ == "__main__":

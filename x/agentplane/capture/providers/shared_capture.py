@@ -62,6 +62,13 @@ class NativeCapture:
         for thread in self.threads:
             thread.start()
 
+    def __enter__(self) -> NativeCapture:
+        self.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
     def write(self, frame: dict[str, Any]) -> None:
         assert self.process is not None
         assert self.process.stdin is not None

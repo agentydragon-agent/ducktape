@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-# Keep recorded requests about the native app-server protocol rather than the
-# broad default coding-agent policy. This still lets each scenario invoke its
-# normal native tool calls.
+# This replaces Codex's broad default coding-agent policy while preserving the
+# app-server's native tool behavior for each scenario.
 BASE_INSTRUCTIONS = "You are a concise test assistant. Follow user requests using the available tools."
 
 
@@ -22,7 +21,7 @@ def initialized() -> dict[str, Any]:
     return {"method": "initialized"}
 
 
-def thread_start(request_id: str, *, cwd: str, model: str, effort: str) -> dict[str, Any]:
+def thread_start(request_id: str, *, cwd: str, model: str, effort: str, persist: bool = False) -> dict[str, Any]:
     return {
         "method": "thread/start",
         "id": request_id,
@@ -30,8 +29,10 @@ def thread_start(request_id: str, *, cwd: str, model: str, effort: str) -> dict[
             "cwd": cwd,
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
-            "ephemeral": False,
+            # Non-resume probes do not need a stored rollout, thread title, or session history.
+            "ephemeral": not persist,
             "model": model,
+            # Replaces the broad default coding-agent policy in recorded model requests.
             "baseInstructions": BASE_INSTRUCTIONS,
             "config": {"model_reasoning_effort": effort},
         },

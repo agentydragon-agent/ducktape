@@ -95,11 +95,17 @@ def interrupt(capture: NativeCapture, *, with_queued_input: bool) -> dict[str, A
 def command(binary: str, *, model: str, resume_id: str | None = None) -> list[str]:
     result = [
         binary,
-        # Captures need the native harness, not this machine's installed skills,
-        # plugins, hooks, or project instructions. Keep the tools the explicit
-        # scenarios exercise and make the saved request bodies tractable.
+        # --safe-mode blocks plugins and hooks from adding their prompt/tool bulk.
         "--safe-mode",
+        # This disables skills and slash commands, removing their catalog from the prompt.
         "--disable-slash-commands",
+        # This suppresses the optional prompt_suggestion frame after each turn.
+        "--prompt-suggestions=false",
+        # An empty source list ignores user, project, and local settings files.
+        "--setting-sources=",
+        # With no --mcp-config, this also excludes MCP servers configured on disk.
+        "--strict-mcp-config",
+        # Retain only the four tools the scenarios exercise, not Claude's full tool catalog.
         "--tools",
         "Bash,Read,Edit,Write",
         "--output-format",
