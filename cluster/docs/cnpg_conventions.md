@@ -86,8 +86,8 @@ Parked clusters (suspended Flux Kustomizations; R2/R3 bind again on revival):
   manifests still name `local-path`, the chart-default StorageClass retired
   2026-06-03 (`k8s/local-path-provisioner/helmrelease.yaml`) — re-point to
   `local-path-proxmox` when reviving.
-- `wayback-archive-db` (`k8s/x/wayback-cache/db/`): OVH-HA shape, suspended
-  with the rest of wayback-cache.
+- `wayback-archive-db` (<../../loom/wayback/deploy/db/>): OVH-HA shape,
+  suspended with the rest of wayback-cache.
 - `haku-dispatch-db` (`k8s/x/haku/dispatch/db/`): OVH-HA shape; not wired
   into the root `k8s/kustomization.yaml` at all.
 
