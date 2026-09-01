@@ -15,7 +15,7 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
-  path: ./cluster/k8s/x/activitywatch
+  path: ./cluster/k8s/activitywatch
   prune: true
   wait: true
   decryption:

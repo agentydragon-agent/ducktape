@@ -313,7 +313,7 @@ resources:
   - paperless/app/flux-kustomization.yaml
 
   # --- activitywatch ---
-  - x/activitywatch/flux-kustomization.yaml
+  - activitywatch/flux-kustomization.yaml
 
   # --- grocy ---
   - grocy/sf/app/flux-kustomization.yaml

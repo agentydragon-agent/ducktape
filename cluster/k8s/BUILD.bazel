@@ -81,6 +81,7 @@ filegroup(
 filegroup(
     name = "haku_manifest_contract_files",
     srcs = [
+        "activitywatch/activitywatch-read-token.sops.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-logs.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml",
         "agents/agent-rbac-base/clusterrole-cluster-diagnostics-reader.yaml",
@@ -182,7 +183,6 @@ filegroup(
         "monitoring/namespace/namespace.yaml",
         "nix-cache/namespace/namespace.yaml",
         "vm-images-publisher/namespace.yaml",
-        "x/activitywatch/activitywatch-read-token.sops.yaml",
         "x/haku/dispatch/namespace/namespace.yaml",
         "//props:deploy/namespace/namespace.yaml",
     ],

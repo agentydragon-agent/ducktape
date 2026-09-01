@@ -70,7 +70,7 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert query_grant["coverage"]["path_regex"] == "/api/0/query/.*"
     assert all(grant["credential_handle"] == activity_credential["handle"] for grant in activity_grants)
 
-    read_token = yaml.safe_load((k8s_dir / "x/activitywatch/activitywatch-read-token.sops.yaml").read_text())
+    read_token = yaml.safe_load((k8s_dir / "activitywatch/activitywatch-read-token.sops.yaml").read_text())
     annotations = read_token["metadata"]["annotations"]
     assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"].split(",") == [
         "haku-egress-proxy",

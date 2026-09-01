@@ -57,7 +57,7 @@
     dest = {
       url = "https://activitywatch-write.allegedly.works";
       device = "wyrm2";
-      tokenSopsFile = ../../../cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml;
+      tokenSopsFile = ../../../cluster/k8s/activitywatch/activitywatch-write-token.sops.yaml;
     };
   };
 

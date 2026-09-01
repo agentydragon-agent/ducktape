@@ -1,0 +1,71 @@
+# Shared bearer for the central ActivityWatch write path. The write-proxy sidecar
+# (cluster-secrets) checks it; the synced desktops read the same value as
+# AW_DEST_TOKEN for the importer (user keys). Rotate by re-minting and re-encrypting.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: activitywatch-write-token
+    namespace: activitywatch
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:Mjg8J1p1lqvMhfJHuHueElB3MCLpDfLfkcG4sEp58coO/5HzHbhRBYrbR27zMGAvFC5QaIWzvu90ockWK9tdjA==,iv:1jZCTmYAa3/SL8ux3SUR98sfRTodswdfr4ufSLT9o+w=,tag:TuUiVVa8CeHW0+LFqghbTA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBUV1BaZFNJOXpWMXZaa0Nn
+            OHFTSGlvc0t3Q2NKcTNXdWJWQ1hmSm9KK3k4Ck05SFErdzExQi83TzBlQ0JvRTlr
+            VUpjWkhyRmNjSjl6V0VTbE0xSzFUaGsKLS0tIGg5M2ljdzVxNE1tYmhBL3dVejRU
+            NTE3Q3RvRlRjeXYzK2dHZXJJWnNzMmcKGzawnrbiyJJS1g7oZY+qWaBSJ9omSgvQ
+            nsAEMhjAnL2u6Y3/k4GLKQOX68s3gQpu0os8KiAP3EWwL1gF1FI/kQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBwN2NibzA5QmtwMFZKQnhU
+            Z2h2U0ozUEtrOHhRM3BIRUtBMG5LZ0w1S0VzCkVrQTVXeDhsV1NDTFdTSnhHK0NP
+            ZE5OQjByNXVyanlIQ29rUjZ0amZCUXMKLS0tIDg2SGovbzRBRkNneE4yanBGeGlI
+            aHlCTkVUYTF2NWtQamlWSHBDZ3FsZDAKvnZNxiAvWfjURCkQhwkagLPN/374VfTL
+            l9WWI2jXn5EXX1zQ/Rit1fRNsdczzGFSG37AHEmcf2XFJMq9Wp4a2g==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2eGJuMENRSFJZWm5IYVFN
+            WDQrOUpmbTFmbEdLUUJkVjhkWkJlUEVXdml3CkRRMTM0Z2VFQlkxN2JFZHNrT3VG
+            T1BFekdOdjJjZlRzZDRuS0NGaHBjTzQKLS0tIDVGNmRubmRiREIwOGtIRW0zN1Nt
+            NDh3bjJ6WnUrSHJDOW81WUZ1RlFiakkK7lywZgOSXP44p71Z29OmNY4d4Fi5W1f2
+            S0+OYp/nb8/ELeUXOvipMvR+taw7I5lty130UFk19HIs+XljvOd7fA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBScnIra1hQb0V2ckFjeGsz
+            TzNlTHRZbXdSWWZqL3Myc29oa3RPc0RnWmdRCmRWSVh3LzRuNW5XV2V2aFpmWUlt
+            eVU5ejZiSGVMVHJtS2cxZkRtbDJLc3MKLS0tIDdoWFo0S0Nic1VXbFArVml2MlRV
+            T2VHT3pHcFRHU0lyc3hhbmVES2lkRU0KPftJ9Gnx0AJW2Eyhvan4rrMwTqujC1DC
+            8plOFjOEY0xIP5h6T7cpQmBGQ0azUsD0DMMSO4wu39lGjpwHrGBotw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBEMHhPR2R6M0JCZ0UwdW0r
+            NktxN01CVXJjSkN4UFlINlVzVEJXYUVzTWlBCkRMeTgwM3ovQXlYeXdPT0JJNW45
+            OFRvcHBoMVl0RUF3VmtoVThtbXVPcHcKLS0tIGluQmxQNjBHL21DNGtjYXVpaC9V
+            TDZnMzJnT1RKd3BFcGZUU3lGbU9YODQKdOYNq0RMiIeembERr2LdlZLfv/geM7Ls
+            qxQjDXbz2dzyweChzV5J7RUTP27FBWZ0t6j2XfUA7M5P+S1tZBm1cA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age15hfg4r2zfc2zl6zarecpvykxjktw4zu3grlahz4397rstmhqpvtqjgf6yy
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBHc0xtL2kzb2lpWjdIT3Nm
+            bG5rcysxbWtXbFBBQ3IvVFpwQnVzWmE4bkIwClhScWNaOFJVSkFrR2w4b0FyZm1I
+            cDVLczN1MlVaeDFZZTdRNE91dkhOVU0KLS0tIFhSVTFUN1NYOEl3bnVpeEpJSFI2
+            eXlGVmFMWVBGRWU1NjJCYjFEQzZCVlEKONDprRXiQx63jA32kNI2bn0lxuDNZQth
+            AX7Hk8j2BAvVYwPVDIsncwOoeCUdhoyqqavG07QqC9MkwCYmAETm/w==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1l325yz3v2mev3t896mzvmmkaatjc7z4d9kukvnjuslgwwd8zg9ss9pnsc7
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-01T12:47:29Z"
+    mac: ENC[AES256_GCM,data:MtMBwEXpIOA/Yoxj9Tsz6nYU8CiKXyoiVlslZ32AvWChEDfvOL3WylHd2rLoPGztedbFu4AanLfX0Isr1ssrh8e0gWi0E9FJ2xIIdSZTJX5akXnEY/YYevCoR8T3Nz0P4sHIoFRzQzBsDbKmWY6aabU9cWdsc6cljg3zpWDd1zE=,iv:YrjDqohAY6O1YE3JH6g2O8xILdssdTb/YecjImcOzlI=,tag:eT98q8mhTS0jiuF6POb5og==,type:str]
+    version: 3.13.3

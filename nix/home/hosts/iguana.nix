@@ -40,7 +40,7 @@
     dest = {
       url = "https://activitywatch-write.allegedly.works";
       device = "iguana";
-      tokenSopsFile = ../../../cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml;
+      tokenSopsFile = ../../../cluster/k8s/activitywatch/activitywatch-write-token.sops.yaml;
     };
   };
 

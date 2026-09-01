@@ -71,7 +71,7 @@ in
             SOPS file holding the central write token under `stringData/token`.
             Decrypted to AW_DEST_TOKEN for the importer. The shared dual-recipient
             Secret (cluster + desktops) is
-            cluster/k8s/x/activitywatch/activitywatch-write-token.sops.yaml.
+            cluster/k8s/activitywatch/activitywatch-write-token.sops.yaml.
           '';
         };
       };
