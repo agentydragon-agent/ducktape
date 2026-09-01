@@ -73,6 +73,19 @@ must compare repeated request bodies and provider-native request identity, and a
 non-duplicate partial native output, process survival, and exact terminal frames. Do not hide this gap
 by adding a generic retry or telemetry framework.
 
+Other acceptance gaps are narrower but real:
+
+- the pinned native replay gate does not yet replay the shell/file-edit, steering, or interrupt
+  scenarios through both real binaries; those fixtures currently prove capture output, not the full
+  replay loop;
+- `ReplayServer` currently routes by recorded request order and path rather than comparing complete
+  repeated request bodies; and
+- `secret_scan.py` exists as a small guard but is not yet wired into a test or repository gate.
+
+The live fixture metadata also records provider, scenario, and model but not the resolved native CLI
+version. Add that only when version-specific comparison or recapture maintenance needs it; do not
+introduce a general artifact manifest.
+
 ## Prompt and environment isolation
 
 Capture launches avoid host-specific prompt bulk. Claude uses safe mode with slash commands disabled,
