@@ -8,7 +8,7 @@ A2A repository commit
 ## Decision
 
 A2A is not the harness-neutral control protocol and is not the API used by the web UI to inspect an
-agent's internal rollout. It is an optional later facade for one agent to delegate work to another
+agent's internal Thread timeline. It is an optional later facade for one agent to delegate work to another
 agent as an opaque peer.
 
 The product keeps two private/internal surfaces:
@@ -19,7 +19,7 @@ The product keeps two private/internal surfaces:
 
 An A2A facade may project a deliberately smaller view of that state: task input, working/terminal
 status, useful messages and artifacts, cancellation, and follow-up context. It does not need to
-expose shell commands, tool arguments, raw frames, compaction, or native session internals.
+expose shell commands, tool arguments, raw frames, compaction, or provider-continuity internals.
 
 This layering follows A2A's design instead of extending against it. A2A explicitly assumes that
 agents can collaborate without access to each other's internal state, memory, or tools.
@@ -28,16 +28,16 @@ agents can collaborate without access to each other's internal state, memory, or
 
 A2A has strong matches for the external delegation boundary:
 
-| Harness Control Plane    | A2A 1.0 concept                |
-| ------------------------ | ------------------------------ |
-| Agent conversation scope | `context_id`                   |
-| Delegated unit of work   | `Task`                         |
-| Caller/agent content     | `Message` with typed `Part`s   |
-| Working/terminal status  | `TaskStatusUpdateEvent`        |
-| Deliverable output       | `Artifact` / artifact updates  |
-| Long-running response    | streaming message operation    |
-| Later follow-up          | another message in the context |
-| Cancellation             | task cancellation              |
+| Harness Control Plane   | A2A 1.0 concept                |
+| ----------------------- | ------------------------------ |
+| Agent Thread scope      | `context_id`                   |
+| Delegated unit of work  | `Task`                         |
+| Caller/agent content    | `Message` with typed `Part`s   |
+| Working/terminal status | `TaskStatusUpdateEvent`        |
+| Deliverable output      | `Artifact` / artifact updates  |
+| Long-running response   | streaming message operation    |
+| Later follow-up         | another message in the context |
+| Cancellation            | task cancellation              |
 
 The normative model supports text, files, URLs, arbitrary structured JSON in `Part`, task and
 artifact metadata, streaming updates, multiple bindings, and declared extensions. Those are enough
@@ -80,7 +80,7 @@ A2A does not define the private semantics needed to recover one supervised harne
 - native process generation inside a surviving Pod;
 - exact native-frame storage and replay;
 - Kubernetes Sandbox/PVC lifecycle;
-- provider-native session start/resume and its compatibility profile;
+- provider continuity start/resume and its compatibility profile;
 - uncertain dispatch after a crash near side effects.
 
 These remain in the private bridge protocol and PostgreSQL schema. The A2A facade projects proven
