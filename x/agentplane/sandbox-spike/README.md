@@ -10,6 +10,38 @@ claim same-Pod network confinement. Kubernetes NetworkPolicy and Cilium select t
 individual container: once the proxy sidecar may reach the verifier, the runner shares that L3/L4
 route. See [the observed evidence and recommendation](evidence.md).
 
+The eventual choice is recorded in [ADR: credentialless Sandbox egress](../plans/adr_sandbox_proxy_gateway.md).
+
+## What this spike was asked to answer
+
+Create a practical, disposable proof—not a production identity framework—for the following eventual
+Agentplane capability:
+
+- an Agent/runner must not receive a real upstream credential;
+- a small per-Sandbox proxy should expose only an explicitly granted operation;
+- the proxy may hold a short-lived, audience-scoped Kubernetes Pod token;
+- a trusted upstream gateway should verify that token against Kubernetes and identify the live Pod and
+  its Sandbox owner before authorizing the operation; and
+- the real upstream credential should be held and substituted only at that trusted gateway.
+
+The proof had to test the actual pinned Agent Sandbox and cluster rather than assume that a Sandbox CR,
+NetworkPolicy, ServiceAccount, SPIFFE, or service mesh automatically supplies the desired guarantees.
+
+## Constraints and things deliberately avoided
+
+The experiment used two standalone, non-warm-pooled Sandboxes in a disposable namespace, with no native
+Claude/Codex dependency, Agentplane persistence, Haku Console dependency, Authentik integration,
+production credential, cluster-wide SPIRE/service-mesh installation, or stronger runtime installation.
+It avoided generic forwarding, `CONNECT`, arbitrary destinations, caller-selected credentials, forged
+identity headers, production-template edits, and treating source IP, labels, or a shared ServiceAccount
+as sufficient identity by themselves.
+
+The key network constraint was tested explicitly: Kubernetes NetworkPolicy and Cilium select the Pod
+network identity, not an individual sidecar container. Therefore a proxy sidecar cannot, by itself,
+make the runner's direct TCP route disappear while preserving the same route for the sidecar. The
+accepted boundary is instead application authentication at the gateway: direct runner traffic may
+reach the gateway, but it cannot present the hidden valid Pod token and is rejected.
+
 ## Run
 
 Use an admin kubeconfig against a disposable cluster or namespace. The script creates the
@@ -30,6 +62,22 @@ kubectl delete -k x/agentplane/sandbox-spike --ignore-not-found
 
 No production credential is used. `manifests/secret.example.yaml` contains only an obviously fake
 value. The scripts never print authorization headers, the synthetic value, or projected tokens.
+
+## Results
+
+The live proof passed on Kubernetes v1.35.1 with Agent Sandbox v0.5.5 and Cilium:
+
+- only the proxy received the synthetic Secret and projected Pod-bound token;
+- the verifier authenticated the namespace, ServiceAccount, Pod UID, current Pod IP, and Sandbox owner;
+- copying a token between Sandboxes, forged headers, invalid credentials, and replayed requests failed;
+- proxy/runner restart, Secret reload, and Sandbox suspend/resume behaved as expected;
+- Pod replacement changed the Pod identity and invalidated the old bound token; and
+- direct runner TCP access was **not** blocked because the runner and proxy share the Pod network
+  identity, but direct unauthenticated operations were rejected by the verifier.
+
+The complete classification of proven, unsupported, environment-blocked, and inferred results is in
+[evidence.md](evidence.md). The short version is: Secret exclusion plus Pod/Sandbox authentication is
+usable; same-Pod route confinement is not available from NetworkPolicy/Cilium alone.
 
 ## Shape
 
