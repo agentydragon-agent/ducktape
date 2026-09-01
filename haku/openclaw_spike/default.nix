@@ -5,13 +5,11 @@
 # command-line tooling -- everything a Nix package in one reviewable closure, no
 # second Node, no upstream Docker base.
 #
-# Deviation from public-coder: that image consumes nix-openclaw's *stable*
-# gateway (2026.7.1-2). This spike needs the newer 2026.8.1 beta line for its
-# Claude model metadata (opus-5) and Tool Search fixes, and nix-openclaw only
-# tracks stable. `openclaw@2026.8.1-beta.3` is published on npm, so a beta-pinned
-# wrapper lock (npm_wrapper/) spliced over nix-openclaw's stable one drives the
-# identical, tested `buildNpmPackage` path at the beta version. Bumping the beta
-# = regenerate npm_wrapper/ and refresh `gatewayNpmDepsHash`.
+# Deviation from public-coder: this image uses Node 24 for the SQLite WAL
+# safety guard, while public-coder stays on Node 22. Both images now consume
+# the stable OpenClaw 2026.8.1 gateway from an explicitly pinned npm wrapper.
+# nix-openclaw's own source pin still tracks an older stable, so the wrapper
+# lock and source metadata are spliced over its tested npm-package build path.
 #
 # Gotcha: use this npm-package path, not a from-source `sourceInfo` override.
 # nix-openclaw's own stable is npm-package too, so its from-source pnpm build is
@@ -19,7 +17,7 @@
 # reconstruction), which makes the gateway's offline install fail.
 #
 # Not an upstream Docker base (the earlier approach): that shipped a second Node
-# whose system SQLite 3.51.2 the beta's WAL guard rejects -- the crashloop this
+# whose system SQLite 3.51.2 the gateway's WAL guard rejects -- the crashloop this
 # fixes. Building the image ourselves keeps one Node in one Nix closure.
 {
   pkgs,
@@ -31,7 +29,7 @@ let
 
   # nixpkgs + nix-openclaw's overlay (matching how nix-openclaw builds its own
   # package set), plus a Node bump. nix-openclaw's build targets nodejs_22
-  # (22.23.2 -> SQLite 3.51.2), which the beta's WAL-safety guard rejects at
+  # (22.23.2 -> SQLite 3.51.2), which the gateway's WAL-safety guard rejects at
   # startup. Node 24 (24.19.0 -> SQLite 3.53.3) is WAL-safe and within OpenClaw's
   # engines range; overriding nodejs_22 flows through the npm gateway build and
   # the PATH Node below.
@@ -44,57 +42,66 @@ let
     ];
   };
 
-  # Beta version for nix-openclaw's npm-package gateway build. Mirrors
-  # nix/sources/openclaw-source.nix but pinned to 2026.8.1-beta.3. Setting
+  # Stable version for nix-openclaw's npm-package gateway build. Mirrors
+  # nix/sources/openclaw-source.nix but pinned to 2026.8.1. Setting
   # `gatewayNpmDepsHash` (not `pnpmDepsHash`) selects the prebuilt-npm gateway
   # path -- the one stable uses. `runtimePluginVersion` tracks nix-openclaw's
   # generated acpx runtime plugin (2026.7.1), not the gateway version; acpx
   # 2026.7.1 declares openclawCompat >=2026.7.1, so it is compatible with the
-  # beta host.
-  betaSourceInfo = {
+  # stable host.
+  stableSourceInfo = {
     owner = "openclaw";
     repo = "openclaw";
-    pnpmMajor = "11";
+    pnpmMajor = "12";
     applyPublicSurfaceHardlinksPatch = false;
     applySkipPluginAutoEnableNixModePatch = false;
-    applyNixStorePluginOwnershipPatch = true;
-    releaseTag = "v2026.8.1-beta.3";
-    releaseVersion = "2026.8.1-beta.3";
+    # 2026.8.1 changed the hardlink-policy source shape, so the old
+    # nix-openclaw ownership patch no longer applies. Runtime plugins are
+    # copied into the gateway's bundled extension tree instead.
+    applyNixStorePluginOwnershipPatch = false;
+    releaseTag = "v2026.8.1";
+    releaseVersion = "2026.8.1";
     runtimePluginVersion = "2026.7.1";
-    # a8c1973 is the annotated tag object for v2026.8.1-beta.3 (resolves to commit
-    # 5831b807). The npm path does not fetch the git source, but these mirror the
-    # stable sourceInfo shape.
-    rev = "a8c1973388fa2645fce83f0239b2356744a98045";
-    hash = "sha256-BTrlg8Y88j50hS3EHDCGQhh0k9zSbZt58b2LmYMcq8w=";
-    # npm dependency-cache hash for the beta-pinned wrapper lock (npm_wrapper/).
-    gatewayNpmDepsHash = "sha256-nsYhpaw1wsKZwuIx9KZmM5jYPd4zqX4klSah07LP2lk=";
+    # The npm path does not fetch the git source, but these mirror the stable
+    # sourceInfo shape for checks and future source builds.
+    rev = "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
+    hash = "sha256-9mYcHVti8iV47jByNLIMTXevyamNP82ZHQldzwbt8pg=";
+    # Filled from the Nix build's fixed-output error after the wrapper lock is
+    # regenerated.
+    gatewayNpmDepsHash = "sha256-KnAPTULugA20oTb0Mkh82CajOBBC+LBg+Zx5nugwpAk=";
   };
 
-  # nix-openclaw's npm wrapper (nix/npm/openclaw/) pins openclaw to the *stable*
-  # release, and openclaw-gateway-npm.nix asserts the lock version equals
-  # `sourceInfo.releaseVersion`. Splice our beta-pinned wrapper (npm_wrapper/)
-  # over it so the same buildNpmPackage path installs 2026.8.1-beta.3.
+  # nix-openclaw's npm wrapper (nix/npm/openclaw/) pins openclaw to an older
+  # stable release, and openclaw-gateway-npm.nix asserts the lock version equals
+  # `sourceInfo.releaseVersion`. Splice our stable-pinned wrapper (npm_wrapper/)
+  # over it so the same buildNpmPackage path installs 2026.8.1.
   #
   # Regenerate npm_wrapper/ with:
   #   npm install openclaw@<ver> --package-lock-only --omit=dev --install-strategy=nested
-  # `--install-strategy=nested` is load-bearing: the beta ships no
+  # `--install-strategy=nested` is load-bearing: this release ships no
   # npm-shrinkwrap.json, so a default (hoisted) install lifts all of openclaw's
   # runtime deps to the wrapper's top-level node_modules -- but nix-openclaw's
   # install script copies only node_modules/openclaw/., so the gateway would ship
   # with ZERO runtime deps and crash at its first import (tslog / undici). Nesting
   # mirrors what stable's shrinkwrap does, so the deps sit under
   # node_modules/openclaw and get copied into the gateway.
-  patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-openclaw-beta-wrapper" { } ''
+  patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-openclaw-stable-wrapper" { } ''
     cp -r ${nix-openclaw} "$out"
     chmod -R u+w "$out"
     cp ${./npm_wrapper/package.json} "$out/nix/npm/openclaw/package.json"
     cp ${./npm_wrapper/package-lock.json} "$out/nix/npm/openclaw/package-lock.json"
+    cp ${../../openclaw/patch-openclaw-npm-dist.mjs} "$out/nix/scripts/patch-openclaw-npm-dist.mjs"
+    # 2026.8.1 rejects an ACPX package root that is a symlink outside the
+    # bundled extension tree. Copy the generated plugin into the dist instead.
+    substituteInPlace "$out/nix/scripts/openclaw-gateway-npm-install.sh" \
+      --replace-fail 'ln -s "$OPENCLAW_BUNDLED_ACPX" "$acpx_root"' \
+      'cp -R "$OPENCLAW_BUNDLED_ACPX/." "$acpx_root"'
   '';
 
   gateway =
     (import "${patchedNixOpenclaw}/nix/packages" {
       pkgs = ocPkgs;
-      sourceInfo = betaSourceInfo;
+      sourceInfo = stableSourceInfo;
     }).openclaw-gateway;
 
   # The single Node runtime (Node 24, per the overlay above) on PATH -- the same
@@ -142,7 +149,7 @@ let
 
   # The proxy preload imports `undici` (EnvHttpProxyAgent + setGlobalDispatcher).
   # nix-openclaw's npm gateway hoists undici out of node_modules/openclaw -- the
-  # beta ships no npm-shrinkwrap to nest it, unlike the stable release the
+  # The package ships no npm-shrinkwrap to nest it, unlike the stable release the
   # public-coder image consumes -- so it is NOT in ${gateway}/lib/openclaw/
   # node_modules. Fetch it standalone (version pinned to npm_wrapper's lock) and
   # place it beside the preload. setGlobalDispatcher writes undici's shared global
