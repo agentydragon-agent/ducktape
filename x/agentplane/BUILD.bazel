@@ -18,7 +18,7 @@ py_library(
     name = "runner",
     srcs = ["runner.py"],
     deps = [
-        ":protocol_py_proto",
+        ":protocol_py_proto",  # keep: dynamically imported generated module
         "//x/agentplane/capture/providers/claude:driver",
         "//x/agentplane/capture/providers/claude:scenarios",
         "//x/agentplane/capture/providers/codex:driver",
@@ -37,11 +37,12 @@ py_test(
         "@claude_code_cli_linux_x64//:claude",
     ],
     deps = [
-        "//:conftest",
+        ":protocol_py_proto",  # keep: dynamically imported generated module
         ":runner",
-        "//x/agentplane/capture:replay_fixtures",
-        "//x/agentplane/capture/providers/claude:replay_fixtures",
-        "//x/agentplane/capture/providers/codex:replay_fixtures",
+        "//:conftest",
+        "//x/agentplane/capture:replay_fixtures",  # keep: pytest plugin
+        "//x/agentplane/capture/providers/claude:replay_fixtures",  # keep: pytest plugin
+        "//x/agentplane/capture/providers/codex:replay_fixtures",  # keep: pytest plugin
         "@pypi//grpcio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "driver",
@@ -11,8 +11,8 @@ py_library(
     testonly = True,
     srcs = ["replay_assertions.py"],
     deps = [
-        ":driver",
         "//x/agentplane/capture:replay",
+        "//x/agentplane/capture/providers/codex:driver",
     ],
 )
 
@@ -45,15 +45,10 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
-        ":driver",
-        ":replay_assertions",
-        ":replay_fixtures",
-        ":scenarios",
         "//:conftest",
-        "//util/bazel:runfiles",
-        "//x/agentplane/capture:replay",
-        "//x/agentplane/capture:replay_fixtures",
-        "//x/agentplane/capture/providers:shared_capture",
+        "//x/agentplane/capture/providers/codex:replay_assertions",
+        "//x/agentplane/capture/providers/codex:replay_fixtures",  # keep: pytest plugin
+        "//x/agentplane/capture/providers/codex:scenarios",
         "@pypi//pytest_bazel",
     ],
 )

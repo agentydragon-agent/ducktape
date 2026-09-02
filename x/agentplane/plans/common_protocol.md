@@ -30,7 +30,7 @@ progress packet, or chunk boundary to be identical. Provider differences remain 
 
 - Claude and Codex expose different native control and lifecycle frames.
 - Claude's post-visible-content connection loss produced an empty terminal result without observed
-automatic reconnect in the captured version.
+  automatic reconnect in the captured version.
 - Codex emitted retry notices and eventually a failed turn after repeated losses.
 - Steering, queued input, interruption, and resume use provider-native mechanisms and outcomes; they
   are not assumed to be equivalent merely because both providers have a related operation.
