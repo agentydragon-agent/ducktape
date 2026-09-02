@@ -1,0 +1,19 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "driver",
+    srcs = ["driver.py"],
+)
+
+py_library(
+    name = "scenarios",
+    srcs = ["scenarios.py"],
+    visibility = [
+        "//x/agentplane/capture:__pkg__",
+        "//x/agentplane/capture:__subpackages__",
+    ],
+    deps = [
+        "//x/agentplane/capture/providers:shared_capture",
+        "//x/agentplane/capture/providers/claude:driver",
+    ],
+)
