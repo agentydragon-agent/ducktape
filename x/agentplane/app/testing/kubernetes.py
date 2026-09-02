@@ -15,7 +15,16 @@ from kubernetes_asyncio import client as k8s_client
 from x.agentplane.app.inventory import MANAGED_LABEL, MODEL_ANNOTATION, PROVIDER_LABEL, Provider
 
 NAMESPACE = "agentplane-test"
-WARM_POOL = "agentplane-test-pool"
+TEMPLATE = "agentplane-test-runner"
+
+# What the test template carries, and what every Sandbox the inventory creates must copy.
+POD_TEMPLATE: dict[str, Any] = {
+    "metadata": {"labels": {"app.kubernetes.io/name": "agentplane-test-runner"}},
+    "spec": {"containers": [{"name": "runner", "image": "registry.test/agentplane-runner:test"}]},
+}
+VOLUME_CLAIM_TEMPLATES: list[dict[str, Any]] = [
+    {"metadata": {"name": "state"}, "spec": {"resources": {"requests": {"storage": "1Gi"}}}}
+]
 
 
 def merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> None:
@@ -31,7 +40,16 @@ def merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> None:
 
 class FakeCustomObjectsApi:
     def __init__(self) -> None:
-        self.objects: dict[tuple[str, str], dict[str, Any]] = {}
+        self.objects: dict[tuple[str, str], dict[str, Any]] = {
+            ("sandboxtemplates", TEMPLATE): {
+                "metadata": {"name": TEMPLATE, "creationTimestamp": "2026-09-01T11:00:00Z"},
+                "spec": {
+                    "podTemplate": POD_TEMPLATE,
+                    "volumeClaimTemplatesPolicy": "Overrides",
+                    "volumeClaimTemplates": VOLUME_CLAIM_TEMPLATES,
+                },
+            }
+        }
         self.patches: list[tuple[str, str, dict[str, Any]]] = []
         self.deleted: list[tuple[str, str]] = []
 
@@ -53,8 +71,11 @@ class FakeCustomObjectsApi:
     ) -> dict[str, Any]:
         del group, version
         assert namespace == NAMESPACE
+        key = (plural, body["metadata"]["name"])
+        if key in self.objects:
+            raise k8s_client.ApiException(status=409)
         stored = {**body, "metadata": {**body["metadata"], "creationTimestamp": "2026-09-02T10:00:00Z"}}
-        self.objects[(plural, stored["metadata"]["name"])] = stored
+        self.objects[key] = stored
         return stored
 
     async def get_namespaced_custom_object(
@@ -106,12 +127,13 @@ class FakeCoreV1Api:
             raise k8s_client.ApiException(status=404) from None
 
 
-def claim(
+def sandbox(
     name: str,
     *,
     provider: Provider = Provider.CLAUDE,
     model: str = "test-model",
     labels: dict[str, str] | None = None,
+    operating_mode: str = "Running",
     status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
@@ -121,24 +143,36 @@ def claim(
             "annotations": {MODEL_ANNOTATION: model},
             "creationTimestamp": "2026-09-01T12:00:00Z",
         },
-        "spec": {"warmPoolRef": {"name": WARM_POOL}},
+        "spec": {"podTemplate": POD_TEMPLATE, "operatingMode": operating_mode},
         **({"status": status} if status is not None else {}),
     }
 
 
-def sandbox(name: str, *, operating_mode: str = "Running") -> dict[str, Any]:
-    return {
-        "metadata": {"name": name, "creationTimestamp": "2026-09-01T12:00:05Z"},
-        "spec": {"operatingMode": operating_mode},
-    }
-
-
-def pod(name: str, *, phase: str, ready: bool, ip: str | None) -> k8s_client.V1Pod:
+def pod(name: str, *, phase: str, ready: bool, ip: str | None, waiting_reason: str | None = None) -> k8s_client.V1Pod:
+    """A runner Pod as the kubelet reports it: running and ready, or held up by `waiting_reason`."""
+    state = (
+        k8s_client.V1ContainerState(running=k8s_client.V1ContainerStateRunning())
+        if waiting_reason is None
+        else k8s_client.V1ContainerState(
+            waiting=k8s_client.V1ContainerStateWaiting(reason=waiting_reason, message=f"{waiting_reason} on {name}")
+        )
+    )
     return k8s_client.V1Pod(
         metadata=k8s_client.V1ObjectMeta(name=name, creation_timestamp=datetime(2026, 9, 1, 12, 0, 10, tzinfo=UTC)),
+        spec=k8s_client.V1PodSpec(containers=[k8s_client.V1Container(name="runner")], node_name="test-node"),
         status=k8s_client.V1PodStatus(
             phase=phase,
             pod_ip=ip,
             conditions=[k8s_client.V1PodCondition(type="Ready", status="True" if ready else "False")],
+            container_statuses=[
+                k8s_client.V1ContainerStatus(
+                    name="runner",
+                    image="registry.test/agentplane-runner:test",
+                    image_id="",
+                    ready=ready,
+                    restart_count=0,
+                    state=state,
+                )
+            ],
         ),
     )
