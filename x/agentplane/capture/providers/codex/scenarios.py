@@ -38,13 +38,11 @@ def baseline(capture: NativeCapture, *, thread_start_response: dict[str, Any]) -
 
 def _thread_id(thread_start_response: dict[str, Any]) -> str:
     result = thread_start_response.get("result")
-    if (
-        not isinstance(result, dict)
-        or not isinstance(result.get("thread"), dict)
-        or not isinstance(result["thread"].get("id"), str)
-    ):
+    thread = result.get("thread") if isinstance(result, dict) else None
+    thread_id_value = thread.get("id") if isinstance(thread, dict) else None
+    if not isinstance(thread_id_value, str):
         raise ValueError("Codex thread/start did not return a durable thread id")
-    return result["thread"]["id"]
+    return thread_id_value
 
 
 def submit(capture: NativeCapture, *, thread_start_response: dict[str, Any], text: str) -> dict[str, Any]:

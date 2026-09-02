@@ -37,9 +37,10 @@ def submit(capture: NativeCapture, prompt: str, *, timeout_s: float = 120) -> di
 
 def session_id(submission: dict[str, Any]) -> str:
     terminal = submission.get("terminal")
-    if not isinstance(terminal, dict) or not isinstance(terminal.get("session_id"), str):
+    session_id_value = terminal.get("session_id") if isinstance(terminal, dict) else None
+    if not isinstance(session_id_value, str):
         raise ValueError("Claude result did not return a durable session id")
-    return terminal["session_id"]
+    return session_id_value
 
 
 def submit_while_active(capture: NativeCapture, *, scenario: str) -> dict[str, Any]:

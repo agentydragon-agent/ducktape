@@ -8,8 +8,9 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
+from io import BufferedReader
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel
 
@@ -117,5 +118,6 @@ class NativeCapture:
     def _stderr(self) -> None:
         assert self.process is not None
         assert self.process.stderr is not None
-        while chunk := self.process.stderr.read1(65536):
+        stderr = cast(BufferedReader, self.process.stderr)
+        while chunk := stderr.read1(65536):
             write_jsonl(self.output / "stderr.jsonl", text_record(chunk))
