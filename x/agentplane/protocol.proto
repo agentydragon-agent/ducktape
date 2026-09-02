@@ -124,6 +124,17 @@ message InputAccepted {
   string detail = 4;
 }
 
+message InterruptAcknowledged {
+  string command_id = 1;
+  bool accepted = 2;
+  string native_id = 3;
+  string detail = 4;
+}
+
+message SessionClosed {
+  string reason = 1;
+}
+
 message TurnStarted {
   string turn_id = 1;
   string native_turn_id = 2;
@@ -192,6 +203,8 @@ message Event {
     ToolCallCompleted tool_call_completed = 10;
     TurnCompleted turn_completed = 11;
     NativeEvent native = 12;
+    InterruptAcknowledged interrupt_acknowledged = 13;
+    SessionClosed session_closed = 14;
   }
 }
 

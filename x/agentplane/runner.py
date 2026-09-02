@@ -72,6 +72,7 @@ class _ProtocolSession:
         self.active_native_turn_id = ""
         self.pending_inputs: list[str] = []
         self.open_tool_call_id = ""
+        self.turn_text = ""
         self.closed = False
 
     async def consume(self, requests: AsyncIterable[protocol_pb2.ClientMessage]) -> None:
@@ -91,6 +92,7 @@ class _ProtocolSession:
                 elif command == "interrupt":
                     await self.interrupt(request.interrupt)
                 elif command == "close":
+                    await self._emit(session_closed=protocol_pb2.SessionClosed(reason=request.close.reason))
                     return
                 elif command is None:
                     await self._protocol_error("client message has no command")
@@ -235,12 +237,28 @@ class _ProtocolSession:
             return
         if self.provider == protocol_pb2.PROVIDER_CLAUDE:
             native = claude_driver.interrupt(cancel_queued=request.cancel_queued)
+            response = await self._write_and_wait(
+                native,
+                lambda frame: (
+                    frame.get("type") == "control_response"
+                    and frame.get("response", {}).get("request_id") == native["request_id"]
+                ),
+            )
+            accepted = response.get("response", {}).get("subtype") == "success"
         else:
             native = codex_driver.interrupt(
                 f"agentplane-{uuid4().hex}", thread_id=self.thread_id, turn_id=self.active_native_turn_id
             )
-        await self._write(native)
-        # The terminal native result, not this write, is the interruption acknowledgement.
+            response = await self._write_and_wait(native, lambda frame: frame.get("id") == native["id"])
+            accepted = "error" not in response
+        await self._emit(
+            interrupt_acknowledged=protocol_pb2.InterruptAcknowledged(
+                command_id=request.command_id,
+                accepted=accepted,
+                native_id=str(native.get("request_id", native.get("id", ""))),
+                detail="native interrupt acknowledged" if accepted else "native interrupt rejected",
+            )
+        )
 
     async def _spawn(
         self, command: Sequence[str], cwd: str, environment: Mapping[str, str]
@@ -498,6 +516,8 @@ class _ProtocolSession:
         await self._emit(turn_started=protocol_pb2.TurnStarted(turn_id=turn_id, native_turn_id=native_turn_id))
 
     async def _emit_text(self, text: str, reasoning: bool, native_item_id: str) -> None:
+        if not reasoning:
+            self.turn_text += text
         await self._emit(
             text_delta=protocol_pb2.TextDelta(text=text, reasoning=reasoning, native_item_id=native_item_id)
         )
@@ -506,6 +526,8 @@ class _ProtocolSession:
         await self._emit(tool_call_delta=protocol_pb2.ToolCallDelta(tool_call_id=self.open_tool_call_id, text=text))
 
     async def _emit_turn_completed(self, *, status: str, result_text: str, error: str, native_turn_id: str) -> None:
+        if not result_text:
+            result_text = self.turn_text
         await self._emit(
             turn_completed=protocol_pb2.TurnCompleted(
                 turn_id=self.active_turn_id,
@@ -517,6 +539,7 @@ class _ProtocolSession:
         )
         self.active_turn_id = ""
         self.active_native_turn_id = ""
+        self.turn_text = ""
 
     async def _protocol_error(self, message: str) -> None:
         await self.outgoing.put(protocol_pb2.ServerMessage(protocol_error=message))

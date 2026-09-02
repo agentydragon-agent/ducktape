@@ -213,6 +213,8 @@ async def test_shared_interrupt_command_has_explicit_terminal_outcome(
         finally:
             await channel.close()
             await runner.stop(0)
+        acknowledgements = _events(observations, "interrupt_acknowledged")
+        assert acknowledgements and acknowledgements[-1].interrupt_acknowledged.accepted
         assert _events(observations, "turn_completed")[-1].turn_completed.status == protocol_pb2.TURN_STATUS_INTERRUPTED
         upstream.assert_consumed()
 
