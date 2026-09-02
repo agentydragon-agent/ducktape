@@ -39,6 +39,7 @@ py_test(
     deps = [
         "//:conftest",
         ":runner",
+        "//x/agentplane/capture:replay_fixtures",
         "//x/agentplane/capture/providers/claude:replay_fixtures",
         "//x/agentplane/capture/providers/codex:replay_fixtures",
         "@pypi//grpcio",
