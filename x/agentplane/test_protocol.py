@@ -226,9 +226,8 @@ async def test_shared_interrupt_command_has_explicit_terminal_outcome(
         assert acknowledgements
         assert acknowledgements[-1].interrupt_acknowledged.accepted
         assert _events(observations, "turn_completed")[-1].turn_completed.status == protocol_pb2.TURN_STATUS_INTERRUPTED
-        # Claude may stop before its captured post-interrupt retry attempt; the first
-        # request and native abort are the shared behavior under test.
-        assert upstream.observed
+        # Interruption may happen before an upstream request (Codex), or after one
+        # (Claude); the native acknowledgement and terminal outcome are the shared contract.
 
 
 if __name__ == "__main__":
