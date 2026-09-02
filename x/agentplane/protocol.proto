@@ -130,6 +130,8 @@ message InputAccepted {
 }
 
 message InterruptAcknowledged {
+  // This acknowledges admission by the runner. The provider's own control response remains
+  // available as a NativeEvent and may arrive before or after the turn's terminal event.
   string command_id = 1;
   bool accepted = 2;
   string native_id = 3;

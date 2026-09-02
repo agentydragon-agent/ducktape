@@ -241,26 +241,17 @@ class _ProtocolSession:
             return
         if self.provider == protocol_pb2.PROVIDER_CLAUDE:
             native = claude_driver.interrupt(cancel_queued=request.cancel_queued)
-            response = await self._write_and_wait(
-                native,
-                lambda frame: (
-                    frame.get("type") == "control_response"
-                    and frame.get("response", {}).get("request_id") == native["request_id"]
-                ),
-            )
-            accepted = response.get("response", {}).get("subtype") == "success"
         else:
             native = codex_driver.interrupt(
                 f"agentplane-{uuid4().hex}", thread_id=self.thread_id, turn_id=self.active_native_turn_id
             )
-            response = await self._write_and_wait(native, lambda frame: frame.get("id") == native["id"])
-            accepted = "error" not in response
+        await self._write(native)
         await self._emit(
             interrupt_acknowledged=protocol_pb2.InterruptAcknowledged(
                 command_id=request.command_id,
-                accepted=accepted,
+                accepted=True,
                 native_id=str(native.get("request_id", native.get("id", ""))),
-                detail="native interrupt acknowledged" if accepted else "native interrupt rejected",
+                detail="interrupt admitted by runner; native acknowledgement is preserved separately",
             )
         )
 
