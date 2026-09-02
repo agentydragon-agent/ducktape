@@ -110,7 +110,6 @@ async def test_one_shared_streamed_client_drives_baseline(
         )
         ready = _events(observations, "ready")[-1]
         assert ready.ready.provider == case.provider_enum
-        assert ready.ready.native_session_id
         assert "submit" in ready.ready.capabilities
         assert _events(observations, "text_delta")
         assert _events(observations, "turn_completed")[-1].turn_completed.status == protocol_pb2.TURN_STATUS_COMPLETED

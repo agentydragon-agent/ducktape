@@ -112,6 +112,8 @@ message ClientMessage {
 message Ready {
   string runner_id = 1;
   Provider provider = 2;
+  // May be empty if the provider reveals its continuity id only after readiness; the
+  // corresponding native frame is still preserved as NativeEvent evidence.
   string native_session_id = 3;
   repeated string capabilities = 4;
 }
