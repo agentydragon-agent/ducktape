@@ -1,6 +1,6 @@
 # Native wire capture harness
 
-**Status:** implementation and fixtures are present; strict reconnect review remains open.
+**Status:** implementation and fixtures are present; behavioral native replay coverage is ready for the focused gate.
 
 `//x/agentplane/capture:live_capture` runs one explicit Claude or Codex probe against a fresh
 synthetic workspace. It drives the real native process over structured JSON on direct stdin/stdout
@@ -46,6 +46,10 @@ recording boundary excludes HTTP headers, cookies, environment variables, OAuth 
 and private user data. Do not add redundant base64, parsed-JSON copies, hashes, lengths, timestamps,
 manifest inventories, or a promotion/DLP framework.
 
+Live capture output includes the native stdin/stdout/stderr files shown above. Committed
+`testdata/<provider>/<scenario>/` replay inputs currently retain only `llm-requests.jsonl` and
+`llm-responses.jsonl`; the native logs remain disposable capture output rather than test inputs.
+
 `expected.json`-style semantic expectations belong in hand-authored tests, not generated from the
 observed output. Provider-native request/session/thread/turn ids remain in the provider evidence.
 The harness deliberately does not invent Thread, Turn, Input, runtime-generation, retry, or common
@@ -63,23 +67,21 @@ closes after a visible text delta, waits for the first native terminal frame, an
 separate user input. `connection_exhaustion` repeats controlled losses until the client stops, while
 `post_exhaustion_follow_up` records whether the same process accepts another input afterward.
 
-The recorded versions show provider-specific behavior: Claude Code 2.1.252 can retry before visible
+The recorded captures show provider-specific behavior: Claude Code can retry before visible
 stream content but, after a visible text delta, returns an empty terminal result with no automatic
-reconnect observed; Codex 0.144.1 retries and eventually reports a failed turn after repeated losses.
-These are raw observations, not semantics the bridge should manufacture.
+reconnect observed; Codex retries and eventually reports a failed turn after repeated losses. These
+are raw observations, not semantics the bridge should manufacture.
 
-Strict reconnect acceptance is still pending. Before treating this behavior as fully proven, review
-must compare repeated request bodies and provider-native request identity, and assert duplicate or
-non-duplicate partial native output, process survival, and exact terminal frames. Do not hide this gap
-by adding a generic retry or telemetry framework.
-
-Other acceptance gaps are narrower but real:
-
-- the pinned native replay gate does not yet replay the shell/file-edit, steering, or interrupt
-  scenarios through both real binaries; those fixtures currently prove capture output, not the full
-  replay loop; and
-- `ReplayServer` currently routes by recorded request order and path rather than comparing complete
-  repeated request bodies.
+The native replay gate is split into provider-specific tests, with shared pytest setup in
+`replay_fixtures.py` and provider-specific tests/fixtures/assertions under
+`providers/{claude,codex}/`. It uses scenario-specific behavioral assertions rather than requiring
+every packet or generated field to match. It checks the lifecycle that matters to each behavior: tool item
+opening/progress/completion and workspace effects, steering or queued-input delivery, interruption
+and terminal state, provider retry notices and retry exhaustion, same-process follow-up recovery,
+native resume, and expected assistant output. During a live capture, complete native and upstream
+payloads can be retained as ordered investigation evidence, including volatile request bodies and
+provider-specific IDs, but they are not used as a brittle byte-for-byte oracle or kept as permanent
+Git fixtures.
 
 ## Prompt and environment isolation
 
@@ -110,7 +112,7 @@ server. No capture path uses a PTY, tmux, terminal scraper, prompt heuristic, Ku
 ## Replay through the real harness
 
 ```sh
-bazel test //x/agentplane/capture/tests:test_native_replay
+bazel test //x/agentplane/capture:test_native_replay
 ```
 
 The replay test runs pinned Claude and Codex binaries against a loopback server loaded from the saved

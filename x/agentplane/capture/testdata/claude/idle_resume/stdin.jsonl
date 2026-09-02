@@ -1,4 +1,0 @@
-{"time_ns":5038160113753571,"text":"{\"type\":\"control_request\",\"request_id\":\"capture-28d3e815b79844d8ba6fd32285032acd\",\"request\":{\"subtype\":\"initialize\"}}"}
-{"time_ns":5038160767666879,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: IDLE_RESUME_SEED_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"0fe7d4da-0e46-471c-b0b6-9de0a21156e5\"}"}
-{"time_ns":5038162459591346,"text":"{\"type\":\"control_request\",\"request_id\":\"capture-823d84b2c6e647e482a0f4c7df8d0d9d\",\"request\":{\"subtype\":\"initialize\"}}"}
-{"time_ns":5038163107852835,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: IDLE_RESUME_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"4fcf8170-2b11-4333-a558-bb4a855ecca2\"}"}

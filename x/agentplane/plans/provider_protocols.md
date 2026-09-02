@@ -10,8 +10,10 @@ system, or product persistence model.
 
 - Use real stdin/stdout pipes, not PTYs, tmux, pane scraping, or prompt heuristics.
 - Keep Claude and Codex driver state separate until captures demonstrate a useful common seam.
-- Preserve complete native frames and provider-native ids in the ordered transcript.
-- Capture upstream LLM request bodies and streamed response chunks separately from native frames.
+- Preserve complete native frames and provider-native ids in the ordered transcript during live
+  captures; these verbose native logs are disposable rather than permanent Git fixtures.
+- Capture upstream LLM request bodies and streamed response chunks separately from native frames;
+  retain only the compact upstream inputs needed by replay tests.
 - Do not serialize HTTP headers, cookies, environment variables, credentials, or OAuth state.
 - Use explicit binary paths or simple environment variables; do not build package-resolution or
   executable-integrity infrastructure.
@@ -19,6 +21,11 @@ system, or product persistence model.
 
 The existing `haku/runner`, `haku/cli_protocol`, and `haku/console` code is behavior evidence only.
 The new implementation under `x/agentplane/` must not import it.
+
+When a harness version changes or a new protocol area needs coverage, run a fresh capture with the
+new pinned binary, inspect the native and upstream differences, and update the driver/tests only for
+the behavior we choose to pin down. Replace or add the compact replay inputs alongside the binary
+pin; regenerate verbose native logs on demand rather than committing them.
 
 ## Model endpoint boundary
 

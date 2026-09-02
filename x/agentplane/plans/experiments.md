@@ -1,56 +1,145 @@
 # Agentplane experiments
 
-Status: **focused experiment plan; capture implementation present on PR #15, strict review pending**.
+Status: **capture implementation and fixtures are integrated; behavioral replay verification and the
+thin shared adapter seam are next**.
 
-The capture branch contains the Claude/Codex drivers, fixtures, replay tests, and the reconnect
-scenario. The [capture harness README](../capture/README.md) is the implementation-facing record
-of its layout and run commands. Do not call the capture P0 fully accepted until reconnect replay
-compares the repeated request body and provider-native request identity, and asserts duplicate or
-non-duplicate partial native output, process survival, and exact terminal frames. These are review
-gaps, not reasons to expand the capture into a generic protocol or artifact framework.
+The native capture work is no longer an open discovery task. PR #15's Claude/Codex drivers, live
+capture scripts, scenario fixtures, and replay harness are integrated under [`../capture/`](../capture/).
+The provider-specific native replay tests now contain behavioral coverage for every checked-in
+provider/scenario replay fixture, with shared pytest setup in `../capture/replay_fixtures.py` and
+provider-local assertions beside each provider. Their focused real-binary Bazel run is still the
+verification gate; the current development environment is blocked before test execution by the
+BCR TLS/PKIX failure.
 
-The first experiment is not a control-plane validation suite. It answers one practical question:
-can a small bridge reliably drive native Claude Code and Codex processes, including the interactions
-we need, while recording the upstream LLM exchanges that made them happen?
+The purpose of this document is therefore to record observed capture evidence, the remaining bounded
+verification, and the experiments that should inform the next shared-protocol slice. It is not a
+request to recapture the same baseline behaviors or to build a generic compatibility framework.
 
-## P0 questions
+## Capture evidence delivered
 
-For both providers, establish:
+For both Claude and Codex, the committed examples cover:
 
-1. how to launch and initialize the native process;
-2. how a normal prompt is submitted and how streamed output terminates;
-3. how tool calls and tool results appear on the native wire;
-4. how upstream model requests and streamed responses map to the native exchange;
-5. whether steering exists and where it is accepted;
-6. how interruption is requested and what native terminal evidence follows; and
-7. how the unchanged native harness behaves when one active upstream LLM stream is lost and the
-   model endpoint becomes reachable again; and
-8. whether a completed turn can be resumed after killing only the idle native process.
+- launch and native handshake;
+- baseline streaming and terminal output;
+- shell command and file-edit tool lifecycles, including externally visible effects;
+- active-turn steering or second-input behavior;
+- interruption and native terminal state;
+- upstream connection retry and retry exhaustion;
+- follow-up input after a transport failure; and
+- idle native session/thread resume after replacing only the idle process.
 
-The capture may use provider-native ids directly. It does not need to invent Thread, Turn, Input, or
-runtime-generation ids before the providers' behavior is understood.
+Each live capture preserves native stdin/stdout/stderr, complete upstream request bodies, streamed
+response chunks, and controlled loss markers. It intentionally excludes headers, cookies,
+credentials, OAuth state, and private user data. The repository keeps only the compact upstream
+request/response inputs needed to replay the tested model-server side; the native logs are
+disposable capture output. The replay tests assert the scenario-relevant lifecycle, output,
+process survival, and workspace behavior of a fresh pinned harness against those inputs.
 
-## P1 questions, deferred
+## Current verification gate
 
-Do not block the P0 capture on:
+The focused test is:
 
-- multiple pending prompts and native dequeue semantics;
-- active-turn process death and side-effect reconciliation;
-- central-server reconnect or bridge-log replay;
-- Pod replacement, Sandbox suspension, PVC lifecycle, or Service topology;
-- PostgreSQL persistence and common timeline projection;
-- leases, fencing, authentication, mTLS, approvals, credentials, or subscription adapters.
+```sh
+bazel test //x/agentplane/capture:test_native_replay
+```
 
-Those are control-plane experiments after the native driving seam works. A P0 driver may record a
-simple failure or unsupported result, but it should not implement these systems to obtain one.
+It launches the pinned Claude and Codex binaries against a deterministic loopback fake model server.
+The behavioral assertions are synchronized by native protocol checkpoints and fake-server fixture
+consumption, not by sleeps or exhaustive packet equality. They tolerate generated IDs, timestamps,
+optional metadata, extra progress events, and provider-specific chunk boundaries where those do not
+change the tested behavior.
 
-## Code and fixture shape
+The gate should verify, for each provider/scenario fixture:
 
-Keep the implementation under `x/agentplane/capture/` and keep provider scenario code separate.
-A small shared process/transcript helper is appropriate; a shared protocol state machine is not.
+- the native handshake and terminal outcome;
+- the relevant tool, command, file, steer, queue, or interrupt lifecycle;
+- retry/error/give-up behavior for connection-loss cases;
+- same-process survival and follow-up recovery where captured;
+- native continuity for idle resume; and
+- the expected assistant output or workspace effect.
 
-Each recorded scenario currently contains only the ordered evidence needed by the capture and
-replay code:
+Request bodies are checked for scenario-relevant shape and identity, not literal equality of every
+volatile field. A live recapture is available for investigation when needed. A provider-specific result
+must be recorded as **Proven**, **Supported differently**, **Unsupported**, or
+**Environment-blocked**, rather than normalized into a false common success.
+
+## Captured provider observations
+
+The current recordings establish these constraints:
+
+- Claude uses newline-delimited stream/control JSON. Its captured version can retry before visible
+  stream content, but after a visible text delta it returned an empty terminal result without an
+  observed automatic reconnect.
+- Codex app-server uses newline-delimited JSON-RPC-shaped messages. Its captured version emitted
+  retry notices and eventually reported a failed turn after repeated upstream losses.
+- A Claude active-turn second input is observed as native input behavior; it must not be called
+  steering unless the provider's native evidence supports that interpretation.
+- Codex exposes explicit `turn/steer` and `turn/interrupt` operations in the scenarios where they
+  are supported.
+- Idle resume uses Claude `--resume` or Codex `thread/resume`, not transcript replay or prompt
+  redispatch.
+
+These are observations from the currently pinned harnesses for adapter design. The bridge must not manufacture retry, steering,
+acknowledgement, or successful completion semantics that the native process did not emit.
+
+## Next post-capture experiments
+
+The next focused work package is the thin shared stdio protocol and both provider adapters. Use the
+existing behavioral tests, compact upstream fixtures, and real binaries to answer only what that
+package needs:
+
+1. Which native start/resume, submit, interrupt, and event operations have stable behavioral
+   equivalents?
+2. What admission, progress, completion, failure, and process-survival evidence should the shared
+   seam expose without hiding provider-specific details?
+3. How should supported-differently or unsupported steering and queue behavior be represented?
+4. Which native continuity identifiers must be retained to resume a replacement idle process?
+5. What is the smallest adapter-level contract that can be proven by replay before introducing the
+   standalone Agentplane service?
+
+Do not add a neutral timeline, retry policy, central state machine, or persistence schema merely to
+answer these questions. Keep live provider captures as the authority and keep checked-in replay data
+compact.
+
+## Refreshing harness evidence
+
+The complete native capture output is intentionally not a long-lived Git artifact. If a pinned
+harness version changes, or a new protocol behavior needs coverage:
+
+1. obtain the new pinned Claude or Codex harness;
+2. run the live capture scripts against the synthetic workspace and model endpoint;
+3. eyeball the native and upstream differences against the currently tested behavior;
+4. update the provider driver and hand-authored behavioral tests only for behavior we intend to
+   pin down; and
+5. replace or add the compact upstream replay inputs and update the harness pin as needed.
+
+Do not preserve verbose native logs merely to make the repository self-contained. They can be
+regenerated from the capture scripts when a review or investigation needs them.
+
+## Historical capture invariants
+
+These rules remain in force for any new capture or replay fixture:
+
+- use real native stdin/stdout pipes, never PTYs, tmux, terminal scraping, or pane attachment;
+- drain stderr and preserve bounded useful diagnostics;
+- capture upstream model bodies through the minimal local HTTP server/proxy;
+- use synthetic workspaces and deterministic tool inputs;
+- synchronize steering and interrupt races with native events or explicit checkpoints, not sleeps as
+  the only evidence;
+- keep process exit status and relevant failure messages, without PID/signal chronology or
+  Kubernetes identity;
+- never blindly redispatch an input after uncertain process death; and
+- treat unavailable binaries or unsupported provider operations as explicit results.
+
+For connection-loss cases, cut one active upstream stream after a named complete partial-content
+packet and before terminal completion. Keep the native process and stdio connection alive, restore
+model-endpoint availability, and observe the provider's behavior. Start without tools so retries
+cannot repeat side effects. This tests model-API transport behavior, not provider-native resume,
+bridge reconnect, or Input redispatch.
+
+## Fixture shape
+
+A live capture contains the complete native and upstream evidence:
 
 ```text
 metadata.json
@@ -61,125 +150,29 @@ llm-requests.jsonl
 llm-responses.jsonl
 ```
 
-The native files preserve exact JSON frames by direction. The LLM files preserve complete request
-bodies and streamed response chunks, including a minimal connection-loss marker where applicable.
-The hand-authored semantic assertions live in the tests rather than being generated into each
-fixture directory. File order is sufficient ordering; do not add hashes, lengths, timestamps,
-process generations, or manifest inventories.
+Committed `testdata/<provider>/<scenario>/` replay inputs currently retain only the two upstream
+files: `llm-requests.jsonl` and `llm-responses.jsonl`. Native logs are disposable capture output,
+not replay inputs or golden outputs. Native and upstream files are UTF-8 text. File order is the
+ordering authority. Do not add routine
+hashes, lengths, timestamps, manifest inventories, parsed mirrors, or custom DLP/promotion machinery.
+Semantic expectations belong in hand-authored tests.
 
-## Capture rules
+## Deferred experiments
 
-- Use real native stdin/stdout pipes, never a PTY or terminal scraper.
-- Drain stderr so it cannot block the child; preserve a useful failure log, not a forensic event
-  stream.
-- Capture model bodies through a minimal local HTTP server/proxy. Never serialize headers, cookies,
-  environment variables, or credentials.
-- Use a synthetic workspace and deterministic tool inputs.
-- Use native events or explicit test synchronization for steering and interrupt races, not sleeps
-  as the only evidence.
-- Keep process exit status and the relevant failure message; omit PID, signal chronology, digests,
-  and Kubernetes identity from fixtures.
-- Do not blindly redispatch an input after uncertain process death.
-- Treat unavailable binaries or unsupported provider operations as an explicit test skip/result, not
-  as a reason to grow a compatibility framework.
+One capture-environment cleanup remains explicit: find a supported RBE Claude launcher/toolchain that
+runs the pinned CLI without the current Nix ELF-loader workaround in
+[`../capture/providers/claude/replay_fixtures.py`](../capture/providers/claude/replay_fixtures.py). This is execution-environment cleanup, not a reason to alter
+the capture protocol or behavioral assertions.
 
-## P0 scenario matrix
+These remain outside the capture and adapter slice:
 
-| Scenario               | Claude  | Codex   | Evidence required                                               |
-| ---------------------- | ------- | ------- | --------------------------------------------------------------- |
-| launch/handshake       | yes     | yes     | native initialization exchange                                  |
-| baseline streamed turn | yes     | yes     | prompt, streamed output, terminal result, model exchange        |
-| tool interaction       | yes     | yes     | native tool call/result, model requests, expected effect        |
-| steering               | attempt | attempt | accepted behavior or explicit unsupported result                |
-| interrupt              | attempt | attempt | request plus actual native terminal evidence                    |
-| upstream reconnect     | attempt | attempt | retry/reconnect requests, duplicate output, process/outcome     |
-| idle native resume     | attempt | attempt | native session/thread continuity or explicit unsupported result |
-| fake-model replay      | yes     | yes     | real harness driven from saved model exchange                   |
+- multiple pending prompts and durable dequeue policy;
+- active-turn process death and side-effect reconciliation;
+- central-server reconnect or bridge-log replay;
+- Pod replacement, Sandbox suspension, PVC lifecycle, or Service topology;
+- Thread/Input/Turn persistence, PostgreSQL, and common timeline projection;
+- leases, fencing, authentication, mTLS, credentials, approvals, or subscription adapters; and
+- the standalone Agentplane API, conversation UI, and Haku Console integration.
 
-The first useful fixture set can be one baseline/tool/replay capture per provider. Do not generate a
-fixture for every possible failure window before the core loop is working.
-
-For the upstream reconnect scenario, use one controlled cut after a valid partial assistant-content
-chunk and before terminal completion. Keep the harness process and native stdio connection alive;
-restore model-endpoint availability and observe rather than forcing a retry. Record the exact model
-request/chunks before loss, a minimal transport-loss marker, any subsequent request/chunks, native
-frames, bounded stderr, process survival, duplicated partial output, and terminal outcome.
-
-This is model-API transport behavior, not provider-native resume, central/bridge reconnect, or Input
-redispatch. Start without tools so a retry cannot repeat side effects. A result of immediate failure,
-retry then failure, successful retry, or explicit environment blocker is all useful provider evidence.
-
-## Real-harness replay test
-
-This is a P0 deliverable, not a future TODO:
-
-1. start a deterministic fake Anthropic Messages or OpenAI Responses server;
-2. load a saved `llm.jsonl` exchange;
-3. launch the real Claude or Codex binary;
-4. drive its native protocol through the provider driver;
-5. return the recorded model chunks from the fake server; and
-6. assert the model requests, native output, tool I/O, terminal result, and workspace effect.
-
-The fake server should support the smallest needed set of request/response shapes first. Add tool
-calls, streaming, errors, or malformed responses only when a scenario tests them. The purpose is to
-prove the bridge/harness loop, not to emulate all of either provider's HTTP API.
-
-Keep the real-provider capture and fake-model replay as separate evidence:
-
-- real-provider capture shows what the deployed route and binary actually do;
-- fake-model replay shows that the driver can reproduce and test the interaction without paid
-  inference or network access.
-
-## Native resume test
-
-Use a random in-memory nonce in a completed no-tool turn. Ask the harness to remember it without
-writing it to the workspace. Kill only the idle native child, start a new child using the provider's
-native resume mechanism, and ask for the nonce.
-
-The test must distinguish:
-
-- provider-native context recovery;
-- workspace file survival; and
-- starting a new unrelated conversation.
-
-Do not treat a bridge journal cursor or a replayed prompt as native resume.
-
-## Provider-specific notes
-
-Claude uses newline-delimited stream/control JSON. Capture initialization, user frames, command
-lifecycle, assistant/tool frames, terminal results, and the native interrupt response. A second user
-frame during an active turn may be ordinary queued input rather than steering; record the observed
-behavior instead of assigning it a common meaning.
-
-Codex app-server uses newline-delimited JSON-RPC-shaped messages. Capture `initialize`,
-`initialized`, thread start/resume, turn start, item notifications, turn completion, `turn/steer`,
-and `turn/interrupt` where available. The driver must handle server requests that are actually
-needed by the tested scenario rather than assuming stdout contains notifications only.
-
-Provider-native ids stay in the transcript. Do not duplicate them into a future common envelope in
-this experiment.
-
-## Tests and gates
-
-Ordinary Bazel tests should:
-
-- parse frames across partial reads;
-- replay native transcripts in order;
-- replay model transcripts through the fake server;
-- run hand-authored assertions against both sides of the exchange; and
-- verify that capture code does not import `haku/*`.
-
-Opt-in live tests should run the real binaries and use a finite call/time budget. They must not
-perform credentials, Kubernetes mutations, or arbitrary network access beyond the configured model
-endpoint.
-
-Use the repository's normal secret checks and a small fixture guard for obvious serialized headers
-or token prefixes. Do not create a custom entropy-based promotion pipeline.
-
-## After P0
-
-Only once both providers have useful captures should we decide whether a common adapter needs
-`submit`, `steer`, `interrupt`, `resume`, or queue operations, and which state belongs in PostgreSQL.
-Then run narrowly targeted experiments for the specific failure or lifecycle behavior that the
-product actually needs. Keep unsupported provider behavior visible instead of expanding the first
-implementation to make the matrix look complete.
+They become worthwhile only after the shared seam is proven with the real captured behaviors and a
+concrete product failure or decision requires them.
