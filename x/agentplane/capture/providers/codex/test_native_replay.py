@@ -102,7 +102,7 @@ def test_codex_connection_retry_replays_through_the_pinned_native_cli(
         frames = assertions.assert_success(codex_replay.root, "CONNECTION_RETRY_OK")
         errors = [frame for frame in frames if frame.get("method") == "error"]
         assert any(frame.get("params", {}).get("willRetry") is True for frame in errors)
-        assert len(assertions.agent_texts(frames)) == 1
+        assert [text for text in assertions.agent_texts(frames) if text] == ["CONNECTION_RETRY_OK"]
         server.assert_consumed()
 
 

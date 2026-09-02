@@ -12,14 +12,6 @@
 {"kind":"connection_dropped","capture_request_id":"llm-3","after_event":"response_headers","time_ns":5048347442051184}
 {"kind":"connection_dropped","capture_request_id":"llm-4","after_event":"response_headers","time_ns":5048349236613952}
 {"kind":"connection_dropped","capture_request_id":"llm-5","after_event":"response_headers","time_ns":5048351683528743}
-{"kind":"connection_dropped","capture_request_id":"llm-6","after_event":"response_headers","time_ns":5048354861051961}
-{"kind":"connection_dropped","capture_request_id":"llm-7","after_event":"response_headers","time_ns":5048360112752288}
-{"kind":"connection_dropped","capture_request_id":"llm-8","after_event":"response_headers","time_ns":5048369894607466}
-{"kind":"connection_dropped","capture_request_id":"llm-9","after_event":"response_headers","time_ns":5048390701924418}
-{"kind":"connection_dropped","capture_request_id":"llm-10","after_event":"response_headers","time_ns":5048428911039478}
-{"kind":"connection_dropped","capture_request_id":"llm-11","after_event":"response_headers","time_ns":5048468855703429}
-{"kind":"connection_dropped","capture_request_id":"llm-12","after_event":"response_headers","time_ns":5048504450836414}
-{"kind":"connection_dropped","capture_request_id":"llm-13","after_event":"response_headers","time_ns":5048543699682866}
 {"kind":"response_chunk","capture_request_id":"llm-14","ordinal":1,"body":"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CedAHNCExRcDKKxPa8NRV\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":45,\"cache_read_input_tokens\":8324,\"cache_creation\":{\"ephemeral_5m_input_tokens\":45,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":8,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"}}            }\n\n","time_ns":5048544362504079}
 {"kind":"response_chunk","capture_request_id":"llm-14","ordinal":2,"body":"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}              }\n\n","time_ns":5048544362705378}
 {"kind":"response_chunk","capture_request_id":"llm-14","ordinal":3,"body":"event: ping\ndata: {\"type\": \"ping\"}\n\n","time_ns":5048544362812148}

@@ -29,12 +29,16 @@ class ClaudeReplay:
             self.binary, model="anthropic-max20/ant-messages/claude-haiku-4-5-20251001", resume_id=resume_id
         )
         permission_mode = command.index("--permission-mode")
-        del command[permission_mode : permission_mode + 2]
+        command[permission_mode + 1] = "dontAsk"
+        command.extend(["--allowedTools", "Bash(*)", "Read(**)", "Edit(**)", "Write(**)"])
         return [_python_dynamic_loader(), *command]
 
     def environment(self, endpoint: str) -> dict[str, str]:
         return self.environment_factory(
-            ANTHROPIC_AUTH_TOKEN="test-key", ANTHROPIC_BASE_URL=endpoint, CLAUDE_CONFIG_DIR=str(self.config)
+            ANTHROPIC_AUTH_TOKEN="test-key",
+            ANTHROPIC_BASE_URL=endpoint,
+            CLAUDE_CONFIG_DIR=str(self.config),
+            CLAUDE_CODE_MAX_RETRIES="2",
         )
 
     def capture(self, server: ReplayServer, *, resume_id: str | None = None) -> NativeCapture:

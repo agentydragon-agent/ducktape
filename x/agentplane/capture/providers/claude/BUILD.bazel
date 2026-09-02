@@ -45,6 +45,7 @@ py_test(
     ],
     deps = [
         "//:conftest",
+        "//x/agentplane/capture:replay_fixtures",  # keep: pytest plugin
         "//x/agentplane/capture/providers/claude:replay_assertions",
         "//x/agentplane/capture/providers/claude:replay_fixtures",  # keep: pytest plugin
         "//x/agentplane/capture/providers/claude:scenarios",

@@ -11,11 +11,3 @@
 {"kind":"connection_dropped","capture_request_id":"llm-3","after_event":"response_headers","time_ns":5048071584658684}
 {"kind":"connection_dropped","capture_request_id":"llm-4","after_event":"response_headers","time_ns":5048073062090516}
 {"kind":"connection_dropped","capture_request_id":"llm-5","after_event":"response_headers","time_ns":5048075007622070}
-{"kind":"connection_dropped","capture_request_id":"llm-6","after_event":"response_headers","time_ns":5048078254919513}
-{"kind":"connection_dropped","capture_request_id":"llm-7","after_event":"response_headers","time_ns":5048084121540175}
-{"kind":"connection_dropped","capture_request_id":"llm-8","after_event":"response_headers","time_ns":5048094991773964}
-{"kind":"connection_dropped","capture_request_id":"llm-9","after_event":"response_headers","time_ns":5048113069440348}
-{"kind":"connection_dropped","capture_request_id":"llm-10","after_event":"response_headers","time_ns":5048150575609293}
-{"kind":"connection_dropped","capture_request_id":"llm-11","after_event":"response_headers","time_ns":5048184079192528}
-{"kind":"connection_dropped","capture_request_id":"llm-12","after_event":"response_headers","time_ns":5048219338762357}
-{"kind":"connection_dropped","capture_request_id":"llm-13","after_event":"response_headers","time_ns":5048259576346762}

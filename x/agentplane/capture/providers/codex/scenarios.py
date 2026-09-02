@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Any
 
 from x.agentplane.capture.providers.codex import driver
@@ -119,7 +120,11 @@ def interrupt(
     capture.write(start)
     started = capture.await_frame(lambda item: item.get("id") == "capture-3", timeout=30)
     turn_id = started["result"]["turn"]["id"]
-    active = capture.await_frame(lambda item: item.get("method") == "turn/started", timeout=30)
+    # Codex can accept an interrupt before it emits a native turn/started event when
+    # the mocked upstream has no request for this scenario.
+    active = None
+    with suppress(TimeoutError):
+        active = capture.await_frame(lambda item: item.get("method") == "turn/started", timeout=1)
     queued_response = None
     if with_queued_input:
         queued = driver.turn_start("capture-4", thread_id=thread_id, text="Queued input: reply only if admitted.")

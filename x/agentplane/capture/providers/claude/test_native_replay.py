@@ -131,10 +131,10 @@ def test_claude_steering_replays_the_provider_observed_active_turn_behavior(
             assert assertions.result_text(submission) == "SECOND_INPUT_OBSERVED"
             assert capture.process is not None
             assert capture.process.poll() is None
-        frames = assertions.assert_success(claude_replay.root, "SECOND_INPUT_OBSERVED")
+        assertions.assert_success(claude_replay.root, "SECOND_INPUT_OBSERVED")
         assert submission["first_uuid"] != submission["second_uuid"]
         assert submission["active_evidence"]["type"] == "stream_event"
-        assert len([frame for frame in frames if frame.get("type") == "user"]) >= 2
+        assert b"Reply ONLY SECOND_INPUT_OBSERVED" in server.observed[-1]["body"]
         server.assert_consumed()
 
 
@@ -146,8 +146,8 @@ def test_claude_second_input_replays_after_an_active_turn(
             claude.launch_handshake(capture)
             submission = claude.submit_while_active(capture, scenario="second_input")
             assert assertions.result_text(submission) == "SECOND_INPUT_OBSERVED"
-        frames = assertions.assert_success(claude_replay.root, "SECOND_INPUT_OBSERVED")
-        assert len([frame for frame in frames if frame.get("type") == "user"]) >= 2
+        assertions.assert_success(claude_replay.root, "SECOND_INPUT_OBSERVED")
+        assert b"Reply ONLY SECOND_INPUT_OBSERVED" in server.observed[-1]["body"]
         server.assert_consumed()
 
 

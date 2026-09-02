@@ -51,7 +51,7 @@ def submit_while_active(capture: NativeCapture, *, scenario: str) -> dict[str, A
     without adding a second, driver-authored action log.
     """
     first = driver.user_frame(
-        'Use the Bash tool to run `sh -c \'printf "wait_started\\n"; sleep 20; '
+        'Use the Bash tool to run `/bin/bash -c \'printf "wait_started\\n"; sleep 20; '
         'printf "wait_finished\\n"\'`; after it finishes reply ONLY WAIT_DONE.'
     )
     capture.write(first)
@@ -64,11 +64,13 @@ def submit_while_active(capture: NativeCapture, *, scenario: str) -> dict[str, A
 
 def interrupt(capture: NativeCapture, *, with_queued_input: bool) -> dict[str, Any]:
     first = driver.user_frame(
-        'Use the Bash tool to run `sh -c \'printf "wait_started\\n"; sleep 20; '
+        'Use the Bash tool to run `/bin/bash -c \'printf "wait_started\\n"; sleep 20; '
         'printf "wait_finished\\n"\'`; do not answer early.'
     )
     capture.write(first)
-    active = capture.await_frame(lambda item: item.get("type") == "stream_event", timeout=60)
+    active = capture.await_frame(
+        lambda item: item.get("type") == "command_lifecycle" and item.get("state") == "started", timeout=60
+    )
     queued_uuid = None
     if with_queued_input:
         queued = driver.user_frame("This is intentionally queued input; acknowledge only if admitted.")
