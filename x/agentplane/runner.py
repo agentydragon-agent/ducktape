@@ -379,7 +379,10 @@ class _ProtocolSession:
                                     )
                                 )
         elif frame_type == "result":
-            status = "TURN_STATUS_FAILED" if frame.get("is_error") else "TURN_STATUS_COMPLETED"
+            if frame.get("terminal_reason") == "aborted_streaming":
+                status = "TURN_STATUS_INTERRUPTED"
+            else:
+                status = "TURN_STATUS_FAILED" if frame.get("is_error") else "TURN_STATUS_COMPLETED"
             result_text = _string(frame.get("result"))
             await self._emit_turn_completed(
                 status=status,
