@@ -319,6 +319,9 @@ class _ProtocolSession:
         while line := await stdout.readline():
             frame = self._decode(line)
             request_id = frame.get("id")
+            if request_id is None and frame.get("type") == "control_response":
+                response = frame.get("response")
+                request_id = response.get("request_id") if isinstance(response, dict) else None
             if isinstance(request_id, (str, int)) and str(request_id) in self.waiters:
                 waiter = self.waiters[str(request_id)]
                 if not waiter.done():
