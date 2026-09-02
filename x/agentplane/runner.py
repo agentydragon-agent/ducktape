@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 from collections.abc import AsyncIterable, Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from importlib import import_module
 from typing import Any
@@ -73,6 +74,7 @@ class _ProtocolSession:
         self.pending_inputs: list[str] = []
         self.open_tool_call_id = ""
         self.turn_text = ""
+        self.session_ready = asyncio.Event()
         self.closed = False
 
     async def consume(self, requests: AsyncIterable[protocol_pb2.ClientMessage]) -> None:
@@ -178,8 +180,13 @@ class _ProtocolSession:
             self.reader_task = asyncio.create_task(self._read_native(), name="agentplane-native-reader")
         if self.stderr_task is None:
             self.stderr_task = asyncio.create_task(self._read_stderr(), name="agentplane-native-stderr")
+        if self.provider == protocol_pb2.PROVIDER_CLAUDE and not native_session_id:
+            with suppress(TimeoutError):
+                await asyncio.wait_for(self.session_ready.wait(), timeout=10)
+                # Ready still communicates that the process is usable; the native evidence
+                # may provide a delayed session id for a provider with slow initialization.
         await self._emit_process("PROCESS_STATUS_READY", "native harness initialized")
-        await self._emit_ready(native_session_id or "", capabilities)
+        await self._emit_ready(native_session_id or self.thread_id, capabilities)
 
     async def input(self, request: protocol_pb2.Input) -> None:
         if self.process is None:
@@ -356,7 +363,12 @@ class _ProtocolSession:
 
     async def _translate_claude(self, frame: Mapping[str, Any]) -> None:
         frame_type = frame.get("type")
-        if frame_type == "user":
+        if frame_type == "system":
+            session_id = frame.get("session_id")
+            if isinstance(session_id, str):
+                self.thread_id = session_id
+                self.session_ready.set()
+        elif frame_type == "user":
             native_id = frame.get("uuid")
             if isinstance(native_id, str) and self.pending_inputs:
                 input_id = self.pending_inputs.pop(0)
