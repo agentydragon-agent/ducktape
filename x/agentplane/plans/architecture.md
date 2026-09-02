@@ -96,8 +96,8 @@ needed to address that failure.
 
 ## Native capture is the first vertical slice
 
-The initial implementation lives under `x/agentplane/` and has explicit provider drivers. It should
-produce small fixture transcripts containing:
+The initial implementation lives under `x/agentplane/` and has explicit provider drivers. A live
+capture should produce an inspectable bundle containing:
 
 - ordered native frames in both directions;
 - upstream model request bodies and streamed response chunks;
@@ -105,8 +105,10 @@ produce small fixture transcripts containing:
 - process exit status; and
 - hand-authored expected behavior, including tool and workspace effects where relevant.
 
-A transcript is the evidence. Do not add redundant lengths, hashes, timestamps, parsed copies,
-manifest inventories, checksum files, or a custom promotion/DLP system.
+The live capture is investigation evidence. Keep only the compact upstream request/response inputs
+needed by replay tests in Git; regenerate verbose native logs with the capture scripts when needed.
+Do not add redundant lengths, hashes, timestamps, parsed copies, manifest inventories, checksum files,
+or a custom promotion/DLP system.
 
 The upstream capture boundary must never serialize HTTP headers, cookies, environment variables,
 OAuth state, or credentials. Use a synthetic workspace and ordinary repository secret checks plus a

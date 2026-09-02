@@ -6,11 +6,16 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 # gazelle:resolve py x.agentplane.capture.llm_recording_proxy //x/agentplane/capture:llm_recording_proxy
 # gazelle:resolve py x.agentplane.capture.records //x/agentplane/capture:records
 # gazelle:resolve py x.agentplane.capture.replay //x/agentplane/capture:replay
+# gazelle:resolve py x.agentplane.capture.replay_fixtures //x/agentplane/capture:replay_fixtures
 # gazelle:resolve py x.agentplane.capture.providers.shared_capture //x/agentplane/capture/providers:shared_capture
 # gazelle:resolve py x.agentplane.capture.providers.claude.driver //x/agentplane/capture/providers/claude:driver
 # gazelle:resolve py x.agentplane.capture.providers.claude.scenarios //x/agentplane/capture/providers/claude:scenarios
+# gazelle:resolve py x.agentplane.capture.providers.claude.replay_assertions //x/agentplane/capture/providers/claude:replay_assertions
+# gazelle:resolve py x.agentplane.capture.providers.claude.replay_fixtures //x/agentplane/capture/providers/claude:replay_fixtures
 # gazelle:resolve py x.agentplane.capture.providers.codex.driver //x/agentplane/capture/providers/codex:driver
 # gazelle:resolve py x.agentplane.capture.providers.codex.scenarios //x/agentplane/capture/providers/codex:scenarios
+# gazelle:resolve py x.agentplane.capture.providers.codex.replay_assertions //x/agentplane/capture/providers/codex:replay_assertions
+# gazelle:resolve py x.agentplane.capture.providers.codex.replay_fixtures //x/agentplane/capture/providers/codex:replay_fixtures
 
 package(default_visibility = ["//visibility:public"])
 
@@ -23,10 +28,31 @@ py_binary(
 test_suite(
     name = "tests",
     tests = [
-        "//x/agentplane/capture/tests:test_native_replay",
+        ":test_native_replay",
         "//x/agentplane/capture/tests:test_proxy",
         "//x/agentplane/capture/tests:test_records",
         "//x/agentplane/capture/tests:test_replay",
+    ],
+)
+
+test_suite(
+    name = "test_native_replay",
+    tests = [
+        "//x/agentplane/capture/providers/claude:test_native_replay",
+        "//x/agentplane/capture/providers/codex:test_native_replay",
+    ],
+)
+
+py_library(
+    name = "replay_fixtures",
+    testonly = True,
+    srcs = ["replay_fixtures.py"],
+    visibility = ["//x/agentplane/capture:__subpackages__"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//x/agentplane/capture:replay",
+        "//x/agentplane/capture/providers:shared_capture",
+        "@pypi//pytest",
     ],
 )
 
@@ -61,11 +87,6 @@ py_library(
     srcs = ["replay.py"],
     visibility = ["//x/agentplane/capture:__subpackages__"],
     deps = ["//x/agentplane/capture:records"],
-)
-
-py_library(
-    name = "secret_scan",
-    srcs = ["secret_scan.py"],
 )
 
 py_library(

@@ -1,2 +1,0 @@
-{"time_ns":5038084905223420,"text":"{\"type\":\"control_request\",\"request_id\":\"capture-2aa948edd8b04bdeac577e607878567c\",\"request\":{\"subtype\":\"initialize\"}}"}
-{"time_ns":5038085497595332,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Use shell to run `printf 'PROBE_STDOUT\\\\n'` and `sh -c 'printf \\\"probe stdout before failure\\\\n\\\"; printf \\\"probe stderr before failure\\\\n\\\" >&2; exit 23'`; report outcomes.\"},\"parent_tool_use_id\":null,\"uuid\":\"c32d4385-031a-469a-b7f9-c90d94f015ff\"}"}

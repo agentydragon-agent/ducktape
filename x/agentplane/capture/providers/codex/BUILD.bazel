@@ -7,6 +7,57 @@ py_library(
 )
 
 py_library(
+    name = "replay_assertions",
+    testonly = True,
+    srcs = ["replay_assertions.py"],
+    deps = [
+        ":driver",
+        "//x/agentplane/capture:replay",
+    ],
+)
+
+py_library(
+    name = "replay_fixtures",
+    testonly = True,
+    srcs = ["replay_fixtures.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//x/agentplane/capture:replay",
+        "//x/agentplane/capture/providers:shared_capture",
+        "//x/agentplane/capture/providers/codex:scenarios",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_native_replay",
+    # Native clients may wait through their own connection-recovery backoff.
+    timeout = "moderate",
+    srcs = ["test_native_replay.py"],
+    data = [
+        "//x/agentplane/capture/testdata:upstream_replay_fixtures",
+        "@agentplane_codex_cli_linux_x64//:files",
+    ],
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":driver",
+        ":replay_assertions",
+        ":replay_fixtures",
+        ":scenarios",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "//x/agentplane/capture:replay",
+        "//x/agentplane/capture:replay_fixtures",
+        "//x/agentplane/capture/providers:shared_capture",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "scenarios",
     srcs = ["scenarios.py"],
     visibility = [

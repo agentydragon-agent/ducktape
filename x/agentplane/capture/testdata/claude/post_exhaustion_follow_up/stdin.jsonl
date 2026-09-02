@@ -1,3 +1,0 @@
-{"time_ns":5048344913450470,"text":"{\"type\":\"control_request\",\"request_id\":\"capture-90e75198c52d4504a9e27b041663de40\",\"request\":{\"subtype\":\"initialize\"}}"}
-{"time_ns":5048345576982495,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: POST_EXHAUSTION_FIRST_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"284c8ef6-83e2-4213-b462-885492a03f9a\"}"}
-{"time_ns":5048543708665104,"text":"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK\"},\"parent_tool_use_id\":null,\"uuid\":\"cef8a3e0-9e26-44a5-8f6d-e67a560a9673\"}"}
