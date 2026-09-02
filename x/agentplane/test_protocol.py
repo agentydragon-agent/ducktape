@@ -192,7 +192,10 @@ async def test_shared_interrupt_command_has_explicit_terminal_outcome(
                     llm_endpoint=endpoint,
                 )
             )
-            yield _input("input-1", "Use the long-running shell probe and do not answer early.")
+            yield _input(
+                "input-1",
+                'Use the Bash tool to run `sh -c \'printf "wait_started\\n"; sleep 20; printf "wait_finished\\n"\'`; do not answer early.',
+            )
             await active.wait()
             yield protocol_pb2.ClientMessage(
                 interrupt=protocol_pb2.Interrupt(command_id="interrupt-1", reason="test", cancel_queued=False)
