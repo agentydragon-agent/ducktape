@@ -33,7 +33,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          image: git.allegedly.works/ducktape-ci/agentplane-runner:devel-20260902211817-1e7f2d9 # {"$imagepolicy": "flux-system:agentplane-runner"}
+          image: git.allegedly.works/ducktape-ci/agentplane-runner:devel-20260902213732-7d1c803 # {"$imagepolicy": "flux-system:agentplane-runner"}
           command:
             - /usr/local/bin/agentplane-runner
           args:
