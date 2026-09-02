@@ -10,21 +10,23 @@ from pathlib import Path
 from threading import Lock, Thread
 from typing import Any
 
-from x.agentplane.capture.records import ConnectionDroppedRecord, RequestRecord, ResponseChunkRecord
+from x.agentplane.capture.records import ConnectionDroppedRecord, ProxyErrorRecord, RequestRecord, ResponseChunkRecord
 
 
 def _requests(path: Path) -> list[RequestRecord]:
     return [RequestRecord.model_validate_json(line) for line in path.read_text().splitlines()]
 
 
-def _response_events(path: Path) -> list[ResponseChunkRecord | ConnectionDroppedRecord]:
-    result: list[ResponseChunkRecord | ConnectionDroppedRecord] = []
+def _response_events(path: Path) -> list[ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord]:
+    result: list[ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord] = []
     for line in path.read_text().splitlines():
         kind = json.loads(line).get("kind")
         if kind == "response_chunk":
             result.append(ResponseChunkRecord.model_validate_json(line))
         elif kind == "connection_dropped":
             result.append(ConnectionDroppedRecord.model_validate_json(line))
+        elif kind == "proxy_error":
+            result.append(ProxyErrorRecord.model_validate_json(line))
         else:
             raise ValueError(f"unexpected replay response record kind: {kind!r}")
     return result
@@ -46,7 +48,7 @@ class ReplayServer(ThreadingHTTPServer):
 
     def __init__(self, fixture: Path):
         self.requests = _requests(fixture / "llm-requests.jsonl")
-        events: dict[str, list[ResponseChunkRecord | ConnectionDroppedRecord]] = {}
+        events: dict[str, list[ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord]] = {}
         for row in _response_events(fixture / "llm-responses.jsonl"):
             events.setdefault(row.capture_request_id, []).append(row)
         self.responses = [events.get(row.capture_request_id, []) for row in self.requests]
@@ -87,7 +89,8 @@ class ReplayServer(ThreadingHTTPServer):
                     ),
                     None,
                 )
-                if header_drop:
+                proxy_error = next((event for event in events if isinstance(event, ProxyErrorRecord)), None)
+                if header_drop or proxy_error:
                     self.connection.shutdown(2)  # SHUT_RDWR
                     self.connection.close()
                     return
