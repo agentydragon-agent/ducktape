@@ -1,8 +1,0 @@
-{"time_ns":5037965457648363,"text":"{\"method\":\"initialize\",\"id\":\"capture-1\",\"params\":{\"clientInfo\":{\"name\":\"agentplane-capture\",\"version\":\"0.1\"},\"capabilities\":null}}"}
-{"time_ns":5037965943950781,"text":"{\"method\":\"initialized\"}"}
-{"time_ns":5037965944336490,"text":"{\"method\":\"thread/start\",\"id\":\"capture-2\",\"params\":{\"cwd\":\"/tmp/agentplane-new-fixtures/work-codex-idle_resume\",\"approvalPolicy\":\"never\",\"sandbox\":\"danger-full-access\",\"ephemeral\":false,\"model\":\"chatgpt/oai-responses/gpt-5.6-luna\",\"baseInstructions\":\"You are a concise test assistant. Follow user requests using the available tools.\",\"config\":{\"model_reasoning_effort\":\"low\"}}}"}
-{"time_ns":5037965964360938,"text":"{\"method\":\"turn/start\",\"id\":\"capture-3\",\"params\":{\"threadId\":\"01a05d83-13e6-7f42-9407-9cf5ebf4916f\",\"input\":[{\"type\":\"text\",\"text\":\"Reply with exactly: IDLE_RESUME_SEED_OK\",\"text_elements\":[]}]}}"}
-{"time_ns":5037967711431365,"text":"{\"method\":\"initialize\",\"id\":\"capture-4\",\"params\":{\"clientInfo\":{\"name\":\"agentplane-capture\",\"version\":\"0.1\"},\"capabilities\":null}}"}
-{"time_ns":5037967980452266,"text":"{\"method\":\"initialized\"}"}
-{"time_ns":5037967980750842,"text":"{\"method\":\"thread/resume\",\"id\":\"capture-5\",\"params\":{\"threadId\":\"01a05d83-13e6-7f42-9407-9cf5ebf4916f\"}}"}
-{"time_ns":5037968130033086,"text":"{\"method\":\"turn/start\",\"id\":\"capture-6\",\"params\":{\"threadId\":\"01a05d83-13e6-7f42-9407-9cf5ebf4916f\",\"input\":[{\"type\":\"text\",\"text\":\"Reply with exactly: IDLE_RESUME_OK\",\"text_elements\":[]}]}}"}

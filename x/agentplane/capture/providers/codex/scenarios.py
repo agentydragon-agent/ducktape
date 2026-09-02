@@ -147,6 +147,9 @@ def command(binary: str, *, endpoint: str) -> list[str]:
         'model_providers = {agentplane = {name = "Agentplane LiteLLM", '
         f'base_url = "{endpoint}", env_key = "OPENAI_API_KEY", wire_api = "responses"}}}}'
     )
+    # Run deterministic tool probes without an interactive approval round-trip.
+    approval_policy = 'approval_policy = "never"'
+    sandbox_mode = 'sandbox_mode = "danger-full-access"'
     # Remove automatic skill discovery and its <skills_instructions> prompt block.
     skills = "skills = { bundled = { enabled = false }, include_instructions = false }"
     # These captures use a fixed native approval policy, so omit its redundant permissions
@@ -161,6 +164,10 @@ def command(binary: str, *, endpoint: str) -> list[str]:
         binary,
         "-c",
         provider,
+        "-c",
+        approval_policy,
+        "-c",
+        sandbox_mode,
         "-c",
         providers,
         "-c",

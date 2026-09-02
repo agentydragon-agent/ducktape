@@ -55,7 +55,16 @@ def submit_while_active(capture: NativeCapture, *, scenario: str) -> dict[str, A
         'printf "wait_finished\\n"\'`; after it finishes reply ONLY WAIT_DONE.'
     )
     capture.write(first)
-    active = capture.await_frame(lambda item: item.get("type") == "stream_event", timeout=60)
+    active = capture.await_frame(
+        lambda item: (
+            item.get("type") == "stream_event"
+            or (
+                item.get("type") == "assistant"
+                and any(block.get("type") == "tool_use" for block in item.get("message", {}).get("content", []))
+            )
+        ),
+        timeout=60,
+    )
     second = driver.user_frame("Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
     capture.write(second)
     terminal = capture.await_frame(lambda item: item.get("type") == "result", timeout=120)
@@ -68,7 +77,7 @@ def interrupt(capture: NativeCapture, *, with_queued_input: bool) -> dict[str, A
         'printf "wait_finished\\n"\'`; do not answer early.'
     )
     capture.write(first)
-    active = capture.await_frame(lambda item: item.get("type") == "stream_event", timeout=60)
+    active = capture.await_frame(lambda item: item.get("type") in {"stream_event", "assistant", "system"}, timeout=60)
     queued_uuid = None
     if with_queued_input:
         queued = driver.user_frame("This is intentionally queued input; acknowledge only if admitted.")
@@ -112,8 +121,8 @@ def command(binary: str, *, model: str, resume_id: str | None = None) -> list[st
         "--output-format",
         "stream-json",
         "--verbose",
-        "--permission-mode",
-        "bypassPermissions",
+        "--permission-prompt-tool",
+        "stdio",
         "--include-partial-messages",
         "--input-format",
         "stream-json",

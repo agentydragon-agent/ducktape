@@ -43,6 +43,8 @@ class NativeCapture:
         self.process: subprocess.Popen[bytes] | None = None
         self.frames: queue.Queue[str] = queue.Queue()
         self.threads: list[threading.Thread] = []
+        self.frame_handler: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None
+        self._stdin_lock = threading.Lock()
 
     def start(self) -> None:
         self.process = subprocess.Popen(
@@ -75,8 +77,9 @@ class NativeCapture:
         assert self.process.stdin is not None
         payload = json.dumps(frame, separators=(",", ":")).encode()
         write_jsonl(self.output / "stdin.jsonl", text_record(payload))
-        self.process.stdin.write(payload + b"\n")
-        self.process.stdin.flush()
+        with self._stdin_lock:
+            self.process.stdin.write(payload + b"\n")
+            self.process.stdin.flush()
 
     def await_frame(self, predicate: Callable[[dict[str, Any]], bool], *, timeout: float) -> dict[str, Any]:
         end = time.monotonic() + timeout
@@ -113,6 +116,13 @@ class NativeCapture:
             data = line.rstrip(b"\r\n")
             value = text(data)
             write_jsonl(self.output / "stdout.jsonl", TextRecord(time_ns=time.monotonic_ns(), text=value))
+            frame = json.loads(value)
+            if not isinstance(frame, dict):
+                raise ValueError("native stdout frame must be a JSON object")
+            if self.frame_handler is not None:
+                response = self.frame_handler(frame)
+                if response is not None:
+                    self.write(response)
             self.frames.put(value)
 
     def _stderr(self) -> None:

@@ -1,4 +1,0 @@
-{"time_ns":5037863401263924,"text":"{\"method\":\"initialize\",\"id\":\"capture-1\",\"params\":{\"clientInfo\":{\"name\":\"agentplane-capture\",\"version\":\"0.1\"},\"capabilities\":null}}"}
-{"time_ns":5037866416489669,"text":"{\"method\":\"initialized\"}"}
-{"time_ns":5037866416749337,"text":"{\"method\":\"thread/start\",\"id\":\"capture-2\",\"params\":{\"cwd\":\"/tmp/agentplane-new-fixtures/work-codex-baseline\",\"approvalPolicy\":\"never\",\"sandbox\":\"danger-full-access\",\"ephemeral\":true,\"model\":\"chatgpt/oai-responses/gpt-5.6-luna\",\"baseInstructions\":\"You are a concise test assistant. Follow user requests using the available tools.\",\"config\":{\"model_reasoning_effort\":\"low\"}}}"}
-{"time_ns":5037866786462712,"text":"{\"method\":\"turn/start\",\"id\":\"capture-3\",\"params\":{\"threadId\":\"01a05d81-8f9f-7473-917d-98514fc1a512\",\"input\":[{\"type\":\"text\",\"text\":\"Reply with exactly: CAPTURE_BASELINE_OK\",\"text_elements\":[]}]}}"}
