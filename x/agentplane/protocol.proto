@@ -1,0 +1,203 @@
+// Shared streamed protocol between an Agentplane client and a native harness runner.
+//
+// The runner remains responsible for translating these messages to the selected native
+// Claude Code or Codex protocol. This is deliberately not a transcript schema: an Event
+// is an ordered observation from one live runner, while native_payload_json preserves
+// provider detail that the common vocabulary does not claim to understand.
+//
+// One Connect RPC is one live runner attachment. The client sends Start first, then may
+// send inputs and controls while the server streams observations. The server never
+// interprets a client write as admitted merely because it was written: InputAccepted and
+// the provider observation (where one exists) are separate events.
+//
+// Recovery rule: a transport disconnect is not permission to replay an input. The runner
+// may keep the native process alive and a client may reconnect using the deployment's
+// attachment mechanism, but this protocol has no implicit retry or duplicate suppression
+// for Submit/Steer. If the native model service fails, the runner reports the provider's
+// observed retry/failure outcome; a later input is a new command and may be accepted only
+// after the native harness is ready for it.
+syntax = "proto3";
+
+package ducktape.agentplane.v1;
+
+option java_multiple_files = true;
+option java_package = "com.agentydragon.ducktape.agentplane.v1";
+
+service HarnessRunner {
+  // Attach to one native harness process and exchange commands and ordered observations.
+  rpc Connect(stream ClientMessage) returns (stream ServerMessage);
+}
+
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_CLAUDE = 1;
+  PROVIDER_CODEX = 2;
+}
+
+enum InputMode {
+  INPUT_MODE_SUBMIT = 0;
+  // A provider-native active-turn insertion. Unsupported providers must reject it rather
+  // than silently turning it into a new turn or a normal submit.
+  INPUT_MODE_STEER = 1;
+}
+
+enum InputDisposition {
+  INPUT_DISPOSITION_UNSPECIFIED = 0;
+  INPUT_DISPOSITION_STARTED = 1;
+  INPUT_DISPOSITION_STEERED = 2;
+  INPUT_DISPOSITION_QUEUED = 3;
+  INPUT_DISPOSITION_REJECTED = 4;
+}
+
+enum TurnStatus {
+  TURN_STATUS_UNSPECIFIED = 0;
+  TURN_STATUS_COMPLETED = 1;
+  TURN_STATUS_INTERRUPTED = 2;
+  TURN_STATUS_FAILED = 3;
+  // The native process ended before the provider supplied a terminal turn result.
+  TURN_STATUS_PROCESS_LOST = 4;
+}
+
+enum ProcessStatus {
+  PROCESS_STATUS_UNSPECIFIED = 0;
+  PROCESS_STATUS_STARTING = 1;
+  PROCESS_STATUS_READY = 2;
+  PROCESS_STATUS_RUNNING = 3;
+  PROCESS_STATUS_EXITED = 4;
+}
+
+message Start {
+  Provider provider = 1;
+  string cwd = 2;
+  string model = 3;
+  string reasoning_effort = 4;
+  // Provider-native continuity identifier. Claude uses a session id; Codex uses a thread id.
+  string resume_id = 5;
+  // The upstream fake/real model endpoint used by the native harness. The runner owns
+  // credentials and environment; they are intentionally absent from this message.
+  string llm_endpoint = 6;
+  bool persist = 7;
+}
+
+message Input {
+  string input_id = 1;
+  string text = 2;
+  InputMode mode = 3;
+}
+
+message Interrupt {
+  string command_id = 1;
+  string reason = 2;
+  bool cancel_queued = 3;
+}
+
+message Close {
+  string reason = 1;
+}
+
+message ClientMessage {
+  oneof command {
+    Start start = 1;
+    Input input = 2;
+    Interrupt interrupt = 3;
+    Close close = 4;
+  }
+}
+
+message Ready {
+  string runner_id = 1;
+  Provider provider = 2;
+  string native_session_id = 3;
+  repeated string capabilities = 4;
+}
+
+message ProcessState {
+  ProcessStatus status = 1;
+  int32 exit_code = 2;
+  string detail = 3;
+}
+
+message InputAccepted {
+  string input_id = 1;
+  InputDisposition disposition = 2;
+  string native_id = 3;
+  string detail = 4;
+}
+
+message TurnStarted {
+  string turn_id = 1;
+  string native_turn_id = 2;
+}
+
+message UserInputObserved {
+  string input_id = 1;
+  string native_id = 2;
+  bool current_turn = 3;
+}
+
+message TextDelta {
+  string text = 1;
+  bool reasoning = 2;
+  string native_item_id = 3;
+}
+
+message ToolCallStarted {
+  string tool_call_id = 1;
+  string native_item_id = 2;
+  string tool_name = 3;
+  // JSON object as text, retaining arbitrary provider tool arguments without a second
+  // provider-neutral schema that would immediately become a lowest-common-denominator.
+  string arguments_json = 4;
+}
+
+message ToolCallDelta {
+  string tool_call_id = 1;
+  string text = 2;
+}
+
+message ToolCallCompleted {
+  string tool_call_id = 1;
+  string result_json = 2;
+  bool succeeded = 3;
+}
+
+message TurnCompleted {
+  string turn_id = 1;
+  TurnStatus status = 2;
+  string result_text = 3;
+  string error = 4;
+  string native_turn_id = 5;
+}
+
+message NativeEvent {
+  Provider provider = 1;
+  string kind = 2;
+  string native_id = 3;
+  // Exact provider frame as JSON text. This is an escape hatch for evidence and
+  // provider-specific behavior, not an invitation for clients to parse native wire data.
+  string payload_json = 4;
+}
+
+message Event {
+  uint64 sequence = 1;
+  oneof observation {
+    Ready ready = 2;
+    ProcessState process = 3;
+    InputAccepted input_accepted = 4;
+    UserInputObserved user_input = 5;
+    TurnStarted turn_started = 6;
+    TextDelta text_delta = 7;
+    ToolCallStarted tool_call_started = 8;
+    ToolCallDelta tool_call_delta = 9;
+    ToolCallCompleted tool_call_completed = 10;
+    TurnCompleted turn_completed = 11;
+    NativeEvent native = 12;
+  }
+}
+
+message ServerMessage {
+  oneof message {
+    Event event = 1;
+    string protocol_error = 2;
+  }
+}

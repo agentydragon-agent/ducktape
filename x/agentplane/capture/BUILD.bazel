@@ -47,7 +47,10 @@ py_library(
     name = "replay_fixtures",
     testonly = True,
     srcs = ["replay_fixtures.py"],
-    visibility = ["//x/agentplane/capture:__subpackages__"],
+    visibility = [
+        "//x/agentplane:__pkg__",
+        "//x/agentplane/capture:__subpackages__",
+    ],
     deps = [
         "//util/bazel:runfiles",
         "//x/agentplane/capture:replay",

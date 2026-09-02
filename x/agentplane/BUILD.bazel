@@ -1,0 +1,48 @@
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "protocol_proto",
+    srcs = ["protocol.proto"],
+)
+
+py_proto_library(
+    name = "protocol_py_proto",
+    deps = [":protocol_proto"],
+)
+
+py_library(
+    name = "runner",
+    srcs = ["runner.py"],
+    deps = [
+        ":protocol_py_proto",
+        "//x/agentplane/capture/providers/claude:driver",
+        "//x/agentplane/capture/providers/claude:scenarios",
+        "//x/agentplane/capture/providers/codex:driver",
+        "//x/agentplane/capture/providers/codex:scenarios",
+        "@pypi//grpcio",
+    ],
+)
+
+py_test(
+    name = "test_protocol",
+    timeout = "moderate",
+    srcs = ["test_protocol.py"],
+    data = [
+        "//x/agentplane/capture/testdata:upstream_replay_fixtures",
+        "@agentplane_codex_cli_linux_x64//:files",
+        "@claude_code_cli_linux_x64//:claude",
+    ],
+    deps = [
+        "//:conftest",
+        ":runner",
+        "//x/agentplane/capture/providers/claude:replay_fixtures",
+        "//x/agentplane/capture/providers/codex:replay_fixtures",
+        "@pypi//grpcio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

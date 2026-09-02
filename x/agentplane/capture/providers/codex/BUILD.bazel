@@ -3,7 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "driver",
     srcs = ["driver.py"],
-    visibility = ["//x/agentplane/capture:__subpackages__"],
+    visibility = ["//x/agentplane:__pkg__"],
 )
 
 py_library(
@@ -20,6 +20,7 @@ py_library(
     name = "replay_fixtures",
     testonly = True,
     srcs = ["replay_fixtures.py"],
+    visibility = ["//x/agentplane:__pkg__"],
     deps = [
         "//util/bazel:runfiles",
         "//x/agentplane/capture:replay",
@@ -61,6 +62,7 @@ py_library(
     name = "scenarios",
     srcs = ["scenarios.py"],
     visibility = [
+        "//x/agentplane:__pkg__",
         "//x/agentplane/capture:__pkg__",
         "//x/agentplane/capture:__subpackages__",
     ],
