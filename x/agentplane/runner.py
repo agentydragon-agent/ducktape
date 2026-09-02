@@ -19,8 +19,8 @@ from uuid import uuid4
 
 import grpc
 
-from x.agentplane.capture.providers.claude import driver as claude_driver, scenarios as claude_scenarios
-from x.agentplane.capture.providers.codex import driver as codex_driver, scenarios as codex_scenarios
+from x.agentplane.native.claude import driver as claude_driver, scenarios as claude_scenarios
+from x.agentplane.native.codex import driver as codex_driver, scenarios as codex_scenarios
 
 protocol_pb2: Any = import_module("x.agentplane.protocol_pb2")
 
@@ -35,11 +35,11 @@ def _string(value: Any) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _claude_default_command(binary: str, model: str, resume_id: str | None) -> Sequence[str]:
+def _claude_default_command(binary: str, model: str, continuation_id: str | None) -> Sequence[str]:
     # Claude's binary is a Node executable in the pinned image.  A caller can provide a
     # command builder when its execution environment needs the ELF-loader workaround used
     # by the replay tests; the protocol and runner do not depend on that implementation detail.
-    return claude_scenarios.command(binary, model=model, resume_id=resume_id)
+    return claude_scenarios.command(binary, model=model, resume_id=continuation_id)
 
 
 def _codex_default_command(binary: str, endpoint: str) -> Sequence[str]:
@@ -73,8 +73,8 @@ class _ProtocolSession:
         self.active_native_turn_id = ""
         self.pending_inputs: list[str] = []
         self.open_tool_call_id = ""
-        self.turn_text = ""
         self.session_ready = asyncio.Event()
+        self.translation_source_sequence = 0
         self.closed = False
 
     async def consume(self, requests: AsyncIterable[protocol_pb2.ClientMessage]) -> None:
@@ -124,7 +124,7 @@ class _ProtocolSession:
 
         if self.provider == protocol_pb2.PROVIDER_CLAUDE:
             command = self.config.claude_command_builder(
-                self.config.claude_binary, request.model, request.resume_id or None
+                self.config.claude_binary, request.model, request.continuation_id or None
             )
             environment = {
                 **os.environ,
@@ -142,7 +142,7 @@ class _ProtocolSession:
                 )
             )
             capabilities = ["submit", "interrupt", "idle_resume"]
-            native_session_id = request.resume_id
+            continuation_id = request.continuation_id
         else:
             command = self.config.codex_command_builder(self.config.codex_binary, request.llm_endpoint)
             environment = {
@@ -161,8 +161,8 @@ class _ProtocolSession:
             # task can fulfil.
             self.reader_task = asyncio.create_task(self._read_native(), name="agentplane-native-reader")
             self.stderr_task = asyncio.create_task(self._read_stderr(), name="agentplane-native-stderr")
-            if request.resume_id:
-                start = codex_driver.thread_resume("agentplane-thread-resume", thread_id=request.resume_id)
+            if request.continuation_id:
+                start = codex_driver.thread_resume("agentplane-thread-resume", thread_id=request.continuation_id)
             else:
                 start = codex_driver.thread_start(
                     "agentplane-thread-start",
@@ -174,19 +174,19 @@ class _ProtocolSession:
             started = await self._write_and_wait(start, lambda frame: frame.get("id") == start["id"])
             self.thread_id = self._thread_id(started)
             capabilities = ["submit", "steer", "interrupt", "idle_resume"]
-            native_session_id = self.thread_id
+            continuation_id = self.thread_id
 
         if self.reader_task is None:
             self.reader_task = asyncio.create_task(self._read_native(), name="agentplane-native-reader")
         if self.stderr_task is None:
             self.stderr_task = asyncio.create_task(self._read_stderr(), name="agentplane-native-stderr")
-        if self.provider == protocol_pb2.PROVIDER_CLAUDE and not native_session_id:
+        if self.provider == protocol_pb2.PROVIDER_CLAUDE and not continuation_id:
             with suppress(TimeoutError):
                 await asyncio.wait_for(self.session_ready.wait(), timeout=10)
                 # Ready still communicates that the process is usable; the native evidence
                 # may provide a delayed session id for a provider with slow initialization.
         await self._emit_process("PROCESS_STATUS_READY", "native harness initialized")
-        await self._emit_ready(native_session_id or self.thread_id, capabilities)
+        await self._emit_ready(continuation_id or self.thread_id, capabilities)
 
     async def input(self, request: protocol_pb2.Input) -> None:
         if self.process is None:
@@ -207,16 +207,18 @@ class _ProtocolSession:
             disposition = "INPUT_DISPOSITION_QUEUED" if self.active_turn_id else "INPUT_DISPOSITION_STARTED"
             if not self.active_turn_id:
                 self.active_turn_id = f"turn-{uuid4().hex}"
-                await self._emit_turn_started(self.active_turn_id, "")
+                await self._emit_turn_started(self.active_turn_id)
             self.pending_inputs.append(request.input_id)
-            native = claude_driver.user_frame(request.text)
-            await self._write(native)
-            await self._emit_input_accepted(request.input_id, disposition, native_id=native["uuid"])
+            await self._write(claude_driver.user_frame(request.text))
+            await self._emit_input_accepted(request.input_id, disposition)
             return
 
-        self.pending_inputs.append(request.input_id)
-        self.active_turn_id = f"turn-{uuid4().hex}"
         if request.mode == protocol_pb2.INPUT_MODE_STEER:
+            if not self.active_turn_id or not self.active_native_turn_id:
+                await self._emit_input_accepted(
+                    request.input_id, "INPUT_DISPOSITION_REJECTED", detail="Codex steering requires an active turn"
+                )
+                return
             native = codex_driver.steer(
                 f"agentplane-{uuid4().hex}",
                 thread_id=self.thread_id,
@@ -224,11 +226,13 @@ class _ProtocolSession:
                 text=request.text,
             )
             await self._write_and_wait(native, lambda frame: frame.get("id") == native["id"])
-            await self._emit_input_accepted(
-                request.input_id, "INPUT_DISPOSITION_STEERED", native_id=self.active_native_turn_id
-            )
+            await self._emit_input_accepted(request.input_id, "INPUT_DISPOSITION_STEERED")
             return
 
+        was_active = bool(self.active_turn_id)
+        if not was_active:
+            self.active_turn_id = f"turn-{uuid4().hex}"
+        self.pending_inputs.append(request.input_id)
         native = codex_driver.turn_start(f"agentplane-{uuid4().hex}", thread_id=self.thread_id, text=request.text)
         response = await self._write_and_wait(native, lambda frame: frame.get("id") == native["id"])
         turn = response.get("result", {}).get("turn", {})
@@ -239,15 +243,17 @@ class _ProtocolSession:
             )
             return
         self.active_native_turn_id = native_turn_id
-        await self._emit_input_accepted(request.input_id, "INPUT_DISPOSITION_STARTED", native_id=native_turn_id)
-        await self._emit_turn_started(self.active_turn_id, native_turn_id)
+        disposition = "INPUT_DISPOSITION_QUEUED" if was_active else "INPUT_DISPOSITION_STARTED"
+        await self._emit_input_accepted(request.input_id, disposition)
+        if not was_active:
+            await self._emit_turn_started(self.active_turn_id)
 
     async def interrupt(self, request: protocol_pb2.Interrupt) -> None:
         if self.process is None or not self.active_turn_id:
             await self._protocol_error("interrupt received with no active turn")
             return
         if self.provider == protocol_pb2.PROVIDER_CLAUDE:
-            native = claude_driver.interrupt(cancel_queued=request.cancel_queued)
+            native = claude_driver.interrupt(cancel_queued=request.cancel_queued, reason=request.reason or "agentplane")
         else:
             native = codex_driver.interrupt(
                 f"agentplane-{uuid4().hex}", thread_id=self.thread_id, turn_id=self.active_native_turn_id
@@ -257,7 +263,6 @@ class _ProtocolSession:
             interrupt_acknowledged=protocol_pb2.InterruptAcknowledged(
                 command_id=request.command_id,
                 accepted=True,
-                native_id=str(native.get("request_id", native.get("id", ""))),
                 detail="interrupt admitted by runner; native acknowledgement is preserved separately",
             )
         )
@@ -324,20 +329,19 @@ class _ProtocolSession:
                 waiter = self.waiters[str(request_id)]
                 if not waiter.done():
                     waiter.set_result(frame)
-            await self._emit_native(frame)
-            await self._translate(frame)
+            source_sequence = await self._emit_native(frame)
+            self.translation_source_sequence = source_sequence
+            try:
+                await self._translate(frame)
+            finally:
+                self.translation_source_sequence = 0
         await self._emit_process("PROCESS_STATUS_EXITED", "native harness exited")
         error = RuntimeError("native harness exited before its pending operation completed")
         for waiter in self.waiters.values():
             if not waiter.done():
                 waiter.set_exception(error)
         if self.active_turn_id:
-            await self._emit_turn_completed(
-                status="TURN_STATUS_PROCESS_LOST",
-                result_text="",
-                error=str(error),
-                native_turn_id=self.active_native_turn_id,
-            )
+            await self._emit_turn_completed(status="TURN_STATUS_PROCESS_LOST", error=str(error))
 
     async def _read_stderr(self) -> None:
         process = self.process
@@ -363,16 +367,28 @@ class _ProtocolSession:
 
     async def _translate_claude(self, frame: Mapping[str, Any]) -> None:
         frame_type = frame.get("type")
-        if frame_type == "system":
+        if frame_type == "control_request":
+            request = frame.get("request")
+            if isinstance(request, dict) and request.get("subtype") == "can_use_tool":
+                await self._write(
+                    {
+                        "type": "control_response",
+                        "response": {
+                            "subtype": "success",
+                            "request_id": frame.get("request_id", ""),
+                            "response": {"behavior": "allow", "updatedInput": request.get("input", {})},
+                        },
+                    }
+                )
+        elif frame_type == "system":
             session_id = frame.get("session_id")
             if isinstance(session_id, str):
                 self.thread_id = session_id
                 self.session_ready.set()
         elif frame_type == "user":
-            native_id = frame.get("uuid")
-            if isinstance(native_id, str) and self.pending_inputs:
+            if isinstance(frame.get("uuid"), str) and self.pending_inputs:
                 input_id = self.pending_inputs.pop(0)
-                await self._emit_user_input(input_id, native_id, bool(self.active_turn_id))
+                await self._emit_user_input(input_id, bool(self.active_turn_id))
             message = frame.get("message")
             content = message.get("content") if isinstance(message, dict) else None
             if isinstance(content, list):
@@ -393,7 +409,7 @@ class _ProtocolSession:
                 delta = event.get("delta")
                 text = delta.get("text") if isinstance(delta, dict) else None
                 if isinstance(text, str) and text:
-                    await self._emit_text(text, bool(event.get("type") == "thinking_delta"), "")
+                    await self._emit_text(text, bool(event.get("type") == "thinking_delta"))
         elif frame_type == "assistant":
             message = frame.get("message")
             if isinstance(message, dict):
@@ -402,9 +418,7 @@ class _ProtocolSession:
                     for block in content:
                         if not isinstance(block, dict):
                             continue
-                        if block.get("type") == "text" and isinstance(block.get("text"), str):
-                            await self._emit_text(block["text"], False, "")
-                        elif block.get("type") == "tool_use":
+                        if block.get("type") == "tool_use":
                             tool_id = block.get("id")
                             tool_name = block.get("name")
                             if isinstance(tool_id, str) and isinstance(tool_name, str):
@@ -412,7 +426,6 @@ class _ProtocolSession:
                                 await self._emit(
                                     tool_call_started=protocol_pb2.ToolCallStarted(
                                         tool_call_id=tool_id,
-                                        native_item_id=tool_id,
                                         tool_name=tool_name,
                                         arguments_json=_json(block.get("input", {})),
                                     )
@@ -423,12 +436,7 @@ class _ProtocolSession:
             else:
                 status = "TURN_STATUS_FAILED" if frame.get("is_error") else "TURN_STATUS_COMPLETED"
             result_text = _string(frame.get("result"))
-            await self._emit_turn_completed(
-                status=status,
-                result_text=result_text,
-                error=result_text if status == "TURN_STATUS_FAILED" else "",
-                native_turn_id="",
-            )
+            await self._emit_turn_completed(status=status, error=result_text if status == "TURN_STATUS_FAILED" else "")
 
     async def _translate_codex(self, frame: Mapping[str, Any]) -> None:
         method = frame.get("method")
@@ -439,15 +447,13 @@ class _ProtocolSession:
             item = params.get("item")
             if isinstance(item, dict) and item.get("type") == "userMessage" and self.pending_inputs:
                 input_id = self.pending_inputs.pop(0)
-                native_id = _string(item.get("id"))
-                await self._emit_user_input(input_id, native_id, True)
+                await self._emit_user_input(input_id, True)
             elif isinstance(item, dict) and item.get("type") in ("commandExecution", "mcpToolCall"):
                 tool_id = _string(item.get("id"))
                 self.open_tool_call_id = tool_id
                 await self._emit(
                     tool_call_started=protocol_pb2.ToolCallStarted(
                         tool_call_id=tool_id,
-                        native_item_id=tool_id,
                         tool_name=str(item.get("type")),
                         arguments_json=_json({key: value for key, value in item.items() if key not in ("id", "type")}),
                     )
@@ -456,12 +462,12 @@ class _ProtocolSession:
         if method == "item/agentMessage/delta":
             delta = params.get("delta")
             if isinstance(delta, str):
-                await self._emit_text(delta, False, _string(params.get("itemId", "")))
+                await self._emit_text(delta, False)
             return
         if method == "item/reasoning/summaryTextDelta":
             delta = params.get("delta")
             if isinstance(delta, str):
-                await self._emit_text(delta, True, _string(params.get("itemId", "")))
+                await self._emit_text(delta, True)
             return
         if method == "item/commandExecution/outputDelta":
             delta = params.get("delta")
@@ -493,25 +499,22 @@ class _ProtocolSession:
             }.get(_string(native_status), "TURN_STATUS_FAILED")
             error_value = turn.get("error", {}).get("message", "") if isinstance(turn.get("error"), dict) else ""
             error = _string(error_value)
-            await self._emit_turn_completed(
-                status=status, result_text="", error=error, native_turn_id=_string(turn.get("id", ""))
-            )
+            await self._emit_turn_completed(status=status, error=error)
 
-    async def _emit_native(self, frame: Mapping[str, Any]) -> None:
+    async def _emit_native(self, frame: Mapping[str, Any]) -> int:
         native = protocol_pb2.NativeEvent(
             provider=self.provider,
             kind=str(frame.get("type", frame.get("method", "unknown"))),
-            native_id=str(frame.get("uuid", frame.get("id", ""))),
             payload_json=_json(dict(frame)),
         )
-        await self._emit(native=native)
+        return await self._emit(native=native)
 
-    async def _emit_ready(self, native_session_id: str, capabilities: Sequence[str]) -> None:
+    async def _emit_ready(self, continuation_id: str, capabilities: Sequence[str]) -> None:
         await self._emit(
             ready=protocol_pb2.Ready(
                 runner_id=self.config.runner_id,
                 provider=self.provider,
-                native_session_id=native_session_id,
+                continuation_id=continuation_id,
                 capabilities=list(capabilities),
             )
         )
@@ -519,58 +522,42 @@ class _ProtocolSession:
     async def _emit_process(self, status: str, detail: str) -> None:
         await self._emit(process=protocol_pb2.ProcessState(status=status, detail=detail))
 
-    async def _emit_input_accepted(
-        self, input_id: str, disposition: str, native_id: str = "", detail: str = ""
-    ) -> None:
+    async def _emit_input_accepted(self, input_id: str, disposition: str, detail: str = "") -> None:
         await self._emit(
-            input_accepted=protocol_pb2.InputAccepted(
-                input_id=input_id, disposition=disposition, native_id=native_id, detail=detail
-            )
+            input_accepted=protocol_pb2.InputAccepted(input_id=input_id, disposition=disposition, detail=detail)
         )
 
-    async def _emit_user_input(self, input_id: str, native_id: str, current_turn: bool) -> None:
-        await self._emit(
-            user_input=protocol_pb2.UserInputObserved(input_id=input_id, native_id=native_id, current_turn=current_turn)
-        )
+    async def _emit_user_input(self, input_id: str, current_turn: bool) -> None:
+        await self._emit(user_input=protocol_pb2.UserInputObserved(input_id=input_id, current_turn=current_turn))
 
-    async def _emit_turn_started(self, turn_id: str, native_turn_id: str) -> None:
-        await self._emit(turn_started=protocol_pb2.TurnStarted(turn_id=turn_id, native_turn_id=native_turn_id))
+    async def _emit_turn_started(self, turn_id: str) -> None:
+        await self._emit(turn_started=protocol_pb2.TurnStarted(turn_id=turn_id))
 
-    async def _emit_text(self, text: str, reasoning: bool, native_item_id: str) -> None:
-        if not reasoning:
-            self.turn_text += text
-        await self._emit(
-            text_delta=protocol_pb2.TextDelta(text=text, reasoning=reasoning, native_item_id=native_item_id)
-        )
+    async def _emit_text(self, text: str, reasoning: bool) -> None:
+        await self._emit(text_delta=protocol_pb2.TextDelta(text=text, reasoning=reasoning))
 
     async def _emit_tool_delta(self, text: str) -> None:
         await self._emit(tool_call_delta=protocol_pb2.ToolCallDelta(tool_call_id=self.open_tool_call_id, text=text))
 
-    async def _emit_turn_completed(self, *, status: str, result_text: str, error: str, native_turn_id: str) -> None:
-        if not result_text:
-            result_text = self.turn_text
+    async def _emit_turn_completed(self, *, status: str, error: str) -> None:
         await self._emit(
-            turn_completed=protocol_pb2.TurnCompleted(
-                turn_id=self.active_turn_id,
-                status=status,
-                result_text=result_text,
-                error=error,
-                native_turn_id=native_turn_id,
-            )
+            turn_completed=protocol_pb2.TurnCompleted(turn_id=self.active_turn_id, status=status, error=error)
         )
         self.active_turn_id = ""
         self.active_native_turn_id = ""
-        self.turn_text = ""
 
     async def _protocol_error(self, message: str) -> None:
         await self.outgoing.put(protocol_pb2.ServerMessage(protocol_error=message))
 
-    async def _emit(self, **kwargs: Any) -> None:
+    async def _emit(self, **kwargs: Any) -> int:
         self.sequence += 1
         event = protocol_pb2.Event(sequence=self.sequence)
+        if self.translation_source_sequence:
+            event.source_event_sequences.append(self.translation_source_sequence)
         field, value = next(iter(kwargs.items()))
         getattr(event, field).CopyFrom(value)
         await self.outgoing.put(protocol_pb2.ServerMessage(event=event))
+        return self.sequence
 
     @staticmethod
     def _thread_id(response: Mapping[str, Any]) -> str:

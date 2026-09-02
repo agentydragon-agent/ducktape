@@ -8,19 +8,26 @@
 // One Connect RPC is one live runner attachment. The client sends Start first, then may
 // send inputs and controls while the server streams observations. This is intentionally a
 // single bidirectional stream rather than separate request/response RPCs: native output,
-// input admission, tool activity, and controls can interleave without a polling race. The
-// server never interprets a client write as admitted merely because it was written:
-// InputAccepted and the provider observation (where one exists) are separate events.
-// Implementations must preserve event order and apply transport backpressure rather than
-// drop or coalesce events. `sequence` is the runner-local monotonic order key.
+// input admission, tool activity, and controls can interleave without a polling race.
 //
-// Recovery rule: a transport disconnect is not permission to replay an input. The runner
-// may keep the native process alive and a client may reconnect using the deployment's
-// attachment mechanism, but this protocol has no implicit retry or duplicate suppression
-// for Submit/Steer. If the native model service fails, the runner reports the provider's
-// observed retry/failure outcome; a later input is a new command and may be accepted only
-// after the native harness is ready for it. A native process loss while a turn is active
-// produces TURN_STATUS_PROCESS_LOST; it is not rewritten as a model failure or success.
+// InputAccepted means only that the runner admitted the input to its provider adapter.
+// UserInputObserved is a later provider echo/observation when the native harness exposes one;
+// it is not a second acknowledgement. Provider-specific active-input behavior is reported by
+// disposition and capabilities, not silently normalized into a generic queue.
+//
+// Close ends this attachment. Its reason is diagnostic context; it does not delete the
+// provider's persisted conversation. The runner emits SessionClosed, then applies its own
+// child-process shutdown policy. Implementations must preserve event order and apply transport
+// backpressure rather than drop or coalesce events. `sequence` is the runner-local monotonic
+// order key, and derived protocol events list the NativeEvent sequence values they came from.
+//
+// Recovery rule: a transport disconnect is not permission to replay an input. The runner may
+// keep the native process alive and a client may reconnect using the deployment's attachment
+// mechanism, but this protocol has no implicit retry or duplicate suppression for inputs. If
+// the native model service fails, the runner reports the provider's observed retry/failure
+// outcome; a later input is a new command and may be accepted only after the native harness is
+// ready for it. A native process loss while a turn is active produces TURN_STATUS_PROCESS_LOST;
+// it is not rewritten as a model failure or success.
 syntax = "proto3";
 
 package ducktape.agentplane.v1;
@@ -76,8 +83,8 @@ message Start {
   string cwd = 2;
   string model = 3;
   string reasoning_effort = 4;
-  // Provider-native continuity identifier. Claude uses a session id; Codex uses a thread id.
-  string resume_id = 5;
+  // Opaque provider continuity handle returned by Ready.continuation_id.
+  string continuation_id = 5;
   // The upstream fake/real model endpoint used by the native harness. The runner owns
   // credentials and environment; they are intentionally absent from this message.
   string llm_endpoint = 6;
@@ -92,11 +99,14 @@ message Input {
 
 message Interrupt {
   string command_id = 1;
+  // Forwarded to providers that expose an interrupt reason; diagnostic context otherwise.
   string reason = 2;
+  // Cancels inputs buffered by the provider when that behavior is supported.
   bool cancel_queued = 3;
 }
 
 message Close {
+  // Diagnostic context for ending this Connect attachment; it does not delete the conversation.
   string reason = 1;
 }
 
@@ -112,9 +122,9 @@ message ClientMessage {
 message Ready {
   string runner_id = 1;
   Provider provider = 2;
-  // May be empty if the provider reveals its continuity id only after readiness; the
-  // corresponding native frame is still preserved as NativeEvent evidence.
-  string native_session_id = 3;
+  // Opaque handle usable as Start.continuation_id. It may be empty when the provider reveals
+  // continuity only later; the corresponding native frame remains NativeEvent evidence.
+  string continuation_id = 3;
   repeated string capabilities = 4;
 }
 
@@ -125,18 +135,18 @@ message ProcessState {
 }
 
 message InputAccepted {
+  reserved 3;
   string input_id = 1;
   InputDisposition disposition = 2;
-  string native_id = 3;
   string detail = 4;
 }
 
 message InterruptAcknowledged {
+  reserved 3;
   // This acknowledges admission by the runner. The provider's own control response remains
   // available as a NativeEvent and may arrive before or after the turn's terminal event.
   string command_id = 1;
   bool accepted = 2;
-  string native_id = 3;
   string detail = 4;
 }
 
@@ -146,24 +156,23 @@ message SessionClosed {
 
 message TurnStarted {
   string turn_id = 1;
-  string native_turn_id = 2;
 }
 
 message UserInputObserved {
+  reserved 2;
   string input_id = 1;
-  string native_id = 2;
   bool current_turn = 3;
 }
 
 message TextDelta {
+  reserved 3;
   string text = 1;
   bool reasoning = 2;
-  string native_item_id = 3;
 }
 
 message ToolCallStarted {
+  reserved 2;
   string tool_call_id = 1;
-  string native_item_id = 2;
   string tool_name = 3;
   // JSON object as text, retaining arbitrary provider tool arguments without a second
   // provider-neutral schema that would immediately become a lowest-common-denominator.
@@ -182,21 +191,19 @@ message ToolCallCompleted {
 }
 
 message TurnCompleted {
+  reserved 3, 5;
   string turn_id = 1;
   TurnStatus status = 2;
-  // The completed assistant text, assembled from deltas when the provider does not include
-  // a terminal text field. Empty is valid for tool-only, interrupted, or failed turns.
-  string result_text = 3;
+  // Text is streamed through TextDelta. The exact provider terminal payload remains in NativeEvent.
   string error = 4;
-  string native_turn_id = 5;
 }
 
 message NativeEvent {
+  reserved 3;
   Provider provider = 1;
   string kind = 2;
-  string native_id = 3;
-  // Exact provider frame as JSON text. This is an escape hatch for evidence and
-  // provider-specific behavior, not an invitation for clients to parse native wire data.
+  // Exact provider frame as JSON text. Provider IDs remain inside this payload rather than being
+  // duplicated in the common event vocabulary.
   string payload_json = 4;
 }
 
@@ -204,6 +211,9 @@ message Event {
   // Assigned by the runner for every observation. Values are strictly increasing within
   // one Connect stream, including native evidence and terminal/acknowledgement events.
   uint64 sequence = 1;
+  // Sequences of NativeEvent observations that directly produced this derived event. Native
+  // events are emitted before the derived event, and this list is empty for raw native events.
+  repeated uint64 source_event_sequences = 15;
   oneof observation {
     Ready ready = 2;
     ProcessState process = 3;
