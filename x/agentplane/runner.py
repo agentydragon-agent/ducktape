@@ -104,7 +104,11 @@ class _ProtocolSession:
             await self._protocol_error(f"runner failure: {error}")
         finally:
             await self.close()
-            await self.outgoing.put(None)
+            # On client cancellation the response generator has gone away; do not block a
+            # cancelled consumer trying to enqueue the normal end-of-stream sentinel.
+            task = asyncio.current_task()
+            if task is None or task.cancelling() == 0:
+                await self.outgoing.put(None)
 
     async def start(self, request: protocol_pb2.Start) -> None:
         if request.provider not in (protocol_pb2.PROVIDER_CLAUDE, protocol_pb2.PROVIDER_CODEX):
@@ -322,6 +326,17 @@ class _ProtocolSession:
             await self._emit_native(frame)
             await self._translate(frame)
         await self._emit_process("PROCESS_STATUS_EXITED", "native harness exited")
+        error = RuntimeError("native harness exited before its pending operation completed")
+        for waiter in self.waiters.values():
+            if not waiter.done():
+                waiter.set_exception(error)
+        if self.active_turn_id:
+            await self._emit_turn_completed(
+                status="TURN_STATUS_PROCESS_LOST",
+                result_text="",
+                error=str(error),
+                native_turn_id=self.active_native_turn_id,
+            )
 
     async def _read_stderr(self) -> None:
         process = self.process
@@ -589,7 +604,10 @@ class HarnessRunner:
         self, requests: AsyncIterable[protocol_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterable[protocol_pb2.ServerMessage]:
         del context
-        outgoing: asyncio.Queue[protocol_pb2.ServerMessage | None] = asyncio.Queue()
+        # Native readers and translations stop here when a slow client fills the queue;
+        # gRPC's own flow control then propagates back to the client instead of dropping
+        # deltas or native evidence.
+        outgoing: asyncio.Queue[protocol_pb2.ServerMessage | None] = asyncio.Queue(maxsize=256)
         session = _ProtocolSession(self.config, outgoing)
         consumer = asyncio.create_task(session.consume(requests), name="agentplane-client-consumer")
         try:

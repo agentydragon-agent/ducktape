@@ -6,16 +6,21 @@
 // provider detail that the common vocabulary does not claim to understand.
 //
 // One Connect RPC is one live runner attachment. The client sends Start first, then may
-// send inputs and controls while the server streams observations. The server never
-// interprets a client write as admitted merely because it was written: InputAccepted and
-// the provider observation (where one exists) are separate events.
+// send inputs and controls while the server streams observations. This is intentionally a
+// single bidirectional stream rather than separate request/response RPCs: native output,
+// input admission, tool activity, and controls can interleave without a polling race. The
+// server never interprets a client write as admitted merely because it was written:
+// InputAccepted and the provider observation (where one exists) are separate events.
+// Implementations must preserve event order and apply transport backpressure rather than
+// drop or coalesce events. `sequence` is the runner-local monotonic order key.
 //
 // Recovery rule: a transport disconnect is not permission to replay an input. The runner
 // may keep the native process alive and a client may reconnect using the deployment's
 // attachment mechanism, but this protocol has no implicit retry or duplicate suppression
 // for Submit/Steer. If the native model service fails, the runner reports the provider's
 // observed retry/failure outcome; a later input is a new command and may be accepted only
-// after the native harness is ready for it.
+// after the native harness is ready for it. A native process loss while a turn is active
+// produces TURN_STATUS_PROCESS_LOST; it is not rewritten as a model failure or success.
 syntax = "proto3";
 
 package ducktape.agentplane.v1;
@@ -175,6 +180,8 @@ message ToolCallCompleted {
 message TurnCompleted {
   string turn_id = 1;
   TurnStatus status = 2;
+  // The completed assistant text, assembled from deltas when the provider does not include
+  // a terminal text field. Empty is valid for tool-only, interrupted, or failed turns.
   string result_text = 3;
   string error = 4;
   string native_turn_id = 5;
@@ -190,6 +197,8 @@ message NativeEvent {
 }
 
 message Event {
+  // Assigned by the runner for every observation. Values are strictly increasing within
+  // one Connect stream, including native evidence and terminal/acknowledgement events.
   uint64 sequence = 1;
   oneof observation {
     Ready ready = 2;

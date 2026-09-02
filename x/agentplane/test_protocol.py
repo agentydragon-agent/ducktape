@@ -70,6 +70,7 @@ async def _run(case: Case, server: Any, tmp_path: Any, commands: list[Any], *, t
             yield command
             if index < terminals:
                 await done[index].wait()
+        yield protocol_pb2.ClientMessage(close=protocol_pb2.Close(reason="test complete"))
 
     channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
     try:
@@ -115,6 +116,10 @@ async def test_one_shared_streamed_client_drives_baseline(
         native = _events(observations, "native")
         assert native
         assert all(json.loads(event.native.payload_json) for event in native)
+        sequences = [event.sequence for event in observations]
+        assert sequences == sorted(sequences)
+        assert len(sequences) == len(set(sequences))
+        assert _events(observations, "session_closed")[-1].session_closed.reason == "test complete"
         upstream.assert_consumed()
 
 
@@ -193,6 +198,7 @@ async def test_shared_interrupt_command_has_explicit_terminal_outcome(
                 interrupt=protocol_pb2.Interrupt(command_id="interrupt-1", reason="test", cancel_queued=False)
             )
             await terminal.wait()
+            yield protocol_pb2.ClientMessage(close=protocol_pb2.Close(reason="test complete"))
 
         channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
         try:
@@ -214,7 +220,8 @@ async def test_shared_interrupt_command_has_explicit_terminal_outcome(
             await channel.close()
             await runner.stop(0)
         acknowledgements = _events(observations, "interrupt_acknowledged")
-        assert acknowledgements and acknowledgements[-1].interrupt_acknowledged.accepted
+        assert acknowledgements
+        assert acknowledgements[-1].interrupt_acknowledged.accepted
         assert _events(observations, "turn_completed")[-1].turn_completed.status == protocol_pb2.TURN_STATUS_INTERRUPTED
         upstream.assert_consumed()
 
