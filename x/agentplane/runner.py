@@ -243,7 +243,7 @@ class _ProtocolSession:
             )
             return
         self.active_native_turn_id = native_turn_id
-        disposition = "INPUT_DISPOSITION_QUEUED" if was_active else "INPUT_DISPOSITION_STARTED"
+        disposition = "INPUT_DISPOSITION_JOINED" if was_active else "INPUT_DISPOSITION_STARTED"
         await self._emit_input_accepted(request.input_id, disposition)
         if not was_active:
             await self._emit_turn_started(self.active_turn_id)

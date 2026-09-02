@@ -57,8 +57,11 @@ enum InputDisposition {
   INPUT_DISPOSITION_UNSPECIFIED = 0;
   INPUT_DISPOSITION_STARTED = 1;
   INPUT_DISPOSITION_STEERED = 2;
+  // Accepted by the provider but not yet started as a provider turn (Claude active input).
   INPUT_DISPOSITION_QUEUED = 3;
   INPUT_DISPOSITION_REJECTED = 4;
+  // Accepted by Codex's active turn/start operation and joined the existing provider turn.
+  INPUT_DISPOSITION_JOINED = 5;
 }
 
 enum TurnStatus {
