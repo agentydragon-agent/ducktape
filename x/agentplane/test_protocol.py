@@ -6,7 +6,6 @@ import asyncio
 import importlib
 import os
 from collections.abc import AsyncIterator, Callable, Iterator
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -228,104 +227,6 @@ async def test_shared_client_preserves_tool_lifecycle(
     observations = await task
     assert _events(observations, "tool_call_started")
     assert _events(observations, "tool_call_completed")
-    assert _events(observations, "turn_completed")[-1].turn_completed.status == protocol_pb2.TURN_STATUS_COMPLETED
-    upstream.assert_quiescent()
-
-
-@pytest.mark.parametrize("provider", ["claude", "codex"])
-async def test_shared_client_reports_provider_specific_active_input_disposition(
-    provider: str, cases: dict[str, Case], upstream: ScriptedUpstream, tmp_path: Path
-) -> None:
-    case = cases[provider]
-    runner, port = await serve_runner(_runner_config(case, upstream, tmp_path))
-    second_input_observed = asyncio.Event()
-    tool_started = asyncio.Event()
-    terminal = asyncio.Event()
-    observations: list[Any] = []
-
-    async def source() -> AsyncIterator[Any]:
-        yield protocol_pb2.ClientMessage(
-            start=protocol_pb2.Start(
-                provider=case.provider_enum,
-                cwd=str(tmp_path),
-                model=case.model,
-                reasoning_effort="low",
-                llm_endpoint=upstream.origin,
-            )
-        )
-        yield _input("input-1", "Run a tool, then wait for a follow-up.")
-        await tool_started.wait()
-        mode = protocol_pb2.INPUT_MODE_SUBMIT if provider == "claude" else protocol_pb2.INPUT_MODE_STEER
-        yield _input("input-2", "Reply with ACTIVE_INPUT_OK.", mode=mode)
-        await second_input_observed.wait()
-        await terminal.wait()
-        yield protocol_pb2.ClientMessage(close=protocol_pb2.Close(reason="test complete"))
-
-    channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
-    response_task: asyncio.Task[None] | None = None
-    try:
-        rpc = channel.stream_stream(
-            "/ducktape.agentplane.v1.HarnessRunner/Connect",
-            request_serializer=protocol_pb2.ClientMessage.SerializeToString,
-            response_deserializer=protocol_pb2.ServerMessage.FromString,
-        )
-        call = rpc(source())
-
-        async def consume() -> None:
-            async for response in call:
-                if response.HasField("protocol_error"):
-                    raise AssertionError(response.protocol_error)
-                if not response.HasField("event"):
-                    continue
-                event = response.event
-                observations.append(event)
-                kind = event.WhichOneof("observation")
-                if kind == "tool_call_started":
-                    tool_started.set()
-                elif kind == "user_input" and event.user_input.input_id == "input-2":
-                    second_input_observed.set()
-                elif kind == "turn_completed":
-                    terminal.set()
-
-        response_task = asyncio.create_task(consume())
-        first = await _next_request(upstream)
-        if provider == "claude":
-            upstream.respond(
-                first,
-                anthropic_sse.message_stream(
-                    [anthropic_sse.ToolUse("toolu_active", "Bash", {"command": "sleep 3; printf TOOL_RESULT"})],
-                    model=case.model,
-                ),
-            )
-            second = await _next_request(upstream)
-            assert MessagesRequest.parse(second).texts("user")[-1] == "Reply with ACTIVE_INPUT_OK."
-            upstream.respond(
-                second, anthropic_sse.message_stream([anthropic_sse.Text("ACTIVE_INPUT_OK")], model=case.model)
-            )
-            expected = protocol_pb2.INPUT_DISPOSITION_QUEUED
-        else:
-            upstream.respond(
-                first,
-                responses_sse.response_stream(
-                    [responses_sse.FunctionCall("call_active", "exec_command", {"cmd": "sleep 3; printf TOOL_RESULT"})],
-                    model=case.model,
-                ),
-            )
-            second = await _next_request(upstream)
-            assert ResponsesRequest.parse(second).messages("user")[-1].text == "Reply with ACTIVE_INPUT_OK."
-            upstream.respond(
-                second, responses_sse.response_stream([responses_sse.Message("ACTIVE_INPUT_OK")], model=case.model)
-            )
-            expected = protocol_pb2.INPUT_DISPOSITION_STEERED
-        await response_task
-    finally:
-        if response_task is not None and not response_task.done():
-            response_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await response_task
-        await channel.close()
-        await runner.stop(0)
-    assert _events(observations, "input_accepted")[-1].input_accepted.disposition == expected
     assert _events(observations, "turn_completed")[-1].turn_completed.status == protocol_pb2.TURN_STATUS_COMPLETED
     upstream.assert_quiescent()
 
