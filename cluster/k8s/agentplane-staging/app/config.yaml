@@ -6,3 +6,6 @@ models:
     - anthropic-api/ant-messages/claude-haiku-4-5-20251001
   codex:
     - chatgpt/oai-responses/gpt-5.6-luna
+# The egress proxy's admin port (x/agentplane/egress `Settings.admin_port`), asked for each
+# sandbox's recent decisions; until the proxy Deployment lands the page shows the rules alone.
+egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081

@@ -7,13 +7,21 @@ from typing import Annotated
 from uuid import UUID
 
 import grpc
-from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
 from x.agentplane.app import bridge as runner_bridge
-from x.agentplane.app.inventory import NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
+from x.agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
+from x.agentplane.app.egress import (
+    BindingNotFoundError,
+    BindingView,
+    EgressInventory,
+    FluxOwnedBindingError,
+    PolicyView,
+)
+from x.agentplane.app.inventory import LabelValue, NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
@@ -60,6 +68,50 @@ def _inventory(request: Request) -> SandboxInventory:
 Inventory = Annotated[SandboxInventory, Depends(_inventory)]
 
 
+def _egress(request: Request) -> EgressInventory:
+    egress = request.app.state.egress
+    if not isinstance(egress, EgressInventory):
+        raise TypeError(f"app.state.egress is {type(egress).__name__}, not EgressInventory")
+    return egress
+
+
+Egress = Annotated[EgressInventory, Depends(_egress)]
+
+
+def _decisions(request: Request) -> DecisionsClient:
+    decisions = request.app.state.decisions
+    if not isinstance(decisions, DecisionsClient):
+        raise TypeError(f"app.state.decisions is {type(decisions).__name__}, not DecisionsClient")
+    return decisions
+
+
+Decisions = Annotated[DecisionsClient, Depends(_decisions)]
+
+# Set by the Authentik outpost, the only path a browser has to the app; the other path in, the API
+# server's service proxy, carries no user (cluster/k8s/agentplane-staging/app/networkpolicy.yaml).
+OPERATOR_HEADER = "x-authentik-username"
+_LABEL_VALUE = TypeAdapter(LabelValue)
+
+
+def _operator(request: Request) -> str | None:
+    return request.headers.get(OPERATOR_HEADER)
+
+
+def _require_operator(operator: Annotated[str | None, Depends(_operator)]) -> str:
+    """The operator an approval or grant is recorded as; a caller without one may not decide."""
+    if operator is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, f"no operator identity: the {OPERATOR_HEADER} header is absent"
+        )
+    try:
+        return _LABEL_VALUE.validate_python(operator)
+    except ValidationError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"operator {operator!r} is not a label value") from error
+
+
+Operator = Annotated[str, Depends(_require_operator)]
+
+
 @router.get("")
 async def list_sandboxes(
     inventory: Inventory, include_archived: Annotated[bool, Query(description="Also list archived sandboxes.")] = False
@@ -68,8 +120,15 @@ async def list_sandboxes(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_sandbox(inventory: Inventory, spec: NewSandbox) -> SandboxView:
-    return await inventory.create(spec)
+async def create_sandbox(
+    inventory: Inventory, egress: Egress, spec: NewSandbox, operator: Annotated[str | None, Depends(_operator)]
+) -> SandboxView:
+    """Create the Sandbox; picked policies become one binding it owns, granted by the operator."""
+    by = _require_operator(operator) if spec.policies else None
+    view = await inventory.create(spec)
+    if by is not None:
+        await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=spec.policies, by=by)
+    return view
 
 
 @router.get("/{name}")
@@ -104,6 +163,47 @@ async def unarchive_sandbox(inventory: Inventory, name: str) -> Response:
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sandbox(inventory: Inventory, name: str) -> Response:
     await inventory.delete(name)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{name}/egress")
+async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
+    """What may leave the sandbox: the bindings naming it, with their policies as they resolve."""
+    return await egress.bindings_for(name, await inventory.labels(name))
+
+
+@router.get("/{name}/egress/decisions")
+async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, name: str) -> list[Decision]:
+    """What recently left or was refused, from the proxy; 502 when the proxy cannot be asked."""
+    await inventory.labels(name)  # 404 for a sandbox that does not exist
+    return await decisions.recent(name)
+
+
+egress_router = APIRouter(prefix="/egress", tags=["egress"])
+
+
+@egress_router.get("/policies")
+async def list_policies(egress: Egress) -> list[PolicyView]:
+    """The namespace's policies: what the create form offers to pick from."""
+    return await egress.list_policies()
+
+
+@egress_router.post("/bindings/{name}/approve", status_code=status.HTTP_204_NO_CONTENT)
+async def approve_binding(egress: Egress, operator: Operator, name: str) -> Response:
+    await egress.approve(name, by=operator)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@egress_router.post("/bindings/{name}/deny", status_code=status.HTTP_204_NO_CONTENT)
+async def deny_binding(egress: Egress, operator: Operator, name: str) -> Response:
+    await egress.deny(name, by=operator)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@egress_router.delete("/bindings/{name}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_binding(egress: Egress, name: str) -> Response:
+    """Revoke a runtime binding by deleting it; a binding from git is refused with 409."""
+    await egress.revoke(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -173,7 +273,12 @@ async def thread_events(
 
 
 def create_app(
-    inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge, store: TrajectoryStore, catalog: ModelCatalog
+    inventory: SandboxInventory,
+    bridge: runner_bridge.RunnerBridge,
+    store: TrajectoryStore,
+    catalog: ModelCatalog,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
 ) -> FastAPI:
     if set(catalog) != set(Provider) or not all(catalog.values()):
         raise ValueError(f"the model catalog needs a non-empty list for every provider: {catalog=}")
@@ -182,10 +287,13 @@ def create_app(
     app.state.bridge = bridge
     app.state.store = store
     app.state.models = catalog
+    app.state.egress = egress
+    app.state.decisions = decisions
     app.include_router(router)
     app.include_router(models)
     app.include_router(runner_bridge.router)
     app.include_router(threads)
+    app.include_router(egress_router)
 
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
@@ -199,6 +307,18 @@ def create_app(
     @app.exception_handler(SandboxNotFoundError)
     async def _not_found(_request: Request, error: SandboxNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
+
+    @app.exception_handler(BindingNotFoundError)
+    async def _binding_not_found(_request: Request, error: BindingNotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
+
+    @app.exception_handler(DecisionsUnavailableError)
+    async def _decisions_unavailable(_request: Request, error: DecisionsUnavailableError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_502_BAD_GATEWAY, content={"detail": str(error)})
+
+    @app.exception_handler(FluxOwnedBindingError)
+    async def _flux_owned(_request: Request, error: FluxOwnedBindingError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.exception_handler(runner_bridge.SandboxNotReachableError)
     async def _not_reachable(_request: Request, error: runner_bridge.SandboxNotReachableError) -> JSONResponse:

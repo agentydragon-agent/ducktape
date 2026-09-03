@@ -1,5 +1,6 @@
-import { Badge, Button, Code, Group, Select, Stack, Switch, Table, Text, TextInput, Title } from "@mantine/core";
+import { Badge, Button, Code, Group, Select, Stack, Switch, Table, Tabs, Text, TextInput, Title } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import { create } from "@bufbuild/protobuf";
 
@@ -12,12 +13,22 @@ import {
   type Condition,
   type SandboxView,
 } from "./client";
+import { EgressSection } from "./egress";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
 
 // The harness a session runs, as the API's catalog names it and as the protocol's enum spells it.
 type Harness = "claude" | "codex";
 const HARNESSES: Harness[] = ["claude", "codex"];
 const PROVIDER_ENUM: Record<Harness, Provider> = { claude: Provider.CLAUDE, codex: Provider.CODEX };
+
+// The page's tabs, named in the URL (`?tab=`) so a tab can be linked to and survives a reload.
+const TABS = ["sessions", "egress", "status"] as const;
+type Tab = (typeof TABS)[number];
+const DEFAULT_TAB: Tab = "sessions";
+
+function isTab(value: string | null): value is Tab {
+  return TABS.includes(value as Tab);
+}
 
 function ConditionsTable({ conditions }: { conditions: Condition[] }): JSX.Element {
   return (
@@ -111,6 +122,9 @@ export function SandboxPage({
 }): JSX.Element {
   const [sandbox, setSandbox] = useState<SandboxView | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const tab: Tab = isTab(requestedTab) ? requestedTab : DEFAULT_TAB;
   // Thread names by session id, read once: the store's copy, which outlives the runner's list.
   const [names, setNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -190,56 +204,84 @@ export function SandboxPage({
         </Button>
         <Title order={2}>{name}</Title>
         {sandbox && <Badge>{sandbox.state}</Badge>}
+        {sandbox?.profile && <Badge variant="light">profile: {sandbox.profile}</Badge>}
       </Group>
       {error && <Text c="red">{error}</Text>}
       {sandbox && sandbox.state !== "running" && (
         <Text>The sandbox is {sandbox.state}; sessions need a running Pod.</Text>
       )}
-      {sandbox && <StatusView sandbox={sandbox} />}
-      <Group align="flex-end">
-        <TextInput label="Session id" value={sessionId} onChange={(e) => setSessionId(e.currentTarget.value)} />
-        <Select label="Harness" data={HARNESSES} value={harness} onChange={(v) => v && setHarness(v as Harness)} />
-        <Select label="Model" data={models} value={model} onChange={setModel} />
-        <Select
-          label="Reasoning effort"
-          data={["low", "medium", "high"]}
-          value={effort}
-          onChange={(v) => v && setEffort(v)}
-        />
-        <Button
-          onClick={() => void createSession()}
-          disabled={!sandbox || sandbox.state !== "running" || !sessionId || !model}
-        >
-          New session
-        </Button>
-      </Group>
-      <Table>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Session</Table.Th>
-            <Table.Th>Harness state</Table.Th>
-            <Table.Th>Active turn</Table.Th>
-            <Table.Th>Events</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {sessions.map((session) => (
-            <Table.Tr key={session.sessionId}>
-              <Table.Td>
-                <Group gap="xs">
-                  <Button variant="subtle" onClick={() => onOpenSession(session.sessionId)}>
-                    {session.sessionId}
-                  </Button>
-                  {names[session.sessionId] && <Text size="sm">{names[session.sessionId]}</Text>}
-                </Group>
-              </Table.Td>
-              <Table.Td>{HarnessState[session.harness]}</Table.Td>
-              <Table.Td>{session.activeTurnId || "—"}</Table.Td>
-              <Table.Td>{String(session.lastSequence)}</Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
+      <Tabs
+        value={tab}
+        onChange={(value) => {
+          if (!isTab(value)) return;
+          setSearchParams(value === DEFAULT_TAB ? {} : { tab: value }, { replace: true });
+        }}
+      >
+        <Tabs.List>
+          <Tabs.Tab value="sessions">Sessions</Tabs.Tab>
+          <Tabs.Tab value="egress">Egress</Tabs.Tab>
+          <Tabs.Tab value="status">Status</Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel value="egress" pt="sm">
+          <EgressSection name={name} />
+        </Tabs.Panel>
+        <Tabs.Panel value="status" pt="sm">
+          {sandbox && <StatusView sandbox={sandbox} />}
+        </Tabs.Panel>
+        <Tabs.Panel value="sessions" pt="sm">
+          <Stack>
+            <Group align="flex-end">
+              <TextInput label="Session id" value={sessionId} onChange={(e) => setSessionId(e.currentTarget.value)} />
+              <Select
+                label="Harness"
+                data={HARNESSES}
+                value={harness}
+                onChange={(v) => v && setHarness(v as Harness)}
+              />
+              <Select label="Model" data={models} value={model} onChange={setModel} />
+              <Select
+                label="Reasoning effort"
+                data={["low", "medium", "high"]}
+                value={effort}
+                onChange={(v) => v && setEffort(v)}
+              />
+              <Button
+                onClick={() => void createSession()}
+                disabled={!sandbox || sandbox.state !== "running" || !sessionId || !model}
+              >
+                New session
+              </Button>
+            </Group>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Session</Table.Th>
+                  <Table.Th>Harness state</Table.Th>
+                  <Table.Th>Active turn</Table.Th>
+                  <Table.Th>Events</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {sessions.map((session) => (
+                  <Table.Tr key={session.sessionId}>
+                    <Table.Td>
+                      <Group gap="xs">
+                        <Button variant="subtle" onClick={() => onOpenSession(session.sessionId)}>
+                          {session.sessionId}
+                        </Button>
+                        {names[session.sessionId] && <Text size="sm">{names[session.sessionId]}</Text>}
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>{HarnessState[session.harness]}</Table.Td>
+                    <Table.Td>{session.activeTurnId || "—"}</Table.Td>
+                    <Table.Td>{String(session.lastSequence)}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Stack>
+        </Tabs.Panel>
+      </Tabs>
     </Stack>
   );
 }
