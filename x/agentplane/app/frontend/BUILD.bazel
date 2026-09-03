@@ -283,11 +283,13 @@ VISUAL_DATA = [
         "sandbox",
         "sandbox_egress",
         "session",
+        "session_raw",
         "session_reasoning",
         "sandboxes_phone",
         "sandbox_phone",
         "sandbox_egress_phone",
         "session_phone",
+        "session_raw_phone",
         "session_reasoning_phone",
     ]
 ]

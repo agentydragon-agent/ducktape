@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, toJsonString, type JsonValue } from "@bufbuild/protobuf";
@@ -31,7 +31,7 @@ import {
   shutdownSession,
   type ThreadView,
 } from "./client";
-import { EMPTY, reduce, type InputState, type Item, type SessionState } from "./events";
+import { EMPTY, reduce, timeline, type InputState, type Item, type Row, type SessionState, type Turn } from "./events";
 import { Markdown } from "./markdown";
 import { Direction, EventSchema, ItemKind, TurnStatus, type Event } from "./protocol_pb";
 
@@ -39,6 +39,12 @@ const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
   [ItemKind.TOOL_CALL]: "tool",
 };
+
+function frameText(event: Event): string {
+  return event.observation.case === "native"
+    ? `${event.sequence} ${Direction[event.observation.value.direction]} ${event.observation.value.line}`
+    : `${event.sequence} ${toJsonString(EventSchema, event)}`;
+}
 
 function InputView({ input }: { input: InputState }): JSX.Element {
   return (
@@ -100,6 +106,31 @@ function ItemView({ item, expandReasoning }: { item: Item; expandReasoning: bool
       {item.output && <Code block>{item.output}</Code>}
     </Paper>
   );
+}
+
+function TurnHeader({ turn }: { turn: Turn }): JSX.Element {
+  return (
+    <Group gap="xs">
+      <Text size="sm" c="dimmed">
+        turn {turn.id}
+      </Text>
+      {turn.status !== null && (
+        <Badge color={turn.status === TurnStatus.COMPLETED ? "green" : "orange"}>{TurnStatus[turn.status]}</Badge>
+      )}
+      {turn.error && <Text c="red">{turn.error}</Text>}
+    </Group>
+  );
+}
+
+function RowView({ row, expandReasoning }: { row: Row; expandReasoning: boolean }): JSX.Element {
+  switch (row.kind) {
+    case "turn":
+      return <TurnHeader turn={row.turn} />;
+    case "input":
+      return <InputView input={row.input} />;
+    case "item":
+      return <ItemView item={row.item} expandReasoning={expandReasoning} />;
+  }
 }
 
 /**
@@ -181,17 +212,24 @@ export function SessionView({
   onBack: () => void;
 }): JSX.Element {
   const [state, setState] = useState<SessionState>(EMPTY);
-  const [raw, setRaw] = useState<Event[]>([]);
-  const [showRaw, setShowRaw] = useState(false);
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [thread, setThread] = useState<ThreadView | null>(null);
   const bottom = useRef<HTMLDivElement | null>(null);
-  // In the URL, like the sandbox page's tab, so a transcript read with the thinking shown can be
-  // linked to and survives a reload.
+  // Both switches are in the URL, like the sandbox page's tab, so a reading — the thinking shown,
+  // the frames shown, either or both — can be linked to and survives a reload.
   const [searchParams, setSearchParams] = useSearchParams();
   const expandReasoning = searchParams.get("reasoning") === "open";
+  const showRaw = searchParams.get("raw") === "1";
+
+  /** Sets one switch's parameter, leaving the other's where it is. */
+  function setFlag(name: string, value: string, on: boolean): void {
+    const next = new URLSearchParams(searchParams);
+    if (on) next.set(name, value);
+    else next.delete(name);
+    setSearchParams(next, { replace: true });
+  }
 
   useEffect(() => {
     // EventSource reconnects on its own and resends the last id it saw, which the bridge turns
@@ -204,7 +242,6 @@ export function SessionView({
     });
     source.addEventListener("event", (message: MessageEvent<string>) => {
       const event = fromJson(EventSchema, JSON.parse(message.data) as JsonValue);
-      setRaw((events) => [...events, event]);
       setState((current) => reduce(current, event));
     });
     // The runner ending the stream is final: a reconnect would Open the session again, which
@@ -286,34 +323,28 @@ export function SessionView({
         <Switch
           label="Reasoning"
           checked={expandReasoning}
-          onChange={(e) => setSearchParams(e.currentTarget.checked ? { reasoning: "open" } : {}, { replace: true })}
+          onChange={(e) => setFlag("reasoning", "open", e.currentTarget.checked)}
         />
-        <Switch label="Raw frames" checked={showRaw} onChange={(e) => setShowRaw(e.currentTarget.checked)} />
+        <Switch label="Raw frames" checked={showRaw} onChange={(e) => setFlag("raw", "1", e.currentTarget.checked)} />
       </Group>
       {error && <Text c="red">{error}</Text>}
       <ScrollArea h="60vh">
         <Stack>
-          {showRaw
-            ? raw.map((event) => (
-                <Code key={String(event.sequence)} block>
-                  {event.observation.case === "native"
-                    ? `${event.sequence} ${Direction[event.observation.value.direction]} ${event.observation.value.line}`
-                    : `${event.sequence} ${toJsonString(EventSchema, event)}`}
-                </Code>
-              ))
-            : state.turns.map((turn) => (
+          {/* Raw: the whole session in sequence order, so what happened between two items — a
+              stderr line, the harness starting — reads where it happened. Otherwise the turns,
+              which group what the raw order interleaves. */}
+          {showRaw ? (
+            timeline(state).map(({ event, row }) => (
+              <Fragment key={String(event.sequence)}>
+                {row && <RowView row={row} expandReasoning={expandReasoning} />}
+                <Code block>{frameText(event)}</Code>
+              </Fragment>
+            ))
+          ) : (
+            <>
+              {state.turns.map((turn) => (
                 <Stack key={turn.id} gap="xs">
-                  <Group gap="xs">
-                    <Text size="sm" c="dimmed">
-                      turn {turn.id}
-                    </Text>
-                    {turn.status !== null && (
-                      <Badge color={turn.status === TurnStatus.COMPLETED ? "green" : "orange"}>
-                        {TurnStatus[turn.status]}
-                      </Badge>
-                    )}
-                    {turn.error && <Text c="red">{turn.error}</Text>}
-                  </Group>
+                  <TurnHeader turn={turn} />
                   {state.inputs
                     .filter((input) => input.turnId === turn.id)
                     .map((input) => (
@@ -325,18 +356,20 @@ export function SessionView({
                   )}
                 </Stack>
               ))}
-          {state.inputs
-            .filter((input) => input.state === "submitted")
-            .map((input) => (
-              <InputView key={input.id} input={input} />
-            ))}
-          {state.inputs
-            .filter((input) => input.state === "rejected" || input.state === "uncertain")
-            .map((input) => (
-              <Text key={input.id} c="orange">
-                input {input.id} {input.state} {input.detail}
-              </Text>
-            ))}
+              {state.inputs
+                .filter((input) => input.state === "submitted")
+                .map((input) => (
+                  <InputView key={input.id} input={input} />
+                ))}
+              {state.inputs
+                .filter((input) => input.state === "rejected" || input.state === "uncertain")
+                .map((input) => (
+                  <Text key={input.id} c="orange">
+                    input {input.id} {input.state} {input.detail}
+                  </Text>
+                ))}
+            </>
+          )}
           <div ref={bottom} />
         </Stack>
       </ScrollArea>

@@ -303,40 +303,73 @@ const ANSWER = [
   "```",
 ].join("\n");
 
-function event(sequence: number, observation: MessageInitShape<typeof EventSchema>["observation"]): Event {
-  return create(EventSchema, { sequence: BigInt(sequence), observation });
+function event(
+  sequence: number,
+  observation: MessageInitShape<typeof EventSchema>["observation"],
+  sources: number[] = []
+): Event {
+  return create(EventSchema, { sequence: BigInt(sequence), observation, sourceSequences: sources.map(BigInt) });
 }
 
+function frame(
+  direction: Direction,
+  payload: Record<string, unknown>
+): MessageInitShape<typeof EventSchema>["observation"] {
+  return { case: "native", value: { direction, line: JSON.stringify(payload) } };
+}
+
+/**
+ * Two turns, cited the way the runner cites: a derived event names the frame it was translated
+ * from, while an input written to the harness and the harness's own noise name nothing. The
+ * `session_raw` scenario reads them as one stream in sequence order — the stderr line between the
+ * second turn's reasoning and its answer is where the ordering earns its keep.
+ */
 const EVENTS: Event[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 7 } }),
   event(2, { case: "inputSubmitted", value: { inputId: "i1", text: "List the repository files." } }),
-  event(3, { case: "turnStarted", value: { turnId: "t1" } }),
-  event(4, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }),
-  event(5, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }),
-  event(6, { case: "textDelta", value: { itemId: "r#0", text: THINKING } }),
-  event(7, { case: "itemCompleted", value: { itemId: "r#0", outcome: { case: "text", value: THINKING } } }),
-  event(8, { case: "itemStarted", value: { itemId: "toolu_1", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
-  event(9, { case: "toolArguments", value: { itemId: "toolu_1", argumentsJson: '{"command": "ls"}' } }),
-  event(10, {
-    case: "native",
-    value: { direction: Direction.FROM_HARNESS, line: '{"type":"tool_use","name":"Bash"}' },
-  }),
-  event(11, {
-    case: "itemCompleted",
-    value: { itemId: "toolu_1", outcome: { case: "tool", value: { output: "README.md\nsrc\n", succeeded: true } } },
-  }),
-  event(12, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }),
-  event(13, { case: "textDelta", value: { itemId: "m#0", text: ANSWER } }),
-  event(14, { case: "itemCompleted", value: { itemId: "m#0", outcome: { case: "text", value: ANSWER } } }),
-  event(15, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
-  event(16, { case: "inputSubmitted", value: { inputId: "i2", text: "Now read src." } }),
-  event(17, { case: "turnStarted", value: { turnId: "t2" } }),
-  event(18, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }),
-  event(19, { case: "itemStarted", value: { itemId: "r#1", kind: ItemKind.REASONING } }),
-  event(20, { case: "textDelta", value: { itemId: "r#1", text: THINKING_AGAIN } }),
-  event(21, { case: "itemCompleted", value: { itemId: "r#1", outcome: { case: "text", value: THINKING_AGAIN } } }),
-  event(22, { case: "itemStarted", value: { itemId: "m#1", kind: ItemKind.ASSISTANT_TEXT } }),
-  event(23, { case: "textDelta", value: { itemId: "m#1", text: "Reading `src` now" } }),
+  event(3, frame(Direction.TO_HARNESS, { type: "user", text: "List the repository files." })),
+  event(4, frame(Direction.FROM_HARNESS, { type: "turn.started" })),
+  event(5, { case: "turnStarted", value: { turnId: "t1" } }, [4]),
+  event(6, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }, [4]),
+  event(7, frame(Direction.FROM_HARNESS, { type: "thinking", text: THINKING })),
+  event(8, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }, [7]),
+  event(9, { case: "textDelta", value: { itemId: "r#0", text: THINKING } }, [7]),
+  event(10, { case: "itemCompleted", value: { itemId: "r#0", outcome: { case: "text", value: THINKING } } }, [7]),
+  event(11, frame(Direction.FROM_HARNESS, { type: "tool_use", name: "Bash", input: { command: "ls" } })),
+  event(12, { case: "itemStarted", value: { itemId: "toolu_1", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }, [11]),
+  event(13, { case: "toolArguments", value: { itemId: "toolu_1", argumentsJson: '{"command": "ls"}' } }, [11]),
+  event(14, frame(Direction.FROM_HARNESS, { type: "tool_result", is_error: false })),
+  event(
+    15,
+    {
+      case: "itemCompleted",
+      value: { itemId: "toolu_1", outcome: { case: "tool", value: { output: "README.md\nsrc\n", succeeded: true } } },
+    },
+    [14]
+  ),
+  event(16, frame(Direction.FROM_HARNESS, { type: "text", text: ANSWER })),
+  event(17, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }, [16]),
+  event(18, { case: "textDelta", value: { itemId: "m#0", text: ANSWER } }, [16]),
+  event(19, { case: "itemCompleted", value: { itemId: "m#0", outcome: { case: "text", value: ANSWER } } }, [16]),
+  event(20, frame(Direction.FROM_HARNESS, { type: "turn.completed" })),
+  event(21, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }, [20]),
+  event(22, { case: "inputSubmitted", value: { inputId: "i2", text: "Now read src." } }),
+  event(23, frame(Direction.TO_HARNESS, { type: "user", text: "Now read src." })),
+  event(24, frame(Direction.FROM_HARNESS, { type: "turn.started" })),
+  event(25, { case: "turnStarted", value: { turnId: "t2" } }, [24]),
+  event(26, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }, [24]),
+  event(27, frame(Direction.FROM_HARNESS, { type: "thinking", text: THINKING_AGAIN })),
+  event(28, { case: "itemStarted", value: { itemId: "r#1", kind: ItemKind.REASONING } }, [27]),
+  event(29, { case: "textDelta", value: { itemId: "r#1", text: THINKING_AGAIN } }, [27]),
+  event(
+    30,
+    { case: "itemCompleted", value: { itemId: "r#1", outcome: { case: "text", value: THINKING_AGAIN } } },
+    [27]
+  ),
+  event(31, { case: "harnessStderr", value: { text: "warning: /state/work is not a git repository\n" } }),
+  event(32, frame(Direction.FROM_HARNESS, { type: "text", text: "Reading `src` now" })),
+  event(33, { case: "itemStarted", value: { itemId: "m#1", kind: ItemKind.ASSISTANT_TEXT } }, [32]),
+  event(34, { case: "textDelta", value: { itemId: "m#1", text: "Reading `src` now" } }, [32]),
 ];
 
 routes.push(
@@ -391,6 +424,9 @@ const PAGES: Record<string, string> = {
   sandbox_egress: "/sandboxes/demo-a1b2?tab=egress",
   session: "/sandboxes/demo-a1b2/sessions/s-1",
   session_reasoning: "/sandboxes/demo-a1b2/sessions/s-1?reasoning=open",
+  // The two switches are independent parameters, and the raw scenario turns both on: a reader
+  // following the frames wants the thinking they produced open too.
+  session_raw: "/sandboxes/demo-a1b2/sessions/s-1?raw=1&reasoning=open",
 };
 
 const page = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";
