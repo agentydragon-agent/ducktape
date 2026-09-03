@@ -57,7 +57,9 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
-        "@pypi//typer",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
         "@pypi//uvicorn",
     ],
 )

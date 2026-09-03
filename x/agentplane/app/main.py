@@ -4,88 +4,108 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Any, cast
 
-import typer
 import uvicorn
 from fastapi.staticfiles import StaticFiles
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
+from pydantic import Field
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.app.api import create_app
+from x.agentplane.app.api import ModelCatalog, create_app
 from x.agentplane.app.bridge import RunnerBridge, runner_address
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.trajectory import TrajectoryStore
 
-app = typer.Typer(add_completion=False)
+# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//pyyaml
 
 # The built frontend, a runfiles data dependency of this module's library.
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/x/agentplane/app/frontend/dist/index.html"
 
 
-@app.command()
-def main(
-    namespace: Annotated[str, typer.Option(help="Namespace holding the Sandboxes.")],
-    template: Annotated[str, typer.Option(help="SandboxTemplate every new Sandbox copies its Pod from.")],
-    runner_port: Annotated[int, typer.Option(help="The port every runner Pod listens on.")],
-    host: Annotated[str, typer.Option(help="Bind address.")] = "127.0.0.1",
-    port: Annotated[int, typer.Option(help="Bind port.")] = 8080,
-    kubeconfig: Annotated[Path | None, typer.Option(help="Kubeconfig to use; omit for in-cluster.")] = None,
-    database_url: Annotated[
-        str, typer.Option(envvar="AGENTPLANE_DATABASE_URL", help="SQLAlchemy asyncpg URL of the trajectory store.")
-    ] = "",
-) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    if not database_url:
-        raise typer.BadParameter("--database-url (AGENTPLANE_DATABASE_URL) is required")
-    asyncio.run(
-        async_main(
-            namespace=namespace,
-            template=template,
-            runner_port=runner_port,
-            host=host,
-            port=port,
-            kubeconfig=kubeconfig,
-            database_url=database_url,
-        )
+class Settings(BaseSettings):
+    """The app's configuration.
+
+    Each field is a `--flag`, an `AGENTPLANE_*` environment variable, and a key of the YAML file
+    `AGENTPLANE_CONFIG_FILE` names, in that order of precedence; the staging Deployment keeps the model
+    catalog in that file.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)
+
+    namespace: str = Field(description="Namespace holding the Sandboxes.")
+    template: str = Field(description="SandboxTemplate every new Sandbox copies its Pod from.")
+    runner_port: int = Field(description="The port every runner Pod listens on.")
+    host: str = Field(default="127.0.0.1", description="Bind address.")
+    port: int = Field(default=8080, description="Bind port.")
+    kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
+    database_url: str = Field(description="SQLAlchemy asyncpg URL of the trajectory store.")
+    models: ModelCatalog = Field(
+        description='The models each provider may run, as JSON: {"claude": ["..."], "codex": ["..."]}.'
     )
 
+    def __init__(self, **values: Any) -> None:
+        # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
+        # derives a required-argument signature from the fields.
+        super().__init__(**values)
 
-async def async_main(
-    *, namespace: str, template: str, runner_port: int, host: str, port: int, kubeconfig: Path | None, database_url: str
-) -> None:
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        if config_file := os.environ.get("AGENTPLANE_CONFIG_FILE"):
+            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
+        sources.append(file_secret_settings)
+        return tuple(sources)
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    asyncio.run(async_main(Settings()))
+
+
+async def async_main(settings: Settings) -> None:
     configuration = k8s_client.Configuration()
-    if kubeconfig is None:
+    if settings.kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
     else:
-        await k8s_config.load_kube_config(config_file=str(kubeconfig), client_configuration=configuration)
+        await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
     async with ApiClient(configuration=configuration) as api:
         inventory = SandboxInventory(
-            namespace=namespace,
-            template=template,
+            namespace=settings.namespace,
+            template=settings.template,
             # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
             custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
             core_v1=CoreV1Api(api),
         )
-        store = TrajectoryStore.connect(database_url)
+        store = TrajectoryStore.connect(settings.database_url)
         await store.ensure_schema()
-        bridge = RunnerBridge(address_of=runner_address(inventory, runner_port), store=store)
-        app = create_app(inventory, bridge, store)
+        bridge = RunnerBridge(address_of=runner_address(inventory, settings.runner_port), store=store)
+        app = create_app(inventory, bridge, store, settings.models)
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", StaticFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         try:
             await bridge.start(
                 [view.name for view in await inventory.list_sandboxes() if view.state is ProvisioningState.RUNNING]
             )
-            await uvicorn.Server(uvicorn.Config(app, host=host, port=port)).serve()
+            await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
         finally:
             await bridge.close()
             await store.close()
 
 
 if __name__ == "__main__":
-    app()
+    main()

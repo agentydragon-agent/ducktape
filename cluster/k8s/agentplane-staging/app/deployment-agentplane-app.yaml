@@ -46,6 +46,8 @@ spec:
             - --host=0.0.0.0
             - --port=8080
           env:
+            - name: AGENTPLANE_CONFIG_FILE
+              value: /etc/agentplane/config.yaml
             - name: AGENTPLANE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -99,3 +101,11 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/agentplane
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: agentplane-app-config
