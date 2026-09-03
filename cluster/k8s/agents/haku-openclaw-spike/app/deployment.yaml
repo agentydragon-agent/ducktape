@@ -20,10 +20,8 @@ spec:
         app.kubernetes.io/name: haku-openclaw-spike
     spec:
       automountServiceAccountToken: false
-      # State now lives on the optiplex home worker (state-v2 / local-path-home-ssd),
-      # so the pod is pinned there by that PVC's node affinity. Hard anti-control-plane
-      # (no toleration) guarantees it can never schedule back onto a cp node and starve
-      # etcd/kubelet with agent I/O -- the failure this migration resolves (#4706).
+      # State is on the worker-local state-v2 PVC. Exclude control-plane nodes so
+      # the agent cannot move its I/O back onto the etcd/kubelet hosts.
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -229,11 +227,8 @@ spec:
               memory: 1Gi
             limits:
               cpu: "4"
-              # TODO(vpa-memory-audit): 8Gi -> 16Gi. VPA observed a 6.30Gi
-              # request / 8.39Gi upper bound. A single OpenClaw process holding
-              # 6.3Gi resident is the most suspicious number in this sweep —
-              # investigate before accepting 16Gi, this smells like a leak
-              # rather than a working set.
+              # Provisional high limit after an earlier VPA memory observation;
+              # investigate resident-memory growth before treating it as normal.
               memory: 16Gi
           volumeMounts:
             - name: config

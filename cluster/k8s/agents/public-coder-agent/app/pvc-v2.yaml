@@ -13,7 +13,6 @@ spec:
   storageClassName: local-path-ovh-hdd
   resources:
     requests:
-      # The source used 48.2 GiB at migration planning time. local-path does
-      # not enforce this request as a quota, but 80 GiB records sensible
-      # capacity for the durable agent workspace and its normal growth.
+      # local-path does not enforce PVC requests as quotas; this request leaves
+      # headroom for the durable agent workspace and normal growth.
       storage: 80Gi

@@ -148,15 +148,13 @@ proxy environment handling.
 - **Temporary commit-built iron-proxy image.** <../../../images/iron-proxy/>
   and `.github/workflows/iron-proxy-image.yml` build upstream commit `c90f4fe`
   into the private Forgejo registry because it adds the HTTP/2/gRPC MITM support
-  BuildBuddy needs but has not been released yet. Flux rolls the proxy to that
-  image after the first push. Return to the official image and delete this build
-  path once iron-proxy v0.50.0 ships stable — as of 2026-08-09 `c90f4fe` is
-  v0.49.0 + 1 commit and rides in `v0.50.0-rc.2`, but no non-RC tag has it. The
-  image is shared with
+  BuildBuddy needs but is not in the upstream latest stable release (`v0.49.0`)
+  as of this audit. Flux rolls the proxy to that image after it is published.
+  Return to the official image and delete this build path once a stable release
+  includes the required support. The image is shared with
   `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy`, so it is not owned
-  here — it was named `public-coder-iron-proxy` until 2026-08-09 only because
-  this was its first consumer.
-- **`gateway.bind: all`**, unlike the loopback-bound lab rig, because the outpost
+  here — it was first named for public-coder because this was its first consumer.
+- **`gateway.bind: lan`**, unlike the loopback-bound lab rig, because the outpost
   reaches this pod over the cluster network. What makes that safe is
   `app/networkpolicy-ingress.yaml`, which admits only the outpost's pods —
   without it any pod could forge `x-authentik-username`.
@@ -182,9 +180,8 @@ proxy environment handling.
   OpenEBS LVM provisioner to OVH workers and migrating this claim to a
   size-enforcing LVM-backed StorageClass (or another quota-enforcing design).
 - **Runtime image closure.** Profile and reduce the OpenClaw image before its
-  next substantial expansion. The 2026-08-17 image is 2.61 GiB compressed
-  across 99 layers. It intentionally includes the gateway and Matrix plugin,
-  but also the broad `devtools` and git-hook closures (Bazel/`bbr`, Ansible,
-  AWS CLI, Checkov, Rust tooling, and formatter/pre-commit tooling). Identify
-  the actual runtime-required subset and move the rest to the dedicated
-  devbox or on-demand tooling without breaking agent workflows.
+  next substantial expansion. It intentionally includes the gateway and Matrix
+  plugin, but also the broad `devtools` and git-hook closures (Bazel/`bbr`,
+  Ansible, AWS CLI, Checkov, Rust tooling, and formatter/pre-commit tooling).
+  Identify the actual runtime-required subset and move the rest to the
+  dedicated devbox or on-demand tooling without breaking agent workflows.

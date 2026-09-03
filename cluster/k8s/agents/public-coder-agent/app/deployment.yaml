@@ -20,8 +20,8 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  # State has been verified after restoration onto the worker-local v2 claim.
-  # Keep this GitOps-owned so a manual scale-to-zero cannot drift from Flux.
+  # Keep the replica count GitOps-owned; the worker-local state claim is
+  # selected by the affinity and PVC declarations below.
   replicas: 1
   strategy:
     type: Recreate
@@ -35,9 +35,8 @@ spec:
     spec:
       securityContext:
         fsGroup: 1000
-      # The restored v2 local PVC is deliberately bound on this worker. Keep
-      # Public Coder off control planes even if a later manifest change points
-      # at a different claim.
+      # Keep Public Coder on the worker class that serves its local state PVC;
+      # do not allow it to fall back onto control-plane nodes.
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -47,26 +46,11 @@ spec:
                     operator: In
                     values:
                       - ovh-ns102453
-      # Both containers use the Flux-pinned image produced by the Nix image workflow.
+      # Flux advances both container images after the Nix image workflow publishes them.
       initContainers:
-        # The gateway reads its config from the state dir, which is the PVC, so
-        # the declarative config has to be planted there before startup.
-        #
-        # The `rm` is load-bearing, not tidying. The gateway keeps its own
-        # `last-good` backup and, on startup, compares the file it finds against
-        # it; a seeded config that lacks keys the gateway has since added to its
-        # own copy is treated as a destructive external edit, so the backup is
-        # restored and the seed is set aside as `openclaw.json5.clobbered.<ts>`.
-        # Once anything writes config through the gateway — `openclaw config
-        # set`, the control UI, a plugin — every subsequent deploy of this
-        # ConfigMap is silently ignored. That is not hypothetical: it is why this
-        # agent ran without memory search while the correct config sat in git,
-        # and it hid for three restarts. Deleting the baseline makes the seeded
-        # config authoritative, which is what GitOps ownership means; git is the
-        # backup this file needs.
-        #
-        # Reproduction, the verified fix, and the upstream operator's identical
-        # exposure: docs/personal_agents/findings/harness_behaviour.md F19.
+        # Seed the GitOps config into the state PVC before startup. Remove the
+        # gateway's own config backups so the ConfigMap remains authoritative;
+        # see docs/personal_agents/findings/harness_behaviour.md F19.
         - name: seed-config
           image: ghcr.io/agentydragon/openclaw:devel-20260901160121-bf62e5e # {"$imagepolicy": "flux-system:openclaw"}
           command:
@@ -88,8 +72,6 @@ spec:
             # gateway looks under the wrong home directory and exits "Missing config".
             - name: HOME
               value: /home/openclaw
-            # Keep the declarative source visibly JSON5 while retaining the
-            # same state-PVC placement and init-container ownership semantics.
             - name: OPENCLAW_CONFIG_PATH
               value: /home/openclaw/.openclaw/openclaw.json5
             - name: NPM_CONFIG_PREFIX

@@ -2,18 +2,13 @@
   // This file is the GitOps source of truth. The app init container copies it
   // into the state PVC; OPENCLAW_CONFIG_PATH points OpenClaw back at that copy.
   agents: {
+    ownership: "explicit",
     defaults: {
       userTimezone: "America/Los_Angeles",
       // The working path is Codex subscription -> CLIProxyAPI -> LiteLLM's
       // native Responses endpoint. Keep this on the measured 5.6 roster.
       model: {
         primary: "litellm/chatgpt/oai-responses/gpt-5.6-luna",
-      },
-      // Measured against the live route: all three 5.6 models fail just above
-      // 372k total context. The 50k floor is OpenClaw's tier for that window.
-      // OpenClaw 2026.8 retires this setting; remove it when the image moves.
-      compaction: {
-        reserveTokensFloor: 50000,
       },
       sandbox: {
         mode: "off",
@@ -25,33 +20,42 @@
       },
       skills: [],
       verboseDefault: "full",
-      // Memory uses LiteLLM's OpenAI-compatible embeddings route; keep it out
-      // of the public egress proxy because LiteLLM is an in-cluster Service.
-      memorySearch: {
-        enabled: true,
-        sources: ["memory"],
-        provider: "openai-compatible",
-        model: "google/oai-embeddings/gemini-embedding-2",
-        remote: {
-          baseUrl: "http://litellm.litellm.svc.cluster.local:4000/v1",
-          apiKey: "${OPENCLAW_LITELLM_API_KEY}",
-          nonBatchConcurrency: 2,
-        },
-      },
     },
-    list: [
-      {
-        id: "coder",
+    entries: {
+      coder: {
         name: "Coder",
       },
-      {
-        id: "haku_console_tpm",
+      haku_console_tpm: {
         name: "Haku Console TPM",
         model: {
           primary: "litellm/chatgpt/oai-responses/gpt-5.6-sol",
         },
       },
-    ],
+    },
+  },
+  // Route the Matrix account to the public coder agent explicitly; multi-agent
+  // configurations do not infer a channel owner.
+  bindings: [
+    {
+      agentId: "coder",
+      match: {
+        channel: "matrix",
+      },
+    },
+  ],
+  // Memory uses LiteLLM's OpenAI-compatible embeddings route; keep it out
+  // of the public egress proxy because LiteLLM is an in-cluster Service.
+  memory: {
+    search: {
+      enabled: true,
+      sources: ["memory"],
+      provider: "openai-compatible",
+      model: "google/oai-embeddings/gemini-embedding-2",
+      remote: {
+        baseUrl: "http://litellm.litellm.svc.cluster.local:4000/v1",
+        apiKey: "${OPENCLAW_LITELLM_API_KEY}",
+      },
+    },
   },
   commands: {
     config: false,
@@ -199,9 +203,9 @@
         // Haku fans out to many upstream MCP servers and each call is independent,
         // so let the agent issue concurrent tool calls against it.
         supportsParallelToolCalls: true,
-        // Haku's tools/list is ~194 tools/~733 KB and exceeds OpenClaw's 1.5s
-        // catalog default. Haku can wait up to 60s for terminal results, so
-        // keep this timeout above that to avoid client-side MCP timeouts.
+        // Haku exposes a large tools catalog and can take longer than the
+        // default client timeout. Keep this above Haku's terminal-result wait
+        // so the client does not time out first.
         requestTimeoutMs: 70000,
         headers: {
           // Haku's token is an inert placeholder here; runtime interpolation
@@ -260,14 +264,6 @@
         timeoutSeconds: 30,
         cacheTtlMinutes: 15,
       },
-    },
-  },
-  session: {
-    // OpenClaw permits only daily/idle resets. A 100-year idle timeout makes
-    // automatic rollover unreachable while preserving /new and /reset.
-    reset: {
-      mode: "idle",
-      idleMinutes: 52560000,
     },
   },
 }
