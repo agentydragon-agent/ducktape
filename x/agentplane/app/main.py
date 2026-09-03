@@ -15,7 +15,7 @@ import uvicorn
 from fastapi import Response
 from fastapi.staticfiles import StaticFiles
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
@@ -25,7 +25,9 @@ from x.agentplane.app.api import ModelCatalog, create_app
 from x.agentplane.app.bridge import RunnerBridge, runner_address
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
+from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
+from x.agentplane.app.oidc import load_settings
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -34,6 +36,9 @@ from x.agentplane.app.trajectory import TrajectoryStore
 # The built frontend, a runfiles data dependency of this module's library.
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/x/agentplane/app/frontend/dist/index.html"
+
+
+logger = logging.getLogger(__name__)
 
 
 class SpaFiles(StaticFiles):
@@ -84,6 +89,10 @@ class Settings(BaseSettings):
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."
     )
+    token_audience: str = Field(
+        default="agentplane",
+        description="Audience a Kubernetes token must carry to authenticate here, so none is replayable.",
+    )
 
     def __init__(self, **values: Any) -> None:
         # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
@@ -133,7 +142,18 @@ async def async_main(settings: Settings) -> None:
         store = TrajectoryStore.connect(settings.database_url)
         await store.ensure_schema()
         bridge = RunnerBridge(address_of=runner_address(inventory, settings.runner_port), store=store)
-        app = create_app(inventory, bridge, store, settings.models, egress, DecisionsClient(admin_http))
+        oidc = load_settings()
+        logger.info("browser login: %s", f"OIDC at {oidc.issuer}" if oidc else "none configured")
+        app = create_app(
+            inventory,
+            bridge,
+            store,
+            settings.models,
+            egress,
+            DecisionsClient(admin_http),
+            oidc,
+            TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience),
+        )
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         try:
