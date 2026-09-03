@@ -72,18 +72,18 @@ flowchart TB
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::milestone
 
     subgraph traj["Trajectories outlive sandboxes"]
-        T1["T1 Trajectory persistence<br/>session log + native frames copied out of the sandbox<br/>keyed by thread, sandbox, agent"]:::future
+        T1["T1 Trajectory persistence<br/>session log + native frames copied out of the sandbox<br/>keyed by thread, sandbox, agent"]:::inflight
         T2["T2 Named threads<br/>a small model proposes, the user edits"]:::future
         T3["T3 Search and lookup over past interactions<br/>what happened, why, which agent"]:::future
     end
-    D["Rai decision<br/>conversation app: separate deployment or Haku Console host?"]:::decision
+    D["Decided<br/>conversation app: a separate deployment"]:::completed
     E["Conversation app<br/>timeline and live control over persisted threads"]:::future
     F["Product milestone<br/>persisted history, honest outcomes, real users"]:::milestone
 
     G["Rai decision<br/>second viewer on one session needed?"]:::decision
     R1["Read-only follower attachments"]:::future
 
-    J["Secure egress integration<br/>fixed sidecar + trusted external gateway"]:::future
+    J["Secure egress integration<br/>per-Pod sidecar wraps traffic with the Pod's SA token;<br/>central proxy holds credentials and egress policy;<br/>first credential: the agentydragon-agent GitHub PAT"]:::next
     P["Rai decision<br/>dynamic per-Thread policy or explicit approval needed?"]:::decision
     K["Conditional access controller<br/>allow / deny / user approval required"]:::future
     R["Rai decision<br/>does the threat model require stronger isolation?"]:::decision
@@ -157,14 +157,19 @@ is published to staging. T1 needs only C2, since the bridge already reads the fu
 for F0, but nothing stops it starting alongside C4.
 
 The orange nodes are deliberately limited to choices that change downstream implementation
-ordering. `D` is assumed answered as "separate deployment" for this slice, since the integration
-app is a separate client by construction; the decision remains open for the conversation app.
+ordering. `D` is decided: the conversation app stays a separate deployment, at least for now.
+T1's store is PostgreSQL (a CNPG cluster beside the runner Pods; staging's is disposable).
 External-event scope is decided: approval decisions and other notifications reach a thread as
 inputs ([`async_approvals.md`](async_approvals.md)). A "no" choice should close or defer that
 branch rather than create speculative scaffolding.
 
-The `P`/`K` path is only the narrow access decision needed for a credentialed Agentplane egress
-deployment. It is not the general Agent Console permission model represented by `AA`/`AB`, and it must
+`J` is decided in shape: the ADR's composition, a per-Pod sidecar that takes unauthenticated
+traffic from the sandbox and forwards it to a central proxy under the Pod-bound ServiceAccount
+token, with the central proxy holding the real credentials and the per-identity egress rules
+(methods, hosts, paths, and which placeholder tokens it substitutes). It is Agentplane's own
+code, not a reuse of Haku's egress proxy, and the integration app shows a sandbox's allowed
+egress, tokens, and decisions. The `P`/`K` path is only the narrow access decision needed for a
+credentialed Agentplane egress deployment. It is not the general Agent Console permission model represented by `AA`/`AB`, and it must
 not be reused as a private-Haku policy language by default. The existing broad Ducktape lane is a
 scoped operational convenience, not evidence that the same grants are safe for an agent with Rai's
 personal context.
