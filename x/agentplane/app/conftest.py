@@ -89,20 +89,27 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
 # The agent's credential, and what a test client carries: the app's other one is an OIDC session
 # only an authorization-code round trip produces (`test_auth_routes.py`).
 AUDIENCE = "agentplane-test"
+AGENT = f"system:serviceaccount:{NAMESPACE}:test-agent"
 AGENT_TOKEN = "test-agent-token"  # a test literal, not a real credential
 AGENT_AUTH = {"Authorization": f"Bearer {AGENT_TOKEN}"}
+# A second ServiceAccount, whose tokens are every bit as valid as the agent's and which the app
+# accepts nothing from: what naming the subjects it does accept is for.
+STRANGER = f"system:serviceaccount:{NAMESPACE}:test-stranger"
+STRANGER_TOKEN = "test-stranger-token"  # a test literal, not a real credential
+STRANGER_AUTH = {"Authorization": f"Bearer {STRANGER_TOKEN}"}
 
 
 @pytest.fixture
 def authentication() -> FakeAuthenticationV1Api:
     api = FakeAuthenticationV1Api()
-    api.issue(AGENT_TOKEN, username=f"system:serviceaccount:{NAMESPACE}:test-agent", audiences=[AUDIENCE])
+    api.issue(AGENT_TOKEN, username=AGENT, audiences=[AUDIENCE])
+    api.issue(STRANGER_TOKEN, username=STRANGER, audiences=[AUDIENCE])
     return api
 
 
 @pytest.fixture
 def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
-    return TokenReviewer(cast(Any, authentication), audience=AUDIENCE)
+    return TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=frozenset({AGENT}))
 
 
 @pytest.fixture
