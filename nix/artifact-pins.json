@@ -25,8 +25,8 @@
       "sha256": "ZdhCjzICYKr81LJ1qP0zp7U7PAmS8MvU/Pi+CU6V+As="
     },
     "ducktape": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-5b725598abe5/ducktape-0.1.0-py3-none-any.whl",
-      "sha256": "W3JVmKvluNgiKSdKo7JecgK+doIEJLEHYbeAcE2pc7E="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-5d150a92b334/ducktape-0.1.0-py3-none-any.whl",
+      "sha256": "XRUKkrM0e4V4aIIvsWuKxWpW4AKm7wEje3KP2CMibII="
     },
     "gterm-theme": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-9d9992c2da1d/gterm_theme-0.1.0-py3-none-any.whl",
