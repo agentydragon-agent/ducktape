@@ -1,10 +1,12 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **every candidate anyone proposed has been eliminated by measurement, and the
-burn continues.** It requires wyrm2 to be up, yet nothing observed on wyrm2 accounts for
-it. The single untested lead is that both instruments filtered on a subset of GitHub's
-API addresses, so the traffic was invisible to each of them for the same reason. Fix the
-filters before trusting any elimination below.
+Status: **two consumers, and the big one stops when wyrm2 leaves the cluster.** The
+consumer that broke the account runs at **~2200 points/minute** and exhausts the 5000
+budget about four minutes after each reset. Underneath it sits a metronomic **60
+points/minute** floor, ~1/36th the rate, present before and after and never the problem.
+Stopping kubelet and containerd on wyrm2 removed the fast consumer and left the floor —
+though the operator was also asleep for that window, so pods and operator activity were
+removed together.
 
 ## The blind spot, and why it existed
 
@@ -828,6 +830,84 @@ filter from `api.github.com/meta`, then re-run the residual measurement. Every
 elimination above is scoped to the addresses that were watched, and the residual that
 cleared the CLI is the only one that compared against the account-wide counter rather
 than a filtered capture.
+
+## Two consumers, finally separated
+
+The minutes after the 13:03 reset, wyrm2 fully up:
+
+```text
+13:05Z    255
+13:06Z   +62      the floor, alone
+13:07Z  +1135
+13:08Z  +2250
+13:09Z  +1739
+13:10Z  +2200
+13:11Z  +2231     exhausted, ~4 min after reset
+```
+
+**~2200 points/minute** is what broke the account. The `+62` at 13:06 is the floor
+visible beside it before the fast consumer starts, so the floor was always there and is
+1/36th of the rate that mattered.
+
+kubelet and containerd were then stopped at 13:23 and left down until 19:14 — six hours,
+no pods on the node, host processes untouched, recorder running unfiltered. The 14:00
+window:
+
+```text
+14:05Z  used= 1629   reset, 1629 already gone
+14:06Z  +60
+14:08Z  +60   ... +60 every minute, for hours ...
+14:20Z  +600
+```
+
+The fast consumer is gone; the floor continues at exactly 60/minute, giving the
+15:00–19:00 plateau (3590, 3561, 3861, 3830, 3830) — under the 5000 budget, which is why
+`gh` works again.
+
+**So the finding is that taking wyrm2 off the cluster removed the fast consumer.** The
+floor is a separate, minor, always-present thing that this note earlier mistook for the
+answer because it was what remained moving.
+
+### The floor is not on wyrm2
+
+Over the same six hours, with every pod gone, the recorder's public destinations were
+`147.135.*` (this cluster's own OVH nodes) and Google. **No `140.82.*`, no `20.29.*`, no
+`172.182.*`, no QUIC.** So the poller is neither a pod on wyrm2 nor a host process on
+wyrm2, under instruments that now filter nothing.
+
+### What the six hours do and do not separate
+
+The operator was asleep for the whole window, so "no pods on wyrm2" and "no operator
+activity" were removed together. That splits the two consumers unevenly:
+
+- **The 1 Hz baseline is cleanly attributed.** It ran at exactly 60/minute through six
+  hours with no pods _and_ no operator, so it is neither. Nothing about the confound
+  weakens that.
+- **The bursts are not.** They stopped after 14:20 and the plateau is pure baseline, but
+  pods and operator activity vanished at the same time, so which one carried the bursts
+  is unresolved. They were plausibly the tf-runners, or agent sessions, or both.
+
+The discriminator is cheap now that kubelet is back: an hour with pods running and the
+operator idle. If bursts return, they are workload; if the hour stays flat at 3600, they
+follow the operator.
+
+### Which reframes the partition test
+
+The account went quiet when wyrm2 was **powered off**, and stayed burning at 3600/h when
+only its **pods** went away. The difference between those two states is the machine's
+network presence, not its workloads. That fits a poller that runs elsewhere and targets
+wyrm2, or one whose host loses connectivity along with the node — the operator's
+original suspicion, recorded earlier in this note and not pursued.
+
+### Next
+
+1. **Characterise the cadence.** Sample `github_graphql_rate_used` every 5s for two
+   minutes: a clean 1.000/s is a timer, drift is a request loop. Mimir's minute
+   resolution cannot distinguish them.
+2. **Rotate the credential.** The poller survived kubelet, containerd, every pod and
+   every process on wyrm2. The remaining lever is which token it holds — rotating
+   `Ducktape cluster secrets sync` kills it if that is the one, and is uninformative
+   otherwise. It is the last unturned knob.
 
 ## Knobs not yet turned
 
