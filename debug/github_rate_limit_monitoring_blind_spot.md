@@ -1,7 +1,9 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: the monitoring blind spot is closed. The open question is which consumer.
-First 7h of real data: 2026-09-03 23:00 – 2026-09-04 06:00 UTC.
+Status: **identified**. The consumer is the Claude Desktop app (upstream
+anthropics/claude-code#88320), pinned here at a version predating the fix. Remaining
+work is the version bump and a confirming window. The monitoring blind spot that hid
+this for weeks is closed.
 
 ## The blind spot, and why it existed
 
@@ -186,6 +188,305 @@ anyway; only `GH_RELEASE_PAT` in `release.yml` is the user.)
 
 That leaves the workstation and GitHub-hosted runners — the two places no local
 telemetry reaches.
+
+## The 2026-09-04 07:10 episode, and what it eliminated
+
+A second burst: GraphQL `used` went from 139 at 07:10 UTC to 10698 at 07:22, about
+10500 points in twelve minutes. The connection recorder went live on wyrm2 at 07:20:52
+and so caught only the last ninety seconds — during which GitHub API connections ran
+5–11 per minute, all light. Ten minutes late.
+
+It still eliminated three candidates by arithmetic rather than by absence:
+
+- **`gh` is not it.** Across every Claude Code session transcript in 24h, `gh` usage is
+  REST — `gh api repos/…`, `…/check-runs`, `rate_limit`, mostly in `until` polling loops
+  on a 15–30s period. REST calls do not touch the GraphQL bucket. Exactly **5**
+  `gh api graphql` invocations in the whole window.
+- **`workspace-gc` is not it.** `pr_states` batches 50 branches per request as aliased
+  `pullRequests(headRefName:, first: 5)`, so 250 nodes ≈ 3 points per request. With 209
+  remote branches that is 5 requests, ~15 points for a full sweep. Reaching 10500 needs
+  ~700 sweeps in twelve minutes.
+- **Chrome is not it**, despite holding open connections to `api.github.com`: `ss -tnpi`
+  puts 27 KB and 33 data segments on one, 3.3 KB and 7 on the other. Tens of requests,
+  not thousands.
+
+**Gotcha: connection counting cannot see request volume.** A client issuing thousands of
+GraphQL calls over one keep-alive HTTP/2 socket appears in the recorder as a single
+line. `ss -tnpi`'s `bytes_sent`/`data_segs_out` is the check that distinguishes a busy
+socket from an idle one, and it is what cleared Chrome here.
+
+**Unresolved: whether `used` saturates.** Last night's hourly peaks cluster tightly
+around 2x the 5000 limit (10426, 10000, 10110, 10808, 10080, 10305), which looks like a
+capped counter rather than seven workloads independently stopping at the same number. If
+it caps, a flat `used` says nothing about whether a client is still hammering. Against
+that: it is currently still creeping (+12 points in five minutes), roughly thirty times
+slower than the post-exhaustion climb during a burn. `remaining` dropping 5000 → 0 in
+the minutes after a reset is the signal to trust either way.
+
+## Applications authorized on the account
+
+Rate limits are per account, and this is the part that is easy to get wrong: a **GitHub
+App acting on an installation** has its own bucket, but the same app making
+**user-to-server** requests spends the _user's_ GraphQL points, and an **OAuth app**
+always acts as the user. So an authorized third party can drain this bucket from
+infrastructure none of our probes reach — not the workstation recorder, not Hubble.
+
+Authorized as of 2026-09-04, with GitHub's own "last used" (its resolution is weeks, so
+it separates dormant from live and nothing finer):
+
+| Authorization                 | Kind       | Last used | Note                                    |
+| ----------------------------- | ---------- | --------- | --------------------------------------- |
+| GitHub CLI                    | OAuth      | 1 week    | `gh`; measured REST-only here           |
+| Exist (hellocodeco)           | OAuth      | 2 weeks   | third-party life-tracking               |
+| GitHub Android                | OAuth      | 1 week    | phone                                   |
+| LF: EasyCLA                   | OAuth      | 6 months  | dormant                                 |
+| Visual Studio Code            | OAuth      | 10 months | dormant                                 |
+| ChatGPT Codex Connector       | GitHub App | 1 week    | **acts as the user, from OpenAI infra** |
+| Claude (anthropics)           | GitHub App | 1 week    | **acts as the user, from Anthropic**    |
+| Copilot SWE Agent             | GitHub App | 1 week    | **agent, acts as the user**             |
+| Copilot Chat App              | GitHub App | 1 week    | acts as the user                        |
+| Copilot Pull Request Reviewer | GitHub App | 2 weeks   | acts as the user                        |
+| Haku Console                  | GitHub App | 1 week    | own app; the console's GitHub MCP       |
+| GitHub Copilot Plugin         | GitHub App | 6 months  | dormant                                 |
+| buildbuddy.io                 | GitHub App | never     | dormant                                 |
+| Renovate (mend)               | GitHub App | never     | dormant — not the hosted service        |
+| Slack                         | GitHub App | 11 months | dormant                                 |
+
+The four bolded rows are the shape the evidence has been pointing at all along: an agent
+acting as the user, running somewhere with no local footprint, which is why seven hours
+of burn left no trace on either the workstation or the cluster. `nix/home/codex` wires a
+GitHub connector into Codex explicitly, and the operator runs both Codex and Claude
+sessions across exactly the hours the bucket drains.
+
+Two also-installed apps owned by the account, from the installations view:
+`Ducktape automation` (CI, installation-scoped, own bucket) and `ducktape-arc` — the
+latter unidentified, with no reference anywhere in this repo.
+
+An old `Rai's tests` OAuth app and several stale authorizations were deleted around
+07:32 UTC on 2026-09-04, before the 08:00:15 reset. That makes the following hour a
+before/after test — weak on its own, since the burn is already intermittent, but the
+boundary is clean.
+
+## Personal access tokens on the account
+
+GitHub's "last used" resolution is weeks, which is enough to separate live from dormant.
+Fine-grained, 2026-09-04:
+
+| Token                            | Last used | Maps to                                       |
+| -------------------------------- | --------- | --------------------------------------------- |
+| Ducktape cluster secrets sync    | 1 week    | `external-creds/github-agentydragon`          |
+| Ducktape BuildBuddy release      | 1 week    | `GH_RELEASE_PAT`, `secrets/ci/gh-release-pat` |
+| gaffer binaries nix install      | 1 week    | gaffer-private fetch                          |
+| Gaffer gitops configuration      | 3 months  | dormant                                       |
+| Claude Code Web Ducktape CI read | 3 months  | `DUCKTAPE_CI_READ_GITHUB_TOKEN`               |
+| Claude Code new-VM PAT           | expired   | deleted 2026-09-04                            |
+
+Classic:
+
+| Token                        | Last used | Maps to                                                   |
+| ---------------------------- | --------- | --------------------------------------------------------- |
+| Refined GitHub               | 1 week    | browser extension — `repo, workflow, read:project`        |
+| Gaffer GHCR image-push       | 1 week    | gaffer-private CI                                         |
+| GHCR pull (Gaffer private)   | 1 week    | gaffer-private image pulls                                |
+| BuildBuddy GHCR package push | 5 months  | superseded by `secrets.GITHUB_TOKEN`; deleted             |
+| Terraform PAT for SSH keys   | never     | `tf/github` via `secrets/shared/github-pat-ssh-keys.yaml` |
+
+Two of these settle open questions. **The Claude Code Web CI read token was last used
+three months ago**, which independently kills the cloud-session hypothesis this note
+carried earlier — those sessions have not been spending the personal PAT at all. And
+`Terraform PAT for SSH keys` is wired but never exercised: `tf/github/.envrc` decrypts it
+for four `github_user_ssh_key` resources, so retiring it (a non-expiring
+`admin:public_key` token is worth retiring) requires minting a replacement into the same
+SOPS path or dropping that root.
+
+## Refined GitHub: hypothesized, then falsified
+
+The browser extension held a classic PAT (`repo, workflow, read:project`, used within
+the last week) and drives GitHub's GraphQL API from the browser on every page load. It
+fitted every observation: Chrome held keep-alive connections to `api.github.com`
+throughout; PR #5526 was merged from the web UI inside the 07:10–07:22 burst; it runs
+only while GitHub pages are open, which matches a burn that tracks operator activity
+without being `gh`, the cluster, or cloud sessions; it would not back off on 403; and
+one branches page against 209 branches is the right shape to spend thousands of points.
+A connection-counting recorder structurally cannot see it, which explained the silence.
+
+**The operator deleted that PAT before the 08:00:15 UTC reset, and the burn recurred
+anyway** — see below. Unless the extension has a second credential path, it is not the
+consumer. Recorded because the reasoning was sound and the elimination is what makes it
+useful: the next candidate has to explain the same set of facts without it.
+
+## The 08:00 reset, watched live
+
+The first burn captured while instrumented. 30-second quota sampling:
+
+```text
+08:00:20  used=10710  remaining=0        (pre-reset, exhausted)
+08:00:51  used=10     remaining=4990     reset landed
+08:01:21  used=10     remaining=4990     ~30s of nothing
+08:01:51  used=2056   remaining=2944     2046 points in 30s
+08:02:21  used=4073   remaining=927      2017 more
+08:02:51  used=4073   remaining=927      stopped
+```
+
+About 4060 points in the first ninety seconds. **That was a plateau, not the end**: the
+08:00 hour went on to peak at 10561, 2x budget like every other. An early reading of
+"burst, then stopped" was wrong, and so was the same reading of the 07:10 episode —
+both were the same continuous burn seen through too short a window.
+
+**Coverage is the binding limit on every conclusion here.** The exporter went live at
+22:59 UTC on 2026-09-03, so the entire dataset is 9.1 hours, 16:00–01:00 PDT. Nine of
+those ten hours burned fully; only 23:00 PDT was quiet. No daytime hour has ever been
+observed. The "the burn tracks operator activity" reading elsewhere in this note is
+therefore under-determined: it is equally consistent with something running
+unconditionally that the exporter has not yet watched through a quiet period. One idle
+night settles it and costs nothing.
+
+What the wyrm2 recorder shows across those same minutes: **five GitHub-API connections
+per minute**, steady before, during and after. So ~15 connections carried ~4000 points,
+around 270 points each. Either the caller is off this machine, or it is on it and each
+connection carries several expensive queries.
+
+Connections to `api.github.com` over the whole log, by process:
+
+| Connections | Process                                           |
+| ----------- | ------------------------------------------------- |
+| 51          | Chrome (pid 452999)                               |
+| 44          | `claude` CLI (pid 447911) — 11 such processes run |
+| 28          | `main`, uid 65532, under containerd               |
+| 24          | `claude` CLI (pid 2435149)                        |
+| 6           | tofu-controller `terraform-provi` runners         |
+| 1           | `gh`, spawned by a `claude` session               |
+
+Two `claude` processes connected at 01:01:46 and 01:01:52 PDT, inside the exact 30-second
+window that spent 2046 points. That is the CLI itself, not `gh` and not a Bash tool call.
+Suggestive, not conclusive: connection counts cannot tell how many requests each carried,
+and Chrome leads the table while its measured sockets stayed light.
+
+## Interventions, in order (2026-09-04)
+
+Each landed before the 08:00:15 UTC reset, so the following hour was a before/after test.
+The burn recurred, which positively exonerates all of them.
+
+1. `Rai's tests` OAuth app and several stale OAuth authorizations deleted (~07:32 UTC).
+2. Expired `Claude Code new-VM PAT` deleted; dormant `BuildBuddy GHCR package push` PAT
+   deleted (superseded by `secrets.GITHUB_TOKEN`, see `devinfra/secrets/ci_env.sh`).
+3. `Terraform PAT for SSH keys` deleted. It is wired into `tf/github` via
+   `secrets/shared/github-pat-ssh-keys.yaml`; whether the deleted token is the one in
+   that file is unverified (decrypt it and call `/user`: 401 means it was). Either way
+   that root needs a replacement minted into the same SOPS path, or removing.
+4. **The Refined GitHub browser extension's PAT deleted** — the credential the
+   hypothesis above rested on.
+
+Coverage caveat for everything measured tonight: `rugged` is down, so the connection
+recorder covers wyrm2 only.
+
+## Upstream: this is a known bug, reported twice
+
+Two Anthropic issues describe this consumption, in two different products. Both were
+found after the investigation above had independently reproduced their measurements.
+
+**<https://github.com/anthropics/claude-code/issues/88320>** — `area:desktop`, closed
+2026-08-24. The desktop app's internal `GhRestClient` spends the user's GraphQL points:
+**~569–640 per sidebar session switch, ~1,970 per turn start**, authenticated as the
+user. The reporter's controls line up with everything measured here: windows reaching
+"10,000+ used, 2x the limit" (attributed to parallelism, not to the counter saturation
+guessed at earlier in this note); flat ~2 points/min with the app running but idle; and
+0 points across 4m41s with the app quit. They eliminated the same candidates — shell
+commands, session hooks, CI, cron, OAuth apps.
+
+**<https://github.com/anthropics/claude-code/issues/63222>** — `area:core`, closed
+2026-06-30 **as stale, not fixed**. The CLI's inline PR-status feature exhausts the
+GraphQL bucket on repos with many open PRs, hourly, while REST stays healthy. This repo
+has many open PRs.
+
+Also relevant: **#81959** reports that `gh api rate_limit` names a different bucket than
+the one enforced — the blind spot this note opens with, rediscovered here from scratch —
+and **#65985** covers agent-generated tight `gh run view` polling loops, which the
+session transcripts here show running on a 15–30s period.
+
+Both products run on wyrm2: `claude-desktop-1.18286.0` (pinned by hand in
+<nix/packages/claude-desktop.nix>; the desktop report was against 1.32885.1) and eleven
+`claude` CLI processes. The desktop app's Electron renderers are named `Chrome_ChildIOT`,
+which is why the connection recorder's early tables filed them under Chrome.
+
+**No disabling setting is known.** Neither issue names a workaround, the settings
+inventory in <nix/home/claude_code/default.nix> has no PR-status toggle, and the CLI
+ships as a compiled bundle whose extractable strings expose only `DISABLE_AUTOUPDATER`
+and `DISABLE_INSTALLATION_CHECKS`.
+
+**The decisive test is cheap**: quit the desktop app and watch `used`. Upstream measured
+zero. That also apportions blame between the two products, which decides whether the CLI
+issue needs re-reporting with the better measurements collected here.
+
+## Result: Claude Desktop, confirmed by control
+
+Quitting the desktop app at 08:47 UTC, leaving all twelve `claude` CLI sessions running
+and one actively driven, changed consumption by roughly two orders of magnitude across
+the 09:00 reset:
+
+```text
+09:00:33  used=0     remaining=5000   reset; desktop quit since 08:47
+09:02:34  used=1
+09:04:35  used=5
+09:07:06  used=7     remaining=4993
+```
+
+Seven points in seven minutes, against 5000 gone in under three minutes in every
+previous window and ~10,500 by end of hour. That is the same control, and the same
+result, as upstream #88320.
+
+Two things fall out of it:
+
+- **The CLI is not a meaningful contributor here.** #63222 remains theoretically live,
+  but twelve running sessions produced 7 points in 7 minutes.
+- **The one unexplained quiet hour explains itself.** 23:00 PDT followed the operator's
+  last command at 22:57: an idle app with no session switches, which upstream measures
+  at ~2 points/min. That hour peaked at 523.
+
+Single trial, single variable. The positive control — reopen the app, switch between a
+few sessions, watch ~570 points per switch — would make it A-B-A, at the cost of a
+window's quota.
+
+## Remaining work
+
+1. **Bump the pin.** <nix/packages/claude-desktop.nix> holds `1.18286.0`; the apt repo
+   is at `1.40609.1`, and upstream closed #88320 on 2026-08-24 against a reporter on
+   `1.32885.1`. The file documents the bump-and-rehash procedure.
+2. **Confirm after the bump** — one clean hourly window with the app running and in use.
+3. **Then delete this note**, promoting only what outlives the incident: the
+   `/rate_limit` blind spot (already a comment in
+   <cluster/k8s/github-exporter/graphql-deployments.yaml>), and the connection recorder's
+   own tombstone in <nix/nixos/modules/github-api-recorder.nix>, which comes out with it.
+
+## Knobs not yet turned
+
+Each cuts one credential or one class of caller. Turn one at a time: the burn is
+intermittent enough that two simultaneous changes explain nothing.
+
+**`gh auth logout` on wyrm2.** Verified 2026-09-04: `GITHUB_TOKEN` is unset in both an
+agent session and a fresh login shell, nothing under `nix/` sets it, and
+`~/.config/gh/hosts.yml` (written 2026-07-07) holds an `oauth_token`. So local `gh` runs
+on an interactive `gh auth login` credential — the "GitHub CLI" OAuth app, last used
+within the last week — and not on a SOPS PAT. Logging out therefore cuts more than
+personal `gh` use: with no `GITHUB_TOKEN` in the environment, anything on this host that
+wants GitHub has to fall back to `gh auth token`, including `workspace_gc.py`'s fallback
+path and plausibly whatever the `claude` processes use when they reach
+`api.github.com`. Cost: local `gh` stops working until an interactive re-login, which
+also breaks the PR and CI-watching loops other sessions run.
+
+**Idle with processes running.** Leave wyrm2 awake with its `claude` processes alive but
+unattended, and start no cloud session. Splits "background behaviour of processes that
+exist" from "driven by operator activity" — which plain sleep does not, since suspending
+stops everything at once.
+
+**Stop cloud sessions only**, leaving local work untouched — aimed squarely at the
+`Claude` GitHub App, which acts as the user from Anthropic's infrastructure and is
+invisible to every probe deployed here.
+
+Unrelated defect found while checking the above:
+<devinfra/claude/claude_hook/profiles/cli/context.mako> tells every CLI agent session
+"`GITHUB_TOKEN` available (personal PAT from home-manager)". On wyrm2 that is false, and
+agents are being told they hold a credential they do not.
 
 ## Catching it next time
 
