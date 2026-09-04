@@ -1,9 +1,11 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **identified**. The consumer is the Claude Desktop app (upstream
-anthropics/claude-code#88320), pinned here at a version predating the fix. Remaining
-work is the version bump and a confirming window. The monitoring blind spot that hid
-this for weeks is closed.
+Status: **one heavy consumer identified, not the only one, and not fixed by upgrading.**
+The Claude Desktop app spends the user's GraphQL budget from its internal `GhRestClient`
+(upstream anthropics/claude-code#88320) — proven from the app's own log. Bumping to the
+current release does not stop it, and a second unidentified consumer spends thousands of
+points with the app provably down. The monitoring blind spot that hid all of this is
+closed.
 
 ## The blind spot, and why it existed
 
@@ -62,40 +64,65 @@ earlier. So the consumer is not GraphQL-only; whatever it is also does REST.
 `agentydragon-agent` is flat at 5000/5000 on both buckets for the entire window. Every
 consumer wired to that account is exonerated.
 
-## What consumes a GitHub credential in this repo
+## Every known GitHub API consumer
 
 Rate limits are per **account**, so anything authenticating as `agentydragon` — PAT,
-fine-grained PAT, or user OAuth — draws on the same exhausted bucket. Not all of these
-speak GraphQL; the third column is what could plausibly land in the GraphQL bucket.
+fine-grained PAT, user OAuth, or a GitHub App making _user-to-server_ requests — draws
+on the same 5,000 points/hr GraphQL bucket. A GitHub App acting on an **installation**
+has its own bucket, and git transport (clone, fetch, push over HTTPS or SSH) is not
+API traffic at all and spends nothing.
 
-### Authenticates as `agentydragon` (shares the bucket)
+### Workstations
 
-| Consumer                                                        | Credential                                                         | GraphQL?                                    |
-| --------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------- |
-| Workstation `gh` / agent sessions                               | personal PAT from home-manager + `gh auth` OAuth                   | **yes, heavily** — `gh pr`/`gh issue`       |
-| `devinfra/gc/workspace_gc.py`                                   | `GITHUB_TOKEN` or `gh auth token`                                  | **yes** — explicit `api.github.com/graphql` |
-| haku-console GitHub MCP (`api.githubcopilot.com/mcp`)           | user OAuth, `haku-console-github-mcp-client-credentials`           | **yes** — several tools are GraphQL         |
-| Claude Code web sessions (cihealth etc.)                        | `DUCKTAPE_CI_READ_GITHUB_TOKEN`, `secrets/github-ci-read-pat.yaml` | possible via `gh`                           |
-| `tf/github` Terraform root                                      | `secrets/shared/github-pat-ssh-keys.yaml` via `.envrc`             | some provider resources; manual runs only   |
-| `github-secrets-sync` (flux-system)                             | `external-creds/github-agentydragon`                               | REST                                        |
-| `attic-jwt-rotation` CronJob :30 (nix-cache)                    | same                                                               | REST                                        |
-| `authentik-jwt-rotation` CronJob :15 (agents-infra)             | same                                                               | REST                                        |
-| `github-exporter` + `github-graphql-rate-exporter` (monitoring) | same                                                               | 0-point probe by design                     |
-| `release.yml` / `release-artifact`                              | `GH_RELEASE_PAT`, `secrets/ci/gh-release-pat.sops.yaml`            | REST                                        |
-| `devinfra/nixos_bazel_test/run.sh`                              | `GITHUB_TOKEN` into nix `access-tokens`                            | REST                                        |
+| Consumer                           | Credential                                           | Bucket | Evidence                                                   |
+| ---------------------------------- | ---------------------------------------------------- | ------ | ---------------------------------------------------------- |
+| `claude` CLI, direct               | unclear; `GITHUB_TOKEN` is unset, so `gh auth token` | user   | recorder: 4 pids to `api.github.com`, `comm="HTTP Client"` |
+| Claude Desktop `GhRestClient`      | user OAuth                                           | user   | its own `main.log` logs GraphQL 403s naming user 714892    |
+| `gh` CLI                           | `gh auth login` OAuth (GitHub CLI app)               | user   | transcripts: REST polling; 5 `gh api graphql` in 24h       |
+| Chrome + extensions                | per-extension PATs                                   | user   | `ss -tnpi`: tens of requests per socket                    |
+| Refined GitHub extension           | classic PAT, `repo, workflow, read:project`          | user   | PAT deleted 2026-09-04; burn continued                     |
+| `devinfra/gc/workspace_gc.py`      | `GITHUB_TOKEN` or `gh auth token`                    | user   | ~3 points/request, ~15 per 209-branch sweep                |
+| `tf/github` Terraform root         | `secrets/shared/github-pat-ssh-keys.yaml`            | user   | 4 `github_user_ssh_key`; PAT since deleted                 |
+| `devinfra/nixos_bazel_test/run.sh` | `GITHUB_TOKEN` into nix `access-tokens`              | user   | REST                                                       |
 
-### Separate bucket
+### In-cluster
 
-- **`agentydragon-agent` PAT** (`secrets/github-pat-agentydragon-agent.yaml`,
-  `external-creds/github-agentydragon-agent`): Claude Code web `GITHUB_TOKEN`,
-  public-coder-agent, openclaw-spike, haku-egress-proxy, agentplane-egress, and the
-  second exporter pair. Different user, measured idle.
-- **`ducktape-automation` GitHub App**: `sync-pins.yml` (\*/30), `prune-releases.yml`,
-  `.github/actions/mint-automation-token`. Bills the App installation.
-- **`secrets.GITHUB_TOKEN` / `github.token` in Actions** (pr-visuals, GHCR pushes):
-  per-run installation token.
-- **Git transport, not the API**: Flux `GitRepository` (public HTTPS clone),
-  `flux-deploy-key`, `gaffer-private-fetch-pat`.
+| Consumer                                                | Credential                           | Bucket | Notes                                            |
+| ------------------------------------------------------- | ------------------------------------ | ------ | ------------------------------------------------ |
+| `github-secrets-sync` tf-runner                         | `external-creds/github-agentydragon` | user   | GitHub TF provider → `api.github.com`            |
+| `github-branch-protection` tf-runner                    | same                                 | user   | branch protection is GraphQL                     |
+| `flux-webhook-token` tf-runner                          | same                                 | user   | seen on `api.github.com` via Hubble              |
+| `attic-jwt-rotation` CronJob :30 (nix-cache)            | same                                 | user   | REST                                             |
+| `authentik-jwt-rotation` CronJob :15                    | same                                 | user   | REST                                             |
+| `github-exporter` ×2 (monitoring)                       | both accounts                        | user   | REST `/rate_limit`                               |
+| `github-graphql-rate-exporter` ×2                       | both accounts                        | user   | 0-point `rateLimit` probe                        |
+| unidentified pod, `comm="main"` uid 65532               | unknown                              | user?  | **open** — recurs on `api.github.com` every ~60s |
+| `haku-indexer-chunk-ducktape-public`                    | none                                 | —      | git clone of the public repo, not API            |
+| Flux `source-controller`, `image-automation-controller` | deploy key / registry                | —      | git and registry, not API                        |
+
+Measured contribution of the tf-runners together: ~560 points/h during an hour they were
+visibly reconciling. They reconcile on a 15-minute interval, and their API traffic lasts
+seconds — which is why short Hubble captures kept missing them.
+
+### CI
+
+| Consumer                                           | Credential                | Bucket       |
+| -------------------------------------------------- | ------------------------- | ------------ |
+| GitHub Actions workflows generally                 | `secrets.GITHUB_TOKEN`    | installation |
+| `sync-pins` (\*/30), `prune-releases`              | `ducktape-automation` App | installation |
+| `release.yml`, `release-artifact`                  | `GH_RELEASE_PAT`          | **user**     |
+| gaffer-private CI image push/pull                  | Gaffer GHCR classic PATs  | user         |
+| BuildBuddy runners fetching `http_archive` sources | usually unauthenticated   | anonymous    |
+
+Only `GH_RELEASE_PAT` and the gaffer PATs put CI on the user's bucket; the rest bills the
+App installation or the per-run token.
+
+### Separate account entirely
+
+`agentydragon-agent` (`secrets/github-pat-agentydragon-agent.yaml`,
+`external-creds/github-agentydragon-agent`): Claude Code web `GITHUB_TOKEN`,
+public-coder-agent, openclaw-spike, haku-egress-proxy, agentplane-egress, and the second
+exporter pair. Measured flat at 5000/5000 on both buckets across the whole window.
 
 ## The episode ended at 06:00 UTC
 
@@ -418,7 +445,7 @@ and `DISABLE_INSTALLATION_CHECKS`.
 zero. That also apportions blame between the two products, which decides whether the CLI
 issue needs re-reporting with the better measurements collected here.
 
-## Result: Claude Desktop, confirmed by control
+## Claude Desktop is a heavy consumer — the control, and its limits
 
 Quitting the desktop app at 08:47 UTC, leaving all twelve `claude` CLI sessions running
 and one actively driven, changed consumption by roughly two orders of magnitude across
@@ -443,20 +470,89 @@ Two things fall out of it:
   last command at 22:57: an idle app with no session switches, which upstream measures
   at ~2 points/min. That hour peaked at 523.
 
-Single trial, single variable. The positive control — reopen the app, switch between a
-few sessions, watch ~570 points per switch — would make it A-B-A, at the cost of a
-window's quota.
+Single trial, single variable. Read at the time as identifying _the_ consumer; the next
+section shows that was an overreach. The app is a heavy consumer — the strongest
+evidence being its own log, below — but the quiet window it produced was partial, not
+total.
+
+## Proof from the app's own log
+
+`~/.config/Claude/logs/main.log` on wyrm2 carries the same line as the upstream report,
+naming this account:
+
+```text
+2026-09-04 01:23:22 [warn] [GhRestClient] GraphQL errors { '0': { type: 'RATE_LIMIT',
+  code: 'graphql_rate_limit', message: 'API rate limit already exceeded for user ID 714892.' } }
+```
+
+Dozens of these across 2026-09-03 12:49 → 2026-09-04 01:23 local. This is not inference
+from connection counts: the app logs that it is issuing GraphQL and being refused. It is
+also the fastest available diagnostic — faster than any probe built here — and worth
+reaching for first next time.
+
+## The upgrade does not fix it, and something else is also burning
+
+The confirming window, 2026-09-04, one-minute resolution. The desktop app was down from
+08:47 (log shows its shutdown burst at 01:47 local, then nothing until 02:16) and the new
+build ran 09:16:06–09:17:15 UTC, sixty-nine seconds:
+
+```text
+09:00–09:10Z   +12      app down            quiet, as expected
+09:11–09:15Z   +2337    app down            unexplained
+09:16–09:17Z   +3560    1.40609.1 running   69 seconds
+```
+
+**The bump does not fix it.** `claude-desktop` 1.40609.1 spent ~3560 points in
+sixty-nine seconds, in the same quanta as 1.18286.0 (~1550 on a turn start, ~630 on a
+session switch). Upstream closed #88320 with `state_reason=completed` on 2026-08-24, and
+that close reason was taken here as evidence the fix had shipped — it is not. Whether the
+fix never landed, never reached the Linux build, or regressed is unknown.
+
+**A second consumer exists.** ~2337 points went in 09:11–09:15 with the app provably
+down. Nothing here explains it. The earlier "seven points in seven minutes" result was
+real but partial: the app dominated that particular window rather than being the whole
+of the problem.
+
+## The second consumer is the CLI
+
+The connection recorder answers it. Across 09:11–09:15 UTC — the ~2337 points with the
+desktop app down — roughly 49 connections to `api.github.com` from wyrm2:
+
+| Source                                          | Connections |
+| ----------------------------------------------- | ----------- |
+| `claude` CLI direct (4 distinct pids)           | ~22         |
+| `gh` / `.gh-wrapped` spawned by claude sessions | ~9          |
+| Chrome                                          | ~11         |
+| `main`, uid 65532, a pod under containerd       | 4           |
+| `terraform-provi`                               | 3           |
+
+The CLI processes connect **directly**, not through `gh`: `comm="HTTP Client"` is the
+Node/undici thread name inside the claude binary. Four separate sessions doing it at
+once, clustered in the minutes the quota drained. That is
+<https://github.com/anthropics/claude-code/issues/63222>, `area:core`, closed as _stale_
+rather than fixed.
+
+This also corrects the claim made earlier in this note that the CLI was cleared. That
+rested on twelve sessions producing 7 points in 7 minutes — but that window was
+09:00–09:07 and the CLI's burst came at 09:11. The CLI was not clear; it had not fired
+yet.
+
+**So the answer is both Claude products, independently**, each spending the user's
+personal GraphQL budget, each scaling with session count, against an operator running
+eleven CLI sessions. That is why nine hours of exhaustion never matched any single
+candidate costed here: it was never one thing at machine rate.
 
 ## Remaining work
 
-1. **Bump the pin.** <nix/packages/claude-desktop.nix> holds `1.18286.0`; the apt repo
-   is at `1.40609.1`, and upstream closed #88320 on 2026-08-24 against a reporter on
-   `1.32885.1`. The file documents the bump-and-rehash procedure.
-2. **Confirm after the bump** — one clean hourly window with the app running and in use.
-3. **Then delete this note**, promoting only what outlives the incident: the
-   `/rate_limit` blind spot (already a comment in
-   <cluster/k8s/github-exporter/graphql-deployments.yaml>), and the connection recorder's
-   own tombstone in <nix/nixos/modules/github-api-recorder.nix>, which comes out with it.
+1. **Report upstream.** #88320 is closed as completed but reproduces on 1.40609.1 on
+   Linux. The 69-second run above is a cleaner repro than the original report's.
+2. **Find the second consumer.** It spent ~2337 points across five minutes with the
+   desktop app down, during a `nixos-rebuild switch` and a PR merge. The connection
+   recorder covers wyrm2 and the log covers the app; neither covered this.
+3. **Mitigate meanwhile**: not running the desktop app is the only measure known to work,
+   and it only recovers most of the budget, not all.
+4. Keep this note until the second consumer is named. The recorder module's tombstone
+   condition ("once that note names the consumer") is _not_ yet satisfied.
 
 ## Knobs not yet turned
 
