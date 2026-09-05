@@ -386,6 +386,8 @@ py_test(
         ":conftest",
         ":service",
         "//:conftest",
+        "@pypi//grpcio",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

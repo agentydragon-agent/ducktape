@@ -10,10 +10,12 @@ page is what the runner guarantees about it.
 - `Initialize` receives integration-app configured shell source and a stable digest naming that
   initialization. The runner executes it with `/bin/sh -eu` from `state_dir` before a caller opens
   the first session that needs it.
-- A successful digest is marked under `<state_dir>/initializations/`; retries and later session
-  launches return success without executing again. Changed source under the same app-owned identity
-  is not rerun automatically. A failure is returned with bounded stdout/stderr and is not marked, so
-  an operator may retry after fixing the cause.
+- The first successful initialization is marked under `<state_dir>/initializations/` with both its
+  app-owned identity and source digest. Exact retries and later session launches return success
+  without executing again. The runner refuses a different identity or changed source: bootstrap is
+  a Sandbox-level choice and two possibly incompatible initializations must never be combined. A
+  failure is returned with bounded stdout/stderr and is not marked, so an operator may retry after
+  fixing the cause.
 - The runner accepts source only over this in-cluster control protocol. The integration app exposes
   configured presets, not an arbitrary-shell HTTP field.
 

@@ -240,7 +240,12 @@ class RunnerBridge:
     async def initialize(self, sandbox: str, initialization: str, script: str) -> pb.InitializeResult:
         """Send configured source under a stable idempotence key and refuse a failed initialization."""
         key = hashlib.sha256(initialization.encode()).hexdigest()
-        result = await (await self._client(sandbox)).initialize(key, script)
+        try:
+            result = await (await self._client(sandbox)).initialize(key, script)
+        except grpc.aio.AioRpcError as error:
+            if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
+                raise RunnerError(f"sandbox bootstrap refused: {error.details()}") from error
+            raise
         if result.exit_code != 0:
             detail = result.stderr or result.stdout or f"exit {result.exit_code}"
             raise RunnerError(f"sandbox bootstrap failed: {detail}")

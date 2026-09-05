@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import re
@@ -33,6 +34,10 @@ class OpenError(Exception):
     """Open named a session the runner cannot serve; the stream ends with this message."""
 
 
+class InitializationConflictError(Exception):
+    """The sandbox already completed a different bootstrap initialization."""
+
+
 def make_adapter(session: Session) -> HarnessAdapter:
     provider = pb.Provider.Value(session.record.provider)
     if provider == pb.PROVIDER_CLAUDE:
@@ -54,7 +59,7 @@ class Runner:
         self._initialize_lock = asyncio.Lock()
 
     async def initialize(self, request: pb.InitializeRequest) -> pb.InitializeResult:
-        """Run one configured bootstrap script once per app-owned identity on persistent state."""
+        """Run exactly one configured bootstrap script for this sandbox's persistent state."""
         if _BOOTSTRAP_KEY.fullmatch(request.key) is None:
             raise ValueError("initialize.key must be a lowercase SHA-256 digest")
         source = request.script.encode()
@@ -62,8 +67,20 @@ class Runner:
             raise ValueError(f"initialize.script must contain 1..{_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
         marker_dir = self.config.state_dir / "initializations"
         marker = marker_dir / request.key
+        script_digest = hashlib.sha256(source).hexdigest()
         async with self._initialize_lock:
-            if marker.exists():
+            completed = sorted(path for path in marker_dir.glob("*") if path.is_file())
+            if completed:
+                if len(completed) != 1 or completed[0].name != request.key:
+                    identities = ", ".join(path.name for path in completed)
+                    raise InitializationConflictError(
+                        f"sandbox already initialized with a different bootstrap ({identities}); refusing {request.key}"
+                    )
+                recorded_digest = marker.read_text().strip()
+                if recorded_digest != script_digest:
+                    raise InitializationConflictError(
+                        "sandbox bootstrap identity matches, but its script differs from the completed initialization"
+                    )
                 return pb.InitializeResult(key=request.key, executed=False, exit_code=0)
             marker_dir.mkdir(parents=True, exist_ok=True)
             process = await asyncio.create_subprocess_exec(
@@ -86,7 +103,7 @@ class Runner:
                 stderr=stderr[-_MAX_BOOTSTRAP_OUTPUT:].decode(errors="replace"),
             )
             if exit_code == 0:
-                marker.write_text("completed\n")
+                marker.write_text(f"{script_digest}\n")
             return result
 
     def startup(self) -> None:
@@ -157,6 +174,9 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
     ) -> pb.InitializeResult:
         try:
             return await self.runner.initialize(request)
+        except InitializationConflictError as error:
+            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(error))
+            raise AssertionError("context.abort always raises") from error
         except ValueError as error:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(error))
             raise AssertionError("context.abort always raises") from error
