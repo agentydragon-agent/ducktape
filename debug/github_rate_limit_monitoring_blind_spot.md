@@ -1056,6 +1056,13 @@ generates the event; host→world flows do not. Two nodes were unscrapable durin
 (`bpf_set_retval`; kernel floated to 7.2.0 through `linuxPackages_latest`, pinned back to
 the 7.1 series but not yet rebuilt or rebooted).
 
+One result looks like it contradicts that boundary and does not. The scan returned large
+unresolved-source flows to GitHub addresses on wyrm2, which invites reading them as host
+traffic Hubble was not supposed to see. They are not: `reserved:host` appears as its own
+source value in the same data, so host-sourced flows _are_ labelled when they appear. An
+empty source is an unresolved pod identity — the same metadata gap that leaves
+destinations as raw IPs — not the host namespace leaking into view.
+
 ## Rotating the personal PAT: the measured blast radius
 
 `cluster/k8s/external-creds/github-agentydragon-grants.yaml` binds one consumer
@@ -1071,6 +1078,45 @@ ServiceAccount per namespace, so the in-cluster consumers of the personal PAT ar
 Seven workloads, four namespaces. Everything else in-cluster runs on the agent PAT, whose
 bucket is measured flat. Rotation is a bounded operation and its breakage is
 self-announcing — the exporters stop reporting.
+
+## The installation bucket is separate, free, and idle
+
+Measured 2026-09-05, by minting a real installation token and querying `rateLimit` with
+both credentials in the same minute:
+
+```text
+installation token   limit=5000  used=0    remaining=5000  resetAt=03:15:20Z
+personal token       limit=5000  used=354  remaining=4646  resetAt=03:08:55Z
+```
+
+Different `used` **and** different `resetAt`: separate buckets, and the installation's is
+untouched.
+
+The non-obvious part is that App _ownership_ does not decide the bucket — token **type**
+does. `ducktape-automation` is registered under the personal account and installed on it
+(`target_type: User`, installation `129264096`), and its installation token still gets its
+own 5000/h. GitHub's wording: a _user-to-server_ token is "combined with any requests that
+another GitHub App or OAuth app makes on that user's behalf and any requests that the user
+makes with a personal access token", while installation access tokens "use the
+installation's minimum rate limit of 5,000 requests per hour". Same App, different token,
+different bucket. This repo's own numbers agree: CI runs 79-211 workflows/hour on App and
+per-run tokens while the personal REST bucket never dropped below 4261/5000.
+
+**Why this matters more than naming the consumer.** The harm is not the mystery; it is
+that seven workloads we control share a bucket with something we do not. Moving them onto
+the installation bucket makes the burn stop mattering whether or not it is ever
+identified — and unlike every instrument built for this, it does not depend on catching
+the consumer in the act.
+
+What already exists: the App private key is in
+`secrets/ducktape-automation.2026-05-03.private-key.sops.pem` (app id `3590331`), and
+`.github/actions/mint-automation-token` mints installation tokens from it in CI. An
+in-cluster path needs the same minting for the consumers listed above.
+
+Unverified, and the two things that could sink it: whether the GitHub Terraform provider's
+App auth covers the resources these roots manage (branch protection is GraphQL and needs
+repo admin), and whether the installation's permission set is sufficient. Neither is a
+reason not to probe; both are reasons not to assume.
 
 ## Next
 
@@ -1088,7 +1134,11 @@ Claude Desktop and CLI hypotheses that later measurements retired.
    namespaces, above) and the failure is self-announcing. This remains the last unturned
    knob: the consumer survived every process and pod on wyrm2, so it holds a stored
    credential.
-4. Keep this note until the consumer is named. The recorder module's tombstone condition
+4. **Move the seven controllable workloads onto the installation bucket** (above). The
+   only line of work here that pays off without identifying the consumer, against a bucket
+   measured idle. Probe: whether the GitHub provider's App auth serves
+   `github-branch-protection`, the GraphQL-heaviest of the three tf roots.
+5. Keep this note until the consumer is named. The recorder module's tombstone condition
    ("once that note names the consumer") is still not satisfied.
 
 Do not reach for connection or flow counting again without pairing it against the
