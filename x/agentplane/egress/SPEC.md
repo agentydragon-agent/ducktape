@@ -137,9 +137,9 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   `wholeValue` target on `x-buildbuddy-api-key` substitutes the placeholder before the upstream
   sees it. The integration test covers both a unary Remote Execution-shaped call and a
   bidirectional Build Event Service-shaped stream, including multiple messages and upstream
-  trailers (`test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted`). The client trusts
-  the interception
-  CA, the proxy verifies the upstream TLS certificate, and neither leg uses mTLS.
+  trailers (`test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted`). The client
+  trusts the interception CA, the proxy verifies the upstream TLS certificate, and neither leg
+  uses mTLS.
 - This proves local Bazel, remote-cache/execution, BES, and BuildBuddy API clients whose credential
   is request metadata. It does **not** make `bb remote` credentialless: the CLI authenticates its
   local Remote Runner control RPC with the metadata, then also serialises the API key into the

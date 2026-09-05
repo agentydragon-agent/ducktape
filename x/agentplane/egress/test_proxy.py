@@ -226,7 +226,7 @@ async def test_allowed_request_has_its_placeholder_substituted(proxy: ProxyUnder
 async def recording_grpc_upstream(
     cert_pem: bytes, key_pem: bytes
 ) -> AsyncIterator[tuple[int, asyncio.Queue[tuple[tuple[str, str], ...]]]]:
-    """A TLS gRPC server recording the metadata on one unary call."""
+    """A TLS gRPC server recording metadata on unary and bidirectional calls."""
     requests: asyncio.Queue[tuple[tuple[str, str], ...]] = asyncio.Queue()
 
     async def call(request: bytes, context: grpc.aio.ServicerContext) -> bytes:
