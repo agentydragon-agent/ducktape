@@ -105,8 +105,8 @@
       "sha256": "qIDaK3Y+uX2G6OWlSCyPmcz4DkvezDhGaOX6Lo/xsrs="
     },
     "skill-debundle_integrator": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_integrator-0486e2bd4f6d/debundle_integrator.skill",
-      "sha256": "BIbivU9tRVjwH//rrnqxhSCJPHFoWt5t8AZARU+ZPl4="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_integrator-44b9d07771aa/debundle_integrator.skill",
+      "sha256": "RLnQd3GqT2Vze4Ee3xPPhQMRMBKc8t8y2xE9RdTZdiM="
     },
     "skill-debundle_lane_worker": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_lane_worker-b37fbf868fd8/debundle_lane_worker.skill",
