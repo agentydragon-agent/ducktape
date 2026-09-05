@@ -89,7 +89,6 @@ py_test(
         "//x/agentplane/app:inventory",
         "//x/agentplane/app:presets",
         "//x/agentplane/runner:protocol_pb2",
-        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )

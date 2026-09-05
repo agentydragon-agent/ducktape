@@ -34,7 +34,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential
 
-from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
+from x.agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from x.agentplane.app.presets import PresetCatalog, SandboxBinding
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
@@ -395,7 +395,13 @@ async def open_session(bridge: Bridge, name: str, body: NewSession, request: Req
     presets = request.app.state.presets
     if not isinstance(inventory, SandboxInventory) or not isinstance(presets, PresetCatalog):
         raise TypeError("the app's inventory or preset catalog is not configured")
-    binding_raw = await inventory.preset_binding(name)
+    try:
+        binding_raw = await inventory.preset_binding(name)
+    except SandboxNotFoundError:
+        # Preserve the old concrete-spec path: its runner address remains the authority that decides
+        # whether the sandbox is reachable. Tests and non-Kubernetes embeddings may supply one
+        # without keeping a second inventory record solely for preset lookup.
+        binding_raw = None
     binding = SandboxBinding.model_validate(binding_raw) if binding_raw is not None else None
     resolved = dict(body.spec)
     if body.preset is not None:

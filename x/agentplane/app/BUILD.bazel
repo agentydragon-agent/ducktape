@@ -149,6 +149,7 @@ py_test(
     name = "test_presets",
     srcs = ["test_presets.py"],
     deps = [
+        ":conftest",
         ":presets",
         "//:conftest",
         "@pypi//pytest",

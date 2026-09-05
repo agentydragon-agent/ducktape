@@ -383,6 +383,7 @@ py_test(
     deps = [
         ":client",
         ":config",
+        ":conftest",
         ":service",
         "//:conftest",
         "@pypi//pytest_bazel",
