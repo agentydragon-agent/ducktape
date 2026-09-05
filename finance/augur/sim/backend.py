@@ -1,20 +1,24 @@
 """What a simulation engine is, and what every engine answers with.
 
-The product read models used to name the JAX engine's own output: the selected-rollout
-projection took a `CompiledSimulation` and a `DenseSimulationOutput` and indexed into them.
-That put an engine's internal layout in the product's read path, where a rescaled array or a
-moved field surfaced as a wrong number rather than as a broken contract.
+Two engines run Augur's scenarios: the JAX one in `sim/engine/jax_engine.py` and the Rust
+one behind `rust/backend.py`. They agree on results because they run one compiled plan and
+answer in the shapes declared here — `ProductMetricArrays` for the population workload,
+`EventLog` for a rollout's causal trace — not because two implementations were checked
+against each other.
 
-An engine answers in the shapes declared here instead — `ProductMetricArrays` for the
-population workload, `EventLog` for a rollout's causal trace. Everything built on those is
-written once: the derived metrics, the terminal reduction, the percentile brackets, and the
-rollout projection. An engine supplies inputs, never a read model.
+Everything a consumer builds on top of those shapes is therefore written once. The derived
+metrics, the terminal reduction and the percentile brackets are shared Python both engines
+call; so is the selected-rollout projection. An engine supplies inputs, never a read model.
+
+`sim/` cannot import `rust/`, so this contract lives here and the Rust engine implements it
+from the other side.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import StrEnum
 
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.events import EventLog
@@ -28,6 +32,18 @@ from finance.augur.sim.product_metrics import (
     ProductTerminalSummary,
 )
 from finance.augur.sim.scenario import Scenario
+
+
+class SimulationBackend(StrEnum):
+    """Which engine a deployment runs.
+
+    Named here rather than beside the engines because the deployment config has to spell it,
+    and `sim/` is the one place both the config and the Rust engine can reach. Resolving a
+    name to an `Engine` is `product/service.py`'s job: `sim/` cannot import `rust/`.
+    """
+
+    JAX = "jax"
+    RUST = "rust"
 
 
 @dataclass(frozen=True)
@@ -54,9 +70,9 @@ class Engine(ABC):
     """One simulator, addressed the same way whichever it is.
 
     The two capture modes are separate methods because they cost different things. The
-    product metrics run without retaining a monthly snapshot or event trace, which is what
-    makes the 100,000-rollout fan affordable; `events` retains all of it and is for one
-    selected rollout.
+    product metrics run without retaining a monthly snapshot, journal or event trace, which
+    is what makes the 100,000-rollout fan affordable; `events` retains all of it and is for
+    one selected rollout.
     """
 
     @property
@@ -89,6 +105,6 @@ class Engine(ABC):
         """The canonical event frames, in Augur's own column names and units.
 
         Dense: every month of every rollout is retained. Callers wanting one rollout filter
-        the frames; an engine does not take a rollout index, because none can run one path of
-        a batch more cheaply than the batch.
+        the frames; the engines do not take a rollout index, because neither can run one
+        path of a batch more cheaply than the batch.
         """

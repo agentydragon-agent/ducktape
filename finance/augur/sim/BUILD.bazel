@@ -14,6 +14,10 @@ package_group(
         # purpose. Routing it through the contract would move compilation out of the timed
         # region and quietly change what the published numbers mean.
         "//finance/augur/benchmark/...",
+        # The differential harness runs JAX's scan and its product reductions directly, for
+        # the same kind of reason: it exists to compare one engine against another, and
+        # reading both through the contract would compare the contract with itself.
+        "//finance/augur/rust/differential/...",
         "//finance/augur/sim/...",
     ],
 )
