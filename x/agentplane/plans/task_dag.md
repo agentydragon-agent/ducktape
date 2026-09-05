@@ -159,10 +159,13 @@ A completed item leaves the active queue even when it supplies an edge.
   where server/tool schemas live, what policy gates, and which layer owns MCP transport/errors.
   Acceptance is one adapter boundary diagram plus one end-to-end test shape; no MCP registry is
   built before this gate.
-- **`OPI` operation vertical slice:** one real adapter from agent intent through policy/approval to
-  execution/result and later Thread delivery. The operation layer may initially be colocated with
-  the integration app, but the test must keep runtime lifecycle, access authority, adapter, and
-  trajectory responsibilities separable.
+- **`OPI` ActionRequest vertical slice:** one real adapter from agent intent through
+  policy/Decision to the single Execution/result and later Thread delivery. V0 read scope is
+  caller-own plus operator-all within the existing operator scope; the Action Hub is the canonical
+  state store, while the integration app is the browser BFF. The operation layer may initially be
+  colocated with the integration app, but the test must keep runtime lifecycle, access authority,
+  adapter, and trajectory responsibilities separable. Push approval is a notification adapter over
+  the same Decision path, not a second authority.
 - **`T3` trajectory search:** search persisted text and action evidence, answer “what happened,”
   “why,” and “which Thread,” and link to raw frames. Scope is the caller's already-authorized
   trajectory surface; cross-agent visibility is not silently included.
@@ -174,10 +177,12 @@ A completed item leaves the active queue even when it supplies an edge.
   paths are rejected. Keep this separate from the preset feature.
 - **`AGD` Agent identity:** Rai decides what durable product Agent means and how it maps to an opaque
   authorization principal. It must not be inferred from Sandbox or Thread IDs.
-- **`DATAD` cross-agent read policy:** Rai decides the minimum data scopes and authority boundary
-  for reading another Agent's trajectories. Candidate scopes are metadata, derived summary, search
-  results, full events, and raw native frames. No scope inventory should be built until a real
-  cross-agent consumer exists.
+- **`DATAD` cross-agent read policy:** V0 is intentionally caller-own plus operator-all within
+  the existing operator scope, with redaction of credentials and private reviewer/notification data.
+  The remaining decision is the minimum data scopes and authority boundary for reading another
+  Agent's trajectories. Candidate scopes are metadata, derived summary, search results, full events,
+  raw native frames, and action request/result projections. No cross-agent scope inventory should be
+  built until a real consumer exists.
 - **`XREAD` cross-agent reads:** only after `AGD`, `DATAD`, and `T3`; enforce caller/target/scope at
   the read boundary and audit the result without making Agentplane a universal identity registry.
 - **`DT` driver tools/background:** provider evidence exists, but protocol shape waits for a real
@@ -196,6 +201,10 @@ A completed item leaves the active queue even when it supplies an edge.
   The decision authority owns allow/deny/referral and grants; adapters own MCP/HTTP/
   Kubernetes/host execution; the conversation app owns operator presentation; the trajectory store
   preserves evidence.
+- The Action Hub is the canonical owner of ActionRequest lifecycle and access checks; the existing
+  trajectory store may hold detailed evidence by reference, but raw trajectory links cannot bypass
+  the hub's ACL. The integration app is the authenticated browser BFF, and push notifications are
+  delivery adapters that return through the same Decision Authority.
 - An Agent is a future product identity, distinct from a Sandbox (runtime infrastructure), Thread
   (interaction context), and authorization principal (policy subject). Cross-agent reads require an
   explicit mapping and data-read policy.

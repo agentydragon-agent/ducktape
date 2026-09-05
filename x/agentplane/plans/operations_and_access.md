@@ -186,6 +186,82 @@ The hub consumes the Decision result; it does not silently convert a provider's 
 mere recommendation.
 Do not add a generic controller, policy DSL, or MCP gateway until one real consumer requires it.
 
+## V0 storage and read scope
+
+The useful first boundary is exactly the one Rai suggested:
+
+- the **caller** can read its own ActionRequests, Decisions, and safe result projections;
+- the **human operator** can read and decide on every request in the operator's existing Agentplane
+  scope; and
+- no caller can read another caller's requests or results until Agent identity and cross-agent read
+  policy are designed.
+
+“Own” should be derived from the authenticated origin Thread/caller principal recorded when the
+ActionRequest is submitted, not from a caller-provided `owner_id`. For v0, the caller's read surface
+should include the original request and its final result/error, with protected credential values,
+private reviewer notes, and notification delivery metadata redacted. Operator access can see the
+full reviewable request and decision context, but still must not expose proxy-held secrets. Operator
+reads and decisions should be auditable from the beginning; this is a small event field, not a new
+permission framework.
+
+The Action Hub is the **canonical owner of ActionRequest state**. Store there:
+
+- the immutable request envelope and provenance;
+- Decision events and issuer metadata;
+- the single Execution lifecycle and compact result/error envelope; and
+- references to larger trajectory or blob content when storing it inline would be inappropriate.
+
+Do not duplicate the canonical request and result in the integration app's own tables. The existing
+trajectory store may retain the detailed event/content evidence, but the Action Hub owns the access
+check and returns an authorized projection or follows a reference; a raw trajectory link must not
+become an ACL bypass.
+
+This is a logical service boundary, not a requirement to deploy a microservice in v0. The Action Hub
+and its first DecisionProvider can live in the integration app process and use its PostgreSQL
+connection, behind interfaces that make a later extraction possible. Split it into a separately
+rolled service only when another writer/consumer, independent availability, or an actual rollout
+conflict makes that boundary valuable. The integration app should remain the browser-facing BFF:
+verify the existing operator identity, call the hub over an authenticated service channel, and never
+let the browser write decisions or assert an arbitrary principal.
+
+## Human UI and push approvals
+
+Push approval is a delivery channel, not a second policy authority. The Action Hub should publish a
+small pending-decision notification event to a notification adapter/outbox. The notification should
+contain an opaque request reference and a redacted summary or deep link, never the full sensitive
+request by default.
+
+An approve/deny button from push should return through the DecisionProvider/Authority with:
+
+- the authenticated operator or notification recipient identity;
+- the request ID and the expected current version/state;
+- the intended verdict; and
+- an idempotency key or one-time channel action reference.
+
+The hub rechecks that the request is still `decision_pending`, that the actor may decide it, and that
+no prior Decision won the race. A stale, duplicated, or conflicting callback becomes a harmless
+no-op/error rather than a second Decision. This preserves the same Decision path for the frontend
+and for future Haku Console push notifications.
+
+The first web UI can therefore be:
+
+```text
+browser -> integration app BFF -> Action Hub -> Decision Authority
+```
+
+and the future push path can be:
+
+```text
+Action Hub -> notification adapter -> push provider
+push callback -> Decision Authority -> Action Hub
+```
+
+No approval bearer token should be a guessable request ID or an unrestricted URL. If the push provider
+cannot carry the existing operator session, use a short-lived, single-use, verdict-bound channel
+reference that the authority redeems and then invalidates. V0 Decision records need not be
+cryptographically signed, but push callbacks still need authentication, replay protection, and
+current-state checks.
+
 ## Data access and cross-agent reads
 
 Reading a Thread or trajectory is not the same permission as invoking an external tool. A future
