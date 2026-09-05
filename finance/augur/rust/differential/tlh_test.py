@@ -11,8 +11,8 @@ import polars as pl
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
-from finance.augur.rust.differential.backend import RustResult, assert_backends_agree
-from finance.augur.rust.differential.fixtures import checking, taxed
+from finance.augur.rust.differential.backend import assert_backends_agree
+from finance.augur.rust.result import RustResult
 from finance.augur.sim.scenario import (
     HarvestPolicy,
     InitialAccountBalance,
@@ -25,6 +25,7 @@ from finance.augur.sim.scenario import (
     TargetAllocationPolicy,
 )
 from finance.augur.sim.testing.case import Case, levels, scenario
+from finance.augur.sim.testing.fixtures import checking, taxed
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 SP500 = SecurityKey(symbol=SecuritySymbol("sp500"))

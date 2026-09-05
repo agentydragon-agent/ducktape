@@ -14,9 +14,17 @@ import pytest_bazel
 
 from finance.augur.model.series import SecurityDistributionKey, SecuritySymbol
 from finance.augur.rust import simulator
-from finance.augur.rust.differential.backend import BACKENDS, Backend, SimulationResult, assert_backends_agree
-from finance.augur.rust.differential.fixture import fixture_for
-from finance.augur.rust.differential.fixtures import (
+from finance.augur.rust.case_fixture import fixture_for
+from finance.augur.rust.differential.backend import BACKENDS, assert_backends_agree
+from finance.augur.sim.scenario import (
+    DistributionTaxSlice,
+    InitialLot,
+    ObligationType,
+    RecurringObligation,
+    SecurityDistribution,
+)
+from finance.augur.sim.testing.case import Case, flat, levels
+from finance.augur.sim.testing.fixtures import (
     BND,
     VTI,
     allocation_case,
@@ -28,14 +36,7 @@ from finance.augur.rust.differential.fixtures import (
     target_allocation_case,
     target_allocation_purchase_case,
 )
-from finance.augur.sim.scenario import (
-    DistributionTaxSlice,
-    InitialLot,
-    ObligationType,
-    RecurringObligation,
-    SecurityDistribution,
-)
-from finance.augur.sim.testing.case import Case, flat, levels
+from finance.augur.sim.testing.simulation_result import Backend, SimulationResult
 
 VTI_DISTRIBUTION = SecurityDistributionKey(symbol=SecuritySymbol("vti"))
 
