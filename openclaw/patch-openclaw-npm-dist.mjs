@@ -22,6 +22,48 @@ const jsFiles = fs
   .filter((name) => name.endsWith(".js"))
   .map((name) => path.join(distDir, name));
 
+// OpenClaw 2026.8.1 hard-codes its non-batch embedding concurrency and retry
+// delays after retiring the configuration key that used to tune concurrency.
+// Expose fail-fast environment overrides while retaining the upstream defaults
+// for deployments that do not set them.
+const memoryManagerFile = path.join(distDir, "extensions", "memory-core", "manager-runtime.js");
+if (!fs.existsSync(memoryManagerFile)) {
+  fail(`OpenClaw memory manager missing: ${memoryManagerFile}`);
+}
+let memoryManagerSource = fs.readFileSync(memoryManagerFile, "utf8");
+const memoryManagerReplacements = new Map([
+  [
+    "const EMBEDDING_INDEX_CONCURRENCY = 4;",
+    `function resolvePositiveIntegerEnvironmentVariable(name, fallback) {
+\tconst raw = process.env[name]?.trim();
+\tif (!raw) return fallback;
+\tconst value = Number(raw);
+\tif (!Number.isSafeInteger(value) || value <= 0) throw new Error(\`\${name} must be a positive integer\`);
+\treturn value;
+}
+const EMBEDDING_INDEX_CONCURRENCY = resolvePositiveIntegerEnvironmentVariable("OPENCLAW_MEMORY_INDEX_CONCURRENCY", 4);`,
+  ],
+  [
+    "const EMBEDDING_RETRY_BASE_DELAY_MS = 500;",
+    'const EMBEDDING_RETRY_BASE_DELAY_MS = resolvePositiveIntegerEnvironmentVariable("OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS", 500);',
+  ],
+  [
+    "const EMBEDDING_RETRY_MAX_DELAY_MS = 8e3;",
+    `const EMBEDDING_RETRY_MAX_DELAY_MS = resolvePositiveIntegerEnvironmentVariable("OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS", 8e3);
+if (EMBEDDING_RETRY_MAX_DELAY_MS < EMBEDDING_RETRY_BASE_DELAY_MS) throw new Error("OPENCLAW_MEMORY_RETRY_MAX_DELAY_MS must be at least OPENCLAW_MEMORY_RETRY_BASE_DELAY_MS");`,
+  ],
+]);
+for (const [original, replacement] of memoryManagerReplacements) {
+  if (memoryManagerSource.split(original).length - 1 !== 1) {
+    fail(`expected exactly one OpenClaw memory manager setting: ${original}`);
+  }
+  memoryManagerSource = memoryManagerSource.replace(original, replacement);
+  if (!memoryManagerSource.includes(replacement)) {
+    fail(`OpenClaw memory manager did not receive setting: ${replacement}`);
+  }
+}
+fs.writeFileSync(memoryManagerFile, memoryManagerSource);
+
 const hardlinkPolicyFiles = jsFiles.filter((file) =>
   fs.readFileSync(file, "utf8").includes("function shouldRejectHardlinkedPluginFiles")
 );
