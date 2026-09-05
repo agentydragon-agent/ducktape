@@ -378,6 +378,18 @@ oci_layout_rloc(
 )
 
 py_test(
+    name = "test_initialize",
+    srcs = ["test_initialize.py"],
+    deps = [
+        ":client",
+        ":config",
+        ":service",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_main",
     srcs = ["test_main.py"],
     deps = [

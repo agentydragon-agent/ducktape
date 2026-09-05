@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 from collections.abc import AsyncIterator
 from pathlib import PurePosixPath
 
@@ -22,6 +24,9 @@ from x.agentplane.runner.store import SessionRecord, SessionStore, validate_sess
 # gazelle:include_dep @pypi//grpcio
 
 logger = logging.getLogger(__name__)
+_BOOTSTRAP_KEY = re.compile(r"^[a-f0-9]{64}$")
+_MAX_BOOTSTRAP_BYTES = 65_536
+_MAX_BOOTSTRAP_OUTPUT = 16_384
 
 
 class OpenError(Exception):
@@ -46,6 +51,43 @@ class Runner:
         self.config = config
         self.store = SessionStore(config.state_dir / "sessions")
         self.sessions: dict[str, Session] = {}
+        self._initialize_lock = asyncio.Lock()
+
+    async def initialize(self, request: pb.InitializeRequest) -> pb.InitializeResult:
+        """Run one configured bootstrap script once per app-owned identity on persistent state."""
+        if _BOOTSTRAP_KEY.fullmatch(request.key) is None:
+            raise ValueError("initialize.key must be a lowercase SHA-256 digest")
+        source = request.script.encode()
+        if not source or len(source) > _MAX_BOOTSTRAP_BYTES:
+            raise ValueError(f"initialize.script must contain 1..{_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
+        marker_dir = self.config.state_dir / "initializations"
+        marker = marker_dir / request.key
+        async with self._initialize_lock:
+            if marker.exists():
+                return pb.InitializeResult(key=request.key, executed=False, exit_code=0)
+            marker_dir.mkdir(parents=True, exist_ok=True)
+            process = await asyncio.create_subprocess_exec(
+                "/bin/sh",
+                "-eu",
+                cwd=self.config.state_dir,
+                env={**os.environ, **self.config.environment},
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await process.communicate(source)
+            exit_code = process.returncode
+            assert exit_code is not None
+            result = pb.InitializeResult(
+                key=request.key,
+                executed=True,
+                exit_code=exit_code,
+                stdout=stdout[-_MAX_BOOTSTRAP_OUTPUT:].decode(errors="replace"),
+                stderr=stderr[-_MAX_BOOTSTRAP_OUTPUT:].decode(errors="replace"),
+            )
+            if exit_code == 0:
+                marker.write_text("completed\n")
+            return result
 
     def startup(self) -> None:
         """Load every stored session and record what the previous runner process took with it."""
@@ -109,6 +151,15 @@ class Runner:
 class RunnerService(protocol_pb2_grpc.RunnerServicer):
     def __init__(self, runner: Runner) -> None:
         self.runner = runner
+
+    async def Initialize(  # noqa: N802  # gRPC names servicer methods after the RPC
+        self, request: pb.InitializeRequest, context: grpc.aio.ServicerContext
+    ) -> pb.InitializeResult:
+        try:
+            return await self.runner.initialize(request)
+        except ValueError as error:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(error))
+            raise AssertionError("context.abort always raises") from error
 
     async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, request: pb.ListSessionsRequest, context: grpc.aio.ServicerContext
