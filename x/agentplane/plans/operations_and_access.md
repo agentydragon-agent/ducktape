@@ -15,7 +15,7 @@ Working vocabulary:
 
 - **ActionRequest**: an agent-originated intent to invoke a named capability with structured input.
 - **Decision**: an authorization disposition over an ActionRequest.
-- **Execution/Attempt**: one concrete run of an allowed ActionRequest.
+- **Execution**: the one concrete run permitted for an allowed ActionRequest.
 - **Delivery**: the machine-readable receipt, state update, result, denial, or pending event sent
   back to the originating Thread.
 - **DecisionProvider / Decision Authority**: the component that evaluates and issues a final
@@ -34,14 +34,14 @@ LLM-assisted, or denied. The request is submitted to the hub; the decision route
 recorded transition, not a schema branch known by the agent in advance.
 
 The accepted v0 model separates all three concerns: ActionRequest (intent), Decision
-(authorization disposition), and Execution/Attempt (a concrete run). This is slightly more
+(authorization disposition), and Execution (the one concrete run). This is slightly more
 machinery than one status field, but it matches the desired distinction between waiting for a
 decision, being denied, and actually running.
 
 ### Accepted v0 decisions
 
 - The product noun is **`ActionRequest`**; do not use “ask” or “tool call” in this contract.
-- An ActionRequest is one logical intent, with bounded execution attempts beneath it.
+- An ActionRequest is one logical intent and may result in at most one Execution.
 - The request shape is invariant: the agent does not choose a different schema based on whether the
   request is expected to be auto-allowed or human-reviewed.
 - After a final `allow` Decision, the Action Hub automatically dispatches the request. There is no
@@ -56,9 +56,12 @@ decision, being denied, and actually running.
 
 ### What an ActionRequest means
 
-An ActionRequest is one logical agent intent, with retries and execution attempts beneath it. A
-transient transport retry must not become a new human decision, while each concrete attempt remains
-auditable.
+An ActionRequest is one logical agent intent and may result in at most one Execution. There are no
+request-level retries: if execution fails or is cancelled, that request is terminal and a new
+ActionRequest is required to try again. Duplicate dispatch must be prevented by the hub's
+idempotency/correlation checks rather than handled by creating another Execution. If the connection is
+lost after dispatch may have begun, the hub must not replay blindly; it records `execution_unknown` and
+may reconcile through an adapter's authoritative status query without starting a second Execution.
 
 Every ActionRequest should preserve the upstream adapter payload as the evidence-bearing body. A
 normalized mirror of every MCP argument or provider-specific field is not justified yet.
@@ -75,8 +78,11 @@ ActionRequest accepted
 
 allowed
   -> dispatching -> running
+                 -> execution_unknown
 running
   -> succeeded | failed | cancelled
+execution_unknown
+  -> reconciled to succeeded | failed
 
 decision_pending
   -> cancelled | withdrawn
@@ -91,8 +97,9 @@ schema, missing identity, or duplicate idempotency key), rather than using it in
 policy denial.
 
 The durable evidence is an append-only sequence containing the ActionRequest, Decision event(s),
-and Execution/Attempt event(s). The hub can maintain a current projection for UI and agent delivery,
-but it must not collapse “pending decision,” “denied,” and “running” into one overloaded queue state.
+and at most one Execution event sequence. The hub can maintain a current projection for UI and agent
+delivery, but it must not collapse “pending decision,” “denied,” and “running” into one overloaded
+queue state. `execution_unknown` is an outcome-uncertainty state, not permission to retry.
 
 Potential `expired` state is deliberately undecided. Haku's current approval machinery has no
 expiry, while credentials and execution attempts may still have independent time limits. Do not add
@@ -103,14 +110,13 @@ Remaining questions for Rai:
 - Can the originating agent continue while an ActionRequest is `decision_pending`?
 - Is the Decision delivered as a later Thread input only, or may a blocked native turn be resumed?
 - Is withdrawal agent-controlled, operator-controlled, or both?
-- Does one allow Decision authorize all bounded retries, or must a retry be reauthorized after a
-  failure class changes?
+- How can each first adapter reconcile an `execution_unknown` result without replaying the action?
 - Is a standing grant a different object, or a Decision that creates a reusable grant?
 
 The v0 direction is otherwise fixed: submission returns a receipt immediately and never blocks the
 agent; a later Decision is delivered as an event/input; withdrawal is available before execution
-starts; one allow Decision covers one logical ActionRequest and its bounded retry attempts; standing
-authority is a separate grant owned by the existing grants/access machinery; and an allowed request
+starts; one allow Decision covers one logical ActionRequest and its single possible Execution;
+standing authority is a separate grant owned by the existing grants/access machinery; and an allowed request
 automatically dispatches with explicit `dispatching` and `running` events.
 
 ### Agent-facing UX
@@ -165,8 +171,8 @@ Keep the hub, decision issuers, and executors separate even if the first deploym
   denial. Cryptographic signing is deferred from v0 and can be added when the artifact crosses a
   trust boundary or replay protection requires it.
 - **Execution adapter / Executor**: MCP/HTTP/Kubernetes/host-specific invocation and result
-  translation. It receives an allowed request and creates one or more bounded Execution/Attempt
-  records; it does not reinterpret approval policy.
+  translation. It receives an allowed request and creates at most one Execution record; it does not
+  retry or reinterpret approval policy. A failed Execution is terminal for that ActionRequest.
 - **Integration/conversation app**: current operator-facing review and presentation, if it owns the
   first Action UX. Human action should enter through a DecisionProvider rather than directly mutating
   hub state.

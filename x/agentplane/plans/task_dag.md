@@ -29,10 +29,10 @@ bootstrap execution, UI, and a manual acceptance target. Once it lands and deplo
 acceptance target; do not extend the preset abstraction before that evidence.
 
 **The product noun and core unit are now decided:** the durable object is `ActionRequest`, one
-logical intent with bounded attempts, with automatic dispatch after an allow Decision. The remaining
-operation gate is the event/delivery contract: pending-turn behavior, sensitive-field handling,
-standing grants, retry authorization, and the MCP adapter boundary. The accepted decisions and open
-questions are in [`operations_and_access.md`](operations_and_access.md).
+logical intent with at most one Execution, with automatic dispatch after an allow Decision. The
+remaining operation gate is the event/delivery contract: pending-turn behavior, sensitive-field
+handling, standing grants, uncertain execution reconciliation, and the MCP adapter boundary. The
+accepted decisions and open questions are in [`operations_and_access.md`](operations_and_access.md).
 
 **BuildBuddy's local-client seam is measured and in review:** PR #5650 proves that the HTTP API,
 Bazel remote cache/execution, BES, and Remote Runner control all carry the complete API key in
@@ -66,7 +66,7 @@ flowchart TB
     BB["BuildBuddy auth contract in review<br/>HTTP + unary/bidirectional gRPC substitution;<br/>hosted bb remote boundary remains"]:::active
 
     OPD["Accepted product decision<br/>ActionRequest, logical intent,<br/>automatic dispatch after allow"]:::completed
-    OPS["Decision/event contract<br/>pending delivery, retry, withdrawal,<br/>sensitive input and standing grants"]:::decision
+    OPS["Decision/event contract<br/>pending delivery, withdrawal,<br/>sensitive input and standing grants"]:::decision
     MCPD["Rai decision<br/>MCP adapter and gating boundary<br/>server/tool/result ownership"]:::decision
     OPI["ActionRequest vertical slice<br/>one adapter, decision UI, machine delivery<br/>to the originating Thread"]:::ready
 
@@ -146,13 +146,14 @@ A completed item leaves the active queue even when it supplies an edge.
   Agentplane's fence. The focused test and build passed in BuildBuddy invocations
   `e96f0276-2075-4fff-bb32-9815fd9ee500` and `58eb6493-79a3-4101-9cd8-c09c3074c856`.
 - **`OPD` accepted request model:** Rai accepted `ActionRequest` as the product noun, one logical
-  intent with bounded attempts as the durable unit, invariant request shape, automatic dispatch after
-  an allow Decision, authoritative final Decisions from a future LLM judge, and no cryptographic
+  intent with at most one Execution as the durable unit, invariant request shape, automatic dispatch
+  after an allow Decision, authoritative final Decisions from a future LLM judge, and no cryptographic
   signing requirement in v0. The accepted decisions and boundaries are recorded in
   [`operations_and_access.md`](operations_and_access.md); implementation is still deferred.
-- **`OPS` decision/event contract:** settle pending behavior, Decision delivery, retry authorization,
-  withdrawal, expiry/no-expiry, one-request versus standing-grant semantics, sensitive-field handling,
-  and the machine envelope. The smallest acceptance is a hand-authored lifecycle and replay example
+- **`OPS` decision/event contract:** settle pending behavior, Decision delivery, withdrawal,
+  expiry/no-expiry, one-request versus standing-grant semantics, sensitive-field handling, uncertain
+  execution reconciliation without replay, and the machine envelope. The smallest acceptance is a
+  hand-authored lifecycle and replay example
   that makes each transition and agent-visible input unambiguous.
 - **`MCPD` MCP boundary:** decide whether the first MCP server is trusted external infrastructure,
   where server/tool schemas live, what policy gates, and which layer owns MCP transport/errors.
