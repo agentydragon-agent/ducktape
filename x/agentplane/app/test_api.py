@@ -258,9 +258,9 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     ).json()
     calls: list[tuple[str, object]] = []
 
-    async def initialize(name: str, initialization: str, script: str) -> pb.InitializeResult:
-        calls.append(("initialize", (initialization, script)))
-        return pb.InitializeResult(key="0" * 64, executed=True)
+    async def initialize(name: str, script: str) -> pb.InitializeResult:
+        calls.append(("initialize", script))
+        return pb.InitializeResult(executed=True)
 
     async def open_session(name: str, session_id: str, spec: pb.SessionSpec) -> pb.Attached:
         calls.append(("open", spec))
@@ -275,7 +275,7 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     )
 
     assert response.status_code == 201, response.text
-    assert calls[0] == ("initialize", ("sandbox-preset:public-coder", "mkdir -p /state/workspaces"))
+    assert calls[0] == ("initialize", "mkdir -p /state/workspaces")
     assert calls[1][0] == "open"
     spec = calls[1][1]
     assert isinstance(spec, pb.SessionSpec)

@@ -7,17 +7,20 @@ page is what the runner guarantees about it.
 
 ## Initialization
 
-- `Initialize` receives integration-app configured shell source and a stable digest naming that
-  initialization. The runner executes it with `/bin/sh -eu` from `state_dir` before a caller opens
-  the first session that needs it.
-- The first successful initialization is marked under `<state_dir>/initializations/` with both its
-  app-owned identity and source digest. Exact retries and later session launches return success
-  without executing again. The runner refuses a different identity or changed source: bootstrap is
-  a Sandbox-level choice and two possibly incompatible initializations must never be combined. A
-  failure is returned with bounded stdout/stderr and is not marked, so an operator may retry after
-  fixing the cause.
-- The runner accepts source only over this in-cluster control protocol. The integration app exposes
-  configured presets, not an arbitrary-shell HTTP field.
+- `Initialize` receives integration-app configured shell source and executes it with `/bin/sh -eu`
+  from `state_dir` before the Sandbox's workload starts.
+- The first request durably selects the script digest at the fixed path
+  `<state_dir>/initialization/request.json`, before the script starts. The runner thereafter refuses
+  changed source, including after a failed attempt: two possibly incompatible initializations must
+  never be combined in one Sandbox. An exact request after success only replays the original record;
+  the exact script may be retried after failure.
+- Stdout, stderr, and each attempt's terminal result are appended to a persistent event log with
+  dense Sandbox-scoped sequence numbers. `InitializeRequest.after_sequence` is a reconnect cursor:
+  the runner first replays later saved events, then follows live output through the current attempt.
+  Disconnecting a client does not stop the script or recording, and a future exact request can
+  replay the complete output after the runner restarts.
+- The runner accepts source only over this in-cluster control protocol; how the integration app
+  selects that source is outside the runner contract.
 
 ## Sessions
 

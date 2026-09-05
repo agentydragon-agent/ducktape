@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import hashlib
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -237,18 +236,19 @@ class RunnerBridge:
     async def list_sessions(self, sandbox: str) -> list[pb.SessionSummary]:
         return await (await self._client(sandbox)).list_sessions()
 
-    async def initialize(self, sandbox: str, initialization: str, script: str) -> pb.InitializeResult:
-        """Send configured source under a stable idempotence key and refuse a failed initialization."""
-        key = hashlib.sha256(initialization.encode()).hexdigest()
+    async def initialize(self, sandbox: str, script: str) -> pb.InitializeResult:
+        """Send the Sandbox's one configured bootstrap and refuse a failed initialization."""
         try:
-            result = await (await self._client(sandbox)).initialize(key, script)
+            result = await (await self._client(sandbox)).initialize(script)
         except grpc.aio.AioRpcError as error:
             if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
                 raise RunnerError(f"sandbox bootstrap refused: {error.details()}") from error
             raise
         if result.exit_code != 0:
-            detail = result.stderr or result.stdout or f"exit {result.exit_code}"
-            raise RunnerError(f"sandbox bootstrap failed: {detail}")
+            raise RunnerError(
+                f"sandbox bootstrap failed with exit {result.exit_code}; output remains available "
+                "from the runner's initialization stream"
+            )
         return result
 
     async def open_session(self, sandbox: str, session_id: str, spec: pb.SessionSpec) -> pb.Attached:
@@ -416,7 +416,7 @@ async def open_session(bridge: Bridge, name: str, body: NewSession, request: Req
     if binding is not None:
         bootstrap = presets.sandbox(binding.sandbox_preset).bootstrap
         if bootstrap:
-            await bridge.initialize(name, f"sandbox-preset:{binding.sandbox_preset}", bootstrap)
+            await bridge.initialize(name, bootstrap)
     attached = await bridge.open_session(name, body.session_id, _parse(pb.SessionSpec(), resolved))
     return MessageToDict(attached)
 

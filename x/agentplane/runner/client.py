@@ -102,8 +102,21 @@ class RunnerClient:
         assert message.HasField("attached"), "the first server message must be Attached"
         return Attachment(call, message.attached)
 
-    async def initialize(self, key: str, script: str) -> pb.InitializeResult:
-        return await self._stub.Initialize(pb.InitializeRequest(key=key, script=script))
+    def initialize_events(
+        self, script: str, *, after_sequence: int = 0
+    ) -> grpc.aio.UnaryStreamCall[pb.InitializeRequest, pb.InitializationEvent]:
+        """Replay initialization events after a cursor, then follow live output through completion."""
+        return self._stub.Initialize(pb.InitializeRequest(script=script, after_sequence=after_sequence))
+
+    async def initialize(self, script: str) -> pb.InitializeResult:
+        """Run or replay initialization and return its terminal result."""
+        result: pb.InitializeResult | None = None
+        async for event in self.initialize_events(script):
+            if event.HasField("result"):
+                result = event.result
+        if result is None:
+            raise RunnerError("the initialization stream ended without a result")
+        return result
 
     async def list_sessions(self) -> list[pb.SessionSummary]:
         response = await self._stub.ListSessions(pb.ListSessionsRequest())

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
-import re
 from collections.abc import AsyncIterator
 from pathlib import PurePosixPath
 
@@ -17,6 +17,7 @@ from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.claude import ClaudeAdapter
 from x.agentplane.runner.codex import CodexAdapter
 from x.agentplane.runner.config import RunnerConfig
+from x.agentplane.runner.initialization import InitializationLog
 from x.agentplane.runner.session import Attachment, Session
 from x.agentplane.runner.store import SessionRecord, SessionStore, validate_session_id
 
@@ -25,9 +26,7 @@ from x.agentplane.runner.store import SessionRecord, SessionStore, validate_sess
 # gazelle:include_dep @pypi//grpcio
 
 logger = logging.getLogger(__name__)
-_BOOTSTRAP_KEY = re.compile(r"^[a-f0-9]{64}$")
 _MAX_BOOTSTRAP_BYTES = 65_536
-_MAX_BOOTSTRAP_OUTPUT = 16_384
 
 
 class OpenError(Exception):
@@ -35,7 +34,7 @@ class OpenError(Exception):
 
 
 class InitializationConflictError(Exception):
-    """The sandbox already completed a different bootstrap initialization."""
+    """The sandbox already selected a different bootstrap initialization."""
 
 
 def make_adapter(session: Session) -> HarnessAdapter:
@@ -57,54 +56,85 @@ class Runner:
         self.store = SessionStore(config.state_dir / "sessions")
         self.sessions: dict[str, Session] = {}
         self._initialize_lock = asyncio.Lock()
+        self._initialization_log: InitializationLog | None = None
+        self._initialization_task: asyncio.Task[None] | None = None
 
-    async def initialize(self, request: pb.InitializeRequest) -> pb.InitializeResult:
-        """Run exactly one configured bootstrap script for this sandbox's persistent state."""
-        if _BOOTSTRAP_KEY.fullmatch(request.key) is None:
-            raise ValueError("initialize.key must be a lowercase SHA-256 digest")
+    async def initialize(self, request: pb.InitializeRequest) -> tuple[InitializationLog, asyncio.Task[None] | None]:
+        """Select one sandbox bootstrap and return its replayable log and current execution."""
         source = request.script.encode()
         if not source or len(source) > _MAX_BOOTSTRAP_BYTES:
             raise ValueError(f"initialize.script must contain 1..{_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
-        marker_dir = self.config.state_dir / "initializations"
-        marker = marker_dir / request.key
-        script_digest = hashlib.sha256(source).hexdigest()
         async with self._initialize_lock:
-            completed = sorted(path for path in marker_dir.glob("*") if path.is_file())
-            if completed:
-                if len(completed) != 1 or completed[0].name != request.key:
-                    identities = ", ".join(path.name for path in completed)
-                    raise InitializationConflictError(
-                        f"sandbox already initialized with a different bootstrap ({identities}); refusing {request.key}"
-                    )
-                recorded_digest = marker.read_text().strip()
-                if recorded_digest != script_digest:
-                    raise InitializationConflictError(
-                        "sandbox bootstrap identity matches, but its script differs from the completed initialization"
-                    )
-                return pb.InitializeResult(key=request.key, executed=False, exit_code=0)
-            marker_dir.mkdir(parents=True, exist_ok=True)
-            process = await asyncio.create_subprocess_exec(
-                "/bin/sh",
-                "-eu",
-                cwd=self.config.state_dir,
-                env={**os.environ, **self.config.environment},
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await process.communicate(source)
-            exit_code = process.returncode
-            assert exit_code is not None
-            result = pb.InitializeResult(
-                key=request.key,
-                executed=True,
-                exit_code=exit_code,
-                stdout=stdout[-_MAX_BOOTSTRAP_OUTPUT:].decode(errors="replace"),
-                stderr=stderr[-_MAX_BOOTSTRAP_OUTPUT:].decode(errors="replace"),
-            )
-            if exit_code == 0:
-                marker.write_text(f"{script_digest}\n")
-            return result
+            log = self._claim_initialization(source)
+            if log.completed:
+                return log, None
+            if self._initialization_task is None or self._initialization_task.done():
+                attempt = log.last_attempt + 1
+                self._initialization_task = asyncio.create_task(
+                    self._execute_initialization(source, attempt, log), name=f"sandbox-initialization-{attempt}"
+                )
+            return log, self._initialization_task
+
+    def _claim_initialization(self, source: bytes) -> InitializationLog:
+        root = self.config.state_dir / "initialization"
+        metadata_path = root / "request.json"
+        requested = {"script_sha256": hashlib.sha256(source).hexdigest()}
+        if metadata_path.exists():
+            selected = json.loads(metadata_path.read_text())
+            if selected != requested:
+                raise InitializationConflictError(
+                    "sandbox already selected a different bootstrap script; refusing another"
+                )
+        else:
+            root.mkdir(parents=True, exist_ok=True)
+            staged = metadata_path.with_suffix(".json.tmp")
+            with staged.open("wb") as output:
+                output.write((json.dumps(requested, sort_keys=True) + "\n").encode())
+                output.flush()
+                os.fsync(output.fileno())
+            staged.replace(metadata_path)
+            directory = os.open(root, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        if self._initialization_log is None:
+            self._initialization_log = InitializationLog(root / "events.jsonl")
+        return self._initialization_log
+
+    async def _execute_initialization(self, source: bytes, attempt: int, log: InitializationLog) -> None:
+        process = await asyncio.create_subprocess_exec(
+            "/bin/sh",
+            "-eu",
+            cwd=self.config.state_dir,
+            env={**os.environ, **self.config.environment},
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        assert process.stdin is not None
+        assert process.stdout is not None
+        assert process.stderr is not None
+        stdout = asyncio.create_task(
+            self._record_initialization_output(process.stdout, attempt, pb.INITIALIZATION_STREAM_STDOUT, log)
+        )
+        stderr = asyncio.create_task(
+            self._record_initialization_output(process.stderr, attempt, pb.INITIALIZATION_STREAM_STDERR, log)
+        )
+        process.stdin.write(source)
+        await process.stdin.drain()
+        process.stdin.close()
+        await process.stdin.wait_closed()
+        exit_code = await process.wait()
+        await asyncio.gather(stdout, stderr)
+        log.append_result(attempt, exit_code)
+
+    @staticmethod
+    async def _record_initialization_output(
+        stream: asyncio.StreamReader, attempt: int, source: int, log: InitializationLog
+    ) -> None:
+        while data := await stream.read(4096):
+            log.append_output(attempt, source, data)
 
     def startup(self) -> None:
         """Load every stored session and record what the previous runner process took with it."""
@@ -150,7 +180,15 @@ class Runner:
         return session
 
     async def stop(self) -> None:
-        await asyncio.gather(*(session.stop() for session in self.sessions.values()))
+        tasks: list[asyncio.Future[object] | asyncio.Task[None]] = [
+            asyncio.ensure_future(session.stop()) for session in self.sessions.values()
+        ]
+        if self._initialization_task is not None:
+            tasks.append(self._initialization_task)
+        if tasks:
+            await asyncio.gather(*tasks)
+        if self._initialization_log is not None:
+            self._initialization_log.close()
 
     def summaries(self) -> list[pb.SessionSummary]:
         return [
@@ -171,15 +209,35 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
 
     async def Initialize(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, request: pb.InitializeRequest, context: grpc.aio.ServicerContext
-    ) -> pb.InitializeResult:
+    ) -> AsyncIterator[pb.InitializationEvent]:
         try:
-            return await self.runner.initialize(request)
+            log, execution = await self.runner.initialize(request)
+            if request.after_sequence > log.last_sequence:
+                raise ValueError(
+                    f"after_sequence {request.after_sequence} is beyond the initialization log, "
+                    f"whose last sequence is {log.last_sequence}"
+                )
         except InitializationConflictError as error:
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(error))
-            raise AssertionError("context.abort always raises") from error
+            return
         except ValueError as error:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(error))
-            raise AssertionError("context.abort always raises") from error
+            return
+
+        cursor = request.after_sequence
+        while True:
+            for event in log.since(cursor):
+                yield event
+                cursor = event.sequence
+            if execution is None:
+                return
+            if execution.done():
+                await execution
+                for event in log.since(cursor):
+                    yield event
+                    cursor = event.sequence
+                return
+            await log.wait_beyond(cursor)
 
     async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, request: pb.ListSessionsRequest, context: grpc.aio.ServicerContext

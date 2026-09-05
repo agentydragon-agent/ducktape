@@ -131,6 +131,7 @@ py_library(
         ":claude",
         ":codex",
         ":config",
+        ":initialization",
         ":session",
         ":store",
         "//x/agentplane/runner:protocol_pb2",
@@ -386,7 +387,9 @@ py_test(
         ":conftest",
         ":service",
         "//:conftest",
+        "//x/agentplane/runner:protocol_pb2",
         "@pypi//grpcio",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -440,5 +443,14 @@ py_test(
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "initialization",
+    srcs = ["initialization.py"],
+    deps = [
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
     ],
 )
