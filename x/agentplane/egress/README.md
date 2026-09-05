@@ -41,6 +41,56 @@ The image `//x/agentplane/egress:image` is published as `agentplane-egress`
 (<../../../devinfra/ci/image_targets.json>); the Deployment, sidecar, and CA distribution are the
 cluster manifests' concern (`cluster/k8s/agentplane-staging`).
 
+## BuildBuddy clients
+
+BuildBuddy uses the same API-key header on its JSON-over-HTTP API and its gRPC services:
+`x-buildbuddy-api-key`. For a local Bazel or BuildBuddy client, declare that header as a whole-value
+target; gRPC metadata is exposed to the addon as the initial HTTP/2 request headers, so the existing
+target model substitutes it without a gRPC-specific credential kind.
+
+Interactive browser authentication is separate: BuildBuddy's login flow establishes HTTP-only
+`Authorization`, `Authorization-Issuer`, and `Session-ID` cookies. A browser session should keep
+using those cookies; the API key is for programmatic HTTP/gRPC calls, not a cookie value the proxy
+should synthesize.
+
+```yaml
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: buildbuddy-local-client
+spec:
+  description: A scoped BuildBuddy API key for local HTTP API and Bazel remote-protocol calls.
+  source:
+    secretRef:
+      name: buildbuddy-local-client
+      key: api-key
+  targets:
+    - header: x-buildbuddy-api-key
+      method: wholeValue
+```
+
+The policy still decides the admitted hosts, methods, and paths. `app.buildbuddy.io` serves the
+HTTP API; `remote.buildbuddy.io` serves Build Event Service, remote cache, Remote Execution, and the
+Remote Runner control service over gRPCS. Standard server-authenticated TLS is sufficient for
+API-key authentication. BuildBuddy also supports mTLS as a separate authentication mode; that is
+not header substitution and this proxy does not provision or present a client certificate.
+
+This support is deliberately **local-client only**. `bb remote` first authenticates its local gRPC
+control call with this metadata, but it also copies the API key into the Bazel command executed by
+BuildBuddy's hosted runner. That nested Bazel process is outside Agentplane egress, so a placeholder
+would remain inert there. Do not configure credentialless `bb remote` until BuildBuddy offers a
+runner-side credential reference or Agentplane owns an equivalent broker at that boundary.
+
+Authoritative evidence is pinned to BuildBuddy source commit
+[`6fc01488`](https://github.com/buildbuddy-io/buildbuddy/tree/6fc01488a60d69832f86eff154ac985e1170653e):
+the [authentication guide](https://github.com/buildbuddy-io/buildbuddy/blob/6fc01488a60d69832f86eff154ac985e1170653e/docs/guide-auth.md)
+names the gRPC metadata header and TLS modes; the
+[HTTP API documentation](https://github.com/buildbuddy-io/buildbuddy/blob/6fc01488a60d69832f86eff154ac985e1170653e/docs/enterprise-api.md)
+uses the same header; the [browser cookie definitions](https://github.com/buildbuddy-io/buildbuddy/blob/6fc01488a60d69832f86eff154ac985e1170653e/server/util/cookie/cookie.go)
+show the interactive-session form; and the
+[`bb remote` implementation](https://github.com/buildbuddy-io/buildbuddy/blob/6fc01488a60d69832f86eff154ac985e1170653e/cli/remotebazel/remotebazel.go)
+both appends the key to the local outgoing gRPC context and retains it in the nested Bazel command.
+
 ## ServiceAccount permissions
 
 In the sandbox namespace: `get`, `list`, `watch` on `egresspolicies`, `egressbindings`,

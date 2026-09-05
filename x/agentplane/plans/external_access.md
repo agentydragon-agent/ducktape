@@ -85,10 +85,13 @@ reconciler lands; with one identity per grant, only the grant being revoked paus
 The same guarantee holds for any target the egress fence fronts, since header substitution works
 the same for GitHub or Forgejo tokens, with the desired-versus-actual check replaced by whatever
 that target exposes about the token's scope; it does not hold where the agent must possess the
-real credential. BuildBuddy remains unresolved: local authenticated gRPC reaches the proxy, but
-whether the proxy can substitute its metadata correctly is unmeasured, and `bb remote` moves the
-call onto a hosted runner outside the fence regardless. The transport boundary is canonical in
-the [egress SPEC](../egress/SPEC.md).
+real credential. BuildBuddy is now split at the measured transport boundary: local HTTP API and
+gRPC clients can present `agentplane-credential-<name>` as the whole
+`x-buildbuddy-api-key` header/metadata value, and the proxy substitutes it across unary and
+bidirectional HTTP/2 calls with trailers intact. `bb remote` still cannot be credentialless because
+the CLI also embeds the key in the Bazel command run on BuildBuddy's hosted runner, outside the
+fence. The protocol requirements and acceptance test are canonical in the
+[egress SPEC](../egress/SPEC.md).
 
 ## Choosing
 
@@ -128,6 +131,7 @@ operations fall where.
 | GitHub                                       | fine-grained token or App installation per repo                            | public-repository policy across search; writes under review |
 | Forgejo                                      | scoped tokens (controller-minted)                                          | nothing identified yet                                      |
 | HTTP egress                                  | fence allowlist by origin; path-level allowlists are the natural extension | origins outside the allowlist                               |
+| BuildBuddy local clients                     | proxy-held key in `x-buildbuddy-api-key` for HTTP and gRPC                  | `bb remote` hosted-runner credential delivery               |
 | Gmail                                        | OAuth scopes only                                                          | label-namespace confinement; every mutation                 |
 | Others (Matrix, Home Assistant, Tana, Grocy) | unassessed                                                                 | unassessed; default to brokered until assessed              |
 

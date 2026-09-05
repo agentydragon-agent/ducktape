@@ -231,8 +231,18 @@ async def recording_grpc_upstream(
 
     async def call(request: bytes, context: grpc.aio.ServicerContext) -> bytes:
         del request
-        await requests.put(tuple((item.key, item.value) for item in context.invocation_metadata()))
+        metadata = context.invocation_metadata() or ()
+        await requests.put(tuple((str(item[0]), str(item[1])) for item in metadata))
         return b"upstream ok"
+
+    async def stream(
+        request_iterator: AsyncIterator[bytes], context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[bytes]:
+        metadata = context.invocation_metadata() or ()
+        await requests.put(tuple((str(item[0]), str(item[1])) for item in metadata))
+        async for request in request_iterator:
+            yield b"upstream:" + request
+        context.set_trailing_metadata((("buildbuddy-test-trailer", "ok"),))
 
     server = grpc.aio.server()
     server.add_generic_rpc_handlers(
@@ -245,11 +255,19 @@ async def recording_grpc_upstream(
                     )
                 },
             ),
+            grpc.method_handlers_generic_handler(
+                "google.devtools.build.v1.PublishBuildEvent",
+                {
+                    "PublishBuildToolEventStream": grpc.stream_stream_rpc_method_handler(
+                        stream, request_deserializer=lambda value: value, response_serializer=lambda value: value
+                    )
+                },
+            ),
         )
     )
     port = server.add_secure_port(
         "127.0.0.1:0",
-        grpc.ssl_server_credentials(((key_pem, cert_pem),)),
+        grpc.ssl_server_credentials([(key_pem, cert_pem)]),
     )
     await server.start()
     try:
@@ -288,7 +306,10 @@ async def test_grpc_metadata_placeholder_is_substituted(
                 {
                     "hosts": [UPSTREAM_HOST],
                     "methods": ["POST"],
-                    "paths": ["/build.bazel.remote.execution.v2.Capabilities/GetCapabilities"],
+                    "paths": [
+                        "/build.bazel.remote.execution.v2.Capabilities/GetCapabilities",
+                        "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream",
+                    ],
                     "credentialRef": {"name": credential_name},
                 }
             ],
@@ -323,9 +344,24 @@ async def test_grpc_metadata_placeholder_is_substituted(
                 request_serializer=lambda value: value,
                 response_deserializer=lambda value: value,
             )(b"request", metadata=(("x-buildbuddy-api-key", placeholder),), timeout=10)
+            stream = channel.stream_stream(
+                "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream",
+                request_serializer=lambda value: value,
+                response_deserializer=lambda value: value,
+            )(metadata=(("x-buildbuddy-api-key", placeholder),), timeout=10)
+            await stream.write(b"one")
+            await stream.write(b"two")
+            await stream.done_writing()
+            streamed = [message async for message in stream]
+            trailers = dict(await stream.trailing_metadata() or ())
 
     assert response == b"upstream ok"
-    assert dict(await requests.get())["x-buildbuddy-api-key"] == "buildbuddy-secret"
+    assert streamed == [b"upstream:one", b"upstream:two"]
+    assert trailers["buildbuddy-test-trailer"] == "ok"
+    assert [dict(await requests.get())["x-buildbuddy-api-key"] for _ in range(2)] == [
+        "buildbuddy-secret",
+        "buildbuddy-secret",
+    ]
 
 
 async def test_allowed_request_without_placeholder_is_forwarded_as_is(proxy: ProxyUnderTest) -> None:
