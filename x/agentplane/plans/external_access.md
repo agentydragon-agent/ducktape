@@ -131,7 +131,7 @@ operations fall where.
 | GitHub                                       | fine-grained token or App installation per repo                            | public-repository policy across search; writes under review |
 | Forgejo                                      | scoped tokens (controller-minted)                                          | nothing identified yet                                      |
 | HTTP egress                                  | fence allowlist by origin; path-level allowlists are the natural extension | origins outside the allowlist                               |
-| BuildBuddy local clients                     | proxy-held key in `x-buildbuddy-api-key` for HTTP and gRPC                  | `bb remote` hosted-runner credential delivery               |
+| BuildBuddy local clients                     | proxy-held key in `x-buildbuddy-api-key` for HTTP and gRPC                 | `bb remote` hosted-runner credential delivery               |
 | Gmail                                        | OAuth scopes only                                                          | label-namespace confinement; every mutation                 |
 | Others (Matrix, Home Assistant, Tana, Grocy) | unassessed                                                                 | unassessed; default to brokered until assessed              |
 

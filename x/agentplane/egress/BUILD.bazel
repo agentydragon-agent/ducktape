@@ -185,6 +185,7 @@ py_test(
         ":identity",
         ":policy",
         ":proxy",
+        ":resources",
         ":sidecar",
         ":upstream",
         "//:conftest",

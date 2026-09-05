@@ -235,9 +235,7 @@ async def recording_grpc_upstream(
         await requests.put(tuple((str(item[0]), str(item[1])) for item in metadata))
         return b"upstream ok"
 
-    async def stream(
-        request_iterator: AsyncIterator[bytes], context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[bytes]:
+    async def stream(request_iterator: AsyncIterator[bytes], context: grpc.aio.ServicerContext) -> AsyncIterator[bytes]:
         metadata = context.invocation_metadata() or ()
         await requests.put(tuple((str(item[0]), str(item[1])) for item in metadata))
         async for request in request_iterator:
@@ -265,10 +263,7 @@ async def recording_grpc_upstream(
             ),
         )
     )
-    port = server.add_secure_port(
-        "127.0.0.1:0",
-        grpc.ssl_server_credentials([(key_pem, cert_pem)]),
-    )
+    port = server.add_secure_port("127.0.0.1:0", grpc.ssl_server_credentials([(key_pem, cert_pem)]))
     await server.start()
     try:
         yield port, requests
@@ -321,9 +316,11 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
         binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY, policy_name]),
     )
     await proxy.index.wait_for(
-        lambda: credential_name in proxy.index.credentials
-        and policy_name in proxy.index.policies
-        and policy_name in proxy.index.bindings[BINDING].spec.policies
+        lambda: (
+            credential_name in proxy.index.credentials
+            and policy_name in proxy.index.policies
+            and policy_name in proxy.index.bindings[BINDING].spec.policies
+        )
     )
 
     async with (
