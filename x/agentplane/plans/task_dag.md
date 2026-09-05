@@ -30,7 +30,14 @@ long-lived agent here, and a UI Haku authors and is driven through.
 
 ## Current status
 
-**Next: story 1, the ask** ([`user_stories.md`](user_stories.md) § 1). Credentialless egress was its
+**Next implementation slice: launch presets** ([`launch_presets.md`](launch_presets.md)). This is a
+narrow integration-app feature on top of the first functioning product: a live SandboxPreset may
+name a default ThreadPreset, callers can override preset fields freely, and the runner executes the
+SandboxPreset's bootstrap before the first Thread. It is the first concrete definition of
+`public-coder-agent` without turning Agentplane core into a preset registry.
+
+**Story 1, the ask** ([`user_stories.md`](user_stories.md) § 1) remains the next unresolved product
+story. Credentialless egress was its
 gate and is through: a refused call is already a `403` with a machine-readable reason, which is
 where an ask comes from; the delivery and batching design is written
 ([`async_approvals.md`](async_approvals.md)); the decision arriving as a thread input is decided; and
@@ -67,6 +74,7 @@ flowchart TB
     T1["T1 Trajectory persistence<br/>every event under a thread that outlives the sandbox"]:::completed
 
     Y["Story 1: ask me, I decide<br/>asks, delivery, decisions as inputs<br/>async_approvals.md, user_stories.md"]:::ready
+    LP["Launch presets<br/>SandboxPreset → ThreadPreset,<br/>public-coder, runner bootstrap, UI"]:::ready
     T2["T2 Named threads<br/>a small model proposes, the user edits"]:::next
     T3["T3 Search and lookup over past interactions<br/>what happened, why, which agent"]:::next
     PR["The proxy endures its own rollout<br/>a hard dependency of every turn, with a per-process<br/>decision ring, so scaling out is not free"]:::next
@@ -100,6 +108,7 @@ flowchart TB
     W["Stretch<br/>hardened Kubernetes/Authentik deployment"]:::future
 
     F0 --> Y
+    F0 --> LP
     J --> Y
     J --> PR
     T1 --> T2
@@ -160,6 +169,10 @@ personal context.
 
 ## Work-package acceptance
 
+- **Launch presets (`LP`).** The integration app owns live SandboxPreset and ThreadPreset
+  definitions, Sandbox bindings, revision/provenance, and explicit overrides. A `public-coder`
+  launch exercises the UI, runner bootstrap, egress selection, and first Thread as one vertical
+  slice; the detailed contract and acceptance test are in [`launch_presets.md`](launch_presets.md).
 - **Story 1 (`Y`) the ask.** A sandboxed agent's request — this token for this call, this verb on
   this namespace, this command on this host — is an object the app stores and shows with its
   rationale, it reaches Rai as a notification that can answer it, and the answer arrives in the
@@ -230,7 +243,8 @@ personal context.
 - Sandbox identity and egress evidence: [observed identity evidence](../docs/sandbox_egress_identity_evidence.md).
 - Driver-provided tools and background work, and the decisions the seam is waiting on:
   [`driver_tools_and_background.md`](driver_tools_and_background.md).
-- Profiles, and what would revive them: [`profiles.md`](profiles.md).
+- Sandbox and Thread presets: [`launch_presets.md`](launch_presets.md); broader profiles and what
+  would revive them: [`profiles.md`](profiles.md).
 - Asynchronous approvals, decision delivery, and the notification batcher:
   [`async_approvals.md`](async_approvals.md).
 - Delegated identity versus brokered credentials per external system, and the rule for choosing:

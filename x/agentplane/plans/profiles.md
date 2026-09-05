@@ -1,13 +1,16 @@
 # Profiles
 
-Status: **deferred, pending design**. Nothing in the code, the CRDs, or the cluster manifests
-implements a profile today, and nothing may add one until the design below exists.
+Status: **replaced by the launch-presets design**. The scoped implementation is documented in
+[`launch_presets.md`](launch_presets.md); this file remains as the record of why a broad
+capability profile is not the first abstraction.
 
-A profile is the preset a sandbox runs under — "public coder", "Haku" — the named bundle of what
-an agent in that sandbox is allowed to do. The pull toward it is real: an operator creating a
-sandbox wants to pick one thing, not tick a list of policies.
+A broad profile would be the preset a sandbox runs under — "public coder", "Haku" — including
+what an agent is allowed to do. The pull toward a launch preset is real: an operator creating a
+sandbox wants to pick one thing, not tick a list of policies. The first slice deliberately narrows
+that product concept to app-owned SandboxPreset and ThreadPreset defaults; capability policy remains
+owned by its existing authorities.
 
-## Why it is deferred rather than built
+## Why the broad profile remains deferred
 
 **A profile is expected to span more than egress.** Per-tool-call approvals and other capability
 grants are expected to key off the same notion: whether a tool call needs Rai's decision, which
@@ -26,14 +29,15 @@ removed for this reason, not merely unused: a subject is one named Sandbox.
 **Profiles are not to be stored in Kubernetes** (Rai). Where they do live is part of the design
 this entry is waiting on.
 
-## What leaving looks like
+## What this leaves open
 
-This entry burns down when a design says what a profile is, where it lives, and how every
-consumer — egress, approvals, whatever else has arrived by then — reads it. That design graduates
-to a doc under `x/agentplane/docs/`, and this file goes.
+The launch-presets design says where the app-owned defaults live and how the current Sandbox and
+Thread consumers use them. A broader capability profile still waits for a design that says how
+future consumers — egress, approvals, MCP reachability, and other tool permissions — share one
+authority. Do not widen the launch-presets slice to settle that question.
 
 ## Meanwhile
 
-A sandbox's egress is exactly the policies picked for it, at creation or granted afterwards, one
-binding it owns per grant. Presets are approximated by picking the same policies again; nothing
-infers a class of sandboxes.
+A sandbox's egress remains exactly the policies picked for it, at creation or granted afterwards,
+one binding it owns per grant. The launch-presets slice may prefill those choices, but normal egress
+authorization and enforcement still apply.

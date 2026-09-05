@@ -11,7 +11,8 @@ work that remains open or deferred; the [task DAG](task_dag.md) is the project o
 - [Asynchronous approvals](async_approvals.md)
 - [Driver-provided tools and background work](driver_tools_and_background.md)
 - [Agent access to external systems](external_access.md)
-- [Profiles](profiles.md)
+- [Sandbox and Thread presets](launch_presets.md)
+- [Profiles](profiles.md) — broader capability profiles remain deferred
 
 Durable decisions and evidence:
 
