@@ -131,6 +131,7 @@ py_library(
         ":claude",
         ":codex",
         ":config",
+        ":initialization",
         ":session",
         ":store",
         "//x/agentplane/runner:protocol_pb2",
@@ -378,6 +379,23 @@ oci_layout_rloc(
 )
 
 py_test(
+    name = "test_initialize",
+    srcs = ["test_initialize.py"],
+    deps = [
+        ":client",
+        ":config",
+        ":conftest",
+        ":service",
+        "//:conftest",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_main",
     srcs = ["test_main.py"],
     deps = [
@@ -425,5 +443,14 @@ py_test(
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "initialization",
+    srcs = ["initialization.py"],
+    deps = [
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
     ],
 )
