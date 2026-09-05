@@ -44,6 +44,17 @@ If the single component has a real production container that owns its width
 actual container/class in the harness — not a synthetic hardcoded width — so
 the screenshot tracks the true CSS instead of a number that can drift from it.
 
+## Wait bounds
+
+Every wait takes `WAIT_TIMEOUT_MS` from `capture.mjs` — both navigations, the
+mount wait, `assertNetworkSettled`, and any condition a scenario adds. One bound
+in one place; why that number is at its declaration.
+
+Don't put a literal next to a `waitFor*` call. The 5s that used to sit on the
+mount wait was already ~60x the slowest healthy mount, and a loaded RBE worker
+still outran it — reporting an arbitrary elapsed time rather than that the page
+never mounted.
+
 ## Verifying determinism
 
 A harness "passing" only proves it rendered — it says nothing about whether two
