@@ -55,14 +55,6 @@ since its decision ring is per-process (`PR`).
 broad internet boundary and scoped GitHub credential for `agentydragon-agent`; that convenience is
 not a policy model for the private, high-context Haku agent.
 
-**BuildBuddy's transport seam is measured, not a new DAG dependency.** Local HTTP API and Bazel
-gRPC calls use `x-buildbuddy-api-key`; the existing whole-header credential target substitutes it
-through unary and bidirectional HTTP/2 with trailers intact. `bb remote` remains outside the safe
-slice because it copies the key into a command on BuildBuddy's hosted runner, beyond Agentplane's
-egress fence. The concrete contract and fake-server acceptance test live in the egress SPEC; a
-runner-side credential reference or equivalent broker is the smallest seam that could reopen
-credentialless hosted remote builds.
-
 ## DAG
 
 Three landed nodes stay on the map because the remaining work hangs off them; everything else that
@@ -207,9 +199,7 @@ personal context.
 - **Credentialed production readiness (`L`):** durable freshness and replay defence, per-Sandbox and
   per-Thread binding, rotation, runner-port authentication, and escape tests. Staging spends a
   scoped PAT and a capped model key through the proxy today; neither is evidence that the path is
-  ready for a credential that matters. BuildBuddy local-client support does not change this gate:
-  its acceptance test proves transport and substitution with a fake credential and fake TLS gRPC
-  server, not the scope, rotation, or revocation behavior of a production key.
+  ready for a credential that matters.
 - **Reliability (`M`):** choose one observed failure with the highest user cost. Candidates already
   known: recovery of a turn lost mid-tool beyond `PROCESS_LOST`, session log growth, and the harness
   pin refresh workflow. Each hardening slice needs its own reproduction and acceptance test; do not
