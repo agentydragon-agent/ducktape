@@ -224,7 +224,7 @@ async def test_allowed_request_has_its_placeholder_substituted(proxy: ProxyUnder
 
 @asynccontextmanager
 async def recording_grpc_upstream(
-    cert_path: Path, key_path: Path
+    cert_pem: bytes, key_pem: bytes
 ) -> AsyncIterator[tuple[int, asyncio.Queue[tuple[tuple[str, str], ...]]]]:
     """A TLS gRPC server recording the metadata on one unary call."""
     requests: asyncio.Queue[tuple[tuple[str, str], ...]] = asyncio.Queue()
@@ -249,13 +249,17 @@ async def recording_grpc_upstream(
     )
     port = server.add_secure_port(
         "127.0.0.1:0",
-        grpc.ssl_server_credentials(((key_path.read_bytes(), cert_path.read_bytes()),)),
+        grpc.ssl_server_credentials(((key_pem, cert_pem),)),
     )
     await server.start()
     try:
         yield port, requests
     finally:
         await server.stop(grace=None)
+
+
+def read_keypair(cert_path: Path, key_path: Path) -> tuple[bytes, bytes]:
+    return cert_path.read_bytes(), key_path.read_bytes()
 
 
 async def test_grpc_metadata_placeholder_is_substituted(
@@ -303,8 +307,9 @@ async def test_grpc_metadata_placeholder_is_substituted(
     token_file = proxy.tmp_path / "sidecar-token"
     token_file.write_text(TOKEN_A)
     cert_path, key_path = issue_leaf(proxy.upstream_ca, UPSTREAM_HOST, proxy.tmp_path)
+    cert_pem, key_pem = read_keypair(cert_path, key_path)
     async with (
-        recording_grpc_upstream(cert_path, key_path) as (port, requests),
+        recording_grpc_upstream(cert_pem, key_pem) as (port, requests),
         SidecarRelay(
             proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
         ) as sidecar,
