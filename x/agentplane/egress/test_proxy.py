@@ -280,7 +280,7 @@ def read_keypair(cert_path: Path, key_path: Path) -> tuple[bytes, bytes]:
     return cert_path.read_bytes(), key_path.read_bytes()
 
 
-async def test_grpc_metadata_placeholder_is_substituted(
+async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
     fake: FakeApiServer, proxy: ProxyUnderTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Bazel's remote_header becomes ordinary HTTP/2 metadata at the intercepted proxy."""
@@ -307,6 +307,7 @@ async def test_grpc_metadata_placeholder_is_substituted(
                     "hosts": [UPSTREAM_HOST],
                     "methods": ["POST"],
                     "paths": [
+                        "/api/v1/GetInvocation",
                         "/build.bazel.remote.execution.v2.Capabilities/GetCapabilities",
                         "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream",
                     ],
@@ -324,6 +325,20 @@ async def test_grpc_metadata_placeholder_is_substituted(
         and policy_name in proxy.index.policies
         and policy_name in proxy.index.bindings[BINDING].spec.policies
     )
+
+    async with (
+        aiohttp.ClientSession() as session,
+        session.post(
+            proxy.url("/api/v1/GetInvocation"),
+            proxy=f"http://127.0.0.1:{proxy.proxy_port}",
+            proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+            ssl=client_tls_context(proxy.interception_ca),
+            headers={"x-buildbuddy-api-key": placeholder},
+            json={"selector": {"invocation_id": "fake"}},
+        ) as http_response,
+    ):
+        assert (http_response.status, await http_response.text()) == (200, "upstream ok")
+    assert one(proxy.upstream.requests)[2]["x-buildbuddy-api-key"] == "buildbuddy-secret"
 
     token_file = proxy.tmp_path / "sidecar-token"
     token_file.write_text(TOKEN_A)
