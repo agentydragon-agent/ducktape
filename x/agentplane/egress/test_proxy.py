@@ -16,6 +16,7 @@ from ipaddress import ip_network
 from pathlib import Path
 
 import aiohttp
+import grpc
 import pytest
 import pytest_bazel
 from aiohttp import web
@@ -42,13 +43,21 @@ from x.agentplane.egress.decisions import DecisionRing
 from x.agentplane.egress.identity import PodIdentityVerifier
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
+from x.agentplane.egress.resources import TargetMethod, placeholder_of
+from x.agentplane.egress.sidecar import SidecarRelay
 from x.agentplane.egress.testing.fake_apiserver import (
+    BINDINGS_PLURAL,
+    CREDENTIALS_PLURAL,
+    POLICIES_PLURAL,
     SANDBOX_NAMESPACE,
     SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
     TokenVerdict,
+    binding,
+    credential,
     pod_for,
+    policy,
     sandbox,
     secret,
 )
@@ -111,6 +120,8 @@ class ProxyUnderTest:
     proxy_port: int
     admin_port: int
     interception_ca: CertificateAuthority
+    upstream_ca: CertificateAuthority
+    tmp_path: Path
     index: Index
     upstream: RecordingUpstream
 
@@ -185,6 +196,8 @@ async def proxy(
                 proxy_port=server.listen_port,
                 admin_port=admin_port,
                 interception_ca=interception_ca,
+                upstream_ca=upstream_ca,
+                tmp_path=tmp_path,
                 index=index,
                 upstream=upstream,
             )
@@ -207,6 +220,160 @@ async def test_allowed_request_has_its_placeholder_substituted(proxy: ProxyUnder
     assert (method, path) == ("GET", "/repos/o/r?ref=main")
     assert headers["authorization"] == f"Bearer {SECRET_VALUE}"
     assert "proxy-authorization" not in headers
+
+
+@asynccontextmanager
+async def recording_grpc_upstream(
+    cert_pem: bytes, key_pem: bytes
+) -> AsyncIterator[tuple[int, asyncio.Queue[tuple[tuple[str, str], ...]]]]:
+    """A TLS gRPC server recording metadata on unary and bidirectional calls."""
+    requests: asyncio.Queue[tuple[tuple[str, str], ...]] = asyncio.Queue()
+
+    async def call(request: bytes, context: grpc.aio.ServicerContext) -> bytes:
+        del request
+        metadata = context.invocation_metadata() or ()
+        await requests.put(tuple((str(item[0]), str(item[1])) for item in metadata))
+        return b"upstream ok"
+
+    async def stream(request_iterator: AsyncIterator[bytes], context: grpc.aio.ServicerContext) -> AsyncIterator[bytes]:
+        metadata = context.invocation_metadata() or ()
+        await requests.put(tuple((str(item[0]), str(item[1])) for item in metadata))
+        async for request in request_iterator:
+            yield b"upstream:" + request
+        context.set_trailing_metadata((("buildbuddy-test-trailer", "ok"),))
+
+    server = grpc.aio.server()
+    server.add_generic_rpc_handlers(
+        (
+            grpc.method_handlers_generic_handler(
+                "build.bazel.remote.execution.v2.Capabilities",
+                {
+                    "GetCapabilities": grpc.unary_unary_rpc_method_handler(
+                        call, request_deserializer=lambda value: value, response_serializer=lambda value: value
+                    )
+                },
+            ),
+            grpc.method_handlers_generic_handler(
+                "google.devtools.build.v1.PublishBuildEvent",
+                {
+                    "PublishBuildToolEventStream": grpc.stream_stream_rpc_method_handler(
+                        stream, request_deserializer=lambda value: value, response_serializer=lambda value: value
+                    )
+                },
+            ),
+        )
+    )
+    port = server.add_secure_port("127.0.0.1:0", grpc.ssl_server_credentials([(key_pem, cert_pem)]))
+    await server.start()
+    try:
+        yield port, requests
+    finally:
+        await server.stop(grace=None)
+
+
+def read_keypair(cert_path: Path, key_path: Path) -> tuple[bytes, bytes]:
+    return cert_path.read_bytes(), key_path.read_bytes()
+
+
+async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
+    fake: FakeApiServer, proxy: ProxyUnderTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bazel's remote_header becomes ordinary HTTP/2 metadata at the intercepted proxy."""
+    credential_name = "buildbuddy-api-key"
+    credential_secret = "buildbuddy-api-key-secret"
+    policy_name = "buildbuddy-local-bazel"
+    placeholder = placeholder_of(credential_name)
+    fake.put(SECRETS_PLURAL, secret(credential_secret, {"api-key": "buildbuddy-secret"}))
+    fake.put(
+        CREDENTIALS_PLURAL,
+        credential(
+            credential_name,
+            secret_name=credential_secret,
+            key="api-key",
+            targets=[{"header": "x-buildbuddy-api-key", "method": TargetMethod.WHOLE_VALUE}],
+        ),
+    )
+    fake.put(
+        POLICIES_PLURAL,
+        policy(
+            policy_name,
+            [
+                {
+                    "hosts": [UPSTREAM_HOST],
+                    "methods": ["POST"],
+                    "paths": [
+                        "/api/v1/GetInvocation",
+                        "/build.bazel.remote.execution.v2.Capabilities/GetCapabilities",
+                        "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream",
+                    ],
+                    "credentialRef": {"name": credential_name},
+                }
+            ],
+        ),
+    )
+    fake.put(
+        BINDINGS_PLURAL,
+        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY, policy_name]),
+    )
+    await proxy.index.wait_for(
+        lambda: (
+            credential_name in proxy.index.credentials
+            and policy_name in proxy.index.policies
+            and policy_name in proxy.index.bindings[BINDING].spec.policies
+        )
+    )
+
+    async with (
+        aiohttp.ClientSession() as session,
+        session.post(
+            proxy.url("/api/v1/GetInvocation"),
+            proxy=f"http://127.0.0.1:{proxy.proxy_port}",
+            proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+            ssl=client_tls_context(proxy.interception_ca),
+            headers={"x-buildbuddy-api-key": placeholder},
+            json={"selector": {"invocation_id": "fake"}},
+        ) as http_response,
+    ):
+        assert (http_response.status, await http_response.text()) == (200, "upstream ok")
+    assert one(proxy.upstream.requests)[2]["x-buildbuddy-api-key"] == "buildbuddy-secret"
+
+    token_file = proxy.tmp_path / "sidecar-token"
+    token_file.write_text(TOKEN_A)
+    cert_path, key_path = issue_leaf(proxy.upstream_ca, UPSTREAM_HOST, proxy.tmp_path)
+    cert_pem, key_pem = read_keypair(cert_path, key_path)
+    async with (
+        recording_grpc_upstream(cert_pem, key_pem) as (port, requests),
+        SidecarRelay(
+            proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
+        ) as sidecar,
+    ):
+        monkeypatch.setenv("https_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
+        monkeypatch.setenv("no_proxy", "")
+        credentials = grpc.ssl_channel_credentials(root_certificates=proxy.interception_ca.cert_pem)
+        async with grpc.aio.secure_channel(f"{UPSTREAM_HOST}:{port}", credentials) as channel:
+            response = await channel.unary_unary(
+                "/build.bazel.remote.execution.v2.Capabilities/GetCapabilities",
+                request_serializer=lambda value: value,
+                response_deserializer=lambda value: value,
+            )(b"request", metadata=(("x-buildbuddy-api-key", placeholder),), timeout=10)
+            stream = channel.stream_stream(
+                "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream",
+                request_serializer=lambda value: value,
+                response_deserializer=lambda value: value,
+            )(metadata=(("x-buildbuddy-api-key", placeholder),), timeout=10)
+            await stream.write(b"one")
+            await stream.write(b"two")
+            await stream.done_writing()
+            streamed = [message async for message in stream]
+            trailers = dict(await stream.trailing_metadata() or ())
+
+    assert response == b"upstream ok"
+    assert streamed == [b"upstream:one", b"upstream:two"]
+    assert trailers["buildbuddy-test-trailer"] == "ok"
+    assert [dict(await requests.get())["x-buildbuddy-api-key"] for _ in range(2)] == [
+        "buildbuddy-secret",
+        "buildbuddy-secret",
+    ]
 
 
 async def test_allowed_request_without_placeholder_is_forwarded_as_is(proxy: ProxyUnderTest) -> None:

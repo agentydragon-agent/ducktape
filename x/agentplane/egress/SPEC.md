@@ -132,14 +132,17 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   substitution reaches header values and nothing else. A placeholder anywhere else — a query
   parameter, a body, another envelope — is inert and reaches the upstream unsubstituted, which is
   the property to keep: a URL-borne credential would travel through logs and referrers.
-- **Whether an intercepted gRPC stream reaches the decision at all is unmeasured.** Nothing here
-  mentions HTTP/2, HPACK or gRPC; the addon reads `flow.request.headers` and lets mitmproxy decide
-  what a request is. Whether a `grpcs://` stream arrives with its metadata as headers, with
-  trailers intact, over a long-lived bidirectional connection, from a client that first has to
-  trust the interception CA, has never been tested. This decides whether fencing Bazel's
-  BuildBuddy key is a matching question or a transport one, and it is a transport experiment, not
-  a looser matcher. The public-coder deployment confirms that a local Bazel client's authenticated
-  gRPC reaches iron-proxy, but `bb remote` serialises the key into a command run on a
-  BuildBuddy-hosted runner, outside any fence of ours, where a placeholder would arrive
-  unsubstituted
+- **Intercepted gRPC uses the same header target model.** A TLS gRPC client through the real
+  sidecar and hosted mitmproxy presents its initial metadata in `flow.request.headers`; a
+  `wholeValue` target on `x-buildbuddy-api-key` substitutes the placeholder before the upstream
+  sees it. The integration test covers both a unary Remote Execution-shaped call and a
+  bidirectional Build Event Service-shaped stream, including multiple messages and upstream
+  trailers (`test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted`). The client
+  trusts the interception CA, the proxy verifies the upstream TLS certificate, and neither leg
+  uses mTLS.
+- This proves local Bazel, remote-cache/execution, BES, and BuildBuddy API clients whose credential
+  is request metadata. It does **not** make `bb remote` credentialless: the CLI authenticates its
+  local Remote Runner control RPC with the metadata, then also serialises the API key into the
+  Bazel command run on a BuildBuddy-hosted runner. That runner is outside this proxy, so a
+  placeholder arrives there unsubstituted
   (<../../../cluster/k8s/agents/public-coder-agent/app/deployment.yaml>).
