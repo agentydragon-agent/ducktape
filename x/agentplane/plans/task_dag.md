@@ -69,17 +69,10 @@ index and the redacted response contract. No local-dispatch branch or new creden
 
 ```mermaid
 flowchart TB
-    classDef completed fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:2px
     classDef active fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:3px
     classDef decision fill:#ffedd5,stroke:#c2410c,color:#7c2d12,stroke-width:2px,stroke-dasharray:5 3
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
-
-    F0["Observed evidence<br/>Sandbox + runner + app + trajectories"]:::completed
-    AUTH["Observed evidence<br/>workload-token substitution + SandboxPrincipal"]:::completed
-    LLM["Observed evidence<br/>authenticated LLM ingress"]:::completed
-    ACTION0["Observed evidence<br/>standalone Action Service + human Decision path<br/>fixture echo only"]:::completed
-    PRESETS["Observed evidence<br/>launch presets first slice"]:::completed
 
     AS["Action schema contract<br/>stable identity, params, result/error,<br/>redaction and evolution"]:::decision
     EW["Executor wiring contract<br/>groups/catalog, dispatch, credentials, MCP compatibility,<br/>claim/idempotency/heartbeat + first adapter"]:::decision
@@ -93,11 +86,12 @@ flowchart TB
     APPROVALUI["Deferred integration<br/>integration-app approval UI<br/>pending requests + decisions"]:::future
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
-
-    ER["Observed evidence #5701<br/>egress rules boundary + Service DNS transition"]:::completed
     DEDUPE["Needed support, independent<br/>shared FastAPI/auth setup dedupe"]:::active
     T3["P0 behavior, independent<br/>trajectory search and lookup"]:::active
     PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
+    PROFILES["Deferred design<br/>cross-cutting capability profiles<br/>egress + approvals + MCP/tool permissions"]:::future
+    ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
+    LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
     ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
@@ -105,12 +99,6 @@ flowchart TB
     AG["Deferred<br/>durable Agent identity + cross-agent read policy"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
 
-    F0 --> ACTION0
-    AUTH --> LLM
-    AUTH --> ACTION0
-    ACTION0 --> AS
-    ACTION0 --> EW
-    ACTION0 --> DEL
     AS --> MCP0
     EW --> MCP0
     DEL --> MCP0
@@ -127,11 +115,6 @@ flowchart TB
     EID -. external identity .-> RETIRE_AGENT
     AG -. durable Agent/Thread model .-> RETIRE_AGENT
 
-    AUTH --> ER
-    AUTH --> DEDUPE
-    F0 --> T3
-    F0 --> PR
-    ER -. independent cleanup .-> PROD
     DEDUPE -. independent support .-> PROD
     T3 -. independent product work .-> PROD
     PR -. independent reliability .-> PROD
@@ -140,15 +123,15 @@ flowchart TB
     EW --> DT
     MCP0 --> AG
     AG --> EID
+    EW -. retention cleanup .-> LIVE_CLEAN
 ```
 
-The first executable Action/MCP path is `ACTION0 -> AS + EW + DEL -> MCP0 -> MCPACCEPT`. It uses a
+The first executable Action/MCP path is `AS + EW + DEL -> MCP0 -> MCPACCEPT`. It uses a
 credentialless, staging-owned deterministic streamable-HTTP MCP fixture and a real Claude/Codex
 acceptance turn; it does not wait for GitHub OAuth. The later credentialed path is `MCP0 -> MCPAUTH ->
-PROD`. Egress
-introspection cleanup, shared FastAPI/auth deduplication, trajectory search, and proxy survivability
-can proceed without waiting for those gates. Their independence must not be described as evidence
-that the current echo-only Action Service can execute production work.
+PROD`. Shared FastAPI/auth deduplication, trajectory search, and proxy survivability can proceed
+without waiting for those gates. Their independence must not be described as evidence that the
+current echo-only Action Service can execute production work.
 
 The external-surface and migration tracks are intentionally separate from `MCP0`: `DEL` plus an
 external static Agent identity are prerequisites for the Agentplane MCP aggregator, while the
@@ -241,6 +224,8 @@ server without the Agent or Action Service holding a provider credential.
 **Needed support:** a staging-owned deterministic streamable-HTTP MCP fixture, an MCP executor that
 mirrors `tools/list` and invokes `tools/call`, reviewed runtime binding, a narrow auto-allow policy
 for the fixture Action, and an acceptance scenario in `x/agentplane/acceptance/test_action_mcp.py`.
+Keep `EchoExecutor` as a unit-test fixture while it proves the coordinator seam; remove it from the
+production composition only after the real adapter is wired and its replacement evidence passes.
 
 **Acceptance evidence:** `//x/agentplane/acceptance:all` runs the scenario against the deployed
 stack for both real harness providers, verifies catalog discovery, exactly one Action execution,
@@ -273,6 +258,26 @@ identity authority.
 another configured Agent, and remains distinct from the originating Thread/Sandbox model used by
 hosted Agentplane workloads.
 
+### `PROFILES` — cross-cutting capability profiles
+
+**Deferred design:** define a durable authority for capabilities shared by egress, approvals, MCP
+reachability, and other tool permissions. Do not widen the landed launch-preset slice or store this
+profile in Kubernetes merely to reserve the concept; the profile owner, inheritance, and policy
+read/verification boundary remain open.
+
+**Acceptance evidence:** one profile can be resolved consistently by each participating authority,
+with explicit precedence and negative tests for stale, cross-Agent, or caller-supplied profile names.
+
+### `ACCESS` — delegated versus brokered external access
+
+**Deferred design:** choose per-system whether an Action uses the Agent's delegated identity, a
+brokered operator credential, or a hybrid. Keep target-side RBAC and egress enforcement authoritative;
+use grants/revocation reconciliation where a broker mints delegated authority. This is the broader
+external-access policy behind `MCPAUTH` and `HOSTEXEC`, not a prerequisite for `MCP0`.
+
+**Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
+revocation/expiry semantics without putting a reusable privileged credential in the harness.
+
 ### `MCPAGG` — Agentplane MCP aggregator
 
 **Deferred support:** replace Haku Console's MCP aggregator with an Agentplane-owned MCP surface so
@@ -293,6 +298,13 @@ boundaries. This is an adapter behind `EW`, not a reason to build a generic work
 **Acceptance evidence:** one approved host command produces one durable Execution with bounded output
 and safe terminal/unknown handling; duplicate starts do not run the command twice, and the Action
 Service never receives a reusable host credential.
+
+### `LIVE_CLEAN` — executor heartbeat retention cleanup
+
+**Deferred cleanup:** executor liveness currently creates one heartbeat identity row per coordinator
+process lifetime. Once deployment scale makes that accumulation meaningful, choose a stable executor
+identity or bounded expiry/compaction policy and add retention tests; do not change the exactly-one
+claim or unknown-outcome semantics while doing so.
 
 ### `APPROVALUI` — integration-app approval surface
 
@@ -367,6 +379,9 @@ These are observed product decisions and must not be reopened by the schema or w
 ## Deferred
 
 - capability matrices or a broad Agent identity/privilege framework;
+- cross-cutting capability profiles — see [`profiles.md`](profiles.md);
+- delegated-versus-brokered external-access policy and grant/revocation semantics — see
+  [`external_access.md`](external_access.md);
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
 - production executor implementation in this planning PR;
 - per-destination workload audiences until recipient isolation is required;
