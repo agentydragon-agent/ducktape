@@ -136,6 +136,8 @@ py_test(
     srcs = ["test_action_evidence.py"],
     deps = [
         ":action_evidence",
+        ":conftest",
+        "//:conftest",
         "//x/agentplane/action_service:catalog",
         "//x/agentplane/action_service:models",
         "@pypi//pytest",

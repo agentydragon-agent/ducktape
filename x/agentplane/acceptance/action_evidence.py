@@ -17,7 +17,7 @@ from x.agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from x.agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState
 
 ACTIONS_URL = "http://agentplane-actions.agentplane-staging.svc.cluster.local:8080"
-JSON = TypeAdapter(JsonValue)
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 REQUESTS = TypeAdapter(list[ActionRequestView])
 EVENTS = TypeAdapter(list[ActionEventView])
 
