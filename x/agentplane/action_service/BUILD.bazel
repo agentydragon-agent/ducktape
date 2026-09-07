@@ -104,6 +104,7 @@ py_library(
         ":auth",
         ":catalog",
         ":db",
+        ":runtime",
         ":service",
         "//x/agentplane/sandbox_auth:http",
         "//x/agentplane/sandbox_auth:principal",
@@ -302,5 +303,42 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    deps = [
+        ":catalog",
+        ":mcp_executor",
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_runtime",
+    size = "medium",
+    srcs = ["test_runtime.py"],
+    data = ["//x/agentplane/action_service/test_fixtures:fake_mcp_server.py"],
+    requires_docker = True,
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":db",
+        ":main",
+        ":mcp_executor",
+        ":models",
+        ":runtime",
+        ":service",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//fastapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//uvicorn",
     ],
 )
