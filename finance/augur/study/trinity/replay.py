@@ -24,15 +24,44 @@ attribution:
   the standard one — `bond_fund.constant_maturity_fund_paths`, validated against Damodaran's
   published returns. Two conventions it inherits: annual-pay coupons, and repricing at the
   same maturity each month, so there is no roll-down return.
-- ***The all-bond row is an OPEN DISCREPANCY, not an attributed difference.*** At 0% equity
-  and a 3% withdrawal this survives 43% of windows against Table 3's 80%, and no difference
-  named here accounts for it. Measured, on the paper's own arithmetic outside the simulator:
-  reinvesting the coupon instead of parking it is worth 11 points (42% -> 53%), the withdrawal
-  timing 2 (53% -> 51% at the other end of the year), and monthly rather than annual window
-  starts 3. Nothing left explains 27. The sleeve is not the suspect — see
-  `BOND_MATURITY_YEARS`, which is validated against the paper's own bond series. Treat the
-  bond-heavy rows as unreconciled: the equity-led ones, which is what a 4% rule is about, agree
-  to about a point.
+- ***The all-bond row is PART sensitivity and PART still unexplained.*** Run the paper's own
+  annual arithmetic over the same 32 windows on three return series and the row reads:
+
+      SBBI Exhibit A-3, what Trinity used   66 / 19 / 12 /  3   across 3-6%
+      this sleeve, maturity 20              47 / 19 / 12 /  3
+      Table 3                               80 / 20 / 17 / 12
+
+  So of the 33 points between this sleeve and Table 3, **19 are the bond series and 14 are not
+  accounted for by anything measured here.** Do not describe the whole gap as a sleeve
+  difference.
+
+  The 19 are, and they are an amplified quarter point. A 30-year CPI-indexed withdrawal
+  survives iff the window's real return clears a break-even fixed by the rate, so a cell is
+  sensitive exactly insofar as window mass sits near its own break-even:
+
+      rate   break-even real   windows within +/-0.25pp of it
+      3%          -0.71%                7 of 32
+      4%          +1.31%                2 of 32
+      5%          +3.08%                0 of 32
+      6%          +4.70%                0 of 32
+
+  At 5% and 6% no window is near, which is why those cells agree with the real series exactly
+  and no perturbation moves them. At 3% a fifth of the windows are within a quarter point, and
+  this sleeve runs 0.20 points a year under SBBI window by window — enough to carry several of
+  them across. Confirmed independently: adding 20 basis points to the curve moves the cell 47%
+  to 69% while leaving the sleeve's fit to the real return series untouched (RMSE 2.81 either
+  way). Roughly a point of this cell per basis point a year, so read it in basis points and not
+  in points of "success rate".
+
+  The remaining 14 is Table 3 differing from what Ibbotson's own bond returns produce, and it
+  is NOT explained. If anything it understates: these 32 windows start 1927-1958, where SBBI's
+  published returns end, while the paper's 41 run to a 1965 start — and those later starts,
+  which eat the 1965-82 inflation early, are the worst ones. On the paper's own window set the
+  real series would land lower than 66%, not higher.
+
+  The sleeve's 0.20 points a year is a real defect and is not about this cell — the likely
+  cause is the yield source, Moody's Aaa being a narrower, higher-grade universe than the
+  Aaa-and-Aa composite Ibbotson priced. Fix it against the return series, never against Table 3.
 - *Windows start every month, not every year.* 474 of them against the paper's 41 — the same
   span, sampled 12x more finely, which makes each cell smoother rather than different.
 
