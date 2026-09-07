@@ -1,9 +1,8 @@
 """The app's own OIDC login, so a browser reaches it without a forward-auth proxy in front.
 
-Authentik's application policy binding still decides who may log in, so there is no allowlist here:
-a token this issuer signed is an operator. The session is a signed cookie and nothing more -- no
-store, no refresh -- because the app only ever asks whether a request is authenticated, and a
-cookie's own deadline is the revocation the app can honour.
+Authentik's application policy binding decides who may log in. PostgreSQL stores the identity,
+access token and OAuth state; the browser carries only a signed random handle. Expiry is absolute,
+bounded by the ID token and (when retained) access token; renewal requires a fresh login.
 
 A login exists iff `AGENTPLANE_OIDC_ISSUER` is set. Unset, a browser has no way in and the only
 credential the app accepts is a Kubernetes token (`identity.py`); the API is guarded either way.
@@ -13,10 +12,11 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import UTC, datetime
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import Request
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,9 @@ class OIDCSettings(BaseSettings):
     session_secret: str = Field(description="Signs the session cookie; minted with the client in Terraform.")
     public_base_url: str = Field(description="The app's public origin, which the redirect URI is built from.")
     session_seconds: int = Field(
-        default=28800, description="How long a login lasts. There is no refresh; the cookie simply expires."
+        default=28800,
+        gt=0,
+        description="Maximum absolute login lifetime; token expiry may shorten it. Re-login to renew.",
     )
 
     @property
@@ -91,10 +93,24 @@ def settings(request: Request) -> OIDCSettings:
 
 def session_operator(request: Request) -> str | None:
     """The operator this request's session names, or None when it has none or it has expired."""
-    if "session" not in request.scope:
+    session = operator_session(request)
+    return session.username if session is not None else None
+
+
+class OperatorSession(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    issuer: str
+    subject: str
+    username: str
+    access_token: SecretStr | None = None
+    expires_at: float
+
+
+def operator_session(request: Request) -> OperatorSession | None:
+    if "session" not in request.scope or not request.session.get("user"):
         return None
-    user = request.session.get("user")
-    if not isinstance(user, dict):
+    session = OperatorSession.model_validate(request.session["user"])
+    if session.expires_at <= datetime.now(UTC).timestamp():
         return None
-    username = user.get("username")
-    return username if isinstance(username, str) else None
+    return session

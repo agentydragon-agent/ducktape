@@ -11,7 +11,7 @@ from pathlib import Path
 import uvicorn
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from x.agentplane.action_service.api import create_app
@@ -23,6 +23,7 @@ from x.agentplane.action_service.auth import (
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
 from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
+from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
@@ -50,6 +51,7 @@ class Settings(BaseSettings):
     token_audience: str = "agentplane-egress"
     sandbox_namespaces: frozenset[str] = frozenset({"agentplane-staging"})
     operator_bearer_file: Path | None = None
+    operator_oidc: OperatorOidcSettings | None = None
     operator_subject: str = "configured-bff"
     action_groups: dict[str, ActionGroup] = Field(
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
@@ -59,6 +61,12 @@ class Settings(BaseSettings):
         default=None,
         description="Opt in to auto-allow only bounded echo(message) on a reviewed credentialless MCP group.",
     )
+
+    @model_validator(mode="after")
+    def one_operator_authority(self) -> Settings:
+        if self.operator_oidc is not None and self.operator_bearer_file is not None:
+            raise ValueError("configure operator_oidc or legacy operator_bearer_file, never both")
+        return self
 
     def decision_providers(self, catalog: ActionCatalog) -> list[FixtureDecisionProvider]:
         if self.fixture_auto_allow is None:
@@ -102,7 +110,9 @@ async def async_main(settings: Settings) -> None:
         stack.push_async_callback(service.close)
         await service.start()
         operator_authenticator: OperatorAuthenticator
-        if settings.operator_bearer_file is None:
+        if settings.operator_oidc is not None:
+            operator_authenticator = OidcOperatorAuthenticator(settings.operator_oidc)
+        elif settings.operator_bearer_file is None:
             operator_authenticator = DisabledOperatorAuthenticator()
             logger.info("operator/BFF API is disabled because no operator authenticator is configured")
         else:

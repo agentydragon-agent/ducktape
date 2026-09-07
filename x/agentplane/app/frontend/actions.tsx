@@ -62,7 +62,7 @@ function ActionCard({
         </Group>
         <div>
           <Text size="sm" fw={600} mb={4}>
-            Safe argument projection
+            Exact arguments (unredacted)
           </Text>
           <JsonProjection value={request.arguments} />
         </div>

@@ -8,7 +8,7 @@ The v0 executable seam is deliberately small:
 
 - one invariant request envelope, with optional `origin` and `correlation` stored only as untrusted
   provenance;
-- caller-own and operator-all reads, recursively redacting credential-shaped fields;
+- caller-own and operator-all reads: operator arguments are exact, while caller arguments and all execution result/error views recursively redact credential-shaped fields;
 - a human operator Decision route, with expected-version and idempotency protection and a private,
   operator-only `private_reason`, plus optional synchronous `DecisionProvider`s that run first and
   carry a bounded caller-visible `reason_code`/`reason_description` instead;
@@ -138,3 +138,11 @@ validation, safe tool-error mapping, and ambiguous-call failure path; a failed `
 exchange is not retried. HTTP config rejects userinfo, URL fragments, launch fields, and authentication
 or header settings. The production composition uses this same transport selection. OAuth and
 credential profiles are outside this seam.
+
+### OIDC operator adapter
+
+`operator_oidc` selects pinned RS256 JWT verification plus a mandatory issuer-scoped subject
+allowlist. It is mutually exclusive with the legacy file-backed adapter; there is no fallback.
+The destination records the actual token issuer and subject, not a shared BFF identity. Deployment
+is still disabled until the explicit Authentik federation target is configured. See
+[`../docs/operator_federation.md`](../docs/operator_federation.md) for settings and test evidence.

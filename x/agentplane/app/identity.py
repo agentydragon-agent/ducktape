@@ -114,6 +114,6 @@ async def require_caller(request: Request) -> CallerIdentity:
     if operator is not None and request.method not in {"GET", "HEAD", "OPTIONS"}:
         origin = request.headers.get("origin")
         expected = settings(request).public_base_url.rstrip("/")
-        if origin is not None and origin.rstrip("/") != expected:
+        if origin != expected:
             raise HTTPException(status.HTTP_403_FORBIDDEN, f"cross-origin {request.method} from {origin!r}")
     return caller

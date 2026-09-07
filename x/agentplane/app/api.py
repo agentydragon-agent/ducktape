@@ -12,11 +12,11 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, 
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from starlette.middleware.sessions import SessionMiddleware
 
 from x.agentplane.action_service.client import OperatorActionServiceClient
 from x.agentplane.action_service.models import ActionRequestView, ActionState, DecisionInput
 from x.agentplane.app import auth_routes, bridge as runner_bridge
+from x.agentplane.app.action_federation import FederatedOperatorActions, OperatorFederationError
 from x.agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from x.agentplane.app.egress import (
     BindingNotFoundError,
@@ -36,7 +36,8 @@ from x.agentplane.app.inventory import (
     SandboxView,
 )
 from x.agentplane.app.live import LiveIndex, router as live_router
-from x.agentplane.app.oidc import OIDCSettings, build_oauth
+from x.agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
+from x.agentplane.app.operator_sessions import OperatorSessionMiddleware
 from x.agentplane.app.presets import (
     PresetCatalog,
     Provider,
@@ -267,13 +268,18 @@ async def _operator_actions(
 ) -> AsyncIterator[OperatorActionServiceClient]:
     if caller.kind is not CallerKind.OPERATOR:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Action review requires an operator session")
-    client = request.app.state.operator_actions
-    if client is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Action Service operator connection is not configured")
-    if not isinstance(client, OperatorActionServiceClient):
-        raise TypeError("app.state.operator_actions must be an OperatorActionServiceClient")
+    provider = request.app.state.operator_actions
+    if provider is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, {"code": "operator_federation_not_configured"})
+    if not isinstance(provider, FederatedOperatorActions):
+        raise TypeError("operator_actions must be FederatedOperatorActions")
+    session = operator_session(request)
+    if session is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "operator_reauthentication_required")
     try:
-        yield client
+        yield provider.for_session(session)
+    except OperatorFederationError as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": str(error)}) from None
     except httpx.HTTPStatusError as error:
         raise HTTPException(error.response.status_code, "Action Service rejected the request") from error
     except httpx.RequestError as error:
@@ -364,7 +370,7 @@ def create_app(
     oidc: OIDCSettings | None = None,
     reviewer: TokenReviewer | None = None,
     presets: PresetCatalog | None = None,
-    operator_actions: OperatorActionServiceClient | None = None,
+    operator_actions: FederatedOperatorActions | None = None,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -401,11 +407,11 @@ def create_app(
         app.include_router(api_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(
-            SessionMiddleware,
+            OperatorSessionMiddleware,
+            store=store.operator_sessions,
             secret_key=oidc.session_secret,
             session_cookie=oidc.cookie_name,
             https_only=oidc.secure,
-            same_site="lax",
             max_age=oidc.session_seconds,
         )
         app.state.oauth = build_oauth(oidc)

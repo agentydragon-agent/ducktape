@@ -18,7 +18,7 @@ function request(state: ActionState, index: number): ActionRequestView {
   return {
     id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
     action: { group: "agentplane", name: `state-${state}` },
-    arguments: { state, token: "[redacted]" },
+    arguments: { state, token: "test-exact-token", nested: { password: "test-exact-password" } },
     origin: { thread_id: "10000000-0000-4000-8000-000000000000" },
     correlation: {},
     idempotency_key: `request-${index}`,
@@ -103,8 +103,9 @@ describe("ActionRequests", () => {
     const container = await render(service);
 
     for (const state of states) expect(container.textContent).toContain(stateLabel(state));
-    expect(container.textContent).toContain("Safe argument projection");
-    expect(container.textContent).toContain("[redacted]");
+    expect(container.textContent).toContain("Exact arguments (unredacted)");
+    expect(container.textContent).toContain("test-exact-token");
+    expect(container.textContent).toContain("test-exact-password");
     expect(container.textContent).toContain("Result");
     expect(container.textContent).toContain("Execution error");
   });

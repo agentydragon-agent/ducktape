@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from x.agentplane.app.changes import Changes
+from x.agentplane.app.operator_sessions import Base as SessionBase, OperatorSessionStore
 from x.agentplane.runner import protocol_pb2 as pb
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -86,6 +87,7 @@ class TrajectoryStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
+        self.operator_sessions = OperatorSessionStore(engine)
         # A thread appearing or being renamed is a change the live stream pushes (live.py). Stored
         # events are not: they arrive by the hundreds per turn, and the session's own SSE carries
         # them already.
@@ -93,11 +95,13 @@ class TrajectoryStore:
 
     @classmethod
     def connect(cls, database_url: str) -> TrajectoryStore:
-        return cls(create_async_engine(database_url, pool_pre_ping=True))
+        return cls(create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True))
 
     async def ensure_schema(self) -> None:
         async with self._engine.begin() as connection:
+            await connection.execute(text("SELECT pg_advisory_xact_lock(5820)"))
             await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(SessionBase.metadata.create_all)
             # create_all only creates tables it does not find; a column added since a table was
             # created is added here, idempotently, until the store grows a migration mechanism.
             await connection.execute(text("ALTER TABLE thread ADD COLUMN IF NOT EXISTS name text"))

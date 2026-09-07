@@ -112,6 +112,7 @@ py_library(
         ":catalog",
         ":db",
         ":fixture_policy",
+        ":operator_oidc",
         ":runtime",
         ":service",
         "//x/agentplane/sandbox_auth:http",
@@ -393,5 +394,37 @@ py_library(
         ":catalog",
         ":models",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "operator_oidc",
+    srcs = ["operator_oidc.py"],
+    deps = [
+        ":models",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_operator_oidc",
+    srcs = ["test_operator_oidc.py"],
+    deps = [
+        ":api",
+        ":catalog",
+        ":conftest",
+        ":db",
+        ":operator_oidc",
+        ":service",
+        "//:conftest",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "//x/agentplane/sandbox_auth:http",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
