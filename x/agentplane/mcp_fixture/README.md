@@ -16,8 +16,10 @@ ready until the first merged `devel` image is published and Flux updates the tag
 No operator-created image or workload credential is required; the namespace already
 receives the shared GitOps-owned registry pull secret.
 
-The one non-root replica has a read-only root filesystem, no mounted service-account
-token, 250m CPU/256Mi memory limits, and at most 16 concurrent HTTP connections/tasks.
+The one non-root replica has no mounted service-account token, 250m CPU/256Mi memory
+and 128Mi ephemeral-storage limits, and at most 16 concurrent HTTP connections/tasks.
+The root filesystem is writable because the existing Python image launcher creates
+its virtualenv in the image runfiles on startup; the tool itself performs no I/O.
 Its Cilium policy denies all outbound connections and admits port 8080 only from
 staging `agentplane-app` and `agentplane-actions` pods. The companion caller policy
 adds only that destination to their existing egress permissions. No runner fence

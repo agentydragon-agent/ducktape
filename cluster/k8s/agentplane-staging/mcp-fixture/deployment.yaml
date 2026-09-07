@@ -46,11 +46,13 @@ spec:
             requests:
               cpu: 25m
               memory: 128Mi
+              ephemeral-storage: 16Mi
             limits:
               cpu: 250m
               memory: 256Mi
+              ephemeral-storage: 128Mi
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            # The aspect_rules_py launcher creates its venv in the image runfiles at startup.
             capabilities:
               drop: ["ALL"]
