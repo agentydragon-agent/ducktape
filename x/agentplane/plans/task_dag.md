@@ -87,6 +87,11 @@ flowchart TB
     MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
     MCPACCEPT["Milestone<br/>rerunnable Action/MCP acceptance<br/>against the deployed stack"]:::milestone
+    EID["Deferred support<br/>external Agent identity/auth<br/>static principal, not Thread"]:::future
+    MCPAGG["Deferred support<br/>Agentplane MCP aggregator<br/>external harness/client compatibility"]:::future
+    HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
+    APPROVALUI["Deferred integration<br/>integration-app approval UI<br/>pending requests + decisions"]:::future
+    RETIRE["Deferred migration<br/>retire Haku Console Agent/<br/>conversation ownership"]:::future
 
     ER["Observed evidence #5701<br/>egress rules boundary + Service DNS transition"]:::completed
     DEDUPE["Needed support, independent<br/>shared FastAPI/auth setup dedupe"]:::active
@@ -112,6 +117,13 @@ flowchart TB
     MCP0 --> MCPAUTH
     MCPAUTH --> PROD
     DEL -. later Thread delivery .-> ING
+    DEL --> APPROVALUI
+    DEL --> MCPAGG
+    EID --> MCPAGG
+    EW --> HOSTEXEC
+    MCPAGG -. replacement surface .-> RETIRE
+    APPROVALUI -. replacement surface .-> RETIRE
+    EID -. durable identity .-> RETIRE
 
     AUTH --> ER
     AUTH --> DEDUPE
@@ -125,6 +137,7 @@ flowchart TB
     AS --> DT
     EW --> DT
     MCP0 --> AG
+    AG --> EID
 ```
 
 The first executable Action/MCP path is `ACTION0 -> AS + EW + DEL -> MCP0 -> MCPACCEPT`. It uses a
@@ -134,6 +147,13 @@ PROD`. Egress
 introspection cleanup, shared FastAPI/auth deduplication, trajectory search, and proxy survivability
 can proceed without waiting for those gates. Their independence must not be described as evidence
 that the current echo-only Action Service can execute production work.
+
+The external-surface and migration tracks are intentionally separate from `MCP0`: `DEL` plus an
+external static Agent identity are prerequisites for the Agentplane MCP aggregator, while the
+integration-app approval UI consumes the same Action-state/Decision surface. Hostexec is another
+Executor adapter behind `EW`; its final ordering relative to the credentialed MCP path is deferred.
+Retiring Haku Console's Agent/conversation ownership waits for the replacement surfaces to exist and
+is not a prerequisite for the first Action/MCP acceptance.
 
 ## Named gates and acceptance evidence
 
@@ -237,6 +257,56 @@ OAuth, implement the smallest separately tested subset rather than copying Haku 
 refresh, one safe GitHub read, token refresh/reconnect, and negative isolation for an unbound or
 different account. This milestone must not block `MCP0` or be folded into the credentialless fixture
 test.
+
+### `EID` — external Agent identity and authentication
+
+**Deferred support:** authenticate external Agent clients, including Claude Code Web or another
+non-Agentplane-hosted harness, as a known durable/static Agent identity distinct from any Thread or
+Sandbox. The identity must be trusted by Agentplane before an external MCP client can use the
+aggregator or receive approval state. Username, Thread ID, and caller-supplied provenance are not
+identity authority.
+
+**Acceptance evidence:** an external client authenticates as one configured Agent, cannot impersonate
+another configured Agent, and remains distinct from the originating Thread/Sandbox model used by
+hosted Agentplane workloads.
+
+### `MCPAGG` — Agentplane MCP aggregator
+
+**Deferred support:** replace Haku Console's MCP aggregator with an Agentplane-owned MCP surface so
+MCP clients and harnesses running outside Agentplane's hosted Sandboxes can use the same approved
+tool/action compatibility surface. It must authenticate the external Agent identity, route approval
+requests through the canonical DecisionProvider, and expose no alternate lifecycle or authority
+store.
+
+**Dependencies:** `EID` for the caller principal and `DEL` for pending-approval notification and
+decision delivery. The exact transport, tool projection, and migration order remain open.
+
+### `HOSTEXEC` — hostexec-backed Action execution
+
+**Deferred support:** add hostexec as an Action Service Executor adapter, preserving hostexec's
+existing machine/user authorization, credential exchange, process-state, output, and no-retry
+boundaries. This is an adapter behind `EW`, not a reason to build a generic worker framework first.
+
+**Acceptance evidence:** one approved host command produces one durable Execution with bounded output
+and safe terminal/unknown handling; duplicate starts do not run the command twice, and the Action
+Service never receives a reusable host credential.
+
+### `APPROVALUI` — integration-app approval surface
+
+**Deferred integration:** have the Agentplane integration app display pending Action approval requests
+and submit allow/deny decisions through the Action Service's canonical operator API, as Haku Console
+does today. It is a client/presentation layer, not a second Decision authority or Action state store.
+
+**Dependencies:** the durable Action event/query and human Decision-provider notification pieces of
+`DEL`; its UI may be delivered before or alongside `MCPAGG`.
+
+### `RETIRE` — Haku Console Agent/conversation ownership migration
+
+**Deferred migration:** retire Haku Console's own Agent and conversation ownership only after
+Agentplane has the external identity, MCP aggregator, approval presentation, and replacement
+conversation/Thread surfaces required by Haku. This is a migration and decommissioning milestone,
+not a prerequisite for Action execution; preserve explicit read/export and rollback evidence before
+removing the old owner.
 
 ### `DEL` — decision and Action-state contract
 
