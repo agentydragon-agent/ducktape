@@ -13,14 +13,14 @@ import contextlib
 import logging
 from contextlib import AsyncExitStack
 from datetime import timedelta
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import jsonschema
 import mcp.types
 from fastmcp.client import Client, ClientTransport
 from fastmcp.client.messages import MessageHandler
-from fastmcp.client.transports import StdioTransport
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
+from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
 
 from x.agentplane.action_service.catalog import ActionDefinition, ActionGroup, Key
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
@@ -32,15 +32,34 @@ DEFAULT_CATALOG_REFRESH_INTERVAL = timedelta(minutes=5)
 _KEY_ADAPTER = TypeAdapter(Key)
 
 
-class McpServerConfig(BaseModel):
-    """Stdio MCP server launch config, parsed from `ExecutorBinding.config` for an `mcp`-kind group."""
-
+class McpStdioServerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    transport: Literal["stdio"] = "stdio"
     command: str
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     cwd: str | None = None
+
+
+class McpHttpServerConfig(BaseModel):
+    """Credentialless endpoint; authentication and header forwarding are not configurable here."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    transport: Literal["streamable-http"]
+    url: AnyHttpUrl
+
+    @field_validator("url")
+    @classmethod
+    def validate_endpoint(cls, url: AnyHttpUrl) -> AnyHttpUrl:
+        if url.username is not None or url.password is not None or url.fragment is not None:
+            raise ValueError("MCP endpoint must not contain userinfo or a fragment")
+        return url
+
+
+McpServerConfig = McpStdioServerConfig | McpHttpServerConfig
+_SERVER_CONFIG_ADAPTER = TypeAdapter(McpServerConfig)
 
 
 class _ToolListChangeHandler(MessageHandler):
@@ -79,8 +98,12 @@ class McpActionGroupExecutor:
         *,
         catalog_refresh_interval: timedelta = DEFAULT_CATALOG_REFRESH_INTERVAL,
     ) -> McpActionGroupExecutor:
-        config = McpServerConfig.model_validate(group.executor.config)
-        transport = StdioTransport(config.command, config.args, env=config.env or None, cwd=config.cwd)
+        config = _SERVER_CONFIG_ADAPTER.validate_python(group.executor.config)
+        transport: ClientTransport
+        if isinstance(config, McpStdioServerConfig):
+            transport = StdioTransport(config.command, config.args, env=config.env or None, cwd=config.cwd)
+        else:
+            transport = StreamableHttpTransport(config.url, auth=None)
         return cls(group_key, group, transport, catalog_refresh_interval=catalog_refresh_interval)
 
     @property

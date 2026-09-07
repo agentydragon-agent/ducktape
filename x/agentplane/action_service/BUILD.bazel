@@ -304,3 +304,21 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_mcp_executor_http",
+    srcs = ["test_mcp_executor_http.py"],
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":mcp_executor",
+        ":models",
+        ":service",
+        "//:conftest",
+        "//util/testing:asgi",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)

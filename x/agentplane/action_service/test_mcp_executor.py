@@ -19,7 +19,6 @@ from uuid import uuid4
 
 import pytest_bazel
 from fastmcp import FastMCP
-from fastmcp.client.transports import StdioTransport
 from fastmcp.exceptions import ToolError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -300,12 +299,17 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
     group = ActionGroup(
         title="Slow demo group",
         description="Real subprocess MCP server for the transport-loss scenario.",
-        executor=ExecutorBinding(kind="mcp", description="subprocess test server"),
+        executor=ExecutorBinding(
+            kind="mcp",
+            description="subprocess test server",
+            config={
+                "command": sys.executable,
+                "args": [str(server_path)],
+                "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+            },
+        ),
     )
-    transport = StdioTransport(
-        command=sys.executable, args=[str(server_path)], env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
-    )
-    executor = McpActionGroupExecutor("slow", group, transport)
+    executor = McpActionGroupExecutor.from_group("slow", group)
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store,
