@@ -7,11 +7,10 @@ from mcp.types import TextContent
 
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
-from x.agentplane.mcp_fixture.server import create_server
+from x.agentplane.mcp_fixture.server import app
 
 
 async def test_streamable_http_contract() -> None:
-    app = create_server().http_app(path="/mcp", stateless_http=True, json_response=True)
     port = pick_free_port()
     async with serve_app(app, port=port):
         url = f"http://127.0.0.1:{port}"

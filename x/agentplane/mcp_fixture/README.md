@@ -1,37 +1,31 @@
 # MCP0 staging fixture
 
-**P0 behavior:** a no-auth streamable-HTTP MCP origin exposing exactly one safe,
-read-only, zero-argument tool, `fixture_info`, returning the text
-`agentplane-mcp0-ok`. No clock, randomness, external I/O, credentials, resources,
-prompts, or retained MCP sessions. This is an acceptance fixture, not a general MCP service.
+**P0 behavior:** a no-auth, stateless streamable-HTTP MCP origin exposing only
+`fixture_info()` → `agentplane-mcp0-ok`, annotated read-only and idempotent. No tool
+I/O, clock, randomness, credentials, resources, or prompts. The repo-pinned FastMCP
+SDK implements MCP; this module only registers the constant tool and HTTP health route.
+[Why not an external Everything image?](../../../debug/mcp-fixture-choice.md)
 
 Endpoint: `http://agentplane-mcp-fixture.agentplane-staging.svc.cluster.local:8080/mcp`.
 `GET /healthz` returns `ok` for Kubernetes probes.
 
-**Needed support:** `//x/agentplane/mcp_fixture:image` uses the existing FastMCP SDK
-and OCI Python image convention. The CI image roster publishes to Forgejo; Flux's
-shared image automation updates the staging Deployment. The initial image tag is
-an intentionally nonexistent bootstrap sentinel: the Deployment cannot become
-ready until the first merged `devel` image is published and Flux updates the tag.
-No operator-created image or workload credential is required; the namespace already
-receives the shared GitOps-owned registry pull secret.
+**Needed support:** `//x/agentplane/mcp_fixture:image` follows the existing non-root
+Python OCI convention. CI publishes to Forgejo; shared Flux image automation updates
+the Deployment. The nonexistent bootstrap tag requires the first merged `devel`
+publication and automated tag update before readiness. The namespace's existing
+GitOps-owned registry pull secret is reused; no new credentials are needed.
 
-The one non-root replica has no mounted service-account token, 250m CPU/256Mi memory
-and 128Mi ephemeral-storage limits, and at most 16 concurrent HTTP connections/tasks.
-The root filesystem is writable because the existing Python image launcher creates
-its virtualenv in the image runfiles on startup; the tool itself performs no I/O.
-Its Cilium policy denies all outbound connections and admits port 8080 only from
-staging `agentplane-app` and `agentplane-actions` pods. The companion caller policy
-adds only that destination to their existing egress permissions. No runner fence
-is widened and there is no public HTTPRoute.
+The single replica has no service-account token, at most 16 concurrent HTTP
+connections/tasks, and limits of 250m CPU, 256Mi memory, and 128Mi ephemeral storage.
+The root filesystem remains writable for the existing image launcher's startup venv.
+Cilium denies all fixture outbound connections and admits port 8080 only from staging
+`agentplane-app` and `agentplane-actions`; companion caller egress permits only that
+destination. No public route or runner-policy expansion.
 
-**Acceptance test:** `bbr test //x/agentplane/mcp_fixture:test_server` serves the same
-stateless HTTP app on a real socket, connects without auth, discovers exactly the
-annotated tool, and checks identical text over repeated calls and fresh connections.
-Image build: `bbr build //x/agentplane/mcp_fixture:image`.
-CI also validates the cluster manifests. These tests do not prove a live staging
-rollout or a call from the Action Service.
+**Acceptance:** `bbr test //x/agentplane/mcp_fixture:test_server` serves the production
+ASGI app on a real socket, checks health, discovery, annotations, and identical results
+over repeated calls and fresh no-auth connections. Build with
+`bbr build //x/agentplane/mcp_fixture:image`; CI also validates cluster manifests.
 
-**Deferred:** OAuth, MCP profiles, credential/binding design, Action Service
-executor wiring, and live caller acceptance. This slice only supplies the origin
-and narrow network reachability for that later integration.
+**Deferred:** live staging rollout and Action Service acceptance, executor wiring,
+OAuth, profiles, and credential/binding design. The test does not prove those seams.

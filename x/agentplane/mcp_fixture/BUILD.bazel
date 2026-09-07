@@ -1,5 +1,5 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
@@ -50,10 +50,4 @@ oci_image(
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":layers"],
     user = "1000:1000",
-)
-
-oci_load(
-    name = "load",
-    image = ":image",
-    repo_tags = ["agentplane-mcp-fixture:test"],
 )
