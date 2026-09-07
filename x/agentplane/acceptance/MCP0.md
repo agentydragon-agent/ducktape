@@ -79,7 +79,7 @@ but the following seams prevent this scenario from being executable:
   still serves no Actions. The [staging Deployment](../../../cluster/k8s/agentplane-staging/actions/deployment.yaml)
   does not yet configure the fixture group or `fixture_auto_allow`.
 - [The staging Action egress policy](../../../cluster/k8s/agentplane-staging/egress/egresspolicy-agentplane-actions.yaml)
-  still needs verification/configuration for `/v1/action-groups` and its descendants.
+  does not allow `/v1/action-groups` or its descendants.
 - The fixture image and GitOps declarations exist in this branch, but their bootstrap
   tag requires first publication and automated rollout; no live readiness is claimed.
   The fixture allow path is tested in runtime composition, not enabled on staging.

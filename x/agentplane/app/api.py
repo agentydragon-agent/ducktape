@@ -12,8 +12,8 @@ from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.middleware.sessions import SessionMiddleware
 
-from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.action_service.catalog import ActionCatalog
+from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.app.actions import (
     ActionConflictError,
     ActionHub,

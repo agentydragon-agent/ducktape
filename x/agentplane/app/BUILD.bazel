@@ -138,6 +138,7 @@ py_test(
     name = "test_action_api",
     size = "medium",
     srcs = ["test_action_api.py"],
+    requires_docker = True,
     deps = [
         ":actions",
         ":api",
@@ -163,6 +164,7 @@ py_test(
     name = "test_actions",
     size = "medium",
     srcs = ["test_actions.py"],
+    requires_docker = True,
     deps = [
         ":actions",
         ":conftest",

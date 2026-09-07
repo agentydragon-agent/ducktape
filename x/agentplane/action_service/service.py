@@ -31,8 +31,6 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     DecisionProvider,
     ExecutionClaim,
-    ExecutionLease,
-    ExecutionRequest,
     ExecutionResult,
     ExecutionState,
     Executor,
@@ -67,13 +65,6 @@ class ExecutionOutcomeUnknownError(Exception):
 
 class UnsupportedActionError(Exception):
     """The requested group/action is unknown, unavailable, or has no executor binding."""
-
-
-class EchoExecutor:
-    """Explicit v0 fixture adapter proving the service seam without claiming an MCP integration."""
-
-    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
-        return ExecutionResult(state=ExecutionState.SUCCEEDED, result={"echo": request.arguments})
 
 
 class _StoreBackedLease:

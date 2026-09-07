@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools import ToolResult
+from fastmcp.tools.base import ToolResult
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
