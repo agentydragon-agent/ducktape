@@ -96,3 +96,21 @@ Migrations run separately through `:migrate`; the server verifies the migrated s
 creates tables at startup. `:image` and `:migration_image` are separate OCI targets. The staging
 manifests give the service its own PostgreSQL cluster and credentials rather than coupling it to the
 integration app database.
+
+## MCP executor transports
+
+`McpActionGroupExecutor.from_group` owns one persistent MCP connection for a group. Its
+`ExecutorBinding.config` accepts a stdio launch (`command`, optional `args`, `env`, `cwd`, and
+`transport: stdio`) or a credentialless streamable-HTTP endpoint:
+
+```yaml
+transport: streamable-http
+url: http://127.0.0.1:8000/mcp
+```
+
+HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including
+JSON/SSE responses and session shutdown. Both transports use the same catalog refresh, live schema
+validation, safe tool-error mapping, and ambiguous-call failure path; a failed `tools/call` transport
+exchange is not retried. HTTP config rejects userinfo, URL fragments, launch fields, and authentication
+or header settings. OAuth, credential profiles, and production executor composition are outside this
+seam; `main.py` does not select or start these executors.
