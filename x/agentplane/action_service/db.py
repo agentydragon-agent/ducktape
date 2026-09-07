@@ -129,10 +129,6 @@ class ActionConflictError(Exception):
     pass
 
 
-class UnknownCapabilityError(Exception):
-    pass
-
-
 _TERMINAL_ACTION_STATE = {
     ExecutionState.SUCCEEDED: ActionState.SUCCEEDED,
     ExecutionState.FAILED: ActionState.FAILED,
@@ -179,11 +175,8 @@ class ActionStore:
     def __init__(self, sessions: SessionMaker) -> None:
         self._sessions = sessions
 
-    async def submit(
-        self, body: ActionRequestInput, principal: Principal, *, supported_capabilities: frozenset[str]
-    ) -> tuple[ActionRequestView, bool]:
-        if body.capability not in supported_capabilities:
-            raise UnknownCapabilityError(body.capability)
+    async def submit(self, body: ActionRequestInput, principal: Principal) -> tuple[ActionRequestView, bool]:
+        """Persist an admitted request; ActionService resolves its group/action before calling here."""
         async with self._sessions.begin() as session:
             now = datetime.now(UTC)
             request_id = uuid4()

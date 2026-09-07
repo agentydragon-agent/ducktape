@@ -46,19 +46,41 @@ descriptions and input schemas; `GET /v1/action-groups/{group}/actions/{action}`
 directly and 404s clearly on an unknown group or action. Both are workload-authenticated reads with
 no owner-scoping, since the catalog is the same for every caller.
 
-The catalog is reviewed runtime configuration, not a dynamic registry: `main.Settings.action_groups`
+Group bindings are reviewed runtime configuration, not a dynamic registry: `main.Settings.action_groups`
 follows the same `AGENTPLANE_ACTIONS_CONFIG_FILE`-mounted-YAML convention as the integration app's
-`AGENTPLANE_CONFIG_FILE` (`x/agentplane/app/main.py`), so an operator edits the catalog and the
+`AGENTPLANE_CONFIG_FILE` (`x/agentplane/app/main.py`), so an operator edits the group configuration and the
 process picks it up on restart — sufficient because ActionGroup/executor bindings change at
-operator/deploy cadence, not per-request, and the app's existing `Recreate`-strategy Deployment
-already restarts on every config change. `ExecutorBinding.config` (backend/account material) is
-never exposed by any discovery view; only `ExecutorBinding.description`, a human-authored summary of
-the executor (e.g. account/credential ownership), is.
+operator/deploy cadence, not per-request, and the app uses a `Recreate`-strategy Deployment.
+`McpExecutorBinding.config` is never exposed by discovery; only the human-authored executor description is.
 
-Neither the catalog nor its discovery API selects an Executor or gates `ActionRequest` submission —
-that remains `db.ActionStore.submit`'s `supported_capabilities` check against the wired `Executor`.
-Binding a real ActionGroup to a live Executor is the deferred `EW` gate
-(`plans/task_dag.md`), not this seam.
+The catalog is also the admission and routing authority: `ActionService` resolves the submitted
+`group.action`, rejects unknown or unavailable groups/Actions and unbound groups before persistence,
+and dispatches through the executor bound to that group. `ActionStore` owns persistence and lifecycle,
+not a separate supported-capability set. Executors expose execution only, not an action registry.
+Dispatch resolves the identity again, so a removed action is terminally refused rather than rerouted or
+retried. The existing single-Execution claim and no-retry state machine are unchanged.
+
+`runtime.running_executor` owns one typed `McpActionGroupExecutor` per reviewed group, using
+`isinstance(McpExecutorBinding)` and the stdio or streamable-HTTP config below. It passes a group-keyed
+executor mapping to the service and shares the same catalog objects with discovery. MCP `tools/list`
+refreshes child Actions; execution rechecks the live schema. Echo is only an explicitly injected test
+executor, never a production default or factory option.
+
+An empty catalog starts with no offered actions. Missing bindings and unsupported kinds fail
+settings validation; missing/invalid MCP config, connection failure, or failed initial
+`tools/list` aborts startup before HTTP serving or pending-request recovery. All bindings are
+validated before any server is launched. Startup unwinds already-opened adapters, including a
+partially started adapter; shutdown stops service tasks before closing MCP clients/refresh tasks,
+then Kubernetes and database resources. After startup, catalog-refresh failures retain the landed
+adapter's unavailable-and-retry behavior. OAuth, credential/profile design, and a generic executor
+registry are not part of this composition.
+
+The v1 wire field and database column remain named `capability`, but their value is the stable Action
+identity, not membership in another registry. No rows or identity payloads are rewritten and no schema
+migration is required. The original `agentplane:v0.echo` spelling resolves to `agentplane.echo` for
+existing callers and pending persisted requests; it still requires that configured group/action and
+its binding. Idempotency compares the original payload, so changing spellings under the same key is
+still a conflict. Renaming the wire/storage field itself is deferred until there is a migration plan.
 
 ## Authentication boundaries
 
@@ -84,3 +106,21 @@ Migrations run separately through `:migrate`; the server verifies the migrated s
 creates tables at startup. `:image` and `:migration_image` are separate OCI targets. The staging
 manifests give the service its own PostgreSQL cluster and credentials rather than coupling it to the
 integration app database.
+
+## MCP executor transports
+
+`McpActionGroupExecutor.from_group` owns one persistent MCP connection for a group. Its
+`McpExecutorBinding.config` accepts a stdio launch (`command`, optional `args`, `env`, `cwd`, and
+`transport: stdio`) or a credentialless streamable-HTTP endpoint:
+
+```yaml
+transport: streamable-http
+url: http://127.0.0.1:8000/mcp
+```
+
+HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including
+JSON/SSE responses and session shutdown. Both transports use the same catalog refresh, live schema
+validation, safe tool-error mapping, and ambiguous-call failure path; a failed `tools/call` transport
+exchange is not retried. HTTP config rejects userinfo, URL fragments, launch fields, and authentication
+or header settings. The production composition uses this same transport selection. OAuth and
+credential profiles are outside this seam.

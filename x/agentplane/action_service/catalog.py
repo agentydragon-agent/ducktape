@@ -1,14 +1,12 @@
 """Reviewed, config-driven ActionGroup/Action catalog: the Agent-facing discovery seam.
 
-Groups and their child Actions are code-owned data, not a dynamic registry: an operator edits the
-configured catalog (see `main.Settings.action_groups`) and the process picks it up on restart. This
-module owns validation and lookup only; it does not select an Executor or gate ActionRequest
-submission — that remains `db.ActionStore.submit`'s `supported_capabilities` check.
+Groups are reviewed runtime configuration. Child Actions may be mirrored from the bound backend.
+The same group/action lookup drives discovery and ActionService admission and routing.
 """
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
@@ -31,12 +29,12 @@ class ActionDefinition(BaseModel):
     )
 
 
-class ExecutorBinding(BaseModel):
+class McpExecutorBinding(BaseModel):
     """Where an ActionGroup's Actions execute. Reviewed runtime configuration, not a live registry."""
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: str = Field(min_length=1, max_length=100, description="Executor adapter kind, e.g. 'mcp' or 'hostexec'.")
+    kind: Literal["mcp"] = "mcp"
     description: str = Field(
         min_length=1,
         max_length=2000,
@@ -56,7 +54,7 @@ class ActionGroup(BaseModel):
 
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=2000)
-    executor: ExecutorBinding
+    executor: McpExecutorBinding = Field(discriminator="kind")
     available: bool = Field(default=True, description="Whether this group is currently offered to Agents.")
     actions: dict[Key, ActionDefinition] = Field(default_factory=dict)
 
@@ -88,6 +86,14 @@ class UnknownActionError(Exception):
         super().__init__(f"unknown group/action {group_key}.{action_key}")
         self.group_key = group_key
         self.action_key = action_key
+
+
+def split_action_identity(identity: str) -> tuple[str, str]:
+    # Preserve pending requests and v1 callers of the original fixture; never rewrite stored identity.
+    if identity == "agentplane:v0.echo":
+        return "agentplane", "echo"
+    group, _, action = identity.partition(".")
+    return group, action
 
 
 class ActionCatalog(BaseModel):

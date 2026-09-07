@@ -9,7 +9,7 @@ import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
-from x.agentplane.action_service.catalog import ActionCatalog, UnknownActionError
+from x.agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding, UnknownActionError
 
 # A reviewed runtime-configuration fixture: exactly the value of the `action_groups:` key in the
 # YAML `main.Settings.AGENTPLANE_ACTIONS_CONFIG_FILE` names. Two groups: one available
@@ -55,6 +55,7 @@ def _catalog() -> ActionCatalog:
 def test_configured_groups_and_actions_are_discoverable() -> None:
     catalog = _catalog()
 
+    assert isinstance(catalog.groups["github"].executor, McpExecutorBinding)
     views = {view.key: view for view in catalog.group_views()}
 
     assert views.keys() == {"github", "calendar"}

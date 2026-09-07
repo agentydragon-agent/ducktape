@@ -13,6 +13,7 @@ from uuid import uuid4
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from x.agentplane.action_service.catalog import ActionCatalog
 from x.agentplane.action_service.db import ActionConflictError, ActionStore, ExecutionRow, make_sessionmaker
 from x.agentplane.action_service.models import (
     ActionRequestInput,
@@ -32,17 +33,13 @@ from x.agentplane.action_service.service import ActionService
 
 CALLER = Principal(issuer="test-workload", subject="sandbox-a", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
-CAPABILITY = "agentplane:v0.echo"
+ACTION_ID = "agentplane:v0.echo"
 ALREADY_EXPIRED = timedelta(seconds=-1)
 
 
 class CountingExecutor:
     def __init__(self) -> None:
         self.requests: list[ExecutionRequest] = []
-
-    @property
-    def capabilities(self) -> frozenset[str]:
-        return frozenset({CAPABILITY})
 
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         self.requests.append(request)
@@ -56,10 +53,6 @@ class SlowSilentExecutor:
         self.requests: list[ExecutionRequest] = []
         self._sleep_seconds = sleep_seconds
 
-    @property
-    def capabilities(self) -> frozenset[str]:
-        return frozenset({CAPABILITY})
-
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         self.requests.append(request)
         await asyncio.sleep(self._sleep_seconds)
@@ -68,9 +61,7 @@ class SlowSilentExecutor:
 
 async def _allowed_execution(store: ActionStore, *, idempotency_key: str) -> Any:
     view, _ = await store.submit(
-        ActionRequestInput(idempotency_key=idempotency_key, capability=CAPABILITY, arguments={}),
-        CALLER,
-        supported_capabilities=frozenset({CAPABILITY}),
+        ActionRequestInput(idempotency_key=idempotency_key, capability=ACTION_ID, arguments={}), CALLER
     )
     await store.decide(
         view.id,
@@ -247,7 +238,9 @@ async def test_authoritative_reconciliation_applies_once_the_execution_is_unknow
     assert view.execution.reconciled_at is not None
 
 
-async def test_action_service_restarts_and_worker_liveness_never_double_dispatches(engine: AsyncEngine) -> None:
+async def test_action_service_restarts_and_worker_liveness_never_double_dispatches(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
     """`ActionService restarts during running work` and `worker dies after start` collapse into
     one observable fact at the store: a lease stopped being renewed. Proves it end to end through
     the real coordinator, including the backend's own late, authenticated completion.
@@ -257,7 +250,8 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
     executor = SlowSilentExecutor(sleep_seconds=0.2)
     service = ActionService(
         store,
-        executor,
+        echo_catalog,
+        {"agentplane": executor},
         lease_duration=timedelta(seconds=0.05),
         lease_sweep_interval=timedelta(seconds=0.02),
         executor_heartbeat_interval=timedelta(seconds=0.02),
@@ -266,7 +260,7 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
     await service.start()
     try:
         pending = await service.submit(
-            ActionRequestInput(idempotency_key="no-double-dispatch", capability=CAPABILITY, arguments={}), CALLER
+            ActionRequestInput(idempotency_key="no-double-dispatch", capability=ACTION_ID, arguments={}), CALLER
         )
         await service.decide(
             pending.id,
