@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentplane-mcp-fixture
+  namespace: agentplane-staging
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-mcp-fixture
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-mcp-fixture
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fixture
+          # Bootstrap sentinel: Flux replaces this after the first devel image publication.
+          image: git.allegedly.works/ducktape-ci/agentplane-mcp-fixture:devel-19700101000000-0000000 # {"$imagepolicy": "flux-system:agentplane-mcp-fixture"}
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
