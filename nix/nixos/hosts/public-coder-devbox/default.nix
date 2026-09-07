@@ -17,6 +17,7 @@
   config,
   lib,
   pkgs,
+  bb,
   bbr,
   ...
 }:
@@ -130,9 +131,10 @@ in
     lsof
     git
     openssl
-    # `bbr` remains the ordinary remote-BuildBuddy path. Bazelisk is available
-    # for intentional local execution/debugging in this isolated VM, never in
-    # the OpenClaw harness pod.
+    # `bbr` remains the ordinary remote-BuildBuddy path and delegates to `bb`.
+    # Bazelisk is available by its own name for intentional local,
+    # repository-versioned Bazel execution in this isolated VM.
+    bb
     bbr
     bazelisk
   ];
