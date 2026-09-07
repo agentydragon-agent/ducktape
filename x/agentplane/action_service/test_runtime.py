@@ -83,7 +83,7 @@ async def test_invalid_binding_fails_before_any_adapter_starts(config: dict[str,
 
 @pytest.mark.parametrize("kind", ["echo", "hostexec", "unknown"])
 def test_unsupported_executor_kind_is_rejected_by_settings(kind: str) -> None:
-    with pytest.raises(ValidationError, match="union_tag_invalid"):
+    with patch.object(sys, "argv", ["test_runtime"]), pytest.raises(ValidationError, match="union_tag_invalid"):
         Settings.model_validate(
             {
                 "database_url": "postgresql+asyncpg://test.invalid/test",

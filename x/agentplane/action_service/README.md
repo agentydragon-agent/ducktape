@@ -58,19 +58,19 @@ the executor (e.g. account/credential ownership), is.
 Neither the catalog nor its discovery API selects an Executor or gates `ActionRequest` submission —
 that remains `db.ActionStore.submit`'s `supported_capabilities` check against the wired `Executor`.
 The production composition starts one `McpActionGroupExecutor` per reviewed group with
-`executor.kind: mcp`, using the adapter's existing stdio `config` (`command`, optional `args`,
-`env`, and `cwd`). It passes the same group objects to discovery and the adapters, unions their
+`executor.kind: mcp`, parsed as `McpExecutorBinding`, using the stdio or streamable-HTTP
+`config` described below. It passes the same group objects to discovery and the adapters, unions their
 live capabilities on each submission, and routes dispatch by the exact group prefix. EchoExecutor
 remains an explicitly injected unit fixture; production does not advertise its capability.
 
-An empty catalog starts with no supported capabilities. A missing binding fails settings validation;
-an unsupported kind, missing/invalid MCP launch config, connection failure, or failed initial
+An empty catalog starts with no supported capabilities. Missing bindings and unsupported kinds fail
+settings validation; missing/invalid MCP config, connection failure, or failed initial
 `tools/list` aborts startup before HTTP serving or pending-request recovery. All bindings are
 validated before any server is launched. Startup unwinds already-opened adapters, including a
 partially started adapter; shutdown stops service tasks before closing MCP clients/refresh tasks,
 then Kubernetes and database resources. After startup, catalog-refresh failures retain the landed
-adapter's unavailable-and-retry behavior. OAuth, credential/profile design, remote HTTP transport,
-and a generic executor registry are not part of this composition.
+adapter's unavailable-and-retry behavior. OAuth, credential/profile design, and a generic executor
+registry are not part of this composition.
 
 ## Authentication boundaries
 
@@ -112,5 +112,5 @@ HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implement
 JSON/SSE responses and session shutdown. Both transports use the same catalog refresh, live schema
 validation, safe tool-error mapping, and ambiguous-call failure path; a failed `tools/call` transport
 exchange is not retried. HTTP config rejects userinfo, URL fragments, launch fields, and authentication
-or header settings. OAuth, credential profiles, and production executor composition are outside this
-seam; `main.py` does not select or start these executors.
+or header settings. The production composition uses this same transport selection. OAuth and
+credential profiles are outside this seam.
