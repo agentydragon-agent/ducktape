@@ -36,6 +36,11 @@ in
     ../../modules/hostexecd.nix
   ];
 
+  # The containerDisk is ephemeral, but it must still accommodate one Ducktape
+  # checkout plus the Nix inputs/tooling needed to start a remote BuildBuddy job.
+  # Keep the qcow2 sparse; KubeVirt allocates blocks only as the guest writes them.
+  virtualisation.diskSize = 30 * 1024;
+
   # hostexecd needs no SSH host key at all -- it never establishes an SSH session, only outbound
   # HTTPS -- and this VM's root disk is already ephemeral (containerDisk), so a *persisted* SSH
   # host key would only buy back a stable known_hosts fingerprint across restarts that now happen
