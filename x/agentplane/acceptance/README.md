@@ -12,6 +12,13 @@ same for Claude and Codex, so one test body covers both: the `provider` fixture 
 hardcoding one. `test_launch_presets` instead exercises the configured `public-coder` preset's
 intentional Codex default, Sandbox binding, bootstrap marker, inherited fields, and local override.
 
+## MCP0 live acceptance
+
+[MCP0.md](MCP0.md) defines the real-Agent discovery → ActionRequest → durable events →
+exact MCP result scenario and its exactly-one evidence requirements. It is explicitly
+**blocked, contract-only** until the runtime and staging evidence seams land; there is
+no executable MCP0 target or claim of live acceptance yet.
+
 ## Running it
 
 Not in CI, and not on RBE: the target is `manual`, so `//...` never selects it, and it needs a
