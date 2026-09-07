@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 import uvicorn
@@ -21,7 +22,8 @@ from x.agentplane.action_service.auth import (
 )
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
-from x.agentplane.action_service.service import ActionService, EchoExecutor
+from x.agentplane.action_service.runtime import running_executor
+from x.agentplane.action_service.service import ActionService
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
@@ -75,12 +77,17 @@ def main() -> None:
 
 async def async_main(settings: Settings) -> None:
     engine = make_engine(settings.database_url)
-    await verify_schema(engine)
-    configuration = k8s_client.Configuration()
-    k8s_config.load_incluster_config(client_configuration=configuration)
-    catalog = ActionCatalog(groups=settings.action_groups)
-    async with ApiClient(configuration=configuration) as api:
-        service = ActionService(ActionStore(make_sessionmaker(engine)), EchoExecutor())
+    async with AsyncExitStack() as stack:
+        stack.push_async_callback(engine.dispose)
+        await verify_schema(engine)
+        configuration = k8s_client.Configuration()
+        k8s_config.load_incluster_config(client_configuration=configuration)
+        catalog = ActionCatalog(groups=settings.action_groups)
+        api = await stack.enter_async_context(ApiClient(configuration=configuration))
+        executors = await stack.enter_async_context(running_executor(catalog))
+        service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, executors)
+        # Stop dispatch/lease tasks before closing the adapters, including failed service startup.
+        stack.push_async_callback(service.close)
         await service.start()
         operator_authenticator: OperatorAuthenticator
         if settings.operator_bearer_file is None:
@@ -103,11 +110,7 @@ async def async_main(settings: Settings) -> None:
             operator_authenticator,
             catalog,
         )
-        try:
-            await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
-        finally:
-            await service.close()
-            await engine.dispose()
+        await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
 
 
 if __name__ == "__main__":
