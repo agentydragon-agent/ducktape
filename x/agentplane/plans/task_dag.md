@@ -210,10 +210,10 @@ outcome without replay.
    acceptance test before implementation. It must use streamable HTTP, expose one deterministic
    read-only tool, and require no OAuth or provider credential.
 10. Minimum evidence for that fixture: the named Action validates, allow auto-dispatches once, the
-   MCP server receives the exact intended `tools/call`, duplicate Decision/start paths do not call it
-   twice, success and safe failure are delivered, and ambiguous transport loss becomes unknown
-   without retry. The test must live in `x/agentplane/acceptance/` and run against staging with a
-   real LLM Agent, not remain a manual one-off.
+    MCP server receives the exact intended `tools/call`, duplicate Decision/start paths do not call it
+    twice, success and safe failure are delivered, and ambiguous transport loss becomes unknown
+    without retry. The test must live in `x/agentplane/acceptance/` and run against staging with a
+    real LLM Agent, not remain a manual one-off.
 
 `agentplane:v0.echo` remains explicitly fixture-only and cannot satisfy this gate.
 
