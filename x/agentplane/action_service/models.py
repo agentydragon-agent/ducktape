@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from x.agentplane.action_service.catalog import ActionIdentity
+
 
 class PrincipalRole(StrEnum):
     CALLER = "caller"
@@ -78,7 +80,7 @@ class ActionRequestInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     idempotency_key: str = Field(min_length=1, max_length=200)
-    capability: str = Field(min_length=1, max_length=240)
+    action: ActionIdentity
     arguments: dict[str, JsonValue]
     origin: dict[str, JsonValue] = Field(default_factory=dict)
     correlation: dict[str, JsonValue] = Field(default_factory=dict)
@@ -130,7 +132,7 @@ class ActionRequestView(BaseModel):
 
     id: UUID
     idempotency_key: str
-    capability: str
+    action: ActionIdentity
     arguments: dict[str, JsonValue]
     origin: dict[str, JsonValue]
     correlation: dict[str, JsonValue]
@@ -157,7 +159,7 @@ class ExecutionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     request_id: UUID
-    capability: str
+    action: ActionIdentity
     arguments: dict[str, JsonValue]
     origin: dict[str, JsonValue]
     correlation: dict[str, JsonValue]
@@ -198,9 +200,6 @@ class ExecutionLease(Protocol):
 
 
 class Executor(Protocol):
-    @property
-    def capabilities(self) -> frozenset[str]: ...
-
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult: ...
 
 
@@ -235,7 +234,7 @@ class DecisionContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     request_id: UUID
-    capability: str
+    action: ActionIdentity
     arguments: dict[str, JsonValue]
     caller_principal: Principal
     agent_identity: str | None = Field(

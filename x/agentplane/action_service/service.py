@@ -15,11 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID, uuid4
 
+import jsonschema
+
+from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
 from x.agentplane.action_service.db import ActionConflictError, ActionStore
 from x.agentplane.action_service.models import (
     ActionEventView,
@@ -30,8 +33,6 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     DecisionProvider,
     ExecutionClaim,
-    ExecutionLease,
-    ExecutionRequest,
     ExecutionResult,
     ExecutionState,
     Executor,
@@ -41,6 +42,9 @@ from x.agentplane.action_service.models import (
     UnknownOutcomeReason,
     Verdict,
 )
+
+# types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
+# gazelle:include_dep @pypi//referencing
 
 logger = logging.getLogger(__name__)
 
@@ -64,17 +68,12 @@ class ExecutionOutcomeUnknownError(Exception):
     """The adapter cannot prove whether the external effect started, so replay is forbidden."""
 
 
-class EchoExecutor:
-    """Explicit v0 fixture adapter proving the service seam without claiming an MCP integration."""
+class UnsupportedActionError(Exception):
+    """The requested group/action is unknown, unavailable, or has no executor binding."""
 
-    CAPABILITY = "agentplane:v0.echo"
 
-    @property
-    def capabilities(self) -> frozenset[str]:
-        return frozenset({self.CAPABILITY})
-
-    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
-        return ExecutionResult(state=ExecutionState.SUCCEEDED, result={"echo": request.arguments})
+class InvalidActionArgumentsError(Exception):
+    """Arguments do not match the advertised Action schema; nothing was persisted."""
 
 
 class _StoreBackedLease:
@@ -100,7 +99,8 @@ class ActionService:
     def __init__(
         self,
         store: ActionStore,
-        executor: Executor,
+        catalog: ActionCatalog,
+        executors: Mapping[str, Executor],
         *,
         providers: Sequence[DecisionProvider] = (),
         provider_timeout_seconds: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS,
@@ -111,7 +111,8 @@ class ActionService:
         executor_health_timeout: timedelta = DEFAULT_EXECUTOR_HEALTH_TIMEOUT,
     ) -> None:
         self._store = store
-        self._executor = executor
+        self._catalog = catalog
+        self._executors = dict(executors)
         self._providers = tuple(providers)
         self._provider_timeout_seconds = provider_timeout_seconds
         self._executor_id = executor_id or f"executor-{uuid4()}"
@@ -145,10 +146,27 @@ class ActionService:
         self._sweep_task = None
 
     async def submit(self, body: ActionRequestInput, principal: Principal) -> ActionRequestView:
-        view, created = await self._store.submit(body, principal, supported_capabilities=self._executor.capabilities)
+        self._resolve_executor(body.action)
+        _, action = self._catalog.resolve(body.action.group, body.action.name)
+        try:
+            jsonschema.validate(body.arguments, action.input_schema)
+        except jsonschema.ValidationError:
+            raise InvalidActionArgumentsError("arguments do not match the advertised Action schema") from None
+        view, created = await self._store.submit(body, principal)
         if not created:
             return view
         return await self._auto_decide(view, body, principal)
+
+    def _resolve_executor(self, identity: ActionIdentity) -> Executor:
+        group_key, action_key = identity.group, identity.name
+        try:
+            group, _ = self._catalog.resolve(group_key, action_key)
+        except UnknownActionError as error:
+            raise UnsupportedActionError(identity) from error
+        executor = self._executors.get(group_key)
+        if not group.available or executor is None:
+            raise UnsupportedActionError(identity)
+        return executor
 
     async def _auto_decide(
         self, view: ActionRequestView, body: ActionRequestInput, principal: Principal
@@ -157,7 +175,7 @@ class ActionService:
         if not self._providers:
             return view
         context = DecisionContext(
-            request_id=view.id, capability=body.capability, arguments=body.arguments, caller_principal=principal
+            request_id=view.id, action=body.action, arguments=body.arguments, caller_principal=principal
         )
         vote = await self._evaluate_providers(context)
         if vote is None:
@@ -271,7 +289,7 @@ class ActionService:
         lease = _StoreBackedLease(self._store, claim, self._lease_duration)
         try:
             request = await self._store.mark_running(request_id)
-            result = await self._executor.execute(request, lease)
+            result = await self._resolve_executor(request.action).execute(request, lease)
         except ExecutionOutcomeUnknownError:
             # Adapter exception text can contain provider responses or credentials. Persist and
             # return only the stable classification; the service never projects raw exceptions.

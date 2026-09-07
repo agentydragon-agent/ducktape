@@ -12,6 +12,17 @@ same for Claude and Codex, so one test body covers both: the `provider` fixture 
 hardcoding one. `test_launch_presets` instead exercises the configured `public-coder` preset's
 intentional Codex default, Sandbox binding, bootstrap marker, inherited fields, and local override.
 
+## MCP integration
+
+`//x/agentplane/acceptance:test_mcp` belongs to this deployed suite. Both real harnesses
+receive the Action API URL and public workload placeholder, discover the `everything`
+group's `echo` Action, submit a structured group/name request, poll until terminal,
+and report JSON. The test checks the reported result against the fresh marker's exact
+upstream echo output. It uses the existing sandbox setup/teardown and `Agent` fixtures.
+Staging GitOps wires the upstream image, ActionGroup, narrow echo provider, and discovery
+egress. Run after the PR's images and manifests have rolled out; remote adapter tests
+are not evidence that the real-agent staging test has run.
+
 ## Running it
 
 Not in CI, and not on RBE: the target is `manual`, so `//...` never selects it, and it needs a
@@ -35,27 +46,58 @@ Override any of it through the environment:
 | `AGENTPLANE_ACCEPTANCE_NAMESPACE`       | `agentplane-staging`                         |
 | `AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT` | `agentplane-agent`                           |
 
-### Where an agent can run it
+### Controlled-host preflight
 
-An agent in a Claude Code session usually cannot: this suite needs a kubeconfig, a route to the
-cluster, and a Bazel that can fetch the module graph, and a web session typically has none of the
-three. A Haku sandbox has all of them, and it mints its own token, so no credential has to be
-handed to it.
+Run the suite from a controlled NixOS host, devbox/VM, or FHS-compatible agent
+container. Do not use `bbr`/`bb remote` for this suite: the completed test
+process must stay on the caller, where it can use the caller's Kubernetes
+credentials and network path. BuildBuddy-hosted runners do not inherit the
+caller Sandbox workload token or the current egress substitution path.
+
+Before starting a long run, check the client-side seams separately:
 
 ```bash
-# in a Haku sandbox (sandbox__provision_sandbox, then sandbox__exec_sandbox)
-git clone --depth 1 --branch <branch> https://github.com/agentydragon/ducktape.git
-cd ducktape && bazel test //x/agentplane/acceptance:all \
-  --remote_executor= --remote_cache= --bes_backend= --bes_results_url= \
-  --spawn_strategy=local --genrule_strategy=local --config=nolint \
-  --test_output=streamed --nocache_test_results
+command -v bazelisk kubectl
+bazelisk version
+kubectl config current-context
+kubectl -n agentplane-staging auth can-i create serviceaccounts/token \
+  --resource-name=agentplane-agent
+kubectl -n agentplane-staging create token agentplane-agent \
+  --audience=agentplane --duration=60s >/dev/null
 ```
 
-**Deviation:** those flags turn off remote execution and caching, which
-[AGENTS.md](../../../AGENTS.md) otherwise forbids. A Haku sandbox can reach neither
-`remote.buildbuddy.io` nor an API key for it, and this target is `no-remote-exec` regardless; the
-repo-wide rule is about machines that have BuildBuddy, and that one does not. Run it with `nohup`
-into a log and poll — a full run is two to four minutes, longer than one `exec_sandbox` call.
+The preflight must not print or save the returned token. If the token command
+fails, fix caller RBAC or kubeconfig before launching the suite. If Bazel
+fails while loading the module graph, fix the caller's Bazel/repository-rule
+runtime before investigating staging.
+
+### Failure classification
+
+Use the first point at which the run fails to choose the next investigation:
+
+| Observation                                                   | Likely seam                                                                  |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| No `accept-*` Sandbox is created                              | Bazel client, module/repository rules, kubeconfig, or acceptance-token setup |
+| Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or staging capacity                |
+| App rejects the initial API request                           | Acceptance token audience, subject allowlist, or app ingress                 |
+| Model turn hangs and the decision ring is empty               | Sandbox proxy environment, proxy route, or model ingress path                |
+| Ring records a deny for an expected destination               | Egress policy/binding or destination URL mismatch                            |
+| Rules discovery succeeds but destination authentication fails | Placeholder substitution or independent destination authentication           |
+| Test assertions pass but teardown reports a failure           | Runtime cleanup/reconciliation; inspect the named Sandbox before rerunning   |
+| Process is killed and `accept-*` Sandboxes remain             | Expected teardown limitation; clean them up deliberately before the next run |
+
+Keep the complete test output and the proxy/app decision evidence together.
+The model transcript explains what the agent attempted, but the decision ring
+is the authority for what the proxy actually served.
+
+### Where an agent can run it
+
+Agent pods must use `bbr`/CI, never local Bazel or pytest. This deployed suite is
+`manual` / `no-remote-exec` and lacks an approved CI runner with staging identity and
+connectivity. Therefore it is **blocked from agent pods**; do not disable remote
+execution/caching or mint substitute credentials to work around that boundary.
+The controlled-host instructions above are operator-only, not an agent-pod fallback.
+See [repository instructions](../../../AGENTS.md).
 
 Afterwards, check that nothing leaked: `kubectl -n agentplane-staging get sandboxes.agents.x-k8s.io`
 should show no `accept-*`.

@@ -20,7 +20,7 @@ from x.agentplane.action_service.auth import (
     OperatorAuthenticator,
     workload_principal,
 )
-from x.agentplane.action_service.catalog import ActionCatalog
+from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from x.agentplane.action_service.client import (
     WORKLOAD_CREDENTIAL_PLACEHOLDER,
     ActionServiceClient,
@@ -138,7 +138,7 @@ class RecordingActionService:
         return ActionRequestView(
             id=UUID("00000000-0000-0000-0000-000000000001"),
             idempotency_key=body.idempotency_key,
-            capability=body.capability,
+            action=body.action,
             arguments=body.arguments,
             origin=body.origin,
             correlation=body.correlation,
@@ -195,7 +195,7 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
     )
     body = ActionRequestInput(
         idempotency_key="central-replay",
-        capability="agentplane:v0.echo",
+        action=ActionIdentity(group="agentplane", name="echo"),
         arguments={"text": "hello"},
         origin={"sandbox_id": PRINCIPAL_B.sandbox_uid, "thread_id": "untrusted"},
     )

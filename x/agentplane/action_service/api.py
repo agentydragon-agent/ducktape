@@ -11,7 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroupView, ActionView, UnknownActionError
-from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError, UnknownCapabilityError
+from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -21,7 +21,7 @@ from x.agentplane.action_service.models import (
     Principal,
     PrincipalRole,
 )
-from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 _operator_bearer = HTTPBearer(auto_error=False)
@@ -85,17 +85,22 @@ def create_app(
     @app.exception_handler(UnknownActionError)
     async def unknown_action(request: Request, error: UnknownActionError) -> JSONResponse:
         del request
-        return _error(status.HTTP_404_NOT_FOUND, f"unknown group/action {error.group_key}.{error.action_key}")
+        return _error(status.HTTP_404_NOT_FOUND, f"unknown group/action {(error.group_key, error.action_key)!r}")
 
     @app.exception_handler(ActionConflictError)
     async def conflict(request: Request, error: ActionConflictError) -> JSONResponse:
         del request
         return _error(status.HTTP_409_CONFLICT, str(error))
 
-    @app.exception_handler(UnknownCapabilityError)
-    async def unsupported(request: Request, error: UnknownCapabilityError) -> JSONResponse:
+    @app.exception_handler(UnsupportedActionError)
+    async def unsupported(request: Request, error: UnsupportedActionError) -> JSONResponse:
         del request
-        return _error(status.HTTP_422_UNPROCESSABLE_ENTITY, f"unsupported capability {error.args[0]!r}")
+        return _error(status.HTTP_422_UNPROCESSABLE_ENTITY, f"unsupported group/action {error.args[0]!r}")
+
+    @app.exception_handler(InvalidActionArgumentsError)
+    async def invalid_arguments(request: Request, error: InvalidActionArgumentsError) -> JSONResponse:
+        del request
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error))
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

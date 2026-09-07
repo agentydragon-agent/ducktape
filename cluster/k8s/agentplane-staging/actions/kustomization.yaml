@@ -8,3 +8,7 @@ resources:
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml
+configMapGenerator:
+  - name: agentplane-actions-settings
+    files:
+      - settings.yaml=settings.conf

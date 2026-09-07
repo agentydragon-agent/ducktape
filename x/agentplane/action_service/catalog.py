@@ -1,19 +1,24 @@
 """Reviewed, config-driven ActionGroup/Action catalog: the Agent-facing discovery seam.
 
-Groups and their child Actions are code-owned data, not a dynamic registry: an operator edits the
-configured catalog (see `main.Settings.action_groups`) and the process picks it up on restart. This
-module owns validation and lookup only; it does not select an Executor or gate ActionRequest
-submission — that remains `db.ActionStore.submit`'s `supported_capabilities` check.
+Groups are reviewed runtime configuration. Child Actions may be mirrored from the bound backend.
+The same group/action lookup drives discovery and ActionService admission and routing.
 """
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 _KEY = r"^[a-z][a-z0-9_-]*$"
 Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=200)]
+
+
+class ActionIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    group: Key
+    name: Key
 
 
 class ActionDefinition(BaseModel):
@@ -26,17 +31,17 @@ class ActionDefinition(BaseModel):
     )
     input_schema: dict[str, JsonValue] = Field(
         default_factory=dict,
-        description="A small JSON-Schema-shaped parameter contract, opaque to this catalog. Execution "
-        "re-checks the current executor/tool schema; this catalog entry is discovery only.",
+        description="A small JSON-Schema-shaped parameter contract, opaque to this catalog. Submission "
+        "validates against this advertised schema; execution re-checks the current backend schema.",
     )
 
 
-class ExecutorBinding(BaseModel):
+class McpExecutorBinding(BaseModel):
     """Where an ActionGroup's Actions execute. Reviewed runtime configuration, not a live registry."""
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: str = Field(min_length=1, max_length=100, description="Executor adapter kind, e.g. 'mcp' or 'hostexec'.")
+    kind: Literal["mcp"] = "mcp"
     description: str = Field(
         min_length=1,
         max_length=2000,
@@ -56,7 +61,7 @@ class ActionGroup(BaseModel):
 
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=2000)
-    executor: ExecutorBinding
+    executor: McpExecutorBinding = Field(discriminator="kind")
     available: bool = Field(default=True, description="Whether this group is currently offered to Agents.")
     actions: dict[Key, ActionDefinition] = Field(default_factory=dict)
 
@@ -66,7 +71,6 @@ class ActionView(BaseModel):
 
     group: str
     name: str
-    id: str
     description: str
     input_schema: dict[str, JsonValue]
 
@@ -85,7 +89,7 @@ class ActionGroupView(BaseModel):
 
 class UnknownActionError(Exception):
     def __init__(self, group_key: str, action_key: str) -> None:
-        super().__init__(f"unknown group/action {group_key}.{action_key}")
+        super().__init__(f"unknown group/action {(group_key, action_key)!r}")
         self.group_key = group_key
         self.action_key = action_key
 
@@ -114,11 +118,7 @@ class ActionCatalog(BaseModel):
 
 def _action_view(group_key: str, action_key: str, action: ActionDefinition) -> ActionView:
     return ActionView(
-        group=group_key,
-        name=action_key,
-        id=f"{group_key}.{action_key}",
-        description=action.description,
-        input_schema=action.input_schema,
+        group=group_key, name=action_key, description=action.description, input_schema=action.input_schema
     )
 
 

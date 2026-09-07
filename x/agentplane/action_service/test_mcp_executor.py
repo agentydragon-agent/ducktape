@@ -19,24 +19,25 @@ from uuid import uuid4
 
 import pytest_bazel
 from fastmcp import FastMCP
-from fastmcp.client.transports import StdioTransport
 from fastmcp.exceptions import ToolError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from util.bazel.runfiles import get_required_path
-from x.agentplane.action_service.catalog import ActionGroup, ExecutorBinding
+from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from x.agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
     DecisionInput,
+    ExecutionLease,
     ExecutionRequest,
     ExecutionState,
     Principal,
     PrincipalRole,
     Verdict,
 )
+from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
 
 CALLER = Principal(issuer="test-workload", subject="sandbox-a", role=PrincipalRole.CALLER)
@@ -45,39 +46,28 @@ GROUP_KEY = "demo"
 FAKE_SERVER = "_main/x/agentplane/action_service/test_fixtures/fake_mcp_server.py"
 
 
-class _NoopLease:
-    async def heartbeat(self) -> bool:
-        return True
-
-
 def _group() -> ActionGroup:
     return ActionGroup(
         title="Demo MCP group",
         description="Test-only ActionGroup backed by an in-process fastmcp server.",
-        executor=ExecutorBinding(kind="mcp", description="in-process test server"),
+        executor=McpExecutorBinding(kind="mcp", description="in-process test server"),
     )
 
 
-def _request(*, capability: str, arguments: dict[str, Any]) -> ExecutionRequest:
+def _request(*, action: ActionIdentity, arguments: dict[str, Any]) -> ExecutionRequest:
     return ExecutionRequest(
-        request_id=uuid4(),
-        capability=capability,
-        arguments=arguments,
-        origin={},
-        correlation={},
-        caller_principal=CALLER.key,
+        request_id=uuid4(), action=action, arguments=arguments, origin={}, correlation={}, caller_principal=CALLER.key
     )
 
 
-async def _allowed_execution(
-    store: ActionStore, executor: McpActionGroupExecutor, service: ActionService, *, idempotency_key: str
-) -> Any:
-    view, _ = await store.submit(
+async def _allowed_execution(service: ActionService, *, idempotency_key: str) -> Any:
+    view = await service.submit(
         ActionRequestInput(
-            idempotency_key=idempotency_key, capability=f"{GROUP_KEY}.echo_once", arguments={"text": "hi"}
+            idempotency_key=idempotency_key,
+            action=ActionIdentity(group=GROUP_KEY, name="echo_once"),
+            arguments={"text": "hi"},
         ),
         CALLER,
-        supported_capabilities=executor.capabilities,
     )
     await service.decide(
         view.id,
@@ -116,7 +106,6 @@ async def test_start_mirrors_tool_catalog_into_the_action_group() -> None:
         assert set(group.actions) == {"add", "greet"}
         assert group.actions["add"].description == "Add two numbers."
         assert group.actions["add"].input_schema["required"] == ["a", "b"]
-        assert executor.capabilities == frozenset({"demo.add", "demo.greet"})
         assert group.available is True
     finally:
         await executor.close()
@@ -202,7 +191,8 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store,
-        executor,
+        ActionCatalog(groups={GROUP_KEY: group}),
+        {GROUP_KEY: executor},
         lease_duration=timedelta(seconds=5),
         lease_sweep_interval=timedelta(seconds=1),
         executor_heartbeat_interval=timedelta(seconds=1),
@@ -211,7 +201,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
     await executor.start()
     await service.start()
     try:
-        request_id = await _allowed_execution(store, executor, service, idempotency_key="one-call")
+        request_id = await _allowed_execution(service, idempotency_key="one-call")
         await _poll_state(store, request_id, want=ActionState.SUCCEEDED)
         assert calls == [{"text": "hi"}]
         view = await store.get(request_id, CALLER)
@@ -236,7 +226,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
         await executor.close()
 
 
-async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text() -> None:
+async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text(execution_lease: ExecutionLease) -> None:
     mcp = FastMCP("demo")
 
     @mcp.tool
@@ -247,7 +237,9 @@ async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
     await executor.start()
     try:
-        result = await executor.execute(_request(capability=f"{GROUP_KEY}.explode", arguments={}), _NoopLease())
+        result = await executor.execute(
+            _request(action=ActionIdentity(group=GROUP_KEY, name="explode"), arguments={}), execution_lease
+        )
         assert result.state is ExecutionState.FAILED
         assert result.error == {"kind": "mcp_tool_error", "message": "MCP tool reported an error"}
         assert "xyz-secret-123" not in str(result.error)
@@ -255,10 +247,12 @@ async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text()
         await executor.close()
 
 
-async def test_execution_refuses_arguments_incompatible_with_the_current_live_schema() -> None:
-    """The tool's schema changes underneath a cached mirror (no `refresh_catalog()` in between);
-    `execute()` re-fetches `tools/list` itself and must refuse against the *current* schema rather
-    than the stale mirror, and must never call the tool with mismatched arguments."""
+async def test_execution_refuses_arguments_incompatible_with_the_current_live_schema(engine: AsyncEngine) -> None:
+    """A valid submission waits for approval while the backend schema changes.
+
+    Admission checks the advertised schema; execution must still fetch the current schema and
+    refuse mismatched arguments without calling the tool, even when the mirror remains stale.
+    """
     mcp = FastMCP("demo")
     calls: list[dict[str, Any]] = []
 
@@ -270,9 +264,19 @@ async def test_execution_refuses_arguments_incompatible_with_the_current_live_sc
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
     await executor.start()
+    store = ActionStore(make_sessionmaker(engine))
+    service = ActionService(store, ActionCatalog(groups={GROUP_KEY: group}), {GROUP_KEY: executor})
     try:
+        await service.start()
         assert group.actions["foo"].input_schema["required"] == ["x"]
 
+        submitted = await service.submit(
+            ActionRequestInput(
+                idempotency_key="schema-drift", action=ActionIdentity(group=GROUP_KEY, name="foo"), arguments={"x": 1}
+            ),
+            CALLER,
+        )
+        assert submitted.state is ActionState.DECISION_PENDING
         mcp.local_provider.remove_tool("foo")
 
         @mcp.tool(name="foo")
@@ -281,7 +285,16 @@ async def test_execution_refuses_arguments_incompatible_with_the_current_live_sc
             return {"y": y}
 
         # `arguments` still matches the OLD (mirrored) schema, not the new live one.
-        result = await executor.execute(_request(capability=f"{GROUP_KEY}.foo", arguments={"x": 1}), _NoopLease())
+        await service.decide(
+            submitted.id,
+            DecisionInput(
+                verdict=Verdict.ALLOW, expected_version=submitted.version, idempotency_key="schema-drift-allow"
+            ),
+            OPERATOR,
+        )
+        await _poll_state(store, submitted.id, want=ActionState.FAILED)
+        result = (await store.get(submitted.id, CALLER)).execution
+        assert result is not None
         assert result.state is ExecutionState.FAILED
         assert result.error == {
             "kind": "incompatible_action_schema",
@@ -289,6 +302,7 @@ async def test_execution_refuses_arguments_incompatible_with_the_current_live_sc
         }
         assert calls == [], "the tool must never be called when arguments don't match the current schema"
     finally:
+        await service.close()
         await executor.close()
 
 
@@ -300,16 +314,22 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
     group = ActionGroup(
         title="Slow demo group",
         description="Real subprocess MCP server for the transport-loss scenario.",
-        executor=ExecutorBinding(kind="mcp", description="subprocess test server"),
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="subprocess test server",
+            config={
+                "command": sys.executable,
+                "args": [str(server_path)],
+                "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+            },
+        ),
     )
-    transport = StdioTransport(
-        command=sys.executable, args=[str(server_path)], env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
-    )
-    executor = McpActionGroupExecutor("slow", group, transport)
+    executor = McpActionGroupExecutor.from_group("slow", group)
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
         store,
-        executor,
+        ActionCatalog(groups={"slow": group}),
+        {"slow": executor},
         lease_duration=timedelta(seconds=5),
         lease_sweep_interval=timedelta(seconds=1),
         executor_heartbeat_interval=timedelta(seconds=1),
@@ -318,14 +338,13 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
     await executor.start()
     await service.start()
     try:
-        view, _ = await store.submit(
+        view = await service.submit(
             ActionRequestInput(
                 idempotency_key="transport-loss",
-                capability="slow.slow_echo",
+                action=ActionIdentity(group="slow", name="slow_echo"),
                 arguments={"marker_path": str(marker_path), "seconds": 30.0, "text": "hi"},
             ),
             CALLER,
-            supported_capabilities=executor.capabilities,
         )
         await service.decide(
             view.id,
@@ -351,6 +370,43 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
     finally:
         await asyncio.to_thread(marker_path.unlink, missing_ok=True)
         await service.close()
+
+
+async def test_runtime_binds_configured_mcp_group(engine: AsyncEngine, tmp_path: Path) -> None:
+    group = _group()
+    group.executor.config = {
+        "command": sys.executable,
+        "args": [str(get_required_path(FAKE_SERVER))],
+        "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+    }
+    catalog = ActionCatalog(groups={"runtime": group})
+    store = ActionStore(make_sessionmaker(engine))
+    marker = tmp_path / "called"
+    async with running_executor(catalog) as executors:
+        assert set(catalog.groups["runtime"].actions) == {"slow_echo"}
+        service = ActionService(store, catalog, executors)
+        await service.start()
+        try:
+            view = await service.submit(
+                ActionRequestInput(
+                    idempotency_key="runtime",
+                    action=ActionIdentity(group="runtime", name="slow_echo"),
+                    arguments={"marker_path": str(marker), "seconds": 0, "text": "bound"},
+                ),
+                CALLER,
+            )
+            await service.decide(
+                view.id,
+                DecisionInput(verdict=Verdict.ALLOW, expected_version=view.version, idempotency_key="allow-runtime"),
+                OPERATOR,
+            )
+            await _poll_state(store, view.id, want=ActionState.SUCCEEDED)
+            result = await store.get(view.id, CALLER)
+            assert result.execution is not None
+            assert result.execution.result == {"echoed": "bound"}
+            assert marker.read_text() == "started"
+        finally:
+            await service.close()
 
 
 if __name__ == "__main__":

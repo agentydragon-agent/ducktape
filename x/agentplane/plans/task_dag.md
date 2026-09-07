@@ -26,30 +26,25 @@ P0 behavior. See [`../docs/workload_authentication.md`](../docs/workload_authent
 **Observed evidence — the standalone Action Service landed.** PR
 [#5700](https://github.com/agentydragon/ducktape/pull/5700) made the service the PostgreSQL owner of
 `ActionRequest`, `Decision`, `Execution`, state events, and a pending-decision outbox reference. The
-current caller envelope accepts exactly a 1–200 character `idempotency_key`, a 1–240 character
-`capability`, a JSON-object `arguments`, and optional JSON-object `origin`/`correlation`; extra
+current caller envelope accepts exactly a 1–200 character `idempotency_key`, a structured
+`action` object with separate `group` and `name` fields, a JSON-object `arguments`, and optional JSON-object `origin`/`correlation`; extra
 top-level fields are rejected, and origin/correlation are untrusted provenance. Workload callers can read their own redacted records; the operator surface can read all
 and issue an expected-version, idempotent human allow/deny Decision. Allow auto-dispatches exactly
 one Execution; there are no blind retries, and an ambiguous outcome becomes `execution_unknown`
 through the bounded lease/recovery contract in [`../docs/executor_liveness.md`](../docs/executor_liveness.md).
 
-The only accepted capability is `agentplane:v0.echo`. `EchoExecutor` returns
-`{"echo": <arguments>}` in-process and exists only to prove the coordinator seam, redaction,
-single-execution claim, and recovery behavior. It is not a production action definition, backend,
-MCP adapter, HTTP adapter, worker protocol, or credential-bearing executor. The ActionGroup/Action
-catalog discovery seam is landed in PR [#5731](https://github.com/agentydragon/ducktape/pull/5731),
-synchronous deny-dominant DecisionProvider aggregation is landed in PR
-[#5732](https://github.com/agentydragon/ducktape/pull/5732), and the executor heartbeat/lease
-recovery contract is landed for this fixture seam in PR
-[#5733](https://github.com/agentydragon/ducktape/pull/5733). No production backend is wired because
-the remaining Action schema and production Executor wiring contracts below have not been fully tested.
+The canonical service now composes reviewed MCP groups through `McpActionGroupExecutor`,
+with stdio and credentialless streamable HTTP, initial discovery, schema rechecks, and
+lifecycle-owned cleanup. Real MCP fixtures exercise dispatch; isolated counting/failure
+executors remain for concurrency and recovery tests. There is no dedicated Echo executor.
 
-**Observed evidence — first MCP-backed Executor landed.** PR
-[#5753](https://github.com/agentydragon/ducktape/pull/5753) adds the tested
-`McpActionGroupExecutor`: a stdio MCP adapter that mirrors `tools/list`, refreshes on notification
-or interval, rechecks the live tool schema, initiates `tools/call`, and maps safe success/error/
-unknown outcomes. The Action Service production composition still wires `EchoExecutor`; runtime
-wiring, a remote streamable-HTTP staging fixture, and live Agent acceptance remain open.
+**Needed support — deployed operator connection and MCP0 acceptance.** The app's review
+UI/BFF uses canonical models and the existing operator client; production review is
+unavailable until a supported app-to-service operator auth boundary is configured.
+The app OIDC session does not authenticate to the service, and workload identities
+must never acquire operator authority. Live Agent acceptance is implemented in `//x/agentplane/acceptance:test_mcp`, using
+real harnesses and the reviewed upstream Everything image. It requires the integrated
+images/manifests to be rolled out; see `../acceptance/README.md`.
 
 **Observed evidence — launch presets landed.** PR
 [#5648](https://github.com/agentydragon/ducktape/pull/5648) landed the app-owned `SandboxPreset` and
@@ -230,7 +225,7 @@ outcome without replay.
     without retry. The test must live in `x/agentplane/acceptance/` and run against staging with a
     real LLM Agent, not remain a manual one-off.
 
-`agentplane:v0.echo` remains explicitly fixture-only and cannot satisfy this gate.
+An injected test executor cannot satisfy the live acceptance gate.
 
 ### `MCP0` — credentialless remote MCP vertical slice
 
@@ -242,8 +237,8 @@ server without the Agent or Action Service holding a provider credential.
 streamable-HTTP MCP fixture (or a deliberate transport extension from the current stdio adapter),
 reviewed runtime binding, a narrow auto-allow policy for the fixture Action, and an acceptance
 scenario in `x/agentplane/acceptance/test_action_mcp.py`.
-Keep `EchoExecutor` as a unit-test fixture while it proves the coordinator seam; remove it from the
-production composition only after the real adapter is wired and its replacement evidence passes.
+Use real MCP tools for successful-execution fixtures; keep isolated failure/counting doubles
+only where the test needs deterministic failure or concurrency control.
 
 **Acceptance evidence:** `//x/agentplane/acceptance:all` runs the scenario against the deployed
 stack for both real harness providers, verifies catalog discovery, exactly one Action execution,

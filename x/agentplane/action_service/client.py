@@ -8,7 +8,13 @@ from uuid import UUID
 
 import httpx
 
-from x.agentplane.action_service.models import ActionEventView, ActionRequestInput, ActionRequestView, DecisionInput
+from x.agentplane.action_service.models import (
+    ActionEventView,
+    ActionRequestInput,
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+)
 
 WORKLOAD_CREDENTIAL_PLACEHOLDER = "agentplane-credential-agentplane-workload"
 
@@ -60,6 +66,12 @@ class ActionServiceClient(_BearerClient):
 
 class OperatorActionServiceClient(_BearerClient):
     """BFF-facing client; its authenticator and paths are distinct from Sandbox workload auth."""
+
+    async def list_requests(self, *, states: tuple[ActionState, ...] = ()) -> list[ActionRequestView]:
+        response = await self._request(
+            "GET", "/v1/operator/action-requests", params=[("state", state) for state in states]
+        )
+        return [ActionRequestView.model_validate(row) for row in response.json()]
 
     async def get(self, request_id: UUID) -> ActionRequestView:
         response = await self._request("GET", f"/v1/operator/action-requests/{request_id}")

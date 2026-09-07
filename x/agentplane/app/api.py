@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import UUID
 
 import grpc
-from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, status
+import httpx
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.middleware.sessions import SessionMiddleware
 
+from x.agentplane.action_service.client import OperatorActionServiceClient
+from x.agentplane.action_service.models import ActionRequestView, ActionState, DecisionInput
 from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from x.agentplane.app.egress import (
@@ -22,7 +26,7 @@ from x.agentplane.app.egress import (
     PolicyView,
     UnknownPolicyError,
 )
-from x.agentplane.app.identity import TokenReviewer, require_caller
+from x.agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
 from x.agentplane.app.inventory import (
     PRESET_BINDING_ANNOTATION,
     NewSandbox,
@@ -255,6 +259,48 @@ def _store(request: Request) -> TrajectoryStore:
 Store = Annotated[TrajectoryStore, Depends(_store)]
 
 
+actions_router = APIRouter(prefix="/actions", tags=["actions"])
+
+
+async def _operator_actions(
+    request: Request, caller: Annotated[CallerIdentity, Depends(require_caller)]
+) -> AsyncIterator[OperatorActionServiceClient]:
+    if caller.kind is not CallerKind.OPERATOR:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Action review requires an operator session")
+    client = request.app.state.operator_actions
+    if client is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Action Service operator connection is not configured")
+    if not isinstance(client, OperatorActionServiceClient):
+        raise TypeError("app.state.operator_actions must be an OperatorActionServiceClient")
+    try:
+        yield client
+    except httpx.HTTPStatusError as error:
+        raise HTTPException(error.response.status_code, "Action Service rejected the request") from error
+    except httpx.RequestError as error:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Action Service is unavailable") from error
+
+
+OperatorActions = Annotated[OperatorActionServiceClient, Depends(_operator_actions)]
+
+
+@actions_router.get("")
+async def list_actions(
+    client: OperatorActions,
+    state: Annotated[list[ActionState] | None, Query(description="Only requests in these states.")] = None,
+) -> list[ActionRequestView]:
+    return await client.list_requests(states=tuple(state or ()))
+
+
+@actions_router.get("/{request_id}")
+async def get_action(request_id: UUID, client: OperatorActions) -> ActionRequestView:
+    return await client.get(request_id)
+
+
+@actions_router.post("/{request_id}/decision")
+async def decide_action(request_id: UUID, body: DecisionInput, client: OperatorActions) -> ActionRequestView:
+    return await client.decide(request_id, body)
+
+
 class ThreadRename(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -318,6 +364,7 @@ def create_app(
     oidc: OIDCSettings | None = None,
     reviewer: TokenReviewer | None = None,
     presets: PresetCatalog | None = None,
+    operator_actions: OperatorActionServiceClient | None = None,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -338,9 +385,19 @@ def create_app(
     app.state.live = live
     app.state.oidc = oidc
     app.state.reviewer = reviewer
+    app.state.operator_actions = operator_actions
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
-    for api_router in (router, models, preset_router, runner_bridge.router, threads, egress_router, live_router):
+    for api_router in (
+        router,
+        models,
+        preset_router,
+        runner_bridge.router,
+        threads,
+        actions_router,
+        egress_router,
+        live_router,
+    ):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(

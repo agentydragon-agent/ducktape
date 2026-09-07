@@ -9,7 +9,7 @@ import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
-from x.agentplane.action_service.catalog import ActionCatalog, UnknownActionError
+from x.agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding, UnknownActionError
 
 # A reviewed runtime-configuration fixture: exactly the value of the `action_groups:` key in the
 # YAML `main.Settings.AGENTPLANE_ACTIONS_CONFIG_FILE` names. Two groups: one available
@@ -55,6 +55,7 @@ def _catalog() -> ActionCatalog:
 def test_configured_groups_and_actions_are_discoverable() -> None:
     catalog = _catalog()
 
+    assert isinstance(catalog.groups["github"].executor, McpExecutorBinding)
     views = {view.key: view for view in catalog.group_views()}
 
     assert views.keys() == {"github", "calendar"}
@@ -63,7 +64,7 @@ def test_configured_groups_and_actions_are_discoverable() -> None:
     assert github.available is True
     assert github.executor_kind == "mcp"
     assert github.executor_description == "Connected as Rai's GitHub account via the configured MCP server."
-    assert [action.id for action in github.actions] == ["github.get_file"]
+    assert [(action.group, action.name) for action in github.actions] == [("github", "get_file")]
     assert github.actions[0].description == "Read one file's contents from a public repository."
     assert github.actions[0].input_schema["required"] == ["owner", "repo", "path"]
     assert views["calendar"].available is False
@@ -83,7 +84,7 @@ def test_namespaced_action_lookup_resolves_the_configured_definition() -> None:
 
     view = catalog.action_view("github", "get_file")
 
-    assert view.id == "github.get_file"
+    assert (view.group, view.name) == ("github", "get_file")
     assert view.group == "github"
     assert view.name == "get_file"
 

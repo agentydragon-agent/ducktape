@@ -8,7 +8,10 @@ package(default_visibility = ["//x/agentplane:__subpackages__"])
 py_library(
     name = "models",
     srcs = ["models.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":catalog",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -44,6 +47,7 @@ py_library(
     name = "db",
     srcs = ["db.py"],
     deps = [
+        ":catalog",
         ":models",
         "@pypi//asyncpg",
         "@pypi//pydantic",
@@ -55,8 +59,11 @@ py_library(
     name = "service",
     srcs = ["service.py"],
     deps = [
+        ":catalog",
         ":db",
         ":models",
+        "@pypi//jsonschema",
+        "@pypi//referencing",
     ],
 )
 
@@ -104,6 +111,8 @@ py_library(
         ":auth",
         ":catalog",
         ":db",
+        ":fixture_policy",
+        ":runtime",
         ":service",
         "//x/agentplane/sandbox_auth:http",
         "//x/agentplane/sandbox_auth:principal",
@@ -179,14 +188,21 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    data = ["//cluster/k8s:agentplane-staging/mcp-everything/deployment.yaml"],
     deps = [
+        ":catalog",
         ":database_migrate",
         ":db",
+        ":mcp_executor",
+        ":models",
+        "//util/bazel:runfiles",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
+        "@pypi//fastmcp_slim",
         "@pypi//psycopg",
         "@pypi//pytest",
+        "@pypi//pyyaml",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],
@@ -221,6 +237,7 @@ py_test(
     srcs = ["test_executor_liveness.py"],
     requires_docker = True,
     deps = [
+        ":catalog",
         ":conftest",
         ":db",
         ":models",
@@ -243,6 +260,7 @@ py_test(
         ":db",
         ":mcp_executor",
         ":models",
+        ":runtime",
         ":service",
         "//:conftest",
         "//util/bazel:runfiles",
@@ -293,14 +311,87 @@ py_test(
     srcs = ["test_decision_providers.py"],
     requires_docker = True,
     deps = [
+        ":catalog",
         ":conftest",
         ":db",
+        ":fixture_policy",
+        ":main",
+        ":mcp_executor",
         ":models",
         ":service",
         "//:conftest",
+        "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    deps = [
+        ":catalog",
+        ":mcp_executor",
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_runtime",
+    size = "medium",
+    srcs = ["test_runtime.py"],
+    data = ["//x/agentplane/action_service/test_fixtures:fake_mcp_server.py"],
+    requires_docker = True,
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":db",
+        ":fixture_policy",
+        ":main",
+        ":mcp_executor",
+        ":models",
+        ":runtime",
+        ":service",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//fastapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_mcp_executor_http",
+    srcs = ["test_mcp_executor_http.py"],
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":mcp_executor",
+        ":models",
+        ":service",
+        "//:conftest",
+        "//util/testing:asgi",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "fixture_policy",
+    srcs = ["fixture_policy.py"],
+    deps = [
+        ":catalog",
+        ":models",
+        "@pypi//pydantic",
     ],
 )

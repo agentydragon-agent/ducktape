@@ -37,6 +37,9 @@ bbr test //x/agentplane/app/...
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads and their events.
+- `actions.py`: the colocated logical Action Hub. It owns immutable ActionRequests, final Decisions,
+  and their single possible Execution in the same PostgreSQL database, while keeping the human
+  DecisionProvider and Executor interfaces separate.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 
@@ -110,6 +113,27 @@ Kubernetes is the sandbox inventory, including the archived flag and a compact a
 its live preset association plus explicit thread-default edits; the runner holds the live session;
 PostgreSQL holds the copy of every event that outlives the sandbox. Preset definitions remain app
 configuration, and each launch sends only resolved concrete fields to the runtime.
+
+## Action review
+
+`/#/actions` renders canonical Action Service receipts. The app's `GET /actions`,
+`GET /actions/{request_id}`, and `POST /actions/{request_id}/decision` are an
+operator-only BFF over `OperatorActionServiceClient`. They use the service's models
+unchanged, including expected versions, idempotency keys, and private reason fields.
+The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload
+submission and owner-scoped reads use the service's `/v1/action-requests` API, not the app.
+
+**Production blocked:** app startup does not supply an operator client, so Action review
+returns 503 after operator authentication (token callers get 403). The service's separate
+operator authenticator defaults to disabled. The app's signed OIDC session is not an
+accepted service bearer; no deployed, supported app-to-service operator auth connection
+is provided. Configuring that boundary is intentionally not part of this slice. Do not
+forward a workload bearer or convert a Sandbox principal into an operator to enable it.
+
+The integration test injects the existing configured-bearer adapter with test-only values,
+logs in through OIDC, and drives the BFF into the canonical service and a real FastMCP tool.
+It proves the adapter behavior, not deployed operator access. There is no app-owned Action
+schema or executor. No deployed prototype-data migration is claimed.
 
 ## Launch presets
 
