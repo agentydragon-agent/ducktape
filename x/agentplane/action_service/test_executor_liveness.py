@@ -33,7 +33,7 @@ from x.agentplane.action_service.service import ActionService
 
 CALLER = Principal(issuer="test-workload", subject="sandbox-a", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
-CAPABILITY = "agentplane:v0.echo"
+ACTION_ID = "agentplane:v0.echo"
 ALREADY_EXPIRED = timedelta(seconds=-1)
 
 
@@ -61,7 +61,7 @@ class SlowSilentExecutor:
 
 async def _allowed_execution(store: ActionStore, *, idempotency_key: str) -> Any:
     view, _ = await store.submit(
-        ActionRequestInput(idempotency_key=idempotency_key, capability=CAPABILITY, arguments={}), CALLER
+        ActionRequestInput(idempotency_key=idempotency_key, capability=ACTION_ID, arguments={}), CALLER
     )
     await store.decide(
         view.id,
@@ -260,7 +260,7 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
     await service.start()
     try:
         pending = await service.submit(
-            ActionRequestInput(idempotency_key="no-double-dispatch", capability=CAPABILITY, arguments={}), CALLER
+            ActionRequestInput(idempotency_key="no-double-dispatch", capability=ACTION_ID, arguments={}), CALLER
         )
         await service.decide(
             pending.id,

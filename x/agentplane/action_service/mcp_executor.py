@@ -22,7 +22,7 @@ from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
-from x.agentplane.action_service.catalog import ActionDefinition, ActionGroup, Key
+from x.agentplane.action_service.catalog import ActionDefinition, ActionGroup, Key, split_action_identity
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
 from x.agentplane.action_service.service import ExecutionOutcomeUnknownError
 
@@ -131,13 +131,12 @@ class McpActionGroupExecutor:
         self._group.available = True
 
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
-        prefix = f"{self._group_key}."
-        if not request.capability.startswith(prefix):
+        group_key, name = split_action_identity(request.capability)
+        if group_key != self._group_key:
             return ExecutionResult(
                 state=ExecutionState.FAILED,
                 error={"kind": "unknown_action", "message": "action is not owned by this group"},
             )
-        name = request.capability.removeprefix(prefix)
 
         try:
             tools = await self._client.list_tools()

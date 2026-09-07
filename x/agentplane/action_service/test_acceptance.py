@@ -404,9 +404,7 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
         await after_crash.close()
 
 
-async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clearly(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
-) -> None:
+async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clearly(engine: AsyncEngine) -> None:
     catalog = ActionCatalog(
         groups={
             "github": ActionGroup(
@@ -427,7 +425,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
         }
     )
     store = ActionStore(make_sessionmaker(engine))
-    service = ActionService(store, echo_catalog, {"agentplane": CountingExecutor()})
+    service = ActionService(store, catalog, {"github": CountingExecutor()})
     await service.start()
     client = await _client(service, catalog=catalog)
     try:
