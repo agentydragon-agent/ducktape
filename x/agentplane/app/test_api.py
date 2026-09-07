@@ -556,7 +556,7 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/live/sandboxes",
         "/live/sandboxes/{name}",
     }
-    assert set(paths["/actions"]) == {"get", "post"}
+    assert set(paths["/actions"]) == {"get"}
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}
     assert set(paths["/sandboxes/{name}/egress"]) == {"get", "post"}

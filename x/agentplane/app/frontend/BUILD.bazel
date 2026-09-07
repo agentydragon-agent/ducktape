@@ -323,6 +323,7 @@ vitest_bin.vitest_test(
         ":actions_test",
         ":events_test",
         ":launch_presets_test",
+        "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],
 )

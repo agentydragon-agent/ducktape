@@ -114,24 +114,26 @@ its live preset association plus explicit thread-default edits; the runner holds
 PostgreSQL holds the copy of every event that outlives the sandbox. Preset definitions remain app
 configuration, and each launch sends only resolved concrete fields to the runtime.
 
-## ActionRequests v0
+## Action review
 
-With an explicitly injected test catalog/executor, `POST /actions` accepts `action: {"group": "agentplane", "name": "echo"}` with JSON arguments and an existing
-`origin_thread_id`, deriving caller ownership from the authenticated OIDC session or reviewed
-Kubernetes token. Submission verifies that the origin Thread exists, then records the authenticated
-caller as provenance; v0 deliberately does not infer a durable Agent owner from a Sandbox or Thread.
-The echo Action is an explicit fixture executor: it proves the durable request → human Decision
-→ exactly-once dispatch → result seam without pretending an MCP registry
-or external adapter exists. App-to-Action-Service integration is deferred; production
-app startup has no Echo executor or offered Actions.
+`/#/actions` renders canonical Action Service receipts. The app's `GET /actions`,
+`GET /actions/{request_id}`, and `POST /actions/{request_id}/decision` are an
+operator-only BFF over `OperatorActionServiceClient`. They use the service's models
+unchanged, including expected versions, idempotency keys, and private reason fields.
+The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload
+submission and owner-scoped reads use the service's `/v1/action-requests` API, not the app.
 
-Token callers can list and read only requests recorded for their authenticated principal. The OIDC
-operator can list the app's whole current scope at `/#/actions`, inspect the redacted review
-projection, and call `POST /actions/{request_id}/decision` with an expected version and idempotency
-key. `allow` schedules the one Execution automatically; `deny` is terminal. A process restart marks
-any `dispatching` or `running` Execution `execution_unknown` and never replays it. The event sink in
-`actions.py` is the future notification seam; notification callbacks must return through the same
-idempotent DecisionProvider path.
+**Production blocked:** app startup does not supply an operator client, so Action review
+returns 503 after operator authentication (token callers get 403). The service's separate
+operator authenticator defaults to disabled. The app's signed OIDC session is not an
+accepted service bearer; no deployed, supported app-to-service operator auth connection
+is provided. Configuring that boundary is intentionally not part of this slice. Do not
+forward a workload bearer or convert a Sandbox principal into an operator to enable it.
+
+The integration test injects the existing configured-bearer adapter with test-only values,
+logs in through OIDC, and drives the BFF into the canonical service and a real FastMCP tool.
+It proves the adapter behavior, not deployed operator access. There is no app-owned Action
+schema or executor. No deployed prototype-data migration is claimed.
 
 ## Launch presets
 
@@ -181,14 +183,3 @@ unchanged when no preset is selected.
   Pretty-printing also does not help the payloads that are genuinely hard to read, since a long
   string value stays one long line either way; wrapping and highlighting are what make those
   legible.
-
-### ActionRequest integration boundary
-
-The original app-owned ActionHub/API/UI slice is retained for its persistence, owner
-scope, operator decisions, lifecycle, and visual tests. Its Echo executor exists only
-in `testing/actions.py` and must be explicitly injected with a test catalog. App
-production startup uses an empty catalog and no executor: it does not offer Echo or
-pretend this UI is connected to the independent Action Service. The latter owns the
-real MCP runtime and narrow fixture provider. Connecting the app UI to that service
-remains deferred; the two APIs are not interchangeable and no migration is claimed.
-Wire/database Action identity uses separate group/name fields; no legacy string is accepted.

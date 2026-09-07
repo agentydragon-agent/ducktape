@@ -6,7 +6,7 @@ map and acceptance criteria are in [`task_dag.md`](task_dag.md).
 
 ## Accepted vocabulary and decisions
 
-- **Action**: a stable, namespaced capability definition such as `github.get_file`. Its exact
+- **Action**: a definition selected by separate group and name fields, such as `(github, get_file)`. Its exact
   schema/ownership is still the `AS` design gate; no public `action_version` is required.
 - **ActionRequest**: one immutable caller intent to invoke an Action with structured arguments.
 - **Decision**: an authorization disposition over one ActionRequest.
@@ -48,8 +48,8 @@ integration app/BFF and future notification surfaces are clients.
 ```json
 {
   "idempotency_key": "caller-stable-key",
-  "capability": "agentplane:v0.echo",
-  "arguments": { "text": "hello" },
+  "action": { "group": "everything", "name": "echo" },
+  "arguments": { "message": "hello" },
   "origin": {},
   "correlation": {}
 }
@@ -58,9 +58,9 @@ integration app/BFF and future notification surfaces are clients.
 - `idempotency_key` is a required 1–200 character string, unique per authenticated caller. Reusing
   it with the same envelope returns the original request; reusing it with a different envelope
   conflicts.
-- `capability` is a required 1–240 character string and must be advertised by the configured
-  Executor.
-- `arguments` is a required JSON object but has no capability-specific schema yet.
+- `action` contains required `group` and `name` fields, resolved through the live catalog.
+  Concatenated and legacy identifiers are rejected.
+- `arguments` is a required JSON object; the MCP adapter checks the current backend schema before dispatch.
 - `origin` and `correlation` are optional JSON objects stored only as untrusted provenance. They do
   not establish Sandbox, Thread, Agent, owner, role, or operator authority.
 - Extra top-level fields are rejected.
@@ -92,19 +92,17 @@ specified separately in [`../docs/executor_liveness.md`](../docs/executor_livene
 restart no longer unconditionally declares dispatching/running work unknown, and stale leases are
 the recovery signal.
 
-### Fixture-only executor
+### MCP execution and operator review
 
-`EchoExecutor` advertises only `agentplane:v0.echo` and returns:
+The canonical Action Service owns the MCP runtime and durable Action records. Successful
+execution fixtures use real FastMCP tools through `McpActionGroupExecutor`; isolated
+failure/counting doubles test coordinator failure and concurrency paths.
 
-```json
-{ "echo": { "...": "the submitted arguments" } }
-```
-
-It runs in the Action Service process and performs no external effect. It proves request admission,
-human Decision, automatic single dispatch, result projection, redaction, and recovery. It does not
-prove a production Action definition, schema validation, backend configuration, credential boundary,
-worker transport, capability discovery, health reporting, MCP integration, or real result delivery.
-It must remain described and named as a fixture.
+The app review UI uses canonical models and the existing operator client. Production
+review remains unavailable: no supported app-to-service operator auth connection has
+been configured, and the app's OIDC cookie is not a service bearer. The app owns no
+second Action schema, state machine, or executor. Deployed MCP0 evidence still requires
+the staging prerequisites in `../acceptance/README.md`.
 
 ## Open gate: Action schema contract (`AS`)
 

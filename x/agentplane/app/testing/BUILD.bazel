@@ -20,12 +20,3 @@ py_library(
     srcs = ["egress_proxy.py"],
     deps = ["@pypi//httpx"],
 )
-
-py_library(
-    name = "actions",
-    srcs = ["actions.py"],
-    deps = [
-        "//x/agentplane/action_service:catalog",
-        "//x/agentplane/app:actions",
-    ],
-)

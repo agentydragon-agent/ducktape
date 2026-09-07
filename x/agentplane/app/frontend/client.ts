@@ -53,7 +53,7 @@ export const actionService: ActionService = {
   async decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView> {
     const { data, error } = await api.POST("/actions/{request_id}/decision", {
       params: { path: { request_id: request.id } },
-      body: { verdict, expected_version: request.version, idempotency_key: crypto.randomUUID(), reason: null },
+      body: { verdict, expected_version: request.version, idempotency_key: crypto.randomUUID(), private_reason: null },
     });
     if (error) throw new Error(displayableError(error));
     return data;

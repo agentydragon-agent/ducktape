@@ -52,10 +52,10 @@ function ActionCard({
               {request.action.group} / {request.action.name}
             </Text>
             <Text size="xs" c="dimmed">
-              Request {request.id} · thread {request.origin_thread_id}
+              Request {request.id}
             </Text>
             <Text size="xs" c="dimmed">
-              {request.caller_kind} · {request.caller_principal}
+              {request.caller_principal}
             </Text>
           </Stack>
           <Badge color={STATE_COLORS[request.state] ?? "gray"}>{stateLabel(request.state)}</Badge>
@@ -69,7 +69,7 @@ function ActionCard({
         {request.decision && (
           <Text size="sm">
             Decision: <b>{request.decision.verdict}</b> by {request.decision.issuer}
-            {request.decision.reason ? ` · ${request.decision.reason}` : ""}
+            {request.decision.private_reason ? ` · ${request.decision.private_reason}` : ""}
           </Text>
         )}
         {request.execution?.result !== null && request.execution?.result !== undefined && (

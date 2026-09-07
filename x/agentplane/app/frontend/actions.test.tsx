@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @vitest-environment happy-dom
 
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
@@ -11,21 +11,6 @@ import type { ActionRequestView, ActionService, ActionState } from "./client";
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-Object.defineProperty(window, "matchMedia", {
-  writable: true,
-  value: vi.fn().mockImplementation(
-    (query: string): MediaQueryList => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })
-  ),
-});
 
 function request(state: ActionState, index: number): ActionRequestView {
   const decided = state !== "decision_pending";
@@ -34,8 +19,9 @@ function request(state: ActionState, index: number): ActionRequestView {
     id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
     action: { group: "agentplane", name: `state-${state}` },
     arguments: { state, token: "[redacted]" },
-    origin_thread_id: "10000000-0000-4000-8000-000000000000",
-    caller_kind: "token",
+    origin: { thread_id: "10000000-0000-4000-8000-000000000000" },
+    correlation: {},
+    idempotency_key: `request-${index}`,
     caller_principal: "system:serviceaccount:test:agent",
     state,
     version: decided ? 2 : 1,
@@ -47,7 +33,8 @@ function request(state: ActionState, index: number): ActionRequestView {
           verdict: state === "denied" ? "deny" : "allow",
           provider: "human_operator",
           issuer: "operator",
-          reason: null,
+          private_reason: null,
+          private_reason_redacted: false,
           idempotency_key: `decision-${index}`,
           decided_at: "2026-09-05T12:00:00Z",
         }
@@ -55,11 +42,12 @@ function request(state: ActionState, index: number): ActionRequestView {
     execution: executing
       ? {
           id: `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-          state,
+          state: state as NonNullable<ActionRequestView["execution"]>["state"],
           result: state === "succeeded" ? { ok: true } : null,
           error: ["failed", "cancelled", "execution_unknown"].includes(state) ? { kind: state } : null,
           created_at: "2026-09-05T12:00:00Z",
           started_at: "2026-09-05T12:00:01Z",
+          reconciled_at: null,
           completed_at: ["running", "dispatching"].includes(state) ? null : "2026-09-05T12:00:02Z",
         }
       : null,

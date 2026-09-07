@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator, Iterator
 
 import pytest
 import yaml
+from fastmcp import FastMCP
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.core.container import DockerContainer
@@ -19,6 +20,7 @@ from util.testing.postgres_fixtures import postgres_container
 from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
 from x.agentplane.action_service.database_migrate import apply_migrations
 from x.agentplane.action_service.db import make_engine
+from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
 
 # SQLAlchemy loads these dialects from URLs; Gazelle cannot infer them.
@@ -101,3 +103,19 @@ class RecordingExecutor:
 @pytest.fixture
 def echo_executor() -> RecordingExecutor:
     return RecordingExecutor()
+
+
+@pytest.fixture
+async def mcp_executor(echo_catalog: ActionCatalog) -> AsyncIterator[McpActionGroupExecutor]:
+    server = FastMCP("test-actions")
+
+    @server.tool
+    def echo(n: int) -> dict[str, int]:
+        return {"n": n}
+
+    executor = McpActionGroupExecutor("agentplane", echo_catalog.groups["agentplane"], server)
+    await executor.start()
+    try:
+        yield executor
+    finally:
+        await executor.close()

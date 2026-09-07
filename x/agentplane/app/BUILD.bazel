@@ -26,22 +26,9 @@ py_binary(
 )
 
 py_library(
-    name = "actions",
-    srcs = ["actions.py"],
-    deps = [
-        ":identity",
-        ":trajectory",
-        "//x/agentplane/action_service:catalog",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "api",
     srcs = ["api.py"],
     deps = [
-        ":actions",
         ":auth_routes",
         ":bridge",
         ":decisions",
@@ -52,10 +39,12 @@ py_library(
         ":oidc",
         ":presets",
         ":trajectory",
-        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:client",
+        "//x/agentplane/action_service:models",
         "//x/agentplane/runner:client",
         "@pypi//fastapi",
         "@pypi//grpcio",
+        "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//protobuf",
         "@pypi//pydantic",
@@ -85,7 +74,6 @@ py_library(
     srcs = ["main.py"],
     data = ["//x/agentplane/app/frontend:bundle"],  # keep: the SPA the server mounts
     deps = [
-        ":actions",
         ":api",
         ":bridge",
         ":decisions",
@@ -98,7 +86,6 @@ py_library(
         ":trajectory",
         "//util:kubernetes",
         "//util/bazel:runfiles",
-        "//x/agentplane/action_service:catalog",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
@@ -140,7 +127,6 @@ py_test(
     srcs = ["test_action_api.py"],
     requires_docker = True,
     deps = [
-        ":actions",
         ":api",
         ":bridge",
         ":conftest",
@@ -149,32 +135,24 @@ py_test(
         ":identity",
         ":inventory",
         ":live",
+        ":oidc",
         ":trajectory",
         "//:conftest",
-        "//x/agentplane/app/testing:actions",
-        "//x/agentplane/runner:protocol_pb2",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_actions",
-    size = "medium",
-    srcs = ["test_actions.py"],
-    requires_docker = True,
-    deps = [
-        ":actions",
-        ":conftest",
-        ":identity",
-        ":trajectory",
-        "//:conftest",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "//x/agentplane/action_service:api",
+        "//x/agentplane/action_service:auth",
         "//x/agentplane/action_service:catalog",
-        "//x/agentplane/app/testing:actions",
-        "//x/agentplane/runner:protocol_pb2",
-        "@pypi//protobuf",
+        "//x/agentplane/action_service:client",
+        "//x/agentplane/action_service:database_migrate",
+        "//x/agentplane/action_service:db",
+        "//x/agentplane/action_service:mcp_executor",
+        "//x/agentplane/action_service:models",
+        "//x/agentplane/action_service:service",
+        "//x/agentplane/sandbox_auth:http",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
