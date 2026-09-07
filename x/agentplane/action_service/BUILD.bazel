@@ -104,6 +104,7 @@ py_library(
         ":auth",
         ":catalog",
         ":db",
+        ":fixture_policy",
         ":service",
         "//x/agentplane/sandbox_auth:http",
         "//x/agentplane/sandbox_auth:principal",
@@ -293,8 +294,11 @@ py_test(
     srcs = ["test_decision_providers.py"],
     requires_docker = True,
     deps = [
+        ":catalog",
         ":conftest",
         ":db",
+        ":fixture_policy",
+        ":main",
         ":models",
         ":service",
         "//:conftest",
@@ -302,5 +306,15 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "fixture_policy",
+    srcs = ["fixture_policy.py"],
+    deps = [
+        ":catalog",
+        ":models",
+        "@pypi//pydantic",
     ],
 )

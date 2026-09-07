@@ -21,6 +21,7 @@ from x.agentplane.action_service.auth import (
 )
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
+from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
 from x.agentplane.action_service.service import ActionService, EchoExecutor
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
@@ -52,6 +53,15 @@ class Settings(BaseSettings):
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
     )
 
+    fixture_auto_allow: FixtureAutoAllow | None = Field(
+        default=None, description="Opt in to auto-allow only fixture_info({}) on a reviewed credentialless MCP group."
+    )
+
+    def decision_providers(self, catalog: ActionCatalog) -> list[FixtureDecisionProvider]:
+        if self.fixture_auto_allow is None:
+            return []
+        return [FixtureDecisionProvider(self.fixture_auto_allow, catalog, sandbox_namespaces=self.sandbox_namespaces)]
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -80,7 +90,9 @@ async def async_main(settings: Settings) -> None:
     k8s_config.load_incluster_config(client_configuration=configuration)
     catalog = ActionCatalog(groups=settings.action_groups)
     async with ApiClient(configuration=configuration) as api:
-        service = ActionService(ActionStore(make_sessionmaker(engine)), EchoExecutor())
+        service = ActionService(
+            ActionStore(make_sessionmaker(engine)), EchoExecutor(), providers=settings.decision_providers(catalog)
+        )
         await service.start()
         operator_authenticator: OperatorAuthenticator
         if settings.operator_bearer_file is None:

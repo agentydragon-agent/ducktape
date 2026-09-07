@@ -60,6 +60,34 @@ that remains `db.ActionStore.submit`'s `supported_capabilities` check against th
 Binding a real ActionGroup to a live Executor is the deferred `EW` gate
 (`plans/task_dag.md`), not this seam.
 
+## Credentialless fixture auto-allow
+
+`fixture_auto_allow` is absent by default: no automatic Decision provider is installed. To opt in,
+add this to the staging Action Service YAML named by `AGENTPLANE_ACTIONS_CONFIG_FILE` and restart:
+
+```yaml
+fixture_auto_allow:
+  group: mcp_fixture
+```
+
+The named `action_groups.mcp_fixture` must be a reviewed MCP binding **only to the credentialless
+staging fixture server**. This setting selects the group, not an arbitrary tool or argument rule:
+only `mcp_fixture.fixture_info` with exactly `{}` can receive an allow vote. The provider refuses a
+missing/non-MCP group at startup and returns no opinion while the group is unavailable or no longer
+discovers `fixture_info`. A newly discovered tool does not acquire auto-allow authority. The existing
+executor still validates the current tool schema before calling it.
+
+Authorization uses only the authenticated `kubernetes-sandbox` caller in `sandbox_namespaces`, with
+a nonempty resolved Sandbox UID; request provenance and Agent claims cannot grant it. Reasons are
+constant, bounded, and contain no request, identity, or backend values. All votes still go through
+`ActionService`'s deny-dominant aggregation, durable Decision, and single-dispatch path. Nonmatches
+and provider failures retain human fallback; enabling this does not enable the operator API.
+
+This provider does not attest that an arbitrary endpoint is credentialless: the reviewed deployment
+owns that binding and must not repoint the opted-in group at another server. It supplies no
+credentials, capability profiles, or generic policy language. The setting alone does not wire an
+MCP executor or deploy a fixture, and cannot auto-allow `agentplane:v0.echo`.
+
 ## Authentication boundaries
 
 Sandbox calls use ordinary `Authorization: Bearer <workload token>` at this service. The runner does
