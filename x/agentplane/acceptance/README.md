@@ -75,7 +75,7 @@ The agent's final report has exactly this schema (extra properties forbidden):
   "type": "object",
   "required": ["request_id"],
   "additionalProperties": false,
-  "properties": {"request_id": {"type": "string", "format": "uuid"}}
+  "properties": { "request_id": { "type": "string", "format": "uuid" } }
 }
 ```
 
@@ -94,7 +94,10 @@ Bazel undeclared outputs contain:
   later assertion failure retains earlier evidence.
 - `<sandbox>-ring.json`: the app's credential-free `Decision` records restricted to
   the Action host, captured before observer traffic. No headers, tokens, or raw Pod
-  logs are stored. Transport failures show sandbox/path/status, not arbitrary bodies.
+  logs are stored. `-replay-ring.json` and `-self-approval-ring.json` capture the
+  later agent phases; replay requires three additional admitted POSTs so unchanged
+  state without an actual replay cannot pass. Transport failures show
+  sandbox/path/status, not arbitrary bodies.
 
 Wrong marker means output propagation failed; extra request/Execution ID or dispatch
 means idempotency failed; missing/out-of-order events means audit/cursor contract
