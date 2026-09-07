@@ -92,19 +92,17 @@ specified separately in [`../docs/executor_liveness.md`](../docs/executor_livene
 restart no longer unconditionally declares dispatching/running work unknown, and stale leases are
 the recovery signal.
 
-### Fixture-only executor
+### MCP execution and operator review
 
-`EchoExecutor` advertises only `agentplane:v0.echo` and returns:
+The canonical Action Service owns the MCP runtime and durable Action records. Successful
+execution fixtures use real FastMCP tools through `McpActionGroupExecutor`; isolated
+failure/counting doubles test coordinator failure and concurrency paths.
 
-```json
-{ "echo": { "...": "the submitted arguments" } }
-```
-
-It runs in the Action Service process and performs no external effect. It proves request admission,
-human Decision, automatic single dispatch, result projection, redaction, and recovery. It does not
-prove a production Action definition, schema validation, backend configuration, credential boundary,
-worker transport, capability discovery, health reporting, MCP integration, or real result delivery.
-It must remain described and named as a fixture.
+The app review UI uses canonical models and the existing operator client. Production
+review remains unavailable: no supported app-to-service operator auth connection has
+been configured, and the app's OIDC cookie is not a service bearer. The app owns no
+second Action schema, state machine, or executor. Deployed MCP0 evidence still requires
+the staging prerequisites in `../acceptance/README.md`.
 
 ## Open gate: Action schema contract (`AS`)
 

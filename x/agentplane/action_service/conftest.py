@@ -6,6 +6,7 @@ import re
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
+from fastmcp import FastMCP
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.postgres import PostgresContainer
@@ -15,6 +16,7 @@ from util.testing.postgres_fixtures import postgres_container
 from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
 from x.agentplane.action_service.database_migrate import apply_migrations
 from x.agentplane.action_service.db import make_engine
+from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 
 # SQLAlchemy loads these dialects from URLs; Gazelle cannot infer them.
 # gazelle:include_dep @pypi//asyncpg
@@ -56,3 +58,19 @@ def echo_catalog() -> ActionCatalog:
             )
         }
     )
+
+
+@pytest.fixture
+async def mcp_executor(echo_catalog: ActionCatalog) -> AsyncIterator[McpActionGroupExecutor]:
+    server = FastMCP("test-actions")
+
+    @server.tool
+    def echo(n: int) -> dict[str, int]:
+        return {"n": n}
+
+    executor = McpActionGroupExecutor("agentplane", echo_catalog.groups["agentplane"], server)
+    await executor.start()
+    try:
+        yield executor
+    finally:
+        await executor.close()
