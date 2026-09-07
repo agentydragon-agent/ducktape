@@ -54,6 +54,18 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods"]
     verbs: ["get", "list"]
+  # The devbox is the public-coder agent's ephemeral build machine. Restrict
+  # image-rollout inspection and restart to this one named KubeVirt VM/VMI;
+  # deleting the VMI (not the VM) lets runStrategy: Always recreate it from
+  # the current Flux-updated containerDisk template.
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachines"]
+    resourceNames: ["public-coder-devbox"]
+    verbs: ["get"]
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachineinstances"]
+    resourceNames: ["public-coder-devbox"]
+    verbs: ["get", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
