@@ -14,7 +14,11 @@ spec:
         app.kubernetes.io/name: public-coder-devbox
     spec:
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        # No region pin: the cluster's own KubeVirt CR (cluster/k8s/kubevirt/app/kubevirt.yaml)
+        # already scopes where VMs can run (region in [hil, home], no control-plane nodes), and
+        # kubevirt.io/schedulable=true only appears on nodes that CR actually placed virt-handler
+        # on. Restating region: hil here was redundant with that and needlessly excluded home-region
+        # capacity (e.g. optiplex) that the cluster already permits.
         kubevirt.io/schedulable: "true"
       affinity:
         nodeAffinity:
@@ -24,14 +28,20 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
       domain:
+        # 4 cores / 8Gi limit, 2 cores / 4Gi request: the two hil, kubevirt.io/schedulable=true
+        # nodes (ovh-ns102453, ovh-ns103711) are 8-core/32Gi OVH KS-5 boxes already carrying the
+        # rest of the cluster -- the original 8-core/8Gi *request* never fit either node's free
+        # capacity (one short on CPU, the other on memory), which is why this VM's virt-launcher
+        # pod sat Pending/Unschedulable. Heavy compute already runs on BuildBuddy RBE, not this
+        # box, so it doesn't need to request that much locally.
         cpu:
-          cores: 8
+          cores: 4
         resources:
           limits:
-            cpu: "8"
+            cpu: "4"
           requests:
             cpu: "2"
-            memory: 8Gi
+            memory: 4Gi
         firmware:
           bootloader:
             efi:
