@@ -17,6 +17,10 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
+    - name: sso-providers-tf
+      namespace: ducktape-flux
+    - name: reflector
+      namespace: ducktape-flux
     - name: agentplane-staging-mcp-everything
       namespace: ducktape-flux
     - name: agentplane-staging-namespace

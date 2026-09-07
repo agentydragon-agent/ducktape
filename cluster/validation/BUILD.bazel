@@ -748,3 +748,21 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
+py_test(
+    name = "test_agentplane_federation_contract",
+    srcs = ["test_agentplane_federation_contract.py"],
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "//tf/gitops/sso-providers:provider_agentplane_actions.tf",
+        "//tf/gitops/sso-providers:provider_agentplane_staging.tf",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "//x/agentplane/action_service:main",
+        "//x/agentplane/app:main",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

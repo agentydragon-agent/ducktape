@@ -1,5 +1,5 @@
 # Workload calls arrive only from the central egress proxy after exact placeholder substitution.
-# The integration app is admitted separately for a future configured BFF/operator adapter.
+# The integration app is admitted separately for the session-bound BFF/operator adapter.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -47,3 +47,14 @@ spec:
         - ports:
             - port: "5432"
               protocol: TCP
+    # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443.
+    # The resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - auth.allegedly.works
