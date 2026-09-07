@@ -84,7 +84,9 @@ flowchart TB
     AS["Action schema contract<br/>stable identity, params, result/error,<br/>redaction and evolution"]:::decision
     EW["Executor wiring contract<br/>groups/catalog, dispatch, credentials, MCP compatibility,<br/>claim/idempotency/heartbeat + first adapter"]:::decision
     DEL["Decision/action-state contract<br/>provider aggregation, event/query API,<br/>reason evidence, progress, withdrawal, unknown"]:::decision
-    ACTION1["P0 behavior<br/>one real named Action executes once<br/>and returns a safe result"]:::active
+    MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
+    MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
+    MCPACCEPT["Milestone<br/>rerunnable Action/MCP acceptance<br/>against the deployed stack"]:::milestone
 
     ER["Observed evidence #5701<br/>egress rules boundary + Service DNS transition"]:::completed
     DEDUPE["Needed support, independent<br/>shared FastAPI/auth setup dedupe"]:::active
@@ -103,10 +105,12 @@ flowchart TB
     ACTION0 --> AS
     ACTION0 --> EW
     ACTION0 --> DEL
-    AS --> ACTION1
-    EW --> ACTION1
-    DEL --> ACTION1
-    ACTION1 --> PROD
+    AS --> MCP0
+    EW --> MCP0
+    DEL --> MCP0
+    MCP0 --> MCPACCEPT
+    MCP0 --> MCPAUTH
+    MCPAUTH --> PROD
     DEL -. later Thread delivery .-> ING
 
     AUTH --> ER
@@ -120,10 +124,13 @@ flowchart TB
 
     AS --> DT
     EW --> DT
-    ACTION1 --> AG
+    MCP0 --> AG
 ```
 
-The critical path to production action execution is `ACTION0 -> AS + EW + DEL -> ACTION1`. Egress
+The first executable Action/MCP path is `ACTION0 -> AS + EW + DEL -> MCP0 -> MCPACCEPT`. It uses a
+credentialless, staging-owned deterministic streamable-HTTP MCP fixture and a real Claude/Codex
+acceptance turn; it does not wait for GitHub OAuth. The later credentialed path is `MCP0 -> MCPAUTH ->
+PROD`. Egress
 introspection cleanup, shared FastAPI/auth deduplication, trajectory search, and proxy survivability
 can proceed without waiting for those gates. Their independence must not be described as evidence
 that the current echo-only Action Service can execute production work.
@@ -150,11 +157,12 @@ validated before a Decision or dispatch, and whose result/error can be safely re
 6. Keep ActionGroup-to-executor and MCP-server/tool bindings in reviewed runtime configuration such
    as YAML, so backend/account changes do not require an image roll.
 
-**Acceptance evidence:** connect the configured GitHub MCP server as the user's account, mirror its
-catalog, auto-allow safe public-repository reads, and prove with an acceptance test that an Agent can
-invoke one read Action and receive a safe result. Include negative tests for unknown group/action,
-malformed parameters, incompatible current tool schema, malformed result/error, and sensitive data
-appearing in any projection or log.
+**Acceptance evidence for the first slice:** connect a small credentialless remote MCP fixture,
+mirror its catalog, auto-allow one deterministic read-only Action, and prove with the deployed live
+acceptance suite that a real Claude/Codex Agent can invoke it and receive a safe result. Include
+negative tests for unknown group/action, malformed parameters, incompatible current tool schema,
+malformed result/error, and sensitive data appearing in any projection or log. GitHub account access
+is a separate later credentialed milestone below.
 
 ### `EW` — Executor wiring contract
 
@@ -190,13 +198,45 @@ outcome without replay.
 8. Define executor health and capability discovery as startup/readiness evidence, not a broad dynamic
    registry. **Landed in part:** an executor-level health heartbeat exists internally and feeds
    orphan-reason attribution; no external readiness/discovery endpoint exists yet.
-9. Select one concrete first adapter and write its acceptance fixture before implementation.
-   Minimum evidence: the named Action validates, allow auto-dispatches once, the configured backend
-   receives the exact intended payload and credential identity, duplicate Decision/start paths do
-   not call it twice, success and safe failure are delivered, and ambiguous transport loss becomes
-   unknown without retry.
+9. Select the first adapter as a small credentialless remote MCP fixture and write the deployed
+   acceptance test before implementation. It must use streamable HTTP, expose one deterministic
+   read-only tool, and require no OAuth or provider credential.
+10. Minimum evidence for that fixture: the named Action validates, allow auto-dispatches once, the
+   MCP server receives the exact intended `tools/call`, duplicate Decision/start paths do not call it
+   twice, success and safe failure are delivered, and ambiguous transport loss becomes unknown
+   without retry. The test must live in `x/agentplane/acceptance/` and run against staging with a
+   real LLM Agent, not remain a manual one-off.
 
 `agentplane:v0.echo` remains explicitly fixture-only and cannot satisfy this gate.
+
+### `MCP0` — credentialless remote MCP vertical slice
+
+**P0 behavior:** a real staging Claude/Codex Agent discovers one configured ActionGroup, submits one
+read-only ActionRequest, and polls durable Action events to a safe result produced by a remote MCP
+server without the Agent or Action Service holding a provider credential.
+
+**Needed support:** a staging-owned deterministic streamable-HTTP MCP fixture, an MCP executor that
+mirrors `tools/list` and invokes `tools/call`, reviewed runtime binding, a narrow auto-allow policy
+for the fixture Action, and an acceptance scenario in `x/agentplane/acceptance/test_action_mcp.py`.
+
+**Acceptance evidence:** `//x/agentplane/acceptance:all` runs the scenario against the deployed
+stack for both real harness providers, verifies catalog discovery, exactly one Action execution,
+cursor-based event polling, and the exact safe tool result. It must not assert success from the
+Agent's prose alone.
+
+### `MCPAUTH` — credentialed MCP account and OAuth boundary
+
+**Deferred support:** connect a user's GitHub MCP account without moving browser OAuth state or
+refresh credentials into the harness. Haku Console or a shared credential broker should own the
+operator identity, authorization-code + PKCE flow, callback state, token exchange/refresh, and
+durable token association. Action Service should receive only an opaque account/credential binding
+and own MCP discovery/call translation. If standalone operation later requires Action Service to own
+OAuth, implement the smallest separately tested subset rather than copying Haku Console wholesale.
+
+**Acceptance evidence:** a separate credentialed live scenario proves account linkage, catalog
+refresh, one safe GitHub read, token refresh/reconnect, and negative isolation for an unbound or
+different account. This milestone must not block `MCP0` or be folded into the credentialless fixture
+test.
 
 ### `DEL` — decision and Action-state contract
 

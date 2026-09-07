@@ -124,11 +124,12 @@ configuration such as a reviewed YAML file, so backend/account changes do not re
 Use the executor's live tool schema for admission/execution checks; use a small JSON-compatible typed
 contract unless the first adapter demonstrates a need for full JSON Schema.
 
-**Required evidence:** connect the configured GitHub MCP server as the user's account, mirror its
-catalog, auto-allow safe public-repository reads, and prove with an acceptance test that an Agent can
-invoke one read Action and receive a safe result. Include negative tests for unknown group/action,
-malformed parameters, incompatible current tool schema, malformed result/error, and sensitive data
-appearing in any projection or log.
+**Required evidence for the first adapter:** connect a small credentialless remote MCP fixture,
+mirror its catalog, auto-allow one deterministic read-only Action, and prove in the deployed live
+acceptance suite that a real Claude/Codex Agent can invoke it and receive a safe result. Include
+negative tests for unknown group/action, malformed parameters, incompatible current tool schema,
+malformed result/error, and sensitive data appearing in any projection or log. Do not make GitHub
+OAuth a prerequisite for this first executable slice.
 
 ## Open gate: Executor wiring contract (`EW`)
 
@@ -147,7 +148,8 @@ Before the echo fixture is replaced or supplemented, decide and test:
 - request and backend idempotency-key behavior;
 - executor health, executor heartbeat, and per-Execution lease/heartbeat behavior;
 - bounded progress/status observations for long-running executions; and
-- one concrete first adapter acceptance fixture.
+- one concrete first adapter acceptance fixture, with the first adapter being a credentialless
+  remote MCP fixture rather than a GitHub account integration.
 
 **Recommendation:** keep the first adapter code-owned and in-process only if its transport can keep
 credentials in the correct process and uphold the no-retry boundary. Otherwise use a separate
@@ -202,6 +204,21 @@ privileged GitHub identity, future Gmail or Google Calendar OAuth, or hostexec-s
 The executor definition and Agent-visible description must identify that boundary and warn against
 using privileged access for work the Agent can perform itself. Real credentials remain in the owning
 backend/worker boundary, not in the harness or ActionRequest.
+
+### Credentialed MCP and OAuth boundary
+
+The credentialless remote-MCP slice is intentionally separate from user-account MCP access. For a
+GitHub-backed executor, Haku Console or a shared credential broker should own operator identity,
+authorization-code + PKCE, callback state, token exchange/refresh, and durable token association.
+The Action Service/executor should receive only an opaque account or credential binding and retain
+ownership of MCP `tools/list`/`tools/call`, Action schema compatibility, and result translation. It
+must not receive browser OAuth state or refresh tokens in the harness.
+
+If Action Service eventually needs standalone OAuth operation, start with pre-registered client
+support and the smallest separately tested protected-resource metadata, authorization-server
+metadata, PKCE, callback, token-exchange, refresh, and resource-indicator subset. Dynamic Client
+Registration and a second browser/account UI are not prerequisites for the first credentialed
+adapter.
 
 An executor may report bounded progress snapshots or output observations while an Execution is
 running. Progress is not a second Execution and does not relax the rule that an ambiguous dispatch
