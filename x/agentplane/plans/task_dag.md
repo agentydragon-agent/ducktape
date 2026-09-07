@@ -41,8 +41,15 @@ catalog discovery seam is landed in PR [#5731](https://github.com/agentydragon/d
 synchronous deny-dominant DecisionProvider aggregation is landed in PR
 [#5732](https://github.com/agentydragon/ducktape/pull/5732), and the executor heartbeat/lease
 recovery contract is landed for this fixture seam in PR
-[#5733](https://github.com/agentydragon/ducktape/pull/5733). No real backend is wired because the
-remaining Action schema and Executor wiring contracts below have not been fully tested.
+[#5733](https://github.com/agentydragon/ducktape/pull/5733). No production backend is wired because
+the remaining Action schema and production Executor wiring contracts below have not been fully tested.
+
+**Observed evidence — first MCP-backed Executor landed.** PR
+[#5753](https://github.com/agentydragon/ducktape/pull/5753) adds the tested
+`McpActionGroupExecutor`: a stdio MCP adapter that mirrors `tools/list`, refreshes on notification
+or interval, rechecks the live tool schema, initiates `tools/call`, and maps safe success/error/
+unknown outcomes. The Action Service production composition still wires `EchoExecutor`; runtime
+wiring, a remote streamable-HTTP staging fixture, and live Agent acceptance remain open.
 
 **Observed evidence — launch presets landed.** PR
 [#5648](https://github.com/agentydragon/ducktape/pull/5648) landed the app-owned `SandboxPreset` and
@@ -54,7 +61,9 @@ manual live acceptance target. Broader capability profiles remain deferred; see
 fixture executor.** Executor-level health heartbeats, a per-Execution lease/heartbeat with bounded
 expiry, `lease_expired`/`executor_lost` reason attribution, and authenticated late-completion or
 authoritative-status reconciliation restricted to an Execution already `execution_unknown` resolve
-`EW` item 6 and part of item 5. Dispatch is still in-process, so items 2–4, 7, and 9 remain open; see
+`EW` item 6 and part of item 5. Dispatch is still in-process; items 2–4 and 7 remain open, while the
+MCP adapter portion of item 9 is landed in #5753 and its production composition/remote acceptance
+remain open; see
 [`../docs/executor_liveness.md`](../docs/executor_liveness.md).
 
 **Observed evidence — egress rules API boundary landed.** PR
@@ -206,10 +215,16 @@ outcome without replay.
 8. Define executor health and capability discovery as startup/readiness evidence, not a broad dynamic
    registry. **Landed in part:** an executor-level health heartbeat exists internally and feeds
    orphan-reason attribution; no external readiness/discovery endpoint exists yet.
-9. Select the first adapter as a small credentialless remote MCP fixture and write the deployed
-   acceptance test before implementation. It must use streamable HTTP, expose one deterministic
-   read-only tool, and require no OAuth or provider credential.
-10. Minimum evidence for that fixture: the named Action validates, allow auto-dispatches once, the
+9. **Landed in part by PR #5753:** `McpActionGroupExecutor` is a tested in-process adapter for one
+   configured stdio MCP server. It mirrors `tools/list`, refreshes on notification or interval,
+   rechecks the live tool schema before dispatch, initiates `tools/call`, and maps safe success,
+   tool-error, and ambiguous transport outcomes. This does not yet wire the adapter into the
+   production composition or provide a remote streamable-HTTP transport.
+10. Wire the MCP adapter into the Action Service composition and reviewed runtime configuration,
+    then select the credentialless remote MCP fixture and write the deployed acceptance test before
+    calling `EW` complete. The fixture must expose one deterministic read-only tool and require no
+    OAuth or provider credential.
+11. Minimum evidence for that fixture: the named Action validates, allow auto-dispatches once, the
     MCP server receives the exact intended `tools/call`, duplicate Decision/start paths do not call it
     twice, success and safe failure are delivered, and ambiguous transport loss becomes unknown
     without retry. The test must live in `x/agentplane/acceptance/` and run against staging with a
@@ -223,9 +238,10 @@ outcome without replay.
 read-only ActionRequest, and polls durable Action events to a safe result produced by a remote MCP
 server without the Agent or Action Service holding a provider credential.
 
-**Needed support:** a staging-owned deterministic streamable-HTTP MCP fixture, an MCP executor that
-mirrors `tools/list` and invokes `tools/call`, reviewed runtime binding, a narrow auto-allow policy
-for the fixture Action, and an acceptance scenario in `x/agentplane/acceptance/test_action_mcp.py`.
+**Needed support:** production composition for the landed MCP executor, a staging-owned deterministic
+streamable-HTTP MCP fixture (or a deliberate transport extension from the current stdio adapter),
+reviewed runtime binding, a narrow auto-allow policy for the fixture Action, and an acceptance
+scenario in `x/agentplane/acceptance/test_action_mcp.py`.
 Keep `EchoExecutor` as a unit-test fixture while it proves the coordinator seam; remove it from the
 production composition only after the real adapter is wired and its replacement evidence passes.
 

@@ -131,6 +131,12 @@ negative tests for unknown group/action, malformed parameters, incompatible curr
 malformed result/error, and sensitive data appearing in any projection or log. Do not make GitHub
 OAuth a prerequisite for this first executable slice.
 
+**Landed adapter evidence:** PR [#5753](https://github.com/agentydragon/ducktape/pull/5753) adds
+`McpActionGroupExecutor` with focused tests for catalog mirroring, notification/periodic refresh,
+live-schema validation, one-call dispatch, safe tool errors, and ambiguous transport loss. It is
+currently an in-process stdio adapter; production composition, remote streamable-HTTP support, and
+the real staging Agent acceptance remain open.
+
 ## Open gate: Executor wiring contract (`EW`)
 
 Before the echo fixture is replaced or supplemented, decide and test:
@@ -148,8 +154,9 @@ Before the echo fixture is replaced or supplemented, decide and test:
 - request and backend idempotency-key behavior;
 - executor health, executor heartbeat, and per-Execution lease/heartbeat behavior;
 - bounded progress/status observations for long-running executions; and
-- one concrete first adapter acceptance fixture, with the first adapter being a credentialless
-  remote MCP fixture rather than a GitHub account integration.
+- the production composition for the landed MCP adapter and one concrete first adapter acceptance
+  fixture, with the first deployed adapter being a credentialless remote MCP fixture rather than a
+  GitHub account integration.
 
 **Recommendation:** keep the first adapter code-owned and in-process only if its transport can keep
 credentials in the correct process and uphold the no-retry boundary. Otherwise use a separate
@@ -303,5 +310,5 @@ Execution count or an Action definition field.
 - standing-grant design inside the ActionRequest lifecycle;
 - LLM DecisionProvider and cryptographic Decision signatures;
 - dynamic definition authoring/registry;
-- production executor implementation in this docs-only change; and
+- production executor composition and deployment beyond the landed MCP adapter; and
 - broad external-access policy beyond the first concrete adapter.
