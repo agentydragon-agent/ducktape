@@ -79,6 +79,7 @@ flowchart TB
     DEL["Decision/action-state contract<br/>provider aggregation, event/query API,<br/>reason evidence, progress, withdrawal, unknown"]:::decision
     MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
+    CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     MCPACCEPT["Milestone<br/>rerunnable Action/MCP acceptance<br/>against the deployed stack"]:::milestone
     EID["Deferred support<br/>external Agent identity/auth<br/>static principal, not Thread"]:::future
     MCPAGG["Deferred support<br/>Agentplane MCP aggregator<br/>external harness/client compatibility"]:::future
@@ -89,7 +90,7 @@ flowchart TB
     DEDUPE["Needed support, independent<br/>shared FastAPI/auth setup dedupe"]:::active
     T3["P0 behavior, independent<br/>trajectory search and lookup"]:::active
     PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
-    PROFILES["Deferred design<br/>cross-cutting capability profiles<br/>egress + approvals + MCP/tool permissions"]:::future
+    PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
@@ -104,6 +105,7 @@ flowchart TB
     DEL --> MCP0
     MCP0 --> MCPACCEPT
     MCP0 --> MCPAUTH
+    CRED --> MCPAUTH
     MCPAUTH --> PROD
     DEL -. later Thread delivery .-> ING
     DEL --> APPROVALUI
@@ -240,6 +242,8 @@ operator identity, authorization-code + PKCE flow, callback state, token exchang
 durable token association. Action Service should receive only an opaque account/credential binding
 and own MCP discovery/call translation. If standalone operation later requires Action Service to own
 OAuth, implement the smallest separately tested subset rather than copying Haku Console wholesale.
+The static credential and binding model is a separate design decision below and requires Rai's
+confirmation before implementation begins.
 
 **Acceptance evidence:** a separate credentialed live scenario proves account linkage, catalog
 refresh, one safe GitHub read, token refresh/reconnect, and negative isolation for an unbound or
@@ -258,12 +262,20 @@ identity authority.
 another configured Agent, and remains distinct from the originating Thread/Sandbox model used by
 hosted Agentplane workloads.
 
+### `CRED` — static credential and binding design
+
+**Deferred decision — Rai confirmation required:** define what a static credential is bound to
+(Agent, external account, MCP server, or another authority), which component owns issuance and
+storage, how expiry/refresh/revocation works, how a binding is selected at execution time, and what
+the Agent/API may observe. This node is a design discussion, not an implementation task; do not
+start code or schema work from it until Rai confirms the design.
+
 ### `PROFILES` — cross-cutting capability profiles
 
-**Deferred design:** define a durable authority for capabilities shared by egress, approvals, MCP
+**Deferred decision — Rai confirmation required:** define a durable authority for capabilities shared by egress, approvals, MCP
 reachability, and other tool permissions. Do not widen the landed launch-preset slice or store this
 profile in Kubernetes merely to reserve the concept; the profile owner, inheritance, and policy
-read/verification boundary remain open.
+read/verification boundary remain open. Do not start implementation before the design is confirmed.
 
 **Acceptance evidence:** one profile can be resolved consistently by each participating authority,
 with explicit precedence and negative tests for stale, cross-Agent, or caller-supplied profile names.
