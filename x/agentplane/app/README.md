@@ -37,9 +37,8 @@ bbr test //x/agentplane/app/...
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads and their events.
-- `actions.py`: the colocated logical Action Hub. It owns immutable ActionRequests, final Decisions,
-  and their single possible Execution in the same PostgreSQL database, while keeping the human
-  DecisionProvider and Executor interfaces separate.
+- `action_federation.py`: request-bound operator federation into the canonical Action Service.
+- `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 
@@ -70,7 +69,7 @@ are two credentials, and both are cryptographic:
 
 - **An operator's OIDC session.** `AGENTPLANE_OIDC_ISSUER` and its siblings register the app as an
   Authentik client; `/auth/login` runs an authorization-code flow with PKCE and stores the
-  `preferred_username` in a signed `__Host-` cookie. Unsafe methods additionally have to be
+  `iss`, stable `sub`, and display `preferred_username` in PostgreSQL behind an opaque signed `__Host-` cookie. Unsafe methods additionally have to be
   same-origin, which is the CSRF defence `SameSite=lax` leaves open. Unset the issuer and there is
   no login at all, which is how the tests and a local run work.
 - **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
@@ -123,17 +122,17 @@ unchanged, including expected versions, idempotency keys, and private reason fie
 The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload
 submission and owner-scoped reads use the service's `/v1/action-requests` API, not the app.
 
-**Production blocked:** app startup does not supply an operator client, so Action review
-returns 503 after operator authentication (token callers get 403). The service's separate
-operator authenticator defaults to disabled. The app's signed OIDC session is not an
-accepted service bearer; no deployed, supported app-to-service operator auth connection
-is provided. Configuring that boundary is intentionally not part of this slice. Do not
-forward a workload bearer or convert a Sandbox principal into an operator to enable it.
+**Production federation remains disabled** until explicit Authentik target, subject mappings,
+allowlists, and network reachability are configured. The app now composes a request-bound
+JWT-bearer exchanger; the service independently validates the exchanged operator JWT. No static BFF
+bearer or workload-token promotion is used. Missing configuration is specifically
+`503 detail.code=operator_federation_not_configured`; token callers get 403.
 
-The integration test injects the existing configured-bearer adapter with test-only values,
-logs in through OIDC, and drives the BFF into the canonical service and a real FastMCP tool.
-It proves the adapter behavior, not deployed operator access. There is no app-owned Action
-schema or executor. No deployed prototype-data migration is claimed.
+See [`../docs/operator_federation.md`](../docs/operator_federation.md) for exact settings, PostgreSQL
+startup schema creation, opaque session lifecycle/CSRF/invalidation, failure codes, and signed
+multi-replica/two-operator test targets. Existing browser sessions must log in again after rollout.
+Only operator Action arguments are unredacted; caller arguments and execution result/error
+redaction are unchanged. There is no app-owned Action/Decision/Execution authority.
 
 ## Launch presets
 
@@ -170,8 +169,8 @@ unchanged when no preset is selected.
   `Open` plus unary commands waits for a second, non-browser client that wants it, since the
   stream is what identifies the controlling attachment today.
 - **One replica:** the bridge holds live runner attachments in memory, and a second replica would
-  supersede them. The live watch would not mind more -- each replica would hold its own copy of the
-  same objects and push it to its own tabs -- so it is the bridge alone that keeps the count at one.
+  supersede them. Operator sessions and pending OAuth state are shared in PostgreSQL; login callbacks and logout
+  work across replicas. This does not make the in-memory runner bridge multi-replica safe.
 - **Deletion takes only a suspended sandbox:** it removes the Pod and the volume with everything on
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and

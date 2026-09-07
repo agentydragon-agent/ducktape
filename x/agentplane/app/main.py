@@ -21,6 +21,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
+from x.agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
 from x.agentplane.app.api import ModelCatalog, create_app
 from x.agentplane.app.bridge import RunnerBridge, runner_address
 from x.agentplane.app.decisions import DecisionsClient
@@ -87,6 +88,7 @@ class Settings(BaseSettings):
     host: str = Field(default="127.0.0.1", description="Bind address.")
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
+    action_federation: ActionFederationSettings | None = None
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the trajectory store.")
     models: ModelCatalog = Field(
         description='The models each provider may run, as JSON: {"claude": ["..."], "codex": ["..."]}.'
@@ -149,6 +151,9 @@ def main() -> None:
 
 
 async def async_main(settings: Settings) -> None:
+    oidc = load_settings()
+    if settings.action_federation is not None and oidc is None:
+        raise ValueError("Action federation requires operator OIDC login")
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
@@ -156,6 +161,12 @@ async def async_main(settings: Settings) -> None:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
     async with (
         ApiClient(configuration=configuration) as api,
+        httpx.AsyncClient(
+            base_url=settings.action_federation.service_url
+            if settings.action_federation
+            else "http://disabled.invalid",
+            timeout=10,
+        ) as actions_http,
         httpx.AsyncClient(base_url=settings.egress_admin_url, timeout=settings.egress_admin_timeout) as admin_http,
     ):
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
@@ -181,7 +192,11 @@ async def async_main(settings: Settings) -> None:
         store = TrajectoryStore.connect(settings.database_url)
         await store.ensure_schema()
         bridge = RunnerBridge(address_of=runner_address(inventory, settings.runner_port), store=store)
-        oidc = load_settings()
+        operator_actions = (
+            FederatedOperatorActions(settings.action_federation, oidc, actions_http)
+            if settings.action_federation is not None and oidc is not None
+            else None
+        )
         logger.info("browser login: %s", f"OIDC at {oidc.issuer}" if oidc else "none configured")
         app = create_app(
             inventory,
@@ -193,6 +208,7 @@ async def async_main(settings: Settings) -> None:
             live,
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
+            operator_actions=operator_actions,
             presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
         )
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
@@ -202,7 +218,7 @@ async def async_main(settings: Settings) -> None:
             await bridge.start(
                 [view.name for view in await inventory.list_sandboxes() if view.state is ProvisioningState.RUNNING]
             )
-            await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
+            await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, access_log=False)).serve()
         finally:
             watch_task.cancel()
             await asyncio.gather(watch_task, return_exceptions=True)

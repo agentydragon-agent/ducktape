@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import time
+from datetime import UTC, datetime
 from typing import cast
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
+from joserfc.errors import JoseError
 from pydantic import BaseModel, ConfigDict
 
 from x.agentplane.app.oidc import CLIENT_NAME, session_operator, settings
@@ -47,33 +51,70 @@ async def callback(request: Request) -> RedirectResponse:
     try:
         client = _oauth(request).create_client(CLIENT_NAME)
         token = await client.authorize_access_token(request)
-    except json.JSONDecodeError as error:
+    except json.JSONDecodeError:
         logger.warning("OIDC token exchange returned a non-JSON response")
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, "Identity provider returned an invalid response; please retry."
-        ) from error
-    except OAuthError as error:
-        # The message can carry a value from the query string, so only the code is logged.
-        logger.warning("OIDC callback refused: %s", error.error)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"OIDC error: {error.error}") from error
+        ) from None
+    except (OAuthError, JoseError):
+        # Even the OAuth error code may be caller-controlled. Never echo provider/query values.
+        logger.warning("OIDC callback refused")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC authentication failed") from None
 
     claims = token.get("userinfo") or {}
     # Pinned because authlib trusts whatever discovery returned; a token from another issuer that
     # happens to validate must not become a session here.
     if claims.get("iss") != settings(request).issuer:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token from an unexpected issuer")
+    # This login has one audience. Authlib's ID-token validation alone does not pin it.
+    client_id = settings(request).client_id
+    if claims.get("aud") not in (client_id, [client_id]) or claims.get("azp", client_id) != client_id:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token for an unexpected client")
     username = claims.get("preferred_username")
     if not isinstance(username, str) or not username:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token has no preferred_username")
 
-    request.session["user"] = {"username": username}
-    logger.info("operator logged in: %s", username)
+    subject = claims.get("sub")
+    if not isinstance(subject, str) or not subject:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token has no subject")
+    now = time.time()
+    id_expiry = claims.get("exp")
+    if not isinstance(id_expiry, (float, int)) or not math.isfinite(id_expiry) or id_expiry <= now:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token has no valid expiry")
+    expiry = min(now + settings(request).session_seconds, id_expiry)
+    access_token = token.get("access_token")
+    token_expiry = token.get("expires_at")
+    # Never retain a token without a known lifetime. Login still works, but federation fails closed.
+    if (
+        request.app.state.operator_actions is not None
+        and isinstance(access_token, str)
+        and access_token
+        and isinstance(token_expiry, (float, int))
+        and math.isfinite(token_expiry)
+        and token_expiry > now
+    ):
+        expiry = min(expiry, token_expiry)
+    else:
+        access_token = None
+    request.session.clear()
+    request.session["user"] = {
+        "issuer": settings(request).issuer,
+        "subject": subject,
+        "username": username,
+        "access_token": access_token,
+        "expires_at": expiry,
+    }
+    request.state.rotate_operator_session = True
+    request.state.operator_session_expires_at = datetime.fromtimestamp(expiry, UTC)
+    logger.info("operator logged in")
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/logout")
 async def logout(request: Request) -> RedirectResponse:
-    request.session.pop("user", None)
+    if request.headers.get("origin") != settings(request).public_base_url.rstrip("/"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "logout requires exact same-origin Origin")
+    request.session.clear()
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
 

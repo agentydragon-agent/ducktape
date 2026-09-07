@@ -580,7 +580,7 @@ class ActionStore:
             id=row.id,
             idempotency_key=row.idempotency_key,
             action=ActionIdentity.model_validate(row.action),
-            arguments=_redact(row.arguments),
+            arguments=row.arguments if operator else _redact(row.arguments),
             origin=_redact(row.origin),
             correlation=_redact(row.correlation),
             caller_principal=row.caller_principal if operator else None,

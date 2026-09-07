@@ -41,7 +41,9 @@ executors remain for concurrency and recovery tests. There is no dedicated Echo 
 **Needed support — deployed operator connection and MCP0 acceptance.** The app's review
 UI/BFF uses canonical models and the existing operator client; production review is
 unavailable until a supported app-to-service operator auth boundary is configured.
-The app OIDC session does not authenticate to the service, and workload identities
+Implementation in [PR #5820](https://github.com/agentydragon/ducktape/pull/5820) adds PostgreSQL
+sessions, exact operator arguments, and request-bound federation with destination subject authorization.
+The provider is not deployed; see [operator federation](../docs/operator_federation.md). Workload identities
 must never acquire operator authority. Live Agent acceptance is implemented in `//x/agentplane/acceptance:test_mcp`, using
 real harnesses and the reviewed upstream Everything image. It requires the integrated
 images/manifests to be rolled out; see `../acceptance/README.md`.
@@ -81,6 +83,13 @@ flowchart TB
     AS["Action schema contract<br/>stable identity, params, result/error,<br/>redaction and evolution"]:::decision
     EW["Executor wiring contract<br/>groups/catalog, dispatch, credentials, MCP compatibility,<br/>claim/idempotency/heartbeat + first adapter"]:::decision
     DEL["Decision/action-state contract<br/>provider aggregation, event/query API,<br/>reason evidence, progress, withdrawal, unknown"]:::decision
+    CANCEL_GATE["Decision gate<br/>pre/post-dispatch cancellation semantics<br/>and caller authorization"]:::decision
+    CANCEL["Pending behavior<br/>agent-requested Action withdrawal/cancellation<br/>blocked on CANCEL_GATE"]:::future
+    PUBLIC_REASON["Deferred behavior<br/>operator-authored public decision reason<br/>delivered to requesting agent"]:::future
+    CANCEL_GATE --> CANCEL
+    DEL --> CANCEL_GATE
+    DEL --> PUBLIC_REASON
+    PUBLIC_REASON --> ING
     MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
@@ -88,7 +97,7 @@ flowchart TB
     EID["Deferred support<br/>external Agent identity/auth<br/>static principal, not Thread"]:::future
     MCPAGG["Deferred support<br/>Agentplane MCP aggregator<br/>external harness/client compatibility"]:::future
     HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
-    APPROVALUI["Deferred integration<br/>integration-app approval UI<br/>pending requests + decisions"]:::future
+    APPROVALUI["Needed deployment<br/>operator federation provider + mappings<br/>two-operator live approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     DEDUPE["Needed support, independent<br/>shared FastAPI/auth setup dedupe"]:::active
@@ -112,7 +121,6 @@ flowchart TB
     CRED --> MCPAUTH
     MCPAUTH --> PROD
     DEL -. later Thread delivery .-> ING
-    DEL --> APPROVALUI
     DEL --> MCPAGG
     EID --> MCPAGG
     EW --> HOSTEXEC
@@ -329,14 +337,17 @@ process lifetime. Once deployment scale makes that accumulation meaningful, choo
 identity or bounded expiry/compaction policy and add retention tests; do not change the exactly-one
 claim or unknown-outcome semantics while doing so.
 
-### `APPROVALUI` — integration-app approval surface
+### `APPROVALUI` — deploy the integration-app operator approval path
 
-**Deferred integration:** have the Agentplane integration app display pending Action approval requests
-and submit allow/deny decisions through the Action Service's canonical operator API, as Haku Console
-does today. It is a client/presentation layer, not a second Decision authority or Action state store.
+**Needed support:** configure the Action-only Authentik federation target, reviewed source/target
+subject mappings and allowlists, and network reachability. The UI and BFF already use the canonical
+Action API; #5820 adds durable browser sessions and request-bound federation. Do not build another
+approval coordinator or make human push notifications a prerequisite for this polling UI.
 
-**Dependencies:** the durable Action event/query and human Decision-provider notification pieces of
-`DEL`; its UI may be delivered before or alongside `MCPAGG`.
+**Acceptance evidence:** validate real provider claims with two operators and a denied operator,
+then prove one browser approval reaches the canonical Decision and executes MCP once. Signed mock
+integration is implementation evidence, not proof of deployed Authentik policy. Keep federation
+explicitly disabled until this gate is met.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 
@@ -368,7 +379,7 @@ configured synchronous non-human providers ahead of the existing human path, wit
 provider-authored reason evidence and a shared optimistic-version/idempotency commit path for both
 human and auto-provider Decisions. See [`async_approvals.md`](async_approvals.md).
 
-**Needed support:** human decision callbacks, withdrawal before execution, bounded progress, redacted
+**Needed support:** human decision callbacks, withdrawal/cancellation through `CANCEL_GATE` below, bounded progress, redacted
 payload projection, and what an Agent receives for `execution_unknown`. Durable Action event
 append/query with cursor-based (`after_sequence`) polling is landed; see `action_service/README.md`.
 A separate outbox is not required for this slice, and the never-drained `action_outbox` table has
@@ -379,6 +390,34 @@ or no execution -> Action API polling, including process restart and duplicate c
 Landed: restart-surviving event sequence, cursor/pagination polling, and redaction of
 arguments/credentials/exceptions/private operator reason while surfacing the bounded provider
 reason and safe terminal result. Open: human-provider notification and withdrawal evidence.
+
+### `CANCEL_GATE` → `CANCEL` — agent-requested withdrawal/cancellation
+
+**Pending P0 behavior, explicitly blocked:** let the requesting agent ask the canonical Action
+Service to withdraw/cancel its own Action. Do not implement an endpoint until pre-dispatch versus
+post-dispatch semantics and authorization are defined. Decide ownership, permissible states,
+expected-version/idempotency behavior, races with allow/claim/start, and whether a running executor
+supports cancellation versus only a stop request with unknown outcome. A pre-dispatch withdrawal
+must prove no Execution can subsequently start; a post-dispatch response must not falsely promise
+that external side effects were undone. This gate owns the Action/API/event/schema implications.
+
+**Acceptance evidence after the gate:** replay caller-own versus other-agent/forged requests and
+withdraw-versus-dispatch races, including restart and duplicate delivery. No implementation in #5820.
+
+### `PUBLIC_REASON` — public operator decision reason delivered to the requester
+
+**Deferred behavior:** an operator can author a deliberately public decision reason that the
+requesting agent receives. This is separate from existing operator-only `private_reason` and from
+non-human DecisionProvider reason codes/descriptions. Never expose private_reason by changing its
+projection or reuse it as a notification payload.
+
+**Needed design before implementation:** add an explicitly public bounded field to the canonical
+Decision input/record/response, define Action API projection and durable event references/payloads,
+plan schema migration and replay compatibility, and specify delivery to the originating agent
+(including offline/resume and deduplication through `ING`). The operator UI must clearly distinguish
+public versus private text. Evidence must prove the requester gets the public reason exactly once
+under the chosen delivery contract while private text never enters caller API/event/notification
+views. No implementation or schema fields in #5820.
 
 ### `ING` — Event & Notification Hub
 
@@ -397,7 +436,7 @@ These are observed product decisions and must not be reopened by the schema or w
 - A final allow Decision may auto-dispatch; there is no universal agent `commit` step.
 - The v0 DecisionProvider is human/operator-backed.
 - Dispatch is never blindly retried; ambiguity becomes `execution_unknown`.
-- Caller-own and operator-all reads remain the v0 access scope, with credential-shaped data redacted.
+- Caller-own and operator-all reads remain the v0 access scope. Operator arguments are exact; caller arguments and executor results/errors retain recursive credential-shaped redaction.
 
 ## Deferred
 

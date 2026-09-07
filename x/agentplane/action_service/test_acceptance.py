@@ -191,6 +191,9 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         ).status_code == 404
         operator_list = await client.get("/v1/operator/action-requests", headers=_operator())
         assert operator_list.status_code == 200
+        assert operator_list.json()[0]["arguments"] == envelope["arguments"]
+        operator_detail = await client.get(_operator_path(request_id), headers=_operator())
+        assert operator_detail.json()["arguments"] == envelope["arguments"]
         assert operator_list.json()[0]["caller_principal"] == CALLER_A.key
         assert operator_list.json()[0]["origin"]["owner"] == CALLER_B.key, "forgery remains inert provenance"
 
@@ -213,6 +216,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         )
         assert allowed.status_code == duplicate_allow.status_code == 200
         assert allowed.json()["decision"]["private_reason"] == "private reviewer context"
+        assert allowed.json()["arguments"] == envelope["arguments"]
 
         terminal = await _terminal(client, request_id)
         assert terminal["state"] == "succeeded"
@@ -220,6 +224,9 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "echo": {"text": "hello", "nested": {"api_key": "[redacted]"}},
             "credential": "[redacted]",
         }
+        operator_terminal = (await client.get(_operator_path(request_id), headers=_operator())).json()
+        assert operator_terminal["arguments"] == envelope["arguments"]
+        assert operator_terminal["execution"]["result"] == terminal["execution"]["result"]
         # A human Decision carries no provider reason code; that projection is provider-only.
         assert terminal["decision"]["reason_code"] is None
         assert terminal["decision"]["reason_description"] is None
@@ -610,6 +617,44 @@ async def test_submission_schema_error_is_http_422_and_does_not_persist(
     finally:
         await client.aclose()
         await service.close()
+
+
+async def test_operator_arguments_are_exact_but_caller_arguments_are_recursively_redacted(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    store = ActionStore(make_sessionmaker(engine))
+    service = ActionService(store, echo_catalog, {"agentplane": CountingExecutor()})
+    arguments = {
+        "text": "Authorization: Bearer literal-user-input",
+        "nested": {"api_key": "exact-key", "items": [{"password": "exact-password", "safe": 42}]},
+        "access_token": "exact-token",
+        "null": None,
+    }
+    client = await _client(service)
+    async with client:
+        response = await client.post(
+            "/v1/action-requests",
+            headers=_workload("workload-a"),
+            json={
+                "idempotency_key": "nested-arguments",
+                "action": {"group": "agentplane", "name": "echo"},
+                "arguments": arguments,
+            },
+        )
+        assert response.status_code == 202
+        request_id = response.json()["id"]
+        for body in (
+            response.json(),
+            (await client.get(f"/v1/action-requests/{request_id}", headers=_workload("workload-a"))).json(),
+        ):
+            assert body["arguments"]["access_token"] == "[redacted]"
+            assert body["arguments"]["nested"]["api_key"] == "[redacted]"
+            assert body["arguments"]["nested"]["items"] == [{"password": "[redacted]", "safe": 42}]
+        assert (await client.get(_operator_path(request_id), headers=_operator())).json()["arguments"] == arguments
+        assert (await client.get("/v1/operator/action-requests", headers=_operator())).json()[0][
+            "arguments"
+        ] == arguments
+        assert (await client.get(_operator_path(request_id), headers=_workload("workload-a"))).status_code == 401
 
 
 if __name__ == "__main__":
