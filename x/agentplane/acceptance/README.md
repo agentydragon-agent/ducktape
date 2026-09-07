@@ -14,14 +14,129 @@ intentional Codex default, Sandbox binding, bootstrap marker, inherited fields, 
 
 ## MCP integration
 
-`//x/agentplane/acceptance:test_mcp` belongs to this deployed suite. Both real harnesses
-receive the Action API URL and public workload placeholder, discover the `everything`
-group's `echo` Action, submit a structured group/name request, poll until terminal,
-and report JSON. The test checks the reported result against the fresh marker's exact
-upstream echo output. It uses the existing sandbox setup/teardown and `Agent` fixtures.
-Staging GitOps wires the upstream image, ActionGroup, narrow echo provider, and discovery
-egress. Run after the PR's images and manifests have rolled out; remote adapter tests
-are not evidence that the real-agent staging test has run.
+`//x/agentplane/acceptance:test_mcp` drives real Claude and Codex agents. It is
+manual deployed acceptance, **not runnable from agent pods** under the current
+bbr/CI-only execution policy. No approved CI runner currently has staging identity
+and connectivity. Building this target or running the remote-safe assertion tests
+is not evidence that deployed acceptance passed.
+
+### Scenarios and authority
+
+- **P0 behavior — discovery + echo:** discover the credentialless Everything group
+  and `echo(message)`, submit the same bounded message three times, then replay
+  after completion. Independently require one ActionRequest, the same Execution ID,
+  exact `execution.result == {"content": ["Echo: <message>"]}`, provider
+  `mcp_fixture` / reason `credentialless_fixture`, and exactly one ordered history:
+  `decision_pending → allowed → dispatching → running → succeeded`. The event cursor
+  at the tip must return `[]`.
+- **P0 behavior — no human decision:** a valid echo message longer than 200 characters
+  lies outside the fixture provider's auto-allow scope. Require `decision_pending`,
+  no Decision, no Execution, and only the initial event. Ask the agent to try the
+  **existing** operator decision path with its workload placeholder; require a ring
+  record of the attempt, then recheck pending/no Execution three times over six seconds.
+  This is a bounded observation, not a claim about all future time.
+- **P0 behavior — explicit operator deny/allow:** separate parametrized cases submit
+  the same non-auto-approved echo through the agent, then use the existing operator
+  decision client with expected version + decision idempotency key. Deny requires
+  `denied`, a `human_operator` deny Decision, no Execution, and exactly
+  `[decision_pending, denied]`. Allow requires the exact echo result and one complete
+  execution history. Repeated decision calls, including a stale-version replay after
+  terminal, must leave the request and events unchanged.
+
+**Needed support:** an independent observer runs `/usr/bin/curl` using `kubectl exec`
+in the suite-owned runner Pod, explicitly through its normal loopback sidecar. Only
+GETs, only the public workload placeholder; no token reads, no direct backend calls,
+no port-forwards, no live deployment edits. Staging already declares `pods/exec`
+authority in its acceptance role and includes curl in the runner image. Missing exec
+RBAC, curl, route, workload authentication, or a non-200 response fails loudly. This
+observer verifies service responses independently of the model; it is not intended
+to defend against a malicious agent replacing the runner's installed curl binary.
+The Action service and sidecar URLs are the checked-in staging contracts; changing
+only the app URL or namespace does not retarget these MCP scenarios.
+
+The existing app decision-ring API is collected **before** observer reads. It must
+show admitted discovery, at least three POSTs, and a read of the reported request.
+Unauthorized, unavailable, empty, or evicted evidence fails, never skips. The ring
+proves HTTP admission, **not backend invocation counts**. The no-Execution/no-dispatch
+assertion is the authoritative evidence that denied/pending work was not dispatched
+by the Action Service. No backend-log claim is made: Everything currently exposes no
+reviewed, complete per-invocation audit contract, and Action request IDs are not passed
+to its echo tool. Pod logs are not collected speculatively or treated as proof of zero
+calls. Exact output plus stable Execution ID and a single dispatch history are the
+available API-level exactly-once evidence, not a claim of universal external-effect
+exactly-once delivery.
+
+### Output contract and diagnostics
+
+The agent's final report has exactly this schema (extra properties forbidden):
+
+```json
+{
+  "type": "object",
+  "required": ["request_id"],
+  "additionalProperties": false,
+  "properties": {"request_id": {"type": "string", "format": "uuid"}}
+}
+```
+
+The UUID is only a locator. The independent observer cross-checks its idempotency
+key, group/name, exact fresh marker argument, and the entire fresh Sandbox's request
+list. A fabricated result or plausible model prose cannot satisfy these assertions.
+Authoritative report schemas are `ActionRequestView` and `ActionEventView` in
+`action_service/models.py`; discovery is validated against `ActionGroupView` and
+`ActionView`, whose closed schemas exclude executor configuration.
+
+Bazel undeclared outputs contain:
+
+- `<sandbox>-actions.json`: ordered `[{"path": "<GET path>", "body": <whole JSON response>}]`.
+  Action responses carry request IDs, keys, marker arguments, decisions, execution
+  results, and event sequences. Updated after every successful observer read so a
+  later assertion failure retains earlier evidence.
+- `<sandbox>-ring.json`: the app's credential-free `Decision` records restricted to
+  the Action host, captured before observer traffic. No headers, tokens, or raw Pod
+  logs are stored. Transport failures show sandbox/path/status, not arbitrary bodies.
+
+Wrong marker means output propagation failed; extra request/Execution ID or dispatch
+means idempotency failed; missing/out-of-order events means audit/cursor contract
+failed; pending/denied with any Execution is an authority failure. Keep artifact files
+with test output. Existing sandbox fixture teardown suspends/deletes on assertion or
+transport failures; each run uses a fresh Sandbox identity and random keys. As with
+the rest of this suite, abrupt process death still requires deliberate cleanup.
+
+### Current blocked contracts
+
+**Observed source contract:** staging `actions/settings.conf` has no
+`operator_bearer_file`; `action_service/main.py` therefore selects
+`DisabledOperatorAuthenticator`. The app has no Action BFF forwarding route.
+The service does implement
+`POST /v1/operator/action-requests/{id}/decision`, but a workload placeholder or app
+ServiceAccount token does not become operator authority. Both explicit deny and
+human allow are **blocked on current staging auth/route**, not simulated successes.
+
+An operator running on an approved controlled host may select an **already configured**
+HTTPS operator service route with `AGENTPLANE_ACCEPTANCE_OPERATOR_URL` and a host-owned
+bearer file with `AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE`. These fixtures do not
+create credentials or enable the adapter. The bearer is read in-process, never given
+to the agent, put in argv, or written to artifacts. The operator cases deliberately
+FAIL with `BLOCKED operator decision` when these are absent; route/auth failure also
+fails preflight. Running these cases authorizes the fixture to submit the named
+allow/deny decisions as the operator, not to test a human UI click or invent a BFF.
+
+**Deferred — caller withdrawal:** `action_service/api.py` and its clients have no
+caller withdrawal/cancellation endpoint. `ActionState.CANCELLED` is an executor
+outcome, not evidence of caller cancellation authority. No fake withdrawal test or
+new semantics were added. A future withdrawal slice needs a real API contract and
+pre/post-dispatch behavior before it can acquire a real-agent acceptance test.
+
+Remote-safe validation (does not contact staging):
+
+```bash
+bbr test //x/agentplane/acceptance:test_action_evidence
+bbr build //x/agentplane/acceptance:action_evidence //x/agentplane/acceptance:test_mcp
+```
+
+The assertion tests are negative controls (wrong marker, hidden Execution, repeated
+dispatch, broken sequence, denied without Decision), not substitutes for live agents.
 
 ## Running it
 

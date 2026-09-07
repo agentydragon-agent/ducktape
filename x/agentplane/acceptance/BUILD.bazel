@@ -119,12 +119,39 @@ py_test(
     ],
 )
 
+py_library(
+    name = "action_evidence",
+    testonly = True,
+    srcs = ["action_evidence.py"],
+    deps = [
+        "//util/testing:undeclared_outputs",
+        "//x/agentplane/action_service:client",
+        "//x/agentplane/action_service:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_action_evidence",
+    srcs = ["test_action_evidence.py"],
+    deps = [
+        ":action_evidence",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Live staging, using the same real-agent fixtures and execution boundary as this suite.
 py_test(
     name = "test_mcp",
     timeout = "eternal",
     srcs = ["test_mcp.py"],
     env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_OPERATOR_URL",
+        "AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE",
+        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
         "HOME",
         "KUBECONFIG",
     ],
@@ -133,6 +160,12 @@ py_test(
         "no-remote-exec",
     ],
     deps = [
+        ":action_evidence",
+        "//util/testing:undeclared_outputs",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+        "@pypi//httpx",
+        "@pypi//pytest",
         ":agent",
         ":conftest",
         "//:conftest",
