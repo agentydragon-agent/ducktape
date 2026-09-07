@@ -37,7 +37,7 @@ class McpServerConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    command: str
+    command: str = Field(min_length=1)
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     cwd: str | None = None
