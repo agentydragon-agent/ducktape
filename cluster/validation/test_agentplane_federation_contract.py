@@ -63,6 +63,8 @@ def test_native_trust_and_authoritative_subject_mapping() -> None:
     assert "issuer=local.agentplane_actions_issuer" in target
     assert 'jwks_uri="${local.agentplane_actions_issuer}jwks/"' in target
     assert 'scope="openid"' in target
+    assert "target=authentik_application.agentplane_actions.uuid" in target
+    assert "user=tonumber(authentik_user.agentydragon.id)" in target
     assert "client_secret" not in target
     assert "operator_bearer" not in target
     assert "user_username" not in target

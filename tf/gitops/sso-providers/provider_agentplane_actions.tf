@@ -1,7 +1,7 @@
 # Action-only JWT-bearer target. See x/agentplane/docs/operator_federation.md for
 # the pinned Authentik/provider source proving the subject mapping and grant.
-# Native provider federation preserves the AccessToken's database user; it does
-# NOT enforce this target application's interactive login policy.
+# Native provider federation preserves the AccessToken's database user. Keep
+# the destination subject allowlist even though Authentik also checks policy.
 resource "authentik_provider_oauth2" "agentplane_actions" {
   name                  = "agentplane-actions"
   client_id             = "agentplane-actions"
@@ -15,7 +15,7 @@ resource "authentik_provider_oauth2" "agentplane_actions" {
 
   jwt_federation_providers = [authentik_provider_oauth2.agentplane_staging.id]
   jwt_federation_sources   = []
-  property_mappings       = [data.authentik_property_mapping_provider_scope.openid.id]
+  property_mappings        = [data.authentik_property_mapping_provider_scope.openid.id]
   # No interactive redirects. The generated client secret is never distributed.
 }
 
@@ -24,6 +24,15 @@ resource "authentik_application" "agentplane_actions" {
   slug              = "agentplane-actions"
   protocol_provider = authentik_provider_oauth2.agentplane_actions.id
   meta_description  = "Action decisions with the operator's own federated Authentik identity"
+}
+
+# Defense in depth: Authentik 2026.2.1's native client-credentials grant checks
+# target policy with the source token's user. The service still independently
+# authorizes the exact target issuer/sub; signature or login policy alone is not enough.
+resource "authentik_policy_binding" "agentplane_actions_access" {
+  target = authentik_application.agentplane_actions.uuid
+  user   = tonumber(authentik_user.agentydragon.id)
+  order  = 0
 }
 
 # Resolve the existing managed user by primary key, NEVER by display name or a
@@ -62,7 +71,7 @@ resource "kubernetes_secret" "agentplane_action_federation" {
     name      = "agentplane-action-federation"
     namespace = "authentik"
     annotations = {
-      description                                                 = "Agentplane operator federation pins (no bearer or client secret)"
+      description                                                     = "Agentplane operator federation pins (no bearer or client secret)"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agentplane-staging"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"

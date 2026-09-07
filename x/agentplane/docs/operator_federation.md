@@ -81,8 +81,8 @@ fails startup. Changing reviewed mappings or allowlists requires a configuration
 The Authentik target must explicitly trust only the Agentplane login provider through
 `jwt_federation_providers`, use a short token lifetime, and emit signed RS256 access tokens with
 `iss`, `sub`, `aud`, `azp`, `iat`, and `exp`. The shared resolver enforces these pins with its existing
-30-second clock-skew allowance and five-minute JWKS cache. Exchange does not enforce the target
-application login policy, so the destination's subject allowlist is mandatory. Configure network
+30-second clock-skew allowance and five-minute JWKS cache. Do not rely on the target
+application login policy alone: the destination's independent subject allowlist is mandatory. Configure network
 reachability for BFF-to-token/JWKS/Action and Action-to-JWKS explicitly. No live cluster change or
 live-provider claim-mapping validation was performed here.
 
@@ -116,7 +116,10 @@ The two subject strings are deliberately not assumed equal:
   at the destination. It neither computes a hash nor invents an identity UUID.
 - [Native provider federation](https://github.com/goauthentik/authentik/blob/version/2026.2.1/authentik/providers/oauth2/views/token.py#L414)
   finds the source AccessToken only within `jwt_federation_providers`, verifies its signature,
-  and assigns its database user to the grant. `create_client_credentials_response` calls
+  and assigns its database user to the grant. The pinned implementation also calls
+  `__check_policy_access` with that user: the target has a matching Rai-only policy binding as
+  defense in depth. This corrects the earlier documentation's assertion that target policy is
+  skipped; the destination allowlist is still mandatory. `create_client_credentials_response` calls
   `IDToken.new` for that user and the **target** provider. `to_access_token` stamps target `azp`;
   `IDToken.new` stamps target audience, issuer, `iat`, and `exp`.
 - `jwt_federation_providers` names only the existing Agentplane login provider; external JWT

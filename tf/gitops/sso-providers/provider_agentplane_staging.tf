@@ -14,8 +14,8 @@ resource "authentik_provider_oauth2" "agentplane_staging" {
 
   # Preserve the existing default explicitly: IDToken.new maps this to user.uid.
   # Terraform derives the Action mapping from that same managed user attribute.
-  sub_mode                  = "hashed_user_id"
-  issuer_mode               = "per_provider"
+  sub_mode                   = "hashed_user_id"
+  issuer_mode                = "per_provider"
   include_claims_in_id_token = true
 
   # The profile scope supplies display names only; authorization uses issuer + sub.
