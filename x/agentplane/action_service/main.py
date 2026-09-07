@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -19,8 +21,10 @@ from x.agentplane.action_service.auth import (
     DisabledOperatorAuthenticator,
     OperatorAuthenticator,
 )
-from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup
+from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, ExecutorBinding
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
+from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
+from x.agentplane.action_service.models import Executor
 from x.agentplane.action_service.service import ActionService, EchoExecutor
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
@@ -29,6 +33,40 @@ from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 # gazelle:include_dep @pypi//pyyaml
 
 logger = logging.getLogger(__name__)
+
+
+def _default_action_groups() -> dict[str, ActionGroup]:
+    return {
+        "agentplane": ActionGroup(
+            title="Echo fixture",
+            description="Fixture-only action proving the service boundary.",
+            executor=ExecutorBinding(kind="echo", description="In-process echo fixture"),
+            actions={"echo": ActionDefinition(description="Echo the supplied arguments")},
+        )
+    }
+
+
+@asynccontextmanager
+async def bind_executors(catalog: ActionCatalog) -> AsyncIterator[dict[str, Executor]]:
+    """Bind each configured group once; MCP discovery updates that same group's child Actions."""
+    async with AsyncExitStack() as stack:
+        executors: dict[str, Executor] = {}
+        for key, group in catalog.groups.items():
+            if not group.available:
+                continue
+            match group.executor.kind:
+                case "echo":
+                    if set(group.actions) != {"echo"}:
+                        raise ValueError(f"echo fixture group {key!r} must contain only the echo action")
+                    executors[key] = EchoExecutor()
+                case "mcp":
+                    executor = McpActionGroupExecutor.from_group(key, group)
+                    stack.push_async_callback(executor.close)
+                    await executor.start()
+                    executors[key] = executor
+                case _:
+                    raise ValueError(f"unsupported executor kind for group {key!r}: {group.executor.kind!r}")
+        yield executors
 
 
 class Settings(BaseSettings):
@@ -49,7 +87,8 @@ class Settings(BaseSettings):
     operator_bearer_file: Path | None = None
     operator_subject: str = "configured-bff"
     action_groups: dict[str, ActionGroup] = Field(
-        default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
+        default_factory=_default_action_groups,
+        description="Reviewed ActionGroup catalog, keyed by stable namespaced group key.",
     )
 
     @classmethod
@@ -79,8 +118,8 @@ async def async_main(settings: Settings) -> None:
     configuration = k8s_client.Configuration()
     k8s_config.load_incluster_config(client_configuration=configuration)
     catalog = ActionCatalog(groups=settings.action_groups)
-    async with ApiClient(configuration=configuration) as api:
-        service = ActionService(ActionStore(make_sessionmaker(engine)), EchoExecutor())
+    async with ApiClient(configuration=configuration) as api, bind_executors(catalog) as executors:
+        service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, executors)
         await service.start()
         operator_authenticator: OperatorAuthenticator
         if settings.operator_bearer_file is None:

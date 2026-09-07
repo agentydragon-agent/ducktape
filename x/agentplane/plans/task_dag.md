@@ -33,7 +33,8 @@ and issue an expected-version, idempotent human allow/deny Decision. Allow auto-
 one Execution; there are no blind retries, and an ambiguous outcome becomes `execution_unknown`
 through the bounded lease/recovery contract in [`../docs/executor_liveness.md`](../docs/executor_liveness.md).
 
-The only accepted capability is `agentplane:v0.echo`. `EchoExecutor` returns
+The default fixture Action is `agentplane.echo` (legacy identity `agentplane:v0.echo`). Configured
+ActionGroups and their child Actions govern admission and group-bound routing. `EchoExecutor` returns
 `{"echo": <arguments>}` in-process and exists only to prove the coordinator seam, redaction,
 single-execution claim, and recovery behavior. It is not a production action definition, backend,
 MCP adapter, HTTP adapter, worker protocol, or credential-bearing executor. The ActionGroup/Action

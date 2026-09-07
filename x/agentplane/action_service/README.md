@@ -46,19 +46,32 @@ descriptions and input schemas; `GET /v1/action-groups/{group}/actions/{action}`
 directly and 404s clearly on an unknown group or action. Both are workload-authenticated reads with
 no owner-scoping, since the catalog is the same for every caller.
 
-The catalog is reviewed runtime configuration, not a dynamic registry: `main.Settings.action_groups`
+Group bindings are reviewed runtime configuration, not a dynamic registry: `main.Settings.action_groups`
 follows the same `AGENTPLANE_ACTIONS_CONFIG_FILE`-mounted-YAML convention as the integration app's
-`AGENTPLANE_CONFIG_FILE` (`x/agentplane/app/main.py`), so an operator edits the catalog and the
+`AGENTPLANE_CONFIG_FILE` (`x/agentplane/app/main.py`), so an operator edits the group configuration and the
 process picks it up on restart — sufficient because ActionGroup/executor bindings change at
-operator/deploy cadence, not per-request, and the app's existing `Recreate`-strategy Deployment
-already restarts on every config change. `ExecutorBinding.config` (backend/account material) is
+operator/deploy cadence, not per-request, and the app uses a `Recreate`-strategy Deployment. `ExecutorBinding.config` (backend/account material) is
 never exposed by any discovery view; only `ExecutorBinding.description`, a human-authored summary of
 the executor (e.g. account/credential ownership), is.
 
-Neither the catalog nor its discovery API selects an Executor or gates `ActionRequest` submission —
-that remains `db.ActionStore.submit`'s `supported_capabilities` check against the wired `Executor`.
-Binding a real ActionGroup to a live Executor is the deferred `EW` gate
-(`plans/task_dag.md`), not this seam.
+The catalog is also the admission and routing authority: `ActionService` resolves the submitted
+`group.action`, rejects unknown or unavailable groups/Actions and unbound groups before persistence,
+and dispatches through the executor bound to that group. `ActionStore` owns persistence and lifecycle,
+not a separate supported-capability set. Executors expose execution only, not an action registry.
+Dispatch resolves the identity again, so a removed action is terminally refused rather than rerouted or
+retried. The existing single-Execution claim and no-retry state machine are unchanged.
+
+`main.bind_executors` binds each available configured group using its `ExecutorBinding.kind`: `echo`
+for the fixture, `mcp` for a persistent MCP connection; unsupported kinds fail startup. MCP `tools/list`
+refreshes that same group's child Actions, and execution rechecks the live tool schema before calling.
+The default catalog contains only `agentplane.echo`; configuring `action_groups` replaces that default.
+
+The v1 wire field and database column remain named `capability`, but their value is the stable Action
+identity, not membership in another registry. No rows or identity payloads are rewritten and no schema
+migration is required. The original `agentplane:v0.echo` spelling resolves to `agentplane.echo` for
+existing callers and pending persisted requests; it still requires that configured group/action and
+its binding. Idempotency compares the original payload, so changing spellings under the same key is
+still a conflict. Renaming the wire/storage field itself is deferred until there is a migration plan.
 
 ## Authentication boundaries
 

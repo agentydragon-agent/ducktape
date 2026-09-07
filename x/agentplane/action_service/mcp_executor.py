@@ -83,10 +83,6 @@ class McpActionGroupExecutor:
         transport = StdioTransport(config.command, config.args, env=config.env or None, cwd=config.cwd)
         return cls(group_key, group, transport, catalog_refresh_interval=catalog_refresh_interval)
 
-    @property
-    def capabilities(self) -> frozenset[str]:
-        return frozenset(f"{self._group_key}.{name}" for name in self._group.actions)
-
     async def start(self) -> None:
         await self._stack.enter_async_context(self._client)
         await self.refresh_catalog()
@@ -139,7 +135,7 @@ class McpActionGroupExecutor:
         if not request.capability.startswith(prefix):
             return ExecutionResult(
                 state=ExecutionState.FAILED,
-                error={"kind": "unknown_action", "message": "capability is not owned by this executor"},
+                error={"kind": "unknown_action", "message": "action is not owned by this group"},
             )
         name = request.capability.removeprefix(prefix)
 

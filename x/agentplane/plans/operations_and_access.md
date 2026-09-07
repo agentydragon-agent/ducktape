@@ -94,7 +94,7 @@ the recovery signal.
 
 ### Fixture-only executor
 
-`EchoExecutor` advertises only `agentplane:v0.echo` and returns:
+The default catalog binds `agentplane.echo` (legacy identity `agentplane:v0.echo`) to `EchoExecutor`, which returns:
 
 ```json
 { "echo": { "...": "the submitted arguments" } }

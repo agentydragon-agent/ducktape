@@ -78,7 +78,11 @@ class ActionRequestInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     idempotency_key: str = Field(min_length=1, max_length=200)
-    capability: str = Field(min_length=1, max_length=240)
+    capability: str = Field(
+        min_length=1,
+        max_length=240,
+        description="Stable group.action identity. Legacy wire/storage name retained; not a capability registry.",
+    )
     arguments: dict[str, JsonValue]
     origin: dict[str, JsonValue] = Field(default_factory=dict)
     correlation: dict[str, JsonValue] = Field(default_factory=dict)
@@ -198,9 +202,6 @@ class ExecutionLease(Protocol):
 
 
 class Executor(Protocol):
-    @property
-    def capabilities(self) -> frozenset[str]: ...
-
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult: ...
 
 

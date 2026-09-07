@@ -12,6 +12,7 @@ from testcontainers.postgres import PostgresContainer
 
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
+from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, ExecutorBinding
 from x.agentplane.action_service.database_migrate import apply_migrations
 from x.agentplane.action_service.db import make_engine
 
@@ -41,3 +42,17 @@ async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
         yield engine
     finally:
         await engine.dispose()
+
+
+@pytest.fixture
+def echo_catalog() -> ActionCatalog:
+    return ActionCatalog(
+        groups={
+            "agentplane": ActionGroup(
+                title="Echo",
+                description="Fixture-only echo action.",
+                executor=ExecutorBinding(kind="echo", description="In-process fixture"),
+                actions={"echo": ActionDefinition(description="Echo arguments")},
+            )
+        }
+    )
