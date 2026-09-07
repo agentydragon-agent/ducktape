@@ -19,11 +19,3 @@ tf_module(
     ],
     providers_versions = ":providers",
 )
-
-exports_files(
-    [
-        "provider_agentplane_actions.tf",
-        "provider_agentplane_staging.tf",
-    ],
-    visibility = ["//cluster/validation:__pkg__"],
-)

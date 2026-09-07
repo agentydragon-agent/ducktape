@@ -74,10 +74,6 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     data = ["//x/agentplane/app/frontend:bundle"],  # keep: the SPA the server mounts
-    visibility = [
-        "//cluster/validation:__pkg__",
-        "//x/agentplane:__subpackages__",
-    ],
     deps = [
         ":action_federation",
         ":api",

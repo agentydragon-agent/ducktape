@@ -186,16 +186,25 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 - Log out, confirm old-session review access fails, and repeat login after expiry/restart. A service
   restart must retain the existing session's database authority; expiry/logout must not be undone.
 
-## Static GitOps evidence targets
+## Offline validation
 
-- `//cluster/validation:test_agentplane_federation_contract`: exact source mapping/trust/pin references,
-  JSON Settings plus checked-in YAML catalogs, Secret injection/reload, one-replica rollout and SNI fence.
-- `//tf/gitops/sso-providers:format` and `:validate`: repo-pinned Terraform/provider mirror, backend-free.
-- `//cluster/validation:test_flux_build` and `:test_cluster_integration`: offline manifest render and
-  Flux dependency/health-check contracts. Run through `bbr`/CI only.
+- `//tf/gitops/sso-providers:format` and `:validate`: real `rules_tf` formatting and schema validation
+  using the repo-pinned Terraform/provider mirror, backend-free.
+- `//cluster/validation:test_flux_build` and `:test_cluster_integration`: full offline Flux/Kustomize
+  manifest rendering and dependency/health-check validation.
+- `//x/agentplane/app:test_main`: application Settings environment parsing and OIDC source coexistence.
+- `//x/agentplane/action_service:test_runtime`: Settings/catalog validation and production runtime composition.
+- `//x/agentplane/app:test_action_api` and `//x/agentplane/action_service:test_operator_oidc`: signed
+  offline request/authorization seams, including distinct operator identities and rejected token claims.
 
-Static checks cannot prove a real provider issued the expected subject or that Cilium admitted the
-actual TLS path. The live acceptance above remains required even when every offline target is green.
+Run through `bbr`/CI only. There is no parallel copied-literal HCL/manifest contract test: those
+assertions detected edits rather than executing federation. Synthetic Settings JSON also did not
+prove Terraform's computed output. The shared Terraform local supplies both verifiers' pins; the
+provider mapping and network restrictions above remain explicit configuration review obligations.
+
+These checks cannot prove a real provider issued the expected subject, that Terraform-computed
+configuration reached both processes, or that Cilium admitted the actual TLS path. The live acceptance
+above remains required even when every offline target is green.
 
 ## Failures are distinguishable and fail closed
 
