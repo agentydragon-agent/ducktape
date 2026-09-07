@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_bazel
+from httpx import HTTPStatusError
 from pydantic import ValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -21,7 +22,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from util.testing.asgi import serve_app_sync
-from x.agentplane.action_service.catalog import ActionGroup, ExecutorBinding
+from x.agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import ExecutionRequest, ExecutionState
 from x.agentplane.action_service.service import ExecutionOutcomeUnknownError
@@ -116,7 +117,7 @@ def http_group(fake_server: FakeMcpServer) -> Iterator[ActionGroup]:
         yield ActionGroup(
             title="HTTP test group",
             description="Credentialless test peer",
-            executor=ExecutorBinding(
+            executor=McpExecutorBinding(
                 kind="mcp",
                 description="HTTP test peer",
                 config={"transport": "streamable-http", "url": f"{url}/test-mcp"},
@@ -125,13 +126,18 @@ def http_group(fake_server: FakeMcpServer) -> Iterator[ActionGroup]:
 
 
 @pytest.fixture
-async def executor(http_group: ActionGroup) -> AsyncIterator[McpActionGroupExecutor]:
+async def executor(http_group: ActionGroup, fake_server: FakeMcpServer) -> AsyncIterator[McpActionGroupExecutor]:
     executor = McpActionGroupExecutor.from_group("remote", http_group, catalog_refresh_interval=timedelta(hours=1))
     try:
         await executor.start()
         yield executor
     finally:
-        await executor.close()
+        if fake_server.list_unavailable or fake_server.call_unavailable:
+            # The pinned client re-raises its terminal HTTP failure when joining the session task.
+            with pytest.raises(HTTPStatusError, match="503 Service Unavailable"):
+                await executor.close()
+        else:
+            await executor.close()
 
 
 @pytest.fixture
@@ -248,7 +254,7 @@ def test_unsupported_http_config_fails_before_connecting(config: dict[str, Any])
     group = ActionGroup(
         title="Invalid HTTP test group",
         description="No connection should be attempted",
-        executor=ExecutorBinding(kind="mcp", description="Invalid test peer", config=config),
+        executor=McpExecutorBinding(kind="mcp", description="Invalid test peer", config=config),
     )
     with pytest.raises(ValidationError):
         McpActionGroupExecutor.from_group("remote", group)

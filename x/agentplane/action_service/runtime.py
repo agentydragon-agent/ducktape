@@ -7,7 +7,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 
 from pydantic import ValidationError
 
-from x.agentplane.action_service.catalog import ActionCatalog
+from x.agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
 
@@ -44,7 +44,7 @@ async def running_executor(catalog: ActionCatalog) -> AsyncIterator[McpExecutors
     """
     executors: dict[str, McpActionGroupExecutor] = {}
     for key, group in catalog.groups.items():
-        if group.executor.kind != "mcp":
+        if not isinstance(group.executor, McpExecutorBinding):
             raise ValueError(f"ActionGroup {key!r} has an unsupported executor kind; expected 'mcp'")
         try:
             executors[key] = McpActionGroupExecutor.from_group(key, group)

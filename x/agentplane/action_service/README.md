@@ -51,8 +51,8 @@ follows the same `AGENTPLANE_ACTIONS_CONFIG_FILE`-mounted-YAML convention as the
 `AGENTPLANE_CONFIG_FILE` (`x/agentplane/app/main.py`), so an operator edits the catalog and the
 process picks it up on restart — sufficient because ActionGroup/executor bindings change at
 operator/deploy cadence, not per-request, and the app's existing `Recreate`-strategy Deployment
-already restarts on every config change. `ExecutorBinding.config` (backend/account material) is
-never exposed by any discovery view; only `ExecutorBinding.description`, a human-authored summary of
+already restarts on every config change. `McpExecutorBinding.config` (backend/account material) is
+never exposed by any discovery view; only `McpExecutorBinding.description`, a human-authored summary of
 the executor (e.g. account/credential ownership), is.
 
 Neither the catalog nor its discovery API selects an Executor or gates `ActionRequest` submission —
@@ -100,7 +100,7 @@ integration app database.
 ## MCP executor transports
 
 `McpActionGroupExecutor.from_group` owns one persistent MCP connection for a group. Its
-`ExecutorBinding.config` accepts a stdio launch (`command`, optional `args`, `env`, `cwd`, and
+`McpExecutorBinding.config` accepts a stdio launch (`command`, optional `args`, `env`, `cwd`, and
 `transport: stdio`) or a credentialless streamable-HTTP endpoint:
 
 ```yaml

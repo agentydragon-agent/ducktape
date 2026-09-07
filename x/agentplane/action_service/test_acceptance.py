@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
-from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, ExecutorBinding
+from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
 from x.agentplane.action_service.db import ActionStore, make_sessionmaker
 from x.agentplane.action_service.models import (
     ActionRequestInput,
@@ -412,7 +412,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
             "github": ActionGroup(
                 title="GitHub",
                 description="Read access to public GitHub repositories.",
-                executor=ExecutorBinding(
+                executor=McpExecutorBinding(
                     kind="mcp",
                     description="Connected as Rai's GitHub account.",
                     config={"account_secret_ref": "github-mcp-account"},

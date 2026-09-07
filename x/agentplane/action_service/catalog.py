@@ -8,7 +8,7 @@ submission — that remains `db.ActionStore.submit`'s `supported_capabilities` c
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
@@ -31,12 +31,12 @@ class ActionDefinition(BaseModel):
     )
 
 
-class ExecutorBinding(BaseModel):
+class McpExecutorBinding(BaseModel):
     """Where an ActionGroup's Actions execute. Reviewed runtime configuration, not a live registry."""
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: str = Field(min_length=1, max_length=100, description="Executor adapter kind, e.g. 'mcp' or 'hostexec'.")
+    kind: Literal["mcp"] = "mcp"
     description: str = Field(
         min_length=1,
         max_length=2000,
@@ -56,7 +56,7 @@ class ActionGroup(BaseModel):
 
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=2000)
-    executor: ExecutorBinding
+    executor: McpExecutorBinding = Field(discriminator="kind")
     available: bool = Field(default=True, description="Whether this group is currently offered to Agents.")
     actions: dict[Key, ActionDefinition] = Field(default_factory=dict)
 

@@ -18,7 +18,7 @@ from fastmcp import FastMCP
 from pydantic import JsonValue, ValidationError
 
 from util.bazel.runfiles import get_required_path
-from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ExecutorBinding
+from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, McpExecutorBinding
 from x.agentplane.action_service.db import UnknownCapabilityError
 from x.agentplane.action_service.main import Settings, async_main
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
@@ -39,11 +39,11 @@ CALLER = Principal(issuer="test", subject="sandbox", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
 
 
-def _group(config: dict[str, JsonValue], *, kind: str = "mcp") -> ActionGroup:
+def _group(config: dict[str, JsonValue]) -> ActionGroup:
     return ActionGroup(
         title="Reviewed backend",
         description="Composition test",
-        executor=ExecutorBinding(kind=kind, description="Test backend", config=config),
+        executor=McpExecutorBinding(description="Test backend", config=config),
     )
 
 
@@ -71,17 +71,31 @@ def test_missing_binding_is_rejected() -> None:
         ActionGroup.model_validate({"title": "Missing binding", "description": "Invalid"})
 
 
-@pytest.mark.parametrize(
-    ("config", "kind"),
-    [({}, "mcp"), ({"command": ""}, "mcp"), ({"command": 42}, "mcp"), ({"command": "unused"}, "echo")],
-)
-async def test_invalid_binding_fails_before_any_adapter_starts(config: dict[str, JsonValue], kind: str) -> None:
-    catalog = ActionCatalog(groups={"first": _group({"command": "unused"}), "invalid": _group(config, kind=kind)})
+@pytest.mark.parametrize("config", [{}, {"command": ""}, {"command": 42}])
+async def test_invalid_binding_fails_before_any_adapter_starts(config: dict[str, JsonValue]) -> None:
+    catalog = ActionCatalog(groups={"first": _group({"command": "unused"}), "invalid": _group(config)})
     with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
         with pytest.raises(ValueError, match="ActionGroup 'invalid'"):
             async with running_executor(catalog):
                 pytest.fail("invalid binding was served")
         start.assert_not_awaited()
+
+
+@pytest.mark.parametrize("kind", ["echo", "hostexec", "unknown"])
+def test_unsupported_executor_kind_is_rejected_by_settings(kind: str) -> None:
+    with pytest.raises(ValidationError, match="union_tag_invalid"):
+        Settings.model_validate(
+            {
+                "database_url": "postgresql+asyncpg://test.invalid/test",
+                "action_groups": {
+                    "invalid": {
+                        "title": "Unsupported backend",
+                        "description": "Must fail before runtime starts",
+                        "executor": {"kind": kind, "description": "Test backend", "config": {"command": "unused"}},
+                    }
+                },
+            }
+        )
 
 
 async def test_live_union_and_exact_group_dispatch() -> None:

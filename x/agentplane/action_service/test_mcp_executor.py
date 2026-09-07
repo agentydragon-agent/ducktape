@@ -23,7 +23,7 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from util.bazel.runfiles import get_required_path
-from x.agentplane.action_service.catalog import ActionGroup, ExecutorBinding
+from x.agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from x.agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
@@ -53,7 +53,7 @@ def _group() -> ActionGroup:
     return ActionGroup(
         title="Demo MCP group",
         description="Test-only ActionGroup backed by an in-process fastmcp server.",
-        executor=ExecutorBinding(kind="mcp", description="in-process test server"),
+        executor=McpExecutorBinding(kind="mcp", description="in-process test server"),
     )
 
 
@@ -299,7 +299,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
     group = ActionGroup(
         title="Slow demo group",
         description="Real subprocess MCP server for the transport-loss scenario.",
-        executor=ExecutorBinding(
+        executor=McpExecutorBinding(
             kind="mcp",
             description="subprocess test server",
             config={

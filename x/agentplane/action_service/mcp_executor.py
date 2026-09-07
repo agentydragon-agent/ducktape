@@ -22,7 +22,7 @@ from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
 
-from x.agentplane.action_service.catalog import ActionDefinition, ActionGroup, Key
+from x.agentplane.action_service.catalog import ActionDefinition, ActionGroup, Key, McpExecutorBinding
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
 from x.agentplane.action_service.service import ExecutionOutcomeUnknownError
 
@@ -59,7 +59,7 @@ class McpHttpServerConfig(BaseModel):
 
 
 McpServerConfig = McpStdioServerConfig | McpHttpServerConfig
-_SERVER_CONFIG_ADAPTER = TypeAdapter(McpServerConfig)
+_SERVER_CONFIG_ADAPTER: TypeAdapter[McpServerConfig] = TypeAdapter(McpServerConfig)
 
 
 class _ToolListChangeHandler(MessageHandler):
@@ -98,6 +98,8 @@ class McpActionGroupExecutor:
         *,
         catalog_refresh_interval: timedelta = DEFAULT_CATALOG_REFRESH_INTERVAL,
     ) -> McpActionGroupExecutor:
+        if not isinstance(group.executor, McpExecutorBinding):
+            raise ValueError("unsupported executor binding; expected MCP")
         config = _SERVER_CONFIG_ADAPTER.validate_python(group.executor.config)
         transport: ClientTransport
         if isinstance(config, McpStdioServerConfig):
