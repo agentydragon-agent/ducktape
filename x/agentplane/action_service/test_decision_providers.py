@@ -35,7 +35,7 @@ from x.agentplane.action_service.models import (
     ProviderVerdict,
     Verdict,
 )
-from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError
 
 CALLER = Principal(issuer="kubernetes-sandbox", subject="agentplane-staging:sandbox-a-uid", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
@@ -557,6 +557,42 @@ async def test_outside_fixture_scope_keeps_human_fallback_despite_spoofed_proven
         )
         assert decided.decision is not None
         assert decided.decision.provider == ActionService.HUMAN_PROVIDER
+    finally:
+        await service.close()
+
+
+@pytest.mark.parametrize("arguments", [{}, {"n": "not-an-integer"}, {"n": 1, "extra": "not-allowed"}])
+async def test_invalid_arguments_are_rejected_before_persistence_and_provider_evaluation(
+    engine: AsyncEngine,
+    echo_catalog: ActionCatalog,
+    mcp_executor: McpActionGroupExecutor,
+    arguments: dict[str, JsonValue],
+) -> None:
+    echo_catalog.groups["agentplane"].actions["echo"].input_schema = {
+        "type": "object",
+        "properties": {"n": {"type": "integer"}},
+        "required": ["n"],
+        "additionalProperties": False,
+    }
+    store = ActionStore(make_sessionmaker(engine))
+    provider = ScriptedProvider("policy", ProviderVerdict.NO_OPINION)
+    service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider])
+    try:
+        with pytest.raises(InvalidActionArgumentsError, match="advertised Action schema"):
+            await service.submit(
+                ActionRequestInput(
+                    idempotency_key="schema-check",
+                    action=ActionIdentity(group="agentplane", name="echo"),
+                    arguments=arguments,
+                ),
+                CALLER,
+            )
+        assert provider.contexts == []
+        assert await store.list_requests(CALLER) == []
+        # A rejection neither creates a row nor reserves the caller's idempotency key.
+        accepted = await service.submit(body("schema-check"), CALLER)
+        assert accepted.state is ActionState.DECISION_PENDING
+        assert len(provider.contexts) == 1
     finally:
         await service.close()
 

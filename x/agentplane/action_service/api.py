@@ -21,7 +21,7 @@ from x.agentplane.action_service.models import (
     Principal,
     PrincipalRole,
 )
-from x.agentplane.action_service.service import ActionService, UnsupportedActionError
+from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 _operator_bearer = HTTPBearer(auto_error=False)
@@ -96,6 +96,11 @@ def create_app(
     async def unsupported(request: Request, error: UnsupportedActionError) -> JSONResponse:
         del request
         return _error(status.HTTP_422_UNPROCESSABLE_ENTITY, f"unsupported group/action {error.args[0]!r}")
+
+    @app.exception_handler(InvalidActionArgumentsError)
+    async def invalid_arguments(request: Request, error: InvalidActionArgumentsError) -> JSONResponse:
+        del request
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error))
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

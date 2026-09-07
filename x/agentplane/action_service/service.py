@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID, uuid4
 
+import jsonschema
+
 from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
 from x.agentplane.action_service.db import ActionConflictError, ActionStore
 from x.agentplane.action_service.models import (
@@ -40,6 +42,9 @@ from x.agentplane.action_service.models import (
     UnknownOutcomeReason,
     Verdict,
 )
+
+# types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
+# gazelle:include_dep @pypi//referencing
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +70,10 @@ class ExecutionOutcomeUnknownError(Exception):
 
 class UnsupportedActionError(Exception):
     """The requested group/action is unknown, unavailable, or has no executor binding."""
+
+
+class InvalidActionArgumentsError(Exception):
+    """Arguments do not match the advertised Action schema; nothing was persisted."""
 
 
 class _StoreBackedLease:
@@ -138,6 +147,11 @@ class ActionService:
 
     async def submit(self, body: ActionRequestInput, principal: Principal) -> ActionRequestView:
         self._resolve_executor(body.action)
+        _, action = self._catalog.resolve(body.action.group, body.action.name)
+        try:
+            jsonschema.validate(body.arguments, action.input_schema)
+        except jsonschema.ValidationError:
+            raise InvalidActionArgumentsError("arguments do not match the advertised Action schema") from None
         view, created = await self._store.submit(body, principal)
         if not created:
             return view

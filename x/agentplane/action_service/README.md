@@ -55,7 +55,9 @@ operator/deploy cadence, not per-request, and the app uses a `Recreate`-strategy
 
 The catalog is also the admission and routing authority: `ActionService` resolves the submitted
 structured `action: {group, name}`, rejects unknown or unavailable groups/Actions and unbound groups before persistence,
-and dispatches through the executor bound to that group. `ActionStore` owns persistence and lifecycle,
+and validates arguments against the advertised JSON Schema before persistence or provider
+evaluation. Invalid arguments return HTTP 422 without reserving the idempotency key.
+Dispatch uses the executor bound to that group. `ActionStore` owns persistence and lifecycle,
 not a second admission registry. Executors expose execution only, not an action registry.
 Dispatch resolves the identity again, so a removed action is terminally refused rather than rerouted or
 retried. The existing single-Execution claim and no-retry state machine are unchanged.

@@ -580,5 +580,37 @@ async def test_action_removed_before_allow_never_dispatches(engine: AsyncEngine,
         await service.close()
 
 
+async def test_submission_schema_error_is_http_422_and_does_not_persist(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    echo_catalog.groups["agentplane"].actions["echo"].input_schema = {
+        "type": "object",
+        "properties": {"n": {"type": "integer"}},
+        "required": ["n"],
+    }
+    store = ActionStore(make_sessionmaker(engine))
+    executor = CountingExecutor()
+    service = ActionService(store, echo_catalog, {"agentplane": executor})
+    client = await _client(service, catalog=echo_catalog)
+    try:
+        response = await client.post(
+            "/v1/action-requests",
+            json={
+                "idempotency_key": "invalid-schema",
+                "action": {"group": "agentplane", "name": "echo"},
+                "arguments": {"n": "private-request-value"},
+            },
+            headers=_workload("workload-a"),
+        )
+        assert response.status_code == 422
+        assert "advertised Action schema" in response.text
+        assert "private-request-value" not in response.text
+        assert await store.list_requests(CALLER_A) == []
+        assert executor.requests == []
+    finally:
+        await client.aclose()
+        await service.close()
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

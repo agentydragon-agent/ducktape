@@ -31,8 +31,8 @@ class ActionDefinition(BaseModel):
     )
     input_schema: dict[str, JsonValue] = Field(
         default_factory=dict,
-        description="A small JSON-Schema-shaped parameter contract, opaque to this catalog. Execution "
-        "re-checks the current executor/tool schema; this catalog entry is discovery only.",
+        description="A small JSON-Schema-shaped parameter contract, opaque to this catalog. Submission "
+        "validates against this advertised schema; execution re-checks the current backend schema.",
     )
 
 

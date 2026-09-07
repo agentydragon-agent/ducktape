@@ -247,12 +247,12 @@ async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text(e
         await executor.close()
 
 
-async def test_execution_refuses_arguments_incompatible_with_the_current_live_schema(
-    execution_lease: ExecutionLease,
-) -> None:
-    """The tool's schema changes underneath a cached mirror (no `refresh_catalog()` in between);
-    `execute()` re-fetches `tools/list` itself and must refuse against the *current* schema rather
-    than the stale mirror, and must never call the tool with mismatched arguments."""
+async def test_execution_refuses_arguments_incompatible_with_the_current_live_schema(engine: AsyncEngine) -> None:
+    """A valid submission waits for approval while the backend schema changes.
+
+    Admission checks the advertised schema; execution must still fetch the current schema and
+    refuse mismatched arguments without calling the tool, even when the mirror remains stale.
+    """
     mcp = FastMCP("demo")
     calls: list[dict[str, Any]] = []
 
@@ -264,9 +264,19 @@ async def test_execution_refuses_arguments_incompatible_with_the_current_live_sc
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
     await executor.start()
+    store = ActionStore(make_sessionmaker(engine))
+    service = ActionService(store, ActionCatalog(groups={GROUP_KEY: group}), {GROUP_KEY: executor})
     try:
+        await service.start()
         assert group.actions["foo"].input_schema["required"] == ["x"]
 
+        submitted = await service.submit(
+            ActionRequestInput(
+                idempotency_key="schema-drift", action=ActionIdentity(group=GROUP_KEY, name="foo"), arguments={"x": 1}
+            ),
+            CALLER,
+        )
+        assert submitted.state is ActionState.DECISION_PENDING
         mcp.local_provider.remove_tool("foo")
 
         @mcp.tool(name="foo")
@@ -275,9 +285,16 @@ async def test_execution_refuses_arguments_incompatible_with_the_current_live_sc
             return {"y": y}
 
         # `arguments` still matches the OLD (mirrored) schema, not the new live one.
-        result = await executor.execute(
-            _request(action=ActionIdentity(group=GROUP_KEY, name="foo"), arguments={"x": 1}), execution_lease
+        await service.decide(
+            submitted.id,
+            DecisionInput(
+                verdict=Verdict.ALLOW, expected_version=submitted.version, idempotency_key="schema-drift-allow"
+            ),
+            OPERATOR,
         )
+        await _poll_state(store, submitted.id, want=ActionState.FAILED)
+        result = (await store.get(submitted.id, CALLER)).execution
+        assert result is not None
         assert result.state is ExecutionState.FAILED
         assert result.error == {
             "kind": "incompatible_action_schema",
@@ -285,6 +302,7 @@ async def test_execution_refuses_arguments_incompatible_with_the_current_live_sc
         }
         assert calls == [], "the tool must never be called when arguments don't match the current schema"
     finally:
+        await service.close()
         await executor.close()
 
 
