@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID, uuid4
 
-from x.agentplane.action_service.catalog import ActionCatalog, UnknownActionError, split_action_identity
+from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
 from x.agentplane.action_service.db import ActionConflictError, ActionStore
 from x.agentplane.action_service.models import (
     ActionEventView,
@@ -137,14 +137,14 @@ class ActionService:
         self._sweep_task = None
 
     async def submit(self, body: ActionRequestInput, principal: Principal) -> ActionRequestView:
-        self._resolve_executor(body.capability)
+        self._resolve_executor(body.action)
         view, created = await self._store.submit(body, principal)
         if not created:
             return view
         return await self._auto_decide(view, body, principal)
 
-    def _resolve_executor(self, identity: str) -> Executor:
-        group_key, action_key = split_action_identity(identity)
+    def _resolve_executor(self, identity: ActionIdentity) -> Executor:
+        group_key, action_key = identity.group, identity.name
         try:
             group, _ = self._catalog.resolve(group_key, action_key)
         except UnknownActionError as error:
@@ -161,7 +161,7 @@ class ActionService:
         if not self._providers:
             return view
         context = DecisionContext(
-            request_id=view.id, capability=body.capability, arguments=body.arguments, caller_principal=principal
+            request_id=view.id, action=body.action, arguments=body.arguments, caller_principal=principal
         )
         vote = await self._evaluate_providers(context)
         if vote is None:
@@ -275,7 +275,7 @@ class ActionService:
         lease = _StoreBackedLease(self._store, claim, self._lease_duration)
         try:
             request = await self._store.mark_running(request_id)
-            result = await self._resolve_executor(request.capability).execute(request, lease)
+            result = await self._resolve_executor(request.action).execute(request, lease)
         except ExecutionOutcomeUnknownError:
             # Adapter exception text can contain provider responses or credentials. Persist and
             # return only the stable classification; the service never projects raw exceptions.

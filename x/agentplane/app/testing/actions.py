@@ -1,11 +1,17 @@
 """Explicit fixture injection for the original app ActionRequest vertical slice."""
 
-from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
+from x.agentplane.action_service.catalog import (
+    ActionCatalog,
+    ActionDefinition,
+    ActionGroup,
+    ActionIdentity,
+    McpExecutorBinding,
+)
 from x.agentplane.app.actions import ActionState, ExecutionRequest, ExecutionResult
 
 
 class EchoExecutor:
-    CAPABILITY = "agentplane:v0.echo"
+    ACTION = ActionIdentity(group="agentplane", name="echo")
 
     async def execute(self, request: ExecutionRequest) -> ExecutionResult:
         return ExecutionResult(state=ActionState.SUCCEEDED, result={"echo": request.arguments})

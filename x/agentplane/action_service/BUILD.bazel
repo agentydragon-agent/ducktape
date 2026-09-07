@@ -8,7 +8,10 @@ package(default_visibility = ["//x/agentplane:__subpackages__"])
 py_library(
     name = "models",
     srcs = ["models.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":catalog",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -44,6 +47,7 @@ py_library(
     name = "db",
     srcs = ["db.py"],
     deps = [
+        ":catalog",
         ":models",
         "@pypi//asyncpg",
         "@pypi//pydantic",
@@ -182,15 +186,19 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    data = ["//cluster/k8s:agentplane-staging/mcp-everything/deployment.yaml"],
     deps = [
         ":catalog",
         ":database_migrate",
         ":db",
+        ":models",
+        "//util/bazel:runfiles",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pytest",
+        "@pypi//pyyaml",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],
@@ -342,10 +350,7 @@ py_test(
         ":runtime",
         ":service",
         "//:conftest",
-        "//util:net",
         "//util/bazel:runfiles",
-        "//util/testing:asgi",
-        "//x/agentplane/mcp_fixture:server",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",

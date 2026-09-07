@@ -14,6 +14,13 @@ _KEY = r"^[a-z][a-z0-9_-]*$"
 Key = Annotated[str, StringConstraints(pattern=_KEY, min_length=1, max_length=200)]
 
 
+class ActionIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    group: Key
+    name: Key
+
+
 class ActionDefinition(BaseModel):
     """One namespaced Action's Agent-facing description and parameter contract."""
 
@@ -64,7 +71,6 @@ class ActionView(BaseModel):
 
     group: str
     name: str
-    id: str
     description: str
     input_schema: dict[str, JsonValue]
 
@@ -83,17 +89,9 @@ class ActionGroupView(BaseModel):
 
 class UnknownActionError(Exception):
     def __init__(self, group_key: str, action_key: str) -> None:
-        super().__init__(f"unknown group/action {group_key}.{action_key}")
+        super().__init__(f"unknown group/action {(group_key, action_key)!r}")
         self.group_key = group_key
         self.action_key = action_key
-
-
-def split_action_identity(identity: str) -> tuple[str, str]:
-    # Preserve pending requests and v1 callers of the original fixture; never rewrite stored identity.
-    if identity == "agentplane:v0.echo":
-        return "agentplane", "echo"
-    group, _, action = identity.partition(".")
-    return group, action
 
 
 class ActionCatalog(BaseModel):
@@ -120,11 +118,7 @@ class ActionCatalog(BaseModel):
 
 def _action_view(group_key: str, action_key: str, action: ActionDefinition) -> ActionView:
     return ActionView(
-        group=group_key,
-        name=action_key,
-        id=f"{group_key}.{action_key}",
-        description=action.description,
-        input_schema=action.input_schema,
+        group=group_key, name=action_key, description=action.description, input_schema=action.input_schema
     )
 
 

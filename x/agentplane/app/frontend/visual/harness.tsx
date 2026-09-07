@@ -273,7 +273,7 @@ const THREADS: ThreadView[] = [
 const ACTIONS: ActionRequestView[] = [
   {
     id: "70000000-0000-4000-8000-000000000001",
-    capability: "agentplane:v0.echo",
+    action: { group: "agentplane", name: "echo" },
     arguments: { repository: "agentydragon/ducktape", token: "[redacted]" },
     origin_thread_id: THREADS[0].id,
     caller_kind: "token",
@@ -287,7 +287,7 @@ const ACTIONS: ActionRequestView[] = [
   },
   {
     id: "70000000-0000-4000-8000-000000000002",
-    capability: "agentplane:v0.echo",
+    action: { group: "agentplane", name: "echo" },
     arguments: { message: "completed fixture execution" },
     origin_thread_id: THREADS[1].id,
     caller_kind: "token",

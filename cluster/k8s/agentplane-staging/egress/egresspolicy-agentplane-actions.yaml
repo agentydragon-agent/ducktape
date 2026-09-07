@@ -10,6 +10,8 @@ spec:
       clusterInternal: true
       methods: [GET, POST]
       paths:
+        - /v1/action-groups
+        - /v1/action-groups/**
         - /v1/action-requests
         - /v1/action-requests/**
       credentialRef:

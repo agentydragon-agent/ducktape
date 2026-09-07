@@ -22,13 +22,7 @@ from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
 
-from x.agentplane.action_service.catalog import (
-    ActionDefinition,
-    ActionGroup,
-    Key,
-    McpExecutorBinding,
-    split_action_identity,
-)
+from x.agentplane.action_service.catalog import ActionDefinition, ActionGroup, Key, McpExecutorBinding
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
 from x.agentplane.action_service.service import ExecutionOutcomeUnknownError
 
@@ -162,7 +156,7 @@ class McpActionGroupExecutor:
         self._group.available = True
 
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
-        group_key, name = split_action_identity(request.capability)
+        group_key, name = request.action.group, request.action.name
         if group_key != self._group_key:
             return ExecutionResult(
                 state=ExecutionState.FAILED,

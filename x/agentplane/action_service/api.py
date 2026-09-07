@@ -85,7 +85,7 @@ def create_app(
     @app.exception_handler(UnknownActionError)
     async def unknown_action(request: Request, error: UnknownActionError) -> JSONResponse:
         del request
-        return _error(status.HTTP_404_NOT_FOUND, f"unknown group/action {error.group_key}.{error.action_key}")
+        return _error(status.HTTP_404_NOT_FOUND, f"unknown group/action {(error.group_key, error.action_key)!r}")
 
     @app.exception_handler(ActionConflictError)
     async def conflict(request: Request, error: ActionConflictError) -> JSONResponse:

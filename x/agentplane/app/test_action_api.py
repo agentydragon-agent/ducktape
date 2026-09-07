@@ -54,7 +54,7 @@ async def test_action_api_enforces_caller_and_operator_scope(
             created = await caller_a.post(
                 "/actions",
                 json={
-                    "capability": EchoExecutor.CAPABILITY,
+                    "action": EchoExecutor.ACTION.model_dump(),
                     "arguments": {"message": "hello", "authorization": "do-not-return"},
                     "origin_thread_id": str(thread_id),
                 },
@@ -111,7 +111,7 @@ async def test_action_api_enforces_caller_and_operator_scope(
         await hub.close()
 
 
-async def test_action_submission_rejects_unknown_thread_and_capability(
+async def test_action_submission_rejects_unknown_thread_and_action(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: TrajectoryStore,
@@ -132,7 +132,7 @@ async def test_action_submission_rejects_unknown_thread_and_capability(
         missing = await http.post(
             "/actions",
             json={
-                "capability": EchoExecutor.CAPABILITY,
+                "action": EchoExecutor.ACTION.model_dump(),
                 "arguments": {},
                 "origin_thread_id": "00000000-0000-0000-0000-000000000000",
             },
@@ -140,7 +140,7 @@ async def test_action_submission_rejects_unknown_thread_and_capability(
         unsupported = await http.post(
             "/actions",
             json={
-                "capability": "mcp:invented.tool",
+                "action": {"group": "missing", "name": "tool"},
                 "arguments": {},
                 "origin_thread_id": "00000000-0000-0000-0000-000000000000",
             },

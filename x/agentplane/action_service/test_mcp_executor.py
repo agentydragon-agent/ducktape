@@ -23,13 +23,14 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from util.bazel.runfiles import get_required_path
-from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, McpExecutorBinding
+from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from x.agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
     DecisionInput,
+    ExecutionLease,
     ExecutionRequest,
     ExecutionState,
     Principal,
@@ -45,11 +46,6 @@ GROUP_KEY = "demo"
 FAKE_SERVER = "_main/x/agentplane/action_service/test_fixtures/fake_mcp_server.py"
 
 
-class _NoopLease:
-    async def heartbeat(self) -> bool:
-        return True
-
-
 def _group() -> ActionGroup:
     return ActionGroup(
         title="Demo MCP group",
@@ -58,21 +54,18 @@ def _group() -> ActionGroup:
     )
 
 
-def _request(*, capability: str, arguments: dict[str, Any]) -> ExecutionRequest:
+def _request(*, action: ActionIdentity, arguments: dict[str, Any]) -> ExecutionRequest:
     return ExecutionRequest(
-        request_id=uuid4(),
-        capability=capability,
-        arguments=arguments,
-        origin={},
-        correlation={},
-        caller_principal=CALLER.key,
+        request_id=uuid4(), action=action, arguments=arguments, origin={}, correlation={}, caller_principal=CALLER.key
     )
 
 
 async def _allowed_execution(service: ActionService, *, idempotency_key: str) -> Any:
     view = await service.submit(
         ActionRequestInput(
-            idempotency_key=idempotency_key, capability=f"{GROUP_KEY}.echo_once", arguments={"text": "hi"}
+            idempotency_key=idempotency_key,
+            action=ActionIdentity(group=GROUP_KEY, name="echo_once"),
+            arguments={"text": "hi"},
         ),
         CALLER,
     )
@@ -233,7 +226,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
         await executor.close()
 
 
-async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text() -> None:
+async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text(execution_lease: ExecutionLease) -> None:
     mcp = FastMCP("demo")
 
     @mcp.tool
@@ -244,7 +237,9 @@ async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
     await executor.start()
     try:
-        result = await executor.execute(_request(capability=f"{GROUP_KEY}.explode", arguments={}), _NoopLease())
+        result = await executor.execute(
+            _request(action=ActionIdentity(group=GROUP_KEY, name="explode"), arguments={}), execution_lease
+        )
         assert result.state is ExecutionState.FAILED
         assert result.error == {"kind": "mcp_tool_error", "message": "MCP tool reported an error"}
         assert "xyz-secret-123" not in str(result.error)
@@ -252,7 +247,9 @@ async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text()
         await executor.close()
 
 
-async def test_execution_refuses_arguments_incompatible_with_the_current_live_schema() -> None:
+async def test_execution_refuses_arguments_incompatible_with_the_current_live_schema(
+    execution_lease: ExecutionLease,
+) -> None:
     """The tool's schema changes underneath a cached mirror (no `refresh_catalog()` in between);
     `execute()` re-fetches `tools/list` itself and must refuse against the *current* schema rather
     than the stale mirror, and must never call the tool with mismatched arguments."""
@@ -278,7 +275,9 @@ async def test_execution_refuses_arguments_incompatible_with_the_current_live_sc
             return {"y": y}
 
         # `arguments` still matches the OLD (mirrored) schema, not the new live one.
-        result = await executor.execute(_request(capability=f"{GROUP_KEY}.foo", arguments={"x": 1}), _NoopLease())
+        result = await executor.execute(
+            _request(action=ActionIdentity(group=GROUP_KEY, name="foo"), arguments={"x": 1}), execution_lease
+        )
         assert result.state is ExecutionState.FAILED
         assert result.error == {
             "kind": "incompatible_action_schema",
@@ -324,7 +323,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
         view = await service.submit(
             ActionRequestInput(
                 idempotency_key="transport-loss",
-                capability="slow.slow_echo",
+                action=ActionIdentity(group="slow", name="slow_echo"),
                 arguments={"marker_path": str(marker_path), "seconds": 30.0, "text": "hi"},
             ),
             CALLER,
@@ -373,7 +372,7 @@ async def test_runtime_binds_configured_mcp_group(engine: AsyncEngine, tmp_path:
             view = await service.submit(
                 ActionRequestInput(
                     idempotency_key="runtime",
-                    capability="runtime.slow_echo",
+                    action=ActionIdentity(group="runtime", name="slow_echo"),
                     arguments={"marker_path": str(marker), "seconds": 0, "text": "bound"},
                 ),
                 CALLER,

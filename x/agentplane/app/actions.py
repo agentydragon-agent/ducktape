@@ -21,7 +21,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from x.agentplane.action_service.catalog import ActionCatalog, UnknownActionError, split_action_identity
+from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
 from x.agentplane.app.identity import CallerIdentity, CallerKind
 from x.agentplane.app.trajectory import Thread
 
@@ -70,7 +70,7 @@ class ActionRequestRow(ActionBase):
     __tablename__ = "action_request"
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    capability: Mapped[str] = mapped_column(Text)
+    action: Mapped[dict[str, str]] = mapped_column(JSONB)
     arguments: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     # The originating Thread lives in TrajectoryStore's metadata; submit() verifies it in the same
     # database before this row is inserted rather than coupling the two modules' SQLAlchemy metadata.
@@ -127,7 +127,7 @@ class ExecutionRow(ActionBase):
 class NewActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    capability: str = Field(min_length=1, max_length=240)
+    action: ActionIdentity
     arguments: dict[str, JsonValue]
     origin_thread_id: UUID
 
@@ -171,7 +171,7 @@ class ActionRequestView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: UUID
-    capability: str
+    action: ActionIdentity
     arguments: dict[str, JsonValue]
     origin_thread_id: UUID
     caller_kind: CallerKind
@@ -188,7 +188,7 @@ class ExecutionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     request_id: UUID
-    capability: str
+    action: ActionIdentity
     arguments: dict[str, JsonValue]
     origin_thread_id: UUID
     caller_principal: str
@@ -234,9 +234,9 @@ class ActionNotFoundError(Exception):
         super().__init__(f"no action request {request_id}")
 
 
-class UnknownCapabilityError(Exception):
-    def __init__(self, capability: str) -> None:
-        super().__init__(f"unsupported action capability {capability!r}")
+class UnsupportedActionError(Exception):
+    def __init__(self, action: ActionIdentity) -> None:
+        super().__init__(f"unsupported action action {action!r}")
 
 
 class UnknownOriginThreadError(Exception):
@@ -307,16 +307,16 @@ class ActionHub:
 
     async def submit(self, body: NewActionRequest, caller: CallerIdentity) -> ActionRequestView:
         try:
-            group, _ = self._catalog.resolve(*split_action_identity(body.capability))
+            group, _ = self._catalog.resolve(body.action.group, body.action.name)
         except UnknownActionError:
-            raise UnknownCapabilityError(body.capability) from None
+            raise UnsupportedActionError(body.action) from None
         if not group.available or self._executor is None:
-            raise UnknownCapabilityError(body.capability)
+            raise UnsupportedActionError(body.action)
         async with self._sessions.begin() as session:
             if await session.get(Thread, body.origin_thread_id) is None:
                 raise UnknownOriginThreadError(body.origin_thread_id)
             row = ActionRequestRow(
-                capability=body.capability,
+                action=body.action.model_dump(),
                 arguments=body.arguments,
                 origin_thread_id=body.origin_thread_id,
                 caller_kind=caller.kind.value,
@@ -432,7 +432,7 @@ class ActionHub:
             await asyncio.sleep(0)
             request = await self._mark_running(request_id)
             if self._executor is None:
-                raise UnknownCapabilityError(request.capability)
+                raise UnsupportedActionError(request.action)
             result = await self._executor.execute(request)
             if result.state not in {ActionState.SUCCEEDED, ActionState.FAILED, ActionState.CANCELLED}:
                 raise ValueError(f"executor returned non-terminal state {result.state}")
@@ -492,7 +492,7 @@ class ActionHub:
             _record_event(session, row)
             request = ExecutionRequest(
                 request_id=row.id,
-                capability=row.capability,
+                action=ActionIdentity.model_validate(row.action),
                 arguments=row.arguments,
                 origin_thread_id=row.origin_thread_id,
                 caller_principal=row.caller_principal,
@@ -530,7 +530,7 @@ class ActionHub:
         execution = await session.scalar(select(ExecutionRow).where(ExecutionRow.request_id == row.id))
         return ActionRequestView(
             id=row.id,
-            capability=row.capability,
+            action=ActionIdentity.model_validate(row.action),
             arguments=_redact(row.arguments),
             origin_thread_id=row.origin_thread_id,
             caller_kind=CallerKind(row.caller_kind),

@@ -12,12 +12,16 @@ same for Claude and Codex, so one test body covers both: the `provider` fixture 
 hardcoding one. `test_launch_presets` instead exercises the configured `public-coder` preset's
 intentional Codex default, Sandbox binding, bootstrap marker, inherited fields, and local override.
 
-## MCP0 live acceptance
+## MCP integration
 
-[MCP0.md](MCP0.md) defines the real-Agent discovery → ActionRequest → durable events →
-exact MCP result scenario and its exactly-one evidence requirements. It is explicitly
-**blocked, contract-only** until the runtime and staging evidence seams land; there is
-no executable MCP0 target or claim of live acceptance yet.
+`//x/agentplane/acceptance:test_mcp` belongs to this deployed suite. Both real harnesses
+receive the Action API URL and public workload placeholder, discover the `everything`
+group's `echo` Action, submit a structured group/name request, poll until terminal,
+and report JSON. The test checks the reported result against the fresh marker's exact
+upstream echo output. It uses the existing sandbox setup/teardown and `Agent` fixtures.
+Staging GitOps wires the upstream image, ActionGroup, narrow echo provider, and discovery
+egress. Run after the PR's images and manifests have rolled out; remote adapter tests
+are not evidence that the real-agent staging test has run.
 
 ## Running it
 

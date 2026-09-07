@@ -1,15 +1,15 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: agentplane-staging-mcp-fixture
+  name: agentplane-staging-mcp-everything
   namespace: ducktape-flux
   annotations:
-    description: No-auth deterministic MCP0 fixture; staging-only read-only transport acceptance origin.
+    description: Upstream Everything MCP server for staging acceptance.
 spec:
   retryInterval: 1m
   interval: 10m
   timeout: 5m
-  path: ./cluster/k8s/agentplane-staging/mcp-fixture
+  path: ./cluster/k8s/agentplane-staging/mcp-everything
   prune: true
   wait: true
   sourceRef:
@@ -18,6 +18,4 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: agentplane-staging-namespace
-      namespace: ducktape-flux
-    - name: forgejo-images
       namespace: ducktape-flux

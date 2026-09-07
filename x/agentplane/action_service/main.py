@@ -56,7 +56,8 @@ class Settings(BaseSettings):
     )
 
     fixture_auto_allow: FixtureAutoAllow | None = Field(
-        default=None, description="Opt in to auto-allow only fixture_info({}) on a reviewed credentialless MCP group."
+        default=None,
+        description="Opt in to auto-allow only bounded echo(message) on a reviewed credentialless MCP group.",
     )
 
     def decision_providers(self, catalog: ActionCatalog) -> list[FixtureDecisionProvider]:

@@ -1,14 +1,14 @@
-# Only the staging control-plane callers may reach this no-auth, read-only origin.
+# Only the staging control-plane callers may reach this no-auth upstream reference server.
 # Runner isolation stays unchanged; there is no public route or fixture egress.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-mcp-fixture
+  name: agentplane-mcp-everything
   namespace: agentplane-staging
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: agentplane-mcp-fixture
+      app.kubernetes.io/name: agentplane-mcp-everything
   ingress:
     - fromEndpoints:
         - matchLabels:
@@ -19,17 +19,17 @@ spec:
             app.kubernetes.io/name: agentplane-actions
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "3001"
               protocol: TCP
   egressDeny:
     - toEntities:
         - all
 ---
-# Add only this destination to the callers' existing egress fences; no executor wiring.
+# Add only this destination to the callers' existing egress fences.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-mcp-fixture-callers
+  name: agentplane-mcp-everything-callers
   namespace: agentplane-staging
 spec:
   endpointSelector:
@@ -43,8 +43,8 @@ spec:
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
-            app.kubernetes.io/name: agentplane-mcp-fixture
+            app.kubernetes.io/name: agentplane-mcp-everything
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "3001"
               protocol: TCP

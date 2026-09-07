@@ -250,11 +250,6 @@
       "test": "//x/agentplane/egress/...",
       "registry": "forgejo"
     },
-    "agentplane-mcp-fixture": {
-      "target": "//x/agentplane/mcp_fixture:image",
-      "test": "//x/agentplane/mcp_fixture/...",
-      "registry": "forgejo"
-    },
     "agentplane-llm-ingress": {
       "target": "//x/agentplane/llm_ingress:image",
       "test": "//x/agentplane/llm_ingress/...",

@@ -48,7 +48,9 @@ function ActionCard({
       <Stack gap="sm">
         <Group justify="space-between" align="flex-start">
           <Stack gap={2}>
-            <Text fw={600}>{request.capability}</Text>
+            <Text fw={600}>
+              {request.action.group} / {request.action.name}
+            </Text>
             <Text size="xs" c="dimmed">
               Request {request.id} · thread {request.origin_thread_id}
             </Text>

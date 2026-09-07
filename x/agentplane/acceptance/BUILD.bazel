@@ -118,3 +118,29 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+# Live staging, using the same real-agent fixtures and execution boundary as this suite.
+py_test(
+    name = "test_mcp",
+    timeout = "eternal",
+    srcs = ["test_mcp.py"],
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//x/agentplane/action_service:client",
+        "//x/agentplane/app:api",
+        "//x/agentplane/app:client",
+        "//x/agentplane/app:inventory",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)

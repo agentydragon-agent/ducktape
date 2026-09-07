@@ -13,7 +13,7 @@ from uuid import uuid4
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from x.agentplane.action_service.catalog import ActionCatalog
+from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from x.agentplane.action_service.db import ActionConflictError, ActionStore, ExecutionRow, make_sessionmaker
 from x.agentplane.action_service.models import (
     ActionRequestInput,
@@ -33,17 +33,8 @@ from x.agentplane.action_service.service import ActionService
 
 CALLER = Principal(issuer="test-workload", subject="sandbox-a", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
-ACTION_ID = "agentplane:v0.echo"
+ACTION_ID = ActionIdentity(group="agentplane", name="echo")
 ALREADY_EXPIRED = timedelta(seconds=-1)
-
-
-class CountingExecutor:
-    def __init__(self) -> None:
-        self.requests: list[ExecutionRequest] = []
-
-    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
-        self.requests.append(request)
-        return ExecutionResult(state=ExecutionState.SUCCEEDED, result={"echo": request.arguments})
 
 
 class SlowSilentExecutor:
@@ -61,7 +52,7 @@ class SlowSilentExecutor:
 
 async def _allowed_execution(store: ActionStore, *, idempotency_key: str) -> Any:
     view, _ = await store.submit(
-        ActionRequestInput(idempotency_key=idempotency_key, capability=ACTION_ID, arguments={}), CALLER
+        ActionRequestInput(idempotency_key=idempotency_key, action=ACTION_ID, arguments={}), CALLER
     )
     await store.decide(
         view.id,
@@ -260,7 +251,7 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
     await service.start()
     try:
         pending = await service.submit(
-            ActionRequestInput(idempotency_key="no-double-dispatch", capability=ACTION_ID, arguments={}), CALLER
+            ActionRequestInput(idempotency_key="no-double-dispatch", action=ACTION_ID, arguments={}), CALLER
         )
         await service.decide(
             pending.id,

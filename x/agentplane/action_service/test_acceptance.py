@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
-from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
+from x.agentplane.action_service.catalog import (
+    ActionCatalog,
+    ActionDefinition,
+    ActionGroup,
+    ActionIdentity,
+    McpExecutorBinding,
+)
 from x.agentplane.action_service.db import ActionStore, make_sessionmaker
 from x.agentplane.action_service.models import (
     ActionRequestInput,
@@ -132,7 +138,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
     try:
         envelope = {
             "idempotency_key": "submit-1",
-            "capability": "agentplane:v0.echo",
+            "action": {"group": "agentplane", "name": "echo"},
             "arguments": {"text": "hello", "nested": {"api_key": "provider-material"}},
             # Every identity-like value here is deliberately forged, accepted only as untrusted
             # provenance, and must not affect the caller derived from SandboxPrincipal.
@@ -298,7 +304,7 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
                 headers=_workload("workload-a"),
                 json={
                     "idempotency_key": "leaky-failure",
-                    "capability": "agentplane:v0.echo",
+                    "action": {"group": "agentplane", "name": "echo"},
                     "arguments": {"safe": True},
                 },
             )
@@ -343,7 +349,9 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
 
     pending_view, _ = await store.submit(
         ActionRequestInput(
-            idempotency_key="restart-pending", capability="agentplane:v0.echo", arguments={"case": "safe"}
+            idempotency_key="restart-pending",
+            action=ActionIdentity(group="agentplane", name="echo"),
+            arguments={"case": "safe"},
         ),
         CALLER_A,
     )
@@ -367,7 +375,9 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
 
     inflight_view, _ = await store.submit(
         ActionRequestInput(
-            idempotency_key="restart-inflight", capability="agentplane:v0.echo", arguments={"case": "unsafe"}
+            idempotency_key="restart-inflight",
+            action=ActionIdentity(group="agentplane", name="echo"),
+            arguments={"case": "unsafe"},
         ),
         CALLER_A,
     )
@@ -443,7 +453,6 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
                     {
                         "group": "github",
                         "name": "get_file",
-                        "id": "github.get_file",
                         "description": "Read one file's contents from a public repository.",
                         "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
                     }
@@ -457,7 +466,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
 
         action = await client.get("/v1/action-groups/github/actions/get_file", headers=_workload("workload-a"))
         assert action.status_code == 200
-        assert action.json()["id"] == "github.get_file"
+        assert (action.json()["group"], action.json()["name"]) == ("github", "get_file")
 
         missing_group = await client.get(
             "/v1/action-groups/does-not-exist/actions/get_file", headers=_workload("workload-a")
@@ -484,26 +493,27 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
     await service.start()
     client = await _client(service, catalog=echo_catalog)
     try:
-        for identity in [
-            "missing.echo",
-            "agentplane.missing",
-            "echo",
-            "agentplane.echo.extra",
-            "unbound.echo",
-            "offline.echo",
-        ]:
+        for group, name in [("missing", "echo"), ("agentplane", "missing"), ("unbound", "echo"), ("offline", "echo")]:
             response = await client.post(
                 "/v1/action-requests",
-                json={"idempotency_key": identity, "capability": identity, "arguments": {}},
+                json={"idempotency_key": group, "action": {"group": group, "name": name}, "arguments": {}},
                 headers=_workload("workload-a"),
             )
             assert response.status_code == 422
             assert "unsupported group/action" in response.text
+        for malformed in ["agentplane.echo", "agentplane:v0.echo", {"group": "agentplane", "name": "echo.extra"}]:
+            response = await client.post(
+                "/v1/action-requests",
+                json={"idempotency_key": "malformed", "action": malformed, "arguments": {}},
+                headers=_workload("workload-a"),
+            )
+            assert response.status_code == 422
         assert await store.list_requests(CALLER_A) == []
         assert first.requests == second.requests == []
 
-        for identity in ["agentplane.echo", "other.echo", "agentplane:v0.echo"]:
-            payload = {"idempotency_key": identity, "capability": identity, "arguments": {"action": identity}}
+        for group in ["agentplane", "other"]:
+            identity = {"group": group, "name": "echo"}
+            payload = {"idempotency_key": group, "action": identity, "arguments": {"action": identity}}
             response = await client.post("/v1/action-requests", json=payload, headers=_workload("workload-a"))
             response.raise_for_status()
             submitted = response.json()
@@ -511,27 +521,26 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
             assert duplicate.json()["id"] == submitted["id"]
             decision = await client.post(
                 _operator_path(submitted["id"], "/decision"),
-                json={"verdict": "allow", "expected_version": submitted["version"], "idempotency_key": identity},
+                json={"verdict": "allow", "expected_version": submitted["version"], "idempotency_key": group},
                 headers=_operator(),
             )
             decision.raise_for_status()
             terminal = await _terminal(client, submitted["id"])
             assert terminal["state"] == "succeeded"
-            assert terminal["capability"] == identity
-        assert [request.capability for request in first.requests] == ["agentplane.echo", "agentplane:v0.echo"]
-        assert [request.capability for request in second.requests] == ["other.echo"]
+            assert terminal["action"] == identity
+        assert [request.action for request in first.requests] == [ActionIdentity(group="agentplane", name="echo")]
+        assert [request.action for request in second.requests] == [ActionIdentity(group="other", name="echo")]
 
-        # The compatibility spelling is not a second idempotency identity or an admission bypass.
         conflict = await client.post(
             "/v1/action-requests",
-            json={"idempotency_key": "agentplane:v0.echo", "capability": "agentplane.echo", "arguments": {}},
+            json={"idempotency_key": "agentplane", "action": {"group": "other", "name": "echo"}, "arguments": {}},
             headers=_workload("workload-a"),
         )
         assert conflict.status_code == 409
         del echo_catalog.groups["agentplane"].actions["echo"]
         refused = await client.post(
             "/v1/action-requests",
-            json={"idempotency_key": "removed", "capability": "agentplane:v0.echo", "arguments": {}},
+            json={"idempotency_key": "removed", "action": {"group": "agentplane", "name": "echo"}, "arguments": {}},
             headers=_workload("workload-a"),
         )
         assert refused.status_code == 422
@@ -548,7 +557,11 @@ async def test_action_removed_before_allow_never_dispatches(engine: AsyncEngine,
     client = await _client(service, catalog=echo_catalog)
     try:
         view = await service.submit(
-            ActionRequestInput(idempotency_key="removed-before-allow", capability="agentplane.echo", arguments={}),
+            ActionRequestInput(
+                idempotency_key="removed-before-allow",
+                action=ActionIdentity(group="agentplane", name="echo"),
+                arguments={},
+            ),
             CALLER_A,
         )
         del echo_catalog.groups["agentplane"].actions["echo"]

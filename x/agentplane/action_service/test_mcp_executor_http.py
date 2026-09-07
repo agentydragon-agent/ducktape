@@ -22,9 +22,9 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from util.testing.asgi import serve_app_sync
-from x.agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
+from x.agentplane.action_service.catalog import ActionGroup, ActionIdentity, McpExecutorBinding
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
-from x.agentplane.action_service.models import ExecutionRequest, ExecutionState
+from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionState
 from x.agentplane.action_service.service import ExecutionOutcomeUnknownError
 
 
@@ -100,11 +100,6 @@ class FakeMcpServer:
         return [post for post in self.posts if post["method"] == "tools/call"]
 
 
-class NoopLease:
-    async def heartbeat(self) -> bool:
-        return True
-
-
 @pytest.fixture(params=[False, True], ids=["json", "sse"])
 def fake_server(request: pytest.FixtureRequest) -> FakeMcpServer:
     return FakeMcpServer(sse=request.param)
@@ -144,7 +139,7 @@ async def executor(http_group: ActionGroup, fake_server: FakeMcpServer) -> Async
 def execution_request() -> ExecutionRequest:
     return ExecutionRequest(
         request_id=uuid4(),
-        capability="remote.echo",
+        action=ActionIdentity(group="remote", name="echo"),
         arguments={"text": "hi"},
         origin={},
         correlation={},
@@ -153,7 +148,10 @@ def execution_request() -> ExecutionRequest:
 
 
 async def test_http_session_discovery_call_and_shutdown(
-    http_group: ActionGroup, fake_server: FakeMcpServer, execution_request: ExecutionRequest
+    execution_lease: ExecutionLease,
+    http_group: ActionGroup,
+    fake_server: FakeMcpServer,
+    execution_request: ExecutionRequest,
 ) -> None:
     executor = McpActionGroupExecutor.from_group("remote", http_group)
     try:
@@ -162,7 +160,7 @@ async def test_http_session_discovery_call_and_shutdown(
         assert set(http_group.actions) == {"echo"}
         assert http_group.actions["echo"].description == "Echo text over HTTP."
         assert http_group.actions["echo"].input_schema == fake_server.tools[0]["inputSchema"]
-        result = await executor.execute(execution_request, NoopLease())
+        result = await executor.execute(execution_request, execution_lease)
         assert result.state is ExecutionState.SUCCEEDED
         assert result.result == {"echoed": "hi"}
         assert [post["method"] for post in fake_server.posts] == [
@@ -185,10 +183,13 @@ async def test_http_session_discovery_call_and_shutdown(
 
 
 async def test_http_revalidates_live_schema_before_dispatch(
-    executor: McpActionGroupExecutor, fake_server: FakeMcpServer, execution_request: ExecutionRequest
+    execution_lease: ExecutionLease,
+    executor: McpActionGroupExecutor,
+    fake_server: FakeMcpServer,
+    execution_request: ExecutionRequest,
 ) -> None:
     fake_server.tools[0]["inputSchema"]["required"] = ["other"]
-    result = await executor.execute(execution_request, NoopLease())
+    result = await executor.execute(execution_request, execution_lease)
     assert result.state is ExecutionState.FAILED
     assert result.error is not None
     assert result.error["kind"] == "incompatible_action_schema"
@@ -209,10 +210,13 @@ async def test_http_refresh_and_unavailable_catalog(
 
 
 async def test_http_list_failure_refuses_dispatch(
-    executor: McpActionGroupExecutor, fake_server: FakeMcpServer, execution_request: ExecutionRequest
+    execution_lease: ExecutionLease,
+    executor: McpActionGroupExecutor,
+    fake_server: FakeMcpServer,
+    execution_request: ExecutionRequest,
 ) -> None:
     fake_server.list_unavailable = True
-    result = await executor.execute(execution_request, NoopLease())
+    result = await executor.execute(execution_request, execution_lease)
     assert result.state is ExecutionState.FAILED
     assert result.error is not None
     assert result.error["kind"] == "mcp_unavailable"
@@ -220,21 +224,27 @@ async def test_http_list_failure_refuses_dispatch(
 
 
 async def test_http_tool_error_is_safe_failure(
-    executor: McpActionGroupExecutor, fake_server: FakeMcpServer, execution_request: ExecutionRequest
+    execution_lease: ExecutionLease,
+    executor: McpActionGroupExecutor,
+    fake_server: FakeMcpServer,
+    execution_request: ExecutionRequest,
 ) -> None:
     fake_server.tool_error = True
-    result = await executor.execute(execution_request, NoopLease())
+    result = await executor.execute(execution_request, execution_lease)
     assert result.state is ExecutionState.FAILED
     assert result.error == {"kind": "mcp_tool_error", "message": "MCP tool reported an error"}
     assert len(fake_server.calls) == 1
 
 
 async def test_http_missing_call_result_is_unknown_without_retry(
-    executor: McpActionGroupExecutor, fake_server: FakeMcpServer, execution_request: ExecutionRequest
+    execution_lease: ExecutionLease,
+    executor: McpActionGroupExecutor,
+    fake_server: FakeMcpServer,
+    execution_request: ExecutionRequest,
 ) -> None:
     fake_server.call_unavailable = True
     with pytest.raises(ExecutionOutcomeUnknownError, match="MCP tools/call transport failure"):
-        await executor.execute(execution_request, NoopLease())
+        await executor.execute(execution_request, execution_lease)
     assert len(fake_server.calls) == 1
 
 

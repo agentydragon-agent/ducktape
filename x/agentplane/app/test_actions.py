@@ -20,7 +20,7 @@ from x.agentplane.app.actions import (
     ExecutionRequest,
     ExecutionResult,
     NewActionRequest,
-    UnknownCapabilityError,
+    UnsupportedActionError,
     Verdict,
 )
 from x.agentplane.app.identity import CallerIdentity, CallerKind
@@ -70,7 +70,7 @@ async def _thread(store: TrajectoryStore, session_id: str = "s-1") -> UUID:
 async def _submit(hub: ActionHub, thread_id: UUID, caller: CallerIdentity = CALLER):
     return await hub.submit(
         NewActionRequest(
-            capability=EchoExecutor.CAPABILITY,
+            action=EchoExecutor.ACTION,
             arguments={"text": "hello", "token": "do-not-project", "nested": {"password": "hidden"}},
             origin_thread_id=thread_id,
         ),
@@ -247,7 +247,7 @@ async def test_restart_marks_inflight_execution_unknown_without_replay(store: Tr
 async def test_production_empty_catalog_has_no_echo_fallback(store: TrajectoryStore) -> None:
     hub = ActionHub(store.engine, ActionCatalog(), None)
     await hub.ensure_schema()
-    with pytest.raises(UnknownCapabilityError):
+    with pytest.raises(UnsupportedActionError):
         await _submit(hub, await _thread(store))
     assert await hub.list_requests(OPERATOR) == []
 

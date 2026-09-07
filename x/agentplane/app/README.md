@@ -116,11 +116,11 @@ configuration, and each launch sends only resolved concrete fields to the runtim
 
 ## ActionRequests v0
 
-With an explicitly injected test catalog/executor, `POST /actions` accepts `agentplane:v0.echo` with JSON arguments and an existing
+With an explicitly injected test catalog/executor, `POST /actions` accepts `action: {"group": "agentplane", "name": "echo"}` with JSON arguments and an existing
 `origin_thread_id`, deriving caller ownership from the authenticated OIDC session or reviewed
 Kubernetes token. Submission verifies that the origin Thread exists, then records the authenticated
 caller as provenance; v0 deliberately does not infer a durable Agent owner from a Sandbox or Thread.
-The echo capability is an explicit fixture executor: it proves the durable request → human Decision
+The echo Action is an explicit fixture executor: it proves the durable request → human Decision
 → exactly-once dispatch → result seam without pretending an MCP registry
 or external adapter exists. App-to-Action-Service integration is deferred; production
 app startup has no Echo executor or offered Actions.
@@ -191,4 +191,4 @@ production startup uses an empty catalog and no executor: it does not offer Echo
 pretend this UI is connected to the independent Action Service. The latter owns the
 real MCP runtime and narrow fixture provider. Connecting the app UI to that service
 remains deferred; the two APIs are not interchangeable and no migration is claimed.
-The original wire/database `capability` field and stored identities are unchanged.
+Wire/database Action identity uses separate group/name fields; no legacy string is accepted.

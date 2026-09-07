@@ -33,6 +33,8 @@ spec:
           image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:devel-20260907030842-17e6a3e # {"$imagepolicy": "flux-system:agentplane-action-service-migrate"}
           imagePullPolicy: Always
           env: &database-env
+            - name: AGENTPLANE_ACTIONS_CONFIG_FILE
+              value: /etc/agentplane-actions/settings.yaml
             - name: AGENTPLANE_ACTIONS_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -79,6 +81,10 @@ spec:
             - --port=8080
             - --token-audience=agentplane-egress
           env: *database-env
+          volumeMounts:
+            - name: settings
+              mountPath: /etc/agentplane-actions
+              readOnly: true
           ports:
             - name: http
               containerPort: 8080
@@ -102,3 +108,7 @@ spec:
             limits:
               memory: 512Mi
           securityContext: *container-security
+      volumes:
+        - name: settings
+          configMap:
+            name: agentplane-actions-settings

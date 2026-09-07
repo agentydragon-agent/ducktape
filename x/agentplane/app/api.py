@@ -23,8 +23,8 @@ from x.agentplane.app.actions import (
     DecisionInput,
     HumanDecisionProvider,
     NewActionRequest,
-    UnknownCapabilityError,
     UnknownOriginThreadError,
+    UnsupportedActionError,
 )
 from x.agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from x.agentplane.app.egress import (
@@ -443,8 +443,8 @@ def create_app(
     async def _origin_thread_not_found(_request: Request, error: UnknownOriginThreadError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
-    @app.exception_handler(UnknownCapabilityError)
-    async def _unknown_capability(_request: Request, error: UnknownCapabilityError) -> JSONResponse:
+    @app.exception_handler(UnsupportedActionError)
+    async def _unknown_action(_request: Request, error: UnsupportedActionError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
     @app.exception_handler(ActionConflictError)

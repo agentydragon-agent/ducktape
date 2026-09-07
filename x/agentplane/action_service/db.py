@@ -13,6 +13,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert as pg_i
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -48,7 +49,7 @@ class ActionRequestRow(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     idempotency_key: Mapped[str] = mapped_column(Text)
-    capability: Mapped[str] = mapped_column(Text)
+    action: Mapped[dict[str, str]] = mapped_column(JSONB)
     arguments: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     origin: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     correlation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
@@ -185,7 +186,7 @@ class ActionStore:
                 .values(
                     id=request_id,
                     idempotency_key=body.idempotency_key,
-                    capability=body.capability,
+                    action=body.action.model_dump(),
                     arguments=body.arguments,
                     origin=body.origin,
                     correlation=body.correlation,
@@ -442,7 +443,7 @@ class ActionStore:
             _record_event(session, row, now)
             return ExecutionRequest(
                 request_id=row.id,
-                capability=row.capability,
+                action=ActionIdentity.model_validate(row.action),
                 arguments=row.arguments,
                 origin=row.origin,
                 correlation=row.correlation,
@@ -578,7 +579,7 @@ class ActionStore:
         return ActionRequestView(
             id=row.id,
             idempotency_key=row.idempotency_key,
-            capability=row.capability,
+            action=ActionIdentity.model_validate(row.action),
             arguments=_redact(row.arguments),
             origin=_redact(row.origin),
             correlation=_redact(row.correlation),
@@ -594,7 +595,7 @@ class ActionStore:
 
 def _same_request(row: ActionRequestRow, body: ActionRequestInput) -> bool:
     return (
-        row.capability == body.capability
+        row.action == body.action.model_dump()
         and row.arguments == body.arguments
         and row.origin == body.origin
         and row.correlation == body.correlation

@@ -1,8 +1,8 @@
-"""Opt-in decision provider for the credentialless, no-input MCP staging fixture."""
+"""Opt-in decision provider for the credentialless upstream Everything echo Action."""
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from x.agentplane.action_service.catalog import ActionCatalog, Key, McpExecutorBinding
+from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity, Key, McpExecutorBinding
 from x.agentplane.action_service.models import DecisionContext, PrincipalRole, ProviderOutcome, ProviderVerdict
 
 
@@ -18,7 +18,7 @@ class FixtureDecisionProvider:
         if group is None or not isinstance(group.executor, McpExecutorBinding):
             raise ValueError("fixture auto-allow requires a configured MCP ActionGroup")
         self._group = group
-        self._capability = f"{config.group}.fixture_info"
+        self._action = ActionIdentity(group=config.group, name="echo")
         self._sandbox_namespaces = sandbox_namespaces
 
     @property
@@ -29,8 +29,10 @@ class FixtureDecisionProvider:
         principal = context.caller_principal
         namespace, separator, sandbox_uid = principal.subject.partition(":")
         if (
-            context.capability == self._capability
-            and context.arguments == {}
+            context.action == self._action
+            and set(context.arguments) == {"message"}
+            and isinstance(context.arguments["message"], str)
+            and len(context.arguments["message"]) <= 200
             and principal.role is PrincipalRole.CALLER
             and principal.issuer == "kubernetes-sandbox"
             and namespace in self._sandbox_namespaces
@@ -38,11 +40,11 @@ class FixtureDecisionProvider:
             and sandbox_uid
             and ":" not in sandbox_uid
             and self._group.available
-            and "fixture_info" in self._group.actions
+            and "echo" in self._group.actions
         ):
             return ProviderOutcome(
                 verdict=ProviderVerdict.ALLOW,
                 reason_code="credentialless_fixture",
-                reason_description="No-input staging fixture Action from an authenticated sandbox.",
+                reason_description="Bounded upstream Everything echo Action from an authenticated sandbox.",
             )
         return ProviderOutcome(verdict=ProviderVerdict.NO_OPINION, reason_code="outside_fixture_scope")

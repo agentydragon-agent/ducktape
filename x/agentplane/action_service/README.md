@@ -17,7 +17,7 @@ The v0 executable seam is deliberately small:
   until its own bounded lease expires, then becomes `execution_unknown` and may later be reconciled
   by an authenticated late completion or an authoritative status lookup — see
   [`../docs/executor_liveness.md`](../docs/executor_liveness.md);
-- one explicit `agentplane:v0.echo` fixture executor proving the service boundary; and
+- MCP adapters to reviewed upstream servers, with test-only injected executors in unit tests; and
 - a durable, restart-surviving Action event sequence as the result-delivery surface: a caller polls
   `GET /v1/action-requests/{id}/events?after_sequence=<n>` from `decision_pending` to a terminal
   state, and every submit/Decision/dispatch/terminal/`execution_unknown` transition appends exactly
@@ -41,7 +41,7 @@ rather than an outbox.
 
 `catalog.ActionCatalog` is the Agent-facing discovery seam: an `ActionGroup` (e.g. `github`) is the
 executor/backend ownership unit, and each child `Action` (e.g. `get_file`) is namespaced under it as
-`github.get_file`. `GET /v1/action-groups` lists every configured group with its Actions'
+the pair `(github, get_file)`. `GET /v1/action-groups` lists every configured group with its Actions'
 descriptions and input schemas; `GET /v1/action-groups/{group}/actions/{action}` looks up one Action
 directly and 404s clearly on an unknown group or action. Both are workload-authenticated reads with
 no owner-scoping, since the catalog is the same for every caller.
@@ -54,9 +54,9 @@ operator/deploy cadence, not per-request, and the app uses a `Recreate`-strategy
 `McpExecutorBinding.config` is never exposed by discovery; only the human-authored executor description is.
 
 The catalog is also the admission and routing authority: `ActionService` resolves the submitted
-`group.action`, rejects unknown or unavailable groups/Actions and unbound groups before persistence,
+structured `action: {group, name}`, rejects unknown or unavailable groups/Actions and unbound groups before persistence,
 and dispatches through the executor bound to that group. `ActionStore` owns persistence and lifecycle,
-not a separate supported-capability set. Executors expose execution only, not an action registry.
+not a second admission registry. Executors expose execution only, not an action registry.
 Dispatch resolves the identity again, so a removed action is terminally refused rather than rerouted or
 retried. The existing single-Execution claim and no-retry state machine are unchanged.
 
@@ -75,40 +75,24 @@ then Kubernetes and database resources. After startup, catalog-refresh failures 
 adapter's unavailable-and-retry behavior. OAuth, credential/profile design, and a generic executor
 registry are not part of this composition.
 
-The v1 wire field and database column remain named `capability`, but their value is the stable Action
-identity, not membership in another registry. No rows or identity payloads are rewritten and no schema
-migration is required. The original `agentplane:v0.echo` spelling resolves to `agentplane.echo` for
-existing callers and pending persisted requests; it still requires that configured group/action and
-its binding. Idempotency compares the original payload, so changing spellings under the same key is
-still a conflict. Renaming the wire/storage field itself is deferred until there is a migration plan.
+Requests, execution payloads and durable rows use `action: {"group": "everything", "name": "echo"}`.
+The fields remain separate throughout discovery, validation and dispatch; no concatenated identity
+or legacy name is accepted. Migration `0005_structured_action` removes the unused string column
+without inventing a compatibility mapping. Adding the required replacement column fails
+transactionally if unexpected preexisting rows exist.
 
-## Credentialless fixture auto-allow
+## Credentialless upstream echo auto-allow
 
-`fixture_auto_allow` is absent by default: no automatic Decision provider is installed. To opt in,
-add this to the staging Action Service YAML named by `AGENTPLANE_ACTIONS_CONFIG_FILE` and restart:
-
-```yaml
-fixture_auto_allow:
-  group: mcp_fixture
-```
-
-The named `action_groups.mcp_fixture` must be a reviewed MCP binding **only to the credentialless
-staging fixture server**. This setting selects the group, not an arbitrary tool or argument rule:
-only `mcp_fixture.fixture_info` with exactly `{}` can receive an allow vote. The provider refuses a
-missing/non-MCP group at startup and returns no opinion while the group is unavailable or no longer
-discovers `fixture_info`. A newly discovered tool does not acquire auto-allow authority. The existing
-executor still validates the current tool schema before calling it.
-
-Authorization uses only the authenticated `kubernetes-sandbox` caller in `sandbox_namespaces`, with
-a nonempty resolved Sandbox UID; request provenance and Agent claims cannot grant it. Reasons are
-constant, bounded, and contain no request, identity, or backend values. All votes still go through
-`ActionService`'s deny-dominant aggregation, durable Decision, and single-dispatch path. Nonmatches
-and provider failures retain human fallback; enabling this does not enable the operator API.
-
-This provider does not attest that an arbitrary endpoint is credentialless: the reviewed deployment
-owns that binding and must not repoint the opted-in group at another server. It supplies no
-credentials, capability profiles, or generic policy language. The runtime wires the provider into the same catalog used by its real MCP adapters.
-The opt-in does not deploy a fixture, and cannot auto-allow `agentplane:v0.echo`.
+`fixture_auto_allow` defaults to absent. Staging opts in for the reviewed `everything` group,
+bound to the existing upstream image described in [the deployment note](../docs/mcp_fixture_choice.md).
+The provider allows only that group's `echo` Action with exactly one string `message` argument
+of at most 200 characters, from an authenticated in-scope Kubernetes Sandbox UID. Unavailable
+or missing discovery, other tools, extra arguments, and untrusted identities get no allow vote.
+The MCP adapter still checks the current backend schema. Deny dominance and human fallback
+remain unchanged; opting in does not enable the operator API or grant other upstream tools.
+No custom MCP server or image is built. The real staging test is
+`//x/agentplane/acceptance:test_mcp`: it tasks real agents with discovery, submission, event/result
+polling and a JSON report checked against the upstream echo result.
 
 ## Authentication boundaries
 

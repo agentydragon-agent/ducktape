@@ -6,7 +6,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -15,15 +15,11 @@ import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
-from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.base import ToolResult
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
-from util.testing.asgi import serve_app
-from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, McpExecutorBinding
+from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from x.agentplane.action_service.db import ActionStore, make_sessionmaker
 from x.agentplane.action_service.fixture_policy import FixtureAutoAllow
 from x.agentplane.action_service.main import Settings, async_main
@@ -32,6 +28,7 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
     DecisionInput,
+    ExecutionLease,
     ExecutionRequest,
     ExecutionState,
     Principal,
@@ -40,7 +37,6 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, UnsupportedActionError
-from x.agentplane.mcp_fixture.server import app as fixture_app, server as fixture_server
 
 CALLER = Principal(issuer="test", subject="sandbox", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
@@ -54,14 +50,9 @@ def _group(config: dict[str, JsonValue]) -> ActionGroup:
     )
 
 
-class _Lease:
-    async def heartbeat(self) -> bool:
-        return True
-
-
-def _request(capability: str) -> ExecutionRequest:
+def _request(action: ActionIdentity) -> ExecutionRequest:
     return ExecutionRequest(
-        request_id=uuid4(), capability=capability, arguments={}, origin={}, correlation={}, caller_principal=CALLER.key
+        request_id=uuid4(), action=action, arguments={}, origin={}, correlation={}, caller_principal=CALLER.key
     )
 
 
@@ -72,11 +63,9 @@ async def test_empty_catalog_has_no_echo_fallback(engine: AsyncEngine) -> None:
         assert executors == {}
         assert catalog.group_views() == []
         service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, executors)
-        for identity in ("agentplane.echo", "agentplane:v0.echo"):
+        for identity in (ActionIdentity(group="agentplane", name="echo"),):
             with pytest.raises(UnsupportedActionError):
-                await service.submit(
-                    ActionRequestInput(idempotency_key=identity, capability=identity, arguments={}), CALLER
-                )
+                await service.submit(ActionRequestInput(idempotency_key="empty", action=identity, arguments={}), CALLER)
 
 
 def test_missing_binding_is_rejected() -> None:
@@ -111,7 +100,7 @@ def test_unsupported_executor_kind_is_rejected_by_settings(kind: str) -> None:
         )
 
 
-async def test_live_catalog_and_exact_group_dispatch() -> None:
+async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionLease) -> None:
     servers = {key: FastMCP(key) for key in ("one", "two")}
     for key, server in servers.items():
         # Same tool name on both servers proves routing uses the namespace, not the tool name.
@@ -126,11 +115,15 @@ async def test_live_catalog_and_exact_group_dispatch() -> None:
             assert set(executors) == {"one", "two"}
             assert all(set(group.actions) == {"owner"} for group in catalog.groups.values())
             for key in servers:
-                result = await executors[key].execute(_request(f"{key}.owner"), _Lease())
+                result = await executors[key].execute(
+                    _request(ActionIdentity(group=key, name="owner")), execution_lease
+                )
                 assert result.state is ExecutionState.SUCCEEDED
                 assert result.result == {"owner": key}
             assert (
-                await executors["one"].execute(_request("one_extra.owner"), _Lease())
+                await executors["one"].execute(
+                    _request(ActionIdentity(group="one_extra", name="owner")), execution_lease
+                )
             ).state is ExecutionState.FAILED
             servers["one"].local_provider.remove_tool("owner")
             await adapters["one"].refresh_catalog()
@@ -198,12 +191,15 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
         assert set(group.actions) == {"slow_echo"}
         with pytest.raises(UnsupportedActionError):
             await service.submit(
-                ActionRequestInput(idempotency_key="no-echo", capability="agentplane:v0.echo", arguments={}), CALLER
+                ActionRequestInput(
+                    idempotency_key="no-echo", action=ActionIdentity(group="agentplane", name="echo"), arguments={}
+                ),
+                CALLER,
             )
         view = await service.submit(
             ActionRequestInput(
                 idempotency_key="real-stdio",
-                capability="demo.slow_echo",
+                action=ActionIdentity(group="demo", name="slow_echo"),
                 arguments={"marker_path": str(tmp_path / "called"), "seconds": 0, "text": "wired"},
             ),
             CALLER,
@@ -281,24 +277,12 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
     engine.dispose.assert_awaited_once()
 
 
-class CallRecorder(Middleware):
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, dict[str, Any] | None]] = []
-
-    async def on_call_tool(self, context: MiddlewareContext[Any], call_next: CallNext[Any, ToolResult]) -> ToolResult:
-        self.calls.append((context.message.name, context.message.arguments))
-        return await call_next(context)
-
-
-async def test_main_auto_allows_real_no_auth_fixture_and_replays_once(db_url: str) -> None:
+async def test_main_auto_allows_upstream_everything(db_url: str, everything_url: str) -> None:
     """Real production composition + fixture HTTP; only Kubernetes setup and uvicorn loop are replaced."""
-    recorder = CallRecorder()
-    fixture_server.add_middleware(recorder)
-    port = pick_free_port()
     caller = Principal(issuer="kubernetes-sandbox", subject="agentplane-staging:fixture-uid", role=PrincipalRole.CALLER)
     settings = Settings(
         database_url=db_url,
-        action_groups={"fixture": _group({"transport": "streamable-http", "url": f"http://127.0.0.1:{port}/mcp"})},
+        action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url})},
         fixture_auto_allow=FixtureAutoAllow(group="fixture"),
         _cli_parse_args=False,
     )
@@ -307,8 +291,12 @@ async def test_main_auto_allows_real_no_auth_fixture_and_replays_once(db_url: st
         app = cast(FastAPI, server.config.app)
         service = cast(ActionService, app.state.action_service)
         catalog = cast(ActionCatalog, app.state.action_catalog)
-        assert set(catalog.groups["fixture"].actions) == {"fixture_info"}
-        body = ActionRequestInput(idempotency_key="fixture-once", capability="fixture.fixture_info", arguments={})
+        assert "echo" in catalog.groups["fixture"].actions
+        body = ActionRequestInput(
+            idempotency_key="fixture-once",
+            action=ActionIdentity(group="fixture", name="echo"),
+            arguments={"message": "MCP0-ok"},
+        )
         view = await service.submit(body, caller)
         assert view.decision is not None
         assert view.decision.provider == "mcp_fixture"
@@ -317,29 +305,26 @@ async def test_main_auto_allows_real_no_auth_fixture_and_replays_once(db_url: st
                 await asyncio.sleep(0.01)
                 view = await service.get(view.id, caller)
         assert view.execution is not None
-        assert view.execution.result == {"result": "agentplane-mcp0-ok"}
+        assert view.execution.result == {"content": ["Echo: MCP0-ok"]}
         assert (await service.submit(body, caller)).execution == view.execution
-        assert recorder.calls == [("fixture_info", {})]
         # Agent claims cannot opt an untrusted caller into the fixture policy.
         pending = await service.submit(
             ActionRequestInput(
-                idempotency_key="untrusted", capability=body.capability, arguments={}, origin={"caller": caller.key}
+                idempotency_key="untrusted",
+                action=body.action,
+                arguments={"message": "MCP0-ok"},
+                origin={"caller": caller.key},
             ),
             CALLER,
         )
         assert pending.state is ActionState.DECISION_PENDING
         assert pending.execution is None
 
-    try:
-        async with serve_app(fixture_app, port=port):
-            with (
-                patch("x.agentplane.action_service.main.k8s_config.load_incluster_config"),
-                patch.object(uvicorn.Server, "serve", serve),
-            ):
-                await async_main(settings)
-        assert recorder.calls == [("fixture_info", {})]
-    finally:
-        fixture_server.middleware.remove(recorder)
+    with (
+        patch("x.agentplane.action_service.main.k8s_config.load_incluster_config"),
+        patch.object(uvicorn.Server, "serve", serve),
+    ):
+        await async_main(settings)
 
 
 if __name__ == "__main__":

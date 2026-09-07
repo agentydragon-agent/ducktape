@@ -32,7 +32,7 @@ function request(state: ActionState, index: number): ActionRequestView {
   const executing = !["decision_pending", "allowed", "denied"].includes(state);
   return {
     id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-    capability: `agentplane:v0.state-${state}`,
+    action: { group: "agentplane", name: `state-${state}` },
     arguments: { state, token: "[redacted]" },
     origin_thread_id: "10000000-0000-4000-8000-000000000000",
     caller_kind: "token",
