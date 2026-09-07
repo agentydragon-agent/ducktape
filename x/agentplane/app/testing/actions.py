@@ -12,8 +12,13 @@ class EchoExecutor:
 
 
 def echo_catalog() -> ActionCatalog:
-    return ActionCatalog(groups={"agentplane": ActionGroup(
-        title="Test fixture", description="Explicit test-only injection; no runtime MCP binding",
-        executor=McpExecutorBinding(description="Test injection"),
-        actions={"echo": ActionDefinition(description="Echo fixture")},
-    )})
+    return ActionCatalog(
+        groups={
+            "agentplane": ActionGroup(
+                title="Test fixture",
+                description="Explicit test-only injection; no runtime MCP binding",
+                executor=McpExecutorBinding(description="Test injection"),
+                actions={"echo": ActionDefinition(description="Echo fixture")},
+            )
+        }
+    )

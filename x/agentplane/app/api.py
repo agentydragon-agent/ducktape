@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.middleware.sessions import SessionMiddleware
 
 from x.agentplane.app import auth_routes, bridge as runner_bridge
+from x.agentplane.action_service.catalog import ActionCatalog
 from x.agentplane.app.actions import (
     ActionConflictError,
     ActionHub,
@@ -20,7 +21,6 @@ from x.agentplane.app.actions import (
     ActionRequestView,
     ActionState,
     DecisionInput,
-    EchoExecutor,
     HumanDecisionProvider,
     NewActionRequest,
     UnknownCapabilityError,
@@ -403,7 +403,7 @@ def create_app(
     app.state.live = live
     app.state.oidc = oidc
     app.state.reviewer = reviewer
-    app.state.action_hub = action_hub or ActionHub(store.engine, EchoExecutor())
+    app.state.action_hub = action_hub or ActionHub(store.engine, ActionCatalog(), None)
     app.state.human_decisions = HumanDecisionProvider(app.state.action_hub)
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.

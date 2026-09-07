@@ -52,6 +52,7 @@ py_library(
         ":oidc",
         ":presets",
         ":trajectory",
+        "//x/agentplane/action_service:catalog",
         "//x/agentplane/runner:client",
         "@pypi//fastapi",
         "@pypi//grpcio",
