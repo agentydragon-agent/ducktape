@@ -37,7 +37,7 @@ def test_native_trust_and_authoritative_subject_mapping() -> None:
     target = _hcl("provider_agentplane_actions.tf")
     login = _hcl("provider_agentplane_staging.tf")
     assert 'sub_mode="hashed_user_id"' in login
-    assert 'user=tonumber(authentik_user.agentydragon.id)' in login
+    assert "user=tonumber(authentik_user.agentydragon.id)" in login
     assert 'sub_mode="user_uuid"' in target
     assert 'issuer_mode="per_provider"' in target
     assert 'access_token_validity="minutes=1"' in target
@@ -48,8 +48,7 @@ def test_native_trust_and_authoritative_subject_mapping() -> None:
     assert 'data"authentik_user""agentplane_operator"{pk=tonumber(authentik_user.agentydragon.id)}' in target
     assert "subjects=[data.authentik_user.agentplane_operator.uuid]" in target
     assert (
-        "subject_mapping={(data.authentik_user.agentplane_operator.uid)="
-        "data.authentik_user.agentplane_operator.uuid}"
+        "subject_mapping={(data.authentik_user.agentplane_operator.uid)=data.authentik_user.agentplane_operator.uuid}"
     ) in target
     assert "target=local.agentplane_operator_oidc" in target
     assert "action-federation=jsonencode(local.agentplane_action_federation)" in target
@@ -103,7 +102,8 @@ def test_real_settings_sources(monkeypatch: pytest.MonkeyPatch) -> None:
     assert app.action_federation is not None
     assert app.action_federation.target == actions.operator_oidc
     assert set(app.action_federation.subject_mapping.values()) == app.action_federation.target.subjects
-    assert app.models and actions.action_groups
+    assert app.models
+    assert actions.action_groups
     assert actions.operator_bearer_file is None
 
 
@@ -139,7 +139,9 @@ def test_authentik_node_egress_is_sni_restricted(component: str) -> None:
     docs = yaml.safe_load_all(_file(f"cluster/k8s/agentplane-staging/{component}/networkpolicy.yaml").read_text())
     policy = next(doc for doc in docs if doc["metadata"]["name"] == f"agentplane-{component}")
     rules = policy["spec"]["egress"]
-    node_rules = [rule for rule in rules if set(rule.get("toEntities", [])) & {"world", "host", "remote-node", "cluster"}]
+    node_rules = [
+        rule for rule in rules if set(rule.get("toEntities", [])) & {"world", "host", "remote-node", "cluster"}
+    ]
     assert len(node_rules) == 1
     assert node_rules[0] == {
         "toEntities": ["remote-node", "host"],
@@ -148,9 +150,12 @@ def test_authentik_node_egress_is_sni_restricted(component: str) -> None:
     assert all(rule for rule in rules)
     if component == "app":
         action_rules = [
-            rule for rule in rules
-            if any(endpoint["matchLabels"].get("app.kubernetes.io/name") == "agentplane-actions"
-                   for endpoint in rule.get("toEndpoints", []))
+            rule
+            for rule in rules
+            if any(
+                endpoint["matchLabels"].get("app.kubernetes.io/name") == "agentplane-actions"
+                for endpoint in rule.get("toEndpoints", [])
+            )
         ]
         assert len(action_rules) == 1
         assert action_rules[0]["toPorts"] == [{"ports": [{"port": "8080", "protocol": "TCP"}]}]
