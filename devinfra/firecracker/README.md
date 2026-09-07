@@ -12,17 +12,21 @@ Warm Firecracker microVMs on wyrm2 for Claude Code development. See
 
 ## Components
 
-| Component          | Path                                        | Purpose                            |
-| ------------------ | ------------------------------------------- | ---------------------------------- |
-| Design doc         | `DESIGN.md`                                 | Architecture, goals, prior art     |
-| VM pod             | `vm_pod/`                                   | Entrypoint for Firecracker VM pods |
-| Manager service    | `manager/`                                  | FastAPI VMM, creates VM pods       |
-| NixOS rootfs       | `nix/nixos/hosts/fc_dev/`                   | NixOS config for guest rootfs      |
-| Rootfs provisioner | `provision-rootfs.sh`                       | Build rootfs via Nix, dd to LV     |
-| K8s manifests      | `cluster/k8s/x/claude-sandbox-firecracker/` | Flux-managed deployment            |
-| KVM plugin         | `cluster/k8s/kvm-device-plugin/`            | Device plugin for `/dev/kvm`       |
+| Component          | Path                             | Purpose                            |
+| ------------------ | -------------------------------- | ---------------------------------- |
+| Design doc         | `DESIGN.md`                      | Architecture, goals, prior art     |
+| VM pod             | `vm_pod/`                        | Entrypoint for Firecracker VM pods |
+| Manager service    | `manager/`                       | FastAPI VMM, creates VM pods       |
+| NixOS rootfs       | `nix/nixos/hosts/fc_dev/`        | NixOS config for guest rootfs      |
+| Rootfs provisioner | `provision-rootfs.sh`            | Build rootfs via Nix, dd to LV     |
+| K8s manifests      | `deploy/`                        | Flux-managed (suspended)           |
+| KVM plugin         | `cluster/k8s/kvm-device-plugin/` | Device plugin for `/dev/kvm`       |
 
 ## Quick Start
+
+The in-cluster deployment (`cluster/k8s/claude-sandbox-firecracker.yaml`) is
+currently suspended — nothing is deployed to `claude-sandbox` right now. Flip
+its `suspend` to `false` to revive it.
 
 ```bash
 # Provision base rootfs on wyrm2 (requires Nix + LVM thin pool)
