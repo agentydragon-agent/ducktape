@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from x.agentplane.action_service.catalog import ActionCatalog
+from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
 from x.agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
+from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
+from x.agentplane.action_service.main import Settings
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
@@ -318,6 +322,201 @@ async def test_provider_reason_is_projected_to_caller_unlike_private_operator_re
         assert operator_view.decision is not None
         assert operator_view.decision.reason_code == "untrusted_capability"
         assert operator_view.decision.provider == "policy"
+    finally:
+        await service.close()
+
+
+@pytest.fixture
+def fixture_catalog() -> ActionCatalog:
+    return ActionCatalog(
+        groups={
+            "test_fixture": ActionGroup(
+                title="Test fixture",
+                description="Credentialless test fixture",
+                executor=McpExecutorBinding(description="Test server"),
+                actions={"fixture_info": ActionDefinition(description="Fixed marker")},
+            )
+        }
+    )
+
+
+@pytest.fixture
+def fixture_provider(fixture_catalog: ActionCatalog) -> FixtureDecisionProvider:
+    return FixtureDecisionProvider(
+        FixtureAutoAllow(group="test_fixture"), fixture_catalog, sandbox_namespaces=frozenset({"agentplane-staging"})
+    )
+
+
+@pytest.fixture
+def fixture_context() -> DecisionContext:
+    return DecisionContext(
+        request_id=uuid4(), capability="test_fixture.fixture_info", arguments={}, caller_principal=CALLER
+    )
+
+
+async def test_fixture_allow_is_exact_and_reasons_are_constant(
+    fixture_provider: FixtureDecisionProvider, fixture_context: DecisionContext
+) -> None:
+    outcome = await fixture_provider.decide(fixture_context)
+    assert outcome.verdict is ProviderVerdict.ALLOW
+    assert outcome.reason_code == "credentialless_fixture"
+    assert outcome.reason_description is not None
+    assert len(outcome.reason_description) <= 500
+    assert CALLER.subject not in outcome.reason_description
+
+
+@pytest.mark.parametrize(
+    "capability", ["other.fixture_info", "test_fixture.fixture_info_extra", "test_fixture.echo", "agentplane:v0.echo"]
+)
+async def test_fixture_never_allows_other_actions(
+    fixture_provider: FixtureDecisionProvider, fixture_context: DecisionContext, capability: str
+) -> None:
+    fixture_context = fixture_context.model_copy(update={"capability": capability})
+    assert (await fixture_provider.decide(fixture_context)).verdict is ProviderVerdict.NO_OPINION
+
+
+@pytest.mark.parametrize("arguments", [{"text": "anything"}, {"caller_principal": CALLER.key}, {"x": None}])
+async def test_fixture_never_allows_arguments(
+    fixture_provider: FixtureDecisionProvider, fixture_context: DecisionContext, arguments: dict[str, JsonValue]
+) -> None:
+    fixture_context = fixture_context.model_copy(update={"arguments": arguments})
+    assert (await fixture_provider.decide(fixture_context)).verdict is ProviderVerdict.NO_OPINION
+
+
+@pytest.mark.parametrize(
+    "principal",
+    [
+        OPERATOR,
+        CALLER.model_copy(update={"role": PrincipalRole.OPERATOR}),
+        CALLER.model_copy(update={"issuer": "untrusted"}),
+        CALLER.model_copy(update={"subject": "other-namespace:sandbox-uid"}),
+        CALLER.model_copy(update={"subject": "agentplane-staging:"}),
+        CALLER.model_copy(update={"subject": "agentplane-staging:uid:extra"}),
+    ],
+)
+async def test_fixture_requires_trusted_sandbox_context(
+    fixture_provider: FixtureDecisionProvider, fixture_context: DecisionContext, principal: Principal
+) -> None:
+    fixture_context = fixture_context.model_copy(update={"caller_principal": principal})
+    assert (await fixture_provider.decide(fixture_context)).verdict is ProviderVerdict.NO_OPINION
+
+
+@pytest.mark.parametrize("unavailable", [True, False])
+async def test_fixture_discovery_loss_removes_auto_allow(
+    fixture_provider: FixtureDecisionProvider,
+    fixture_context: DecisionContext,
+    fixture_catalog: ActionCatalog,
+    unavailable: bool,
+) -> None:
+    if unavailable:
+        fixture_catalog.groups["test_fixture"].available = False
+    else:
+        fixture_catalog.groups["test_fixture"].actions.clear()
+    assert (await fixture_provider.decide(fixture_context)).verdict is ProviderVerdict.NO_OPINION
+
+
+async def test_fixture_policy_is_opt_in_through_runtime_yaml(
+    fixture_catalog: ActionCatalog, fixture_context: DecisionContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path / "actions.yaml"
+    config.write_text("database_url: postgresql://test.invalid/test\n")
+    monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(config))
+    assert Settings(_cli_parse_args=False).decision_providers(fixture_catalog) == []
+    config.write_text("database_url: postgresql://test.invalid/test\nfixture_auto_allow:\n  group: test_fixture\n")
+    providers = Settings(_cli_parse_args=False).decision_providers(fixture_catalog)
+    assert len(providers) == 1
+    assert (await providers[0].decide(fixture_context)).verdict is ProviderVerdict.ALLOW
+
+
+@pytest.mark.parametrize("config", [{"group": "*"}, {"group": "test_fixture", "actions": ["*"]}])
+def test_fixture_configuration_cannot_expand_tool_scope(config: dict[str, JsonValue]) -> None:
+    with pytest.raises(ValidationError):
+        FixtureAutoAllow.model_validate(config)
+
+
+def test_fixture_provider_rejects_missing_group(fixture_catalog: ActionCatalog) -> None:
+    fixture_catalog.groups.clear()
+    with pytest.raises(ValueError, match="requires a configured MCP ActionGroup"):
+        FixtureDecisionProvider(
+            FixtureAutoAllow(group="test_fixture"),
+            fixture_catalog,
+            sandbox_namespaces=frozenset({"agentplane-staging"}),
+        )
+
+
+def test_fixture_catalog_rejects_non_mcp_binding() -> None:
+    with pytest.raises(ValidationError):
+        ActionGroup.model_validate(
+            {
+                "title": "Not MCP",
+                "description": "Invalid binding",
+                "executor": {"kind": "hostexec", "description": "Not allowed"},
+            }
+        )
+
+
+class FixtureExecutor:
+    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
+        return ExecutionResult(state=ExecutionState.SUCCEEDED, result="test-marker")
+
+
+@pytest.mark.parametrize("deny", [False, True])
+async def test_fixture_provider_uses_existing_deny_dominant_decision_path(
+    engine: AsyncEngine, fixture_provider: FixtureDecisionProvider, fixture_catalog: ActionCatalog, deny: bool
+) -> None:
+    store = ActionStore(make_sessionmaker(engine))
+    service = ActionService(
+        store,
+        fixture_catalog,
+        {"test_fixture": FixtureExecutor()},
+        providers=[
+            fixture_provider,
+            ScriptedProvider("other", ProviderVerdict.DENY if deny else ProviderVerdict.NO_OPINION),
+        ],
+    )
+    try:
+        result = await service.submit(
+            ActionRequestInput(idempotency_key="fixture", capability="test_fixture.fixture_info", arguments={}), CALLER
+        )
+        assert result.state is (ActionState.DENIED if deny else ActionState.ALLOWED)
+        assert result.decision is not None
+        assert result.decision.provider == ("other" if deny else "mcp_fixture")
+        if deny:
+            assert result.execution is None
+    finally:
+        await service.close()
+
+
+async def test_outside_fixture_scope_keeps_human_fallback_despite_spoofed_provenance(
+    engine: AsyncEngine, fixture_provider: FixtureDecisionProvider, fixture_catalog: ActionCatalog
+) -> None:
+    service = ActionService(
+        ActionStore(make_sessionmaker(engine)),
+        fixture_catalog,
+        {"test_fixture": FixtureExecutor()},
+        providers=[fixture_provider],
+    )
+    try:
+        result = await service.submit(
+            ActionRequestInput(
+                idempotency_key="fixture-spoof",
+                capability="test_fixture.fixture_info",
+                arguments={},
+                origin={"caller_principal": CALLER.key},
+                correlation={"agent_identity": CALLER.key},
+            ),
+            CALLER.model_copy(update={"issuer": "untrusted"}),
+        )
+        assert result.state is ActionState.DECISION_PENDING
+        assert result.decision is None
+        assert result.execution is None
+        decided = await service.decide(
+            result.id,
+            DecisionInput(verdict=Verdict.DENY, expected_version=result.version, idempotency_key="human-fallback"),
+            OPERATOR,
+        )
+        assert decided.decision is not None
+        assert decided.decision.provider == ActionService.HUMAN_PROVIDER
     finally:
         await service.close()
 

@@ -6,7 +6,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -15,12 +15,17 @@ import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
+from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools.tool import ToolResult
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from util.bazel.runfiles import get_required_path
+from util.net import pick_free_port
+from util.testing.asgi import serve_app
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, McpExecutorBinding
 from x.agentplane.action_service.db import ActionStore, make_sessionmaker
+from x.agentplane.action_service.fixture_policy import FixtureAutoAllow
 from x.agentplane.action_service.main import Settings, async_main
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
@@ -35,6 +40,7 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, UnsupportedActionError
+from x.agentplane.mcp_fixture.server import app as fixture_app, server as fixture_server
 
 CALLER = Principal(issuer="test", subject="sandbox", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
@@ -273,6 +279,67 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
         ["engine disposed"] if failure == "schema" else ["service started", "service closed", "engine disposed"]
     )
     engine.dispose.assert_awaited_once()
+
+
+class CallRecorder(Middleware):
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    async def on_call_tool(self, context: MiddlewareContext[Any], call_next: CallNext[Any, ToolResult]) -> ToolResult:
+        self.calls.append((context.message.name, context.message.arguments))
+        return await call_next(context)
+
+
+async def test_main_auto_allows_real_no_auth_fixture_and_replays_once(db_url: str) -> None:
+    """Real production composition + fixture HTTP; only Kubernetes setup and uvicorn loop are replaced."""
+    recorder = CallRecorder()
+    fixture_server.add_middleware(recorder)
+    port = pick_free_port()
+    caller = Principal(issuer="kubernetes-sandbox", subject="agentplane-staging:fixture-uid", role=PrincipalRole.CALLER)
+    settings = Settings(
+        database_url=db_url,
+        action_groups={"fixture": _group({"transport": "streamable-http", "url": f"http://127.0.0.1:{port}/mcp"})},
+        fixture_auto_allow=FixtureAutoAllow(group="fixture"),
+        _cli_parse_args=False,
+    )
+
+    async def serve(server: uvicorn.Server) -> None:
+        app = cast(FastAPI, server.config.app)
+        service = cast(ActionService, app.state.action_service)
+        catalog = cast(ActionCatalog, app.state.action_catalog)
+        assert set(catalog.groups["fixture"].actions) == {"fixture_info"}
+        body = ActionRequestInput(idempotency_key="fixture-once", capability="fixture.fixture_info", arguments={})
+        view = await service.submit(body, caller)
+        assert view.decision is not None
+        assert view.decision.provider == "mcp_fixture"
+        async with asyncio.timeout(10):
+            while view.state is not ActionState.SUCCEEDED:
+                await asyncio.sleep(0.01)
+                view = await service.get(view.id, caller)
+        assert view.execution is not None
+        assert view.execution.result == {"result": "agentplane-mcp0-ok"}
+        assert (await service.submit(body, caller)).execution == view.execution
+        assert recorder.calls == [("fixture_info", {})]
+        # Agent claims cannot opt an untrusted caller into the fixture policy.
+        pending = await service.submit(
+            ActionRequestInput(
+                idempotency_key="untrusted", capability=body.capability, arguments={}, origin={"caller": caller.key}
+            ),
+            CALLER,
+        )
+        assert pending.state is ActionState.DECISION_PENDING
+        assert pending.execution is None
+
+    try:
+        async with serve_app(fixture_app, port=port):
+            with (
+                patch("x.agentplane.action_service.main.k8s_config.load_incluster_config"),
+                patch.object(uvicorn.Server, "serve", serve),
+            ):
+                await async_main(settings)
+        assert recorder.calls == [("fixture_info", {})]
+    finally:
+        fixture_server.middleware.remove(recorder)
 
 
 if __name__ == "__main__":

@@ -54,3 +54,4 @@ resources:
   - agentplane-llm-ingress-image.yaml
   - github-graphql-rate-exporter-image.yaml
   - github-api-proxy-image.yaml
+  - agentplane-mcp-fixture-image.yaml

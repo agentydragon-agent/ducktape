@@ -37,6 +37,9 @@ bbr test //x/agentplane/app/...
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads and their events.
+- `actions.py`: the colocated logical Action Hub. It owns immutable ActionRequests, final Decisions,
+  and their single possible Execution in the same PostgreSQL database, while keeping the human
+  DecisionProvider and Executor interfaces separate.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 
@@ -111,6 +114,25 @@ its live preset association plus explicit thread-default edits; the runner holds
 PostgreSQL holds the copy of every event that outlives the sandbox. Preset definitions remain app
 configuration, and each launch sends only resolved concrete fields to the runtime.
 
+## ActionRequests v0
+
+With an explicitly injected test catalog/executor, `POST /actions` accepts `agentplane:v0.echo` with JSON arguments and an existing
+`origin_thread_id`, deriving caller ownership from the authenticated OIDC session or reviewed
+Kubernetes token. Submission verifies that the origin Thread exists, then records the authenticated
+caller as provenance; v0 deliberately does not infer a durable Agent owner from a Sandbox or Thread.
+The echo capability is an explicit fixture executor: it proves the durable request → human Decision
+→ exactly-once dispatch → result seam without pretending an MCP registry
+or external adapter exists. App-to-Action-Service integration is deferred; production
+app startup has no Echo executor or offered Actions.
+
+Token callers can list and read only requests recorded for their authenticated principal. The OIDC
+operator can list the app's whole current scope at `/#/actions`, inspect the redacted review
+projection, and call `POST /actions/{request_id}/decision` with an expected version and idempotency
+key. `allow` schedules the one Execution automatically; `deny` is terminal. A process restart marks
+any `dispatching` or `running` Execution `execution_unknown` and never replays it. The event sink in
+`actions.py` is the future notification seam; notification callbacks must return through the same
+idempotent DecisionProvider path.
+
 ## Launch presets
 
 `GET /presets` publishes configured Sandbox presets and their inherited editable Thread defaults.
@@ -159,3 +181,14 @@ unchanged when no preset is selected.
   Pretty-printing also does not help the payloads that are genuinely hard to read, since a long
   string value stays one long line either way; wrapping and highlighting are what make those
   legible.
+
+### ActionRequest integration boundary
+
+The original app-owned ActionHub/API/UI slice is retained for its persistence, owner
+scope, operator decisions, lifecycle, and visual tests. Its Echo executor exists only
+in `testing/actions.py` and must be explicitly injected with a test catalog. App
+production startup uses an empty catalog and no executor: it does not offer Echo or
+pretend this UI is connected to the independent Action Service. The latter owns the
+real MCP runtime and narrow fixture provider. Connecting the app UI to that service
+remains deferred; the two APIs are not interchangeable and no migration is claimed.
+The original wire/database `capability` field and stored identities are unchanged.
