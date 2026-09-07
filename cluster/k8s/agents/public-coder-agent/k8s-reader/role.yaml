@@ -65,7 +65,9 @@ rules:
   - apiGroups: ["kubevirt.io"]
     resources: ["virtualmachineinstances"]
     resourceNames: ["public-coder-devbox"]
-    verbs: ["get", "delete"]
+    # A named VMI waiter establishes its resource version with a list+watch;
+    # resourceNames requires the caller to field-select this exact VMI.
+    verbs: ["get", "list", "watch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
