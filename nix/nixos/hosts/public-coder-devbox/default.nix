@@ -212,8 +212,14 @@ in
     wantedBy = [ "multi-user.target" ];
     before = [ "hostexecd.service" ];
     after = [ "local-fs.target" ];
-    path = [ pkgs.coreutils pkgs.util-linux ];
-    serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
+    path = [
+      pkgs.coreutils
+      pkgs.util-linux
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
     script = ''
       set -eu
       src="${buildbuddyRuntimeDir}/source"
