@@ -61,6 +61,10 @@ spec:
               serial: pctoken
               disk:
                 bus: virtio
+            - name: buildbuddy-api-key
+              serial: pcbuildbuddy
+              disk:
+                bus: virtio
           interfaces:
             - name: default
               masquerade: {}
@@ -89,3 +93,8 @@ spec:
         - name: hostexecd-token
           secret:
             secretName: public-coder-devbox-hostexecd-token
+        - name: buildbuddy-api-key
+          secret:
+            # Reflected from claude-sandbox/buildbuddy-api-key by the existing
+            # shared-secret reflector policy.
+            secretName: buildbuddy-api-key
