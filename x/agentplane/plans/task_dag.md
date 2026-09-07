@@ -91,7 +91,8 @@ flowchart TB
     MCPAGG["Deferred support<br/>Agentplane MCP aggregator<br/>external harness/client compatibility"]:::future
     HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
     APPROVALUI["Deferred integration<br/>integration-app approval UI<br/>pending requests + decisions"]:::future
-    RETIRE["Deferred migration<br/>retire Haku Console Agent/<br/>conversation ownership"]:::future
+    RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
+    RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
 
     ER["Observed evidence #5701<br/>egress rules boundary + Service DNS transition"]:::completed
     DEDUPE["Needed support, independent<br/>shared FastAPI/auth setup dedupe"]:::active
@@ -121,9 +122,10 @@ flowchart TB
     DEL --> MCPAGG
     EID --> MCPAGG
     EW --> HOSTEXEC
-    MCPAGG -. replacement surface .-> RETIRE
-    APPROVALUI -. replacement surface .-> RETIRE
-    EID -. durable identity .-> RETIRE
+    MCPAGG -. replacement surface .-> RETIRE_TOOLS
+    APPROVALUI -. replacement surface .-> RETIRE_TOOLS
+    EID -. external identity .-> RETIRE_AGENT
+    AG -. durable Agent/Thread model .-> RETIRE_AGENT
 
     AUTH --> ER
     AUTH --> DEDUPE
@@ -152,8 +154,9 @@ The external-surface and migration tracks are intentionally separate from `MCP0`
 external static Agent identity are prerequisites for the Agentplane MCP aggregator, while the
 integration-app approval UI consumes the same Action-state/Decision surface. Hostexec is another
 Executor adapter behind `EW`; its final ordering relative to the credentialed MCP path is deferred.
-Retiring Haku Console's Agent/conversation ownership waits for the replacement surfaces to exist and
-is not a prerequisite for the first Action/MCP acceptance.
+Haku Console migration is split: Agent/conversation management and tool-call/approval management
+can retire on different schedules after their respective replacement surfaces exist. Neither is a
+prerequisite for the first Action/MCP acceptance.
 
 ## Named gates and acceptance evidence
 
@@ -300,13 +303,22 @@ does today. It is a client/presentation layer, not a second Decision authority o
 **Dependencies:** the durable Action event/query and human Decision-provider notification pieces of
 `DEL`; its UI may be delivered before or alongside `MCPAGG`.
 
-### `RETIRE` — Haku Console Agent/conversation ownership migration
+### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 
-**Deferred migration:** retire Haku Console's own Agent and conversation ownership only after
-Agentplane has the external identity, MCP aggregator, approval presentation, and replacement
-conversation/Thread surfaces required by Haku. This is a migration and decommissioning milestone,
+**Deferred migration:** retire Haku Console's own Agent and conversation management only after
+Agentplane has the external identity, durable Agent/Thread lifecycle, conversation read/control, and
+replacement runtime surfaces required by Haku. This is a migration and decommissioning milestone,
 not a prerequisite for Action execution; preserve explicit read/export and rollback evidence before
 removing the old owner.
+
+### `RETIRE_TOOLS` — Haku Console tool-call and approval management migration
+
+**Deferred migration:** retire Haku Console's connected-MCP catalog, tool-call application/approval
+queue, and related tool-call management only after the Agentplane MCP aggregator, integration-app
+approval UI, credential bindings, and canonical Action/Decision APIs cover the required workflows.
+This track may move independently of Agent/conversation management: Haku Console may continue to own
+conversations while Agentplane owns external tool calls, or the reverse during a staged migration.
+Preserve tool-call audit/export and rollback evidence before removing the old owner.
 
 ### `DEL` — decision and Action-state contract
 
