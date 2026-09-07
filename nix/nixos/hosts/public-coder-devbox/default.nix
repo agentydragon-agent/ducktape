@@ -17,6 +17,7 @@
   config,
   lib,
   pkgs,
+  bbr,
   ...
 }:
 let
@@ -124,6 +125,10 @@ in
     lsof
     git
     openssl
+    # The devbox runs Bazel only through this repository's remote-BuildBuddy
+    # wrapper; keeping it in the base image avoids needing a large `nix develop`
+    # closure just to start a build/test.
+    bbr
   ];
 
   # The ConfigMap is attached by KubeVirt as a small virtio disk with the
