@@ -118,9 +118,48 @@ compares different SERIES, not the two spans of the one series these arms share.
 row as reported and unexplained. The horizons a 30-year spender is exposed to are the ones where
 dynamics dominate, and those agree with each other.
 
+### Splitting the windows by equation, and why its answer is not stable
+
+The estimator is one OLS per equation over shared regressors, so each equation can take its own
+sample without changing what is estimated. `mixed_windows.py` gives the rate equations the 1955
+window and inflation the century, with the innovation covariance — the one genuinely
+cross-equation quantity — on a span that is itself a parameter (`covariance_span_test.py` sweeps
+it).
+
+On origins from 1975, the mixed fit beat both single-window fits on every state at 5 and 10
+years, by 4-22%. That result did not survive its own bug fix.
+
+**The comparison is not robust to the scoring period, and that is the finding.** The covariance
+span had no minimum-sample guard, so a late span estimated a 3x3 covariance off a handful of
+residuals at the early origins. Adding the guard pushes the first scorable origin from 1975 to
+1995 for EVERY arm, and on that origin set the headline reverses. The two single-window arms are
+identical in definition across both runs — only the months they are scored on moved:
+
+|                          | origins 1975+ | origins 1995+ |
+| ------------------------ | ------------- | ------------- |
+| 10y joint density 1926   | 5.675         | **7.554**     |
+| 10y joint density 1955   | **5.805**     | 6.842         |
+| 10y short-rate CRPS 1926 | 0.03559       | **0.01684**   |
+| 10y short-rate CRPS 1955 | **0.02889**   | 0.02613       |
+
+At ten years the 1955 window leads on one origin set and trails by 0.71 nats on the other, and
+the century goes from 23% WORSE on the short rate to 36% BETTER. On the 1995+ origins the mixed
+fit no longer beats both: the century leads joint density at 5 and 10 years.
+
+The likely mechanism, stated as a hypothesis because nothing here tests it: a 10-year forecast
+from a 1975-1985 origin lands in the Volcker disinflation, and the later origin set contains no
+comparable rate regime change. Which window looks better depends on which regime the test period
+holds.
+
+So the durable conclusion is narrower than a window recommendation: **no ranking out of this
+machinery means anything without its origin set stated**, the section above included, and the
+per-equation split is not established as an improvement. No default changes.
+
 **What this does not establish.** Origins overlap heavily at these horizons, so the arms' means
 are comparable to each other but carry no usable standard error; no significance is claimed, and
-none is reported. The shipped default stays `FRED_1955`, which these numbers support for the rate
+none is reported. Nor does it hold beyond the origins it was measured on: the table above is
+1975+, and on 1995+ origins the short-rate half of it REVERSES (see the section below). Read
+every row here as "on these origins", not as a property of the windows. The shipped default stays `FRED_1955`, which these numbers support for the rate
 block and argue against for inflation.
 
 **Deviation worth knowing:** the VAR reads `CPIAUCSL` (seasonally adjusted) while the historical
