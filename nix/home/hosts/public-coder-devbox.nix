@@ -20,6 +20,12 @@ _: {
   programs.tmux.enable = true;
   programs.zsh.enable = true;
 
+  # The boot service writes this mode-0600 file from the KubeVirt-attached
+  # BuildBuddy Secret. Keep the import non-secret and stable in the image.
+  home.file.".bazelrc".text = ''
+    try-import /home/coder/.config/bazel/buildbuddy.bazelrc
+  '';
+
   home.username = "coder";
   home.homeDirectory = "/home/coder";
   home.stateVersion = "25.11";

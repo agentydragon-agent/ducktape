@@ -27,6 +27,8 @@ let
   proxyUrl = "http://${proxyHost}:8080";
   hostexecdTokenDevice = "/dev/disk/by-id/virtio-pctoken";
   hostexecdTokenFile = "/etc/hostexecd-daemon-token.txt";
+  buildbuddyKeyDevice = "/dev/disk/by-id/virtio-pcbuildbuddy";
+  buildbuddyRuntimeDir = "/run/public-coder-devbox-buildbuddy";
   proxyCaDevice = "/dev/disk/by-id/virtio-pcproxyca";
   proxyCaRuntimeDir = "/run/public-coder-devbox-proxy-ca";
 in
@@ -203,6 +205,42 @@ in
     };
   };
 
+  # Materialize the reflected BuildBuddy Secret only at runtime. bbr needs the
+  # environment key; Bazel reads the matching credential rc imported by ~/.bazelrc.
+  systemd.services.public-coder-devbox-buildbuddy = {
+    description = "Install the public-coder-devbox BuildBuddy credential";
+    wantedBy = [ "multi-user.target" ];
+    before = [ "hostexecd.service" ];
+    after = [ "local-fs.target" ];
+    path = [
+      pkgs.coreutils
+      pkgs.util-linux
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      set -eu
+      src="${buildbuddyRuntimeDir}/source"
+      mkdir -p "$src" "${buildbuddyRuntimeDir}"
+      mounted=0
+      for _ in $(seq 1 60); do
+        if mountpoint -q "$src" || mount -o ro "${buildbuddyKeyDevice}" "$src" 2>/dev/null; then mounted=1; break; fi
+        sleep 1
+      done
+      [ "$mounted" -eq 1 ] || { echo "BuildBuddy key disk missing" >&2; exit 1; }
+      test -s "$src/api-key"
+      umask 077
+      { printf 'BUILDBUDDY_API_KEY='; cat "$src/api-key"; printf '\n'; } > "${buildbuddyRuntimeDir}/environment"
+      install -d -m0700 -o coder -g users /home/coder/.config/bazel
+      { printf 'common:rbe --remote_header=x-buildbuddy-api-key='; cat "$src/api-key"; printf '\n'; } > /home/coder/.config/bazel/buildbuddy.bazelrc
+      chown coder:users /home/coder/.config/bazel/buildbuddy.bazelrc
+      chmod 0600 /home/coder/.config/bazel/buildbuddy.bazelrc
+      umount "$src"
+    '';
+  };
+
   # hostexecd: haku-console runs approved public-coder-agent shell calls here, auto-approved only
   # for this exact host (haku/docs/security.md invariant #9, cluster/k8s/haku/console/config.yaml's
   # `hostexec_public_coder_devbox` policy). Its outbound HTTPS is fenced through the same iron-proxy
@@ -219,11 +257,14 @@ in
     requires = [
       "public-coder-devbox-proxy-ca.service"
       "public-coder-devbox-hostexecd-token.service"
+      "public-coder-devbox-buildbuddy.service"
     ];
     after = [
       "public-coder-devbox-proxy-ca.service"
       "public-coder-devbox-hostexecd-token.service"
+      "public-coder-devbox-buildbuddy.service"
     ];
+    serviceConfig.EnvironmentFile = [ "${buildbuddyRuntimeDir}/environment" ];
   };
 
   # These are intentionally placeholders / non-secret routing settings. The
