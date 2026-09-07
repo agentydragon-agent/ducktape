@@ -45,9 +45,11 @@ is the browser identity lifetime. Token exchange may reject an upstream-revoked 
 
 ## Explicit configuration required before deployment
 
-**Not deployed by this PR.** No Action federation target/provider or corresponding network-policy
-change is present in the checked-in staging deployment. Do not mount a shared BFF operator bearer,
-forward a workload token, or invent a BFF signing authority to bypass this gap.
+**Staging GitOps wiring:** `tf/gitops/sso-providers/provider_agentplane_actions.tf` provisions the
+Action-only target and computes both configurations from the existing managed operator. The staging
+Deployments consume its reflected JSON configuration via their existing Settings environment sources.
+This is configuration, not evidence of a successful live exchange. Never mount a shared BFF operator
+bearer, forward a workload token, or invent a BFF signing authority.
 
 The existing Haku hostexec Authentik pattern is the supported exchange shape:
 `grant_type=client_credentials`, `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`,
@@ -79,17 +81,130 @@ fails startup. Changing reviewed mappings or allowlists requires a configuration
 The Authentik target must explicitly trust only the Agentplane login provider through
 `jwt_federation_providers`, use a short token lifetime, and emit signed RS256 access tokens with
 `iss`, `sub`, `aud`, `azp`, `iat`, and `exp`. The shared resolver enforces these pins with its existing
-30-second clock-skew allowance and five-minute JWKS cache. Exchange does not enforce the target
-application login policy, so the destination's subject allowlist is mandatory. Configure network
+30-second clock-skew allowance and five-minute JWKS cache. Do not rely on the target
+application login policy alone: the destination's independent subject allowlist is mandatory. Configure network
 reachability for BFF-to-token/JWKS/Action and Action-to-JWKS explicitly. No live cluster change or
 live-provider claim-mapping validation was performed here.
 
-Before enabling, validate the real target's subject mappings and token claims with two authorized
-operators and a denied operator. The signed mock tests prove our request composition, verification,
+Before declaring staging acceptance, validate the real target's subject mapping and token claims
+with Rai and a denied operator. Do not widen the current Rai-only allowlist for a test; the two-operator
+identity-continuity case remains covered by signed offline fixtures. The signed mock tests prove our request composition, verification,
 and audit continuity, not the deployed Authentik policy. The BFF verifies the retained upstream
 access token matches the current session's **issuer and subject**, then verifies the exchanged token
 matches the explicit target subject. Action Service independently verifies and authorizes that token,
 and records its actual target issuer/subject in the existing Decision issuer field.
+
+## Staging GitOps subject proof and rollout
+
+### Authoritative mapping (configuration proof, not live token observation)
+
+The login policy binding remains **only** `authentik_user.agentydragon.id`. Display names never
+enter the mapping. The login provider now explicitly pins its existing default
+`sub_mode = "hashed_user_id"`; the Action target explicitly selects `sub_mode = "user_uuid"`.
+The two subject strings are deliberately not assumed equal:
+
+- `data.authentik_user.agentplane_operator.pk = tonumber(authentik_user.agentydragon.id)` selects
+  the already-managed account by primary key. The pinned
+  [Terraform provider v2026.2.0 data source](https://github.com/goauthentik/terraform-provider-authentik/blob/v2026.2.0/pkg/provider/data_source_user.go#L149)
+  calls `CoreUsersRetrieve(pk)` and its `mapFromUser` exposes API `uid` and `uuid` without deriving
+  either. The [resource schema](https://github.com/goauthentik/terraform-provider-authentik/blob/v2026.2.0/docs/resources/provider_oauth2.md)
+  supports both selected `sub_mode` values. No lookup by username is used for authorization.
+- In the cluster's pinned Authentik 2026.2.1,
+  [IDToken.new](https://github.com/goauthentik/authentik/blob/version/2026.2.1/authentik/providers/oauth2/id_token.py#L108)
+  sets `hashed_user_id` to `token.user.uid` and `user_uuid` to `str(token.user.uuid)`.
+  Terraform therefore maps the former API value to the latter and allows **only the latter**
+  at the destination. It neither computes a hash nor invents an identity UUID.
+- [Native provider federation](https://github.com/goauthentik/authentik/blob/version/2026.2.1/authentik/providers/oauth2/views/token.py#L414)
+  finds the source AccessToken only within `jwt_federation_providers`, verifies its signature,
+  and assigns its database user to the grant. The pinned implementation also calls
+  `__check_policy_access` with that user: the target has a matching Rai-only policy binding as
+  defense in depth. This corrects the earlier documentation's assertion that target policy is
+  skipped; the destination allowlist is still mandatory. `create_client_credentials_response` calls
+  `IDToken.new` for that user and the **target** provider. `to_access_token` stamps target `azp`;
+  `IDToken.new` stamps target audience, issuer, `iat`, and `exp`.
+- `jwt_federation_providers` names only the existing Agentplane login provider; external JWT
+  federation sources are explicitly empty. The one-minute target uses the existing signing
+  certificate, not an invented signing key. `openid` is its only property mapping/scope.
+  Confirm the deployed certificate/JWKS still uses RSA/RS256 before live acceptance; the
+  application and service fail closed for another algorithm.
+
+These are provider-derived values evaluated by the normal Terraform controller. No credential-bearing
+plan or state output, user token, password, or signing private key is needed in review. If the lookup
+fails or either attribute is empty, reconciliation must fail; there is no placeholder fallback.
+Account deletion/recreation changes the identity; review it as an authorization change. Future
+Authentik/provider upgrades must preserve this source contract or update and revalidate the mapping.
+
+### Distribution and ordering
+
+1. The already-existing `sso-providers-tf` health check waits for the Terraform resource. The module
+   creates the target and `agentplane-action-federation` in `authentik`; Reflector mirrors it only to
+   `agentplane-staging`. It contains `action-federation` and `operator-oidc` JSON, **no target client
+   secret or shared operator bearer**. Both use the same `local.agentplane_operator_oidc` object.
+2. Action Service depends on that Terraform layer and Reflector. It reads
+   `AGENTPLANE_ACTIONS_OPERATOR_OIDC`; its migration init gate and private Action DB remain in place.
+   Reflector readiness is not a per-secret delivery guarantee: the required Secret reference keeps
+   pods from starting until delivery. Reloader rolls both consumers when the configuration changes.
+3. The app depends on the Action Service and retains its existing database, OIDC client, and session
+   signing Secret. Its `AGENTPLANE_ACTION_FEDERATION` JSON overrides the YAML default. Both app and
+   Action YAML ConfigMaps now use Kustomize name hashes so catalog/config edits restart the process.
+   No replicas are added: the in-memory runner bridge still requires one app replica and `Recreate`.
+4. Use app, Action Service, and migration images published from `df4a440` (#5820) or a descendant.
+   The devel CI run [34167823523](https://github.com/agentydragon/ducktape/actions/runs/34167823523)
+   published all three; existing Flux image markers/policies remain enabled. Do not enable this
+   configuration on the previous `5686ff8` app image (it lacks persistent sessions/federation).
+   Existing cookies require a new login. App startup creates `operator_browser_session` and its
+   expiry index via the existing shared-Postgres advisory-lock DDL path; no separate app migration,
+   DB, signing-secret rotation, or session-replica expansion is introduced.
+
+The BFF already reaches Action on the destination Pod port 8080, and Action admits it separately
+from the workload proxy. Both now reach the public Authentik origin on host/remote-node TCP 443,
+restricted by `serverNames: [auth.allegedly.works]`. This is end-to-end TLS SNI enforcement, not TLS
+termination or a new proxy credential. See [Cilium's SNI policy](https://docs.cilium.io/en/v1.18/security/policy/language/#limit-tls-server-name-indication-sni)
+and [the cluster's Gateway identity precedent](../../../cluster/docs/cilium_network_policy.md).
+The cluster enables Envoy/Gateway API and retains Cilium's default L7 proxy. A bare FQDN selector
+cannot reach these node IPs with the current CIDR match mode. There is no world/all-egress rule.
+DNS stays on the existing kube-dns endpoints/53; JWKS paths are pinned in each verifier, not enforced
+by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup requires revalidation.
+
+### Live acceptance after merge/reconciliation (not performed in this PR)
+
+- Confirm the Terraform resource and both Flux layers are ready, configuration Secret references
+  resolved, the intended image revisions running, Action migration healthy, and app startup completed
+  its session-table DDL. Inspect status, not secret payloads or a credential-bearing Terraform plan.
+- Verify public discovery/JWKS issuer and RS256 metadata against the configured login and target
+  pins. Verify Hubble shows the BFF token/JWKS and Action JWKS connections admitted; a TLS connection
+  with a different SNI on the same gateway must be denied. Do not weaken egress if this fails.
+- Log in as Rai using the existing browser Authentik session. Through the normal UI, review a pending
+  non-auto-allowed fixture Action with harmless arguments, approve it, and confirm the durable Decision
+  records the target issuer and the target UUID subject from the managed user's identity record.
+  Deny a second fixture and confirm no executor dispatch. The exact `echo` fixture can auto-allow:
+  choose a harmless fixture outside that bounded auto-allow path, not a production side effect.
+- Confirm an existing non-authorized account cannot enter Agentplane or obtain a Decision. Do not add
+  a second allowed user just to validate. Wrong issuer/audience/subject, two independent operators,
+  and source/target mismatch are additionally covered by signed offline tests, not simulated live
+  with copied tokens. No token, code, cookie, or credential-bearing request goes into logs/review.
+- Log out, confirm old-session review access fails, and repeat login after expiry/restart. A service
+  restart must retain the existing session's database authority; expiry/logout must not be undone.
+
+## Offline validation
+
+- `//tf/gitops/sso-providers:format` and `:validate`: real `rules_tf` formatting and schema validation
+  using the repo-pinned Terraform/provider mirror, backend-free.
+- `//cluster/validation:test_flux_build` and `:test_cluster_integration`: full offline Flux/Kustomize
+  manifest rendering and dependency/health-check validation.
+- `//x/agentplane/app:test_main`: application Settings environment parsing and OIDC source coexistence.
+- `//x/agentplane/action_service:test_runtime`: Settings/catalog validation and production runtime composition.
+- `//x/agentplane/app:test_action_api` and `//x/agentplane/action_service:test_operator_oidc`: signed
+  offline request/authorization seams, including distinct operator identities and rejected token claims.
+
+Run through `bbr`/CI only. There is no parallel copied-literal HCL/manifest contract test: those
+assertions detected edits rather than executing federation. Synthetic Settings JSON also did not
+prove Terraform's computed output. The shared Terraform local supplies both verifiers' pins; the
+provider mapping and network restrictions above remain explicit configuration review obligations.
+
+These checks cannot prove a real provider issued the expected subject, that Terraform-computed
+configuration reached both processes, or that Cilium admitted the actual TLS path. The live acceptance
+above remains required even when every offline target is green.
 
 ## Failures are distinguishable and fail closed
 

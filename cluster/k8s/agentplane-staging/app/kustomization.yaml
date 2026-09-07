@@ -18,7 +18,5 @@ resources:
 
 configMapGenerator:
   - name: agentplane-app-config
-    options:
-      disableNameSuffixHash: true
     files:
       - config.yaml

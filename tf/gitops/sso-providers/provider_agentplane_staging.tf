@@ -12,10 +12,13 @@ resource "authentik_provider_oauth2" "agentplane_staging" {
   invalidation_flow  = data.authentik_flow.invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
 
+  # Preserve the existing default explicitly: IDToken.new maps this to user.uid.
+  # Terraform derives the Action mapping from that same managed user attribute.
+  sub_mode                   = "hashed_user_id"
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
 
-  # The app names an approval after `preferred_username`, which the profile scope carries.
+  # The profile scope supplies display names only; authorization uses issuer + sub.
   property_mappings = [
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.profile.id,
@@ -46,7 +49,7 @@ resource "authentik_policy_binding" "agentplane_staging_access" {
   order  = 0
 }
 
-# Signs the session cookie (Starlette SessionMiddleware). Generated here so it lives with the
+# Signs the opaque server-side session handle. Generated here so it lives with the
 # client credentials and rotates together; a per-pod key would end every session on a restart.
 resource "random_password" "agentplane_staging_session_secret" {
   length  = 64

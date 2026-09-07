@@ -80,19 +80,19 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    # Discovery, the token exchange and userinfo, against the issuer's public origin
-    # (https://auth.allegedly.works) -- the same URL the browser is redirected to, which is what
-    # the discovery document names and the app pins. That resolves to the gateway's address, so
-    # the hop lands on a node's hostNetwork Envoy rather than on the authentik Pod: hence host and
-    # remote-node beside world, as the egress proxy next door already found (../egress/networkpolicy.yaml).
+    # Public Authentik origin resolves to hostNetwork Gateway node IPs. FQDN/CIDR
+    # selectors cannot match those identities with the cluster's current Cilium
+    # configuration. TLS SNI restricts the node:443 rule to this one origin;
+    # TLS remains end-to-end (no terminatingTLS secret or MITM).
     - toEntities:
-        - world
         - remote-node
         - host
       toPorts:
         - ports:
             - port: "443"
               protocol: TCP
+          serverNames:
+            - auth.allegedly.works
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: agentplane-staging

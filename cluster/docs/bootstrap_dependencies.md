@@ -339,6 +339,16 @@ regenerate, then SOPS-encrypt.
 | **Nix cache**    | `nix-cache/app/jwt-token.sops.yaml`                                                                                                                                                                                          | Generated at bootstrap                                         |
 | **CNPG**         | `tofu-state/db/credentials.sops.yaml`                                                                                                                                                                                        | Generated (random password)                                    |
 
+### Agentplane operator federation
+
+`sso-providers-tf` reads the existing managed Rai user by primary key (API `uid`/`uuid`), creates the
+Action-only Authentik exchange provider, and writes `agentplane-action-federation` in `authentik`.
+Reflector distributes it only to `agentplane-staging`; Action depends on both layers, and the app
+now also depends on Action readiness. Both consume configuration JSON via required Secret keys and
+reload on change. No target client secret or operator bearer is distributed. Existing login client,
+session-signing Secret, app PostgreSQL, and Action migration/DB ownership are unchanged. See
+[subject source proof and live rollout validation](../../x/agentplane/docs/operator_federation.md#staging-gitops-subject-proof-and-rollout).
+
 ## Recovery Scenarios
 
 ### Full bootstrap from zero
