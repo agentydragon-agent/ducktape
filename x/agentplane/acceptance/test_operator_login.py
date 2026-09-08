@@ -15,6 +15,7 @@ from x.agentplane.acceptance.operator_login import (
     SECRET_PATH,
     LoginBlockedError,
     OperatorCredentials,
+    app_origin,
     login_operator,
     read_operator_credentials,
 )
@@ -90,8 +91,11 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
     flow = f"{IDP}/if/flow/default-authentication-flow/?next=%2Fapplication%2Fo%2Fauthorize%2F"
     callback = f"{APP}/auth/callback?state=server-state&code=provider-code"
     steps: list[str] = []
+    identified = False
+    authenticated = False
 
     def respond(request: httpx.Request) -> httpx.Response:
+        nonlocal identified, authenticated
         steps.append(request.url.path)
         assert "authorization" not in request.headers
         if request.url.host == "auth.test.invalid":
@@ -110,7 +114,7 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
             case "/application/o/authorize/":
                 assert request.url.params["state"] == "server-state"
                 assert request.url.params["code_challenge"] == "server-pkce"
-                return httpx.Response(302, headers={"location": flow})
+                return httpx.Response(302, headers={"location": callback if authenticated else flow})
             case "/if/flow/default-authentication-flow/":
                 return httpx.Response(
                     200, text="Flow UI", headers={"set-cookie": "authentik_csrf=test-csrf; Path=/; Secure"}
@@ -118,6 +122,16 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
             case "/api/v3/flows/executor/default-authentication-flow/":
                 assert request.url.params["query"] == httpx.URL(flow).query.decode()
                 if request.method == "GET":
+                    if authenticated:
+                        return httpx.Response(
+                            200,
+                            json={
+                                "component": "xak-flow-redirect",
+                                "to": f"{IDP}/application/o/authorize/?state=server-state&code_challenge=server-pkce",
+                            },
+                        )
+                    if identified:
+                        return httpx.Response(200, json={"component": "ak-stage-password"})
                     return httpx.Response(
                         200, json={"component": "ak-stage-identification", "password_fields": combined}
                     )
@@ -130,11 +144,12 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
                     if combined:
                         expected["password"] = "test-password"
                     assert payload == expected
-                    if not combined:
-                        return httpx.Response(200, json={"component": "ak-stage-password"})
+                    identified = True
+                    authenticated = combined
                 else:
                     assert payload == {"component": "ak-stage-password", "password": "test-password"}
-                return httpx.Response(200, json={"component": "xak-flow-redirect", "to": callback})
+                    authenticated = True
+                return httpx.Response(302, headers={"location": str(request.url)})
             case "/auth/callback":
                 assert str(request.url) == callback
                 assert request.headers["cookie"] == f"{SECURE_COOKIE}=pending"
@@ -150,7 +165,7 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
     async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
         await login_operator(http, CREDENTIALS)
     assert steps[-2:] == ["/auth/callback", "/auth/me"]
-    assert len(steps) == (7 if combined else 8)
+    assert len(steps) == (9 if combined else 11)
 
 
 @pytest.mark.parametrize(
@@ -198,6 +213,10 @@ async def test_login_refuses_unsafe_or_unsupported_flow(failure: str) -> None:
     assert marker not in str(caught.value)
     assert posts == 0
     assert gets <= 21
+
+
+def test_origin_normalization() -> None:
+    assert app_origin(APP) == app_origin(f"{APP}/")
 
 
 if __name__ == "__main__":

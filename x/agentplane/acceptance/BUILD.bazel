@@ -166,6 +166,7 @@ py_test(
     name = "test_operator_login",
     srcs = ["test_operator_login.py"],
     deps = [
+        ":conftest",
         ":operator_login",
         "//:conftest",
         "//x/agentplane/app:oidc",

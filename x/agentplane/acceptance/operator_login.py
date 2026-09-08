@@ -56,7 +56,7 @@ def read_operator_credentials() -> OperatorCredentials:
     __tracebackhide__ = True
     # Project only the active server, never raw kubeconfig credentials. Reject direct cluster access.
     server = _kubectl("config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
-    if server.decode().strip() != KUBE_PROXY:
+    if server.strip() != KUBE_PROXY.encode():
         raise LoginBlockedError("BLOCKED: current kubeconfig must use the Haku Console Kubernetes proxy")
     raw = _kubectl("get", f"--raw={SECRET_PATH}")
     try:
@@ -82,7 +82,7 @@ def app_origin(base_url: str) -> httpx.URL:
     url = httpx.URL(base_url)
     if url.scheme != "https" or url.userinfo or url.query or url.fragment or url.path != "/":
         raise LoginBlockedError("BLOCKED: BFF acceptance requires an HTTPS app origin without credentials or path")
-    return url
+    return _origin(url)
 
 
 def _destination(source: httpx.URL, location: str, app: httpx.URL, idp: httpx.URL) -> httpx.URL:
@@ -93,7 +93,14 @@ def _destination(source: httpx.URL, location: str, app: httpx.URL, idp: httpx.UR
     if _origin(url) == app and url.path == "/auth/callback":
         return url
     if _origin(url) == idp and (
-        url.path == "/application/o/authorize/" or re.fullmatch(r"/if/flow/[a-zA-Z0-9_-]+/", url.path)
+        url.path == "/application/o/authorize/"
+        or re.fullmatch(r"/if/flow/[a-zA-Z0-9_-]+/", url.path)
+        # stage_ok returns a same-executor 302, followed as GET by Authentik's fetch client.
+        or (
+            _origin(source) == idp
+            and url.path == source.path
+            and re.fullmatch(r"/api/v3/flows/executor/[a-zA-Z0-9_-]+/", url.path)
+        )
     ):
         return url
     raise LoginBlockedError("BLOCKED: OIDC redirect outside the app callback or Authentik authorization/flow endpoints")
@@ -119,7 +126,7 @@ async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentia
     # Bounds include both HTTP redirects and FlowExecutor stages; never retry a rejected password.
     for _ in range(20):
         # Refuse broad-domain cookies before another request can send them to the other origin.
-        if any(cookie.domain.lstrip(".") not in (app.host, idp.host) for cookie in http.cookies.jar):
+        if any(cookie.domain_specified or cookie.domain not in (app.host, idp.host) for cookie in http.cookies.jar):
             raise LoginBlockedError("BLOCKED: login returned a cookie spanning untrusted origins")
         if _origin(response.url) == app and response.url.path == "/auth/callback":
             if response.status_code != 303 or response.headers.get("location") != "/":
@@ -136,7 +143,7 @@ async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentia
             response = await http.get(target)
             continue
         if response.status_code != 200:
-            raise LoginBlockedError("BLOCKED: Authentik login refused; check dedicated user, flow and CSRF configuration")
+            raise LoginBlockedError("BLOCKED: Authentik refused login; check user, flow and CSRF configuration")
         if re.fullmatch(r"/if/flow/[a-zA-Z0-9_-]+/", response.url.path):
             # GET the UI first to obtain Authentik's normal session/CSRF cookies, then do what its UI does.
             flow_page = response.url
@@ -149,6 +156,8 @@ async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentia
         challenge = response.json()
         if not isinstance(challenge, dict) or challenge.get("response_errors"):
             raise LoginBlockedError("BLOCKED: Authentik challenge rejected the dedicated operator login")
+        if challenge.get("captcha_stage"):
+            raise LoginBlockedError("BLOCKED: Authentik requires an interactive CAPTCHA challenge")
         component = challenge.get("component")
         if component == "xak-flow-redirect":
             target = _destination(response.url, challenge["to"], app, idp)
