@@ -116,6 +116,15 @@ class DecidedMcpReport(BaseModel):
     result: JsonValue
 
 
+def _bff_request(response: httpx.Response) -> ActionRequestView:
+    """Validation errors must not render the response's operator identity into test artifacts."""
+    __tracebackhide__ = True
+    try:
+        return ActionRequestView.model_validate(response.json())
+    except ValueError:
+        pytest.fail("BFF returned an invalid ActionRequestView; response body withheld", pytrace=False)
+
+
 @pytest.mark.parametrize("verdict", list(Verdict))
 async def test_agent_mcp_bff_decision(
     operator_bff: httpx.AsyncClient,
@@ -148,7 +157,7 @@ Stop now and return ONLY the returned request UUID, without JSON, fences, or exp
     path = f"/actions/{request_id}"
     pending_response = await operator_bff.get(path)
     assert pending_response.status_code == HTTPStatus.OK
-    pending = ActionRequestView.model_validate(pending_response.json())
+    pending = _bff_request(pending_response)
     assert pending.id == request_id
     assert pending.idempotency_key == submission_key
     assert (pending.action.group, pending.action.name) == ("everything", "echo")
@@ -162,7 +171,7 @@ Stop now and return ONLY the returned request UUID, without JSON, fences, or exp
     decision = DecisionInput(verdict=verdict, expected_version=pending.version, idempotency_key=str(uuid4()))
     decided_response = await operator_bff.post(f"{path}/decision", json=decision.model_dump(mode="json"))
     assert decided_response.status_code == HTTPStatus.OK
-    decided = ActionRequestView.model_validate(decided_response.json())
+    decided = _bff_request(decided_response)
     assert decided.id == request_id
     assert decided.arguments == pending.arguments
     assert decided.version == pending.version + 1
@@ -202,7 +211,7 @@ execution.result, or use null when denied with no execution. Do not fabricate it
     assert report.result == expected_result
     terminal_response = await operator_bff.get(path)
     assert terminal_response.status_code == HTTPStatus.OK
-    terminal = ActionRequestView.model_validate(terminal_response.json())
+    terminal = _bff_request(terminal_response)
     assert terminal.id == request_id
     assert terminal.idempotency_key == submission_key
     assert terminal.action == pending.action
@@ -224,14 +233,14 @@ execution.result, or use null when denied with no execution. Do not fabricate it
     # Replay the original version/key after completion: same Decision and Execution, no new dispatch.
     duplicate = await operator_bff.post(f"{path}/decision", json=decision.model_dump(mode="json"))
     assert duplicate.status_code == HTTPStatus.OK
-    if ActionRequestView.model_validate(duplicate.json()) != terminal:
+    if _bff_request(duplicate) != terminal:
         pytest.fail("Duplicate decision changed the terminal request", pytrace=False)
     stale = decision.model_copy(update={"idempotency_key": str(uuid4())})
     refused = await operator_bff.post(f"{path}/decision", json=stale.model_dump(mode="json"))
     assert refused.status_code == HTTPStatus.CONFLICT
     unchanged = await operator_bff.get(path)
     assert unchanged.status_code == HTTPStatus.OK
-    if ActionRequestView.model_validate(unchanged.json()) != terminal:
+    if _bff_request(unchanged) != terminal:
         pytest.fail("Stale decision changed the terminal request", pytrace=False)
 
 
