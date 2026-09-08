@@ -191,12 +191,11 @@ in
       install -Dm0644 "$src/ca-certificates.crt" "${proxyCaRuntimeDir}/proxy-ca.crt"
       cat /etc/ssl/certs/ca-bundle.crt "${proxyCaRuntimeDir}/proxy-ca.crt" \
         > "${proxyCaRuntimeDir}/ca-bundle.crt"
-      # Bazel's embedded JVM ignores the PEM bundle. Start from the Nix JDK's
-      # public CA store, then import every certificate from the live proxy
-      # bundle: it includes the ordinary roots plus the interception root.
-      base_store=$(find "${pkgs.jdk}" -path '*/lib/security/cacerts' -type f -print -quit)
-      test -n "$base_store"
-      cp "$base_store" "$BAZEL_PROXY_TRUSTSTORE"
+      # Bazel's embedded JVM ignores the PEM bundle. Build an isolated JKS
+      # from every live proxy-bundle certificate: it carries both the public
+      # roots and the interception root, avoiding duplicate-import failures
+      # against the Nix JDK's pre-populated cacerts store.
+      rm -f "$BAZEL_PROXY_TRUSTSTORE"
       cert_dir="${proxyCaRuntimeDir}/java-certs"
       mkdir -p "$cert_dir"
       awk -v out="$cert_dir" '
