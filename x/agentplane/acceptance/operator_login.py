@@ -79,7 +79,11 @@ def _origin(url: httpx.URL) -> httpx.URL:
 
 
 def app_origin(base_url: str) -> httpx.URL:
-    url = httpx.URL(base_url)
+    __tracebackhide__ = True
+    try:
+        url = httpx.URL(base_url)
+    except httpx.InvalidURL:
+        raise LoginBlockedError("BLOCKED: invalid BFF app origin") from None
     if url.scheme != "https" or url.userinfo or url.query or url.fragment or url.path != "/":
         raise LoginBlockedError("BLOCKED: BFF acceptance requires an HTTPS app origin without credentials or path")
     return _origin(url)
@@ -118,7 +122,9 @@ async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentia
     if issuer.scheme != "https" or issuer.userinfo or issuer.query or issuer.fragment:
         raise LoginBlockedError("BLOCKED: operator Secret has an invalid HTTPS issuer")
     idp = _origin(issuer)
-    if app == idp or http.cookies or "Authorization" in http.headers:
+    if app.host == idp.host or app.host.endswith(f".{idp.host}") or idp.host.endswith(f".{app.host}"):
+        raise LoginBlockedError("BLOCKED: app and Authentik require separate, non-overlapping cookie hosts")
+    if http.cookies or "Authorization" in http.headers:
         raise LoginBlockedError("BLOCKED: OIDC login requires a fresh cookie jar without bearer authentication")
     response = await http.get("/auth/login")
     identified = False
@@ -139,6 +145,8 @@ async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentia
                 raise LoginBlockedError("BLOCKED: app OIDC session does not identify the dedicated operator")
             return
         if response.is_redirect:
+            if response.request.method == "POST" and response.status_code in (307, 308):
+                raise LoginBlockedError("BLOCKED: Authentik requested replay of a credential POST")
             target = _destination(response.url, response.headers["location"], app, idp)
             response = await http.get(target)
             continue

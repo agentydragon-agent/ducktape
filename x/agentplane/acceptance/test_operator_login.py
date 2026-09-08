@@ -75,7 +75,11 @@ def test_secret_failures_are_closed_and_do_not_echo_output(
     elif failure == "malformed":
         results.append(subprocess.CompletedProcess([], 0, stdout=marker.encode()))
     else:
-        results.append(subprocess.CompletedProcess([], 0, stdout=b'{"data":{"username":""}}'))
+        results.append(
+            subprocess.CompletedProcess(
+                [], 0, stdout=b'{"data":{"username":"","password":"","issuer":"","subject":""}}'
+            )
+        )
     run = Mock(side_effect=results)
     monkeypatch.setattr(subprocess, "run", run)
     with pytest.raises(LoginBlockedError, match="BLOCKED") as caught:
@@ -170,7 +174,19 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
 
 @pytest.mark.parametrize(
     "failure",
-    ["foreign", "http", "userinfo", "wrong_callback", "broad_cookie", "mfa", "csrf", "rejected", "loop", "callback"],
+    [
+        "foreign",
+        "http",
+        "userinfo",
+        "wrong_callback",
+        "broad_cookie",
+        "mfa",
+        "csrf",
+        "rejected",
+        "loop",
+        "callback",
+        "captcha",
+    ],
 )
 async def test_login_refuses_unsafe_or_unsupported_flow(failure: str) -> None:
     posts = 0
@@ -203,6 +219,8 @@ async def test_login_refuses_unsafe_or_unsupported_flow(failure: str) -> None:
             return httpx.Response(200)
         if failure == "rejected":
             return httpx.Response(200, json={"response_errors": {"password": [marker]}})
+        if failure == "captcha":
+            return httpx.Response(200, json={"component": "ak-stage-identification", "captcha_stage": {"key": marker}})
         if failure == "csrf":
             return httpx.Response(200, json={"component": "ak-stage-identification"})
         return httpx.Response(200, json={"component": "ak-stage-authenticator-validate", "private": marker})

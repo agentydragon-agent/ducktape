@@ -89,7 +89,7 @@ async def operator_bff(base_url: str, operator_credentials: OperatorCredentials)
                 await login_operator(http, operator_credentials)
             except LoginBlockedError as exc:
                 pytest.fail(str(exc), pytrace=False)
-            except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError):
                 pytest.fail("BLOCKED: OIDC transport or response invalid; auth details withheld", pytrace=False)
             http.headers["Origin"] = origin
             # An absent request exercises federation without listing other requests.
@@ -155,7 +155,8 @@ Stop now and return ONLY the returned request UUID, without JSON, fences, or exp
     assert pending.arguments == {"message": marker}
     assert pending.state is ActionState.DECISION_PENDING
     assert pending.version == 1
-    assert pending.decision is None
+    if pending.decision is not None:
+        pytest.fail("Pending request already has a Decision", pytrace=False)
     assert pending.execution is None
 
     decision = DecisionInput(verdict=verdict, expected_version=pending.version, idempotency_key=str(uuid4()))
