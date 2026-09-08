@@ -33,10 +33,6 @@ spec:
       namespace: ducktape-flux
     - name: litellm-keys-tf
       namespace: ducktape-flux
-    # Creates the dedicated acceptance operator and reflection source. Required
-    # Secret refs gate container startup until Reflector delivers the copy.
-    - name: sso-providers-tf
-      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

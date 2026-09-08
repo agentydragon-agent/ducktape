@@ -32,8 +32,8 @@ resource "authentik_policy_binding" "agentplane_acceptance_actions_access" {
   order  = 1
 }
 
-# Intentionally delivered to the acceptance runner's OpenClaw container, never
-# to the proxy or a sandbox. These are login inputs, not a pre-issued session.
+# Read on demand by the acceptance runner through Console-authorized Kubernetes
+# GET, not mounted in OpenClaw, the proxy, or a sandbox. No pre-issued session.
 resource "kubernetes_secret" "agentplane_acceptance_operator" {
   metadata {
     name      = "agentplane-acceptance-operator"

@@ -356,16 +356,19 @@ resolved by primary key. Action Service authorization remains independent and de
 
 The Terraform-owned `authentik/agentplane-acceptance-operator` Secret contains only
 `username`, `password`, Action `issuer`, and UUID `subject`. Reflector permits and auto-copies it
-only to `public-coder-agent`. The OpenClaw container receives these via required
-`AGENTPLANE_ACCEPTANCE_OPERATOR_{USERNAME,PASSWORD,ISSUER,SUBJECT}` Secret references, intentionally
-making the real login credential available to that runner. Its Flux layer depends on
-`sso-providers-tf` (Reflector and the namespace are already dependencies through the proxy).
-No proxy substitution, proxy credential mount, sandbox delivery, or workload RBAC is added.
+only to `public-coder-agent`. The acceptance runner reads this one Secret on demand through its
+existing kubeconfig and Haku Console-proxied Kubernetes API. A namespace Role grants only `get`
+on that `resourceNames` entry to the existing `haku:access-profile:public-coder` Group; no
+list/watch, other Secrets, or ServiceAccount subjects are granted. This is the same group already
+bound to staging Agentplane lifecycle permissions, not a new operator interpretation of its bearer.
+No OpenClaw env injection, proxy mount/substitution, or sandbox delivery is added. RBAC can be
+installed before the Secret exists; runner bootstrap must wait for Terraform/Reflector delivery.
 Protect Terraform state and Kubernetes Secrets; never print login material in runner diagnostics.
-The acceptance test currently needs an app-issued `AGENTPLANE_ACCEPTANCE_OPERATOR_SESSION_COOKIE`;
-username/password provisioning alone does not supply it. Runner-owned real OIDC login bootstrap
-is a separate follow-up, not a pre-signed cookie or inserted session row. This wiring is not live
-login/acceptance evidence.
+The current acceptance test still reads username/issuer/subject and an app-issued session cookie
+from environment variables. Test code must be amended separately to read the reflected Secret
+through the existing kubeconfig; this infrastructure does not supply that env contract. Real OIDC
+login/session-cookie bootstrap remains runner-owned: a password is not a signed session, and no
+pre-signed cookie or inserted session row is provisioned. No live login/acceptance is claimed.
 
 ## Recovery Scenarios
 
