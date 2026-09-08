@@ -38,12 +38,15 @@ is not evidence that deployed acceptance passed.
 - **P0 behavior — coordinated operator deny/allow:** one parametrized body runs both
   verdicts on both real harnesses. Turn one submits the non-auto-approved echo and
   returns only the request UUID JSON. Independent `ActionEvidence` reads must confirm
-  pending/no Decision/no Execution before Python uses `OperatorActionServiceClient`
+  pending/no Decision/no Execution before Python uses the session-authenticated Integration App BFF
   with expected version + a fresh decision idempotency key + a synthetic private reason.
+  BFF `GET /actions/{id}` independently confirms the exact pending request, arguments,
+  version, and absence of Decision/Execution; `POST /actions/{id}/decision` decides it.
   Turn two on the **same Agent/session** polls that UUID to terminal and reads its events;
   it does not resubmit or receive operator credentials/reason. A before/after ring delta
   requires fresh admitted agent GETs of both request and events, with no observer reads
-  between snapshots. The final UUID report is not result evidence.
+  between snapshots. Its UUID/state/result report is cross-checked against independent
+  caller API reads, never accepted as result evidence by itself.
   Independent API/events require the exact configured operator issuer/subject, a stable
   Decision ID, and private reason visible only to the operator (absent from caller
   projections/events and the second-turn transcript). Deny requires no Execution and
@@ -78,7 +81,7 @@ exactly-once delivery.
 
 ### Output contract and diagnostics
 
-The agent's final report has exactly this schema (extra properties forbidden):
+The first-turn submission report has exactly this schema (extra properties forbidden):
 
 ```json
 {
@@ -88,6 +91,9 @@ The agent's final report has exactly this schema (extra properties forbidden):
   "properties": { "request_id": { "type": "string", "format": "uuid" } }
 }
 ```
+
+The coordinated second-turn report additionally requires `state` and `result` (null
+when no Execution exists); both are checked against independent readback.
 
 The UUID is only a locator. The independent observer cross-checks its idempotency
 key, group/name, exact fresh marker argument, and the entire fresh Sandbox's request
@@ -120,39 +126,65 @@ the rest of this suite, abrupt process death still requires deliberate cleanup.
 ### Current blocked contracts
 
 **Observed source contract / deployment prerequisite:** [#5827](https://github.com/agentydragon/ducktape/pull/5827)
-authorizes **Rai only** through the existing browser login and request-bound Authentik
-exchange. It does not provide a runner token or Python-accessible authenticated operator
-route for this acceptance process. Its browser BFF is not a generic bearer-client route.
-The fixed #5822 base predates that federation wiring; neither this test nor its protected
-operator URL/token-file contract provisions identity, Terraform, runtime authentication,
-or a BFF. Live coordinated acceptance remains **BLOCKED**, not skipped or simulated,
-until an approved runner has the required route and authorized identity.
+authorizes **Rai only** through the Integration App's OIDC login and request-bound
+Authentik exchange. No dedicated staging acceptance operator is authorized, and no
+reviewed Python Authentik login adapter/credential contract is currently provisioned.
+Live coordinated acceptance therefore remains **BLOCKED**, not skipped or simulated.
+The fixed #5822 base predates the BFF/federation runtime; this stack uses its evidence
+helpers, but the deployed target must include #5820/#5827 (or successors).
 
-On an approved controlled host, provide all four settings:
+The Python operator side calls **only the Integration App**: `GET /auth/me`,
+`GET /actions`, `GET /actions/{id}`, and `POST /actions/{id}/decision`. It presents
+the real app session cookie and exact same-origin `Origin`, not an Authorization
+bearer. The BFF owns the upstream access token and performs the real federation on
+requests; the acceptance process never exchanges a canonical Action Service token.
+Redirects are not followed during acceptance. There is no canonical-service fallback;
+`OperatorActionServiceClient` is deliberately not used because its paths/auth are wrong
+for this boundary. The old `AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE` is not consumed.
 
-| Variable                                    | Required value                                                               |
-| ------------------------------------------- | ---------------------------------------------------------------------------- |
-| `AGENTPLANE_ACCEPTANCE_OPERATOR_URL`        | Existing HTTPS operator service base URL, without credentials/query/fragment |
-| `AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE` | Host-owned, readable, nonempty bearer file; never a token value              |
-| `AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER`     | Independently established target token issuer                                |
-| `AGENTPLANE_ACCEPTANCE_OPERATOR_SUBJECT`    | Independently established authorized target subject                          |
+### Required Python login/session handoff
 
-Select the expected issuer/subject from the reviewed target configuration, **not** from
-this test's returned Decision, a guessed UUID, a username, or the source login subject.
-For #5827 that means the Action-only issuer and Rai's managed-user UUID (`user_uuid`),
-not the login provider's `hashed_user_id`. `DecisionView.issuer` is the existing wire
-field holding `Principal.key`, serialized as `issuer:subject`; the test compares that
-whole value, without trying to split a URL on colons. Event records contain ordered
-states/sequences, not a separate identity claim; identity is asserted on the Decision.
+An approved controlled-host Python login adapter must complete the **real** Integration
+App `/auth/login` → Authentik authorization → app `/auth/callback` flow using one cookie
+jar (preserving app OAuth state/nonce/PKCE). It needs protected credentials for a
+**dedicated authorized staging operator** and a reviewed way to satisfy that account's
+actual Authentik flow, including any challenges/MFA. No password grant, bypass of MFA,
+mock IdP, fabricated callback/session, browser automation, or borrowed Rai identity is
+implemented here. Do not assume username/password alone automates the deployed flow.
+The app's OIDC client secret and session-signing secret remain server-owned.
 
-Missing identity settings fail preflight with precise `BLOCKED operator preflight`;
-missing URL/file, unreadable/empty file, and unavailable/unauthorized route also fail
-before any sandbox/decision is created by the operator case. The bearer is read only
-in the acceptance process, never put in a prompt, argv, or artifact. Neither workload
-nor app ServiceAccount tokens substitute for operator authority. Running these cases
-authorizes the Python fixture's named allow/deny decisions, not browser automation or
-identity provisioning. Existing fixture teardown suspends/deletes the fresh sandbox
-even on failure; no withdrawal endpoint is assumed.
+After successful callback, the login adapter hands off the value of the app's
+`__Host-agentplane_session` cookie in a host-owned file with no group/world permissions
+(e.g. mode 0600). The file contains **only the opaque signed handle**, optionally with a
+trailing newline, not JSON, a Cookie header, or an access/ID token. Its server-side
+session row must retain the unexpired source access token needed for federation.
+The adapter must refresh by real login before expiry; the test does not refresh or
+provision identity. Protect/revoke the suite-dedicated session and remove the handoff
+file after the run. This handoff is an authenticated-session prerequisite, **not a
+claim that this test automates or proves the login flow**. Without it, fail preflight
+with `BLOCKED`; do not silently exercise a different operator surface.
+
+| Variable                                      | Required value                                                                                         |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `AGENTPLANE_ACCEPTANCE_OPERATOR_URL`          | Same HTTPS Integration App origin used by the agent-control client; no path/credentials/query/fragment |
+| `AGENTPLANE_ACCEPTANCE_OPERATOR_SESSION_FILE` | Protected real OIDC session-handle file described above                                                |
+| `AGENTPLANE_ACCEPTANCE_OPERATOR_USERNAME`     | Expected dedicated login username, checked by `/auth/me`                                               |
+| `AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER`       | Independently established **target** token issuer                                                      |
+| `AGENTPLANE_ACCEPTANCE_OPERATOR_SUBJECT`      | Independently established authorized **target** subject                                                |
+
+The app URL defaults to staging; a controlled runner can retarget it with the existing
+`AGENTPLANE_ACCEPTANCE_URL` contract. The explicit operator origin must match it.
+Select expected issuer/subject from reviewed target configuration, **not** from the
+returned Decision, a guessed UUID, username, or source login subject. #5827's target
+uses managed-user UUID (`user_uuid`), not login `hashed_user_id`; extending it for a
+dedicated operator and provisioning real login credentials is outside this PR.
+`DecisionView.issuer` holds the whole `Principal.key` (`issuer:subject`). Event records
+contain ordered states/sequences, not identity; identity is asserted on the Decision.
+
+Missing settings, inaccessible/insecure session file, wrong/expired login, missing BFF,
+or rejected federation fail precise preflight `BLOCKED` before an operator case creates
+a sandbox/decision. Session credentials never enter agent prompts, argv, or artifacts.
+The suite uses existing sandbox teardown even on failures; no withdrawal is assumed.
 
 **Deferred — caller withdrawal:** `action_service/api.py` and its clients have no
 caller withdrawal/cancellation endpoint. `ActionState.CANCELLED` is an executor

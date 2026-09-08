@@ -10,17 +10,25 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 import pytest_bazel
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from x.agentplane.acceptance.action_evidence import ACTIONS_URL, ActionEvidence, assert_success, assert_unexecuted
 from x.agentplane.acceptance.agent import Agent
 from x.agentplane.action_service.catalog import ActionGroupView, ActionView
-from x.agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER, OperatorActionServiceClient
-from x.agentplane.action_service.models import DecisionInput, Principal, PrincipalRole, Verdict
+from x.agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER
+from x.agentplane.action_service.models import (
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+    Principal,
+    PrincipalRole,
+    Verdict,
+)
 from x.agentplane.app.api import Provider
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
+from x.agentplane.app.oidc import SECURE_COOKIE
 
 
 class McpReport(BaseModel):
@@ -28,6 +36,11 @@ class McpReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     request_id: UUID
+
+
+class TerminalMcpReport(McpReport):
+    state: ActionState
+    result: JsonValue
 
 
 def prompt(message: str, key: str) -> str:
@@ -171,18 +184,21 @@ alternate routes. Report the HTTP status only; a refusal is expected.
         await asyncio.sleep(2)
 
 
-class OperatorTokenFile:
-    def __init__(self, path: Path) -> None:
-        self.path = path
+class OperatorBff:
+    """Session-authenticated Integration App routes, never the canonical operator API."""
 
-    async def token(self) -> str:
-        try:
-            token = self.path.read_text().strip()
-        except (OSError, UnicodeError):
-            pytest.fail("BLOCKED operator preflight: host-owned token file unreadable", pytrace=False)
-        if not token:
-            pytest.fail("BLOCKED operator preflight: host-owned token file empty", pytrace=False)
-        return token
+    def __init__(self, http: httpx.AsyncClient) -> None:
+        self.http = http
+
+    async def get(self, request_id: UUID) -> ActionRequestView:
+        response = await self.http.get(f"/actions/{request_id}")
+        response.raise_for_status()
+        return ActionRequestView.model_validate(response.json())
+
+    async def decide(self, request_id: UUID, decision: DecisionInput) -> ActionRequestView:
+        response = await self.http.post(f"/actions/{request_id}/decision", json=decision.model_dump(mode="json"))
+        response.raise_for_status()
+        return ActionRequestView.model_validate(response.json())
 
 
 @pytest.fixture(scope="session")
@@ -191,14 +207,15 @@ def expected_operator() -> Principal:
         "AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER",
         "AGENTPLANE_ACCEPTANCE_OPERATOR_SUBJECT",
         "AGENTPLANE_ACCEPTANCE_OPERATOR_URL",
-        "AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE",
+        "AGENTPLANE_ACCEPTANCE_OPERATOR_SESSION_FILE",
+        "AGENTPLANE_ACCEPTANCE_OPERATOR_USERNAME",
     ]
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
         pytest.fail(
             f"BLOCKED operator preflight: missing {', '.join(missing)}. Requires an existing operator route, "
-            "host-owned token file and independently established target issuer/subject. "
-            "#5827 authorizes Rai only; no acceptance-runner token/route exists. "
+            "host-owned real OIDC session file, dedicated login username and independently established target issuer/subject. "
+            "#5827 authorizes Rai only; no dedicated operator Python login/session contract is provisioned. "
             "Workload/app tokens cannot substitute; do not infer identity from this Decision.",
             pytrace=False,
         )
@@ -210,28 +227,68 @@ def expected_operator() -> Principal:
 
 
 @pytest.fixture
-async def action_operator(expected_operator: Principal) -> AsyncIterator[OperatorActionServiceClient]:
-    # The session-scoped identity fixture checks all required settings before function fixtures.
+def operator_session(expected_operator: Principal) -> str:
+    try:
+        path = Path(os.environ["AGENTPLANE_ACCEPTANCE_OPERATOR_SESSION_FILE"])
+        if path.stat().st_mode & 0o077:
+            pytest.fail("BLOCKED BFF preflight: session file must not be group/world accessible", pytrace=False)
+        cookie = path.read_text().strip()
+    except (OSError, UnicodeError):
+        pytest.fail("BLOCKED BFF preflight: protected OIDC session file unreadable", pytrace=False)
+    if not cookie or any(character.isspace() or character == ";" for character in cookie):
+        pytest.fail(
+            "BLOCKED BFF preflight: session file must contain only the opaque app session handle", pytrace=False
+        )
+    return cookie
+
+
+@pytest.fixture
+async def action_operator(operator_session: str, base_url: str) -> AsyncIterator[OperatorBff]:
+    # Required settings are checked by the session-scoped fixture before function fixtures.
     url = os.environ["AGENTPLANE_ACCEPTANCE_OPERATOR_URL"]
-    path = os.environ["AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE"]
     try:
         route = httpx.URL(url)
     except httpx.InvalidURL:
-        pytest.fail("BLOCKED operator preflight: invalid operator URL", pytrace=False)
-    if route.scheme != "https" or not route.host or route.userinfo or route.query or route.fragment:
-        pytest.fail("BLOCKED operator preflight: HTTPS URL required, without credentials/query/fragment", pytrace=False)
-    async with httpx.AsyncClient(base_url=url, timeout=20) as http:
-        operator = OperatorActionServiceClient(http, OperatorTokenFile(Path(path)))
+        pytest.fail("BLOCKED BFF preflight: invalid Integration App origin", pytrace=False)
+    if (
+        route.scheme != "https"
+        or not route.host
+        or route.userinfo
+        or route.query
+        or route.fragment
+        or route.path != "/"
+        or route != httpx.URL(base_url)
+    ):
+        pytest.fail("BLOCKED BFF preflight: operator URL must be the same HTTPS Integration App origin", pytrace=False)
+    # No Authorization header, redirect following, token exchange, or canonical service URL here.
+    # The real app session owns the upstream access token and request-bound federation.
+    async with httpx.AsyncClient(
+        base_url=url, timeout=20, follow_redirects=False, headers={"Origin": str(route).rstrip("/")}
+    ) as http:
+        http.cookies.set(SECURE_COOKIE, operator_session, domain=route.host, path="/")
         try:
-            await operator.list_requests()
-        except httpx.HTTPError:
-            pytest.fail("BLOCKED operator preflight: route/auth unavailable; no decision attempted", pytrace=False)
-        yield operator
+            me = await http.get("/auth/me")
+            if me.status_code != 200 or me.json() != {
+                "username": os.environ["AGENTPLANE_ACCEPTANCE_OPERATOR_USERNAME"]
+            }:
+                pytest.fail(
+                    "BLOCKED BFF preflight: dedicated operator session missing/expired/wrong login", pytrace=False
+                )
+            listing = await http.get("/actions")
+            if listing.status_code != 200:
+                pytest.fail(
+                    f"BLOCKED BFF preflight: /actions HTTP {listing.status_code}; dedicated operator federation/route unavailable",
+                    pytrace=False,
+                )
+            TypeAdapter(list[ActionRequestView]).validate_python(listing.json())
+        except (httpx.HTTPError, ValueError):
+            pytest.fail("BLOCKED BFF preflight: app session/federation transport or response invalid", pytrace=False)
+        yield OperatorBff(http)
 
 
 @pytest.mark.parametrize("verdict", [Verdict.DENY, Verdict.ALLOW])
 async def test_explicit_operator_decision(
-    action_operator: OperatorActionServiceClient,
+    action_operator: OperatorBff,
     client: Client,
     sandbox: Callable[..., Awaitable[SandboxView]],
     provider: Provider,
@@ -243,6 +300,16 @@ async def test_explicit_operator_decision(
     agent, evidence, request_id, _ = await submit(client, sandbox, provider, model, message)
     pending = await evidence.request(request_id)
     assert_unexecuted(pending, await evidence.events(request_id), denied=False)
+    # Confirm the exact request via the operator-facing Integration App BEFORE deciding.
+    review = await action_operator.get(request_id)
+    assert review.id == pending.id
+    assert review.idempotency_key == pending.idempotency_key
+    assert review.action == pending.action
+    assert review.arguments == pending.arguments
+    assert review.version == pending.version
+    assert review.state == pending.state
+    assert review.decision is None
+    assert review.execution is None
     # This synthetic private marker is never sent in either agent prompt.
     private_reason = f"operator-only-{uuid4()}"
     decision = DecisionInput(
@@ -273,10 +340,12 @@ GET {ACTIONS_URL}/v1/action-requests/{request_id} at two-second intervals for up
 until denied, succeeded, failed, cancelled, or execution_unknown. Then GET
 {ACTIONS_URL}/v1/action-requests/{request_id}/events?after_sequence=0.
 Do not POST, submit a replacement, obtain credentials, or use any operator endpoint.
-Return ONLY {{"request_id":"{request_id}"}} after reading the terminal request and its events.
+Return ONLY JSON with request_id ("{request_id}"), state (the observed terminal state),
+and result (the observed execution.result, or null when there is no execution). No extra fields.
 """)
     assert private_reason not in turn.transcript, "private operator reason leaked to the agent"
-    assert McpReport.model_validate_json(turn.answer).request_id == request_id
+    report = TerminalMcpReport.model_validate_json(turn.answer)
+    assert report.request_id == request_id
     after = [
         row
         for row in await client.decisions(evidence.sandbox)
@@ -307,6 +376,8 @@ Return ONLY {{"request_id":"{request_id}"}} after reading the terminal request a
     request = await evidence.request(request_id)
     events = await evidence.events(request_id)
     assert request.decision is not None, request
+    assert report.state == request.state, request
+    assert report.result == (request.execution.result if request.execution else None), request
     assert request.decision.id == decided.decision.id, request
     assert request.decision.issuer == expected_operator.key, request
     assert request.decision.provider == "human_operator", request
