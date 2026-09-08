@@ -151,8 +151,10 @@ in
     before = [ "network-online.target" ];
     path = [
       pkgs.coreutils
+      pkgs.jdk
       pkgs.util-linux
     ];
+    environment.BAZEL_PROXY_TRUSTSTORE = "${proxyCaRuntimeDir}/bazel-cacerts";
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
@@ -181,6 +183,15 @@ in
       install -Dm0644 "$src/ca-certificates.crt" "${proxyCaRuntimeDir}/proxy-ca.crt"
       cat /etc/ssl/certs/ca-bundle.crt "${proxyCaRuntimeDir}/proxy-ca.crt" \
         > "${proxyCaRuntimeDir}/ca-bundle.crt"
+      # Bazel's embedded JVM ignores the PEM bundle. Start from the Nix JDK's
+      # public CA store and append the live TLS-inspection CA for BCR fetches.
+      base_store=$(find "${pkgs.jdk}" -path '*/lib/security/cacerts' -type f -print -quit)
+      test -n "$base_store"
+      cp "$base_store" "$BAZEL_PROXY_TRUSTSTORE"
+      keytool -importcert -noprompt -storepass changeit \
+        -alias public-coder-proxy-ca \
+        -keystore "$BAZEL_PROXY_TRUSTSTORE" \
+        -file "${proxyCaRuntimeDir}/proxy-ca.crt"
       umount "$src"
     '';
   };
@@ -211,7 +222,11 @@ in
     description = "Install the public-coder-devbox BuildBuddy credential";
     wantedBy = [ "multi-user.target" ];
     before = [ "hostexecd.service" ];
-    after = [ "local-fs.target" ];
+    requires = [ "public-coder-devbox-proxy-ca.service" ];
+    after = [
+      "local-fs.target"
+      "public-coder-devbox-proxy-ca.service"
+    ];
     path = [
       pkgs.coreutils
       pkgs.util-linux
@@ -234,9 +249,13 @@ in
       umask 077
       { printf 'BUILDBUDDY_API_KEY='; cat "$src/api-key"; printf '\n'; } > "${buildbuddyRuntimeDir}/environment"
       install -d -m0700 -o coder -g users /home/coder/.config/bazel
+      cat > /home/coder/.config/bazel/runtime.bazelrc <<EOF
+      startup --host_jvm_args=-Djavax.net.ssl.trustStore=${proxyCaRuntimeDir}/bazel-cacerts
+      startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
+      EOF
       { printf 'common:rbe --remote_header=x-buildbuddy-api-key='; cat "$src/api-key"; printf '\n'; } > /home/coder/.config/bazel/buildbuddy.bazelrc
-      chown coder:users /home/coder/.config/bazel/buildbuddy.bazelrc
-      chmod 0600 /home/coder/.config/bazel/buildbuddy.bazelrc
+      chown coder:users /home/coder/.config/bazel/runtime.bazelrc /home/coder/.config/bazel/buildbuddy.bazelrc
+      chmod 0600 /home/coder/.config/bazel/runtime.bazelrc /home/coder/.config/bazel/buildbuddy.bazelrc
       umount "$src"
     '';
   };
