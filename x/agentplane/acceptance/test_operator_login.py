@@ -1,0 +1,204 @@
+"""Offline choreography/sanitization checks, not evidence of a deployed OIDC login."""
+
+import base64
+import json
+import subprocess
+from unittest.mock import Mock
+
+import httpx
+import pytest
+import pytest_bazel
+from pydantic import SecretStr
+
+from x.agentplane.acceptance.operator_login import (
+    KUBE_PROXY,
+    SECRET_PATH,
+    LoginBlockedError,
+    OperatorCredentials,
+    login_operator,
+    read_operator_credentials,
+)
+from x.agentplane.app.oidc import SECURE_COOKIE
+
+APP = "https://app.test.invalid"
+IDP = "https://auth.test.invalid"
+CREDENTIALS = OperatorCredentials(
+    username=SecretStr("test-user"),
+    password=SecretStr("test-password"),
+    issuer=SecretStr(f"{IDP}/application/o/actions/"),
+    subject=SecretStr("test-subject"),
+)
+
+
+def test_secret_is_one_named_get_through_current_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    data = {name: base64.b64encode(value.get_secret_value().encode()).decode() for name, value in CREDENTIALS}
+    run = Mock(
+        side_effect=[
+            subprocess.CompletedProcess([], 0, stdout=KUBE_PROXY.encode()),
+            subprocess.CompletedProcess([], 0, stdout=json.dumps({"data": data}).encode()),
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", run)
+    assert read_operator_credentials() == CREDENTIALS
+    assert run.call_args_list[0].args[0] == [
+        "kubectl",
+        "--v=0",
+        "--request-timeout=20s",
+        "config",
+        "view",
+        "--minify",
+        "-o",
+        "jsonpath={.clusters[0].cluster.server}",
+    ]
+    assert run.call_args_list[1].args[0] == ["kubectl", "--v=0", "--request-timeout=20s", "get", f"--raw={SECRET_PATH}"]
+    for call in run.call_args_list:
+        assert call.kwargs["stderr"] == subprocess.DEVNULL
+        assert call.kwargs["stdout"] == subprocess.PIPE
+        assert call.kwargs["timeout"] == 30
+
+
+@pytest.mark.parametrize("failure", ["direct", "missing", "timeout", "denied", "malformed", "empty"])
+def test_secret_failures_are_closed_and_do_not_echo_output(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    marker = "must-not-be-in-failure-output"
+    results: list[object] = [subprocess.CompletedProcess([], 0, stdout=KUBE_PROXY.encode())]
+    if failure == "direct":
+        results = [subprocess.CompletedProcess([], 0, stdout=b"https://kubernetes.default.svc")]
+    elif failure == "missing":
+        results = [FileNotFoundError(marker)]
+    elif failure == "timeout":
+        results.append(subprocess.TimeoutExpired("kubectl", 30, output=marker))
+    elif failure == "denied":
+        results.append(subprocess.CompletedProcess([], 1, stdout=marker.encode(), stderr=marker.encode()))
+    elif failure == "malformed":
+        results.append(subprocess.CompletedProcess([], 0, stdout=marker.encode()))
+    else:
+        results.append(subprocess.CompletedProcess([], 0, stdout=b'{"data":{"username":""}}'))
+    run = Mock(side_effect=results)
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(LoginBlockedError, match="BLOCKED") as caught:
+        read_operator_credentials()
+    assert marker not in str(caught.value)
+    assert capsys.readouterr() == ("", "")
+    assert run.call_count == len(results)
+
+
+@pytest.mark.parametrize("combined", [False, True])
+async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
+    # Test doubles deliberately stand in for the network only. Production never constructs a cookie.
+    flow = f"{IDP}/if/flow/default-authentication-flow/?next=%2Fapplication%2Fo%2Fauthorize%2F"
+    callback = f"{APP}/auth/callback?state=server-state&code=provider-code"
+    steps: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        steps.append(request.url.path)
+        assert "authorization" not in request.headers
+        if request.url.host == "auth.test.invalid":
+            assert SECURE_COOKIE not in request.headers.get("cookie", "")
+        else:
+            assert "authentik_csrf" not in request.headers.get("cookie", "")
+        match request.url.path:
+            case "/auth/login":
+                return httpx.Response(
+                    302,
+                    headers={
+                        "location": f"{IDP}/application/o/authorize/?state=server-state&code_challenge=server-pkce",
+                        "set-cookie": f"{SECURE_COOKIE}=pending; Path=/; Secure; HttpOnly",
+                    },
+                )
+            case "/application/o/authorize/":
+                assert request.url.params["state"] == "server-state"
+                assert request.url.params["code_challenge"] == "server-pkce"
+                return httpx.Response(302, headers={"location": flow})
+            case "/if/flow/default-authentication-flow/":
+                return httpx.Response(
+                    200, text="Flow UI", headers={"set-cookie": "authentik_csrf=test-csrf; Path=/; Secure"}
+                )
+            case "/api/v3/flows/executor/default-authentication-flow/":
+                assert request.url.params["query"] == httpx.URL(flow).query.decode()
+                if request.method == "GET":
+                    return httpx.Response(
+                        200, json={"component": "ak-stage-identification", "password_fields": combined}
+                    )
+                assert request.headers["origin"] == IDP
+                assert request.headers["referer"] == flow
+                assert request.headers["x-csrftoken"] == "test-csrf"
+                payload = json.loads(request.content)
+                if payload["component"] == "ak-stage-identification":
+                    expected = {"component": "ak-stage-identification", "uid_field": "test-user"}
+                    if combined:
+                        expected["password"] = "test-password"
+                    assert payload == expected
+                    if not combined:
+                        return httpx.Response(200, json={"component": "ak-stage-password"})
+                else:
+                    assert payload == {"component": "ak-stage-password", "password": "test-password"}
+                return httpx.Response(200, json={"component": "xak-flow-redirect", "to": callback})
+            case "/auth/callback":
+                assert str(request.url) == callback
+                assert request.headers["cookie"] == f"{SECURE_COOKIE}=pending"
+                return httpx.Response(
+                    303,
+                    headers={"location": "/", "set-cookie": f"{SECURE_COOKIE}=app-issued; Path=/; Secure; HttpOnly"},
+                )
+            case "/auth/me":
+                assert request.headers["cookie"] == f"{SECURE_COOKIE}=app-issued"
+                return httpx.Response(200, json={"username": "test-user"})
+        raise AssertionError("Unexpected request")
+
+    async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
+        await login_operator(http, CREDENTIALS)
+    assert steps[-2:] == ["/auth/callback", "/auth/me"]
+    assert len(steps) == (7 if combined else 8)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["foreign", "http", "userinfo", "wrong_callback", "broad_cookie", "mfa", "csrf", "rejected", "loop", "callback"],
+)
+async def test_login_refuses_unsafe_or_unsupported_flow(failure: str) -> None:
+    posts = 0
+    gets = 0
+    marker = "do-not-echo-authorization-query"
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        nonlocal posts, gets
+        if request.method == "POST":
+            posts += 1
+        else:
+            gets += 1
+        if request.url.path == "/auth/login":
+            target = {
+                "foreign": f"https://untrusted.invalid/?code={marker}",
+                "http": f"http://auth.test.invalid/if/flow/login/?code={marker}",
+                "userinfo": f"https://user@auth.test.invalid/if/flow/login/?code={marker}",
+                "wrong_callback": f"{APP}/other?code={marker}",
+                "callback": f"{APP}/auth/callback?code={marker}",
+            }.get(failure, f"{IDP}/if/flow/login/?next={marker}")
+            headers = {"location": target}
+            if failure == "broad_cookie":
+                headers["set-cookie"] = "bad=private; Domain=test.invalid; Path=/; Secure"
+            return httpx.Response(302, headers=headers)
+        if request.url.path == "/auth/callback":
+            return httpx.Response(401, text=marker)
+        if request.url.path == "/if/flow/login/":
+            if failure == "loop":
+                return httpx.Response(302, headers={"location": str(request.url)})
+            return httpx.Response(200)
+        if failure == "rejected":
+            return httpx.Response(200, json={"response_errors": {"password": [marker]}})
+        if failure == "csrf":
+            return httpx.Response(200, json={"component": "ak-stage-identification"})
+        return httpx.Response(200, json={"component": "ak-stage-authenticator-validate", "private": marker})
+
+    async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
+        with pytest.raises(LoginBlockedError, match="BLOCKED") as caught:
+            await login_operator(http, CREDENTIALS)
+    assert marker not in str(caught.value)
+    assert posts == 0
+    assert gets <= 21
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
