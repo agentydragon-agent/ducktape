@@ -24,32 +24,44 @@
   ...
 }:
 {
-  # Install NixOS-specific local Bazel flags to /etc/bazel.bazelrc.
-  # System-level bazelrc is read regardless of $HOME, so it works even when
-  # Claude Code's sandbox overrides HOME.
-  environment.etc."bazel.bazelrc".source = ./system.bazelrc;
+  options.ducktape.bazel.extraSystemBazelrc = lib.mkOption {
+    type = lib.types.lines;
+    default = "";
+    description = "Additional host-specific Bazel rc lines appended to /etc/bazel.bazelrc.";
+  };
 
-  # envfs remains useful for software that hardcodes FHS executable paths.
-  # Bazel itself uses the explicit local shell in system.bazelrc; an RBE config
-  # can override that with the remote worker's /bin/bash.
-  services.envfs.enable = true;
+  config = {
+    # Install NixOS-specific local Bazel flags to /etc/bazel.bazelrc.
+    # System-level bazelrc is read regardless of $HOME, so it works even when
+    # Claude Code's sandbox overrides HOME.
+    environment.etc."bazel.bazelrc".text =
+      builtins.readFile ./system.bazelrc
+      + lib.optionalString (
+        config.ducktape.bazel.extraSystemBazelrc != ""
+      ) "\n${config.ducktape.bazel.extraSystemBazelrc}";
 
-  # nix-ld: provides /lib64/ld-linux-x86-64.so.2 stub so dynamically-linked
-  # binaries Bazel downloads (python-build-standalone, rustc, node) can run.
-  programs.nix-ld.enable = true;
+    # envfs remains useful for software that hardcodes FHS executable paths.
+    # Bazel itself uses the explicit local shell in system.bazelrc; an RBE config
+    # can override that with the remote worker's /bin/bash.
+    services.envfs.enable = true;
 
-  # Development packages needed for Bazel builds
-  environment.systemPackages = with pkgs; [
-    # Build essentials
-    gcc
-    gnumake
-    binutils
-    patchelf
-    # Direnv for .envrc support
-    direnv
-    # SCM
-    git
-    # Python (rules_python bootstrap)
-    python3
-  ];
+    # nix-ld: provides /lib64/ld-linux-x86-64.so.2 stub so dynamically-linked
+    # binaries Bazel downloads (python-build-standalone, rustc, node) can run.
+    programs.nix-ld.enable = true;
+
+    # Development packages needed for Bazel builds
+    environment.systemPackages = with pkgs; [
+      # Build essentials
+      gcc
+      gnumake
+      binutils
+      patchelf
+      # Direnv for .envrc support
+      direnv
+      # SCM
+      git
+      # Python (rules_python bootstrap)
+      python3
+    ];
+  };
 }

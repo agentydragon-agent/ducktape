@@ -144,6 +144,14 @@ in
   # The ConfigMap is attached by KubeVirt as a small virtio disk with the
   # stable serial `pcproxyca`. Build a complete CA bundle from the live
   # ConfigMap contents rather than committing a generated certificate.
+  ducktape.bazel.extraSystemBazelrc = ''
+    # The embedded Bazel JVM reads this generated JKS, and the system rc is
+    # reliable for hostexec sessions where ~/.bazelrc is not loaded.
+    startup --host_jvm_args=-Djavax.net.ssl.trustStore=${proxyCaRuntimeDir}/bazel-cacerts
+    startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
+    try-import /home/coder/.config/bazel/buildbuddy.bazelrc
+  '';
+
   systemd.services.public-coder-devbox-proxy-ca = {
     description = "Install the live public-coder-agent proxy CA bundle";
     wantedBy = [ "multi-user.target" ];
@@ -184,14 +192,25 @@ in
       cat /etc/ssl/certs/ca-bundle.crt "${proxyCaRuntimeDir}/proxy-ca.crt" \
         > "${proxyCaRuntimeDir}/ca-bundle.crt"
       # Bazel's embedded JVM ignores the PEM bundle. Start from the Nix JDK's
-      # public CA store and append the live TLS-inspection CA for BCR fetches.
+      # public CA store, then import every certificate from the live proxy
+      # bundle: it includes the ordinary roots plus the interception root.
       base_store=$(find "${pkgs.jdk}" -path '*/lib/security/cacerts' -type f -print -quit)
       test -n "$base_store"
       cp "$base_store" "$BAZEL_PROXY_TRUSTSTORE"
-      keytool -importcert -noprompt -storepass changeit \
-        -alias public-coder-proxy-ca \
-        -keystore "$BAZEL_PROXY_TRUSTSTORE" \
-        -file "${proxyCaRuntimeDir}/proxy-ca.crt"
+      cert_dir="${proxyCaRuntimeDir}/java-certs"
+      mkdir -p "$cert_dir"
+      awk -v out="$cert_dir" '
+        /BEGIN CERTIFICATE/ { n++; file = sprintf("%s/cert-%03d.pem", out, n) }
+        file != "" { print > file }
+        /END CERTIFICATE/ { close(file); file = "" }
+      ' "${proxyCaRuntimeDir}/proxy-ca.crt"
+      for cert in "$cert_dir"/*.pem; do
+        keytool -importcert -noprompt -storepass changeit \
+          -alias "public-coder-proxy-ca-$(basename "$cert" .pem)" \
+          -keystore "$BAZEL_PROXY_TRUSTSTORE" \
+          -file "$cert"
+      done
+      rm -rf "$cert_dir"
       umount "$src"
     '';
   };
@@ -249,13 +268,9 @@ in
       umask 077
       { printf 'BUILDBUDDY_API_KEY='; cat "$src/api-key"; printf '\n'; } > "${buildbuddyRuntimeDir}/environment"
       install -d -m0700 -o coder -g users /home/coder/.config/bazel
-      cat > /home/coder/.config/bazel/runtime.bazelrc <<EOF
-      startup --host_jvm_args=-Djavax.net.ssl.trustStore=${proxyCaRuntimeDir}/bazel-cacerts
-      startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
-      EOF
       { printf 'common:rbe --remote_header=x-buildbuddy-api-key='; cat "$src/api-key"; printf '\n'; } > /home/coder/.config/bazel/buildbuddy.bazelrc
-      chown coder:users /home/coder/.config/bazel/runtime.bazelrc /home/coder/.config/bazel/buildbuddy.bazelrc
-      chmod 0600 /home/coder/.config/bazel/runtime.bazelrc /home/coder/.config/bazel/buildbuddy.bazelrc
+      chown coder:users /home/coder/.config/bazel/buildbuddy.bazelrc
+      chmod 0600 /home/coder/.config/bazel/buildbuddy.bazelrc
       umount "$src"
     '';
   };
