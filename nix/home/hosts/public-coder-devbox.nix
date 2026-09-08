@@ -20,9 +20,11 @@ _: {
   programs.tmux.enable = true;
   programs.zsh.enable = true;
 
-  # The boot service writes this mode-0600 file from the KubeVirt-attached
-  # BuildBuddy Secret. Keep the import non-secret and stable in the image.
+  # Boot services write these mode-0600 runtime files. Keep the imports
+  # non-secret and stable in the image: one supplies the proxy-CA Java
+  # truststore for local Bazel, the other carries the BuildBuddy header.
   home.file.".bazelrc".text = ''
+    try-import /home/coder/.config/bazel/runtime.bazelrc
     try-import /home/coder/.config/bazel/buildbuddy.bazelrc
   '';
 
