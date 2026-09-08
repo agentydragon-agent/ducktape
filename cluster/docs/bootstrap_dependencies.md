@@ -349,6 +349,27 @@ reload on change. No target client secret or operator bearer is distributed. Exi
 session-signing Secret, app PostgreSQL, and Action migration/DB ownership are unchanged. See
 [subject source proof and live rollout validation](../../x/agentplane/docs/operator_federation.md#staging-gitops-subject-proof-and-rollout).
 
+The same module creates the regular `agentplane-acceptance-operator` user with a stable random
+password and no groups/roles. Only Agentplane staging login and the Action target receive new user
+bindings; the shared Action allowlist/mapping preserves Rai and adds this user's API `uid`/`uuid`
+resolved by primary key. Action Service authorization remains independent and deny-dominant.
+
+The Terraform-owned `authentik/agentplane-acceptance-operator` Secret contains only
+`username`, `password`, Action `issuer`, and UUID `subject`. Reflector permits and auto-copies it
+only to `public-coder-agent`. The acceptance runner reads this one Secret on demand through its
+existing kubeconfig and Haku Console-proxied Kubernetes API. A namespace Role grants only `get`
+on that `resourceNames` entry to the existing `haku:access-profile:public-coder` Group; no
+list/watch, other Secrets, or ServiceAccount subjects are granted. This is the same group already
+bound to staging Agentplane lifecycle permissions, not a new operator interpretation of its bearer.
+No OpenClaw env injection, proxy mount/substitution, or sandbox delivery is added. RBAC can be
+installed before the Secret exists; runner bootstrap must wait for Terraform/Reflector delivery.
+Protect Terraform state and Kubernetes Secrets; never print login material in runner diagnostics.
+The current acceptance test still reads username/issuer/subject and an app-issued session cookie
+from environment variables. Test code must be amended separately to read the reflected Secret
+through the existing kubeconfig; this infrastructure does not supply that env contract. Real OIDC
+login/session-cookie bootstrap remains runner-owned: a password is not a signed session, and no
+pre-signed cookie or inserted session row is provisioned. No live login/acceptance is claimed.
+
 ## Recovery Scenarios
 
 ### Full bootstrap from zero

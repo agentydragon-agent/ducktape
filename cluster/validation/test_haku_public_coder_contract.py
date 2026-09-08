@@ -174,6 +174,55 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
     assert public_coder_subject not in bound_haku_subjects
 
 
+def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credential(k8s_dir: Path) -> None:
+    agent_dir = k8s_dir / "agents/public-coder-agent"
+    manifest = agent_dir / "k8s-reader/agentplane-acceptance-operator.yaml"
+    objects = list(yaml.safe_load_all(manifest.read_text()))
+    role = one(obj for obj in objects if obj["kind"] == "Role")
+    binding = one(obj for obj in objects if obj["kind"] == "RoleBinding")
+    assert role["metadata"]["namespace"] == binding["metadata"]["namespace"] == "public-coder-agent"
+    assert role["rules"] == [
+        {
+            "apiGroups": [""],
+            "resources": ["secrets"],
+            "resourceNames": ["agentplane-acceptance-operator"],
+            "verbs": ["get"],
+        }
+    ]
+    assert binding["roleRef"] == {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "Role",
+        "name": role["metadata"]["name"],
+    }
+    subject = one(binding["subjects"])
+    assert subject == {
+        "kind": "Group",
+        "name": "haku:access-profile:public-coder",
+        "apiGroup": "rbac.authorization.k8s.io",
+    }
+    staging = yaml.safe_load(
+        (k8s_dir / "agentplane-staging/agent-rbac/rolebinding-agentplane-operator.yaml").read_text()
+    )
+    assert subject in staging["subjects"]
+    kustomization = yaml.safe_load((agent_dir / "k8s-reader/kustomization.yaml").read_text())
+    assert manifest.name in kustomization["resources"]
+
+    secret_name = one(one(role["rules"])["resourceNames"])
+    for layer in ("app", "proxy"):
+        deployment = yaml.safe_load((agent_dir / layer / "deployment.yaml").read_text())
+        pod = deployment["spec"]["template"]["spec"]
+        for container in pod.get("initContainers", []) + pod["containers"]:
+            for entry in container.get("env", []):
+                assert not entry["name"].startswith("AGENTPLANE_ACCEPTANCE_OPERATOR_")
+                assert entry.get("valueFrom", {}).get("secretKeyRef", {}).get("name") != secret_name
+            for source in container.get("envFrom", []):
+                assert source.get("secretRef", {}).get("name") != secret_name
+        for volume in pod.get("volumes", []):
+            assert volume.get("secret", {}).get("secretName") != secret_name
+            for source in volume.get("projected", {}).get("sources", []):
+                assert source.get("secret", {}).get("name") != secret_name
+
+
 def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     """Agent traffic, configured SAR authorization, and proxy execution authority stay separate."""
     agent_dir = k8s_dir / "agents" / "public-coder-agent"

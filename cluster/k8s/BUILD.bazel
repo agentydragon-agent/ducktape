@@ -88,6 +88,7 @@ filegroup(
     name = "haku_manifest_contract_files",
     srcs = [
         "activitywatch/activitywatch-read-token.sops.yaml",
+        "agentplane-staging/agent-rbac/rolebinding-agentplane-operator.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-logs.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml",
         "agents/agent-rbac-base/clusterrole-cluster-diagnostics-reader.yaml",
@@ -100,6 +101,7 @@ filegroup(
         "agents/public-coder-agent/app/deployment.yaml",
         "agents/public-coder-agent/app/networkpolicy-egress.yaml",
         "agents/public-coder-agent/devbox/virtualmachine.yaml",
+        "agents/public-coder-agent/k8s-reader/agentplane-acceptance-operator.yaml",
         "agents/public-coder-agent/k8s-reader/cluster-admin-ceiling.yaml",
         "agents/public-coder-agent/k8s-reader/cluster-metadata-reader.yaml",
         "agents/public-coder-agent/k8s-reader/extended-diagnostics-reader.yaml",
