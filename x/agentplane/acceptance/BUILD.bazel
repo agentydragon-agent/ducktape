@@ -151,6 +151,8 @@ py_test(
     timeout = "eternal",
     srcs = ["test_mcp.py"],
     env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER",
+        "AGENTPLANE_ACCEPTANCE_OPERATOR_SUBJECT",
         "AGENTPLANE_ACCEPTANCE_OPERATOR_URL",
         "AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE",
         "AGENTPLANE_ACCEPTANCE_NAMESPACE",

@@ -35,13 +35,23 @@ is not evidence that deployed acceptance passed.
   **existing** operator decision path with its workload placeholder; require a ring
   record of the attempt, then recheck pending/no Execution three times over six seconds.
   This is a bounded observation, not a claim about all future time.
-- **P0 behavior — explicit operator deny/allow:** separate parametrized cases submit
-  the same non-auto-approved echo through the agent, then use the existing operator
-  decision client with expected version + decision idempotency key. Deny requires
-  `denied`, a `human_operator` deny Decision, no Execution, and exactly
-  `[decision_pending, denied]`. Allow requires the exact echo result and one complete
-  execution history. Repeated decision calls, including a stale-version replay after
-  terminal, must leave the request and events unchanged.
+- **P0 behavior — coordinated operator deny/allow:** one parametrized body runs both
+  verdicts on both real harnesses. Turn one submits the non-auto-approved echo and
+  returns only the request UUID JSON. Independent `ActionEvidence` reads must confirm
+  pending/no Decision/no Execution before Python uses `OperatorActionServiceClient`
+  with expected version + a fresh decision idempotency key + a synthetic private reason.
+  Turn two on the **same Agent/session** polls that UUID to terminal and reads its events;
+  it does not resubmit or receive operator credentials/reason. A before/after ring delta
+  requires fresh admitted agent GETs of both request and events, with no observer reads
+  between snapshots. The final UUID report is not result evidence.
+  Independent API/events require the exact configured operator issuer/subject, a stable
+  Decision ID, and private reason visible only to the operator (absent from caller
+  projections/events and the second-turn transcript). Deny requires no Execution and
+  exactly `[decision_pending, denied]`; allow requires the exact Echo result, one stable
+  Execution ID from decision through terminal, and the complete ordered dispatch history.
+  Same-key decision replay, including after terminal with the original stale version,
+  preserves the Decision/request/events. A new-key opposite verdict at that stale version
+  must return HTTP 409 and leave the same single request/history unchanged.
 
 **Needed support:** an independent observer runs `/usr/bin/curl` using `kubectl exec`
 in the suite-owned runner Pod, explicitly through its normal loopback sidecar. Only
@@ -95,7 +105,8 @@ Bazel undeclared outputs contain:
 - `<sandbox>-ring.json`: the app's credential-free `Decision` records restricted to
   the Action host, captured before observer traffic. No headers, tokens, or raw Pod
   logs are stored. `-replay-ring.json` and `-self-approval-ring.json` capture the
-  later agent phases; replay requires three additional admitted POSTs so unchanged
+  later agent phases; `-poll-ring.json` captures the coordinated second-turn reads.
+  Replay requires three additional admitted POSTs so unchanged
   state without an actual replay cannot pass. Transport failures show
   sandbox/path/status, not arbitrary bodies.
 
@@ -108,22 +119,40 @@ the rest of this suite, abrupt process death still requires deliberate cleanup.
 
 ### Current blocked contracts
 
-**Observed source contract:** staging `actions/settings.conf` has no
-`operator_bearer_file`; `action_service/main.py` therefore selects
-`DisabledOperatorAuthenticator`. The app has no Action BFF forwarding route.
-The service does implement
-`POST /v1/operator/action-requests/{id}/decision`, but a workload placeholder or app
-ServiceAccount token does not become operator authority. Both explicit deny and
-human allow are **blocked on current staging auth/route**, not simulated successes.
+**Observed source contract / deployment prerequisite:** [#5827](https://github.com/agentydragon/ducktape/pull/5827)
+authorizes **Rai only** through the existing browser login and request-bound Authentik
+exchange. It does not provide a runner token or Python-accessible authenticated operator
+route for this acceptance process. Its browser BFF is not a generic bearer-client route.
+The fixed #5822 base predates that federation wiring; neither this test nor its protected
+operator URL/token-file contract provisions identity, Terraform, runtime authentication,
+or a BFF. Live coordinated acceptance remains **BLOCKED**, not skipped or simulated,
+until an approved runner has the required route and authorized identity.
 
-An operator running on an approved controlled host may select an **already configured**
-HTTPS operator service route with `AGENTPLANE_ACCEPTANCE_OPERATOR_URL` and a host-owned
-bearer file with `AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE`. These fixtures do not
-create credentials or enable the adapter. The bearer is read in-process, never given
-to the agent, put in argv, or written to artifacts. The operator cases deliberately
-FAIL with `BLOCKED operator decision` when these are absent; route/auth failure also
-fails preflight. Running these cases authorizes the fixture to submit the named
-allow/deny decisions as the operator, not to test a human UI click or invent a BFF.
+On an approved controlled host, provide all four settings:
+
+| Variable                                    | Required value                                                               |
+| ------------------------------------------- | ---------------------------------------------------------------------------- |
+| `AGENTPLANE_ACCEPTANCE_OPERATOR_URL`        | Existing HTTPS operator service base URL, without credentials/query/fragment |
+| `AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE` | Host-owned, readable, nonempty bearer file; never a token value              |
+| `AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER`     | Independently established target token issuer                                |
+| `AGENTPLANE_ACCEPTANCE_OPERATOR_SUBJECT`    | Independently established authorized target subject                          |
+
+Select the expected issuer/subject from the reviewed target configuration, **not** from
+this test's returned Decision, a guessed UUID, a username, or the source login subject.
+For #5827 that means the Action-only issuer and Rai's managed-user UUID (`user_uuid`),
+not the login provider's `hashed_user_id`. `DecisionView.issuer` is the existing wire
+field holding `Principal.key`, serialized as `issuer:subject`; the test compares that
+whole value, without trying to split a URL on colons. Event records contain ordered
+states/sequences, not a separate identity claim; identity is asserted on the Decision.
+
+Missing identity settings fail preflight with precise `BLOCKED operator preflight`;
+missing URL/file, unreadable/empty file, and unavailable/unauthorized route also fail
+before any sandbox/decision is created by the operator case. The bearer is read only
+in the acceptance process, never put in a prompt, argv, or artifact. Neither workload
+nor app ServiceAccount tokens substitute for operator authority. Running these cases
+authorizes the Python fixture's named allow/deny decisions, not browser automation or
+identity provisioning. Existing fixture teardown suspends/deletes the fresh sandbox
+even on failure; no withdrawal endpoint is assumed.
 
 **Deferred — caller withdrawal:** `action_service/api.py` and its clients have no
 caller withdrawal/cancellation endpoint. `ActionState.CANCELLED` is an executor

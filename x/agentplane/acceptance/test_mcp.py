@@ -17,7 +17,7 @@ from x.agentplane.acceptance.action_evidence import ACTIONS_URL, ActionEvidence,
 from x.agentplane.acceptance.agent import Agent
 from x.agentplane.action_service.catalog import ActionGroupView, ActionView
 from x.agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER, OperatorActionServiceClient
-from x.agentplane.action_service.models import DecisionInput, Verdict
+from x.agentplane.action_service.models import DecisionInput, Principal, PrincipalRole, Verdict
 from x.agentplane.app.api import Provider
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
@@ -78,7 +78,7 @@ async def submit(
     agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
     key = str(uuid4())
     turn = await agent.run(prompt(message, key))
-    report = turn.report(McpReport)
+    report = McpReport.model_validate_json(turn.answer)
     await ring_evidence(client, view.name, report.request_id)
     evidence = ActionEvidence(view.name)
     groups = TypeAdapter(list[ActionGroupView]).validate_python(await evidence.get("/v1/action-groups"))
@@ -176,20 +176,50 @@ class OperatorTokenFile:
         self.path = path
 
     async def token(self) -> str:
-        return self.path.read_text().strip()
+        try:
+            token = self.path.read_text().strip()
+        except (OSError, UnicodeError):
+            pytest.fail("BLOCKED operator preflight: host-owned token file unreadable", pytrace=False)
+        if not token:
+            pytest.fail("BLOCKED operator preflight: host-owned token file empty", pytrace=False)
+        return token
+
+
+@pytest.fixture(scope="session")
+def expected_operator() -> Principal:
+    required = [
+        "AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER",
+        "AGENTPLANE_ACCEPTANCE_OPERATOR_SUBJECT",
+        "AGENTPLANE_ACCEPTANCE_OPERATOR_URL",
+        "AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE",
+    ]
+    missing = [name for name in required if not os.environ.get(name)]
+    if missing:
+        pytest.fail(
+            f"BLOCKED operator preflight: missing {', '.join(missing)}. Requires an existing operator route, "
+            "host-owned token file and independently established target issuer/subject. "
+            "#5827 authorizes Rai only; no acceptance-runner token/route exists. "
+            "Workload/app tokens cannot substitute; do not infer identity from this Decision.",
+            pytrace=False,
+        )
+    return Principal(
+        issuer=os.environ["AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER"],
+        subject=os.environ["AGENTPLANE_ACCEPTANCE_OPERATOR_SUBJECT"],
+        role=PrincipalRole.OPERATOR,
+    )
 
 
 @pytest.fixture
-async def action_operator() -> AsyncIterator[OperatorActionServiceClient]:
-    url = os.environ.get("AGENTPLANE_ACCEPTANCE_OPERATOR_URL")
-    path = os.environ.get("AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE")
-    if not url or not path:
-        pytest.fail(
-            "BLOCKED operator decision: staging config has no operator_bearer_file and app has no Action BFF "
-            "route. Requires an existing authorized operator URL and host-owned token file; workload/app "
-            "tokens cannot substitute. No authenticator or credentials are provisioned by this suite."
-        )
-    assert url.startswith("https://"), "operator route must use HTTPS"
+async def action_operator(expected_operator: Principal) -> AsyncIterator[OperatorActionServiceClient]:
+    # The session-scoped identity fixture checks all required settings before function fixtures.
+    url = os.environ["AGENTPLANE_ACCEPTANCE_OPERATOR_URL"]
+    path = os.environ["AGENTPLANE_ACCEPTANCE_OPERATOR_TOKEN_FILE"]
+    try:
+        route = httpx.URL(url)
+    except httpx.InvalidURL:
+        pytest.fail("BLOCKED operator preflight: invalid operator URL", pytrace=False)
+    if route.scheme != "https" or not route.host or route.userinfo or route.query or route.fragment:
+        pytest.fail("BLOCKED operator preflight: HTTPS URL required, without credentials/query/fragment", pytrace=False)
     async with httpx.AsyncClient(base_url=url, timeout=20) as http:
         operator = OperatorActionServiceClient(http, OperatorTokenFile(Path(path)))
         try:
@@ -207,30 +237,109 @@ async def test_explicit_operator_decision(
     provider: Provider,
     model: str,
     verdict: Verdict,
+    expected_operator: Principal,
 ) -> None:
     message = f"HUMAN-{uuid4()}-" + "x" * 201
-    _, evidence, request_id, _ = await submit(client, sandbox, provider, model, message)
+    agent, evidence, request_id, _ = await submit(client, sandbox, provider, model, message)
     pending = await evidence.request(request_id)
     assert_unexecuted(pending, await evidence.events(request_id), denied=False)
-    decision = DecisionInput(verdict=verdict, expected_version=pending.version, idempotency_key=str(uuid4()))
-    await action_operator.decide(request_id, decision)
-    await action_operator.decide(request_id, decision)
-    for _ in range(45):
-        request = await evidence.request(request_id)
-        if request.state in {"denied", "succeeded", "failed", "cancelled", "execution_unknown"}:
-            break
-        await asyncio.sleep(2)
-    assert request.decision is not None, request
-    assert request.decision.provider == "human_operator", request
+    # This synthetic private marker is never sent in either agent prompt.
+    private_reason = f"operator-only-{uuid4()}"
+    decision = DecisionInput(
+        verdict=verdict, expected_version=pending.version, idempotency_key=str(uuid4()), private_reason=private_reason
+    )
+    decided = await action_operator.decide(request_id, decision)
+    assert decided.decision is not None
+    assert decided.decision.provider == "human_operator"
+    # DecisionView.issuer stores Principal.key: the authenticated issuer AND subject.
+    assert decided.decision.issuer == expected_operator.key
+    assert decided.decision.verdict == verdict
+    assert decided.decision.idempotency_key == decision.idempotency_key
+    assert decided.decision.private_reason == private_reason
+    assert not decided.decision.private_reason_redacted
+    duplicate = await action_operator.decide(request_id, decision)
+    assert duplicate.decision == decided.decision
+
+    # Snapshot AFTER all first-turn observer traffic, and read again BEFORE any second-turn
+    # observer traffic. An unchanged request or a plausible report alone cannot prove agent polling.
+    before = [
+        row
+        for row in await client.decisions(evidence.sandbox)
+        if row.host == "agentplane-actions.agentplane-staging.svc.cluster.local"
+    ]
+    turn = await agent.run(f"""
+Continue the SAME request {request_id}, using the same normal proxy and public workload placeholder.
+GET {ACTIONS_URL}/v1/action-requests/{request_id} at two-second intervals for up to 90 seconds
+until denied, succeeded, failed, cancelled, or execution_unknown. Then GET
+{ACTIONS_URL}/v1/action-requests/{request_id}/events?after_sequence=0.
+Do not POST, submit a replacement, obtain credentials, or use any operator endpoint.
+Return ONLY {{"request_id":"{request_id}"}} after reading the terminal request and its events.
+""")
+    assert private_reason not in turn.transcript, "private operator reason leaked to the agent"
+    assert McpReport.model_validate_json(turn.answer).request_id == request_id
+    after = [
+        row
+        for row in await client.decisions(evidence.sandbox)
+        if row.host == "agentplane-actions.agentplane-staging.svc.cluster.local"
+    ]
+    (undeclared_outputs_dir() / f"{evidence.sandbox}-poll-ring.json").write_text(
+        json.dumps(
+            {
+                phase: [row.model_dump(mode="json") for row in rows]
+                for phase, rows in [("before", before), ("after", after)]
+            },
+            indent=2,
+        )
+    )
+    for path in [f"/v1/action-requests/{request_id}", f"/v1/action-requests/{request_id}/events?after_sequence=0"]:
+        counts = [
+            sum(
+                row.host == "agentplane-actions.agentplane-staging.svc.cluster.local"
+                and row.method == "GET"
+                and row.path == path
+                and row.outcome == "allow"
+                for row in rows
+            )
+            for rows in [before, after]
+        ]
+        assert counts[1] > counts[0], f"missing second-turn admitted GET {path}; ring absent/evicted is not a pass"
+
+    request = await evidence.request(request_id)
     events = await evidence.events(request_id)
+    assert request.decision is not None, request
+    assert request.decision.id == decided.decision.id, request
+    assert request.decision.issuer == expected_operator.key, request
+    assert request.decision.provider == "human_operator", request
+    assert request.decision.verdict == verdict, request
+    assert request.decision.private_reason is None, "caller projection exposes private reason"
+    assert request.decision.private_reason_redacted, request
     if verdict == Verdict.DENY:
         assert_unexecuted(request, events, denied=True)
     else:
         assert_success(request, events, message)
-    # A stale-version replay must return the existing Decision/Execution, not dispatch again.
-    await action_operator.decide(request_id, decision)
+        assert decided.execution is not None
+        assert request.execution is not None
+        assert request.execution.id == decided.execution.id
+        assert duplicate.execution is not None
+        assert duplicate.execution.id == request.execution.id
+    assert request.version > pending.version
+    assert (await action_operator.get(request_id)).decision == decided.decision
+    # Same-key stale replay is idempotent; a NEW key at the stale version must conflict.
+    replay = await action_operator.decide(request_id, decision)
+    assert replay.decision == decided.decision
+    stale = DecisionInput(
+        verdict=Verdict.ALLOW if verdict == Verdict.DENY else Verdict.DENY,
+        expected_version=pending.version,
+        idempotency_key=str(uuid4()),
+    )
+    with pytest.raises(httpx.HTTPStatusError) as conflict:
+        await action_operator.decide(request_id, stale)
+    assert conflict.value.response.status_code == 409
+    assert await evidence.requests() == [request]
     assert await evidence.request(request_id) == request
     assert await evidence.events(request_id) == events
+    assert await evidence.get(f"/v1/action-requests/{request_id}/events?after_sequence={events[-1].sequence}") == []
+    assert private_reason not in json.dumps(evidence.exchanges), "private reason leaked in caller API/events"
 
 
 if __name__ == "__main__":
