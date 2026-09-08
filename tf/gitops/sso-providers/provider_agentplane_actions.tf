@@ -48,7 +48,10 @@ locals {
     issuer   = local.agentplane_actions_issuer
     audience = authentik_provider_oauth2.agentplane_actions.client_id
     jwks_uri = "${local.agentplane_actions_issuer}jwks/"
-    subjects = [data.authentik_user.agentplane_operator.uuid]
+    subjects = [
+      data.authentik_user.agentplane_operator.uuid,
+      data.authentik_user.agentplane_acceptance_operator.uuid,
+    ]
   }
   agentplane_action_federation = {
     service_url    = "http://agentplane-actions.agentplane-staging.svc.cluster.local:8080"
@@ -56,7 +59,8 @@ locals {
     login_jwks_uri = "https://auth.allegedly.works/application/o/${authentik_application.agentplane_staging.slug}/jwks/"
     target         = local.agentplane_operator_oidc
     subject_mapping = {
-      (data.authentik_user.agentplane_operator.uid) = data.authentik_user.agentplane_operator.uuid
+      (data.authentik_user.agentplane_operator.uid)            = data.authentik_user.agentplane_operator.uuid
+      (data.authentik_user.agentplane_acceptance_operator.uid) = data.authentik_user.agentplane_acceptance_operator.uuid
     }
     scope = "openid"
   }
@@ -65,7 +69,7 @@ locals {
 # The existing reflector/reloader path distributes configuration computed from
 # Authentik, not a shared operator credential. Each process parses its JSON env
 # field using its existing Settings source. One local object is both verifiers'
-# pin set, including the destination's mandatory Rai-only subject allowlist.
+# pin set, including the destination's mandatory operator subject allowlist.
 resource "kubernetes_secret" "agentplane_action_federation" {
   metadata {
     name      = "agentplane-action-federation"

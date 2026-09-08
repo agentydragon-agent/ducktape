@@ -164,6 +164,27 @@ spec:
                 secretKeyRef:
                   name: buildbuddy-api-key
                   key: api-key
+            # Dedicated staging operator login inputs; never forward workload identity.
+            - name: AGENTPLANE_ACCEPTANCE_OPERATOR_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-acceptance-operator
+                  key: username
+            - name: AGENTPLANE_ACCEPTANCE_OPERATOR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-acceptance-operator
+                  key: password
+            - name: AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-acceptance-operator
+                  key: issuer
+            - name: AGENTPLANE_ACCEPTANCE_OPERATOR_SUBJECT
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-acceptance-operator
+                  key: subject
             - name: OPENCLAW_LITELLM_API_KEY
               valueFrom:
                 secretKeyRef:

@@ -349,6 +349,24 @@ reload on change. No target client secret or operator bearer is distributed. Exi
 session-signing Secret, app PostgreSQL, and Action migration/DB ownership are unchanged. See
 [subject source proof and live rollout validation](../../x/agentplane/docs/operator_federation.md#staging-gitops-subject-proof-and-rollout).
 
+The same module creates the regular `agentplane-acceptance-operator` user with a stable random
+password and no groups/roles. Only Agentplane staging login and the Action target receive new user
+bindings; the shared Action allowlist/mapping preserves Rai and adds this user's API `uid`/`uuid`
+resolved by primary key. Action Service authorization remains independent and deny-dominant.
+
+The Terraform-owned `authentik/agentplane-acceptance-operator` Secret contains only
+`username`, `password`, Action `issuer`, and UUID `subject`. Reflector permits and auto-copies it
+only to `public-coder-agent`. The OpenClaw container receives these via required
+`AGENTPLANE_ACCEPTANCE_OPERATOR_{USERNAME,PASSWORD,ISSUER,SUBJECT}` Secret references, intentionally
+making the real login credential available to that runner. Its Flux layer depends on
+`sso-providers-tf` (Reflector and the namespace are already dependencies through the proxy).
+No proxy substitution, proxy credential mount, sandbox delivery, or workload RBAC is added.
+Protect Terraform state and Kubernetes Secrets; never print login material in runner diagnostics.
+The acceptance test currently needs an app-issued `AGENTPLANE_ACCEPTANCE_OPERATOR_SESSION_COOKIE`;
+username/password provisioning alone does not supply it. Runner-owned real OIDC login bootstrap
+is a separate follow-up, not a pre-signed cookie or inserted session row. This wiring is not live
+login/acceptance evidence.
+
 ## Recovery Scenarios
 
 ### Full bootstrap from zero
