@@ -125,10 +125,6 @@ py_test(
     timeout = "eternal",
     srcs = ["test_mcp.py"],
     env_inherit = [
-        "AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER",
-        "AGENTPLANE_ACCEPTANCE_OPERATOR_SESSION_COOKIE",
-        "AGENTPLANE_ACCEPTANCE_OPERATOR_SUBJECT",
-        "AGENTPLANE_ACCEPTANCE_OPERATOR_USERNAME",
         "AGENTPLANE_ACCEPTANCE_TOKEN",
         "AGENTPLANE_ACCEPTANCE_URL",
         "HOME",
@@ -141,12 +137,38 @@ py_test(
     deps = [
         ":agent",
         ":conftest",
+        ":operator_login",
         "//:conftest",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:models",
         "//x/agentplane/app:api",
         "//x/agentplane/app:client",
         "//x/agentplane/app:inventory",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "operator_login",
+    testonly = True,
+    srcs = ["operator_login.py"],
+    deps = [
+        "//x/agentplane/app:oidc",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_operator_login",
+    srcs = ["test_operator_login.py"],
+    deps = [
+        ":conftest",
+        ":operator_login",
+        "//:conftest",
         "//x/agentplane/app:oidc",
         "@pypi//httpx",
         "@pypi//pydantic",

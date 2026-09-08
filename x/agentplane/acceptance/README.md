@@ -32,16 +32,26 @@ identity, duplicate-decision idempotency and stale-version rejection. Full Actio
 events are currently **not exposed by the BFF**: the agent reads them, but Python
 does not independently verify history. No canonical operator API fallback is used.
 
-These cases fail preflight with **BLOCKED** until a protected runner supplies
-`AGENTPLANE_ACCEPTANCE_OPERATOR_SESSION_COOKIE` from a dedicated operator's real
-app OIDC login, plus `AGENTPLANE_ACCEPTANCE_OPERATOR_USERNAME` and the expected
-Action Service target `AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER` / `_SUBJECT`.
-The cookie is the app-issued value, not a Cookie header or bearer; never mint a
-signed cookie or insert a session row. Login/session provisioning is runner-owned
-and not implemented here. Inject secrets only into the test process's protected
-environment, never argv, prompts, logs or uploaded artifacts; disable HTTP tracing
-and pytest local-variable dumps. The session must retain a valid federation token
-for the entire run. The agent-pod runner restriction below still applies.
+These cases read only `public-coder-agent/agentplane-acceptance-operator` via
+`kubectl get --raw=/api/v1/namespaces/public-coder-agent/secrets/agentplane-acceptance-operator`
+using the existing kubeconfig and Haku Console Kubernetes proxy
+(`https://haku-kubeapi.allegedly.works`). No operator environment variables or
+pre-issued cookie are used. Missing proxy/RBAC/reflection or malformed Secret data
+fails **BLOCKED**, without printing kubectl output or decoded values.
+
+A fresh `httpx` cookie jar starts at the app's `/auth/login`, follows Authentik's
+normal redirects and username/password FlowExecutor challenges with its CSRF cookie,
+and returns to the app's `/auth/callback`. The app owns OAuth state, nonce, PKCE,
+token exchange and server-side session storage. Mutation requests use the app's
+exact same-origin `Origin`. Unexpected redirects, MFA, consent or browser-only
+challenges fail **BLOCKED**; the test never fabricates a cookie or inserts a session.
+The challenge handling matches Authentik 2026.2.1, the GitOps-pinned release.
+
+Credentials stay in process memory. HTTP logging is suppressed for the BFF client's
+lifetime; pytest local-variable dumps are refused before Secret access. Do not add
+HTTP tracing, response dumps or credential artifacts. The existing suite URL/token
+settings below still serve the separate workload client. The agent-pod runner
+restriction below still applies: remote choreography tests are not live acceptance.
 
 ## Running it
 
