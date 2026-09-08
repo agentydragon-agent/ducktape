@@ -23,6 +23,26 @@ Staging GitOps wires the upstream image, ActionGroup, narrow echo provider, and 
 egress. Run after the PR's images and manifests have rolled out; remote adapter tests
 are not evidence that the real-agent staging test has run.
 
+`test_agent_mcp_bff_decision` adds allow/deny cases on each harness: turn 1 submits
+an echo longer than the fixture's 200-character auto-allow bound and returns only
+its UUID; Python inspects and decides through the app's `/actions/{id}` BFF; the
+same Agent polls in turn 2 and returns strict JSON. Python independently checks
+durable request/Decision/Execution snapshots, exact arguments/result, operator
+identity, duplicate-decision idempotency and stale-version rejection. Full Action
+events are currently **not exposed by the BFF**: the agent reads them, but Python
+does not independently verify history. No canonical operator API fallback is used.
+
+These cases fail preflight with **BLOCKED** until a protected runner supplies
+`AGENTPLANE_ACCEPTANCE_OPERATOR_SESSION_COOKIE` from a dedicated operator's real
+app OIDC login, plus `AGENTPLANE_ACCEPTANCE_OPERATOR_USERNAME` and the expected
+Action Service target `AGENTPLANE_ACCEPTANCE_OPERATOR_ISSUER` / `_SUBJECT`.
+The cookie is the app-issued value, not a Cookie header or bearer; never mint a
+signed cookie or insert a session row. Login/session provisioning is runner-owned
+and not implemented here. Inject secrets only into the test process's protected
+environment, never argv, prompts, logs or uploaded artifacts; disable HTTP tracing
+and pytest local-variable dumps. The session must retain a valid federation token
+for the entire run. The agent-pod runner restriction below still applies.
+
 ## Running it
 
 Not in CI, and not on RBE: the target is `manual`, so `//...` never selects it, and it needs a
