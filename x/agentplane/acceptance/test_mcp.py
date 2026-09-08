@@ -385,6 +385,8 @@ and result (the observed execution.result, or null when there is no execution). 
     assert request.decision.private_reason is None, "caller projection exposes private reason"
     assert request.decision.private_reason_redacted, request
     if verdict == Verdict.DENY:
+        assert decided.execution is None
+        assert duplicate.execution is None
         assert_unexecuted(request, events, denied=True)
     else:
         assert_success(request, events, message)
@@ -394,10 +396,14 @@ and result (the observed execution.result, or null when there is no execution). 
         assert duplicate.execution is not None
         assert duplicate.execution.id == request.execution.id
     assert request.version > pending.version
-    assert (await action_operator.get(request_id)).decision == decided.decision
+    operator_terminal = await action_operator.get(request_id)
+    assert operator_terminal.decision == decided.decision
+    assert operator_terminal.state == request.state
+    assert operator_terminal.version == request.version
+    assert operator_terminal.execution == request.execution
     # Same-key stale replay is idempotent; a NEW key at the stale version must conflict.
     replay = await action_operator.decide(request_id, decision)
-    assert replay.decision == decided.decision
+    assert replay == operator_terminal
     stale = DecisionInput(
         verdict=Verdict.ALLOW if verdict == Verdict.DENY else Verdict.DENY,
         expected_version=pending.version,
