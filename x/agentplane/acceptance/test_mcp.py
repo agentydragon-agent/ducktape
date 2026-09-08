@@ -59,7 +59,7 @@ execution.result. Do the HTTP calls; do not infer or fabricate a result from thi
     assert report.output == {"content": [f"Echo: {marker}"]}, turn.transcript
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 async def operator_bff(base_url: str) -> AsyncIterator[httpx.AsyncClient]:
     """A runner-provided real OIDC session, never a locally signed cookie or inserted DB row."""
     for name in ("SESSION_COOKIE", "USERNAME", "ISSUER", "SUBJECT"):
