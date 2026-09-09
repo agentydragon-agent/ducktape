@@ -7,6 +7,10 @@ models:
   codex:
     - chatgpt/oai-responses/gpt-5.6-luna
 
+# Rendered into the image-owned agent-instruction template; deployments may use different service names.
+agent_egress_rules_url: http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules
+agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+
 # App-owned launch presets. Names are resolved here; the Sandbox CR and runner receive only the
 # concrete template, policies, bootstrap source, and SessionSpec fields.
 thread_presets:
@@ -17,12 +21,7 @@ thread_presets:
     cwd: /state/workspaces/{session_id}
     reasoning_effort: medium
     instructions: >-
-      Work as a public-repository coding agent. Keep private cluster data out of the workspace and
-      outputs. Outbound access is policy-controlled; discover the GitHub credential placeholder and
-      its required presentation from
-      http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules with Authorization: Bearer
-      agentplane-credential-agentplane-workload. This is a known inert placeholder, not a secret;
-      send it through the configured HTTP proxy. Never ask for or print the substituted credential.
+      Work as a public-repository coding agent. Keep private cluster data out of the workspace and outputs.
 sandbox_presets:
   public-coder:
     title: Public coder
