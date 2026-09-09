@@ -59,11 +59,11 @@ locals {
     login_jwks_uri = "https://auth.allegedly.works/application/o/${authentik_application.agentplane_staging.slug}/jwks/"
     target         = local.agentplane_operator_oidc
     subject_mapping = {
-      # Authentik's hashed_user_id subject mode emits sha256(user.uid), not the raw uid.
-      # Keep the source-provider hash and target-provider UUID explicit: neither token is
-      # trusted to choose the destination subject, and the target allowlist remains separate.
-      (sha256(data.authentik_user.agentplane_operator.uid))            = data.authentik_user.agentplane_operator.uuid
-      (sha256(data.authentik_user.agentplane_acceptance_operator.uid)) = data.authentik_user.agentplane_acceptance_operator.uuid
+      # Authentik 2026.2.1's HASHED_USER_ID mode emits token.user.uid directly.
+      # Keep the source uid and target UUID explicit: neither token is trusted to choose the
+      # destination subject, and the target allowlist remains separate.
+      (data.authentik_user.agentplane_operator.uid)            = data.authentik_user.agentplane_operator.uuid
+      (data.authentik_user.agentplane_acceptance_operator.uid) = data.authentik_user.agentplane_acceptance_operator.uuid
     }
     scope = "openid"
   }

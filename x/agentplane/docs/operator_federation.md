@@ -111,10 +111,10 @@ The two subject strings are deliberately not assumed equal:
   supports both selected `sub_mode` values. No lookup by username is used for authorization.
 - In the cluster's pinned Authentik 2026.2.1,
   [IDToken.new](https://github.com/goauthentik/authentik/blob/version/2026.2.1/authentik/providers/oauth2/id_token.py#L108)
-  emits the source provider's `hashed_user_id` as the SHA-256 digest of `token.user.uid`, while
-  `user_uuid` is `str(token.user.uuid)`. Terraform therefore computes the documented SHA-256
-  mapping key from the authoritative API `uid` and maps it to the authoritative target UUID; it
-  does not derive or guess either identity value. The target still allows **only the UUID**.
+  assigns `hashed_user_id` to `token.user.uid` directly, while `user_uuid` is
+  `str(token.user.uuid)`. Terraform therefore maps the authoritative API `uid` directly to the
+  authoritative target UUID; it does not derive or guess either identity value. The target still
+  allows **only the UUID**.
 - [Native provider federation](https://github.com/goauthentik/authentik/blob/version/2026.2.1/authentik/providers/oauth2/views/token.py#L414)
   finds the source AccessToken only within `jwt_federation_providers`, verifies its signature,
   and assigns its database user to the grant. The pinned implementation also calls
