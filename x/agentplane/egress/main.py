@@ -116,7 +116,7 @@ async def async_main(settings: Settings) -> None:
                     authentication=authentication,
                     core_v1=core_v1,
                     audience=settings.token_audience,
-                    namespaces=frozenset({settings.sandbox_namespace}),
+                    allowed_service_account_namespaces=frozenset({settings.sandbox_namespace}),
                 )
             ),
             RulesProjection(index),

@@ -13,13 +13,15 @@ class FixtureAutoAllow(BaseModel):
 
 
 class FixtureDecisionProvider:
-    def __init__(self, config: FixtureAutoAllow, catalog: ActionCatalog, *, sandbox_namespaces: frozenset[str]) -> None:
+    def __init__(
+        self, config: FixtureAutoAllow, catalog: ActionCatalog, *, allowed_service_account_namespaces: frozenset[str]
+    ) -> None:
         group = catalog.groups.get(config.group)
         if group is None or not isinstance(group.executor, McpExecutorBinding):
             raise ValueError("fixture auto-allow requires a configured MCP ActionGroup")
         self._group = group
         self._action = ActionIdentity(group=config.group, name="echo")
-        self._sandbox_namespaces = sandbox_namespaces
+        self._allowed_service_account_namespaces = allowed_service_account_namespaces
 
     @property
     def name(self) -> str:
@@ -35,7 +37,7 @@ class FixtureDecisionProvider:
             and len(context.arguments["message"]) <= 200
             and principal.role is PrincipalRole.CALLER
             and principal.issuer == "kubernetes-sandbox"
-            and namespace in self._sandbox_namespaces
+            and namespace in self._allowed_service_account_namespaces
             and separator
             and sandbox_uid
             and ":" not in sandbox_uid

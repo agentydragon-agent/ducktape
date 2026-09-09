@@ -1,6 +1,6 @@
 # Reviewed credentialless remote binding; discovery supplies Actions at process startup.
 # Keep this endpoint aligned with the existing mcp-everything Service (no runner MCP access).
-sandbox_namespaces:
+allowed_service_account_namespaces:
   - agentplane-staging
 action_groups:
   everything:

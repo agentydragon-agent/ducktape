@@ -104,6 +104,9 @@ polling and a JSON report checked against the upstream echo result.
 
 ## Authentication boundaries
 
+`allowed_service_account_namespaces` lists the Kubernetes namespaces whose ServiceAccounts
+may authenticate sandbox callers. It does not approve Actions or select an MCP destination.
+
 Sandbox calls use ordinary `Authorization: Bearer <workload token>` at this service. The runner does
 not hold that token: it presents the public
 `agentplane-credential-agentplane-workload` placeholder to the existing pod-local/central egress

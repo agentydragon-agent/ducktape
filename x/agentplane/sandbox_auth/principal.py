@@ -42,19 +42,26 @@ class SandboxPrincipalRejectedError(Exception):
 
 
 class SandboxPrincipalResolver:
-    """Resolve Pod-bound Kubernetes workload tokens within an allowed namespace scope."""
+    """Resolve Pod-bound workload tokens only from ServiceAccounts in the allowed namespaces."""
 
     def __init__(
-        self, *, authentication: AuthenticationV1Api, core_v1: CoreV1Api, audience: str, namespaces: frozenset[str]
+        self,
+        *,
+        authentication: AuthenticationV1Api,
+        core_v1: CoreV1Api,
+        audience: str,
+        allowed_service_account_namespaces: frozenset[str],
     ) -> None:
         if not audience:
             raise ValueError("audience must not be empty")
-        if not namespaces or any(not namespace for namespace in namespaces):
-            raise ValueError("namespaces must contain at least one non-empty namespace")
+        if not allowed_service_account_namespaces or any(
+            not namespace for namespace in allowed_service_account_namespaces
+        ):
+            raise ValueError("allowed_service_account_namespaces must contain at least one non-empty namespace")
         self._authentication = authentication
         self._core_v1 = core_v1
         self._audience = audience
-        self._namespaces = namespaces
+        self._allowed_service_account_namespaces = allowed_service_account_namespaces
 
     async def resolve(self, token: str) -> SandboxPrincipal:
         """Return only the destination-safe principal; never infer identity from request metadata."""
@@ -126,7 +133,7 @@ class SandboxPrincipalResolver:
                 RejectionReason.TOKEN_REJECTED, "bearer has an invalid ServiceAccount subject"
             )
         namespace, service_account = parts
-        if namespace not in self._namespaces:
+        if namespace not in self._allowed_service_account_namespaces:
             raise SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "bearer namespace is not accepted here")
         return namespace, service_account
 

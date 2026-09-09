@@ -350,7 +350,6 @@ filegroup(
     name = "agentplane_actions_remote_mcp",
     srcs = glob([
         "agentplane-staging/actions/*.yaml",
-        "agentplane-staging/actions/*.conf",
         "agentplane-staging/mcp-everything/*.yaml",
     ]),
     visibility = ["//x/agentplane/action_service:__pkg__"],

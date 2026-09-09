@@ -74,7 +74,7 @@ def test_rendered_remote_binding_reaches_existing_service(settings: Settings, re
     # The existing image's streamableHttp entrypoint serves /mcp, not the legacy SSE endpoint.
     assert container["command"][-1] == "streamableHttp"
     assert endpoint.path == "/mcp"
-    assert service["metadata"]["namespace"] in settings.sandbox_namespaces
+    assert service["metadata"]["namespace"] in settings.allowed_service_account_namespaces
     assert pod["automountServiceAccountToken"] is False
     assert not group.actions
     catalog = ActionCatalog(groups=settings.action_groups)

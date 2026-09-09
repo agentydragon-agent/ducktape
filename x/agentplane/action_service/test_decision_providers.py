@@ -340,7 +340,9 @@ def fixture_catalog() -> ActionCatalog:
 @pytest.fixture
 def fixture_provider(fixture_catalog: ActionCatalog) -> FixtureDecisionProvider:
     return FixtureDecisionProvider(
-        FixtureAutoAllow(group="test_fixture"), fixture_catalog, sandbox_namespaces=frozenset({"agentplane-staging"})
+        FixtureAutoAllow(group="test_fixture"),
+        fixture_catalog,
+        allowed_service_account_namespaces=frozenset({"agentplane-staging"}),
     )
 
 
@@ -456,7 +458,7 @@ def test_fixture_provider_rejects_missing_group(fixture_catalog: ActionCatalog) 
         FixtureDecisionProvider(
             FixtureAutoAllow(group="test_fixture"),
             fixture_catalog,
-            sandbox_namespaces=frozenset({"agentplane-staging"}),
+            allowed_service_account_namespaces=frozenset({"agentplane-staging"}),
         )
 
 

@@ -121,7 +121,7 @@ def workload_authenticator() -> tuple[SandboxPrincipalAuthenticator, FakeAuthent
         authentication=cast(AuthenticationV1Api, authentication),
         core_v1=cast(CoreV1Api, FakeCoreApi()),
         audience=AUDIENCE,
-        namespaces=frozenset({NAMESPACE}),
+        allowed_service_account_namespaces=frozenset({NAMESPACE}),
     )
     return SandboxPrincipalAuthenticator(resolver), authentication
 

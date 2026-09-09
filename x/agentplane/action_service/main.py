@@ -51,7 +51,10 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8080
     token_audience: str = "agentplane-egress"
-    sandbox_namespaces: frozenset[str] = frozenset({"agentplane-staging"})
+    allowed_service_account_namespaces: frozenset[str] = Field(
+        default=frozenset({"agentplane-staging"}),
+        description="Kubernetes namespaces whose ServiceAccounts may authenticate sandbox callers; does not grant Action approval.",
+    )
     operator_bearer_file: Path | None = None
     operator_oidc: OperatorOidcSettings | None = None
     operator_subject: str = "configured-bff"
@@ -73,7 +76,13 @@ class Settings(BaseSettings):
     def decision_providers(self, catalog: ActionCatalog) -> list[FixtureDecisionProvider]:
         if self.fixture_auto_allow is None:
             return []
-        return [FixtureDecisionProvider(self.fixture_auto_allow, catalog, sandbox_namespaces=self.sandbox_namespaces)]
+        return [
+            FixtureDecisionProvider(
+                self.fixture_auto_allow,
+                catalog,
+                allowed_service_account_namespaces=self.allowed_service_account_namespaces,
+            )
+        ]
 
     @classmethod
     def settings_customise_sources(
@@ -132,7 +141,7 @@ async def async_main(settings: Settings) -> None:
                     authentication=AuthenticationV1Api(api),
                     core_v1=CoreV1Api(api),
                     audience=settings.token_audience,
-                    namespaces=settings.sandbox_namespaces,
+                    allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
                 )
             ),
             operator_authenticator,

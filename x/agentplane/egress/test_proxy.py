@@ -297,7 +297,7 @@ async def proxy(
                     authentication=AuthenticationV1Api(api_client),
                     core_v1=CoreV1Api(api_client),
                     audience=AUDIENCE,
-                    namespaces=frozenset({SANDBOX_NAMESPACE}),
+                    allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
                 )
             ),
             RulesProjection(index),
