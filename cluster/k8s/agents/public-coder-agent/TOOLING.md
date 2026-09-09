@@ -240,18 +240,6 @@ privileged node operations are not routine direct-reader diagnostics.
 and `rugged`. It runs under an explicitly authorized host user, commonly `agentydragon`, whose host
 and cluster permissions can be much broader than the public-coder Pod's identities.
 
-`hostexec/bash` also reaches this Agent's own dedicated devbox VM
-(`cluster/k8s/agents/public-coder-agent/devbox`, `host=public-coder-devbox`), which exists
-specifically for the heavier build tooling this Pod's own image does not carry (Bazel/BuildBuddy,
-direnv, full Git checkouts). Calls to that one host as its unprivileged `coder` user auto-approve —
-no operator click, any `cmd` — under a narrow policy scoped to exactly that host and that one
-`run_as` (`haku/docs/security.md` invariant #9, `haku/console/auto_approval/hostexec.py`). `run_as`
-must be `coder`; `root` on this host stays exactly as manual-approval as every other host
-(`wyrm2`, `rugged`, `atlas`) always was — `hostexecd` runs as root to drop privilege into whatever
-`run_as` a call names, so an auto-approved root call would let you read that host's own daemon
-token straight off disk. Do not assume the devbox exception generalizes beyond this one host and
-this one user.
-
 Central valid uses include:
 
 - admin-level kubectl diagnostics or operations that the public-coder ServiceAccount and current
@@ -277,18 +265,16 @@ state which host-local fact or elevated permission makes the direct Pod surfaces
 
 ### SSH to the devbox
 
-`ssh devbox` reaches the same VM as the same unprivileged `coder`, through a terminating bastion
-rather than the approval queue (`cluster/k8s/agents/public-coder-agent/sshpiper`). No Haku tool
-call, no `tool_call_id`, no approval lifecycle — and no `node_daemon_executions` row either.
+`ssh devbox` reaches the dedicated devbox VM as the unprivileged `coder` account through a
+terminating bastion (`cluster/k8s/agents/public-coder-agent/sshpiper`). No Haku tool call, no
+`tool_call_id`, no approval lifecycle — and no `node_daemon_executions` row.
 
-Prefer it for what `hostexec/bash` cannot do: watching a long build as it runs instead of waiting
-for one truncated result, an interactive session, and `scp` (`rsync` is in neither image). Prefer `hostexec/bash` for a
-single bounded command whose result you want on the record.
+Use it for watching a long build as it runs, interactive sessions, and `scp` (`rsync` is in neither
+image).
 
 Two things it deliberately cannot do, both rejected at the piper rather than by convention:
 port forwarding (`ssh -L`/`-D`/`-R`), and reaching any account but `coder` — the destination user
-is fixed upstream and no `ssh root@…` spelling changes it. `root` on this host remains
-manual-approval `hostexec` only.
+is fixed upstream and no `ssh root@…` spelling changes it.
 
 ## Current auto-approval summary
 
@@ -299,11 +285,8 @@ policy auto-approves reviewed GitHub reads scoped to:
 - `agentydragon/gaffer-private`.
 
 The repository evaluator checks ordinary owner/repository fields and applies stricter parsing to
-code and pull-request search queries. It also auto-approves `hostexec/bash` calls with
-`host=public-coder-devbox, run_as=coder` (any `cmd`) — see § Host execution above. Every other Haku
-operation, including `hostexec/bash` on any other host or as `run_as=root` on this one, remains
-approval-gated unless the live
-configuration has changed.
+code and pull-request search queries. Every other Haku operation remains approval-gated unless the
+live configuration has changed.
 
 Do not infer public-coder authority from the broader `haku_v1` profile. That profile belongs to Haku
 and includes personal-service and other standing permissions that public coder must not inherit.

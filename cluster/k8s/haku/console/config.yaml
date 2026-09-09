@@ -369,23 +369,6 @@ auto_approval_policies:
   # - id: kubectl_passthrough_redundancy_check
   #   type: kubernetes_passthrough
   #   server: kubectl-passthrough-mcp
-  # Deliberately narrow: names ONE host, ONE unprivileged run_as, and nothing about cmd. See the
-  # `hostexec` catalog entry comment above, haku/console/auto_approval/hostexec.py, and
-  # haku/docs/security.md invariant #9. This is the sole reason public-coder-agent's `hostexec`
-  # calls are ever auto-approved at all -- every other host stays exactly as manual as it is for
-  # the Operator. `run_as: [coder]` deliberately excludes root: hostexecd runs as root so it can
-  # drop to whatever run_as a call names, and the devbox's own daemon-token file is root-owned
-  # mode 0600 -- an auto-approved run_as=root call would let the Agent read that file (and
-  # everything else on the box) with nobody ever reviewing the command. `coder` is the VM's
-  # unprivileged build account (nix/nixos/hosts/public-coder-devbox/default.nix); the Operator can
-  # still request root manually (hostexec-root-public-coder-devbox in
-  # tf/gitops/agent-machine-access/hostexec.tf), same as on wyrm2/rugged/atlas -- that path is
-  # unaffected, since this policy only ever widens auto-approval, never RBAC.
-  - id: hostexec_public_coder_devbox
-    type: hostexec_host_scoped
-    server: hostexec
-    hosts: [public-coder-devbox]
-    run_as: [coder]
   - id: public_coder_v1
     type: any_of
     policies:
@@ -398,7 +381,6 @@ auto_approval_policies:
       # Disabled alongside the policy definition above: do not auto-deny kubectl passthrough
       # solely because the direct Kubernetes SAR says the request is theoretically allowed.
       # - kubectl_passthrough_redundancy_check
-      - hostexec_public_coder_devbox
   - id: tana_safe_tools
     type: exact_tools
     tools:
@@ -562,7 +544,6 @@ access_profiles:
       - grants
       - haku_index
       - haku_session_sandboxes
-      - hostexec
   - id: manual-review
     auto_approval_policy: manual_review
     allowed_harnesses: []
@@ -1255,19 +1236,14 @@ mcp:
         credential:
           kind: none
     # `hostexec` (haku/console/tools/hostexec.py): run an approved shell command on an
-    # operator machine (wyrm2/rugged/atlas/public-coder-devbox) under the operator's OWN
+    # operator machine (wyrm2/rugged/atlas) under the operator's OWN
     # Authentik identity. There is no standing credential: `operator_login_identity` makes each
     # call resolve the acting Operator's stored console-login token (captured via
     # offline_access) and exchange it (jwt-bearer) for a short-lived, single-use, per-host
     # token that hostexecd verifies against Authentik's JWKS. This catalog entry only selects
     # the auth mode; the in-scope hosts + their exec URLs / audiences are the top-level
-    # `hostexec:` block below. Every call is manual-approval by default (haku/docs/security.md
-    # invariant #9), EXCEPT calls the `hostexec_public_coder_devbox` auto_approval_policy below
-    # matches: exactly host=public-coder-devbox, run_as=coder (never root), any cmd, assigned
-    # only to the `public-coder` access profile. Auto-approval never changes the execution authority --
-    # the minted token is still the Operator's own, per invariant #9 -- it only skips the
-    # click for that one host. See haku/hostexec/README.md and
-    # haku/console/auto_approval/hostexec.py.
+    # `hostexec:` block below. Every call is manual-approval by default; see
+    # haku/hostexec/README.md and haku/console/auto_approval/hostexec.py.
     hostexec:
       id: hostexec
       backend:
@@ -1292,13 +1268,6 @@ hostexec:
     atlas:
       daemon_id: atlas
       audience_client_id: hostexec-atlas
-    # public-coder-agent's own KubeVirt devbox (cluster/k8s/agents/public-coder-agent/devbox). The
-    # only host in this list an Agent (not just the Operator) may reach without a manual click --
-    # see the `hostexec` catalog entry comment above and the `hostexec_public_coder_devbox` policy
-    # below.
-    public-coder-devbox:
-      daemon_id: public-coder-devbox
-      audience_client_id: hostexec-public-coder-devbox
 node_daemons:
   daemons:
     wyrm2:
@@ -1309,7 +1278,4 @@ node_daemons:
       backends: [hostexec]
     atlas:
       display_name: atlas
-      backends: [hostexec]
-    public-coder-devbox:
-      display_name: public-coder-devbox
       backends: [hostexec]

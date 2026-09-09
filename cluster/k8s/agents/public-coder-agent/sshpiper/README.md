@@ -49,9 +49,7 @@ asciinema play /recordings/<conn_guid>/shell-channel-0.cast
 ```
 
 **Gotcha:** this captures screen output, so it covers PTY sessions and misses a non-PTY
-`ssh devbox <cmd>`. It is therefore not yet an equivalent of the `node_daemon_executions` row
-`hostexec` writes per command, and the two doors are not yet interchangeable from an audit
-standpoint. Nothing prunes the directory either.
+`ssh devbox <cmd>`. Nothing prunes the directory either.
 
 ## Known gaps
 

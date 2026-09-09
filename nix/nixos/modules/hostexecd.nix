@@ -58,8 +58,8 @@ in
       default = null;
       description = ''
         HTTP(S) proxy hostexecd's outbound reqwest client should use to reach `consoleUrl`/the
-        JWKS endpoint, for a host whose egress is fenced through one (public-coder-devbox). Unset
-        on every host that reaches the console directly (wyrm2/rugged/atlas).
+        JWKS endpoint when the host's egress is fenced through one. Leave unset for hosts that
+        reach the console directly.
       '';
     };
 
@@ -81,11 +81,8 @@ in
         `sops.secrets.hostexecd_daemon_token` declaration entirely. For a host with no
         Kubernetes relationship to the cluster (wyrm2/rugged/atlas), decrypting the committed
         `node-daemon-<host>.sops.yaml` locally via sops-nix is the only channel available, so
-        leave this unset. A KubeVirt-managed guest (public-coder-devbox) has a simpler one:
-        Flux/kustomize-controller already decrypts that same file server-side to materialize
-        haku-console's own copy of the token, and KubeVirt can attach a second Secret carrying
-        the identical value as a guest disk — no local sops/age identity needed on the guest at
-        all. Set this to wherever that disk is installed.
+        leave this unset. Set it only when a host has another secure delivery mechanism for the
+        same routing bearer.
       '';
     };
   };

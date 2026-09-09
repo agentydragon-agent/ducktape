@@ -57,10 +57,6 @@ spec:
               serial: pcproxyca
               disk:
                 bus: virtio
-            - name: hostexecd-token
-              serial: pctoken
-              disk:
-                bus: virtio
             - name: buildbuddy-api-key
               serial: pcbuildbuddy
               disk:
@@ -94,9 +90,6 @@ spec:
         - name: proxy-ca
           configMap:
             name: public-coder-agent-proxy-ca-cert
-        - name: hostexecd-token
-          secret:
-            secretName: public-coder-devbox-hostexecd-token
         - name: buildbuddy-api-key
           secret:
             # Reflected from claude-sandbox/buildbuddy-api-key by the existing
