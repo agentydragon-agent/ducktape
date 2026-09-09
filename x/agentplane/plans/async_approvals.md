@@ -91,7 +91,9 @@ asynchronous human provider.
    Notification Hub.
 
 **Landed:** the durable Action event sequence, cursor-based (`after_sequence`) query behavior, and
-process-restart recovery, without a second source-of-truth queue. See
+process-restart recovery, without a second source-of-truth queue. The single human `decision_note`
+is shared unchanged through existing caller polling and operator/BFF projections; provider reasons
+remain separate bounded outcome evidence. This does not add push or Event Hub delivery. See
 `x/agentplane/action_service/README.md`.
 
 ### Acceptance evidence
@@ -105,9 +107,9 @@ Use a scripted scenario with the fixture executor first, then repeat it for the 
 5. human allow and deny callbacks race through the same canonical Decision route, with one final Decision;
 6. allow produces exactly one Execution and deny produces none;
 7. duplicate callback/event reads do not create a second Decision or Execution;
-8. the bounded provider `reason_code`/`reason_description` and safe terminal result reach the caller
-   projection, while sensitive arguments, the operator's `private_reason`, credentials, and backend
-   exception text do not; and
+8. the exact human `decision_note`, or bounded provider `reason_code`/`reason_description` with no
+   human note, reaches both caller and operator projections alongside the safe terminal result;
+   sensitive caller arguments, credentials, and backend exception text remain excluded; and
 9. ambiguous dispatch loss reaches the Action API as `execution_unknown` without backend replay.
 
 ## Deferred

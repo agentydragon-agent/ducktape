@@ -263,13 +263,17 @@ callbacks across the human and auto-provider Decision routes — PR
 
 Settle and test:
 
-- redacted pending/Decision/result/error envelopes with provider reason evidence; and
+- caller pending/result/error redaction, shared human decision notes, and bounded provider reason evidence; and
 - withdrawal before Execution starts and Agent/API-visible treatment of `execution_unknown` and any
   adapter-specific status reconciliation.
 
 **Landed:** durable Action event append/query with restart recovery and cursor-based
 `after_sequence` polling, so a caller can resume from the last sequence it already has and repeated
 reads are a no-op. See README.md's "Delivery: polling, not an outbox".
+
+**Landed behavior:** the single human `decision_note` is persisted and returned unchanged in caller
+polling and operator/BFF projections. Non-human provider reason code/description remain separate
+bounded outcome evidence. This is query visibility, not push/Event Hub delivery.
 
 The Action Service's event history is the source of truth. A separate outbox is not required for this
 slice; the never-drained `action_outbox` table has been dropped. Cross-service push delivery belongs

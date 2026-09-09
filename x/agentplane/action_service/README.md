@@ -9,9 +9,10 @@ The v0 executable seam is deliberately small:
 - one invariant request envelope, with optional `origin` and `correlation` stored only as untrusted
   provenance;
 - caller-own and operator-all reads: operator arguments are exact, while caller arguments and all execution result/error views recursively redact credential-shaped fields;
-- a human operator Decision route, with expected-version and idempotency protection and a private,
-  operator-only `private_reason`, plus optional synchronous `DecisionProvider`s that run first and
-  carry a bounded caller-visible `reason_code`/`reason_description` instead;
+- a human operator Decision route, with expected-version and idempotency protection and one
+  `decision_note` (optional, at most 2000 characters), shared unchanged with caller and operator;
+  optional synchronous non-human `DecisionProvider`s run first and carry bounded
+  `reason_code`/`reason_description` outcome evidence, with `decision_note=None`;
 - automatic dispatch after allow, exactly one `Execution`, and no retry after dispatch may begin;
 - restart recovery: pending dispatches resume immediately; dispatching/running work is left alone
   until its own bounded lease expires, then becomes `execution_unknown` and may later be reconciled
@@ -22,6 +23,10 @@ The v0 executable seam is deliberately small:
   `GET /v1/action-requests/{id}/events?after_sequence=<n>` from `decision_pending` to a terminal
   state, and every submit/Decision/dispatch/terminal/`execution_unknown` transition appends exactly
   one ordered event.
+
+Migration `0006_decision_note` renames the existing human-note column without dropping data;
+downgrade restores the old column name. Existing notes become caller-visible too. Notes are not
+a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
 
 ## Delivery: polling, not an outbox
 

@@ -80,7 +80,7 @@ class DecisionRow(Base):
     verdict: Mapped[str] = mapped_column(Text)
     provider: Mapped[str] = mapped_column(Text)
     issuer: Mapped[str] = mapped_column(Text)
-    private_reason: Mapped[str | None] = mapped_column(Text)
+    decision_note: Mapped[str | None] = mapped_column(Text)
     reason_code: Mapped[str | None] = mapped_column(Text)
     reason_description: Mapped[str | None] = mapped_column(Text)
     idempotency_key: Mapped[str] = mapped_column(Text)
@@ -265,7 +265,7 @@ class ActionStore:
             issuer=principal.key,
             idempotency_key=body.idempotency_key,
             expected_version=body.expected_version,
-            private_reason=body.private_reason,
+            decision_note=body.decision_note,
         )
 
     async def decide_by_provider(
@@ -280,7 +280,7 @@ class ActionStore:
         reason_code: str,
         reason_description: str | None,
     ) -> tuple[ActionRequestView, bool]:
-        """Synchronous non-human DecisionProvider route: no operator identity, no private reason.
+        """Synchronous non-human DecisionProvider route: no operator identity, no human decision note.
 
         `caller_principal` only scopes the returned view (caller-own vs. operator-all projection);
         the provider itself, not a human, is the decision's issuer.
@@ -307,7 +307,7 @@ class ActionStore:
         issuer: str,
         idempotency_key: str,
         expected_version: int,
-        private_reason: str | None = None,
+        decision_note: str | None = None,
         reason_code: str | None = None,
         reason_description: str | None = None,
     ) -> tuple[ActionRequestView, bool]:
@@ -341,7 +341,7 @@ class ActionStore:
                     verdict=verdict.value,
                     provider=provider,
                     issuer=issuer,
-                    private_reason=private_reason,
+                    decision_note=decision_note,
                     reason_code=reason_code,
                     reason_description=reason_description,
                     idempotency_key=idempotency_key,
@@ -588,7 +588,7 @@ class ActionStore:
             version=row.version,
             created_at=row.created_at,
             updated_at=row.updated_at,
-            decision=_decision_view(decision, operator=operator),
+            decision=_decision_view(decision),
             execution=_execution_view(execution),
         )
 
@@ -610,7 +610,7 @@ def _record_event(session: AsyncSession, row: ActionRequestRow, at: datetime) ->
     session.add(ActionEventRow(request_id=row.id, sequence=row.version, state=row.state, at=at))
 
 
-def _decision_view(row: DecisionRow | None, *, operator: bool) -> DecisionView | None:
+def _decision_view(row: DecisionRow | None) -> DecisionView | None:
     if row is None:
         return None
     return DecisionView(
@@ -618,10 +618,7 @@ def _decision_view(row: DecisionRow | None, *, operator: bool) -> DecisionView |
         verdict=Verdict(row.verdict),
         provider=row.provider,
         issuer=row.issuer,
-        private_reason=row.private_reason if operator else None,
-        private_reason_redacted=bool(row.private_reason) and not operator,
-        # Bounded provider-authored evidence is safe for the Action audit/projection by contract
-        # (models.ProviderOutcome), unlike a human operator's free-text private_reason.
+        decision_note=row.decision_note,
         reason_code=row.reason_code,
         reason_description=row.reason_description,
         idempotency_key=row.idempotency_key,

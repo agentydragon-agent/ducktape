@@ -239,5 +239,7 @@ A result echoing an argument does not become an operator credential-disclosure p
 - `//x/agentplane/action_service:test_acceptance`: exact operator arguments including nested
   secret-looking values, recursive caller redaction, and unchanged redacted execution results.
 
-Agent-requested withdrawal/cancellation and an operator-authored **public** decision reason remain
-unimplemented. They require separate decisions about cancellation races and public-versus-private reason delivery.
+The single human-authored `decision_note` is shared unchanged with caller and operator through
+canonical polling/BFF projections; provider outcome reason fields remain separate. There is no
+private human-note path. Agent-requested withdrawal/cancellation and push/Event Hub notification
+remain deferred.

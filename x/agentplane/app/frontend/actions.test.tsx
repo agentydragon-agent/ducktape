@@ -33,8 +33,7 @@ function request(state: ActionState, index: number): ActionRequestView {
           verdict: state === "denied" ? "deny" : "allow",
           provider: "human_operator",
           issuer: "operator",
-          private_reason: null,
-          private_reason_redacted: false,
+          decision_note: "Reviewed scope — allowed for this request.",
           idempotency_key: `decision-${index}`,
           decided_at: "2026-09-05T12:00:00Z",
         }
@@ -106,6 +105,7 @@ describe("ActionRequests", () => {
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     expect(container.textContent).toContain("test-exact-token");
     expect(container.textContent).toContain("test-exact-password");
+    expect(container.textContent).toContain("Reviewed scope — allowed for this request.");
     expect(container.textContent).toContain("Result");
     expect(container.textContent).toContain("Execution error");
   });

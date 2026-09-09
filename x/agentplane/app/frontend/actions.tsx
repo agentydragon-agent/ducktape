@@ -69,7 +69,7 @@ function ActionCard({
         {request.decision && (
           <Text size="sm">
             Decision: <b>{request.decision.verdict}</b> by {request.decision.issuer}
-            {request.decision.private_reason ? ` · ${request.decision.private_reason}` : ""}
+            {request.decision.decision_note ? ` · ${request.decision.decision_note}` : ""}
           </Text>
         )}
         {request.execution?.result !== null && request.execution?.result !== undefined && (

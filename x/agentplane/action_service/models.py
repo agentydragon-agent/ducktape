@@ -92,7 +92,11 @@ class DecisionInput(BaseModel):
     verdict: Verdict
     expected_version: int = Field(ge=1)
     idempotency_key: str = Field(min_length=1, max_length=200)
-    private_reason: str | None = Field(default=None, max_length=2000)
+    decision_note: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Human-authored note shared unchanged with caller and operator; not secret.",
+    )
 
 
 class DecisionView(BaseModel):
@@ -102,13 +106,16 @@ class DecisionView(BaseModel):
     verdict: Verdict
     provider: str
     issuer: str
-    private_reason: str | None
-    private_reason_redacted: bool
+    decision_note: str | None = Field(
+        max_length=2000,
+        description="Human-authored note shared unchanged with caller and operator; absent for provider decisions.",
+    )
     reason_code: str | None = Field(
         default=None, description="Bounded provider-authored reason code; absent for a human Decision."
     )
     reason_description: str | None = Field(
-        default=None, description="Bounded provider-authored explanation, safe for caller/operator projection."
+        default=None,
+        description="Bounded provider-authored explanation, safe for caller/operator projection; absent for a human Decision.",
     )
     idempotency_key: str
     decided_at: datetime
