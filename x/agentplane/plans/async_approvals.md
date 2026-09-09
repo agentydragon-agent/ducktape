@@ -1,5 +1,13 @@
 # Asynchronous approvals: remaining delivery work
 
+## Burn-down in this PR
+
+The implementation slice in PR #5937 now covers the NOTIFY delivery support: Action Service
+PostgreSQL notification fanout, authenticated app SSE snapshots, listener recovery, durable
+per-subscription push delivery/retry/recovery, subscription ownership protection, browser
+registration management, and service-worker approval controls. The remaining work below is
+acceptance or explicitly separate product scope; do not reopen a second approval lifecycle for it.
+
 Human Decisions, synchronous provider aggregation, shared notes, durable cursor-based events,
 notification-driven bounded waits, and owner-only pre-claim cancellation are implemented. Use the
 [Action Service specification](../action_service/SPEC.md) and [README](../action_service/README.md),
@@ -17,8 +25,7 @@ subscription-management routes and proxies the authenticated Decision route. For
 page, use the app's existing SSE pattern for server-pushed snapshots/changes rather than polling.
 
 Notify the operator that an ActionRequest needs review with only safe/redacted context. Stale or
-duplicate buttons cannot overwrite a winning Decision or create a parallel human lifecycle. The
-The Actions page's SSE stream reconnects with a durable cursor/snapshot boundary; it does not fall
+duplicate buttons cannot overwrite a winning Decision or create a parallel human lifecycle. The Actions page's SSE stream reconnects from an authoritative snapshot boundary; it does not fall
 back to a timer poll while the stream is healthy. The Web Push notification remains the background
 fallback when no tab is open or the stream is unavailable. A later Event & Notification Hub may
 take over delivery, but is not a prerequisite for this first slice. Prove notification retries and
@@ -26,9 +33,10 @@ review races without duplicate effects. Subscription rows and fanout must be saf
 Action Service and app replicas; reconnect/replay comes from durable state, never process-local
 memory.
 
-This is optional delivery, not a prerequisite for the current polling UI or human-approved
-Claude.ai acceptance. The deployed browser/BFF verification is `APPROVALUI` in the
-[task DAG](task_dag.md).
+Implementation is complete for this code slice. It is not a prerequisite for human-approved
+Claude.ai acceptance, and the deployed browser/BFF verification remains `APPROVALUI` in the
+[task DAG](task_dag.md). Live VAPID delivery, revocation, unavailable-push fallback, and
+retry/race behavior still require deployed acceptance; CI does not claim those outcomes.
 
 ## Concrete progress and unknown-outcome observations
 
