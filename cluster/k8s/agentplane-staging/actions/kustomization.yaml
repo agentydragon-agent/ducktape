@@ -11,4 +11,4 @@ resources:
 configMapGenerator:
   - name: agentplane-actions-settings
     files:
-      - settings.yaml=settings.conf
+      - settings.yaml

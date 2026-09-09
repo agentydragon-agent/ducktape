@@ -128,7 +128,7 @@ async def ingress_clients(
             authentication=AuthenticationV1Api(api),
             core_v1=CoreV1Api(api),
             audience=AUDIENCE,
-            namespaces=frozenset({SANDBOX_NAMESPACE}),
+            allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
         )
         app = create_app(
             IngressResources(

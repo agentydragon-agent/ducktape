@@ -73,8 +73,9 @@ executor mapping to the service and shares the same catalog objects with discove
 refreshes child Actions; execution rechecks the live schema. Echo is only an explicitly injected test
 executor, never a production default or factory option.
 
-An empty catalog starts with no offered actions. Missing bindings and unsupported kinds fail
-settings validation; missing/invalid MCP config, connection failure, or failed initial
+An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
+path aborts startup rather than silently selecting that empty catalog. Missing bindings and unsupported kinds fail
+settings validation without echoing input values; missing/invalid MCP config, connection failure, or failed initial
 `tools/list` aborts startup before HTTP serving or pending-request recovery. All bindings are
 validated before any server is launched. Startup unwinds already-opened adapters, including a
 partially started adapter; shutdown stops service tasks before closing MCP clients/refresh tasks,
@@ -102,6 +103,9 @@ No custom MCP server or image is built. The real staging test is
 polling and a JSON report checked against the upstream echo result.
 
 ## Authentication boundaries
+
+`allowed_service_account_namespaces` lists the Kubernetes namespaces whose ServiceAccounts
+may authenticate sandbox callers. It does not approve Actions or select an MCP destination.
 
 Sandbox calls use ordinary `Authorization: Bearer <workload token>` at this service. The runner does
 not hold that token: it presents the public
@@ -140,9 +144,12 @@ url: http://127.0.0.1:8000/mcp
 HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including
 JSON/SSE responses and session shutdown. Both transports use the same catalog refresh, live schema
 validation, safe tool-error mapping, and ambiguous-call failure path; a failed `tools/call` transport
-exchange is not retried. HTTP config rejects userinfo, URL fragments, launch fields, and authentication
+exchange is not retried. HTTP config rejects userinfo, URL queries/fragments, launch fields, and authentication
 or header settings. The production composition uses this same transport selection. OAuth and
-credential profiles are outside this seam.
+credential profiles are outside this seam. Invalid discovered schemas or duplicate supported tool names
+make the entire group unavailable, clearing stale Actions. Invalid live schemas are refused before
+`tools/call`. Production startup and shutdown report only the group and failure category, not raw
+transport exceptions or endpoint values.
 
 ### OIDC operator adapter
 

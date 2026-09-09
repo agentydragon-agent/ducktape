@@ -61,7 +61,7 @@ async def async_main(settings: Settings) -> None:
             authentication=AuthenticationV1Api(api),
             core_v1=CoreV1Api(api),
             audience=settings.token_audience,
-            namespaces=frozenset({settings.namespace}),
+            allowed_service_account_namespaces=frozenset({settings.namespace}),
         )
         app = create_app(
             IngressResources(

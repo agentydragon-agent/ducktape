@@ -63,7 +63,7 @@ def authenticator() -> tuple[SandboxPrincipalAuthenticator, AsyncMock]:
                 authentication=cast(AuthenticationV1Api, SimpleNamespace(create_token_review=create_token_review)),
                 core_v1=cast(CoreV1Api, SimpleNamespace(read_namespaced_pod=read_namespaced_pod)),
                 audience="agentplane-egress",
-                namespaces=frozenset({NAMESPACE}),
+                allowed_service_account_namespaces=frozenset({NAMESPACE}),
             )
         ),
         create_token_review,

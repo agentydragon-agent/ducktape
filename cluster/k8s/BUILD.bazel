@@ -345,3 +345,12 @@ exports_files(
     ["agentplane-staging/mcp-everything/deployment.yaml"],
     visibility = ["//x/agentplane/action_service:__pkg__"],
 )
+
+filegroup(
+    name = "agentplane_actions_remote_mcp",
+    srcs = glob([
+        "agentplane-staging/actions/*.yaml",
+        "agentplane-staging/mcp-everything/*.yaml",
+    ]),
+    visibility = ["//x/agentplane/action_service:__pkg__"],
+)

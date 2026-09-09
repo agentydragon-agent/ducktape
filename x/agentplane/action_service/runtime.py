@@ -33,8 +33,20 @@ async def running_executor(catalog: ActionCatalog) -> AsyncIterator[dict[str, Ex
     async with AsyncExitStack() as stack:
         for key, executor in executors.items():
             # Register before start: a connected client can fail during initial discovery.
-            stack.push_async_callback(executor.close)
-            await executor.start()
+            stack.push_async_callback(_close_executor, key, executor)
+            try:
+                await executor.start()
+            except Exception:
+                # Transport exceptions can include the endpoint and backend response body.
+                raise RuntimeError(f"ActionGroup {key!r} failed initial MCP discovery") from None
             if not catalog.groups[key].available:
                 raise RuntimeError(f"ActionGroup {key!r} failed initial MCP discovery")
         yield dict(executors)
+
+
+async def _close_executor(key: str, executor: McpActionGroupExecutor) -> None:
+    try:
+        await executor.close()
+    except Exception:
+        # The pinned HTTP client can re-raise a terminal transport failure during shutdown.
+        raise RuntimeError(f"ActionGroup {key!r} MCP shutdown failed") from None

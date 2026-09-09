@@ -81,7 +81,10 @@ class PodIdentityVerifier:
         self._clock = clock
         self._cache: dict[str, _CachedIdentity] = {}
         self._resolver = SandboxPrincipalResolver(
-            authentication=authentication, core_v1=core_v1, audience=audience, namespaces=frozenset({namespace})
+            authentication=authentication,
+            core_v1=core_v1,
+            audience=audience,
+            allowed_service_account_namespaces=frozenset({namespace}),
         )
 
     async def identify(self, token: str, source_ip: str) -> PodIdentity:

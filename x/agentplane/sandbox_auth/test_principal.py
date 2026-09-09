@@ -88,7 +88,7 @@ def resolver(
     token_reviews: Mapping[str, k8s_client.V1TokenReview],
     pods: Mapping[tuple[str, str], k8s_client.V1Pod | Exception],
     *,
-    namespaces: frozenset[str] = frozenset({NAMESPACE}),
+    allowed_service_account_namespaces: frozenset[str] = frozenset({NAMESPACE}),
 ) -> tuple[SandboxPrincipalResolver, AsyncMock, AsyncMock]:
     async def create_token_review(body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
         return token_reviews[body.spec.token]
@@ -106,7 +106,7 @@ def resolver(
             authentication=cast(AuthenticationV1Api, SimpleNamespace(create_token_review=create_token_review_mock)),
             core_v1=cast(CoreV1Api, SimpleNamespace(read_namespaced_pod=read_namespaced_pod_mock)),
             audience=AUDIENCE,
-            namespaces=namespaces,
+            allowed_service_account_namespaces=allowed_service_account_namespaces,
         ),
         create_token_review_mock,
         read_namespaced_pod_mock,

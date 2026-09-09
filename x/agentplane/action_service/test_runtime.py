@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import textwrap
 from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -98,6 +99,67 @@ def test_unsupported_executor_kind_is_rejected_by_settings(kind: str) -> None:
                 },
             }
         )
+
+
+@pytest.mark.parametrize("path_kind", ["missing", "directory"])
+def test_explicit_config_file_must_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_kind: str) -> None:
+    path = tmp_path / "settings.yaml" if path_kind == "missing" else tmp_path
+    monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
+    with pytest.raises(ValueError, match="configured Action Service settings file"):
+        Settings(database_url="postgresql://unused", _cli_parse_args=False)
+
+
+def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "settings.yaml"
+    path.write_text(
+        textwrap.dedent("""
+        action_groups:
+          remote:
+            title: Remote
+            description: Reviewed peer
+            executor:
+              kind: mcp
+              description: No credentials
+              config:
+                transport: streamable-http
+                url: http://test-peer.invalid/mcp
+    """)
+    )
+    monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
+    settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
+    assert settings.action_groups["remote"].executor.config == {
+        "transport": "streamable-http",
+        "url": "http://test-peer.invalid/mcp",
+    }
+    path.write_text(
+        path.read_text()
+        .replace("kind: mcp", "kind: unsupported")
+        .replace("http://test-peer.invalid/mcp", "http://test-peer.invalid/mcp?token=test-only-private")
+    )
+    with pytest.raises(ValidationError) as error:
+        Settings(database_url="postgresql://unused", _cli_parse_args=False)
+    assert "test-only-private" not in str(error.value)
+
+
+def test_invalid_group_key_rejected_by_settings() -> None:
+    with pytest.raises(ValidationError):
+        Settings(database_url="postgresql://unused", action_groups={"bad/key": _group({})}, _cli_parse_args=False)
+
+
+async def test_runtime_sanitizes_connect_and_cleanup_failures() -> None:
+    catalog = ActionCatalog(
+        groups={"remote": _group({"transport": "streamable-http", "url": "http://test-peer.invalid/mcp"})}
+    )
+    with (
+        patch.object(McpActionGroupExecutor, "start", AsyncMock(side_effect=RuntimeError("private connect material"))),
+        patch.object(McpActionGroupExecutor, "close", AsyncMock(side_effect=RuntimeError("private cleanup material"))),
+        pytest.raises(RuntimeError, match="MCP shutdown failed") as error,
+    ):
+        async with running_executor(catalog):
+            pytest.fail("unavailable runtime served")
+    assert error.value.__suppress_context__
 
 
 async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionLease) -> None:
