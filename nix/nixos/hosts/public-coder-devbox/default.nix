@@ -42,9 +42,13 @@ let
     NO_PROXY = "127.0.0.1,localhost";
     no_proxy = "127.0.0.1,localhost";
   };
-  proxyCaClientEnvironment = {
+  # Nix daemon has defaults for several client-specific CA variables, so it
+  # receives only this compatible base. Other clients receive the full set.
+  proxyCaNixEnvironment = {
     SSL_CERT_FILE = proxyCaBundle;
     NIX_SSL_CERT_FILE = proxyCaBundle;
+  };
+  proxyCaClientEnvironment = proxyCaNixEnvironment // {
     CURL_CA_BUNDLE = proxyCaBundle;
     GIT_SSL_CAINFO = proxyCaBundle;
     # Python HTTP clients and pip may use certifi rather than SSL_CERT_FILE.
@@ -244,7 +248,7 @@ in
   systemd.services.nix-daemon = {
     requires = [ "public-coder-devbox-proxy-ca.service" ];
     after = [ "public-coder-devbox-proxy-ca.service" ];
-    environment = proxyNetworkEnvironment // proxyCaClientEnvironment;
+    environment = proxyNetworkEnvironment // proxyCaNixEnvironment;
   };
 
   # Materialize the reflected BuildBuddy Secret only at runtime. bbr needs the
