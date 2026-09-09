@@ -539,6 +539,10 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/actions/{request_id}",
         "/actions/{request_id}/decision",
         "/actions/{request_id}/events",
+        "/actions/stream",
+        "/push/config",
+        "/push/decision/{request_id}",
+        "/push/subscriptions",
         "/connection-enrollments/{handle}/preview",
         "/connection-enrollments/{handle}/decision",
         "/connection-identities",
@@ -570,6 +574,10 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/live/sandboxes/{name}",
     }
     assert set(paths["/actions"]) == {"get"}
+    assert set(paths["/actions/stream"]) == {"get"}
+    assert set(paths["/push/config"]) == {"get"}
+    assert set(paths["/push/decision/{request_id}"]) == {"post"}
+    assert set(paths["/push/subscriptions"]) == {"get", "post", "delete"}
     assert set(paths["/connection-enrollments/{handle}/preview"]) == {"post"}
     assert set(paths["/connection-enrollments/{handle}/decision"]) == {"post"}
     assert set(paths["/sandboxes"]) == {"get", "post"}
