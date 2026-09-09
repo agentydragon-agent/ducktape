@@ -186,6 +186,7 @@ in
     strace
     lsof
     git
+    gh
     openssl
     kubectl
     # `bbr` remains the ordinary remote-BuildBuddy path and delegates to `bb`.
@@ -360,7 +361,12 @@ in
     proxyNetworkEnvironment
     // proxyCaClientEnvironment
     // {
+      # Git consumes GH_PAT while the GitHub CLI reads GH_TOKEN. Both are the
+      # same inert proxy value; iron-proxy replaces it only in Authorization
+      # headers sent to GitHub, so `gh` authenticates as the agent account
+      # without receiving its PAT.
       GH_PAT = "proxy-github-placeholder";
+      GH_TOKEN = "proxy-github-placeholder";
     };
 
   users.motd = "public-coder-devbox - NixOS development VM for public-coder-agent\n";
