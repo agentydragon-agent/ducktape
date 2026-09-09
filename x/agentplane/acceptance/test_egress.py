@@ -52,12 +52,12 @@ RULES_URL = "http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/ru
 BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
-# The model endpoint, on the same path as everything else
-# (cluster/k8s/agentplane-staging/egress/egresspolicy-litellm.yaml). Granted by the deployment's
-# `default_policies` rather than by a caller, because an agent that cannot reach it has nothing to
-# run -- so a sandbox that names no policy still has this one.
+# The authenticated model ingress, on the same egress path as everything else
+# (cluster/k8s/agentplane-staging/egress/egresspolicy-litellm.yaml). It holds the LiteLLM key and
+# is granted by the deployment's `default_policies` rather than by a caller, because an agent that
+# cannot reach it has nothing to run -- so a sandbox that names no policy still has this one.
 LITELLM = "litellm"
-LITELLM_HOST = "litellm.litellm.svc.cluster.local"
+LLM_INGRESS_HOST = "agentplane-llm-ingress.agentplane-staging.svc.cluster.local"
 
 # The proxy records a decision as it serves it; the app reads the ring over a separate hop, and a
 # binding's Active condition is written by the proxy's informer rather than by the grant itself.
@@ -168,8 +168,10 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 async def test_the_model_call_itself_goes_through_the_proxy(
     client: Client, sandbox: Sandboxes, provider: Provider, model: str
 ) -> None:
-    """The runner holds the placeholder, not the LiteLLM key, so a turn happens at all only if the
-    proxy admitted the model call and put the real key into it.
+    """The runner holds only an inert placeholder, not the LiteLLM key, so a turn happens at all only
+    if the proxy admits the model call and substitutes its sidecar-only workload token for the
+    authenticated ingress. The ingress then verifies that workload identity and presents its
+    server-held LiteLLM key on the separate internal hop.
 
     That makes the turn its own proof of reachability -- an agent that answers has been served -- and
     leaves the decision to say *how*: through the proxy with a credential substituted, rather than
@@ -177,19 +179,20 @@ async def test_the_model_call_itself_goes_through_the_proxy(
     sandbox reaching LiteLLM directly with the key in its own environment, which answers just as well
     and is what routing the model endpoint through the proxy exists to stop.
 
-    The sandbox names no policy. `litellm` reaching it anyway is what `default_policies` is for.
+    The sandbox names no policy. `litellm` reaching the ingress anyway is what `default_policies` is
+    for.
     """
     view = await sandbox(f"accept-model-{provider}")
     agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
 
     turn = await agent.run("Reply with the single word: ok. Do not use any tool.")
 
-    served = await _decision_for(client, view.name, LITELLM_HOST)
+    served = await _decision_for(client, view.name, LLM_INGRESS_HOST)
     assert served.outcome is Outcome.ALLOW, f"{served!r}\n{turn.transcript}"
     assert served.policy == LITELLM, f"the model call was admitted by another policy: {served!r}"
     assert served.substituted, (
-        f"the model call was admitted with no credential substituted, so the sandbox presented a key "
-        f"of its own rather than the placeholder: {served!r}"
+        f"the model call was admitted with no credential substituted, so the sandbox did not present "
+        f"only the inert placeholder to the authenticated ingress: {served!r}"
     )
 
 
