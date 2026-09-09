@@ -63,8 +63,24 @@ py_library(
         ":catalog",
         ":db",
         ":models",
+        ":push",
         "@pypi//jsonschema",
         "@pypi//referencing",
+    ],
+)
+
+py_library(
+    name = "push",
+    srcs = ["push.py"],
+    deps = [
+        ":db",
+        ":models",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//py_vapid",
+        "@pypi//pydantic",
+        "@pypi//pywebpush",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -81,6 +97,7 @@ py_library(
         ":mcp_frontend",
         ":models",
         ":oauth",
+        ":push",
         ":service",
         ":updates",
         "//x/agentplane/sandbox_auth:http",
@@ -126,6 +143,7 @@ py_library(
         ":fixture_policy",
         ":oauth",
         ":operator_oidc",
+        ":push",
         ":runtime",
         ":service",
         ":updates",

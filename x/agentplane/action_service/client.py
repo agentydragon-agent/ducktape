@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
@@ -120,6 +121,30 @@ class OperatorActionServiceClient(_BearerClient):
             "GET", "/v1/operator/action-requests", params=[("state", state) for state in states]
         )
         return [ActionRequestView.model_validate(row) for row in response.json()]
+
+    async def stream_requests(self) -> AsyncIterator[bytes]:
+        """Yield raw SSE chunks from the operator Action stream."""
+        token = await self._tokens.token()
+        async with self._http.stream(
+            "GET", "/v1/operator/action-requests/stream", headers={"Authorization": f"Bearer {token}"}
+        ) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_raw():
+                yield chunk
+
+    async def push_config(self) -> dict[str, str | None]:
+        response = await self._request("GET", "/v1/operator/push/config")
+        return response.json()
+
+    async def push_subscriptions(self) -> list[dict[str, object]]:
+        response = await self._request("GET", "/v1/operator/push/subscriptions")
+        return response.json()
+
+    async def register_push(self, subscription: dict[str, str]) -> None:
+        await self._request("POST", "/v1/operator/push/subscriptions", json=subscription)
+
+    async def remove_push(self, endpoint: str) -> None:
+        await self._request("DELETE", "/v1/operator/push/subscriptions", params={"endpoint": endpoint})
 
     async def get(self, request_id: UUID) -> ActionRequestView:
         response = await self._request("GET", f"/v1/operator/action-requests/{request_id}")
