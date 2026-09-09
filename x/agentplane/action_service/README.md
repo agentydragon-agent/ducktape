@@ -61,6 +61,29 @@ Migration `0006_decision_note` renames the existing human-note column without dr
 downgrade restores the old column name. Existing notes become caller-visible too. Notes are not
 a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
 
+## Consent transactions
+
+`EnrollmentAuthority` accepts trusted, framework-validated authorization metadata from the OAuth
+adapter. Only an opaque enrollment handle crosses to the integration-app URL; PostgreSQL stores
+its hash. The operator-authenticated `/v1/operator/connection-enrollments/{handle}/preview` and
+`/decision` routes bind the interaction to the app's server-side per-session browser secret and
+the independently verified operator principal. The app enforces browser Origin/CSRF protection;
+the service compares the browser-binding hash and operator on every decision.
+
+Preview returns client presentation and expiry, not the held upstream URL or PKCE challenge.
+Allow stores the configured Identity and Connection name, then releases only the stored framework
+URL. Deny returns no redirect. Exact decision retries recover the original response; conflicting
+or stale decisions cannot overwrite it. The configured Identity catalog supplies the UI picker.
+
+The OAuth adapter calls `approved` with the framework code's client/redirect/PKCE tuple and the
+verified, explicitly mapped upstream operator. It binds and validates the resulting pending grant,
+then calls `claim_exchange` immediately before framework code consumption. Only one exchange can
+claim an enrollment; dependency failures before the claim remain retryable, whereas ambiguous
+post-claim failures require fresh OAuth. Activation remains the adapter's responsibility after
+successful token persistence. Migration `0010_connection_enrollments` retains correlation
+tombstones so expired codes cannot select a newer consent. These endpoints do not enable OAuth
+or bypass Action review on their own.
+
 ## Decision providers
 
 All configured synchronous providers run to completion; any deny dominates, otherwise any allow
@@ -129,8 +152,8 @@ The same service process serves stateless Streamable HTTP at `/mcp`. The FastAPI
 the PostgreSQL update listener and MCP transport and unwinds both on shutdown/startup failure.
 This is the production `main.py` composition, not a sidecar, upstream-tool proxy, or second store.
 Requests use the same Sandbox bearer/egress placeholder substitution as the REST workload API.
-Operator/OIDC bearers remain confined to `/v1/operator/...`; external OAuth/DCR enrollment is not
-implemented. No public ingress or harness deployment is added here. FastMCP's automatic Host/Origin
+Operator/OIDC bearers remain confined to `/v1/operator/...`; configured external OAuth grants are
+also accepted by `/mcp`. No public ingress or harness deployment is added here. FastMCP's automatic Host/Origin
 guard protects loopback access without categorically rejecting requests carrying Origin; authority
 comes from the explicit validated bearer, not Origin or browser cookies. Browser CORS policy can
 be configured alongside future external exposure.
@@ -138,6 +161,36 @@ Staging's current `egresspolicy-agentplane-actions.yaml` permits only the REST p
 Sandbox MCP clients also requires an explicit `/mcp` egress allowance with the same workload
 credential substitution. The protocol tests exercise substitution at that boundary, not a claim
 that the current cluster policy already permits the new route.
+
+### External OAuth
+
+The optional `oauth` settings enable FastMCP 3.4.4's DCR, discovery, authorization, callback,
+token and revocation routes in this process. `ActionsOAuthProxy` holds the validated upstream
+redirect in the durable enrollment authority and sends the browser to the integration app's
+consent page. The page chooses a Connection display name and configured Identity; raw client
+registration and upstream login alone create no caller authority.
+
+After consent, the adapter verifies the upstream issuer/subject against the explicitly configured
+single-operator mapping, validates the pending binding, and atomically claims the enrollment
+before FastMCP consumes its code. Only one token family may issue per enrollment. Failures before
+the claim can be retried; an ambiguous failure after it requires fresh OAuth, not another issuance.
+Tokens contain an opaque grant reference. Every bearer admission and refresh resolves the current
+canonical grant; unbind/revocation cannot silently retarget an old token to a new Identity.
+The local revocation endpoint ends the canonical grant independently of upstream IdP revocation;
+it does not forward local credentials upstream or revoke an upstream account. Encrypted SDK
+metadata remains bounded by its existing TTL after the grant is ended.
+
+Configure dedicated upstream client credentials, discovery/issuer pins, public `base_url`,
+`integration_app_url`, and the exact `approving_operator` issuer/subject mapping. Provider-scoped
+subjects are never assumed equal. `jwt_signing_key_file` supplies a stable key across replicas;
+`encryption_key_file` supplies a Fernet key for credential-bearing PostgreSQL KV in the same Actions
+database (`agentplane_oauth_kv`). Neither key is generated at startup. Runtime settings add no
+deployment, Authentik client, ingress, or browser CORS policy automatically.
+
+External MCP callers share receipt ownership/idempotency within the configured Identity while
+each Action retains immutable submitting Connection/grant/revision/issuer/client provenance.
+Production admission and dispatch use the same Connection authority. Sandbox bearers still use
+live workload validation and egress substitution; OAuth does not grant an operator bearer bypass.
 
 | Tool                         | Use                                                                                                                                               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |

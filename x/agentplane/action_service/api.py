@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.routing import Route
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
+from x.agentplane.action_service.caller_auth import CallerAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroupView, ActionView, UnknownActionError
 from x.agentplane.action_service.connections import (
     Connection,
@@ -24,6 +25,17 @@ from x.agentplane.action_service.connections import (
     Identity,
 )
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
+from x.agentplane.action_service.enrollments import (
+    EnrollmentAuthority,
+    EnrollmentConflictError,
+    EnrollmentDecisionInput,
+    EnrollmentDecisionResult,
+    EnrollmentExpiredError,
+    EnrollmentNotFoundError,
+    EnrollmentPreview,
+    EnrollmentPreviewInput,
+    EnrollmentRejectedError,
+)
 from x.agentplane.action_service.mcp_frontend import ActionsMcp, create_server
 from x.agentplane.action_service.models import (
     ActionEventView,
@@ -35,6 +47,7 @@ from x.agentplane.action_service.models import (
     Principal,
     PrincipalRole,
 )
+from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
@@ -98,8 +111,11 @@ def create_app(
     *,
     updates: ActionUpdates,
     connections: ConnectionAuthority | None = None,
+    enrollments: EnrollmentAuthority | None = None,
+    oauth: ActionsOAuthProxy | None = None,
 ) -> FastAPI:
-    mcp_app = create_server(service, catalog, updates, workload_authenticator).http_app(
+    caller_authenticator = CallerAuthenticator(workload_authenticator, oauth)
+    mcp_app = create_server(service, catalog, updates, caller_authenticator).http_app(
         path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto"
     )
 
@@ -120,6 +136,8 @@ def create_app(
 
     if connections is not None:
         _connection_routes(app, connections)
+    if enrollments is not None:
+        _enrollment_routes(app, enrollments)
 
     @app.exception_handler(ActionNotFoundError)
     async def not_found(request: Request, error: ActionNotFoundError) -> JSONResponse:
@@ -254,7 +272,9 @@ def create_app(
         return await action_service.decide(request_id, body, principal)
 
     # Match only the transport endpoint, without a slash redirect or intercepting unknown REST paths.
-    app.router.routes.append(Route("/mcp", ActionsMcp(mcp_app, workload_authenticator)))
+    if oauth is not None:
+        app.router.routes.extend(oauth.get_routes(mcp_path="/mcp"))
+    app.router.routes.append(Route("/mcp", ActionsMcp(mcp_app, caller_authenticator)))
     return app
 
 
@@ -290,6 +310,34 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
     @app.post("/v1/operator/connections/{connection_id}/unbind", dependencies=[Depends(_operator)])
     async def unbind_connection(connection_id: UUID, body: ConnectionVersion) -> Connection:
         return await authority.unbind(connection_id, expected_version=body.expected_version)
+
+
+def _enrollment_routes(app: FastAPI, authority: EnrollmentAuthority) -> None:
+    @app.exception_handler(EnrollmentRejectedError)
+    async def enrollment_rejected(request: Request, error: EnrollmentRejectedError) -> JSONResponse:
+        del request
+        match error:
+            case EnrollmentNotFoundError():
+                code = status.HTTP_404_NOT_FOUND
+            case EnrollmentExpiredError():
+                code = status.HTTP_410_GONE
+            case EnrollmentConflictError():
+                code = status.HTTP_409_CONFLICT
+            case _:
+                code = status.HTTP_403_FORBIDDEN
+        return _error(code, str(error))
+
+    @app.post("/v1/operator/connection-enrollments/{handle}/preview")
+    async def enrollment_preview(
+        handle: str, body: EnrollmentPreviewInput, principal: Annotated[Principal, Depends(_operator)]
+    ) -> EnrollmentPreview:
+        return await authority.preview(handle, body, principal)
+
+    @app.post("/v1/operator/connection-enrollments/{handle}/decision")
+    async def enrollment_decision(
+        handle: str, body: EnrollmentDecisionInput, principal: Annotated[Principal, Depends(_operator)]
+    ) -> EnrollmentDecisionResult:
+        return await authority.decide(handle, body, principal)
 
 
 def _error(status_code: int, detail: str) -> JSONResponse:
