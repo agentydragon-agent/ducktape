@@ -7,7 +7,7 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
 
 ## Open plans and gates
 
-- [Task DAG](task_dag.md) — authoritative landed/open dependency map
+- [Task DAG](task_dag.md) — authoritative landed/open dependency map, including `INPUT_DELIVERY`: re-read native queue research and refresh captures before changing the common protocol
 - [Operations and access](operations_and_access.md) — Action schema, Executor wiring, and Action-state gates
 - [Asynchronous approvals](async_approvals.md) — Decision aggregation and Action event/query delivery
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
@@ -27,7 +27,7 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
 - Authenticated LLM ingress — PR
   [#5698](https://github.com/agentydragon/ducktape/pull/5698) and
   [`../llm_ingress/README.md`](../llm_ingress/README.md)
-- Standalone Action Service with human Decision path and fixture-only echo executor — PR
+- Standalone Action Service with human Decision path — PR
   [#5700](https://github.com/agentydragon/ducktape/pull/5700) and
   [`../action_service/README.md`](../action_service/README.md)
 - ActionGroup/Action catalog discovery — PR
@@ -40,8 +40,11 @@ the [task DAG](task_dag.md) is authoritative for status and dependencies.
   [#5733](https://github.com/agentydragon/ducktape/pull/5733) and
   [`../docs/executor_liveness.md`](../docs/executor_liveness.md)
 - MCP-backed `ActionGroup` Executor adapter — PR
-  [#5753](https://github.com/agentydragon/ducktape/pull/5753), with focused adapter tests; production
-  composition, remote transport, and live Agent acceptance remain open
+  [#5753](https://github.com/agentydragon/ducktape/pull/5753), extended with production composition,
+  remote HTTP and staging-config readiness evidence in
+  [#5886](https://github.com/agentydragon/ducktape/pull/5886); live Agent acceptance remains open
+- Operator sessions/federation, BFF events and shared human `decision_note` are implemented;
+  deployed OIDC/BFF acceptance remains open. See the task DAG for evidence and remaining gates.
 - Launch presets first slice — PR
   [#5648](https://github.com/agentydragon/ducktape/pull/5648) and
   [launch-preset evidence](../docs/launch_presets.md)
