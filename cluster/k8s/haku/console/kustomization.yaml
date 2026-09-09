@@ -10,7 +10,6 @@ resources:
   - haku-console-google-client-credentials.sops.yaml
   - haku-console-github-mcp-client-credentials.sops.yaml
   - node-daemon-atlas.sops.yaml
-  - node-daemon-public-coder-devbox.sops.yaml
   - node-daemon-rugged.sops.yaml
   - node-daemon-wyrm2.sops.yaml
   - httproute.yaml

@@ -44,13 +44,13 @@ own GitHub account and pushes to its own forks.
 
 ## Layers
 
-| Directory    | Contents                                                                                                                                                 |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `namespace/` | Namespace only                                                                                                                                           |
-| `proxy/`     | Interception CA, trust bundle, iron-proxy, and the FQDN allowlist                                                                                        |
-| `app/`       | OpenClaw Deployment, config, state PVC, credentials, NetworkPolicies                                                                                     |
-| `devbox/`    | KubeVirt build/test VM (Bazel/BuildBuddy/direnv), reached two ways: auto-approved `hostexec` (§ TOOLING.md Host execution) and `ssh` through `sshpiper/` |
-| `sshpiper/`  | Terminating SSH bastion to the devbox — the Agent's key opens the piper, the piper's key opens `coder@public-coder-devbox` (<sshpiper/README.md>)        |
+| Directory    | Contents                                                                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `namespace/` | Namespace only                                                                                                                                    |
+| `proxy/`     | Interception CA, trust bundle, iron-proxy, and the FQDN allowlist                                                                                 |
+| `app/`       | OpenClaw Deployment, config, state PVC, credentials, NetworkPolicies                                                                              |
+| `devbox/`    | KubeVirt build/test VM (Bazel/BuildBuddy/direnv), reached through `ssh` via `sshpiper/`                                                           |
+| `sshpiper/`  | Terminating SSH bastion to the devbox — the Agent's key opens the piper, the piper's key opens `coder@public-coder-devbox` (<sshpiper/README.md>) |
 
 The repository-owned tooling and approval operating instructions are in <TOOLING.md>. They cover
 which local, GitHub, Kubernetes, Haku, and physical-host surfaces to prefer, how to inspect the live
@@ -80,17 +80,10 @@ Two layers, and the split matters:
 The model path never leaves the cluster: LiteLLM is reached directly, bypassing
 the proxy, via `NO_PROXY`.
 
-## Two doors to the devbox
+## Devbox access
 
-`hostexec/bash` and `ssh devbox` both run commands on the same VM as the same unprivileged
-`coder`, by different routes. They are not equivalent and both are live:
-
-|             | `hostexec/bash`                                                      | `ssh devbox`                                          |
-| ----------- | -------------------------------------------------------------------- | ----------------------------------------------------- |
-| Authority   | the Operator's short-lived per-host Authentik token, minted per call | the Agent's own standing key, valid only at the piper |
-| Audit       | a `node_daemon_executions` row per command                           | asciicast recordings of PTY sessions                  |
-| Output      | one terminal result, `max_bytes` ≤ 100 000                           | streamed, unbounded                                   |
-| Interactive | no                                                                   | yes, plus `scp`                                       |
+`ssh devbox` reaches the VM as the unprivileged `coder` account through `sshpiper/`. It supports
+streamed interactive work and `scp`; PTY sessions are recorded as asciicasts.
 
 SSH exists for the third row: a long build's output arrives as it happens rather than as a
 truncated result at the end. What it costs is the first two — a standing credential in place of
@@ -203,8 +196,8 @@ proxy environment handling.
   next substantial expansion. It intentionally includes the gateway and Matrix
   plugin, but also the broad `devtools` and git-hook closures (Bazel/`bbr`,
   Ansible, AWS CLI, Checkov, Rust tooling, and formatter/pre-commit tooling).
-  `devbox/` now gives the agent a reachable devbox again (auto-approved
-  `hostexec`, TOOLING.md § Host execution), but nothing has moved to it yet:
+  `devbox/` now gives the agent a reachable devbox again through `ssh devbox`, but nothing has
+  moved to it yet:
   identify the actual runtime-required subset of the image and move the rest
   there without breaking agent workflows. The devbox's own root disk is an
   ephemeral KubeVirt `containerDisk`, published automatically by

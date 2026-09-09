@@ -119,16 +119,3 @@ py_library(
     srcs = ["hostexec.py"],
     deps = [":decision"],
 )
-
-py_test(
-    name = "test_hostexec",
-    srcs = ["test_hostexec.py"],
-    deps = [
-        ":decision",
-        ":hostexec",
-        "//:conftest",
-        "//haku/console:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)

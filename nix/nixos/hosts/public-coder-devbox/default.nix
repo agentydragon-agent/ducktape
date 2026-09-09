@@ -25,8 +25,6 @@ let
   keys = import ../../../ssh-keys.nix;
   proxyHost = "public-coder-agent-proxy.public-coder-agent.svc.cluster.local";
   proxyUrl = "http://${proxyHost}:8080";
-  hostexecdTokenDevice = "/dev/disk/by-id/virtio-pctoken";
-  hostexecdTokenFile = "/etc/hostexecd-daemon-token.txt";
   buildbuddyKeyDevice = "/dev/disk/by-id/virtio-pcbuildbuddy";
   buildbuddyRuntimeDir = "/run/public-coder-devbox-buildbuddy";
   proxyCaDevice = "/dev/disk/by-id/virtio-pcproxyca";
@@ -83,7 +81,6 @@ in
   imports = [
     ../../modules/vm-hardware.nix
     ../../modules/bazel
-    ../../modules/hostexecd.nix
   ];
 
   # The containerDisk is ephemeral, but it must still accommodate one Ducktape
@@ -156,68 +153,13 @@ in
     '';
   };
 
-  # hostexecd's own daemon token (cluster/k8s/haku/console/node-daemon-public-coder-devbox.sops.yaml)
-  # needs no on-guest sops/age decryption either, unlike wyrm2/rugged/atlas: those are physical
-  # machines with no Kubernetes relationship to the cluster, so decrypting that committed ciphertext
-  # themselves via a persisted host-derived age identity is their only channel. This VM is a
-  # KubeVirt-managed guest Kubernetes already controls, so it gets the same treatment as the proxy
-  # CA below: Flux/kustomize-controller decrypts the token server-side (it already needs to, to
-  # materialize haku-console's own copy of it) and KubeVirt attaches the plaintext result as a small
-  # virtio disk. No local decryption identity to persist at all.
-  systemd.services.public-coder-devbox-hostexecd-token = {
-    description = "Install the public-coder-devbox hostexecd daemon token";
-    wantedBy = [
-      "hostexecd.service"
-      "multi-user.target"
-    ];
-    before = [ "hostexecd.service" ];
-    after = [ "local-fs.target" ];
-    path = [
-      pkgs.coreutils
-      pkgs.util-linux
-    ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      set -eu
-      src="/run/public-coder-devbox-hostexecd-token/source"
-      mkdir -p "$src"
-      mounted=0
-      for _ in $(seq 1 60); do
-        if mountpoint -q "$src"; then
-          mounted=1
-          break
-        fi
-        if mount -o ro "${hostexecdTokenDevice}" "$src" 2>/dev/null; then
-          mounted=1
-          break
-        fi
-        sleep 1
-      done
-      if [ "$mounted" -ne 1 ]; then
-        echo "KubeVirt hostexecd-token disk did not appear at ${hostexecdTokenDevice}" >&2
-        exit 1
-      fi
-      install -Dm0600 "$src/token" "${hostexecdTokenFile}"
-      umount "$src"
-    '';
-  };
-
-  # Root SSH login stays available for the human Operator (key-only; manual hostexec approval, or
-  # an interactive session, both still work as root exactly like any other hostexec host). Its
-  # egress is enforced outside the guest by the Cilium policy on virt-launcher either way.
+  # Root SSH login stays available for the human Operator (key-only). Its egress is enforced
+  # outside the guest by the Cilium policy on virt-launcher.
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
   users.users.root.openssh.authorizedKeys.keys = [ keys.publicCoderDevbox ];
 
-  # `coder` is the account public-coder-agent's auto-approved hostexec calls actually run as
-  # (cluster/k8s/haku/console/config.yaml's hostexec_public_coder_devbox policy names it as the
-  # only allowed run_as) -- an ordinary unprivileged user, so it can run Nix/Bazel builds like any
-  # normal account (the daemon-mediated multi-user Nix model needs no special privilege for that),
-  # but cannot read the root-owned, mode-0600 hostexecd daemon token or anything else root-only on
-  # this box. That confinement is the whole point: see haku/docs/security.md invariant #9.
+  # `coder` is the unprivileged account used for public-coder-agent's SSH build sessions.
   users.users.coder = {
     isNormalUser = true;
     home = "/home/coder";
@@ -225,9 +167,8 @@ in
     openssh.authorizedKeys.keys = [
       keys.publicCoderDevbox
       # sshpiper's mapping key (cluster/k8s/agents/public-coder-agent/sshpiper). Authorized here
-      # and not for root: the piper re-originates the Agent's session as this account, so the same
-      # unprivileged confinement that bounds the hostexec door bounds the SSH one. Nothing about
-      # the Pipe's own configuration is load-bearing for that.
+      # and not for root: the piper re-originates the Agent's session as this account. Nothing
+      # about the Pipe's own configuration is load-bearing for that.
       keys.publicCoderAgentSshpiper
     ];
   };
@@ -260,7 +201,7 @@ in
   # ConfigMap contents rather than committing a generated certificate.
   ducktape.bazel.extraSystemBazelrc = ''
     # The embedded Bazel JVM reads this generated JKS, and the system rc is
-    # reliable for hostexec sessions where ~/.bazelrc is not loaded.
+    # reliable for non-login build invocations where ~/.bazelrc is not loaded.
     startup --host_jvm_args=-Djavax.net.ssl.trustStore=${proxyCaRuntimeDir}/bazel-cacerts
     startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
     try-import /home/coder/.config/bazel/buildbuddy.bazelrc
@@ -336,7 +277,6 @@ in
   systemd.services.public-coder-devbox-kubeconfig = {
     description = "Install the public-coder devbox Kubernetes proxy config";
     wantedBy = [ "multi-user.target" ];
-    before = [ "hostexecd.service" ];
     requires = [ "public-coder-devbox-proxy-ca.service" ];
     after = [
       "local-fs.target"
@@ -380,7 +320,6 @@ in
   systemd.services.public-coder-devbox-buildbuddy = {
     description = "Install the public-coder-devbox BuildBuddy credential";
     wantedBy = [ "multi-user.target" ];
-    before = [ "hostexecd.service" ];
     requires = [ "public-coder-devbox-proxy-ca.service" ];
     after = [
       "local-fs.target"
@@ -413,37 +352,6 @@ in
       chmod 0600 /home/coder/.config/bazel/buildbuddy.bazelrc
       umount "$src"
     '';
-  };
-
-  # hostexecd: haku-console runs approved public-coder-agent shell calls here, auto-approved only
-  # for this exact host (haku/docs/security.md invariant #9, cluster/k8s/haku/console/config.yaml's
-  # `hostexec_public_coder_devbox` policy). Its outbound HTTPS is fenced through the same iron-proxy
-  # as everything else on this VM, so it needs the proxy plus the proxy's own interception CA
-  # (nix/nixos/modules/hostexecd.nix's extra_root_cert_file), which every other hostexec host
-  # (wyrm2/rugged/atlas) leaves unset because it reaches the console directly.
-  ducktape.hostexec = {
-    enable = true;
-    httpsProxy = proxyUrl;
-    extraRootCertFile = "${proxyCaRuntimeDir}/ca-bundle.crt";
-    daemonTokenFile = hostexecdTokenFile;
-  };
-  systemd.services.hostexecd = {
-    # Hostexec commands inherit the daemon's systemd environment rather than
-    # `environment.sessionVariables`, so give them the same proxy/trust contract.
-    environment = proxyNetworkEnvironment // proxyCaClientEnvironment;
-    requires = [
-      "public-coder-devbox-proxy-ca.service"
-      "public-coder-devbox-hostexecd-token.service"
-      "public-coder-devbox-buildbuddy.service"
-      "public-coder-devbox-kubeconfig.service"
-    ];
-    after = [
-      "public-coder-devbox-proxy-ca.service"
-      "public-coder-devbox-hostexecd-token.service"
-      "public-coder-devbox-buildbuddy.service"
-      "public-coder-devbox-kubeconfig.service"
-    ];
-    serviceConfig.EnvironmentFile = [ "${buildbuddyRuntimeDir}/environment" ];
   };
 
   # These are intentionally placeholders / non-secret routing settings. The

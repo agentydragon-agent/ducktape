@@ -4,7 +4,7 @@ metadata:
   name: public-coder-agent-devbox
   namespace: ducktape-flux
   annotations:
-    description: KubeVirt build/test devbox for public-coder-agent (Bazel/BuildBuddy/direnv), ephemeral containerDisk root apart from the sshd host key. Two doors, both landing on the unprivileged `coder` account — hostexecd under an auto-approved host-scoped policy (haku/docs/security.md invariant #9), and ssh through ../sshpiper.
+    description: KubeVirt build/test devbox for public-coder-agent (Bazel/BuildBuddy/direnv), with an ephemeral containerDisk root apart from the sshd host key and SSH access through ../sshpiper.
 spec:
   interval: 10m
   retryInterval: 1m
