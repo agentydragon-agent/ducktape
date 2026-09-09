@@ -86,7 +86,7 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
 
 async def test_registration_owner_cannot_be_overwritten(engine: AsyncEngine) -> None:
     store = PushSubscriptionStore(make_sessionmaker(engine))
-    args = dict(endpoint="https://push.example/a", p256dh="test", auth="test", user_agent="test")
+    args = {"endpoint": "https://push.example/a", "p256dh": "test", "auth": "test", "user_agent": "test"}
     await store.save(operator_principal=OPERATOR.key, **args)
     with pytest.raises(ValueError, match="another operator"):
         await store.save(operator_principal="other", **args)
