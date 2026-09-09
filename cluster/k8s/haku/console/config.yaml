@@ -362,19 +362,13 @@ auto_approval_policies:
       haku_index:
         - search
         - index_status
-  # Never grants standing authority: it only checks whether the calling Agent's own Kubernetes SAR
-  # identity already covers a kubectl-passthrough-mcp call, and if so auto-*denies* it with a
-  # message to use that direct path instead of the operator's broader passthrough credential. A
-  # denial here always falls back to manual for anything not already covered — this narrows toward
-  # what the Agent could already do unattended, never widens it.
-  #
-  # public-coder only for now. Haku's Claude Code runtime (and any other claude.ai-hosted variant)
-  # would need verified kubectl access in its own environment, and instructions to actually reach
-  # for it (or for the haku sandbox's own kube-api-proxy) instead of kubectl-passthrough-mcp, before
-  # a redirect here is actionable there rather than a dead end. See TODO.md.
-  - id: kubectl_passthrough_redundancy_check
-    type: kubernetes_passthrough
-    server: kubectl-passthrough-mcp
+  # Disabled: direct-SAR coverage must not auto-deny the operator-linked passthrough route.
+  # The current public-coder kubeconfig cannot execute its required POST/SPDY transport through
+  # haku-kubeapi, while the passthrough service carries the working WebSocket path. Keep the
+  # definition commented out until direct access is a verified, equivalent substitute.
+  # - id: kubectl_passthrough_redundancy_check
+  #   type: kubernetes_passthrough
+  #   server: kubectl-passthrough-mcp
   # Deliberately narrow: names ONE host, ONE unprivileged run_as, and nothing about cmd. See the
   # `hostexec` catalog entry comment above, haku/console/auto_approval/hostexec.py, and
   # haku/docs/security.md invariant #9. This is the sole reason public-coder-agent's `hostexec`
@@ -401,7 +395,9 @@ auto_approval_policies:
       - grants_self_introspection
       - grants_own_revoke
       - public_coder_recall_reads
-      - kubectl_passthrough_redundancy_check
+      # Disabled alongside the policy definition above: do not auto-deny kubectl passthrough
+      # solely because the direct Kubernetes SAR says the request is theoretically allowed.
+      # - kubectl_passthrough_redundancy_check
       - hostexec_public_coder_devbox
   - id: tana_safe_tools
     type: exact_tools
