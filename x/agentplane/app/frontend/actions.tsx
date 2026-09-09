@@ -155,8 +155,10 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
   }, [service]);
 
   useEffect(() => {
-    void refresh();
-    if (service !== actionService) return;
+    if (service !== actionService) {
+      void refresh();
+      return;
+    }
     const source = new EventSource("/actions/stream");
     source.addEventListener("snapshot", (event) => {
       try {
@@ -174,9 +176,11 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
     setDeciding(request.id);
     try {
       const updated = await service.decide(request, verdict);
-      setRequests((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setRequests((current) =>
+        current.map((item) => (item.id === updated.id && updated.version >= item.version ? updated : item))
+      );
       setError(null);
-      await refresh();
+      if (service !== actionService) await refresh();
     } catch (failure) {
       setError(displayableError(failure));
     } finally {
