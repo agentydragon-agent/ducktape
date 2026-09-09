@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 import httpx
@@ -136,11 +136,11 @@ class OperatorActionServiceClient(_BearerClient):
 
     async def push_config(self) -> dict[str, str | None]:
         response = await self._request("GET", "/v1/operator/push/config")
-        return response.json()
+        return cast(dict[str, str | None], response.json())
 
     async def push_subscriptions(self) -> list[dict[str, object]]:
         response = await self._request("GET", "/v1/operator/push/subscriptions")
-        return response.json()
+        return cast(list[dict[str, object]], response.json())
 
     async def register_push(self, subscription: dict[str, str], *, user_agent: str) -> None:
         await self._request(
