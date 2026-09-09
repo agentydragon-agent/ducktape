@@ -2,6 +2,7 @@
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "0012_action_push_subscription"
 down_revision = "0011_enrollment_reconnect"
@@ -22,8 +23,26 @@ def upgrade() -> None:
     op.create_index(
         "ix_action_push_subscription_operator_principal", "action_push_subscription", ["operator_principal"]
     )
+    op.create_table(
+        "action_push_delivery",
+        sa.Column(
+            "request_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("action_request.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "endpoint",
+            sa.Text(),
+            sa.ForeignKey("action_push_subscription.endpoint", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column("kind", sa.Text(), nullable=False),
+        sa.PrimaryKeyConstraint("request_id", "endpoint"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_table("action_push_delivery")
     op.drop_index("ix_action_push_subscription_operator_principal", table_name="action_push_subscription")
     op.drop_table("action_push_subscription")
