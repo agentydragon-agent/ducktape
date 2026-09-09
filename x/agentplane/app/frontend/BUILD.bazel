@@ -533,3 +533,11 @@ VISUAL_DATA = [
         "session_reasoning_phone",
     ]
 ]
+
+js_test(
+    name = "sw_test",
+    size = "small",
+    data = [":service_worker"],
+    entry_point = "sw_test.mjs",
+    env = {"SW_SOURCE": "$(rootpath :service_worker)"},
+)
