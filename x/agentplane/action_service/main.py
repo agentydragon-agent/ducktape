@@ -139,14 +139,17 @@ async def async_main(settings: Settings) -> None:
                 PushIdentity(settings.web_push),
                 PushSubscriptionStore(make_sessionmaker(engine)),
                 base_url=settings.web_push.public_base_url,
+                database_url=settings.database_url,
+                authorized_operators=frozenset(
+                    f"{settings.operator_oidc.issuer}:{subject}" for subject in settings.operator_oidc.subjects
+                )
+                if settings.operator_oidc
+                else frozenset(),
             )
             stack.push_async_callback(push_notifier.close)
+            push_notifier.start()
         service = ActionService(
-            ActionStore(make_sessionmaker(engine), external_grants=connections),
-            catalog,
-            executors,
-            providers=providers,
-            notifier=push_notifier,
+            ActionStore(make_sessionmaker(engine), external_grants=connections), catalog, executors, providers=providers
         )
         # Stop dispatch/lease tasks before closing the adapters, including failed service startup.
         stack.push_async_callback(service.close)

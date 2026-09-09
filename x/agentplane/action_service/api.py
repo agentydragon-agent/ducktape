@@ -310,6 +310,10 @@ def create_app(
     ) -> None:
         if push_identity is None or push_subscriptions is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "web push is not configured")
+        try:
+            push_identity.validate_endpoint(body.endpoint)
+        except ValueError:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "unsupported push endpoint") from None
         user_agent = request.headers.get("user-agent")
         await push_subscriptions.save(
             operator_principal=principal.key,

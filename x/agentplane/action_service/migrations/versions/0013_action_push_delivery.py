@@ -13,10 +13,20 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "action_push_delivery",
-        sa.Column("request_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column(
+            "request_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("action_request.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "endpoint",
+            sa.Text(),
+            sa.ForeignKey("action_push_subscription.endpoint", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("kind", sa.Text(), nullable=False),
-        sa.Column("claimed_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("request_id", "kind"),
+        sa.PrimaryKeyConstraint("request_id", "endpoint"),
     )
 
 

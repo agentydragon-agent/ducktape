@@ -15,10 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Coroutine, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 import jsonschema
@@ -50,13 +49,6 @@ from x.agentplane.action_service.models import (
 # gazelle:include_dep @pypi//referencing
 
 logger = logging.getLogger(__name__)
-
-
-class ActionNotifier(Protocol):
-    async def pending(self, view: ActionRequestView) -> None: ...
-
-    async def resolved(self, view: ActionRequestView) -> None: ...
-
 
 DEFAULT_PROVIDER_TIMEOUT_SECONDS = 5.0
 PROVIDER_TIMEOUT_REASON = "provider_timeout"
@@ -119,7 +111,6 @@ class ActionService:
         lease_sweep_interval: timedelta = DEFAULT_LEASE_SWEEP_INTERVAL,
         executor_heartbeat_interval: timedelta = DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL,
         executor_health_timeout: timedelta = DEFAULT_EXECUTOR_HEALTH_TIMEOUT,
-        notifier: ActionNotifier | None = None,
     ) -> None:
         self._store = store
         self._catalog = catalog
@@ -131,7 +122,6 @@ class ActionService:
         self._lease_sweep_interval = lease_sweep_interval
         self._executor_heartbeat_interval = executor_heartbeat_interval
         self._executor_health_timeout = executor_health_timeout
-        self._notifier = notifier
         self._tasks: set[asyncio.Task[None]] = set()
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._sweep_task: asyncio.Task[None] | None = None
@@ -169,15 +159,7 @@ class ActionService:
         view, created = await self._store.submit(body, principal, external_grant=external_grant)
         if not created or external_grant is not None:
             return view
-        if self._notifier is not None:
-            self._schedule_notification(self._notify_pending(view), name=f"action-push-pending-{view.id}")
         return await self._auto_decide(view, body, principal)
-
-    async def _notify_pending(self, view: ActionRequestView) -> None:
-        try:
-            await self._notifier.pending(view) if self._notifier is not None else None
-        except Exception:
-            logger.warning("action pending notification failed", exc_info=True)
 
     def _resolve_executor(self, identity: ActionIdentity) -> Executor:
         group_key, action_key = identity.group, identity.name
@@ -264,17 +246,9 @@ class ActionService:
 
     async def decide(self, request_id: UUID, body: DecisionInput, principal: Principal) -> ActionRequestView:
         view, should_dispatch = await self._store.decide(request_id, body, principal, provider=self.HUMAN_PROVIDER)
-        if self._notifier is not None:
-            self._schedule_notification(self._notify_resolved(view), name=f"action-push-resolved-{view.id}")
         if should_dispatch:
             self._schedule(request_id)
         return view
-
-    async def _notify_resolved(self, view: ActionRequestView) -> None:
-        try:
-            await self._notifier.resolved(view) if self._notifier is not None else None
-        except Exception:
-            logger.warning("action resolved notification failed", exc_info=True)
 
     def _schedule(self, request_id: UUID) -> None:
         task = asyncio.create_task(self._dispatch_once(request_id), name=f"action-dispatch-{request_id}")
@@ -289,18 +263,6 @@ class ActionService:
             # Raw adapter/database exceptions can contain request or provider material. The durable
             # state machine carries the safe classification; logs record only that coordination failed.
             logger.error("action dispatch coordination failed; request will not be retried")
-
-    def _schedule_notification(self, coroutine: Coroutine[Any, Any, None], *, name: str) -> None:
-        task = asyncio.create_task(coroutine, name=name)
-        self._tasks.add(task)
-        task.add_done_callback(self._notification_done)
-
-    def _notification_done(self, task: asyncio.Task[None]) -> None:
-        self._tasks.discard(task)
-        if task.cancelled():
-            return
-        if task.exception() is not None:
-            logger.warning("action notification failed")
 
     async def _heartbeat_loop(self) -> None:
         """Prove this executor identity is alive, independent of any Execution it may hold."""

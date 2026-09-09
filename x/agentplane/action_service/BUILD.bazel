@@ -74,6 +74,7 @@ py_library(
     deps = [
         ":db",
         ":models",
+        ":updates",
         "@pypi//cryptography",
         "@pypi//httpx",
         "@pypi//py_vapid",
@@ -775,5 +776,22 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_push",
+    size = "medium",
+    srcs = ["test_push.py"],
+    requires_docker = True,
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":db",
+        ":models",
+        ":push",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
