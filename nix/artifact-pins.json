@@ -37,8 +37,8 @@
       "sha256": "XsGsfbsFp2r78eTyHUZ6ERgbsNWHyts4YdBnTMp9NxY="
     },
     "hostexecd": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/hostexecd-57e265af7907/hostexecd",
-      "sha256": "V+Jlr3kHPjvBzfAB2jnD0SpCBRZMoRN6dYrIrShMEOQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/hostexecd-9e64a38307a0/hostexecd",
+      "sha256": "nmSjgweguaDlCv7KEepdAo8m/4k/RfMEj6o7SBvw++Y="
     },
     "aiquota-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3725f35b2fbf/aiquota.zip",
