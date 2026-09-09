@@ -288,6 +288,14 @@ in
     daemonTokenFile = hostexecdTokenFile;
   };
   systemd.services.hostexecd = {
+    # Hostexec commands inherit the daemon's systemd environment rather than
+    # `environment.sessionVariables`. Python package clients commonly prefer
+    # certifi over OpenSSL's SSL_CERT_FILE, so pass the complete runtime bundle
+    # through their explicit overrides as well.
+    environment = {
+      REQUESTS_CA_BUNDLE = "${proxyCaRuntimeDir}/ca-bundle.crt";
+      PIP_CERT = "${proxyCaRuntimeDir}/ca-bundle.crt";
+    };
     requires = [
       "public-coder-devbox-proxy-ca.service"
       "public-coder-devbox-hostexecd-token.service"
@@ -315,6 +323,9 @@ in
     NIX_SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
     CURL_CA_BUNDLE = "${proxyCaRuntimeDir}/ca-bundle.crt";
     GIT_SSL_CAINFO = "${proxyCaRuntimeDir}/ca-bundle.crt";
+    # Python HTTP clients and pip may use certifi rather than SSL_CERT_FILE.
+    REQUESTS_CA_BUNDLE = "${proxyCaRuntimeDir}/ca-bundle.crt";
+    PIP_CERT = "${proxyCaRuntimeDir}/ca-bundle.crt";
     NODE_EXTRA_CA_CERTS = "${proxyCaRuntimeDir}/ca-bundle.crt";
   };
 
