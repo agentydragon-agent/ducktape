@@ -411,8 +411,10 @@ push notification from Agentplane with the request context and explicit Approve/
 controls must invoke the canonical authenticated Decision route, not create a second approval
 authority or coordinator. The existing polling UI remains valid when push is unavailable.
 
-**Needed support:** browser subscription and delivery lifecycle, authenticated action binding for
-each control, safe/redacted notification payloads, notification retry/expiry behavior, and stale or
+**Needed support:** an integration-app Settings surface to register the current browser, list and
+forget the operator's registered browsers, and revoke this browser's subscription; browser
+subscription and delivery lifecycle; authenticated action binding for each control; safe/redacted
+notification payloads; notification retry/expiry behavior; and stale or
 duplicate button presses that resolve as harmless already-decided conflicts. Preserve the private
 operator reason boundary; the notification must not expose credentials or unrestricted backend
 errors. This is delivery support for `APPROVALUI` and does not replace the Action event sequence.
