@@ -98,13 +98,20 @@ async def test_all_subscribers_wake_on_channel_loss(waiting: Waiting) -> None:
             waiting.updates.check_available()
 
 
-async def test_listener_recovers_after_connection_loss(waiting: Waiting) -> None:
+async def test_listener_recovers_after_connection_loss(waiting: Waiting, monkeypatch: pytest.MonkeyPatch) -> None:
+    restarted = asyncio.Event()
+    start = waiting.updates.start
+
+    async def observed_start() -> None:
+        await start()
+        restarted.set()
+
+    monkeypatch.setattr(waiting.updates, "start", observed_start)
     recovery = asyncio.create_task(waiting.updates.recover_connections())
     try:
         await waiting.updates.close()
         async with asyncio.timeout(10):
-            while not waiting.updates._available:
-                await asyncio.sleep(0.05)
+            await restarted.wait()
         with waiting.updates.subscribe_all() as changed:
             await decide(waiting, Verdict.DENY)
             async with asyncio.timeout(10):
