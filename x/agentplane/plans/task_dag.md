@@ -25,7 +25,7 @@ P0 behavior. See [`../docs/workload_authentication.md`](../docs/workload_authent
 
 **Observed evidence — the standalone Action Service landed.** PR
 [#5700](https://github.com/agentydragon/ducktape/pull/5700) made the service the PostgreSQL owner of
-`ActionRequest`, `Decision`, `Execution`, state events, and a pending-decision outbox reference. The
+`ActionRequest`, `Decision`, `Execution`, and state events. The unused outbox has since been dropped. The
 current caller envelope accepts exactly a 1–200 character `idempotency_key`, a structured
 `action` object with separate `group` and `name` fields, a JSON-object `arguments`, and optional JSON-object `origin`/`correlation`; extra
 top-level fields are rejected, and origin/correlation are untrusted provenance. Workload callers can read their own redacted records; the operator surface can read all
@@ -38,15 +38,22 @@ with stdio and credentialless streamable HTTP, initial discovery, schema recheck
 lifecycle-owned cleanup. Real MCP fixtures exercise dispatch; isolated counting/failure
 executors remain for concurrency and recovery tests. There is no dedicated Echo executor.
 
-**Needed support — deployed operator connection and MCP0 acceptance.** The app's review
-UI/BFF uses canonical models and the existing operator client; production review is
-unavailable until a supported app-to-service operator auth boundary is configured.
-Implementation in [PR #5820](https://github.com/agentydragon/ducktape/pull/5820) adds PostgreSQL
-sessions, exact operator arguments, and request-bound federation with destination subject authorization.
-The provider is not deployed; see [operator federation](../docs/operator_federation.md). Workload identities
-must never acquire operator authority. Live Agent acceptance is implemented in `//x/agentplane/acceptance:test_mcp`, using
-real harnesses and the reviewed upstream Everything image. It requires the integrated
-images/manifests to be rolled out; see `../acceptance/README.md`.
+**Observed evidence — remote MCP and operator review implementation.**
+[#5886](https://github.com/agentydragon/ducktape/pull/5886) hardens the existing streamable-HTTP
+runtime and tests rendered staging configuration against the existing Everything Service. Production
+composition, discovery/schema checks, and the bounded fixture policy are implemented, not open tasks.
+[#5820](https://github.com/agentydragon/ducktape/pull/5820) implements PostgreSQL browser sessions
+and request-bound operator federation; [#5827](https://github.com/agentydragon/ducktape/pull/5827)
+adds Authentik configuration. [#5876](https://github.com/agentydragon/ducktape/pull/5876) exposes
+canonical events through the BFF; [#5881](https://github.com/agentydragon/ducktape/pull/5881) shares
+one human `decision_note` with caller and operator.
+
+**Needed support — live verification only.** Run `//x/agentplane/acceptance:test_mcp` with the
+real harnesses, Everything deployment, dedicated acceptance operator, and normal OIDC/BFF path.
+The bootstrap and scenarios are implemented; rollout, real Authentik claims, network reachability,
+and live Agent results remain unverified here. Do not reimplement those components or treat CI as
+that deployed proof. See [acceptance](../acceptance/README.md) and
+[operator federation](../docs/operator_federation.md). Workload identities never gain operator authority.
 
 **Observed evidence — launch presets landed.** PR
 [#5648](https://github.com/agentydragon/ducktape/pull/5648) landed the app-owned `SandboxPreset` and
@@ -54,14 +61,11 @@ images/manifests to be rolled out; see `../acceptance/README.md`.
 manual live acceptance target. Broader capability profiles remain deferred; see
 [`../docs/launch_presets.md`](../docs/launch_presets.md) and [`profiles.md`](profiles.md).
 
-**Observed evidence — executor liveness and orphan-recovery contract landed for the in-process
-fixture executor.** Executor-level health heartbeats, a per-Execution lease/heartbeat with bounded
-expiry, `lease_expired`/`executor_lost` reason attribution, and authenticated late-completion or
-authoritative-status reconciliation restricted to an Execution already `execution_unknown` resolve
-`EW` item 6 and part of item 5. Dispatch is still in-process; items 2–4 and 7 remain open, while the
-MCP adapter portion of item 9 is landed in #5753 and its production composition/remote acceptance
-remain open; see
-[`../docs/executor_liveness.md`](../docs/executor_liveness.md).
+**Observed evidence — executor liveness and orphan recovery.** Executor health heartbeats,
+per-Execution leases, bounded expiry, and authenticated reconciliation of `execution_unknown`
+are implemented. In-process MCP composition is landed; a future out-of-process adapter must
+justify and prove its own dispatch transport rather than reopening the existing claim contract.
+See [executor liveness](../docs/executor_liveness.md).
 
 **Observed evidence — egress rules API boundary landed.** PR
 [#5701](https://github.com/agentydragon/ducktape/pull/5701) made
@@ -80,14 +84,13 @@ flowchart TB
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
-    AS["Action schema contract<br/>stable identity, params, result/error,<br/>redaction and evolution"]:::decision
-    EW["Executor wiring contract<br/>groups/catalog, dispatch, credentials, MCP compatibility,<br/>claim/idempotency/heartbeat + first adapter"]:::decision
-    DEL["Decision/action-state contract<br/>provider aggregation, event/query API,<br/>reason evidence, progress, withdrawal, unknown"]:::decision
+    AS["Observed evidence<br/>Action schema/catalog and projections"]:::milestone
+    EW["Observed evidence<br/>MCP runtime/config, claim and liveness<br/>CI proof; live verification in MCP0"]:::milestone
+    DEL["Observed evidence<br/>Decision aggregation, shared note,<br/>canonical event/query API"]:::milestone
     CANCEL_GATE["Decision gate<br/>pre/post-dispatch cancellation semantics<br/>and caller authorization"]:::decision
     CANCEL["Pending behavior<br/>agent-requested Action withdrawal/cancellation<br/>blocked on CANCEL_GATE"]:::future
     CANCEL_GATE --> CANCEL
     DEL --> CANCEL_GATE
-    DEL --> ING
     MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
@@ -96,9 +99,10 @@ flowchart TB
     MCPFRONT["Deferred support<br/>Action Service MCP frontend<br/>external presentation over canonical Action API"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>external harness/client compatibility"]:::future
     HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
-    APPROVALUI["Needed deployment<br/>operator federation provider + mappings<br/>two-operator live approval proof"]:::active
+    APPROVALUI["Needed live evidence<br/>deployed operator federation + BFF<br/>identity and approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
+    INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>provider research and captures first"]:::active
     T3["P0 behavior, independent<br/>trajectory search and lookup"]:::active
     PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
@@ -129,6 +133,7 @@ flowchart TB
     EID -. external identity .-> RETIRE_AGENT
     AG -. durable Agent/Thread model .-> RETIRE_AGENT
 
+    INPUT_DELIVERY -. reliable Thread ingress .-> ING
     T3 -. independent product work .-> PROD
     PR -. independent reliability .-> PROD
 
@@ -142,8 +147,9 @@ flowchart TB
 The first executable Action/MCP path is `AS + EW + DEL -> MCP0 -> MCPACCEPT`. It uses a
 credentialless, staging-owned deterministic streamable-HTTP MCP fixture and a real Claude/Codex
 acceptance turn; it does not wait for GitHub OAuth. The later credentialed path is `MCP0 -> MCPAUTH ->
-PROD`. Trajectory search and proxy survivability can proceed without waiting for those gates.
-Neither independent track proves production Action execution. Shared app/auth/client/test setup
+PROD`. Input-delivery research, trajectory search, and proxy survivability can proceed independently.
+The AS/EW/DEL nodes record landed contracts, not implementation prerequisites still waiting to be built.
+These independent tracks do not prove deployed Action execution. Shared app/auth/client/test setup
 has no outstanding extraction justified by the current consumers; deduplication is not a scheduled
 work item or a production-readiness prerequisite.
 
@@ -163,78 +169,23 @@ prerequisite for the first Action/MCP acceptance.
 **P0 behavior:** a caller can submit one stable, reviewable, namespaced Action whose parameters are
 validated before a Decision or dispatch, and whose result/error can be safely replayed.
 
-**Needed support / decisions:**
-
-1. Define **Action** as the code-owned capability concept and **ActionRequest** as one immutable
-   invocation of that Action. Keep the existing request lifecycle and one-logical-intent model.
-2. Choose a stable group/action name and catalog evolution behavior. No public `action_version` is
-   required; execution re-checks the current executor/tool schema and refuses incompatible arguments.
-3. Define parameter representation and validation. **Recommendation:** use the live MCP/tool schema
-   for the first adapter; introduce a smaller typed contract only if a non-MCP executor needs it.
-4. Define the result and stable error envelope, including which backend/provider details are safe to
-   persist and return.
-5. Define redaction and projection rules for inputs, results, errors, Decision views, events, logs,
-   and replay fixtures. Do not add a generic `sensitivity` field to every Action.
-6. Keep ActionGroup-to-executor and MCP-server/tool bindings in reviewed runtime configuration such
-   as YAML, so backend/account changes do not require an image roll.
-
-**Acceptance evidence for the first slice:** connect a small credentialless remote MCP fixture,
-mirror its catalog, auto-allow one deterministic read-only Action, and prove with the deployed live
-acceptance suite that a real Claude/Codex Agent can invoke it and receive a safe result. Include
-negative tests for unknown group/action, malformed parameters, incompatible current tool schema,
-malformed result/error, and sensitive data appearing in any projection or log. GitHub account access
-is a separate later credentialed milestone below.
+**Observed evidence:** separate group/name identity, reviewed runtime bindings, discovered schemas,
+admission and execution rechecks, and canonical safe result/error projections are implemented.
+See [Action Service](../action_service/README.md). Remaining work is deployed MCP0 verification;
+credentialed or non-MCP adapters must separately establish their boundaries.
 
 ### `EW` — Executor wiring contract
 
-**P0 behavior:** one accepted and allowed ActionRequest selects exactly one healthy configured
-Executor, crosses a defined credential boundary, and produces one durable result or explicit unknown
-outcome without replay.
+**Observed evidence:** the in-process MCP executor supports stdio and credentialless streamable HTTP.
+Reviewed settings select groups/backends; invalid bindings or initial discovery abort startup.
+The existing Everything Service is bound in staging settings. CI tests exercise production
+composition with real HTTP MCP and PostgreSQL, and render Kustomize through the settings parser.
+One Execution, atomic claim, no blind retry, lease expiry, and unknown-outcome reconciliation are
+implemented. [#5886](https://github.com/agentydragon/ducktape/pull/5886) records the readiness tests.
 
-**Needed support / decisions:**
-
-1. Define how stable group/action identity selects an Executor and how capability/definition
-   registration is validated at startup. Duplicate, missing, or incompatible registrations fail
-   startup or request admission; they do not fall through at dispatch time.
-2. Define adapter/backend configuration and validation, including what is static code/config and what
-   may be changed without rebuilding.
-3. Choose in-process execution versus a separate worker/process for the first adapter, and record the
-   failure/isolation property that justifies the choice. **Recommendation:** use an in-process,
-   code-owned adapter only if its SDK/transport can uphold the credential and no-retry boundary;
-   otherwise choose a separate worker before adding a generic worker framework.
-4. Define the credential and Kubernetes ServiceAccount boundary. State which process may receive a
-   real credential, how central egress or native workload identity is used, and what the Action
-   Service itself must never possess.
-5. Define dispatch transport and result/event delivery back to the Action Service, including how a
-   worker proves which request it is completing. **Landed in part:** the lease-token bearer a
-   worker presents to heartbeat or complete is decided (`docs/executor_liveness.md`); the transport
-   that would carry it out of process is not.
-6. **Landed:** preserve the exactly-one claim — one Execution row, atomic claim before dispatch, no
-   retry after dispatch may have begun, bounded lease expiry to `execution_unknown` on ambiguous
-   loss, and adapter-agnostic reconciliation (late completion or an authoritative status lookup)
-   restricted to an Execution already `execution_unknown`, never preempting a live attempt. See
-   `docs/executor_liveness.md`.
-7. Define idempotency-key behavior at request admission and at the backend boundary. A backend key
-   may reduce duplicate effects but does not weaken the service's no-retry rule.
-8. Define executor health and capability discovery as startup/readiness evidence, not a broad dynamic
-   registry. **Landed in part:** an executor-level health heartbeat exists internally and feeds
-   orphan-reason attribution; no external readiness/discovery endpoint exists yet.
-9. **Landed in part by PR #5753:** `McpActionGroupExecutor` is a tested in-process adapter for one
-   configured stdio MCP server. It mirrors `tools/list`, refreshes on notification or interval,
-   rechecks the live tool schema before dispatch, initiates `tools/call`, and maps safe success,
-   tool-error, and ambiguous transport outcomes. This does not yet wire the adapter into the
-   production composition or provide a remote streamable-HTTP transport.
-10. Wire the MCP adapter into the Action Service composition and reviewed runtime configuration,
-    then select the credentialless remote MCP fixture and write the deployed acceptance test before
-    calling `EW` complete. The fixture must expose one deterministic read-only tool and require no
-    OAuth or provider credential.
-11. Minimum evidence for that fixture: the named Action validates, allow auto-dispatches once, the
-    MCP server receives the exact intended `tools/call`, duplicate Decision/start paths do not call it
-    twice, success and safe failure are delivered, and ambiguous transport loss becomes unknown
-    without retry. The test must live in `x/agentplane/acceptance/` and run against staging with a
-    real LLM Agent, not remain a manual one-off.
-
-An injected test executor cannot satisfy the live acceptance gate.
+**Needed support:** run the deployed MCP0 acceptance below. **Deferred:** out-of-process transport,
+credentialed adapters, adapter-specific status lookup, and bounded progress for a real long-running
+consumer. None requires another generic executor framework before that consumer exists.
 
 ### `MCP0` — credentialless remote MCP vertical slice
 
@@ -242,12 +193,12 @@ An injected test executor cannot satisfy the live acceptance gate.
 read-only ActionRequest, and polls durable Action events to a safe result produced by a remote MCP
 server without the Agent or Action Service holding a provider credential.
 
-**Needed support:** production composition for the landed MCP executor, a staging-owned deterministic
-streamable-HTTP MCP fixture (or a deliberate transport extension from the current stdio adapter),
-reviewed runtime binding, a narrow auto-allow policy for the fixture Action, and an acceptance
-scenario in `x/agentplane/acceptance/test_action_mcp.py`.
-Use real MCP tools for successful-execution fixtures; keep isolated failure/counting doubles
-only where the test needs deterministic failure or concurrency control.
+**Observed evidence:** production composition, remote transport, staging Everything binding,
+bounded echo auto-allow policy, and `x/agentplane/acceptance/test_mcp.py` are implemented.
+
+**Needed support:** verify deployed images/configuration and run that suite through the real
+OIDC/BFF and harness paths. Keep real MCP tools for success cases and isolated doubles only for
+controlled failures/concurrency. CI composition tests do not satisfy this live gate.
 
 **Acceptance evidence:** `//x/agentplane/acceptance:all` runs the scenario against the deployed
 stack for both real harness providers, verifies catalog discovery, exactly one Action execution,
@@ -376,17 +327,15 @@ process lifetime. Once deployment scale makes that accumulation meaningful, choo
 identity or bounded expiry/compaction policy and add retention tests; do not change the exactly-one
 claim or unknown-outcome semantics while doing so.
 
-### `APPROVALUI` — deploy the integration-app operator approval path
+### `APPROVALUI` — verify the deployed integration-app operator approval path
 
-**Needed support:** configure the Action-only Authentik federation target, reviewed source/target
-subject mappings and allowlists, and network reachability. The UI and BFF already use the canonical
-Action API; #5820 adds durable browser sessions and request-bound federation. Do not build another
-approval coordinator or make human push notifications a prerequisite for this polling UI.
+**Observed evidence:** PostgreSQL sessions, request-bound federation, Authentik configuration,
+dedicated acceptance-operator bootstrap, and canonical BFF review/events are implemented.
 
-**Acceptance evidence:** validate real provider claims with two operators and a denied operator,
-then prove one browser approval reaches the canonical Decision and executes MCP once. Signed mock
-integration is implementation evidence, not proof of deployed Authentik policy. Keep federation
-explicitly disabled until this gate is met.
+**Needed support:** verify actual deployment and provider claims, distinct authorized identities
+and rejected identities, then execute the existing BFF approval acceptance. Signed mock integration
+is CI evidence, not deployed Authentik proof. Do not add another approval coordinator or require
+push notifications for the polling UI.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 
@@ -419,8 +368,9 @@ configured synchronous non-human providers ahead of the existing human path, wit
 provider-authored reason evidence and a shared optimistic-version/idempotency commit path for both
 human and auto-provider Decisions. See [`async_approvals.md`](async_approvals.md).
 
-**Needed support:** human decision callbacks, withdrawal/cancellation through `CANCEL_GATE` below, bounded progress, redacted
-payload projection, and what an Agent receives for `execution_unknown`. Durable Action event
+**Needed support:** human-provider notifications, withdrawal/cancellation through `CANCEL_GATE` below,
+and bounded progress for a concrete consumer. Human callbacks, safe projections, and the
+`execution_unknown` API state are implemented. Durable Action event
 append/query with cursor-based (`after_sequence`) polling is landed; see `action_service/README.md`.
 A separate outbox is not required for this slice, and the never-drained `action_outbox` table has
 been dropped.
@@ -453,6 +403,44 @@ existing notes; there is no private human-note field. Non-human provider `reason
 `reason_description` remain separate bounded outcome evidence. API/BFF tests cover exact note
 visibility and duplicate/stale decisions; push notification and offline Thread wake remain in `ING`.
 
+### `INPUT_DELIVERY` — native queue evidence before common-protocol changes
+
+**P0 behavior:** an input crossing the app/runner boundary has an honest, correlated delivery
+outcome after disconnect/reconnect, without silently losing it or blindly submitting it twice.
+This work is independent of live Action/MCP staging acceptance and is not Action cancellation.
+
+**Needed support — mandatory first step:** re-read the landed
+[Claude queue research](../docs/claude_input_queue.md),
+[Claude/Codex protocol notes](../docs/provider_protocols.md),
+[native harness evidence](../docs/harness_evidence.md),
+[Claude runtime contracts](../docs/claude_runtime_contracts.md), and
+[current common protocol](../docs/common_protocol.md), then inspect the pinned drivers/tests.
+Reconsider the common protocol's input semantics from this evidence rather than assuming the
+bridge is the only queue or that one input equals one turn.
+
+- Claude: UUID command handles, lifecycle receipts, capability negotiation, targeted withdrawal,
+  interrupt receipts/queued survivors, and coalescing that can make cancellation batch-granular.
+  Do not interpret an ambiguous `cancelled:false` as a guaranteed no-op or fabricate receipts.
+- Codex: distinguish joined input in the active turn's in-memory pending list from the separate
+  experimental durable `thread/queue/*` API. Examine queue promotion, dispatch/delete locking,
+  interruption, and correlated user-message evidence; an RPC acknowledgement is not consumption
+  or completion, and a queue-changed notification alone does not prove promotion.
+
+**Observed evidence boundary:** some queue behavior comes from declarations/static analysis, not
+capture-pinned tests. Refresh live probes/captures against both pinned binaries for the behavior
+being adopted before changing the common protocol; then encode supported behavior in scripted
+native-harness CI tests against the controlled model endpoint. Missing capabilities and blocked
+experiments stay explicit, not normalized into success. This research may justify common-protocol
+changes, but it does not preselect a queue facade, selective cancellation, or a new persistence layer.
+
+**Acceptance evidence:** exercise disconnect before delivery, delivery before observed receipt,
+reconnect/replay with the same `input_id`, and restart. Prove duplicate-ID handling at each actual
+boundary rather than assuming native idempotency. Include Claude coalescing/interrupt/withdrawal
+and Codex join-versus-durable-queue cases, preserving raw native evidence and provider differences.
+No acknowledgement, retry, steering, cancellation, or completion may be invented by the runner.
+Decide the narrow common contract only after these observations; keep unsupported operations native
+or explicitly unavailable. **Deferred:** generic queue management and unproven per-input cancellation.
+
 ### `ING` — Event & Notification Hub
 
 **Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
@@ -479,7 +467,6 @@ These are observed product decisions and must not be reopened by the schema or w
 - delegated-versus-brokered external-access policy and grant/revocation semantics — see
   [`external_access.md`](external_access.md);
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
-- production executor implementation in this planning PR;
 - per-destination workload audiences until recipient isolation is required;
 - broad profiles beyond the landed launch-preset slice; and
 - cryptographic Decision signing until Decisions cross a boundary that requires it.

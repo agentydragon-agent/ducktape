@@ -98,15 +98,15 @@ The canonical Action Service owns the MCP runtime and durable Action records. Su
 execution fixtures use real FastMCP tools through `McpActionGroupExecutor`; isolated
 failure/counting doubles test coordinator failure and concurrency paths.
 
-The app review UI uses canonical models and the existing operator client. Production
-review remains unavailable: no supported app-to-service operator auth connection has
-been configured, and the app's OIDC cookie is not a service bearer. The app owns no
-second Action schema, state machine, or executor. Deployed MCP0 evidence still requires
-the staging prerequisites in `../acceptance/README.md`.
+The app review UI/BFF uses canonical models, PostgreSQL operator sessions and request-bound
+federation. Authentik configuration and the dedicated acceptance-operator bootstrap are implemented.
+The app owns no second Action schema, state machine, or executor. Deployed OIDC/BFF and real-Agent
+MCP0 evidence still require the live run described in `../acceptance/README.md`.
 
-## Open gate: Action schema contract (`AS`)
+## Action schema contract (`AS`)
 
-Before a real adapter is implemented, decide and test:
+**Observed evidence:** the credentialless MCP slice implements the following contract. Treat these
+as review requirements for future adapters, not an unfinished first-adapter checklist:
 
 - Action versus ActionRequest: the definition is not the invocation;
 - stable group/action key and catalog evolution behavior; no public `action_version` is required, and
@@ -131,13 +131,17 @@ OAuth a prerequisite for this first executable slice.
 
 **Landed adapter evidence:** PR [#5753](https://github.com/agentydragon/ducktape/pull/5753) adds
 `McpActionGroupExecutor` with focused tests for catalog mirroring, notification/periodic refresh,
-live-schema validation, one-call dispatch, safe tool errors, and ambiguous transport loss. It is
-currently an in-process stdio adapter; production composition, remote streamable-HTTP support, and
-the real staging Agent acceptance remain open.
+live-schema validation, one-call dispatch, safe tool errors, and ambiguous transport loss. It
+now supports in-process stdio and credentialless remote streamable HTTP. Production composition
+and the existing Everything staging binding are implemented;
+[#5886](https://github.com/agentydragon/ducktape/pull/5886) adds fail-closed/runtime/render evidence.
+Only the deployed real-Agent acceptance remains open for this slice.
 
-## Open gate: Executor wiring contract (`EW`)
+## Executor wiring contract (`EW`)
 
-Before the echo fixture is replaced or supplemented, decide and test:
+**Observed evidence:** reviewed MCP composition, discovery, claim/liveness and no-retry behavior
+are implemented. **Needed support:** verify the deployed credentialless path. For a future
+credentialed or non-MCP adapter, review only the boundaries it changes against these requirements:
 
 - how group/action identity selects an Executor;
 - capability/definition registration and duplicate/missing/incompatible startup failure;
@@ -249,7 +253,7 @@ infer Agent identity from `origin`, `correlation`, or other caller-controlled fi
 Sandbox principal is available, that limitation is explicit in the decision context rather than
 silently filled with an unverified Agent name.
 
-## Open gate: decision and Action-state contract (`DEL`)
+## Decision and Action-state contract (`DEL`)
 
 **P0 behavior:** submission remains non-blocking; the Action API and durable Action events expose a
 pending human Decision and the eventual Decision/Execution result with bounded provider-authored reason
@@ -261,11 +265,10 @@ callbacks across the human and auto-provider Decision routes — PR
 [#5732](https://github.com/agentydragon/ducktape/pull/5732), summarized in
 [`async_approvals.md`](async_approvals.md).
 
-Settle and test:
-
-- caller pending/result/error redaction, shared human decision notes, and bounded provider reason evidence; and
-- withdrawal before Execution starts and Agent/API-visible treatment of `execution_unknown` and any
-  adapter-specific status reconciliation.
+**Observed evidence:** caller pending/result/error redaction, shared human decision notes, bounded
+provider reason evidence, and the `execution_unknown` API/reconciliation contract are implemented.
+**Needed support:** settle withdrawal through `CANCEL_GATE` and prove any new adapter-specific
+status lookup; do not recreate the landed Decision/query path.
 
 **Landed:** durable Action event append/query with restart recovery and cursor-based
 `after_sequence` polling, so a caller can resume from the last sequence it already has and repeated

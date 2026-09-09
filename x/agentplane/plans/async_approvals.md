@@ -1,8 +1,8 @@
 # Asynchronous approvals and delivery
 
 Status: **the human Decision path, synchronous DecisionProvider aggregation, and durable Action
-event/query polling are implemented; human-provider notification, withdrawal, unknown-outcome,
-progress, and batching remain open.** This plan is the `DEL` gate in [`task_dag.md`](task_dag.md),
+event/query polling, shared decision notes, and lease-based unknown-outcome recovery are implemented;
+human-provider notification, withdrawal, concrete progress consumers, and Thread batching remain open.** This plan is the `DEL` gate in [`task_dag.md`](task_dag.md),
 not a second request or tool lifecycle.
 
 ## Preserved decisions
@@ -55,7 +55,7 @@ a provider timeout/exception is `no_opinion`, never `allow`, with its raw text n
 logged; and human and auto-provider Decisions commit through the same optimistic-version/idempotency
 path, so whichever wins a race, the loser's stale callback surfaces as an explicit already-decided
 conflict rather than overriding the winner. No real policy provider or Thread notification is added;
-production still runs with zero configured providers.
+staging now configures the bounded Everything echo fixture policy; broader policies remain deferred.
 
 ## Open delivery contract
 
@@ -80,8 +80,8 @@ asynchronous human provider.
 3. **Withdrawal.** Define who may withdraw before Execution starts, expected-version behavior, and
    the final event. Do not add post-dispatch cancellation unless the first adapter can prove its
    semantics.
-4. **Unknown outcome.** Define the Agent/API-visible state for `execution_unknown` and whether the
-   concrete adapter exposes an authoritative status lookup. Status reconciliation may update the
+4. **Unknown outcome.** The Agent/API-visible `execution_unknown` state and authenticated
+   reconciliation are implemented; a concrete adapter must establish any authoritative status lookup. Status reconciliation may update the
    existing Execution; it never starts another one.
 5. **Progress.** If an adapter is long-running, define bounded status/progress observations and
    authorized output-so-far reads. Progress must be tied to the existing Execution and must not
@@ -111,6 +111,10 @@ Use a scripted scenario with the fixture executor first, then repeat it for the 
    human note, reaches both caller and operator projections alongside the safe terminal result;
    sensitive caller arguments, credentials, and backend exception text remain excluded; and
 9. ambiguous dispatch loss reaches the Action API as `execution_unknown` without backend replay.
+
+Thread input queueing/replay is the independent `INPUT_DELIVERY` item in [the DAG](task_dag.md).
+It requires native Claude/Codex research and capture review before common-protocol changes; it is
+not a new Action event store or the Action withdrawal contract.
 
 ## Deferred
 
