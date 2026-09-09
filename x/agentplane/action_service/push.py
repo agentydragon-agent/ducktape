@@ -11,6 +11,7 @@ import asyncio
 import base64
 import datetime
 import logging
+from uuid import UUID
 
 import httpx
 from cryptography.hazmat.primitives import serialization
@@ -21,7 +22,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from x.agentplane.action_service.db import PushSubscriptionRow
+from x.agentplane.action_service.db import PushDeliveryRow, PushSubscriptionRow
 from x.agentplane.action_service.models import ActionRequestView, ActionState
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,14 @@ class PushSubscriptionStore:
         async with self._sessions.begin() as session:
             await session.execute(delete(PushSubscriptionRow).where(PushSubscriptionRow.endpoint == endpoint))
 
+    async def claim_delivery(self, request_id: UUID, kind: str) -> bool:
+        statement = insert(PushDeliveryRow).values(
+            request_id=request_id, kind=kind, claimed_at=datetime.datetime.now(datetime.UTC)
+        ).on_conflict_do_nothing()
+        async with self._sessions.begin() as session:
+            result = await session.execute(statement)
+            return result.rowcount == 1
+
 
 class ActionPushNotifier:
     def __init__(self, identity: PushIdentity, subscriptions: PushSubscriptionStore, *, base_url: str) -> None:
@@ -137,6 +146,8 @@ class ActionPushNotifier:
         await self._http.aclose()
 
     async def pending(self, view: ActionRequestView) -> None:
+        if not await self._subscriptions.claim_delivery(view.id, "pending"):
+            return
         await self._send(
             PushShow(
                 action_id=str(view.id),
@@ -148,6 +159,8 @@ class ActionPushNotifier:
         )
 
     async def resolved(self, view: ActionRequestView) -> None:
+        if not await self._subscriptions.claim_delivery(view.id, "resolved"):
+            return
         outcome = "Approved" if view.state is not ActionState.DENIED else "Denied"
         await self._send(PushRetract(action_id=str(view.id), outcome=outcome))
 
