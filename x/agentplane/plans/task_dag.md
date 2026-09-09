@@ -235,7 +235,7 @@ arguments, forged references, app outage, instance additions surviving preset up
 changes before dispatch. Same-preset Sandboxes retain separate caller reads/idempotency; Threads
 within one Sandbox retain current shared workload scope. See [Action policies](action_policies.md).
 
-### `CLAUDEAI` — working Claude.ai MCP facade before transcript search
+### `CLAUDEAI` — working Claude.ai MCP facade
 
 **Operator-priority milestone:** the operator can connect Claude.ai to the deployed Action Service
 MCP facade, name/bind the Connection through integration-app enrollment, discover Actions, and use
