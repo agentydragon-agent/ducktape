@@ -68,6 +68,22 @@ spec:
             - port: "9000"
               protocol: TCP
 
+    # agentplane-staging: the app and Action Service use the public Authentik
+    # issuer so discovery returns the canonical external endpoints. When the
+    # public hostname resolves to the same node as the caller, hostNetwork
+    # Gateway hairpin traffic can arrive with the caller namespace identity
+    # instead of reserved:ingress; admit only this namespace on Authentik's
+    # HTTP ports so that path remains equivalent to the Gateway route.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+            - port: "9443"
+              protocol: TCP
+
     # kubectl MCP servers: OIDC discovery + JWKS
     - fromEndpoints:
         - matchLabels:
