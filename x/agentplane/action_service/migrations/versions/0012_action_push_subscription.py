@@ -1,4 +1,4 @@
-"""Store operator browser registrations for Action approval Web Push."""
+"""Create the complete Action approval Web Push schema in one revision."""
 
 import sqlalchemy as sa
 from alembic import op
