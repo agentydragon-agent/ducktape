@@ -31,6 +31,27 @@ let
   buildbuddyRuntimeDir = "/run/public-coder-devbox-buildbuddy";
   proxyCaDevice = "/dev/disk/by-id/virtio-pcproxyca";
   proxyCaRuntimeDir = "/run/public-coder-devbox-proxy-ca";
+  proxyCaBundle = "${proxyCaRuntimeDir}/ca-bundle.crt";
+  # Match the complete proxy/trust client set used by sandbox setup and the
+  # Console runtime. Keeping it as data avoids tool-specific variants drifting.
+  proxyNetworkEnvironment = {
+    HTTP_PROXY = proxyUrl;
+    HTTPS_PROXY = proxyUrl;
+    http_proxy = proxyUrl;
+    https_proxy = proxyUrl;
+    NO_PROXY = "127.0.0.1,localhost";
+    no_proxy = "127.0.0.1,localhost";
+  };
+  proxyCaClientEnvironment = {
+    SSL_CERT_FILE = proxyCaBundle;
+    NIX_SSL_CERT_FILE = proxyCaBundle;
+    CURL_CA_BUNDLE = proxyCaBundle;
+    GIT_SSL_CAINFO = proxyCaBundle;
+    # Python HTTP clients and pip may use certifi rather than SSL_CERT_FILE.
+    REQUESTS_CA_BUNDLE = proxyCaBundle;
+    PIP_CERT = proxyCaBundle;
+    NODE_EXTRA_CA_CERTS = proxyCaBundle;
+  };
 in
 {
   imports = [
@@ -223,16 +244,7 @@ in
   systemd.services.nix-daemon = {
     requires = [ "public-coder-devbox-proxy-ca.service" ];
     after = [ "public-coder-devbox-proxy-ca.service" ];
-    environment = {
-      HTTP_PROXY = proxyUrl;
-      HTTPS_PROXY = proxyUrl;
-      http_proxy = proxyUrl;
-      https_proxy = proxyUrl;
-      NO_PROXY = "127.0.0.1,localhost";
-      no_proxy = "127.0.0.1,localhost";
-      SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
-      NIX_SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
-    };
+    environment = proxyNetworkEnvironment // proxyCaClientEnvironment;
   };
 
   # Materialize the reflected BuildBuddy Secret only at runtime. bbr needs the
@@ -289,13 +301,8 @@ in
   };
   systemd.services.hostexecd = {
     # Hostexec commands inherit the daemon's systemd environment rather than
-    # `environment.sessionVariables`. Python package clients commonly prefer
-    # certifi over OpenSSL's SSL_CERT_FILE, so pass the complete runtime bundle
-    # through their explicit overrides as well.
-    environment = {
-      REQUESTS_CA_BUNDLE = "${proxyCaRuntimeDir}/ca-bundle.crt";
-      PIP_CERT = "${proxyCaRuntimeDir}/ca-bundle.crt";
-    };
+    # `environment.sessionVariables`, so give them the same proxy/trust contract.
+    environment = proxyNetworkEnvironment // proxyCaClientEnvironment;
     requires = [
       "public-coder-devbox-proxy-ca.service"
       "public-coder-devbox-hostexecd-token.service"
@@ -311,23 +318,12 @@ in
 
   # These are intentionally placeholders / non-secret routing settings. The
   # iron-proxy substitutes the real GitHub credential only on GitHub hosts.
-  environment.sessionVariables = {
-    HTTP_PROXY = proxyUrl;
-    HTTPS_PROXY = proxyUrl;
-    http_proxy = proxyUrl;
-    https_proxy = proxyUrl;
-    NO_PROXY = "127.0.0.1,localhost";
-    no_proxy = "127.0.0.1,localhost";
-    GH_PAT = "proxy-github-placeholder";
-    SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
-    NIX_SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
-    CURL_CA_BUNDLE = "${proxyCaRuntimeDir}/ca-bundle.crt";
-    GIT_SSL_CAINFO = "${proxyCaRuntimeDir}/ca-bundle.crt";
-    # Python HTTP clients and pip may use certifi rather than SSL_CERT_FILE.
-    REQUESTS_CA_BUNDLE = "${proxyCaRuntimeDir}/ca-bundle.crt";
-    PIP_CERT = "${proxyCaRuntimeDir}/ca-bundle.crt";
-    NODE_EXTRA_CA_CERTS = "${proxyCaRuntimeDir}/ca-bundle.crt";
-  };
+  environment.sessionVariables =
+    proxyNetworkEnvironment
+    // proxyCaClientEnvironment
+    // {
+      GH_PAT = "proxy-github-placeholder";
+    };
 
   users.motd = "public-coder-devbox - NixOS development VM for public-coder-agent\n";
 }
