@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 import pytest_bazel
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from x.agentplane.acceptance.agent import Agent
 from x.agentplane.acceptance.operator_login import (
@@ -20,7 +20,14 @@ from x.agentplane.acceptance.operator_login import (
     read_operator_credentials,
 )
 from x.agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER
-from x.agentplane.action_service.models import ActionRequestView, ActionState, DecisionInput, ExecutionState, Verdict
+from x.agentplane.action_service.models import (
+    ActionEventView,
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+    ExecutionState,
+    Verdict,
+)
 from x.agentplane.app.api import Provider
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
@@ -123,6 +130,15 @@ def _bff_request(response: httpx.Response) -> ActionRequestView:
         return ActionRequestView.model_validate(response.json())
     except ValueError:
         pytest.fail("BFF returned an invalid ActionRequestView; response body withheld", pytrace=False)
+
+
+def _bff_events(response: httpx.Response) -> list[ActionEventView]:
+    """Withhold malformed event bodies just as for request receipts."""
+    __tracebackhide__ = True
+    try:
+        return TypeAdapter(list[ActionEventView]).validate_json(response.content)
+    except ValueError:
+        pytest.fail("BFF returned invalid ActionEventView history; response body withheld", pytrace=False)
 
 
 @pytest.mark.parametrize("verdict", list(Verdict))
@@ -229,6 +245,22 @@ execution.result, or use null when denied with no execution. Do not fabricate it
         assert terminal.execution.error is None
     else:
         assert terminal.execution is None
+
+    events_response = await operator_bff.get(f"{path}/events", params={"after_sequence": 0})
+    assert events_response.status_code == HTTPStatus.OK
+    events = _bff_events(events_response)
+    assert [event.sequence for event in events] == list(range(1, terminal.version + 1))
+    assert [event.state for event in events] == (
+        [
+            ActionState.DECISION_PENDING,
+            ActionState.ALLOWED,
+            ActionState.DISPATCHING,
+            ActionState.RUNNING,
+            ActionState.SUCCEEDED,
+        ]
+        if verdict is Verdict.ALLOW
+        else [ActionState.DECISION_PENDING, ActionState.DENIED]
+    )
 
     # Replay the original version/key after completion: same Decision and Execution, no new dispatch.
     duplicate = await operator_bff.post(f"{path}/decision", json=decision.model_dump(mode="json"))

@@ -27,7 +27,13 @@ from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, Acti
 from x.agentplane.action_service.database_migrate import apply_migrations
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
-from x.agentplane.action_service.models import ActionRequestInput, ActionState, Principal, PrincipalRole
+from x.agentplane.action_service.models import (
+    ActionEventView,
+    ActionRequestInput,
+    ActionState,
+    Principal,
+    PrincipalRole,
+)
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
@@ -250,6 +256,9 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
     )
     path = f"/actions/{pending.id}/decision"
     decision = {"verdict": "allow", "expected_version": pending.version, "idempotency_key": "test-allow"}
+    events_path = f"/actions/{pending.id}/events"
+    assert (await browser.get(events_path)).status_code == 401
+    assert (await browser.get(events_path, headers=AGENT_AUTH)).status_code == 403
     assert (await browser.get("/actions")).status_code == 401
     assert (await browser.get("/actions", headers=AGENT_AUTH)).status_code == 403
     assert (await browser.post(path, headers=AGENT_AUTH, json=decision)).status_code == 403
@@ -281,7 +290,20 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
             # Each read awaits service IO; no fixed delay or elapsed-time assertion.
     assert final["execution"]["result"] == {"recorded": "hi"}
     assert review.calls == ["hi"]
-    assert [event.state for event in await service.events(pending.id, CALLER)] == [
+    canonical_events = await service.events(pending.id, CALLER)
+    response = await browser.get(events_path)
+    assert response.status_code == 200
+    assert [ActionEventView.model_validate(event) for event in response.json()] == canonical_events
+    assert all(set(event) == {"sequence", "state", "at"} for event in response.json())
+    assert [event.sequence for event in canonical_events] == list(range(1, len(canonical_events) + 1))
+    for cursor in (0, 2, canonical_events[-1].sequence, canonical_events[-1].sequence + 1):
+        response = await browser.get(events_path, params={"after_sequence": cursor})
+        assert response.status_code == 200
+        assert [ActionEventView.model_validate(event) for event in response.json()] == await service.events(
+            pending.id, CALLER, after_sequence=cursor
+        )
+    assert (await browser.get(events_path, params={"after_sequence": -1})).status_code == 422
+    assert [event.state for event in canonical_events] == [
         ActionState.DECISION_PENDING,
         ActionState.ALLOWED,
         ActionState.DISPATCHING,
@@ -315,9 +337,13 @@ async def test_unconfigured_or_rejected_service_auth_fails_closed(review: Review
         CALLER,
     )
     await review.browser.get("/auth/login")
-    response = await review.browser.get("/actions")
-    assert response.status_code == expected
-    assert "test-private-provider-detail" not in response.text
+    for read_path in ("/actions", f"/actions/{pending.id}/events"):
+        response = await review.browser.get(read_path)
+        assert response.status_code == expected
+        assert "test-private-provider-detail" not in response.text
+        assert "access_token" not in response.text
+        assert SUBJECT_A not in response.text
+        assert review.issuer not in response.text
     assert (
         await review.browser.post(
             f"/actions/{pending.id}/decision",

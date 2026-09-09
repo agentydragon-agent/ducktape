@@ -116,9 +116,12 @@ configuration, and each launch sends only resolved concrete fields to the runtim
 ## Action review
 
 `/#/actions` renders canonical Action Service receipts. The app's `GET /actions`,
-`GET /actions/{request_id}`, and `POST /actions/{request_id}/decision` are an
+`GET /actions/{request_id}`, `GET /actions/{request_id}/events?after_sequence=0`,
+and `POST /actions/{request_id}/decision` are an
 operator-only BFF over `OperatorActionServiceClient`. They use the service's models
 unchanged, including expected versions, idempotency keys, and private reason fields.
+Event reads return canonical `ActionEventView` entries in sequence order, strictly after the
+non-negative cursor (default 0).
 The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload
 submission and owner-scoped reads use the service's `/v1/action-requests` API, not the app.
 
