@@ -5,8 +5,9 @@ Action Service, LLM ingress, acceptance suite, and durable evidence under [`../d
 This directory contains current design gates, genuinely deferred decisions, and north-star context;
 the [task DAG](task_dag.md) is authoritative for status and dependencies.
 
-Current priority: working Claude.ai access to the Action Service MCP facade (`CLAUDEAI`) first,
-transcript search/lookup (`T3`) next. This is work ordering, not a technical dependency.
+Current priority: working Claude.ai access to the Action Service MCP facade (`CLAUDEAI`).
+Transcript search/lookup (`T3`) is deliberately deferred product work and is not in the current
+execution sequence. This is a priority decision, not a technical dependency.
 The first external OAuth slice uses human-approved Actions; configurable policy representation and
 per-Identity auto-approval do not gate it. SandboxPresets remain integration-app-only composition.
 

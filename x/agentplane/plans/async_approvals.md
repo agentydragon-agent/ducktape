@@ -6,12 +6,24 @@ notification-driven bounded waits, and owner-only pre-claim cancellation are imp
 not a second lifecycle contract here. Native harness approvals remain disabled under the
 [runner contract](../runner/SPEC.md).
 
-## Human notification (`NOTIFY`)
+## Web push approval notification (`NOTIFY`)
 
-Notify the operator that an ActionRequest needs review, linking to the integration app's existing
-Actions page. The authenticated UI/notification client submits intent through the canonical
-Decision endpoint. Duplicate or stale callbacks cannot overwrite a winning Decision or create a
-parallel human lifecycle. Prove notification retries and review races without duplicate effects.
+Put the first implementation in the integration app: its frontend owns the service worker, browser
+subscription, notification click handling, Approve/Deny presentation, and a Settings surface to
+register this browser and manage the operator's other registered browsers; its backend/BFF owns
+subscription registration/revocation and Web Push delivery. For an open Actions page, use the
+app's existing SSE pattern for server-pushed snapshots/changes rather than polling. The BFF calls
+the Action Service's canonical authenticated Decision endpoint. The Action Service remains the
+source of truth for pending Actions, Decisions, and durable events; it does not own browser
+subscriptions, VAPID keys, or a second approval lifecycle.
+
+Notify the operator that an ActionRequest needs review with only safe/redacted context. Stale or
+duplicate buttons cannot overwrite a winning Decision or create a parallel human lifecycle. The
+The Actions page's SSE stream reconnects with a durable cursor/snapshot boundary; it does not fall
+back to a timer poll while the stream is healthy. The Web Push notification remains the background
+fallback when no tab is open or the stream is unavailable. A later Event & Notification Hub may
+take over delivery, but is not a prerequisite for this first slice. Prove notification retries and
+review races without duplicate effects.
 
 This is optional delivery, not a prerequisite for the current polling UI or human-approved
 Claude.ai acceptance. The deployed browser/BFF verification is `APPROVALUI` in the

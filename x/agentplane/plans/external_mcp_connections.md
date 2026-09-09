@@ -7,10 +7,10 @@ provenance display, and Connection list/rename/unbind UI are implemented. Their 
 [service README](../action_service/README.md#external-oauth), and
 [app README](../app/README.md). This plan tracks unfinished delivery, not another authority contract.
 
-**Operator priority:** working deployed Claude.ai access (`CLAUDEAI`) first, transcript search
-(`T3`) next. This is ordering, not a technical dependency. Independently running Claude Code
-(for example on wyrm2) extends the client evidence to `EXTERNALMCP`; it does not delay that search
-priority condition. The [task DAG](task_dag.md) owns dependencies and status.
+**Operator priority:** working deployed Claude.ai access (`CLAUDEAI`) is the current priority.
+Transcript search (`T3`) is deliberately deferred product work and is not part of this execution
+sequence. Independently running Claude Code (for example on wyrm2) extends the client evidence to
+`EXTERNALMCP`; the [task DAG](task_dag.md) owns dependencies and status.
 
 The first external requests require human approval. Configurable
 [Action policies](action_policies.md), backend-account OAuth, and the broader Thread model do not
@@ -59,6 +59,15 @@ Executions, events, and results; neither model prose nor signed protocol fixture
 Record the deployed revisions, client/version, exact scenario, and redacted evidence. Reuse existing
 acceptance helpers and reconcile the open
 [#5822](https://github.com/agentydragon/ducktape/pull/5822) evidence work before adding duplicates.
+
+The protocol-side acceptance should use the pinned FastMCP client rather than a second hand-rolled
+MCP implementation. Build a small live/manual Bazel target that performs DCR, drives the browser
+authorization/consent handoff, retains the resulting access/refresh token family only in an
+ephemeral in-process provider, and gives that provider to `fastmcp.Client` for MCP initialization,
+discovery, and the Action call. The test client owns no Agentplane authority: it proves the public
+OAuth/MCP client contract while the Action Service remains the authority for grants and Decisions.
+An access-token-only pass is sufficient for the first call; refresh/reconnect acceptance must also
+exercise the provider's refresh path. Do not print or persist token values.
 
 1. Connect Claude.ai through public discovery and DCR. Complete the real integration-app login,
    Connection naming, Identity picker, and consent. Verify return to the client's validated callback,
