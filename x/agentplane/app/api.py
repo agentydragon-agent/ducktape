@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import UUID
@@ -351,10 +352,15 @@ async def list_actions(
 @actions_router.get("/stream")
 async def action_stream(request: Request, client: OperatorActions) -> StreamingResponse:
     async def body() -> AsyncIterator[bytes]:
-        async for chunk in client.stream_requests():
-            if await request.is_disconnected():
-                break
-            yield chunk
+        # Force periodic reauthentication (including logout in another replica), not state polling.
+        try:
+            async with asyncio.timeout(30):
+                async for chunk in client.stream_requests():
+                    if operator_session(request) is None or await request.is_disconnected():
+                        return
+                    yield chunk
+        except TimeoutError:
+            return
 
     return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
@@ -389,8 +395,8 @@ async def push_subscriptions(client: OperatorActions) -> list[dict[str, object]]
 
 
 @push_router.post("/subscriptions", status_code=204)
-async def register_push_subscription(body: dict[str, str], client: OperatorActions) -> None:
-    await client.register_push(body)
+async def register_push_subscription(body: dict[str, str], client: OperatorActions, request: Request) -> None:
+    await client.register_push(body, user_agent=request.headers.get("user-agent", "")[:300])
 
 
 @push_router.delete("/subscriptions", status_code=204)

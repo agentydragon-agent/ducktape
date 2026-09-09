@@ -19,6 +19,7 @@ export function PushSettings(): JSX.Element {
   const [key, setKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [current, setCurrent] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -28,6 +29,10 @@ export function PushSettings(): JSX.Element {
       ]);
       setKey(config.application_server_key);
       setDevices(registered);
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+        setCurrent((await registration?.pushManager.getSubscription())?.endpoint ?? null);
+      }
       setError(null);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
@@ -42,11 +47,22 @@ export function PushSettings(): JSX.Element {
         throw new Error("Web Push is not configured or supported by this browser.");
       if ((await Notification.requestPermission()) !== "granted")
         throw new Error("Notification permission was not granted.");
-      const registration = await navigator.serviceWorker.register("/sw.js");
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: keyBytes(key),
-      });
+      await navigator.serviceWorker.register("/sw.js");
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        const oldKey = subscription.options.applicationServerKey;
+        const expected = keyBytes(key);
+        if (
+          !oldKey ||
+          oldKey.byteLength !== expected.length ||
+          !new Uint8Array(oldKey).every((byte, i) => byte === expected[i])
+        ) {
+          await subscription.unsubscribe();
+          subscription = null;
+        }
+      }
+      subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
       const body = subscription.toJSON();
       if (!body.endpoint || !body.keys?.p256dh || !body.keys.auth)
         throw new Error("Browser returned an incomplete push subscription.");
@@ -67,6 +83,11 @@ export function PushSettings(): JSX.Element {
     setBusy(true);
     try {
       await json<void>(`/push/subscriptions?endpoint=${encodeURIComponent(endpoint)}`, { method: "DELETE" });
+      if (endpoint === current) {
+        const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+        await (await registration?.pushManager.getSubscription())?.unsubscribe();
+        setCurrent(null);
+      }
       await refresh();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
@@ -89,7 +110,10 @@ export function PushSettings(): JSX.Element {
         <Paper withBorder p="sm" key={device.endpoint}>
           <Group justify="space-between">
             <Stack gap={2}>
-              <Text size="sm">{device.user_agent || "Unknown browser"}</Text>
+              <Text size="sm">
+                {device.user_agent || "Unknown browser"}
+                {device.endpoint === current ? " (this browser)" : ""}
+              </Text>
               <Code style={{ maxWidth: 500, overflow: "hidden", textOverflow: "ellipsis" }}>{device.endpoint}</Code>
             </Stack>
             <Button color="red" variant="light" onClick={() => void forget(device.endpoint)} loading={busy}>

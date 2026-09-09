@@ -90,6 +90,7 @@ function AppRoutes(): JSX.Element {
         <Routes>
           <Route path="/" element={<ListRoute />} />
           <Route path="/actions" element={<ActionRequests />} />
+          <Route path="/actions/:requestId" element={<ActionRequests />} />
           <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
           <Route path="/connections" element={<Connections />} />
           <Route path="/notifications" element={<PushSettings />} />

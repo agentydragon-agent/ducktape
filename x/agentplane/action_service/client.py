@@ -49,7 +49,9 @@ class _BearerClient:
 
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
         token = await self._tokens.token()
-        response = await self._http.request(method, url, headers={"Authorization": f"Bearer {token}"}, **kwargs)
+        headers = kwargs.pop("headers", {})
+        headers["Authorization"] = f"Bearer {token}"
+        response = await self._http.request(method, url, headers=headers, **kwargs)
         response.raise_for_status()
         return response
 
@@ -140,8 +142,10 @@ class OperatorActionServiceClient(_BearerClient):
         response = await self._request("GET", "/v1/operator/push/subscriptions")
         return response.json()
 
-    async def register_push(self, subscription: dict[str, str]) -> None:
-        await self._request("POST", "/v1/operator/push/subscriptions", json=subscription)
+    async def register_push(self, subscription: dict[str, str], *, user_agent: str) -> None:
+        await self._request(
+            "POST", "/v1/operator/push/subscriptions", json=subscription, headers={"User-Agent": user_agent}
+        )
 
     async def remove_push(self, endpoint: str) -> None:
         await self._request("DELETE", "/v1/operator/push/subscriptions", params={"endpoint": endpoint})

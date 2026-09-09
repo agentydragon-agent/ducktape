@@ -3,9 +3,12 @@ self.addEventListener("push", (event) => {
   const message = event.data.json();
   if (message.kind === "retract") {
     event.waitUntil(
-      self.registration
-        .getNotifications({ tag: message.action_id })
-        .then((items) => Promise.all(items.map((item) => item.close())))
+      self.registration.showNotification(message.outcome, {
+        tag: message.action_id,
+        silent: true,
+        requireInteraction: false,
+        data: message,
+      })
     );
     return;
   }
@@ -28,7 +31,7 @@ self.addEventListener("notificationclick", (event) => {
   const message = event.notification.data;
   if (!message || message.kind !== "show") return;
   if (event.action !== "approve" && event.action !== "deny") {
-    event.waitUntil(self.clients.openWindow(message.url));
+    event.waitUntil(self.clients.openWindow("/#/actions"));
     return;
   }
   event.waitUntil(
@@ -43,7 +46,10 @@ self.addEventListener("notificationclick", (event) => {
         decision_note: null,
       }),
     }).then((response) => {
-      if (!response.ok) return self.clients.openWindow(message.url);
+      if (!response.ok) return self.clients.openWindow("/#/actions");
     })
   );
 });
+
+self.addEventListener("install", (event) => event.waitUntil(self.skipWaiting()));
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));

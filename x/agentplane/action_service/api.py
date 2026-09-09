@@ -262,6 +262,8 @@ def create_app(
         principal: Annotated[Principal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
         action_updates: Annotated[ActionUpdates, Depends(_updates)],
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
+        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
     ) -> StreamingResponse:
         async def body() -> AsyncIterator[bytes]:
             # Subscribe before reading; clear before each read, never after it.
@@ -269,6 +271,8 @@ def create_app(
                 while True:
                     changed.clear()
                     action_updates.check_available()
+                    if credentials is None or await authenticator.authenticate(credentials.credentials) != principal:
+                        return
                     yield (
                         b"event: snapshot\ndata: " + _sse_json(await action_service.list_requests(principal)) + b"\n\n"
                     )
@@ -278,6 +282,11 @@ def create_app(
                                 await changed.wait()
                         except TimeoutError:
                             action_updates.check_available()
+                            if (
+                                credentials is None
+                                or await authenticator.authenticate(credentials.credentials) != principal
+                            ):
+                                return
                             yield b": keepalive\n\n"
 
         return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
