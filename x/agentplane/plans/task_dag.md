@@ -10,10 +10,11 @@ this backlog. See the [Action Service specification](../action_service/SPEC.md),
 
 ## Operator priority
 
-Prioritize working deployed Claude.ai access to the Action Service MCP facade (`CLAUDEAI`), then
-transcript search/lookup (`T3`). Search is technically independent; this is the desired order of
-work, not a claim that its implementation depends on MCP. Additional local Claude Code acceptance
-in `EXTERNALMCP` and full Haku migration are not part of that priority condition.
+Prioritize working deployed Claude.ai access to the Action Service MCP facade (`CLAUDEAI`).
+Transcript search/lookup (`T3`) is deliberately deferred until a later product-planning point; it
+is not in the current execution sequence. Search is technically independent, so this deferral is a
+priority decision rather than a claim that its implementation depends on MCP. Additional local
+Claude Code acceptance and full Haku migration are not part of the current priority condition.
 
 ## DAG
 
@@ -41,7 +42,7 @@ flowchart TB
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>provider research and captures first"]:::active
-    T3["Lower priority<br/>trajectory search and lookup"]:::future
+    T3["Deferred product work<br/>trajectory search and lookup<br/>later prioritization"]:::future
     PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
     PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
@@ -248,9 +249,10 @@ this Claude.ai outcome specifically; it does not require the additional client o
 
 ### `T3` — trajectory search and lookup
 
-**Lower-priority product work:** search and look up stored trajectories. This is technically
-independent of `CLAUDEAI`; prioritize the working facade first. Existing transcript persistence and
-unrelated lifecycle reliability work are not reclassified as search implementation by this ordering.
+**Deferred product work:** search and look up stored trajectories at a later product-planning point.
+This is technically independent of `CLAUDEAI`, but it is intentionally not in the current work
+sequence. Existing transcript persistence and unrelated lifecycle reliability work are not
+reclassified as search implementation by this deferral.
 
 ### `EXTERNALMCP` — hosted clients and external harnesses using governed Actions
 
