@@ -6,6 +6,7 @@ const listeners = new Map();
 const requests = [];
 const windows = [];
 const notices = [];
+let current = { state: "decision_pending", version: 1 };
 const self = {
   addEventListener: (kind, handler) => listeners.set(kind, handler),
   registration: { showNotification: async (title, options) => notices.push({ title, ...options }) },
@@ -16,7 +17,7 @@ runInNewContext(readFileSync(process.env.SW_SOURCE, "utf8"), {
   self,
   fetch: async (url, options) => {
     requests.push({ url, options });
-    return { ok: true };
+    return { ok: current !== null, json: async () => current };
   },
   crypto: { randomUUID: () => "test-intent" },
 });
@@ -51,3 +52,20 @@ listeners.get("push")({
 await work;
 assert.equal(notices[0].tag, "request");
 assert.equal(notices[0].actions, undefined, "resolved notice offers no decisions");
+
+async function show() {
+  let work;
+  listeners.get("push")({
+    data: { json: () => message },
+    waitUntil: (promise) => {
+      work = promise;
+    },
+  });
+  await work;
+  return notices.at(-1);
+}
+assert.equal((await show()).actions.length, 2);
+current = { state: "denied", version: 2 };
+assert.equal((await show()).actions, undefined, "late pending push cannot restore decision buttons");
+current = null;
+assert.equal((await show()).actions.length, 0, "expired session opens review without decision buttons");
