@@ -58,9 +58,16 @@ restriction below still applies: remote choreography tests are not live acceptan
 Not in CI, and not on RBE: the target is `manual`, so `//...` never selects it, and it needs a
 kubeconfig and a route to the cluster.
 
+Bazel excludes `manual` targets from package patterns, so `:all` only runs the non-live
+`test_operator_login` unit test. Name the live scenario explicitly. Start with the egress
+vertical slice:
+
 ```bash
-bazelisk test //x/agentplane/acceptance:all --test_output=streamed --test_arg=-s
+bazelisk test //x/agentplane/acceptance:test_egress --test_output=streamed --test_arg=-s
 ```
+
+Run the other live scenarios by their explicit targets: `:test_launch_presets`,
+`:test_instructions`, and `:test_mcp`.
 
 By default it tests `https://agentplane-staging.allegedly.works` and mints its own bearer token with
 `kubectl -n agentplane-staging create token agentplane-agent --audience=agentplane`. That call needs
@@ -90,10 +97,9 @@ Before starting a long run, check the client-side seams separately:
 command -v bazelisk kubectl
 bazelisk version
 kubectl config current-context
-kubectl -n agentplane-staging auth can-i create serviceaccounts/token \
-  --resource-name=agentplane-agent
+kubectl -n agentplane-staging auth can-i create serviceaccounts/token/agentplane-agent
 kubectl -n agentplane-staging create token agentplane-agent \
-  --audience=agentplane --duration=60s >/dev/null
+  --audience=agentplane --duration=600s >/dev/null
 ```
 
 The preflight must not print or save the returned token. If the token command
