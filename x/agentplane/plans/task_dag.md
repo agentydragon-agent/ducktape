@@ -10,6 +10,12 @@ this backlog. See the [Action Service specification](../action_service/SPEC.md),
 
 ## Operator priority
 
+All Agentplane components and their acceptance contracts are multi-replica by default. Durable
+state belongs to the owning PostgreSQL or Kubernetes authority; cross-replica change fanout uses
+the authority's notification/watch mechanism (PostgreSQL `NOTIFY` for Action Service state), with
+reconnect/replay from durable state rather than process-local memory. A single-replica deployment
+is an explicit temporary operational constraint, never an implicit correctness assumption.
+
 Prioritize working deployed Claude.ai access to the Action Service MCP facade (`CLAUDEAI`).
 Transcript search/lookup (`T3`) is deliberately deferred until a later product-planning point; it
 is not in the current execution sequence. Search is technically independent, so this deferral is a

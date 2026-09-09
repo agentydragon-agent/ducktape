@@ -8,14 +8,13 @@ not a second lifecycle contract here. Native harness approvals remain disabled u
 
 ## Web push approval notification (`NOTIFY`)
 
-Put the first implementation in the integration app: its frontend owns the service worker, browser
+The Action Service owns canonical Action event fanout and the initial background Web Push sender,
+so every replica observes the same committed transitions through PostgreSQL `NOTIFY`. The
+integration app owns the browser experience: its frontend owns the service worker, browser
 subscription, notification click handling, Approve/Deny presentation, and a Settings surface to
 register this browser and manage the operator's other registered browsers; its backend/BFF owns
-subscription registration/revocation and Web Push delivery. For an open Actions page, use the
-app's existing SSE pattern for server-pushed snapshots/changes rather than polling. The BFF calls
-the Action Service's canonical authenticated Decision endpoint. The Action Service remains the
-source of truth for pending Actions, Decisions, and durable events; it does not own browser
-subscriptions, VAPID keys, or a second approval lifecycle.
+subscription-management routes and proxies the authenticated Decision route. For an open Actions
+page, use the app's existing SSE pattern for server-pushed snapshots/changes rather than polling.
 
 Notify the operator that an ActionRequest needs review with only safe/redacted context. Stale or
 duplicate buttons cannot overwrite a winning Decision or create a parallel human lifecycle. The
@@ -23,7 +22,9 @@ The Actions page's SSE stream reconnects with a durable cursor/snapshot boundary
 back to a timer poll while the stream is healthy. The Web Push notification remains the background
 fallback when no tab is open or the stream is unavailable. A later Event & Notification Hub may
 take over delivery, but is not a prerequisite for this first slice. Prove notification retries and
-review races without duplicate effects.
+review races without duplicate effects. Subscription rows and fanout must be safe across multiple
+Action Service and app replicas; reconnect/replay comes from durable state, never process-local
+memory.
 
 This is optional delivery, not a prerequisite for the current polling UI or human-approved
 Claude.ai acceptance. The deployed browser/BFF verification is `APPROVALUI` in the

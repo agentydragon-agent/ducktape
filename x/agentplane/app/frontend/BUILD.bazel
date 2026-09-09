@@ -355,6 +355,22 @@ ts_library(
 )
 
 ts_library(
+    name = "push",
+    srcs = ["push.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+filegroup(
+    name = "service_worker",
+    srcs = ["sw.js"],
+)
+
+ts_library(
     name = "app",
     srcs = ["app.tsx"],
     tsconfig = TSCONFIG,
@@ -362,6 +378,7 @@ ts_library(
         ":actions",
         ":connections",
         ":consent",
+        ":push",
         ":sandbox_page",
         ":sandboxes",
         ":session",

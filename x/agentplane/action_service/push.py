@@ -127,9 +127,11 @@ class PushSubscriptionStore:
             await session.execute(delete(PushSubscriptionRow).where(PushSubscriptionRow.endpoint == endpoint))
 
     async def claim_delivery(self, request_id: UUID, kind: str) -> bool:
-        statement = insert(PushDeliveryRow).values(
-            request_id=request_id, kind=kind, claimed_at=datetime.datetime.now(datetime.UTC)
-        ).on_conflict_do_nothing()
+        statement = (
+            insert(PushDeliveryRow)
+            .values(request_id=request_id, kind=kind, claimed_at=datetime.datetime.now(datetime.UTC))
+            .on_conflict_do_nothing()
+        )
         async with self._sessions.begin() as session:
             result = await session.execute(statement)
             return result.rowcount == 1

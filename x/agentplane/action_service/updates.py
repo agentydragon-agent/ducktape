@@ -30,6 +30,7 @@ class ActionUpdates:
         self._dsn = make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
         self._connection: asyncpg.Connection[Any] | None = None
         self._subscribers: dict[UUID, set[asyncio.Event]] = {}
+        self._all_subscribers: set[asyncio.Event] = set()
         self._available = False
 
     async def start(self) -> None:
@@ -71,6 +72,17 @@ class ActionUpdates:
             if not subscribers:
                 del self._subscribers[request_id]
 
+    @contextmanager
+    def subscribe_all(self) -> Iterator[asyncio.Event]:
+        """Subscribe to every committed Action event for server-push consumers."""
+        self.check_available()
+        changed = asyncio.Event()
+        self._all_subscribers.add(changed)
+        try:
+            yield changed
+        finally:
+            self._all_subscribers.discard(changed)
+
     def _notified(self, _connection: object, _pid: int, _channel: str, payload: object) -> None:
         try:
             request_id = UUID(str(payload))
@@ -84,9 +96,13 @@ class ActionUpdates:
             return
         for changed in self._subscribers.get(request_id, ()):
             changed.set()
+        for changed in self._all_subscribers:
+            changed.set()
 
     def _terminated(self, _connection: object) -> None:
         self._available = False
         for subscribers in self._subscribers.values():
             for changed in subscribers:
                 changed.set()
+        for changed in self._all_subscribers:
+            changed.set()

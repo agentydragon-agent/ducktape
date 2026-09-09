@@ -63,7 +63,6 @@ py_library(
         ":catalog",
         ":db",
         ":models",
-        ":push",
         "@pypi//jsonschema",
         "@pypi//referencing",
     ],
@@ -102,6 +101,7 @@ py_library(
         ":updates",
         "//x/agentplane/sandbox_auth:http",
         "@pypi//fastapi",
+        "@pypi//pydantic",
         "@pypi//starlette",
     ],
 )
