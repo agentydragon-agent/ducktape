@@ -52,6 +52,30 @@ let
     PIP_CERT = proxyCaBundle;
     NODE_EXTRA_CA_CERTS = proxyCaBundle;
   };
+  # This is an inert Haku placeholder, not a Kubernetes credential. The devbox
+  # reaches haku-kubeapi through the agent iron-proxy, which substitutes the
+  # caller's Agent bearer only for that exact host.
+  publicCoderKubeconfig = ''
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: haku-kubeapi
+        cluster:
+          server: https://haku-kubeapi.allegedly.works
+          proxy-url: ${proxyUrl}
+          certificate-authority: ${proxyCaBundle}
+    contexts:
+      - name: public-coder
+        context:
+          cluster: haku-kubeapi
+          namespace: public-coder-agent
+          user: public-coder
+    current-context: public-coder
+    users:
+      - name: public-coder
+        user:
+          token: proxy-haku-console-placeholder
+  '';
   sshHostKeyDevice = "/dev/disk/by-id/virtio-pchostkey";
   sshHostKeyFile = "/etc/ssh/ssh_host_ed25519_key";
 in
@@ -222,6 +246,7 @@ in
     lsof
     git
     openssl
+    kubectl
     # `bbr` remains the ordinary remote-BuildBuddy path and delegates to `bb`.
     # Bazelisk is available by its own name for intentional local,
     # repository-versioned Bazel execution in this isolated VM.
@@ -304,6 +329,33 @@ in
     '';
   };
 
+  # The live Agentplane acceptance suite is manual/no-remote-exec and must run
+  # on this controlled host. Install its non-secret kubeconfig at boot rather
+  # than copying a credential from the agent pod; its placeholder is mediated
+  # by the existing iron-proxy route above.
+  systemd.services.public-coder-devbox-kubeconfig = {
+    description = "Install the public-coder devbox Kubernetes proxy config";
+    wantedBy = [ "multi-user.target" ];
+    before = [ "hostexecd.service" ];
+    requires = [ "public-coder-devbox-proxy-ca.service" ];
+    after = [
+      "local-fs.target"
+      "public-coder-devbox-proxy-ca.service"
+    ];
+    path = [ pkgs.coreutils ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      set -eu
+      install -d -m0700 -o coder -g users /home/coder/.kube
+      printf '%s\\n' '${publicCoderKubeconfig}' > /home/coder/.kube/config
+      chown coder:users /home/coder/.kube/config
+      chmod 0600 /home/coder/.kube/config
+    '';
+  };
+
   # Nix's HTTP proxy is an environment setting, not a nix.conf setting. The
   # interactive environment receives these through sessionVariables, while
   # nix-daemon needs them explicitly in its systemd environment because it is
@@ -383,11 +435,13 @@ in
       "public-coder-devbox-proxy-ca.service"
       "public-coder-devbox-hostexecd-token.service"
       "public-coder-devbox-buildbuddy.service"
+      "public-coder-devbox-kubeconfig.service"
     ];
     after = [
       "public-coder-devbox-proxy-ca.service"
       "public-coder-devbox-hostexecd-token.service"
       "public-coder-devbox-buildbuddy.service"
+      "public-coder-devbox-kubeconfig.service"
     ];
     serviceConfig.EnvironmentFile = [ "${buildbuddyRuntimeDir}/environment" ];
   };
