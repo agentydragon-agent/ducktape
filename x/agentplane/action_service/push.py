@@ -113,7 +113,9 @@ class PushSubscriptionStore:
             )
         )
         async with self._sessions.begin() as session:
-            await session.execute(statement)
+            saved = await session.scalar(statement.returning(PushSubscriptionRow.endpoint))
+            if saved is None:
+                raise ValueError("subscription belongs to another operator")
 
     async def list_for(self, operator_principal: str) -> list[PushSubscriptionRow]:
         async with self._sessions() as session:

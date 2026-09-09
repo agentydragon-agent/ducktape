@@ -791,6 +791,7 @@ py_test(
         ":models",
         ":push",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

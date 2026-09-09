@@ -3,6 +3,7 @@
 import asyncio
 from typing import cast
 
+import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -81,6 +82,18 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
     finally:
         await first.close()
         await second.close()
+
+
+async def test_registration_owner_cannot_be_overwritten(engine: AsyncEngine) -> None:
+    store = PushSubscriptionStore(make_sessionmaker(engine))
+    args = dict(endpoint="https://push.example/a", p256dh="test", auth="test", user_agent="test")
+    await store.save(operator_principal=OPERATOR.key, **args)
+    with pytest.raises(ValueError, match="another operator"):
+        await store.save(operator_principal="other", **args)
+    assert not await store.delete(operator_principal="other", endpoint=args["endpoint"])
+    assert len(await store.list_for(OPERATOR.key)) == 1
+    assert await store.delete(operator_principal=OPERATOR.key, endpoint=args["endpoint"])
+    assert not await store.list_for(OPERATOR.key)
 
 
 if __name__ == "__main__":

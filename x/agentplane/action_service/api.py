@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.routing import Route
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
@@ -58,9 +58,10 @@ from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 
 class PushSubscriptionInput(BaseModel):
-    endpoint: str
-    p256dh: str
-    auth: str
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    endpoint: str = Field(min_length=1, max_length=2048)
+    p256dh: str = Field(min_length=1, max_length=200)
+    auth: str = Field(min_length=1, max_length=200)
 
 
 _operator_bearer = HTTPBearer(auto_error=False)
@@ -324,13 +325,16 @@ def create_app(
         except ValueError:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "unsupported push endpoint") from None
         user_agent = request.headers.get("user-agent")
-        await push_subscriptions.save(
-            operator_principal=principal.key,
-            endpoint=body.endpoint,
-            p256dh=body.p256dh,
-            auth=body.auth,
-            user_agent=user_agent[:300] if user_agent else None,
-        )
+        try:
+            await push_subscriptions.save(
+                operator_principal=principal.key,
+                endpoint=body.endpoint,
+                p256dh=body.p256dh,
+                auth=body.auth,
+                user_agent=user_agent[:300] if user_agent else None,
+            )
+        except ValueError:
+            raise HTTPException(status.HTTP_409_CONFLICT, "subscription is already registered") from None
 
     @app.delete("/v1/operator/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
     async def remove_push_subscription(endpoint: str, principal: Annotated[Principal, Depends(_operator)]) -> None:
