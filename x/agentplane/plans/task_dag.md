@@ -85,11 +85,9 @@ flowchart TB
     DEL["Decision/action-state contract<br/>provider aggregation, event/query API,<br/>reason evidence, progress, withdrawal, unknown"]:::decision
     CANCEL_GATE["Decision gate<br/>pre/post-dispatch cancellation semantics<br/>and caller authorization"]:::decision
     CANCEL["Pending behavior<br/>agent-requested Action withdrawal/cancellation<br/>blocked on CANCEL_GATE"]:::future
-    PUBLIC_REASON["Deferred behavior<br/>operator-authored public decision reason<br/>delivered to requesting agent"]:::future
     CANCEL_GATE --> CANCEL
     DEL --> CANCEL_GATE
-    DEL --> PUBLIC_REASON
-    PUBLIC_REASON --> ING
+    DEL --> ING
     MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
@@ -404,20 +402,13 @@ that external side effects were undone. This gate owns the Action/API/event/sche
 **Acceptance evidence after the gate:** replay caller-own versus other-agent/forged requests and
 withdraw-versus-dispatch races, including restart and duplicate delivery. No implementation in #5820.
 
-### `PUBLIC_REASON` — public operator decision reason delivered to the requester
+### Decision note — existing query/BFF projection
 
-**Deferred behavior:** an operator can author a deliberately public decision reason that the
-requesting agent receives. This is separate from existing operator-only `private_reason` and from
-non-human DecisionProvider reason codes/descriptions. Never expose private_reason by changing its
-projection or reuse it as a notification payload.
-
-**Needed design before implementation:** add an explicitly public bounded field to the canonical
-Decision input/record/response, define Action API projection and durable event references/payloads,
-plan schema migration and replay compatibility, and specify delivery to the originating agent
-(including offline/resume and deduplication through `ING`). The operator UI must clearly distinguish
-public versus private text. Evidence must prove the requester gets the public reason exactly once
-under the chosen delivery contract while private text never enters caller API/event/notification
-views. No implementation or schema fields in #5820.
+**Landed behavior:** one bounded human-authored `decision_note` is stored and returned unchanged to
+requesting caller and operator through the existing Action API polling/BFF. The migration preserves
+existing notes; there is no private human-note field. Non-human provider `reason_code` and
+`reason_description` remain separate bounded outcome evidence. API/BFF tests cover exact note
+visibility and duplicate/stale decisions; push notification and offline Thread wake remain in `ING`.
 
 ### `ING` — Event & Notification Hub
 

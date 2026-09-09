@@ -428,3 +428,20 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_database_migrate",
+    size = "medium",
+    srcs = ["test_database_migrate.py"],
+    requires_docker = True,
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":db",
+        ":models",
+        "//:conftest",
+        "@pypi//alembic",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

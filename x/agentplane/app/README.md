@@ -119,7 +119,10 @@ configuration, and each launch sends only resolved concrete fields to the runtim
 `GET /actions/{request_id}`, `GET /actions/{request_id}/events?after_sequence=0`,
 and `POST /actions/{request_id}/decision` are an
 operator-only BFF over `OperatorActionServiceClient`. They use the service's models
-unchanged, including expected versions, idempotency keys, and private reason fields.
+unchanged, including expected versions, idempotency keys, and the human-authored `decision_note`.
+The same note is visible to the requesting caller and operator; the existing UI displays it.
+Provider-authored bounded `reason_code`/`reason_description` are separate outcome evidence, not
+another human note. OpenAPI and frontend types are generated from the canonical models.
 Event reads return canonical `ActionEventView` entries in sequence order, strictly after the
 non-negative cursor (default 0).
 The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload

@@ -208,14 +208,19 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "verdict": "allow",
             "expected_version": pending["version"],
             "idempotency_key": "decision-allow-1",
-            "private_reason": "private reviewer context",
+            "decision_note": "Reviewed scope — allowed for this request.",
         }
+        oversized = await client.post(
+            _operator_path(request_id, "/decision"), headers=_operator(), json={**decision, "decision_note": "x" * 2001}
+        )
+        assert oversized.status_code == 422
+        assert DecisionInput.model_validate({**decision, "decision_note": "x" * 2000}).decision_note == "x" * 2000
         allowed, duplicate_allow = await asyncio.gather(
             client.post(_operator_path(request_id, "/decision"), headers=_operator(), json=decision),
             client.post(_operator_path(request_id, "/decision"), headers=_operator(), json=decision),
         )
         assert allowed.status_code == duplicate_allow.status_code == 200
-        assert allowed.json()["decision"]["private_reason"] == "private reviewer context"
+        assert allowed.json()["decision"]["decision_note"] == "Reviewed scope — allowed for this request."
         assert allowed.json()["arguments"] == envelope["arguments"]
 
         terminal = await _terminal(client, request_id)
@@ -230,8 +235,20 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         # A human Decision carries no provider reason code; that projection is provider-only.
         assert terminal["decision"]["reason_code"] is None
         assert terminal["decision"]["reason_description"] is None
-        assert terminal["decision"]["private_reason"] is None
-        assert terminal["decision"]["private_reason_redacted"] is True
+        assert terminal["decision"] == operator_terminal["decision"] == allowed.json()["decision"]
+        assert duplicate_allow.json()["decision"] == terminal["decision"]
+        assert terminal["decision"]["decision_note"] == decision["decision_note"]
+        assert set(terminal["decision"]) == {
+            "id",
+            "verdict",
+            "provider",
+            "issuer",
+            "decision_note",
+            "reason_code",
+            "reason_description",
+            "idempotency_key",
+            "decided_at",
+        }
         assert len(executor.requests) == 1
         assert executor.requests[0].arguments["nested"] == {"api_key": "provider-material"}
 
@@ -242,11 +259,21 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
                 "verdict": "allow",
                 "expected_version": 1,
                 "idempotency_key": "decision-allow-1",
-                "private_reason": "ignored on replay",
+                "decision_note": "ignored on replay",
             },
         )
         assert replay.status_code == 200
         assert replay.json()["state"] == "succeeded"
+        assert replay.json()["decision"] == terminal["decision"]
+        late = await client.post(
+            _operator_path(request_id, "/decision"),
+            headers=_operator(),
+            json={**decision, "idempotency_key": "late-note", "decision_note": "must not overwrite"},
+        )
+        assert late.status_code == 409
+        assert (await client.get(f"/v1/action-requests/{request_id}", headers=_workload("workload-a"))).json()[
+            "decision"
+        ] == terminal["decision"]
         assert len(executor.requests) == 1
 
         history = await client.get(f"/v1/action-requests/{request_id}/events", headers=_workload("workload-a"))
@@ -286,10 +313,15 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
                 "verdict": "deny",
                 "expected_version": denied_pending["version"],
                 "idempotency_key": "decision-deny-1",
-                "private_reason": "not permitted",
+                "decision_note": "not permitted",
             },
         )
         assert denied.json()["state"] == "denied"
+        caller_denied = (
+            await client.get(f"/v1/action-requests/{denied_pending['id']}", headers=_workload("workload-b"))
+        ).json()
+        assert caller_denied["decision"] == denied.json()["decision"]
+        assert caller_denied["decision"]["decision_note"] == "not permitted"
         assert len(executor.requests) == 1
     finally:
         await client.aclose()

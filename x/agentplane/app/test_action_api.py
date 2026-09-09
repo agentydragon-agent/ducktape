@@ -255,7 +255,12 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
         CALLER,
     )
     path = f"/actions/{pending.id}/decision"
-    decision = {"verdict": "allow", "expected_version": pending.version, "idempotency_key": "test-allow"}
+    decision = {
+        "verdict": "allow",
+        "expected_version": pending.version,
+        "idempotency_key": "test-allow",
+        "decision_note": "Reviewed scope — allowed for this request.",
+    }
     events_path = f"/actions/{pending.id}/events"
     assert (await browser.get(events_path)).status_code == 401
     assert (await browser.get(events_path, headers=AGENT_AUTH)).status_code == 403
@@ -278,7 +283,9 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
     allowed = await browser.post(path, json=decision)
     assert allowed.status_code == 200, allowed.text
     assert allowed.json()["decision"]["issuer"] == f"{review.issuer}:target-a"
-    assert (await browser.post(path, json=decision)).status_code == 200
+    assert (await browser.post(path, json={**decision, "decision_note": "ignored replay"})).json()[
+        "decision"
+    ] == allowed.json()["decision"]
     assert (
         await browser.post(path, json={**decision, "verdict": "deny", "idempotency_key": "late-deny"})
     ).status_code == 409
@@ -289,6 +296,11 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
                 break
             # Each read awaits service IO; no fixed delay or elapsed-time assertion.
     assert final["execution"]["result"] == {"recorded": "hi"}
+    caller_view = await service.get(pending.id, CALLER)
+    assert caller_view.decision is not None
+    assert final["decision"] == caller_view.decision.model_dump(mode="json")
+    assert final["decision"]["decision_note"] == decision["decision_note"]
+    assert (await browser.get("/actions")).json()[0]["decision"] == final["decision"]
     assert review.calls == ["hi"]
     canonical_events = await service.events(pending.id, CALLER)
     response = await browser.get(events_path)

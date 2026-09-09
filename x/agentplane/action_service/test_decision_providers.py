@@ -296,7 +296,7 @@ async def test_decision_context_carries_only_trusted_identity(
         await service.close()
 
 
-async def test_provider_reason_is_projected_to_caller_unlike_private_operator_reason(
+async def test_provider_reason_is_projected_separately_from_human_note(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
     store = ActionStore(make_sessionmaker(engine))
@@ -311,15 +311,14 @@ async def test_provider_reason_is_projected_to_caller_unlike_private_operator_re
         assert result.decision is not None
         assert result.decision.reason_code == "untrusted_action"
         assert result.decision.reason_description == "policy decided"
-        # Unlike a human operator's private_reason, a provider's bounded reason is safe to show
-        # the caller directly; it never touches private_reason/private_reason_redacted.
-        assert result.decision.private_reason is None
-        assert result.decision.private_reason_redacted is False
+        # Provider outcome evidence is separate from the human-authored note.
+        assert result.decision.decision_note is None
 
         operator_view = await store.get(result.id, OPERATOR)
         assert operator_view.decision is not None
         assert operator_view.decision.reason_code == "untrusted_action"
         assert operator_view.decision.provider == "policy"
+        assert operator_view.decision == result.decision
     finally:
         await service.close()
 
