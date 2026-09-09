@@ -35,7 +35,7 @@ flowchart TB
     SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>through concrete Sandbox bindings"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
-    MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>external harness/client compatibility"]:::future
+    MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>real Claude.ai/Claude Code proof"]:::future
     HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
     APPROVALUI["Needed live evidence<br/>deployed operator federation + BFF<br/>identity and approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
@@ -43,13 +43,14 @@ flowchart TB
     INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>provider research and captures first"]:::active
     T3["Lower priority<br/>trajectory search and lookup"]:::future
     PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
+    PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
     PROVIDERLOG["Ready fix<br/>safe formatted provider-error logs"]:::active
-    NOTIFY["Deferred delivery<br/>human approval notifications"]:::future
+    NOTIFY["P0 behavior<br/>web push approval notifications<br/>approve/deny controls"]:::active
     ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
     DT["Deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
@@ -73,6 +74,7 @@ flowchart TB
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     T3 -. product work .-> PROD
     PR -. independent reliability .-> PROD
+    PR --> PC_EGRESS
 
     MCP0 --> AG
 ```
@@ -297,12 +299,36 @@ external-access policy behind `MCPAUTH` and `HOSTEXEC`, not a prerequisite for `
 **Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
 revocation/expiry semantics without putting a reusable privileged credential in the harness.
 
+### `PC_EGRESS` — public-coder-agent egress migration
+
+**Milestone:** replace the existing `haku-console` / `iron-proxy` proxy path in front of
+`public-coder-agent` with the Agentplane egress proxy, using a dedicated production (non-staging)
+Agentplane instance. Preserve the current public-coder configuration as the starting contract: its
+wide-open egress and the small set of substituted tokens are intentional inputs to the migration,
+not an invitation to redesign policy in this milestone.
+
+**Needed support:** deploy and operate the production Agentplane egress instance, express the
+public-coder destination rules and token substitutions in its reviewed configuration, and provide
+the required ServiceAccount, network policy, routing, and secret wiring. Compare effective behavior
+against the existing path before cutover; do not infer equivalence from source configuration alone.
+
+**Acceptance evidence:** public-coder can reach every currently supported destination, each existing
+substituted token is presented only at its intended destination, denied/unmatched traffic behaves as
+specified, and the Agentplane proxy survives rollout/restart without silently dropping the agent's
+in-flight work. Run the real devbox/agent acceptance through the new path, retain redacted effective
+rules and token-boundary evidence, then cut over with a reversible rollback window. Retire the old
+`haku-console` / `iron-proxy` resources only after the production path is proven and rollback is
+available; this milestone is an egress migration, not permission to widen the stable configuration.
+
 ### `MCPAGG` — Haku Console MCP aggregator replacement
 
 **Deferred migration:** use the implemented generic Action MCP frontend as the replacement surface for Haku
 Console's aggregator. Verify the required external harness/client workflows against it before
 retiring the old surface; do not build a second frontend, approval coordinator, or authority store.
-`EXTERNALMCP` proves Claude.ai and independently running Claude Code with OAuth and configured Identities.
+The real-client proof must exercise Claude.ai and independently running Claude Code with OAuth and
+configured Identities, including DCR, consent, discovery, human approval, result recovery, refresh,
+and revocation. `EXTERNALMCP` is the client-compatibility evidence for this migration, not just a
+protocol fixture.
 Inventory and migrate the remaining Haku tools, policies, and client workflows separately; backend
 credential requirements remain adapter-specific. The initial facade uses generic Action tools;
 per-Action projection may never be needed and is not required for migration. Actual generic-client
@@ -376,12 +402,25 @@ which excludes exception formatting. Remove unsafe exception material from emitt
 the full formatted output with a sentinel secret. Preserve bounded durable error codes and the
 existing provider aggregation behavior; do not label log safety implemented before this fix.
 
-### `NOTIFY` — human approval notification delivery
+### `NOTIFY` — web push approval notification delivery
 
-**Deferred support:** notify the human that a request needs review, linking to the existing
-integration-app approval surface. Responses use the canonical authenticated Decision route;
-duplicate/stale callbacks cannot create another authority or lifecycle. This does not gate the
-existing polling UI or `CLAUDEAI`. See [remaining delivery work](async_approvals.md).
+**P0 behavior:** when an Action needs operator approval or denial, the operator can receive a web
+push notification from Agentplane with the request context and explicit Approve/Deny controls. The
+controls must invoke the canonical authenticated Decision route, not create a second approval
+authority or coordinator. The existing polling UI remains valid when push is unavailable.
+
+**Needed support:** browser subscription and delivery lifecycle, authenticated action binding for
+each control, safe/redacted notification payloads, notification retry/expiry behavior, and stale or
+duplicate button presses that resolve as harmless already-decided conflicts. Preserve the private
+operator reason boundary; the notification must not expose credentials or unrestricted backend
+errors. This is delivery support for `APPROVALUI` and does not replace the Action event sequence.
+
+**Acceptance evidence:** a real operator receives a push for a pending Action, approves and denies
+from the buttons, sees the canonical Action state update, and gets no duplicate Decision or
+Execution under retries, refresh, reconnect, or an already-decided request. Prove subscription
+revocation and an unavailable-push fallback to the existing app UI. This feature is not required
+to prove the first Claude.ai connection, but is required before treating Agentplane approval
+delivery as a replacement for the Haku Console experience.
 
 ### `INPUT_DELIVERY` — native queue evidence before common-protocol changes
 
