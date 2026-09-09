@@ -57,6 +57,13 @@ path, so whichever wins a race, the loser's stale callback surfaces as an explic
 conflict rather than overriding the winner. No real policy provider or Thread notification is added;
 staging now configures the bounded Everything echo fixture policy; broader policies remain deferred.
 
+The planned `CALLERPOLICY` slice in [configured Action policies](action_policies.md) adds bounded
+deciders selected by a trusted configured Identity or authenticated Sandbox type. Hosted harnesses
+in Sandbox Threads keep their workload-authenticated Action path. Mandatory Action authorization
+bounds are distinct from permission to skip human review: an error in a mandatory bound cannot
+become `no_opinion` and let another provider's allow win. Configuration, type classification, and
+policy-change semantics remain design work; this document owns existing Decision aggregation.
+
 ## Open delivery contract
 
 ### P0 behavior
@@ -77,9 +84,11 @@ asynchronous human provider.
    then let its authenticated UI/notification client call the Action Service's canonical decision
    endpoint. The endpoint returns a stale/already-decided result when another provider won; it never
    creates a parallel human lifecycle.
-3. **Withdrawal.** Define who may withdraw before Execution starts, expected-version behavior, and
-   the final event. Do not add post-dispatch cancellation unless the first adapter can prove its
-   semantics.
+3. **Cancellation.** Implement the resolved `CANCEL` contract in [the DAG](task_dag.md): only the
+   owning caller, no expected-version requirement, and the atomic dispatch claim as cutoff. A
+   successful cancellation prevents execution; claimed/running/unknown execution cannot be cancelled.
+   Preserve prior Decisions, cancellation audit, idempotent replay, and canonical state events.
+   No executor cancellation propagation or process killing is in scope.
 4. **Unknown outcome.** The Agent/API-visible `execution_unknown` state and authenticated
    reconciliation are implemented; a concrete adapter must establish any authoritative status lookup. Status reconciliation may update the
    existing Execution; it never starts another one.
