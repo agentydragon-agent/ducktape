@@ -12,18 +12,39 @@ self.addEventListener("push", (event) => {
     );
     return;
   }
+  if (message.kind !== "show") return;
   event.waitUntil(
-    self.registration.showNotification(`${message.action_group} / ${message.action_name}`, {
-      body: "Action requires approval",
-      tag: message.action_id,
-      requireInteraction: true,
-      actions: [
-        { action: "approve", title: "Approve" },
-        { action: "deny", title: "Deny" },
-        { action: "details", title: "Details" },
-      ],
-      data: message,
-    })
+    (async () => {
+      // Push services can deliver an old show after its retraction. Re-read authority before
+      // offering decisions; an expired session gets a reauthentication deep link, not buttons.
+      let current = null;
+      try {
+        const response = await fetch(`/actions/${encodeURIComponent(message.action_id)}`, { credentials: "include" });
+        if (response.ok) current = await response.json();
+      } catch {
+        /* Offline delivery still opens the app without offering stale decisions. */
+      }
+      if (current && current.state !== "decision_pending") {
+        await self.registration.showNotification(current.state.replaceAll("_", " "), {
+          tag: message.action_id,
+          silent: true,
+          data: { kind: "retract", action_id: message.action_id },
+        });
+        return;
+      }
+      await self.registration.showNotification(`${message.action_group} / ${message.action_name}`, {
+        body: current ? "Action requires approval" : "Open Agentplane to review this Action",
+        tag: message.action_id,
+        requireInteraction: true,
+        actions: current
+          ? [
+              { action: "approve", title: "Approve" },
+              { action: "deny", title: "Deny" },
+            ]
+          : [],
+        data: current ? { ...message, version: current.version } : message,
+      });
+    })()
   );
 });
 self.addEventListener("notificationclick", (event) => {
