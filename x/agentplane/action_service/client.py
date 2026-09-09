@@ -77,6 +77,12 @@ class OperatorActionServiceClient(_BearerClient):
         response = await self._request("GET", f"/v1/operator/action-requests/{request_id}")
         return ActionRequestView.model_validate(response.json())
 
+    async def events(self, request_id: UUID, *, after_sequence: int = 0) -> list[ActionEventView]:
+        response = await self._request(
+            "GET", f"/v1/operator/action-requests/{request_id}/events", params={"after_sequence": after_sequence}
+        )
+        return [ActionEventView.model_validate(event) for event in response.json()]
+
     async def decide(self, request_id: UUID, body: DecisionInput) -> ActionRequestView:
         response = await self._request(
             "POST", f"/v1/operator/action-requests/{request_id}/decision", json=body.model_dump(mode="json")

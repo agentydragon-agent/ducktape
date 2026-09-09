@@ -533,6 +533,7 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/actions",
         "/actions/{request_id}",
         "/actions/{request_id}/decision",
+        "/actions/{request_id}/events",
         "/models",
         "/presets",
         "/sandboxes",

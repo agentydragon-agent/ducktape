@@ -14,7 +14,7 @@ from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.action_service.client import OperatorActionServiceClient
-from x.agentplane.action_service.models import ActionRequestView, ActionState, DecisionInput
+from x.agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
 from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.app.action_federation import FederatedOperatorActions, OperatorFederationError
 from x.agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
@@ -300,6 +300,15 @@ async def list_actions(
 @actions_router.get("/{request_id}")
 async def get_action(request_id: UUID, client: OperatorActions) -> ActionRequestView:
     return await client.get(request_id)
+
+
+@actions_router.get("/{request_id}/events")
+async def action_events(
+    request_id: UUID,
+    client: OperatorActions,
+    after_sequence: Annotated[int, Query(ge=0, description="Events with a greater sequence.")] = 0,
+) -> list[ActionEventView]:
+    return await client.events(request_id, after_sequence=after_sequence)
 
 
 @actions_router.post("/{request_id}/decision")
