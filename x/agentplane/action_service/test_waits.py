@@ -98,6 +98,22 @@ async def test_all_subscribers_wake_on_channel_loss(waiting: Waiting) -> None:
             waiting.updates.check_available()
 
 
+async def test_listener_recovers_after_connection_loss(waiting: Waiting) -> None:
+    recovery = asyncio.create_task(waiting.updates.recover_connections())
+    try:
+        await waiting.updates.close()
+        async with asyncio.timeout(10):
+            while not waiting.updates._available:
+                await asyncio.sleep(0.05)
+        with waiting.updates.subscribe_all() as changed:
+            await decide(waiting, Verdict.DENY)
+            async with asyncio.timeout(10):
+                await changed.wait()
+    finally:
+        recovery.cancel()
+        await asyncio.gather(recovery, return_exceptions=True)
+
+
 async def subscribed(waiting: Waiting) -> None:
     # Authorization read, then the race-closing read after subscription.
     for _ in range(2):

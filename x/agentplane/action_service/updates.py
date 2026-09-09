@@ -32,10 +32,12 @@ class ActionUpdates:
         self._subscribers: dict[UUID, set[asyncio.Event]] = {}
         self._all_subscribers: set[asyncio.Event] = set()
         self._available = False
+        self._lost = asyncio.Event()
 
     async def start(self) -> None:
         if self._connection is not None:
             raise RuntimeError("Action update listener already started")
+        self._lost.clear()
         self._connection = await asyncpg.connect(self._dsn, timeout=10)
         self._connection.add_termination_listener(self._terminated)
         try:
@@ -51,6 +53,18 @@ class ActionUpdates:
         if self._connection is not None:
             await self._connection.close(timeout=2)
             self._connection = None
+
+    async def recover_connections(self) -> None:
+        """Supervise an API listener; existing waits still fail explicitly on channel loss."""
+        while True:
+            await self._lost.wait()
+            await self.close()
+            await asyncio.sleep(1)
+            try:
+                await self.start()
+            except Exception:
+                self._lost.set()
+                logger.warning("Action listener reconnect failed; details withheld")
 
     def check_available(self) -> None:
         if not self._available:
@@ -103,6 +117,7 @@ class ActionUpdates:
 
     def _terminated(self, _connection: object) -> None:
         self._available = False
+        self._lost.set()
         for subscribers in self._subscribers.values():
             for changed in subscribers:
                 changed.set()
