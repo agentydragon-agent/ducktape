@@ -53,8 +53,8 @@ class McpHttpServerConfig(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_endpoint(cls, url: AnyHttpUrl) -> AnyHttpUrl:
-        if url.username is not None or url.password is not None or url.fragment is not None:
-            raise ValueError("MCP endpoint must not contain userinfo or a fragment")
+        if url.username is not None or url.password is not None or url.fragment is not None or url.query is not None:
+            raise ValueError("MCP endpoint must not contain userinfo, a query, or a fragment")
         return url
 
 
@@ -109,6 +109,8 @@ class McpActionGroupExecutor:
         return cls(group_key, group, transport, catalog_refresh_interval=catalog_refresh_interval)
 
     async def start(self) -> None:
+        self._group.available = False
+        self._group.actions = {}
         await self._stack.enter_async_context(self._client)
         await self.refresh_catalog()
         self._refresh_task = asyncio.create_task(self._refresh_loop(), name=f"mcp-executor-refresh-{self._group_key}")
@@ -132,13 +134,13 @@ class McpActionGroupExecutor:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.warning("periodic MCP catalog refresh failed; will retry", exc_info=True)
+                logger.warning("periodic MCP catalog refresh failed; will retry")
 
     async def refresh_catalog(self) -> None:
         try:
             tools = await self._client.list_tools()
         except Exception:
-            logger.warning("MCP tools/list failed; %s marked unavailable", self._group_key, exc_info=True)
+            logger.warning("MCP tools/list failed; %s marked unavailable", self._group_key)
             self._group.available = False
             self._group.actions = {}
             return
@@ -149,9 +151,18 @@ class McpActionGroupExecutor:
             except ValidationError:
                 logger.warning("MCP tool name %r does not fit the catalog key pattern; skipping", tool.name)
                 continue
-            actions[key] = ActionDefinition(
-                description=tool.description or f"MCP tool {tool.name}", input_schema=tool.inputSchema
-            )
+            try:
+                jsonschema.validators.validator_for(tool.inputSchema).check_schema(tool.inputSchema)
+                if key in actions:
+                    raise ValueError("duplicate MCP tool name")
+                actions[key] = ActionDefinition(
+                    description=tool.description or f"MCP tool {tool.name}", input_schema=tool.inputSchema
+                )
+            except (jsonschema.SchemaError, ValueError):
+                logger.warning("MCP catalog invalid; %s marked unavailable", self._group_key)
+                self._group.available = False
+                self._group.actions = {}
+                return
         self._group.actions = actions
         self._group.available = True
 
@@ -166,7 +177,7 @@ class McpActionGroupExecutor:
         try:
             tools = await self._client.list_tools()
         except Exception:
-            logger.warning("MCP tools/list failed before dispatch; refusing without calling the backend", exc_info=True)
+            logger.warning("MCP tools/list failed before dispatch; refusing without calling the backend")
             return ExecutionResult(
                 state=ExecutionState.FAILED,
                 error={"kind": "mcp_unavailable", "message": "could not verify the current tool schema"},
@@ -181,6 +192,11 @@ class McpActionGroupExecutor:
 
         try:
             jsonschema.validate(request.arguments, tool.inputSchema)
+        except jsonschema.SchemaError:
+            return ExecutionResult(
+                state=ExecutionState.FAILED,
+                error={"kind": "mcp_invalid_schema", "message": "backend tool schema is invalid"},
+            )
         except jsonschema.ValidationError:
             return ExecutionResult(
                 state=ExecutionState.FAILED,

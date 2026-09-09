@@ -20,7 +20,7 @@ from x.agentplane.action_service.auth import (
     DisabledOperatorAuthenticator,
     OperatorAuthenticator,
 )
-from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup
+from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, Key
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
 from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
@@ -43,7 +43,9 @@ class Settings(BaseSettings):
     keeps the ActionGroup catalog in that file so backend/account changes need only a restart.
     """
 
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_ACTIONS_", cli_parse_args=True, cli_kebab_case=True)
+    model_config = SettingsConfigDict(
+        env_prefix="AGENTPLANE_ACTIONS_", cli_parse_args=True, cli_kebab_case=True, hide_input_in_errors=True
+    )
 
     database_url: str = Field(description="Action Service-owned PostgreSQL database URL.")
     host: str = "127.0.0.1"
@@ -53,7 +55,7 @@ class Settings(BaseSettings):
     operator_bearer_file: Path | None = None
     operator_oidc: OperatorOidcSettings | None = None
     operator_subject: str = "configured-bff"
-    action_groups: dict[str, ActionGroup] = Field(
+    action_groups: dict[Key, ActionGroup] = Field(
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
     )
 
@@ -84,6 +86,10 @@ class Settings(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
         if config_file := os.environ.get("AGENTPLANE_ACTIONS_CONFIG_FILE"):
+            # pydantic-settings silently ignores absent YAML files. An explicit deployment
+            # binding must never turn into a healthy service with an empty catalog.
+            if not Path(config_file).is_file():
+                raise ValueError("configured Action Service settings file is not a regular file")
             sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
         sources.append(file_secret_settings)
         return tuple(sources)

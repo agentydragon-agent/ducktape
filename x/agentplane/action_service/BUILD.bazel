@@ -370,20 +370,28 @@ py_test(
 
 py_test(
     name = "test_mcp_executor_http",
+    size = "medium",
     srcs = ["test_mcp_executor_http.py"],
+    requires_docker = True,
     deps = [
         ":catalog",
         ":conftest",
+        ":db",
+        ":main",
         ":mcp_executor",
         ":models",
+        ":runtime",
         ":service",
         "//:conftest",
         "//util/testing:asgi",
+        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
         "@pypi//starlette",
+        "@pypi//uvicorn",
     ],
 )
 
@@ -443,5 +451,28 @@ py_test(
         "@pypi//alembic",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    data = [
+        "//cluster/k8s:agentplane_actions_remote_mcp",
+        "@multitool//tools/kustomize",
+    ],
+    deps = [
+        ":catalog",
+        ":conftest",
+        ":main",
+        ":mcp_executor",
+        ":runtime",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
