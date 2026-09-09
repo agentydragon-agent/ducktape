@@ -90,7 +90,8 @@ def test_secret_failures_are_closed_and_do_not_echo_output(
 
 
 @pytest.mark.parametrize("combined", [False, True])
-async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
+@pytest.mark.parametrize("csrf_cookie", [False, True])
+async def test_login_follows_bff_flow_csrf_and_callback(combined: bool, csrf_cookie: bool) -> None:
     # Test doubles deliberately stand in for the network only. Production never constructs a cookie.
     flow = f"{IDP}/if/flow/default-authentication-flow/?next=%2Fapplication%2Fo%2Fauthorize%2F"
     callback = f"{APP}/auth/callback?state=server-state&code=provider-code"
@@ -120,9 +121,8 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
                 assert request.url.params["code_challenge"] == "server-pkce"
                 return httpx.Response(302, headers={"location": callback if authenticated else flow})
             case "/if/flow/default-authentication-flow/":
-                return httpx.Response(
-                    200, text="Flow UI", headers={"set-cookie": "authentik_csrf=test-csrf; Path=/; Secure"}
-                )
+                headers = {"set-cookie": "authentik_csrf=test-csrf; Path=/; Secure"} if csrf_cookie else {}
+                return httpx.Response(200, text="Flow UI", headers=headers)
             case "/api/v3/flows/executor/default-authentication-flow/":
                 assert request.url.params["query"] == httpx.URL(flow).query.decode()
                 if request.method == "GET":
@@ -141,7 +141,10 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
                     )
                 assert request.headers["origin"] == IDP
                 assert request.headers["referer"] == flow
-                assert request.headers["x-csrftoken"] == "test-csrf"
+                if csrf_cookie:
+                    assert request.headers["x-authentik-csrf"] == "test-csrf"
+                else:
+                    assert "x-authentik-csrf" not in request.headers
                 payload = json.loads(request.content)
                 if payload["component"] == "ak-stage-identification":
                     expected = {"component": "ak-stage-identification", "uid_field": "test-user"}
@@ -174,19 +177,7 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool) -> None:
 
 @pytest.mark.parametrize(
     "failure",
-    [
-        "foreign",
-        "http",
-        "userinfo",
-        "wrong_callback",
-        "broad_cookie",
-        "mfa",
-        "csrf",
-        "rejected",
-        "loop",
-        "callback",
-        "captcha",
-    ],
+    ["foreign", "http", "userinfo", "wrong_callback", "broad_cookie", "mfa", "rejected", "loop", "callback", "captcha"],
 )
 async def test_login_refuses_unsafe_or_unsupported_flow(failure: str) -> None:
     posts = 0
@@ -221,8 +212,6 @@ async def test_login_refuses_unsafe_or_unsupported_flow(failure: str) -> None:
             return httpx.Response(200, json={"response_errors": {"password": [marker]}})
         if failure == "captcha":
             return httpx.Response(200, json={"component": "ak-stage-identification", "captcha_stage": {"key": marker}})
-        if failure == "csrf":
-            return httpx.Response(200, json={"component": "ak-stage-identification"})
         return httpx.Response(200, json={"component": "ak-stage-authenticator-validate", "private": marker})
 
     async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:

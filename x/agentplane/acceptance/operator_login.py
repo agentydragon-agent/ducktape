@@ -183,13 +183,12 @@ async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentia
             password_sent = True
         else:
             raise LoginBlockedError("BLOCKED: Authentik requires an unsupported interactive/MFA/consent challenge")
-        # A CSRF cookie is not bypassed: echo it exactly as Authentik's own API client does.
+        # Authentik 2026.2's flow executor may not issue its CSRF cookie for an OIDC login
+        # started through /application/o/authorize/. When it does issue one, echo it through
+        # Authentik's current header; the app's state/nonce/PKCE checks remain mandatory either way.
         csrf = http.cookies.get("authentik_csrf", domain=idp.host, path="/")
-        if not csrf:
-            raise LoginBlockedError("BLOCKED: Authentik did not provide its CSRF cookie")
-        response = await http.post(
-            executor,
-            json=payload,
-            headers={"Origin": str(idp).rstrip("/"), "Referer": str(flow_page), "X-CSRFToken": csrf},
-        )
+        headers = {"Origin": str(idp).rstrip("/"), "Referer": str(flow_page)}
+        if csrf:
+            headers["X-Authentik-CSRF"] = csrf
+        response = await http.post(executor, json=payload, headers=headers)
     raise LoginBlockedError("BLOCKED: Authentik login exceeded its redirect/stage bound")
