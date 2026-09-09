@@ -10,8 +10,11 @@ terraform {
 
   required_providers {
     authentik = {
-      source  = "goauthentik/authentik"
-      version = "~> 2026.2"
+      source = "goauthentik/authentik"
+      # Authentik is pinned to 2026.2.x in the cluster. Keep the provider on
+      # the matching minor line; `~> 2026.2` would also admit later provider
+      # releases whose API schema is incompatible with the 2026.2 server.
+      version = "~> 2026.2.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
