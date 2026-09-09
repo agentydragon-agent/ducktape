@@ -350,7 +350,7 @@ in
     script = ''
       set -eu
       install -d -m0700 -o coder -g users /home/coder/.kube
-      printf '%s\\n' '${publicCoderKubeconfig}' > /home/coder/.kube/config
+      printf '%s\n' '${publicCoderKubeconfig}' > /home/coder/.kube/config
       chown coder:users /home/coder/.kube/config
       chmod 0600 /home/coder/.kube/config
     '';
