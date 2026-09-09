@@ -63,6 +63,25 @@ Expected action rejection leaves books unchanged. The current runner retains
 its explicit all-or-none funding-group control; individual payment execution
 does not select an alternative funding strategy or retry a policy.
 
+The scoped household action control accepts one policy function shape: a batch of
+active actor/path observations returns a keyed batch of ordered action lists.
+Original path identities survive selection, reordering and replay; policy memory
+belongs to the caller. A scalar-authored policy can be adapted over this same
+batch interface, not a second engine interface.
+
+Its monthly decision occurs after scheduled cashflows and due-claim assembly.
+Each active path receives exactly one decision per month. Exact sales, purchases,
+transfers, claim payments and chosen consumption execute in the supplied order,
+without automatic funding, allocation, spending cuts or another policy call.
+A rejected action changes none of that action's financial state; successful
+earlier actions remain. Its rollout stops, skipping the remaining actions and
+future decisions. Any still-unpaid due claim is a distinct stop cause after
+execution. Independent paths continue. Invalid batch routing or scenario input
+and unexpected arithmetic/accounting defects are simulator errors, not modeled
+financial rejections. This control is limited to a single decision-making
+household with scripted counterparties and explicitly immediate cash execution;
+it does not establish a general multi-agent scheduler or settlement-delay model.
+
 Native experiments can separately choose monthly allocation targets through a
 rollout-local function for one declared cash-account component. It observes
 opening funding-account cash and sleeve values at current prices, before this
@@ -183,7 +202,8 @@ full liquidation consumes every selected lot's remaining units and basis.
 
 ### Policy types
 
-Policies are first-class typed objects. The current policy vocabulary:
+The configured runner uses typed policy objects. Its current control vocabulary
+is separate from the callable batch action interface described above:
 
 | Policy                    | Inputs                                                       | Action(s) emitted                                                                                          |
 | ------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -346,7 +366,8 @@ conditioning past values on eventual completion.
 - It is not a portfolio optimizer. Policies are user-specified rules; augur
   reports their consequences, not what optimal policies would be.
 - It does not model agent learning or strategic interaction (game-theoretic
-  best response). Each agent's policy is fixed by scenario configuration.
+  best response). Configured-control parameters are fixed by the scenario;
+  callable batch policies keep experiment-owned memory and decision logic.
 - It currently assumes FIFO lot selection for sale-basis accounting where a
   simulator slice needs concrete cost-basis math. HIFO, specific-identification,
   and average-cost lot selection are future extensions.
