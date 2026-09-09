@@ -99,7 +99,6 @@ flowchart TB
     APPROVALUI["Needed deployment<br/>operator federation provider + mappings<br/>two-operator live approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
-    DEDUPE["Observed evidence, independent<br/>shared app/auth/client/test setup audited<br/>no extraction justified in this slice"]:::milestone
     T3["P0 behavior, independent<br/>trajectory search and lookup"]:::active
     PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
@@ -143,10 +142,10 @@ flowchart TB
 The first executable Action/MCP path is `AS + EW + DEL -> MCP0 -> MCPACCEPT`. It uses a
 credentialless, staging-owned deterministic streamable-HTTP MCP fixture and a real Claude/Codex
 acceptance turn; it does not wait for GitHub OAuth. The later credentialed path is `MCP0 -> MCPAUTH ->
-PROD`. The shared setup audit (`DEDUPE`) found no extraction justified in this slice; see
-[the audit](../../../debug/agentplane_shared_setup_audit.md). Trajectory search and proxy survivability
-can proceed without waiting for those gates. None of these independent tracks proves production
-Action execution.
+PROD`. Trajectory search and proxy survivability can proceed without waiting for those gates.
+Neither independent track proves production Action execution. Shared app/auth/client/test setup
+has no outstanding extraction justified by the current consumers; deduplication is not a scheduled
+work item or a production-readiness prerequisite.
 
 The external-surface and migration tracks are intentionally separate from `MCP0`: `DEL` plus an
 authenticated durable external Agent identity (`EID`) are prerequisites for `MCPFRONT`, the Action

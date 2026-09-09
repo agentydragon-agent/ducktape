@@ -92,8 +92,6 @@ The PR descriptions contain the exact remote test/build invocations and BuildBud
 - per-destination audiences if recipient isolation becomes a requirement;
 - Kubernetes API access under a distinct projected audience;
 - authoritative Thread/Agent attribution after live bindings exist;
-- ordinary-service `SubjectAccessReview` integration;
+- ordinary-service `SubjectAccessReview` integration; and
 - external-agent authentication, standing grants, cross-agent permissions, credential broker, or
-  broad identity/capability framework; and
-- shared FastAPI/auth construction deduplication, which may proceed independently without changing
-  this boundary.
+  broad identity/capability framework.
