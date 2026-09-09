@@ -92,13 +92,14 @@ flowchart TB
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     MCPACCEPT["Milestone<br/>rerunnable Action/MCP acceptance<br/>against the deployed stack"]:::milestone
-    EID["Deferred support<br/>external Agent identity/auth<br/>static principal, not Thread"]:::future
-    MCPAGG["Deferred support<br/>Agentplane MCP aggregator<br/>external harness/client compatibility"]:::future
+    EID["Deferred support<br/>external Agent identity/auth<br/>durable principal, not Thread"]:::future
+    MCPFRONT["Deferred support<br/>Action Service MCP frontend<br/>external presentation over canonical Action API"]:::future
+    MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>external harness/client compatibility"]:::future
     HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
     APPROVALUI["Needed deployment<br/>operator federation provider + mappings<br/>two-operator live approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
-    DEDUPE["Needed support, independent<br/>shared FastAPI/auth setup dedupe"]:::active
+    DEDUPE["Observed evidence, independent<br/>shared app/auth/client/test setup audited<br/>no extraction justified in this slice"]:::milestone
     T3["P0 behavior, independent<br/>trajectory search and lookup"]:::active
     PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
@@ -119,15 +120,16 @@ flowchart TB
     CRED --> MCPAUTH
     MCPAUTH --> PROD
     DEL -. later Thread delivery .-> ING
-    DEL --> MCPAGG
-    EID --> MCPAGG
+    DEL --> MCPFRONT
+    EID --> MCPFRONT
+    MCPFRONT -. replacement surface .-> MCPAGG
+    MCPFRONT -. replacement surface .-> RETIRE_TOOLS
     EW --> HOSTEXEC
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     APPROVALUI -. replacement surface .-> RETIRE_TOOLS
     EID -. external identity .-> RETIRE_AGENT
     AG -. durable Agent/Thread model .-> RETIRE_AGENT
 
-    DEDUPE -. independent support .-> PROD
     T3 -. independent product work .-> PROD
     PR -. independent reliability .-> PROD
 
@@ -141,12 +143,14 @@ flowchart TB
 The first executable Action/MCP path is `AS + EW + DEL -> MCP0 -> MCPACCEPT`. It uses a
 credentialless, staging-owned deterministic streamable-HTTP MCP fixture and a real Claude/Codex
 acceptance turn; it does not wait for GitHub OAuth. The later credentialed path is `MCP0 -> MCPAUTH ->
-PROD`. Shared FastAPI/auth deduplication, trajectory search, and proxy survivability can proceed
-without waiting for those gates. Their independence must not be described as evidence that the
-current echo-only Action Service can execute production work.
+PROD`. The shared setup audit (`DEDUPE`) found no extraction justified in this slice; see
+[the audit](../../../debug/agentplane_shared_setup_audit.md). Trajectory search and proxy survivability
+can proceed without waiting for those gates. None of these independent tracks proves production
+Action execution.
 
 The external-surface and migration tracks are intentionally separate from `MCP0`: `DEL` plus an
-external static Agent identity are prerequisites for the Agentplane MCP aggregator, while the
+authenticated durable external Agent identity (`EID`) are prerequisites for `MCPFRONT`, the Action
+Service MCP frontend. It supplies the replacement surface for `MCPAGG` and `RETIRE_TOOLS`, while the
 integration-app approval UI consumes the same Action-state/Decision surface. Hostexec is another
 Executor adapter behind `EW`; its final ordering relative to the credentialed MCP path is deferred.
 Haku Console migration is split: Agent/conversation management and tool-call/approval management
@@ -270,10 +274,10 @@ test.
 ### `EID` — external Agent identity and authentication
 
 **Deferred support:** authenticate external Agent clients, including Claude Code Web or another
-non-Agentplane-hosted harness, as a known durable/static Agent identity distinct from any Thread or
-Sandbox. The identity must be trusted by Agentplane before an external MCP client can use the
-aggregator or receive approval state. Username, Thread ID, and caller-supplied provenance are not
-identity authority.
+non-Agentplane-hosted harness, as a known durable Agent identity distinct from any Thread or
+Sandbox. The identity must be trusted by Agentplane before an external MCP client can use
+`MCPFRONT` or receive approval state. This requirement does not select a static credential scheme.
+Username, Thread ID, and caller-supplied provenance are not identity authority.
 
 **Acceptance evidence:** an external client authenticates as one configured Agent, cannot impersonate
 another configured Agent, and remains distinct from the originating Thread/Sandbox model used by
@@ -307,16 +311,54 @@ external-access policy behind `MCPAUTH` and `HOSTEXEC`, not a prerequisite for `
 **Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
 revocation/expiry semantics without putting a reusable privileged credential in the harness.
 
-### `MCPAGG` — Agentplane MCP aggregator
+### `MCPFRONT` — Action Service MCP frontend
 
-**Deferred support:** replace Haku Console's MCP aggregator with an Agentplane-owned MCP surface so
-MCP clients and harnesses running outside Agentplane's hosted Sandboxes can use the same approved
-tool/action compatibility surface. It must authenticate the external Agent identity, route approval
-requests through the canonical DecisionProvider, and expose no alternate lifecycle or authority
-store.
+**Deferred support — smallest user-visible behavior:** an authenticated external MCP client discovers
+Actions, submits one ActionRequest without waiting for approval, and reads its pending Decision and
+eventual safe result. This is external MCP presentation over the canonical Action API, not another
+executor, remote MCP runtime, or lifecycle store.
 
-**Dependencies:** `EID` for the caller principal and `DEL` for pending-approval notification and
-decision delivery. The exact transport, tool projection, and migration order remain open.
+**Dependencies:** `DEL` for the canonical Decision/Action-state and durable event-query contract,
+and `EID` for trusted durable external Agent identity. Caller-supplied Agent/Thread names and
+origin/correlation are not identity authority. `MCPFRONT` is not a prerequisite for `MCP0`.
+This planning change implements neither the frontend nor identity, OAuth, cancellation, Event Hub,
+profiles, or remote MCP runtime; the external authentication mechanism remains an `EID` decision.
+
+**Needed support / contract:**
+
+- **Catalog:** present the canonical ActionGroup/Action catalog and input schemas; preserve separate
+  group/name identity and never expose executor bindings or credentials. Do not create an MCP-owned
+  registry or dispatch directly to an upstream tool.
+- **Submit:** forward the canonical ActionRequest envelope and caller-scoped idempotency key under
+  the authenticated external Agent principal. Return the durable request ID and current state,
+  including `decision_pending`, rather than holding an MCP call open for human approval.
+- **Get / events:** read only that caller's canonical request and ordered durable Action events.
+  `after_sequence` is the last event sequence already received; return later events in order, use
+  the last returned sequence for the next poll, and return an empty list when none are newer.
+  Reconnect/restart resumes from the same request ID and cursor, without another submission or
+  execution. Do not add a frontend-owned cursor, queue, or event log.
+- **Approvals:** canonical DecisionProviders and the existing operator UI/BFF remain the decision
+  path, including expected-version/idempotent allow/deny. MCP clients cannot acquire operator
+  authority or bypass the canonical single-Execution/no-blind-retry lifecycle.
+- **Isolation / projection:** preserve caller-own reads and canonical redaction of arguments,
+  results, errors, and events. The human `decision_note` remains shared unchanged with caller and
+  operator, not a private channel; non-human `reason_code`/`reason_description` remain separate.
+
+**Acceptance evidence:** a real external MCP client, authenticated as Agent A, discovers a configured
+Action, submits it, observes pending state, and resumes event polling after reconnect and service
+restart. Allow through the canonical operator BFF produces exactly one Execution and the same safe
+result as the Action API; deny produces none. Replay duplicate submission/Decision delivery and
+prove Agent B cannot get or poll A's request, forged provenance cannot change ownership, and no
+operator-only arguments, credential-bearing bindings, or unsafe executor payloads leak through MCP.
+This integration proof comes before any frontend-specific persistence or framework.
+
+### `MCPAGG` — Haku Console MCP aggregator replacement
+
+**Deferred migration:** use `MCPFRONT` as the replacement external MCP presentation surface for Haku
+Console's aggregator. Verify the required external harness/client workflows against it before
+retiring the old surface; do not build a second frontend, approval coordinator, or authority store.
+The exact transport, MCP tool projection, and migration order remain open. Tool-call/approval
+management retirement remains the separate `RETIRE_TOOLS` milestone.
 
 ### `HOSTEXEC` — hostexec-backed Action execution
 
@@ -358,8 +400,9 @@ removing the old owner.
 ### `RETIRE_TOOLS` — Haku Console tool-call and approval management migration
 
 **Deferred migration:** retire Haku Console's connected-MCP catalog, tool-call application/approval
-queue, and related tool-call management only after the Agentplane MCP aggregator, integration-app
-approval UI, credential bindings, and canonical Action/Decision APIs cover the required workflows.
+queue, and related tool-call management only after `MCPFRONT`, the `MCPAGG` compatibility migration,
+integration-app approval UI, credential bindings, and canonical Action/Decision APIs cover the
+required workflows.
 This track may move independently of Agent/conversation management: Haku Console may continue to own
 conversations while Agentplane owns external tool calls, or the reverse during a staged migration.
 Preserve tool-call audit/export and rollback evidence before removing the old owner.
@@ -386,8 +429,9 @@ been dropped.
 **Acceptance evidence:** a scripted replay covering submit -> pending -> allow/deny -> one execution
 or no execution -> Action API polling, including process restart and duplicate callback delivery.
 Landed: restart-surviving event sequence, cursor/pagination polling, and redaction of
-arguments/credentials/exceptions/private operator reason while surfacing the bounded provider
-reason and safe terminal result. Open: human-provider notification and withdrawal evidence.
+credential-shaped arguments/results/errors and unsafe exceptions while surfacing the unchanged
+human `decision_note`, bounded non-human provider reason evidence, and safe terminal result.
+Open: human-provider notification and withdrawal evidence.
 
 ### `CANCEL_GATE` → `CANCEL` — agent-requested withdrawal/cancellation
 
