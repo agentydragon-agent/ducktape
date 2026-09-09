@@ -56,6 +56,13 @@ from x.agentplane.action_service.service import ActionService, InvalidActionArgu
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
+
+class PushSubscriptionInput(BaseModel):
+    endpoint: str
+    p256dh: str
+    auth: str
+
+
 _operator_bearer = HTTPBearer(auto_error=False)
 
 
@@ -282,11 +289,6 @@ def create_app(
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
         return await action_service.get(request_id, principal)
-
-    class PushSubscriptionInput(BaseModel):
-        endpoint: str
-        p256dh: str
-        auth: str
 
     @app.get("/v1/operator/push/config")
     async def push_config(principal: Annotated[Principal, Depends(_operator)]) -> dict[str, str | None]:

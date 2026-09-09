@@ -84,6 +84,8 @@ class ActionUpdates:
             self._all_subscribers.discard(changed)
 
     def _notified(self, _connection: object, _pid: int, _channel: str, payload: object) -> None:
+        for changed in self._all_subscribers:
+            changed.set()
         try:
             request_id = UUID(str(payload))
         except ValueError:
