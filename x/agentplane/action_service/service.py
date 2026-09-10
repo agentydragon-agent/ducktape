@@ -14,6 +14,7 @@ status lookup reconcile the one attempt that was made.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -58,6 +59,7 @@ DEFAULT_LEASE_DURATION = timedelta(seconds=30)
 DEFAULT_LEASE_SWEEP_INTERVAL = timedelta(seconds=5)
 DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL = timedelta(seconds=10)
 DEFAULT_EXECUTOR_HEALTH_TIMEOUT = timedelta(seconds=45)
+DEFAULT_DISPATCH_POLL_INTERVAL = timedelta(seconds=1)
 
 
 @dataclass(frozen=True)
@@ -111,6 +113,7 @@ class ActionService:
         lease_sweep_interval: timedelta = DEFAULT_LEASE_SWEEP_INTERVAL,
         executor_heartbeat_interval: timedelta = DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL,
         executor_health_timeout: timedelta = DEFAULT_EXECUTOR_HEALTH_TIMEOUT,
+        dispatch_poll_interval: timedelta = DEFAULT_DISPATCH_POLL_INTERVAL,
     ) -> None:
         self._store = store
         self._catalog = catalog
@@ -122,9 +125,12 @@ class ActionService:
         self._lease_sweep_interval = lease_sweep_interval
         self._executor_heartbeat_interval = executor_heartbeat_interval
         self._executor_health_timeout = executor_health_timeout
+        self._dispatch_poll_interval = dispatch_poll_interval
         self._tasks: set[asyncio.Task[None]] = set()
+        self._scheduled: set[UUID] = set()
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._sweep_task: asyncio.Task[None] | None = None
+        self._dispatch_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         """Resume only dispatches that provably never started; liveness sweeps handle the rest.
@@ -135,17 +141,22 @@ class ActionService:
         """
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(), name="action-executor-heartbeat")
         self._sweep_task = asyncio.create_task(self._sweep_loop(), name="action-lease-sweep")
+        self._dispatch_task = asyncio.create_task(self._dispatch_loop(), name="action-dispatch-recovery")
         for request_id in await self._store.pending_dispatches():
             self._schedule(request_id)
 
     async def close(self) -> None:
-        background = [task for task in (self._heartbeat_task, self._sweep_task) if task is not None]
+        background = [
+            task for task in (self._heartbeat_task, self._sweep_task, self._dispatch_task) if task is not None
+        ]
         for task in [*self._tasks, *background]:
             task.cancel()
         await asyncio.gather(*self._tasks, *background, return_exceptions=True)
         self._tasks.clear()
         self._heartbeat_task = None
         self._sweep_task = None
+        self._dispatch_task = None
+        self._scheduled.clear()
 
     async def submit(
         self, body: ActionRequestInput, principal: Principal, *, external_grant: ExternalGrantProvenance | None = None
@@ -251,18 +262,36 @@ class ActionService:
         return view
 
     def _schedule(self, request_id: UUID) -> None:
+        if request_id in self._scheduled:
+            return
+        self._scheduled.add(request_id)
         task = asyncio.create_task(self._dispatch_once(request_id), name=f"action-dispatch-{request_id}")
         self._tasks.add(task)
         task.add_done_callback(self._done)
 
     def _done(self, task: asyncio.Task[None]) -> None:
         self._tasks.discard(task)
+        request_id = task.get_name().removeprefix("action-dispatch-")
+        with contextlib.suppress(ValueError):
+            self._scheduled.discard(UUID(request_id))
         if task.cancelled():
             return
         if task.exception() is not None:
             # Raw adapter/database exceptions can contain request or provider material. The durable
             # state machine carries the safe classification; logs record only that coordination failed.
             logger.error("action dispatch coordination failed; request will not be retried")
+
+    async def _dispatch_loop(self) -> None:
+        """Reconcile durable pending dispatches so any healthy replica can take over."""
+        while True:
+            try:
+                for request_id in await self._store.pending_dispatches():
+                    self._schedule(request_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning("pending Action dispatch reconciliation failed; will retry", exc_info=True)
+            await asyncio.sleep(self._dispatch_poll_interval.total_seconds())
 
     async def _heartbeat_loop(self) -> None:
         """Prove this executor identity is alive, independent of any Execution it may hold."""
