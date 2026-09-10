@@ -54,14 +54,6 @@ second Action outbox or event store. Cross-Identity delivery requires an explici
 Thread input queueing/replay is independent `INPUT_DELIVERY` work and requires native Claude/Codex
 research and capture review before common-protocol changes.
 
-## Provider-error log safety (`PROVIDERLOG`)
-
-The previous plan claimed raw provider exception text was never logged. Current
-`ActionService._ask` calls `logger.exception`, and the test only inspects `record.getMessage()`,
-excluding traceback formatting. Prevent sensitive exception material in rendered logs and test
-the complete formatted output with a sentinel secret. Durable bounded error codes and provider
-aggregation behavior already exist and must remain unchanged.
-
 ## Configurable policies
 
 [Action policies](action_policies.md) owns configurable mandatory authorization bounds and reusable

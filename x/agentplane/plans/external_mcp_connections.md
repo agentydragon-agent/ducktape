@@ -1,8 +1,8 @@
 # External MCP connections: remaining delivery
 
 Configured static Identities, PostgreSQL Connection/grant authority, generic FastMCP tools,
-OAuth/DCR, transaction-bound integration-app consent with naming/Identity selection, and Action
-provenance display, and Connection list/rename/unbind UI are implemented. Their contracts live in the
+OAuth/DCR, transaction-bound integration-app consent with naming/Identity selection, reconnect/rebind,
+Action provenance display, and Connection list/rename/unbind UI are implemented. Their contracts live in the
 [Action Service specification](../action_service/SPEC.md),
 [service README](../action_service/README.md#external-oauth), and
 [app README](../app/README.md). This plan tracks unfinished delivery, not another authority contract.
@@ -31,25 +31,11 @@ canonical discovery/resource/callback URLs, and external MCP reachability. Check
 in parallel, without gating Claude.ai acceptance on it. Follow the staging rollout/runbook evidence in that PR; do not expose operator REST or enrollment-management routes through the public MCP route.
 A healthy deployment is intermediate evidence, not real-client acceptance.
 
-## Connection reconnect and rebind (`RECONNECT`)
+## Connection reconnect and rebind
 
-List/detail, rename, and confirmed unbind are implemented in the app/BFF. Deployed management
-acceptance remains: verify rename preserves authority and history, and unbind refuses old-token
-access. The UI distinguishes configured-Identity availability from current grant state.
+Existing-Connection reconnect and Identity rebind are implemented in [#5930](https://github.com/agentydragon/ducktape/pull/5930). A fresh OAuth consent lets the operator choose a new Connection or an existing Connection, select a configured Identity, and confirm replacement using the reviewed Connection version. The Action Service preserves immutable grant and Action provenance, revokes the prior grant when replacement is reserved, and never retargets old tokens or historical receipts.
 
-**Next independent feature:** allow fresh OAuth consent to select an existing Connection for
-reconnect or explicit Identity change. The authority already exposes version-checked
-`ReconnectConnection`; enrollment currently always creates `NewConnection`. Extend that same
-browser-bound enrollment and BFF with a new/existing choice, the reviewed Connection version,
-and authority-change confirmation. Do not add an independent grant-changing endpoint or infer a
-Connection from mutable names or a new DCR registration.
-
-Reuse the settled lifecycle: binding the replacement pending revision ends the old grant, before
-successful activation; failure does not restore it. Old tokens never inherit the replacement
-Identity. Rename is presentation only; names need not be unique. Original Action ownership and
-client/Connection/grant provenance remain immutable, including on duplicate submission.
-Test same-Identity reconnect, A-to-B rebind, stale/concurrent consent, failed issuance, old-token
-rejection, and original-grant dispatch checks. This follow-up does not gate initial new enrollment.
+Real-client reconnect behavior is covered by the broader `CLAUDEAI` / `EXTERNALMCP` acceptance; this is no longer a separate implementation gate.
 
 ## Real-client acceptance (`CLAUDEAI`, then `EXTERNALMCP`)
 
@@ -94,7 +80,7 @@ rollout before rerunning it. Provenance presentation is already implemented, not
 Record Claude.ai success separately as `CLAUDEAI`. Then repeat the client flow with Claude Code
 running on an operator machine, not an Agentplane-hosted harness, to establish `EXTERNALMCP`.
 Its native callback, registration, refresh, and fresh authorization need their own evidence.
-Existing-Connection reconnect acceptance belongs to `RECONNECT`, not the initial connection gate.
+Existing-Connection reconnect acceptance is part of the real-client connection evidence, not a separate implementation gate.
 
 **Parallel Sandbox proof, not a Claude.ai prerequisite:** verify the same generic workflow from a
 real Sandbox through workload bearer substitution, retaining per-Sandbox ownership without OAuth
