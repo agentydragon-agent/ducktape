@@ -226,10 +226,9 @@ cash/tax settlement. Native code may retain immutable reporting statements, neve
 a mirrored mutable position/basis book. No custom exception taxonomy, model
 callback handoff or generic managed-account API is needed.
 
-The [TLH migration plan](managed_portfolio.md) retains acceptance of the implemented
-component/all-driver integration and native deletion. MA3's runnable comparison
-is still future work. Tax-aware rules additionally need the CAP tax-observation
-slice above; fixed investor-flow controls do not.
+The [paired TLH study](managed_portfolio.md) remains future work. Tax-aware rules
+additionally need the CAP tax-observation slice above; fixed investor-flow
+controls do not.
 
 ## Acceptance and remaining choices
 
@@ -272,7 +271,7 @@ configured helpers are test-only, not a second public driver.
 ACCEPT moves supported consumers to the common session. Existing Python funding, common
 reporting and held-bond capture are reused, not reimplemented. New `product/`
 features are deferred; its remaining adapter work must simplify existing behavior
-or retire legacy execution. The roadmap names the narrow harvesting,
+or retire legacy execution. The roadmap names the narrow
 committed-purchase and private-equity timing gates for complete app cutover.
 Configured source-account claim grouping is all-or-none; each migration must test
 and explain timing/funding differences rather than hide them in a compatibility
