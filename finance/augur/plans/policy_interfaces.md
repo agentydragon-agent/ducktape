@@ -134,6 +134,13 @@ timing remain GP choices, not an accident of batch row order. Books and paths
 stay in the existing executor. Native unit tests may drive the step primitives;
 production consumers converge on the Python loop, not two supported drivers.
 
+Future PE support distinguishes mandatory issuer events from holder decisions.
+Forced recovery executes without a policy opt-in. Each presented sale opportunity
+requires an explicit sell or decline response; missing one is invalid, not an
+implicit decision to hold. Response coverage belongs to the same monthly batch,
+not a second callback or retry loop. This requirement is recorded for deferred PE
+work; the current action session does not implement it.
+
 The initial action session uses Rust financial-step execution. RUNTIME/GE separately
 reevaluate those internals, including execution strategy, ragged output layout and
 notebook usability. They do not gate interface consolidation or decide who owns
@@ -225,7 +232,9 @@ use this same session, not a second policy interface.
 
 P12 migrates configured consumers and removes old full-run loops and implicit
 public-portfolio strategy, preserving required existing housing/PE capabilities.
-Trinity is the active first slice; bond examples, benchmarks and the app remain.
+Bond examples, benchmarks and the app remain. The roadmap separates Python product
+funding, common session reporting and held-bond capture from the narrow harvesting,
+committed-purchase and private-equity timing gates needed for full app cutover.
 Configured source-account claim grouping is all-or-none; each migration must test
 and explain timing/funding differences rather than hide them in a compatibility
 runner. GP gates only the additional product/multi-actor semantics a slice needs.
