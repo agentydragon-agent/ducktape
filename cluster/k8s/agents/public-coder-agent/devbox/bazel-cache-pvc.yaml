@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: public-coder-devbox-bazel-cache
+  namespace: public-coder-agent
+  annotations:
+    description: >-
+      Separately deletable local Bazel output, repository, and action cache for
+      public-coder-devbox. Stop the VM before deleting this claim to reset it.
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: lvm-proxmox-ssd
+  resources:
+    requests:
+      # The local SSD thin pool is 30Gi; leave physical headroom for other claims.
+      storage: 20Gi
+  volumeMode: Filesystem

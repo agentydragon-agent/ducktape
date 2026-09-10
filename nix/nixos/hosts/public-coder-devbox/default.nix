@@ -26,6 +26,11 @@ let
   proxyHost = "public-coder-agent-proxy.public-coder-agent.svc.cluster.local";
   proxyUrl = "http://${proxyHost}:8080";
   buildbuddyKeyDevice = "/dev/disk/by-id/virtio-pcbuildbuddy";
+  bazelCacheDevice = "/dev/disk/by-id/virtio-pcbazelcache";
+  bazelCacheMount = "/var/cache/bazel";
+  bazelOutputUserRoot = "${bazelCacheMount}/output-user-root";
+  bazelRepositoryCache = "${bazelCacheMount}/repository-cache";
+  bazelDiskCache = "${bazelCacheMount}/disk-cache";
   buildbuddyRuntimeDir = "/run/public-coder-devbox-buildbuddy";
   buildbuddyEnvironmentFile = "${buildbuddyRuntimeDir}/environment";
   buildbuddyBashEnvFile = "/etc/public-coder-devbox/bash-env";
@@ -93,7 +98,7 @@ in
   # The containerDisk is ephemeral, but it must still accommodate one Ducktape
   # checkout plus the Nix inputs/tooling needed to start a remote BuildBuddy job.
   # Keep the qcow2 sparse; KubeVirt allocates blocks only as the guest writes them.
-  virtualisation.diskSize = 30 * 1024;
+  virtualisation.diskSize = 50 * 1024;
 
   # The host key is persisted rather than regenerated per boot because sshpiper
   # (cluster/k8s/agents/public-coder-agent/sshpiper) is the party that verifies this upstream, and
@@ -193,6 +198,32 @@ in
   environment.loginShellInit = buildbuddyShellInit;
   programs.bash.interactiveShellInit = buildbuddyShellInit;
 
+  # Keep Bazel outputs and repositories on a separately deletable PVC rather
+  # than the ephemeral container disk. The PVC storage class formats this
+  # virtio disk as ext4.
+  systemd.services.public-coder-devbox-bazel-cache = {
+    description = "Mount the public-coder-devbox Bazel cache PVC";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "local-fs.target" ];
+    before = [ "sshd.service" ];
+    path = [ pkgs.coreutils pkgs.util-linux ];
+    serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
+    script = ''
+      set -eu
+      mkdir -p "${bazelCacheMount}"
+      mounted=0
+      for _ in $(seq 1 60); do
+        if mountpoint -q "${bazelCacheMount}" || mount -o noatime "${bazelCacheDevice}" "${bazelCacheMount}" 2>/dev/null; then
+          mounted=1
+          break
+        fi
+        sleep 1
+      done
+      [ "$mounted" -eq 1 ] || { echo "Bazel cache PVC disk did not appear at ${bazelCacheDevice}" >&2; exit 1; }
+      install -d -m0700 -o coder -g users "${bazelOutputUserRoot}" "${bazelRepositoryCache}" "${bazelDiskCache}"
+    '';
+  };
+
   environment.systemPackages = with pkgs; [
     htop
     btop
@@ -221,6 +252,11 @@ in
   # stable serial `pcproxyca`. Build a complete CA bundle from the live
   # ConfigMap contents rather than committing a generated certificate.
   ducktape.bazel.extraSystemBazelrc = ''
+    # Share output bases, downloaded repositories, and local action results across
+    # all devbox worktrees; all three live on the separately deletable cache PVC.
+    startup --output_user_root=${bazelOutputUserRoot}
+    common --repository_cache=${bazelRepositoryCache}
+    build --disk_cache=${bazelDiskCache}
     # The embedded Bazel JVM reads this generated JKS, and the system rc is
     # reliable for non-login build invocations where ~/.bazelrc is not loaded.
     startup --host_jvm_args=-Djavax.net.ssl.trustStore=${proxyCaRuntimeDir}/bazel-cacerts
