@@ -160,8 +160,8 @@ model families are candidates, not mandatory implementation projects.
   secondary event treatment, discrete issuance, posterior-predictive deployment,
   and population-informed failure/no-liquidity tails. A population fit must
   account for failed/non-exited companies; do not tune a hazard solely to one
-  anecdote or market quote. More detail remains in
-  [the calibration plan](prediction_market_calibration.md).
+  anecdote or market quote. Existing behavior is described in
+  [the calibration contract](../docs/calibration.md), not a pending implementation plan.
 
 ## Deferred evidence operations and app work
 
@@ -169,6 +169,13 @@ These are retained ideas, not active DAG prerequisites. New `product/` and UI
 features remain deprioritized; correctness and legacy retirement are separate.
 Richer PE app controls are dropped from the backlog, not queued as deferred work.
 
+- Retirement of the smooth-dilution PE mode and the experimental PM reifier is
+  deferred. The owner found smooth dilution unsatisfactory for fidelity; its
+  continued presence is not an endorsement. PM-based forecast comparison remains
+  a possible later experiment, but keeping the reifier executable is not a
+  requirement. If calibration/reification code is deleted, leave a revival task
+  for comparing Augur forecasts with prediction-market beliefs; do not silently
+  lose that research intent or turn it into a current feature obligation.
 - Keep existing evidence loaders and access working. Postpone new fetch-cadence,
   caching and throttling infrastructure until observed throttling justifies it;
   no speculative ingestion subsystem or cache prerequisite for studies. Quote
