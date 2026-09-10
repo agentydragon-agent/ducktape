@@ -165,6 +165,9 @@ py_library(
     ],
 )
 
+# Deliberate exception: this is an offline provider-adapter regression test, not evidence that a
+# deployed IdP or Agentplane is reachable. It remains here because login choreography is a
+# high-churn prerequisite for the live MCP scenario and benefits from the same package/target.
 py_test(
     name = "test_operator_login",
     srcs = ["test_operator_login.py"],
