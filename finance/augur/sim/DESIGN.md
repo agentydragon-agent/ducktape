@@ -73,8 +73,13 @@ comparing stopped books with completed horizons.
 ## Remaining configured consumers
 
 `ProductService` calls <configured.py> for compact product arrays or dense event
-frames, then applies the reducers in <product_metrics.py> and the selected-rollout
-projection in <../product/projection.py>. The configured runner owns full-horizon loops and
+frames. Selected detail executes once and projects both metrics and events from
+that completed capture before applying <../product/projection.py>. In-process
+event projection consumes captured rows directly, without a JSON export/decode
+round trip. Explicit JSON exports, prepared-input binding/file serialization and
+the legacy acceptance result adapter remain separate boundaries.
+
+The configured runner owns full-horizon loops and
 implicit allocation/grouped-funding behavior. `policy/configured_allocation.py`
 proposes trades through shared Python helpers; native operations settle them.
 The app's projections do not define

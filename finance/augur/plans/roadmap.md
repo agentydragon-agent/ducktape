@@ -6,9 +6,7 @@ and examines distributions and individual timelines. The primary acceptance
 case is joint spending-flexibility × allocation planning with supported taxes.
 Housing remains a capability; the house-buying web app does not define the library.
 
-Grounded at `devel` `0ce89eb293` and the TLH integration draft
-[#6083](https://github.com/agentydragon/ducktape/pull/6083) (2026-09-10 UTC). The
-[experiment/interface sketches, PR #5859](https://github.com/agentydragon/ducktape/pull/5859)
+The [experiment/interface sketches, PR #5859](https://github.com/agentydragon/ducktape/pull/5859)
 remain a proposal, not an API to implement wholesale. This plan owns sequencing;
 [allocation experiments](allocation_program.md) owns the remaining experiment
 questions. The [capability backlog](future_work.md) retains deferred research and
@@ -205,22 +203,19 @@ flowchart TB
     GX{"GX: backstop jurisdiction and realism"}
     GL{"GL: future measured workload tuning; parked"}
     RUNTIME["RUNTIME: future bottleneck investigation; parked"] --> GE{"GE: future optimization choice; parked"}
-    PYSTEP["PYSTEP: Python domain moves; mortgage ownership active"]
+    PYSTEP["PYSTEP: consumer-driven Python domain moves"]
     IDTYPES["IDTYPES: distinct entity IDs; deferred"]
 
     ACCEPT["ACCEPT: legacy acceptance-suite readers"] --> P12["P12: delete remaining configured drivers and schemas"]
 
     APP["APP: existing app cutover; no new features"]
-    MA1["MA1: opaque Python TLH portfolio"] --> MA2["MA2: all TLH drivers and settlement"]
-    MA2 --> MA3["MA3: runnable TLH comparison"]
-    MA2 --> APP
+    MA3["MA3: runnable TLH comparison"]
     GHOUSE{"GHOUSE: purchase timing; deferred"} --> HOUSING["HOUSING: preserve property lifecycle"]
     GPE{"GPE: issuer/tender timing; deferred"} --> PE["PE: preserve compulsory events and tender choice"]
     HOUSING --> APP
     PE --> APP
     APP --> P12
     GP -. multiple-taxpayer acceptance cases only .-> ACCEPT
-    MA2 -. affected harvest suites only .-> ACCEPT
     HOUSING -. affected housing suites only .-> ACCEPT
     PE -. affected PE suites only .-> ACCEPT
 
@@ -262,15 +257,10 @@ lowering and preserves existing scope. The current app has one decision-making
 owner; scripted counterparties do not require a general multi-policy scheduler.
 New adaptive HOUSE/BOND features are not prerequisites for preserving current
 behavior. Supported ACCEPT slices remain independently landable. The
-[TLH migration plan](managed_portfolio.md) specifies MA1–MA3: one opaque Python
-component owns private positions/basis and monthly modeled losses. The native
-engine settles financial effects and captures read-only statements, not a mirrored
-cohort book. The implementation is present in draft
-[#6083](https://github.com/agentydragon/ducktape/pull/6083); the revised Python
-session/types/configured-allocation integration, financial-event visibility and
-native-reader retirement still require integrated acceptance.
-MA1/MA2 remain until that evidence passes. This branch does not wait for housing, PE
-or RUNTIME/GE.
+[paired TLH study plan](managed_portfolio.md) specifies MA3 on the existing
+Python component and action session. It does not wait for housing, PE or
+RUNTIME/GE. Component ownership, settlement and timing are documented in
+[the TLH contract](../docs/tlh.md).
 
 Outcome reporting is a consumer acceptance requirement, not a separate prerequisite
 project. Common-session summaries already retain payment/claim identities, unpaid amounts and causes,
@@ -345,15 +335,6 @@ delete the native counterpart with its last caller. Native books, tax assessment
 bond math and remaining property/PE mechanics are current responsibilities, not
 a mandate to port every module. No benchmark gate or second supported evaluator.
 
-The active **mortgage ownership slice ([#6089](https://github.com/agentydragon/ducktape/pull/6089))** gives Python the terms,
-fixed installment, active servicing state and paid-interest YTD. Outstanding
-principal remains ledger-authoritative; native code accepts immutable payment/tax
-facts and captures read-only statements, without a mutable loan mirror. Verify
-amortization and final residuals, funded/rejected installments, payoff, rental and
-year-end interest, and existing configured captures. Preserve purchase-before-review,
-first-payment-after-origination and sale-before-servicing timing. This slice does
-not require GHOUSE or complete HOUSING, HOUSE or APP; it adds no purchase action.
-
 ### Policy-interface PRs and acceptance
 
 Policy-prefixed names are task IDs, not GitHub PR numbers or a demand to serialize the work.
@@ -368,14 +349,12 @@ apply only to the consuming slice. No convergence node waits for RUNTIME/GE.
 
 ### Domain composition and existing-app retirement
 
-| Unit    | Change and acceptance                                                                                                                                                                                                                                       | Needs                              |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| MA1     | Opaque Python TLH component owns the curve, units, adjusted basis, ages and rounding cash, with contribution/withdrawal/liquidation operations. Independent controls are in the [TLH migration plan](managed_portfolio.md).                                 | None; representation/phase settled |
-| MA2     | Integrate the same component into common and configured Python drivers, settle cash/tax effects and capture statements. Advance before all TLH investor operations; delete every native TLH formula/state/reader and replaced Python curve.                 | MA1's component contract           |
-| MA3     | Runnable paired TLH/no-harvest comparison on identical supplied paths, documented CLI tests, compact outcomes and selected replay. Calibration validation remains separate.                                                                                 | MA2's action-session integration   |
-| HOUSING | Preserve scheduled purchase, occupancy, rent, improvements, sale and mortgage/tax lifecycle through shared financial steps and capture. Test funding failure, purchase basis, deductions and rental transitions. This is not adaptive purchase policy.      | GHOUSE                             |
-| PE      | Separate compulsory issuer state/cash events from Python tender choice. Enforce eligibility, capacity and lockups through canonical execution; preserve collapse/recovery, IPO transition, gains and event outputs.                                         | GPE                                |
-| APP     | Cut over all product endpoints from configured Python execution to common actions/outputs; selected detail executes once, fans use compact capture. Preserve holdings and supported lifecycle inputs, then remove replaced methods with their last callers. | MA2, HOUSING, PE                   |
+| Unit    | Change and acceptance                                                                                                                                                                                                                                            | Needs                             |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| MA3     | Runnable paired TLH/no-harvest comparison on identical supplied paths, documented CLI tests, compact outcomes and selected replay. Calibration validation remains separate.                                                                                      | None; use existing action session |
+| HOUSING | Preserve scheduled purchase, occupancy, rent, improvements, sale and mortgage/tax lifecycle through shared financial steps and capture. Test funding failure, purchase basis, deductions and rental transitions. This is not adaptive purchase policy.           | GHOUSE                            |
+| PE      | Separate compulsory issuer state/cash events from Python tender choice. Enforce eligibility, capacity and lockups through canonical execution; preserve collapse/recovery, IPO transition, gains and event outputs.                                              | GPE                               |
+| APP     | Cut over all product endpoints from configured Python execution to common actions/outputs, preserving single-execution selected detail and compact fans. Preserve holdings and supported lifecycle inputs, then remove replaced methods with their last callers. | HOUSING, PE                       |
 
 The default API test configuration includes PE and dated bonds. Public-only
 controls must declare a separate synthetic portfolio, not discard those holdings.
@@ -405,8 +384,7 @@ atomic caller updates and deletion criteria.
 | ACCEPT  | Move remaining acceptance suites to common typed traces/receipts.         | Expanded capabilities only for affected suites |
 
 Reuse the typed `CompiledRun` and exact total opening basis from
-`InitialLot.cost_basis`. MA1's representation and phase are agreed, not an open
-GH gate. ACCEPT uses the existing typed result contract; no merge wait is a
+`InitialLot.cost_basis`. ACCEPT uses the existing typed result contract; no merge wait is a
 content dependency. The [entity-ID note](typed_series_config.md)
 scopes IDTYPES without turning artifact/wire churn into an active cleanup prerequisite.
 
@@ -469,7 +447,7 @@ gates tax-aware policy rules, not MA3's fixed-flow accounting control or all stu
 
 | Unit    | Independently reviewable change(s)                                                                                                                                                                                                                                                                                                                                                                         | Evidence required before calling it complete                                                                                                                                                                                                                                                                                                                                                                             |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PYSTEP  | Move subsequent financial-domain definitions/steps where actual component/study consumers benefit; public types, session orchestration and configured proposals are already Python-owned. Switch all callers and delete each replaced native counterpart.                                                                                                                                                  | Correct financial behavior, coherent ownership and an all-callers migration boundary. No speedup or large-N cost gate; no reverse-callback workaround or supported duplicate evaluator.                                                                                                                                                                                                                                  |
+| PYSTEP  | Move subsequent financial-domain definitions/steps where actual component/study consumers benefit; public types, session orchestration, TLH portfolios, mortgage servicing and configured proposals are already Python-owned. Switch all callers and delete each replaced native counterpart.                                                                                                              | Correct financial behavior, coherent ownership and an all-callers migration boundary. No speedup or large-N cost gate; no reverse-callback workaround or supported duplicate evaluator.                                                                                                                                                                                                                                  |
 | RUNTIME | Parked: investigate an actual slow workload when large-N use requires it, separating language, execution and output layout.                                                                                                                                                                                                                                                                                | Comparable financial work/outputs and real profiling, not historical aggregate speedup attribution. No prerequisite edge to current domain/API work.                                                                                                                                                                                                                                                                     |
 | CAP     | Only consumer-required domain facts/reductions and retirement of fixed product-specific metric capture. Reuse actor-session capture; preserve existing app behavior without new app features or enrichment of the old runner. Keep selected traces and compact capture distinct.                                                                                                                           | Actor/account/component selection without every base slab, stable path IDs and explicit observed/stopped validity. Richer contract/tax capture uses existing actor views. Do not claim current Python reductions run in Rust. No universal metric enum or duplicate compact collector.                                                                                                                                   |
 | BIND    | First make proxy/distributing-product semantics explicit and validate held **and purchasable** support at composition. Then supply equity price-return **and dividend-amount paths**, with explicit historical/fitted payout assumptions, coordinated with TAX's supported character slice. Reuse typed conditioning records; IDTYPES is deferred and does not gate this slice. Reuse existing typed keys. | A total-return proxy cannot silently become a taxable distributing holding. Missing payouts, incompatible tax character and double-counted total returns reject before execution; legitimate zero payouts remain valid. Price plus payouts reconcile before tax, with timing and provenance. Product terms, construction assumptions and investor strategy have distinct owners; no global registry or universal fitter. |
@@ -566,15 +544,10 @@ all the others to be solved first.
    legacy readers. Household obligation/failure controls already use the common
    session. The remaining suites retire independently as their capabilities
    permit; multiple-taxpayer cases still need GP's scoped actor sequencing.
-2. **MA1/MA2** acceptance is in draft
-   [#6083](https://github.com/agentydragon/ducktape/pull/6083). Verify all-driver
-   financial integration and retirement under the revised Python boundary before
-   removing these nodes. One advance
-   precedes investor operations, including scheduled sales; later funding failure
-   does not suppress harvesting. Native TLH retirement does not wait for full
-   APP/P12. **MA3** remains a future runnable paired comparison. Continue
-   **STUDY** consumers alongside cleanup. Scope GT/GS and continue independent
-   BIND/SCORE work. The `product/` shell gets no new feature agenda.
+2. **MA3** remains a runnable paired TLH comparison on the existing Python
+   component/session. Continue **STUDY** consumers alongside cleanup. Scope GT/GS
+   and continue independent BIND/SCORE work. **PYSTEP** selects further domain
+   moves for actual consumers. The `product/` shell gets no new feature agenda.
 3. **GHOUSE and GPE remain deferred.** Full APP/P12 retirement retains
    the capabilities they actually need; do not remove those regressions or add
    a compatibility driver to claim convergence. Public reader deletions proceed.

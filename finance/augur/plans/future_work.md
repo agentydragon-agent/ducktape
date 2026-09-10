@@ -37,10 +37,8 @@ assumptions remain downstream.
 
 ## Reduced-form TLH portfolios
 
-**MA1/MA2** retain integration acceptance for the implemented opaque Python
-component and its drivers; **MA3** remains the paired experiment. See
-[the TLH migration plan](managed_portfolio.md). Representation and the common
-pre-investor monthly phase are settled, not a gate to reopen here.
+**MA3** remains the [paired TLH experiment](managed_portfolio.md). Reuse the
+Python component's [ownership and timing contract](../docs/tlh.md).
 
 - Check modeled realized losses and subsequent gain/basis consequences against
   named real-account evidence. Refit decay as longitudinal evidence becomes

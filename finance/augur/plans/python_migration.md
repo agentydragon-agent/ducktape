@@ -13,14 +13,6 @@ Python. PYSTEP is not a backlog to move those again. Native worlds retain financ
 books, settlement, tax assessment, bond math and remaining property/PE processing;
 choose subsequent moves for a concrete domain consumer, not language coverage.
 
-The active mortgage slice (PR pending) moves terms, fixed installments, servicing
-state and paid-interest YTD to `sim/mortgage.py`, reading outstanding principal
-from the ledger. Native code receives immutable payment/tax facts and retains
-capture statements only. Acceptance must cover amortization, rejected-payment
-atomicity, payoff, yearly interest and existing configured outputs before this
-slice leaves PYSTEP. It preserves configured pre-observation acquisition and
-does not settle GHOUSE, enable purchase actions or complete HOUSING/APP.
-
 The next priority is a coherent model that experiments can compose, not a sequence
 of the easiest arithmetic kernels to port. Use the opaque TLH portfolio and FIRE
 studies to expose needed boundaries:
@@ -50,12 +42,9 @@ The `product/` shell is not a new-feature priority. Its changes should correct
 existing behavior or retire legacy interfaces; experiments remain the primary
 consumers driving new domain capabilities.
 
-The [TLH integration acceptance](managed_portfolio.md) covers every driver and
-native-reader retirement, not only a new example. The common and configured
-Python loops advance the component before investor operations, including
-scheduled redemptions, regardless of a later funding failure. Verify that
-integration under the revised Python session and request types before removing
-MA1/MA2; MA3 remains a future paired experiment.
+The [paired TLH study](managed_portfolio.md) remains MA3. Reuse the component's
+[ownership and timing contract](../docs/tlh.md) and the Python mortgage owner
+in [the simulator design](../sim/DESIGN.md); neither is an unfinished language port.
 
 Move the definitions and financial steps to Python where that makes this object
 model clearer, easier to inspect and less dependent on duplicated binding/schema
