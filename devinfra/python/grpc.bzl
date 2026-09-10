@@ -59,7 +59,10 @@ def py_grpc_library(name, proto, visibility = None):
         pyi_srcs = [name + "_pb2.pyi"],
         tags = generated_tags,
         visibility = visibility,
-        deps = ["@pypi//protobuf"],
+        deps = [
+            "@pypi//protobuf",
+            "@pypi//types_protobuf",
+        ],
     )
     py_library(
         name = name + "_pb2_grpc",

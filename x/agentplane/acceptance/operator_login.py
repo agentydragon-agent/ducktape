@@ -119,7 +119,9 @@ def _destination(
             and url.path == source.path
             and re.fullmatch(r"/api/v3/flows/executor/[a-zA-Z0-9_-]+/", url.path)
         )
-        or (provider == "dex" and re.fullmatch(r"/dex/(auth|auth/local|approval|callback)/?", url.path))
+        or (
+            provider == "dex" and re.fullmatch(r"/dex/(auth|auth/local|auth/local/login|approval|callback)/?", url.path)
+        )
     ):
         return url
     raise LoginBlockedError("BLOCKED: OIDC redirect outside the app callback or Authentik authorization/flow endpoints")
@@ -169,7 +171,7 @@ async def login_operator(
             continue
         if response.status_code != 200:
             raise LoginBlockedError("BLOCKED: Authentik refused login; check user, flow and CSRF configuration")
-        if provider == "dex" and re.fullmatch(r"/dex/auth/local/?", response.url.path):
+        if provider == "dex" and re.fullmatch(r"/dex/auth/local(?:/login)?/?", response.url.path):
             # Dex's local connector is a normal HTML form. Keep the provider adapter deliberately
             # small: the app's authorization-code, state, nonce, PKCE, and callback checks remain
             # the contract under test; this only avoids reproducing Authentik's FlowExecutor.
