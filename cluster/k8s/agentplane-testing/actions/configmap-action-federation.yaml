@@ -10,11 +10,11 @@ data:
     {
       "mode": "direct",
       "service_url": "http://agentplane-actions.agentplane-testing.svc.cluster.local:8080",
-      "login_jwks_uri": "https://agentplane-dex-testing.allegedly.works/keys",
+      "login_jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
       "target": {
-        "issuer": "https://agentplane-dex-testing.allegedly.works",
+        "issuer": "https://agentplane-dex-testing.allegedly.works/dex",
         "audience": "agentplane-testing",
-        "jwks_uri": "https://agentplane-dex-testing.allegedly.works/keys",
+        "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
         "subjects": ["test-subject"]
       },
       "subject_mapping": {
@@ -24,8 +24,8 @@ data:
     }
   operator-oidc: |
     {
-      "issuer": "https://agentplane-dex-testing.allegedly.works",
+      "issuer": "https://agentplane-dex-testing.allegedly.works/dex",
       "audience": "agentplane-testing",
-      "jwks_uri": "https://agentplane-dex-testing.allegedly.works/keys",
+      "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
       "subjects": ["test-subject"]
     }
