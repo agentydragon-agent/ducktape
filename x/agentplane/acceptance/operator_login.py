@@ -177,16 +177,16 @@ async def login_operator(
             if form is None or not form.get("action"):
                 raise LoginBlockedError("BLOCKED: Dex login form was not found")
             target = _destination(response.url, str(form["action"]), app, idp, provider)
-            payload = {
+            dex_payload = {
                 str(input_tag["name"]): str(input_tag.get("value", ""))
                 for input_tag in form.find_all("input")
                 if input_tag.get("name")
             }
-            payload.update(
+            dex_payload.update(
                 login=credentials.username.get_secret_value(), password=credentials.password.get_secret_value()
             )
             response = await http.post(
-                target, data=payload, headers={"Origin": str(idp).rstrip("/"), "Referer": str(response.url)}
+                target, data=dex_payload, headers={"Origin": str(idp).rstrip("/"), "Referer": str(response.url)}
             )
             continue
         if re.fullmatch(r"/if/flow/[a-zA-Z0-9_-]+/", response.url.path):
