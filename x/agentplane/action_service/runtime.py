@@ -9,11 +9,14 @@ from pydantic import ValidationError
 
 from x.agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
+from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority
 from x.agentplane.action_service.models import Executor
 
 
 @asynccontextmanager
-async def running_executor(catalog: ActionCatalog) -> AsyncIterator[dict[str, Executor]]:
+async def running_executor(
+    catalog: ActionCatalog, linkage: McpLinkageAuthority | None = None
+) -> AsyncIterator[dict[str, Executor]]:
     """Validate all bindings before connecting, then require initial discovery for every group.
 
     An empty catalog intentionally serves no actions. A configured group must have a valid MCP
@@ -25,7 +28,11 @@ async def running_executor(catalog: ActionCatalog) -> AsyncIterator[dict[str, Ex
         if not isinstance(group.executor, McpExecutorBinding):
             raise ValueError(f"ActionGroup {key!r} has an unsupported executor kind; expected 'mcp'")
         try:
-            executors[key] = McpActionGroupExecutor.from_group(key, group)
+            executors[key] = (
+                McpActionGroupExecutor.from_group_with_linkage(key, group, linkage)
+                if linkage is not None
+                else McpActionGroupExecutor.from_group(key, group)
+            )
         except ValidationError:
             # Pydantic's default exception text includes raw binding values.
             raise ValueError(f"ActionGroup {key!r} has an invalid MCP binding") from None
@@ -39,7 +46,7 @@ async def running_executor(catalog: ActionCatalog) -> AsyncIterator[dict[str, Ex
             except Exception:
                 # Transport exceptions can include the endpoint and backend response body.
                 raise RuntimeError(f"ActionGroup {key!r} failed initial MCP discovery") from None
-            if not catalog.groups[key].available:
+            if not catalog.groups[key].available and not executor.requires_linkage:
                 raise RuntimeError(f"ActionGroup {key!r} failed initial MCP discovery")
         yield dict(executors)
 

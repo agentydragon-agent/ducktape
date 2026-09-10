@@ -8,6 +8,7 @@ import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
 import { SessionView } from "./session";
 import { PushSettings } from "./push";
+import { McpServers } from "./mcp_servers";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
 function sandboxPath(name: string): string {
@@ -81,6 +82,12 @@ function AppRoutes(): JSX.Element {
             Connections
           </Button>
           <Button
+            variant={location.pathname === "/mcp-servers" ? "filled" : "subtle"}
+            onClick={() => void navigate("/mcp-servers")}
+          >
+            MCP servers
+          </Button>
+          <Button
             variant={location.pathname === "/notifications" ? "filled" : "subtle"}
             onClick={() => void navigate("/notifications")}
           >
@@ -94,6 +101,7 @@ function AppRoutes(): JSX.Element {
           <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
           <Route path="/connections" element={<Connections />} />
           <Route path="/notifications" element={<PushSettings />} />
+          <Route path="/mcp-servers" element={<McpServers />} />
           <Route path="/sandboxes/:name" element={<SandboxRoute />} />
           <Route path="/sandboxes/:name/sessions/:sessionId" element={<SessionRoute />} />
           <Route path="*" element={<ListRoute />} />

@@ -25,12 +25,29 @@ py_library(
     srcs = ["mcp_executor.py"],
     deps = [
         ":catalog",
+        ":mcp_linkage",
         ":models",
         ":service",
         "@pypi//fastmcp_slim",
+        "@pypi//httpx",
         "@pypi//jsonschema",
         "@pypi//mcp",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "mcp_linkage",
+    srcs = ["mcp_linkage.py"],
+    deps = [
+        ":catalog",
+        ":db",
+        ":models",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//prometheus_client",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -95,6 +112,7 @@ py_library(
         ":db",
         ":enrollments",
         ":mcp_frontend",
+        ":mcp_linkage",
         ":models",
         ":oauth",
         ":push",
@@ -102,6 +120,7 @@ py_library(
         ":updates",
         "//x/agentplane/sandbox_auth:http",
         "@pypi//fastapi",
+        "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//starlette",
     ],
@@ -113,6 +132,7 @@ py_library(
     deps = [
         ":connections",
         ":enrollments",
+        ":mcp_linkage",
         ":models",
         "@pypi//httpx",
     ],
@@ -142,6 +162,7 @@ py_library(
         ":db",
         ":enrollments",
         ":fixture_policy",
+        ":mcp_linkage",
         ":oauth",
         ":operator_oidc",
         ":push",
@@ -370,6 +391,7 @@ py_library(
     deps = [
         ":catalog",
         ":mcp_executor",
+        ":mcp_linkage",
         ":models",
         "@pypi//pydantic",
     ],

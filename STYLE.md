@@ -346,6 +346,12 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
     declared container port), schemas/invariants that admit many valid inputs, and
     runtime behavior. Ask whether a plausible wrong edit would fail without updating
     expected values in lockstep.
+  - **Route-roster example**: do not assert that an API responds to _only_ a checked-in
+    list of URLs. That is a change detector: every intentional route addition forces an
+    unrelated test edit, while "the app shall not respond to any URL outside this exact
+    list" is rarely a useful property of the feature under test. Test each route's
+    meaningful behavior and allow additive routes unless an explicit security boundary
+    requires a closed world.
   - Generated-output snapshots are valid when the test runs the generator — including
     the inverted form where the test _builds_ the artifact in code (loops and functions
     beating repetitive YAML) and asserts the checked-in file equals it: there the test

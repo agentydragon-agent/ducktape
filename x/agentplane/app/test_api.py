@@ -531,10 +531,10 @@ def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
     assert "/healthz" not in client.get("/openapi.json").json()["paths"]
 
 
-def test_openapi_schema_names_every_operation(client: TestClient) -> None:
+def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
     paths = client.get("/openapi.json").json()["paths"]
 
-    assert set(paths) == {
+    expected = {
         "/actions",
         "/actions/{request_id}",
         "/actions/{request_id}/decision",
@@ -572,7 +572,14 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/threads/{thread_id}/events",
         "/live/sandboxes",
         "/live/sandboxes/{name}",
+        "/mcp-linkage/callback",
+        "/mcp-servers",
+        "/mcp-servers/{server_id}/linkage",
+        "/mcp-servers/{server_id}/linkage/start",
+        "/mcp-servers/{server_id}/linkage/disconnect",
     }
+    # Additive API evolution is allowed; behavior tests own each intentionally public route.
+    assert expected <= set(paths)
     assert set(paths["/actions"]) == {"get"}
     assert set(paths["/actions/stream"]) == {"get"}
     assert set(paths["/push/config"]) == {"get"}

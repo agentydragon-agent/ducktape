@@ -16,6 +16,7 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentPreview,
     EnrollmentPreviewInput,
 )
+from x.agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -81,6 +82,30 @@ class ActionServiceClient(_BearerClient):
 
 class OperatorActionServiceClient(_BearerClient):
     """BFF-facing client; its authenticator and paths are distinct from Sandbox workload auth."""
+
+    async def complete_mcp_linkage(self, state: str, code: str) -> McpLinkageView:
+        response = await self._request("GET", "/v1/mcp-linkage/callback", params={"state": state, "code": code})
+        return McpLinkageView.model_validate(response.json())
+
+    async def mcp_linkages(self) -> list[McpLinkageView]:
+        response = await self._request("GET", "/v1/operator/mcp-servers")
+        return [McpLinkageView.model_validate(row) for row in response.json()]
+
+    async def mcp_linkage(self, server_id: str) -> McpLinkageView:
+        response = await self._request("GET", f"/v1/operator/mcp-servers/{server_id}/linkage")
+        return McpLinkageView.model_validate(response.json())
+
+    async def start_mcp_linkage(self, server_id: str, scopes: list[str]) -> McpLinkageStartView:
+        response = await self._request(
+            "POST",
+            f"/v1/operator/mcp-servers/{server_id}/linkage/start",
+            json=McpLinkageStart(scopes=scopes).model_dump(mode="json"),
+        )
+        return McpLinkageStartView.model_validate(response.json())
+
+    async def disconnect_mcp_linkage(self, server_id: str) -> McpLinkageView:
+        response = await self._request("POST", f"/v1/operator/mcp-servers/{server_id}/linkage/disconnect")
+        return McpLinkageView.model_validate(response.json())
 
     async def list_identities(self) -> dict[str, Identity]:
         response = await self._request("GET", "/v1/operator/identities")

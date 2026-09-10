@@ -217,6 +217,67 @@ class PushDeliveryRow(Base):
     kind: Mapped[str] = mapped_column(Text)
 
 
+class McpServerLinkageRow(Base):
+    """One shared OAuth token family for a configured MCP server."""
+
+    __tablename__ = "mcp_server_linkage"
+
+    server_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    provider: Mapped[str] = mapped_column(Text)
+    server_url: Mapped[str] = mapped_column(Text)
+    revision: Mapped[int] = mapped_column(Integer)
+    scopes: Mapped[list[str]] = mapped_column(JSONB)
+    token_state_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("mcp_oauth_token_state.id", ondelete="SET NULL"), nullable=True
+    )
+    token_endpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resource: Mapped[str | None] = mapped_column(Text, nullable=True)
+    linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    linked_by: Mapped[str | None] = mapped_column(Text)
+
+
+class McpOAuthTokenStateRow(Base):
+    """Normalized shared token state and cross-replica refresh claim."""
+
+    __tablename__ = "mcp_oauth_token_state"
+    __table_args__ = (UniqueConstraint("server_id"),)
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    server_id: Mapped[str] = mapped_column(Text)
+    access_token: Mapped[str] = mapped_column(Text)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_type: Mapped[str] = mapped_column(Text)
+    scope: Mapped[list[str]] = mapped_column(JSONB)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    token_revision: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    refresh_claim_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    refresh_claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_failure_count: Mapped[int] = mapped_column(Integer)
+    refresh_failure_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_failure_latest_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_failure_action: Mapped[str | None] = mapped_column(Text)
+    refresh_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class McpLinkageFlowRow(Base):
+    """Short-lived PKCE state; never expose the verifier or token to the browser."""
+
+    __tablename__ = "mcp_linkage_flow"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    server_id: Mapped[str] = mapped_column(Text)
+    state_hash: Mapped[str] = mapped_column(Text, unique=True)
+    verifier: Mapped[str] = mapped_column(Text)
+    operator_principal: Mapped[str] = mapped_column(Text)
+    scopes: Mapped[list[str]] = mapped_column(JSONB)
+    authorization_endpoint: Mapped[str] = mapped_column(Text)
+    token_endpoint: Mapped[str] = mapped_column(Text)
+    resource: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ActionNotFoundError(Exception):
     pass
 
