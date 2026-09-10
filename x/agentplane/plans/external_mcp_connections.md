@@ -20,16 +20,15 @@ management. Sandbox callers use the same MCP frontend with workload bearers, wit
 
 ## Staging rollout (`MCPDEPLOY`)
 
-[#5926](https://github.com/agentydragon/ducktape/pull/5926) prepares dedicated Authentik OAuth
-configuration, persistent signing/encryption keys, a configured Identity, exact public protocol
-routes, and the existing workload-token substitution path for `/mcp`. It is draft until published
-Action Service, migration, and app images contain the merged OAuth/consent code and compatible pins
-are ready. Do not enable configuration against older images or infer rollout from merged source.
+[#6093](https://github.com/agentydragon/ducktape/pull/6093) adds the reviewed GitHub and Kubernetes
+MCP server configuration, reflected GitHub client credentials, the staging OAuth callback route,
+and Action Service egress. It remains open until published Action Service, migration, and app
+images contain the merged OAuth/consent code and compatible pins are ready. Do not enable
+configuration against older images or infer rollout from merged source.
 
 After operator-approved rollout, verify migration completion, required reflected configuration,
 canonical discovery/resource/callback URLs, and external MCP reachability. Check the workload path
-in parallel, without gating Claude.ai acceptance on it. Follow the staging runbook in
-that PR; do not expose operator REST or enrollment-management routes through the public MCP route.
+in parallel, without gating Claude.ai acceptance on it. Follow the staging rollout/runbook evidence in that PR; do not expose operator REST or enrollment-management routes through the public MCP route.
 A healthy deployment is intermediate evidence, not real-client acceptance.
 
 ## Connection reconnect and rebind (`RECONNECT`)
@@ -162,5 +161,5 @@ The deterministic fixture is not tool parity. Outbound credentialed-account OAut
 
 External Claude Code needs no Agentplane Sandbox/Thread or upstream credential. Only calls routed
 through Actions receive its governance; its local tools remain governed by the harness and host.
-Do not couple initial client delivery to hosted `MCP0` acceptance or complete Haku retirement.
+Do not couple initial client delivery to hosted credentialless MCP acceptance or complete Haku retirement.
 `RETIRE_TOOLS` and `RETIRE_AGENT` keep separate export, rollback, and decommissioning gates.

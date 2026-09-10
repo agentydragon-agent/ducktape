@@ -50,7 +50,11 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="AGENTPLANE_ACTIONS_", cli_parse_args=True, cli_kebab_case=True, hide_input_in_errors=True
+        env_prefix="AGENTPLANE_ACTIONS_",
+        env_nested_delimiter="__",
+        cli_parse_args=True,
+        cli_kebab_case=True,
+        hide_input_in_errors=True,
     )
 
     database_url: str = Field(description="Action Service-owned PostgreSQL database URL.")

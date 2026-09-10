@@ -1,8 +1,44 @@
-# Staging intentionally has no acceptance-only Action fixture. It remains available for ad hoc
-# Authentik/Cilium click-through tests; the Flux-managed testing instance owns mcp-everything.
+# Staging remote MCP backends. OAuth linkage is operator-managed by the Action Service;
+# action groups expose only reviewed tool catalogs and never expose client credentials.
 allowed_service_account_namespaces:
   - agentplane-staging
 identities:
   personal:
     enabled: true
-# No acceptance-only fixture is installed in staging.
+mcp_servers:
+  github:
+    server_id: github
+    provider: github
+    server_url: https://api.githubcopilot.com/mcp/
+    client_id: configured-by-secret
+    client_secret_file: /etc/agentplane-mcp/github-client-secret
+    redirect_uri: https://haku.allegedly.works/mcp-linkage/callback
+  kubernetes:
+    server_id: kubernetes
+    provider: kubernetes
+    server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
+    client_id: kubectl-passthrough-mcp
+    redirect_uri: https://haku.allegedly.works/mcp-linkage/callback
+action_groups:
+  github:
+    title: GitHub MCP
+    description: GitHub's operator-linked MCP tools; every Action remains subject to operator approval.
+    executor:
+      kind: mcp
+      description: GitHub MCP executed with the linked operator GitHub account.
+      config:
+        transport: streamable-http
+        url: https://api.githubcopilot.com/mcp/
+        server_id: github
+        auth: oauth
+  kubernetes:
+    title: Kubernetes MCP
+    description: Kubernetes passthrough MCP tools; every Action remains subject to operator approval.
+    executor:
+      kind: mcp
+      description: Kubernetes MCP executed with the linked operator Kubernetes identity.
+      config:
+        transport: streamable-http
+        url: https://kubectl-passthrough-mcp.allegedly.works/mcp
+        server_id: kubernetes
+        auth: oauth

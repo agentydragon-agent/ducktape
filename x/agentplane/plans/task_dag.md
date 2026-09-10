@@ -31,7 +31,7 @@ flowchart TB
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
-    MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
+    MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>OAuth linkage + provider proof"]:::active
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     POLICYBIND["Design gate<br/>shared ActionPolicySets + bindings<br/>model, storage, ownership"]:::decision
     MCPDEPLOY["In progress<br/>OAuth-capable images + staging wiring<br/>public MCP and Sandbox reachability"]:::active
@@ -168,14 +168,17 @@ behind a rollback switch before retiring Haku Console's corresponding tool surfa
 
 ### `MCPAUTH` — credentialed MCP account and OAuth boundary
 
-**Deferred support:** connect a user's GitHub MCP account without moving browser OAuth state or
-refresh credentials into the harness. Haku Console or a shared credential broker should own the
-operator identity, authorization-code + PKCE flow, callback state, token exchange/refresh, and
-durable token association. Action Service should receive only an opaque account/credential binding
-and own MCP discovery/call translation. If standalone operation later requires Action Service to own
-OAuth, implement the smallest separately tested subset rather than copying Haku Console wholesale.
-The static credential and binding model is a separate design decision below and requires Rai's
-confirmation before implementation begins.
+**Implemented support:** PostgreSQL-backed, server-scoped OAuth linkage now owns discovery,
+PKCE/token exchange, normalized token state, background refresh, advisory-lock leadership,
+refresh claims, failure/backoff state, execution-time credential resolution, metrics, and
+configuration cleanup. The Action Service receives credentials only at execution time; they are
+not placed in the harness, Action prompt, or durable Action payload.
+
+**Remaining acceptance:** run the staged GitHub provider scenario first: link the account, discover
+the catalog/resource, execute one safe read, refresh without MCP calls, observe refresh failure and
+degraded/reconnect behavior, and prove token rotation is used without rebuilding the executor.
+Then add Kubernetes provider acceptance. Preserve negative isolation for an unbound or different
+account. The broader static credential and binding model remains the separate `CRED` design gate.
 
 **Acceptance evidence:** a separate credentialed live scenario proves account linkage, catalog
 refresh, one safe GitHub read, token refresh/reconnect, and negative isolation for an unbound or
@@ -184,9 +187,9 @@ test.
 
 ### `MCPDEPLOY` — stage the external MCP endpoint
 
-**In progress:** [#5926](https://github.com/agentydragon/ducktape/pull/5926) prepares the
-dedicated Authentik provider, persistent OAuth keys, configured Identity, public protocol routes,
-and Sandbox `/mcp` egress substitution. Keep it draft until published Action Service, migration,
+**In progress:** [#6093](https://github.com/agentydragon/ducktape/pull/6093) adds the reviewed GitHub
+and Kubernetes MCP server configuration, reflected GitHub client credentials, callback route, and
+Action Service egress. Keep deployment acceptance open until published Action Service, migration,
 and integration-app images contain the merged consent/OAuth implementation and the deployment pins
 are compatible. A merged source PR or a healthy old pod does not establish readiness.
 
