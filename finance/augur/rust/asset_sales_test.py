@@ -186,8 +186,8 @@ def test_same_month_sales_consume_lots_sequentially() -> None:
         ("second", "new", Fraction(40), 400_000, 600_000),
     ]
     assert [(lot.lot_id, _remaining(lot), lot.basis_remaining) for lot in rollout.summary.ending_book.lots] == [
-        ("old", 0, 0),
-        ("new", 60, 600_000),
+        ("old", Fraction(0), 0),
+        ("new", Fraction(60), 600_000),
     ]
     assert rollout.summary.cash[0].values[-1] == 2_100_000
     assert [(receipt.month, receipt.action_index) for receipt in rollout.trace.receipts] == [(1, 0), (1, 1)]
