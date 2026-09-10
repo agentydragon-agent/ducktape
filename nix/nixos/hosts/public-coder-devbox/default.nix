@@ -185,7 +185,6 @@ in
   services.openssh.extraConfig = ''
     Match User coder
       SetEnv BASH_ENV=${buildbuddyBashEnvFile}
-      SetEnv GH_PAT=proxy-github-placeholder
       SetEnv GH_TOKEN=proxy-github-placeholder
       SetEnv KUBECONFIG=/home/coder/.kube/config
   '';
@@ -384,11 +383,8 @@ in
     proxyNetworkEnvironment
     // proxyCaClientEnvironment
     // {
-      # Git consumes GH_PAT while the GitHub CLI reads GH_TOKEN. Both are the
-      # same inert proxy value; iron-proxy replaces it only in Authorization
-      # headers sent to GitHub, so `gh` authenticates as the agent account
-      # without receiving its PAT.
-      GH_PAT = "proxy-github-placeholder";
+      # The GitHub CLI reads this inert proxy value; iron-proxy replaces it
+      # only in Authorization headers sent to GitHub.
       GH_TOKEN = "proxy-github-placeholder";
     };
 
