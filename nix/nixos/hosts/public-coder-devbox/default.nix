@@ -206,11 +206,17 @@ in
     wantedBy = [ "multi-user.target" ];
     after = [ "local-fs.target" ];
     before = [ "sshd.service" ];
-    path = [ pkgs.coreutils pkgs.util-linux ];
+    path = [ pkgs.coreutils pkgs.e2fsprogs pkgs.util-linux ];
     serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
     script = ''
       set -eu
       mkdir -p "${bazelCacheMount}"
+      fs_type="$(blkid -o value -s TYPE "${bazelCacheDevice}" 2>/dev/null || true)"
+      case "$fs_type" in
+        "") mkfs.ext4 -F -L bazel-cache "${bazelCacheDevice}" ;;
+        ext4) ;;
+        *) echo "Unexpected Bazel cache PVC filesystem: $fs_type" >&2; exit 1 ;;
+      esac
       mounted=0
       for _ in $(seq 1 60); do
         if mountpoint -q "${bazelCacheMount}" || mount -o noatime "${bazelCacheDevice}" "${bazelCacheMount}" 2>/dev/null; then

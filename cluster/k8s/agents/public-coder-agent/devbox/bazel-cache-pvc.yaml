@@ -9,9 +9,9 @@ metadata:
       public-coder-devbox. Stop the VM before deleting this claim to reset it.
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: lvm-proxmox-hdd
+  storageClassName: lvm-proxmox-hdd-block
   resources:
     requests:
       # The local HDD thin pool has ample capacity for this separately resettable cache.
       storage: 20Gi
-  volumeMode: Filesystem
+  volumeMode: Block
