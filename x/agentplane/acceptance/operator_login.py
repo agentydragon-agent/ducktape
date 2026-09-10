@@ -14,6 +14,7 @@ import subprocess
 from typing import Literal
 
 import httpx
+from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 from x.agentplane.app.oidc import SECURE_COOKIE
@@ -172,17 +173,15 @@ async def login_operator(
             # Dex's local connector is a normal HTML form. Keep the provider adapter deliberately
             # small: the app's authorization-code, state, nonce, PKCE, and callback checks remain
             # the contract under test; this only avoids reproducing Authentik's FlowExecutor.
-            form = re.search(r"<form[^>]+action=[\"']([^\"']+)[\"']", response.text, flags=re.IGNORECASE)
-            if form is None:
+            form = BeautifulSoup(response.text, "html.parser").find("form")
+            if form is None or not form.get("action"):
                 raise LoginBlockedError("BLOCKED: Dex login form was not found")
-            target = _destination(response.url, form.group(1), app, idp, provider)
-            payload = dict(
-                re.findall(
-                    r"<input[^>]+name=[\"']([^\"']+)[\"'][^>]+value=[\"']([^\"']*)[\"']",
-                    response.text,
-                    flags=re.IGNORECASE,
-                )
-            )
+            target = _destination(response.url, str(form["action"]), app, idp, provider)
+            payload = {
+                str(input_tag["name"]): str(input_tag.get("value", ""))
+                for input_tag in form.find_all("input")
+                if input_tag.get("name")
+            }
             payload.update(
                 login=credentials.username.get_secret_value(), password=credentials.password.get_secret_value()
             )
