@@ -30,8 +30,9 @@ flowchart TB
     classDef decision fill:#ffedd5,stroke:#c2410c,color:#7c2d12,stroke-width:2px,stroke-dasharray:5 3
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
+    classDef completed fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:2px
 
-    MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
+    MCP0["Completed<br/>credentialless remote MCP Action<br/>real testing LLM acceptance"]:::completed
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     MCPACCEPT["Milestone<br/>rerunnable Action/MCP acceptance<br/>against the deployed stack"]:::milestone
@@ -88,11 +89,13 @@ flowchart TB
     ACCESS -. authority choice .-> EGRESS_CHANGE
 ```
 
-The credentialless deployed gate is `MCP0 -> MCPACCEPT`: use the existing staging-owned
-streamable-HTTP fixture and real Claude/Codex acceptance turns. Implementation and CI evidence
-already exist. A real two-provider echo pass is recorded in
-[#5922](https://github.com/agentydragon/ducktape/pull/5922); the full rerunnable evidence gate remains.
-Credentialed upstream access is separate (`MCPAUTH`).
+The credentialless deployed gate (`MCP0`) is complete: the existing testing-owned
+streamable-HTTP fixture served real Claude/Codex acceptance turns, with the exact safe echo result
+verified for both providers. The earlier live run also exercised the real app/Sandbox path and left
+only the separate operator-approval cases blocked by the pre-merge Dex adapter/configuration issue;
+those fixes landed in [#6084](https://github.com/agentydragon/ducktape/pull/6084). The remaining
+operator browser/BFF and Web Push evidence belongs to `APPROVALUI` / `NOTIFY`, not to reopening
+`MCP0`. Credentialed upstream access is separate (`MCPAUTH`).
 Input delivery and proxy survivability can proceed independently of the external-client track.
 
 The external-client track is single-operator and independent of `MCP0` and the broader `AG` model.
@@ -137,21 +140,16 @@ path and does not block current credential-placeholder egress.
 read-only ActionRequest, and polls durable Action events to a safe result produced by a remote MCP
 server without the Agent or Action Service holding a provider credential.
 
-**Observed evidence:** production composition, remote transport, staging Everything binding,
-bounded echo auto-allow policy, and `x/agentplane/acceptance/test_mcp.py` are implemented.
-[#5922](https://github.com/agentydragon/ducktape/pull/5922) records a real Claude/Codex echo pass.
-The broader independent-evidence scenarios in
-[#5822](https://github.com/agentydragon/ducktape/pull/5822) remain open; reconcile that PR against
-current federation/cancellation contracts before adding overlapping acceptance work.
+**Observed evidence:** production composition, remote transport, testing Everything binding,
+bounded echo auto-allow policy, and `x/agentplane/acceptance/test_mcp.py` are implemented. A live
+run against `agentplane-testing` verified catalog discovery, exactly one Action execution,
+cursor-based event polling, and the exact safe tool result for both Claude and Codex. This is the
+completed credentialless MCP vertical; the operator-decision variants are tracked as deployed
+approval evidence under `APPROVALUI`.
 
-**Needed support:** verify deployed images/configuration and run that suite through the real
-OIDC/BFF and harness paths. Keep real MCP tools for success cases and isolated doubles only for
-controlled failures/concurrency. CI composition tests do not satisfy this live gate.
-
-**Acceptance evidence:** `//x/agentplane/acceptance:all` runs the scenario against the deployed
-stack for both real harness providers, verifies catalog discovery, exactly one Action execution,
-cursor-based event polling, and the exact safe tool result. It must not assert success from the
-Agent's prose alone.
+**Acceptance evidence:** `//x/agentplane/acceptance:test_mcp` has the real two-provider pass for
+this gate. It must not assert success from the Agent's prose alone; the Action result and durable
+service state remain authoritative.
 
 ### `MCPAUTH` — credentialed MCP account and OAuth boundary
 
