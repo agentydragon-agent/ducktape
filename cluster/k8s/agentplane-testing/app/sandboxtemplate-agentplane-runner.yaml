@@ -1,7 +1,6 @@
 # Agentplane runner sandbox: the Pod and volume every Sandbox the integration
 # app stamps is copied from (the app reads this template at creation; no claim
-# or warm pool references it), driven over port 7000. The Pod is pinned to
-# hil-ovh, where its state PVC binds; a suspended Sandbox (operatingMode:
+# or warm pool references it), driven over port 7000. A suspended Sandbox (operatingMode:
 # Suspended) drops the Pod and keeps the PVC, so it resumes on the node holding
 # it. Both harnesses reach the authenticated LLM ingress through the egress sidecar, which
 # substitutes the sidecar-only workload token; the runner holds only an inert placeholder.
@@ -28,10 +27,6 @@ spec:
       dnsPolicy: ClusterFirst
       imagePullSecrets:
         - name: forgejo-images-creds
-      # With the rest of the namespace and with LiteLLM, which is already here: a runner's model
-      # calls and its hop to the app both stay inside the zone instead of crossing the mesh.
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
       serviceAccountName: agentplane-runner
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 60
