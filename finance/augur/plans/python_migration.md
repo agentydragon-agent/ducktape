@@ -5,6 +5,33 @@ performance. Prefer Python where it makes financial entities, steps and policies
 clearer to compose and inspect. This is not a rewrite benchmark contest. The
 [roadmap](roadmap.md) owns dispatch and dependencies; remove completed work here.
 
+## Active atomic Python cutover
+
+Replace Augur's remaining native financial world with ordinary Python and land
+one integrated cutover. Preserve currently supported financial behavior and the
+existing configured/action-session timing distinctions; do not bundle new tax,
+bond, housing or private-equity capabilities. Python-owned session, policy, TLH
+and mortgage responsibilities remain the starting point, not work to recreate.
+
+- [ ] Map every native financial test to preserved Python coverage, including
+      generated money/rounding properties and independently authored expectations.
+- [ ] Implement exact arithmetic, books, settlement, claims, taxes, bonds and
+      property/private-equity mechanics with one authoritative owner per fact.
+- [ ] Migrate observations, capture and all callers to direct Python objects;
+      remove the native extension, bindings and superseded transport records.
+- [ ] Run the retained Python acceptance suites and ported native tests through
+      repository CI; resolve financial discrepancies rather than weakening tests.
+- [ ] Delete native-only build/package plumbing and retire this cutover checklist
+      when the final single Python implementation is validated.
+
+No permanent alternate backend, native fallback or copied JSON-shaped Python
+extension API remains. Preserve exact money, rejection atomicity, successful
+prefixes, stopped-path validity, lot basis and financial phase ordering. A
+Rust-free executor does not itself complete the separate APP/P12 capability and
+configured-policy retirement work. Performance is not a prerequisite gate, and
+no unchanged-throughput claim is implied. Bazel-backed work runs on the SSH devbox
+or hosted CI, never on the current agent pod.
+
 ## Choose subsequent moves by domain value
 
 The [current boundary](../sim/DESIGN.md) already places session sequencing,
