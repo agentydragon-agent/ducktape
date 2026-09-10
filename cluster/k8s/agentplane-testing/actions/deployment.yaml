@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: agentplane-actions
   annotations:
-    secret.reloader.stakater.com/reload: agentplane-action-federation
+    configmap.reloader.stakater.com/reload: agentplane-action-federation
 spec:
   replicas: 1
   strategy:
@@ -38,7 +38,7 @@ spec:
           env: &database-env
             - name: AGENTPLANE_ACTIONS_OPERATOR_OIDC
               valueFrom:
-                secretKeyRef:
+                configMapKeyRef:
                   name: agentplane-action-federation
                   key: operator-oidc
             - name: AGENTPLANE_ACTIONS_CONFIG_FILE

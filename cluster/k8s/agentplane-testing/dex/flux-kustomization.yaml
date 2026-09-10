@@ -16,10 +16,6 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
   dependsOn:
     - name: agentplane-testing-namespace
       namespace: ducktape-flux
