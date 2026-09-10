@@ -7,27 +7,18 @@ financial kernel another policy or population loop.
 import json
 from collections import defaultdict
 from copy import deepcopy
-from dataclasses import dataclass
 
+import numpy as np
 from pydantic import JsonValue
 
 from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan, validate_prepared
 from finance.augur.sim import _native, results
 from finance.augur.sim.actions import Buy, DecisionActions
+from finance.augur.sim.events import EventLog, decode_serialized_event_log
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
 from finance.augur.sim.prepared import CompiledRun, PreparedAmount, PreparedFixedAmount
+from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.session import Capture, _Session
-
-
-@dataclass(frozen=True)
-class ProductMetrics:
-    """Product transport only: observed rows plus zero padding after stopped paths."""
-
-    rollout_count: int
-    snapshot_count: int
-    base_series: list[list[int]]
-    failed_month: list[int]
-    metric_names: tuple[str, ...] = BASE_METRIC_NAMES
 
 
 def _amount(session: _Session, rollout_id: int, amount: PreparedAmount) -> int:
@@ -172,7 +163,13 @@ def simulate_summaries_json(run: CompiledRun) -> str:
     return _export(run, "summary")
 
 
-def simulate_product_metrics(run: CompiledRun, primary_agent_id: str) -> ProductMetrics:
+def simulate_events(run: CompiledRun) -> EventLog:
+    """Dense canonical frames without the forensic journal."""
+
+    return decode_serialized_event_log(json.loads(simulate_dense_json(run)))
+
+
+def simulate_product_metrics(run: CompiledRun, primary_agent_id: str) -> ProductMetricArrays:
     session = _run(run, "summary", primary_agent_id)
     snapshots = run.scenario.horizon_months + 1
     base_series = [[0] * (snapshots * run.rollout_count) for _ in BASE_METRIC_NAMES]
@@ -192,4 +189,14 @@ def simulate_product_metrics(run: CompiledRun, primary_agent_id: str) -> Product
         for snapshot, row in enumerate(rows):
             for metric, value in enumerate(row):
                 base_series[metric][snapshot * run.rollout_count + rollout_id] = value
-    return ProductMetrics(run.rollout_count, snapshots, base_series, failures)
+    return ProductMetricArrays(
+        # Configured full runs emit every prepared row in its original order.
+        rollout_ids=tuple(range(run.rollout_count)),
+        month_index=np.arange(snapshots, dtype=np.int64),
+        failed_month=np.asarray(failures, dtype=np.int64),
+        currency_code=run.currency_code,
+        currency_quantum=run.currency_quantum,
+        base_series=tuple(
+            np.asarray(block, dtype=np.int64).reshape((snapshots, run.rollout_count)) for block in base_series
+        ),
+    )

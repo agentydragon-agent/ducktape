@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.historical_windows import HistoricalWindowsModel, MacroHistory
-from finance.augur.sim.backend import compile_run
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.prepared import CompiledRun

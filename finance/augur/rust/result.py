@@ -16,8 +16,8 @@ from typing import Any, cast
 
 import polars as pl
 
-from finance.augur.rust.event_log import decode_event_log
 from finance.augur.sim import configured
+from finance.augur.sim.events import decode_serialized_event_log
 from finance.augur.sim.scenario import Scenario
 from finance.augur.sim.testing.case import Case
 from finance.augur.sim.testing.simulation_result import CHANNEL, SimulationResult, held_lots
@@ -318,7 +318,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     )
     return RustResult(
         backend="rust",
-        events=decode_event_log(rust),
+        events=decode_serialized_event_log(rust),
         cash=cash,
         lots=lots,
         income=income,

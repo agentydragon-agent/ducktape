@@ -2,10 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-# An engine's internals — its month loop and the output layout it writes — are visible only
-# in here. Everything outside reads an engine through `sim/backend.py`, whose whole point is
-# that the product does not name one engine's output shape. Convention did not hold that
-# line before; this does.
+# Private simulation internals stay within the simulator package tree.
 package_group(
     name = "inside_the_simulator",
     packages = [
@@ -207,21 +204,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "backend",
-    srcs = ["backend.py"],
-    deps = [
-        ":events",
-        ":external_series",
-        ":jurisdictions",
-        ":locations",
-        ":prepared",
-        ":product_metrics",
-        ":scenario",
-        "//finance/augur/sim/compiler:execution",
-    ],
-)
-
 py_test(
     name = "scenario_test",
     srcs = ["scenario_test.py"],
@@ -233,24 +215,6 @@ py_test(
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_backend",
-    srcs = ["test_backend.py"],
-    deps = [
-        ":backend",
-        ":external_series",
-        ":jurisdictions",
-        ":locations",
-        ":scenario",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/model:series",
-        "//finance/augur/sim/testing:case",
-        "@pypi//numpy",
         "@pypi//pytest_bazel",
     ],
 )
@@ -354,11 +318,14 @@ py_library(
     deps = [
         ":_native",
         ":actions",
+        ":events",
         ":metric_composition",
         ":prepared",
+        ":product_metrics",
         ":results",
         ":session",
         "//finance/augur/policy:configured_allocation",
+        "@pypi//numpy",
         "@pypi//pydantic",
     ],
 )
@@ -451,7 +418,6 @@ py_test(
     name = "configured_allocation_test",
     srcs = ["configured_allocation_test.py"],
     deps = [
-        ":backend",
         ":configured",
         ":jurisdictions",
         ":prepared",
@@ -462,6 +428,7 @@ py_test(
         "//finance/augur/policy:configured_allocation",
         "//finance/augur/rust:prepared",
         "//finance/augur/rust:result",
+        "//finance/augur/sim/compiler:execution",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
         "@pypi//polars",
@@ -502,6 +469,30 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "configured_test",
+    srcs = ["configured_test.py"],
+    deps = [
+        ":configured",
+        ":events",
+        ":external_series",
+        ":locations",
+        ":metric_composition",
+        ":prepared",
+        ":product_metrics",
+        ":runtime",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/sim/compiler:execution",
+        "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

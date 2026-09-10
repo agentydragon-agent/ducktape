@@ -27,7 +27,7 @@ from jaxtyping import Float64
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import LevelSeriesKey
-from finance.augur.sim.backend import compile_run
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.jurisdictions import Jurisdiction
 from finance.augur.sim.locations import Location
@@ -113,7 +113,7 @@ class Case:
     def compiled_run(self) -> CompiledRun:
         """This case as the production engine takes it.
 
-        Lets a suite drive `RustEngine` rather than a test-only path, so what a suite asserts
+        Lets a suite drive configured execution rather than a test-only path, so what a suite asserts
         against is what the product service runs.
         """
 

@@ -72,7 +72,7 @@ from finance.augur.product.wire import (
     SetRentedFractionEventWire,
     SleeveWeight,
 )
-from finance.augur.rust.backend import RustEngine
+from finance.augur.sim.configured import simulate_product_metrics
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.quantiles import currency_quantiles
@@ -294,7 +294,7 @@ def test_product_metrics_fail_when_holding_price_series_is_missing() -> None:
     )
     case = Case(scenario=scenario, rollout_count=1, paths=ExternalSeriesContext())
     with pytest.raises(ValueError, match="security:missing"):
-        RustEngine().product_metrics(case.compiled_run, primary_agent_id="agent_a")
+        simulate_product_metrics(case.compiled_run, primary_agent_id="agent_a")
 
 
 def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
@@ -420,7 +420,7 @@ def test_fan_and_selected_rollout_metrics_share_one_reducer(
 ) -> None:
     seeds = (7, 8)
     run, _model_id = product._compile_product_run(scenario_key, seeds)
-    metrics = product._engine.product_metrics(run, primary_agent_id=product._primary_agent_id)
+    metrics = simulate_product_metrics(run, primary_agent_id=product._primary_agent_id)
     expected_metrics = metrics.metric_arrays()
     expected_failed = metrics.failed_month
     percentiles = (0.0, 25.0, 50.0, 75.0, 100.0)
@@ -536,13 +536,13 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     }
 
 
-def test_combined_product_projection_runs_shared_reducer_once(
+def test_combined_product_projection_simulates_once(
     product: service.ProductService,
     counting_model: CountingModel,
     monkeypatch: pytest.MonkeyPatch,
     scenario_key: ScenarioKey,
 ) -> None:
-    original = product._engine.product_summaries
+    original = service.simulate_product_metrics
     calls = 0
 
     def counted(*args, **kwargs):
@@ -550,7 +550,7 @@ def test_combined_product_projection_runs_shared_reducer_once(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(product._engine, "product_summaries", counted)
+    monkeypatch.setattr(service, "simulate_product_metrics", counted)
 
     response = product.projection_summary(
         ProductProjectionRequest(
@@ -573,7 +573,7 @@ def test_combined_product_projection_runs_shared_reducer_once(
 def test_metric_fan_runs_reduced_product_projection_once_per_batch(
     product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
-    original = product._engine.product_fan
+    original = service.simulate_product_metrics
     calls = 0
 
     def counted(*args, **kwargs):
@@ -581,11 +581,11 @@ def test_metric_fan_runs_reduced_product_projection_once_per_batch(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(product._engine, "product_fan", counted)
+    monkeypatch.setattr(service, "simulate_product_metrics", counted)
 
     product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=4, metric="cash", percentiles=(50,)))
 
-    # All four seeds share one simulated batch, so the reduced product projection runs once.
+    # All four seeds share one simulated batch, rather than executing once per seed.
     assert calls == 1
 
 

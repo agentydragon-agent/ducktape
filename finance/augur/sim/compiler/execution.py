@@ -425,7 +425,7 @@ def _locations(
     )
 
 
-def prepare_run(
+def compile_run(
     scenario: Scenario,
     *,
     rollout_count: int,
@@ -433,7 +433,11 @@ def prepare_run(
     jurisdictions: Mapping[str, Jurisdiction],
     locations: Mapping[str, Location],
 ) -> CompiledRun:
-    """Resolve one self-contained execution input; retain no source objects to reread."""
+    """Resolve one self-contained execution input; retain no source objects to reread.
+
+    Sampling and rule/location loading belong to the caller, so experiments can reuse
+    a supplied path population across policy cells.
+    """
     if rollout_count <= 0:
         raise ValueError(f"rollout_count must be positive; got {rollout_count}")
     quantum = scenario.currency.quantum

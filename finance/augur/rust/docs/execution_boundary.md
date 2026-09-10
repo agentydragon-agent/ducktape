@@ -1,6 +1,6 @@
 # Execution input
 
-`sim.backend.compile_run` prepares a typed `sim.prepared.CompiledRun` from a
+`sim.compiler.execution.compile_run` prepares a typed `sim.prepared.CompiledRun` from a
 `Scenario`, materialized paths, jurisdiction rules and locations. Sessions consume
 those resolved facts directly; they never reread the authoring inputs.
 

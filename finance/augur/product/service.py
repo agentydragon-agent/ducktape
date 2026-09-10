@@ -45,9 +45,9 @@ from finance.augur.product.wire import (
     ScenarioKey,
     TerminalDistributionResponse,
 )
-from finance.augur.rust.backend import RustEngine
-from finance.augur.sim.backend import Engine, compile_run
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.compiler.series import scenario_level_series_keys
+from finance.augur.sim.configured import simulate_events, simulate_product_metrics
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
 from finance.augur.sim.prepared import CompiledRun
@@ -56,6 +56,9 @@ from finance.augur.sim.product_metrics import (
     ProductMetricFanSummary,
     ProductProjectionSummaries,
     ProductTerminalSummary,
+    metric_fan,
+    projection_summaries,
+    terminal_summary,
 )
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.runtime import load_jurisdictions_for
@@ -82,7 +85,6 @@ class ProductService:
             raise ValueError("max_horizon_months must be positive")
         if not models:
             raise ValueError("models must contain at least one preset")
-        self._engine: Engine = RustEngine()
         self._portfolio = portfolio
         self._initial_cash = initial_cash if isinstance(initial_cash, Decimal) else Decimal(str(initial_cash))
         self._primary_agent_id = primary_agent_id
@@ -155,8 +157,8 @@ class ProductService:
     def _rollout_response(self, scenario: ScenarioKey, seed: int) -> RolloutResponse:
         run, model_id = self._compile_product_run(scenario, (seed,))
         projection = project_product_rollout(
-            self._engine.events(run),
-            self._engine.product_metrics(run, primary_agent_id=self._primary_agent_id),
+            simulate_events(run),
+            simulate_product_metrics(run, primary_agent_id=self._primary_agent_id),
             rollout_id=0,
             primary_agent_id=self._primary_agent_id,
             asset_label_by_id=self._asset_label_by_id,
@@ -230,12 +232,11 @@ class ProductService:
     ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
         run, model_id = self._compile_product_run(scenario_key, seeds)
         metric_name = _quanta_metric(metric)
+        arrays = simulate_product_metrics(run, primary_agent_id=self._primary_agent_id)
         summary: ProductMetricFanSummary | ProductTerminalSummary = (
-            self._engine.product_terminal(run, primary_agent_id=self._primary_agent_id, metric=metric_name)
+            terminal_summary(arrays, metric=metric_name)
             if percentiles is None
-            else self._engine.product_fan(
-                run, primary_agent_id=self._primary_agent_id, metric=metric_name, percentiles=percentiles
-            )
+            else metric_fan(arrays, metric=metric_name, percentiles=percentiles)
         )
         return summary, model_id
 
@@ -243,8 +244,10 @@ class ProductService:
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
     ) -> tuple[ProductProjectionSummaries, str]:
         run, model_id = self._compile_product_run(scenario_key, seeds)
-        summaries = self._engine.product_summaries(
-            run, primary_agent_id=self._primary_agent_id, metric=_quanta_metric(metric), percentiles=percentiles
+        summaries = projection_summaries(
+            simulate_product_metrics(run, primary_agent_id=self._primary_agent_id),
+            metric=_quanta_metric(metric),
+            percentiles=percentiles,
         )
         return summaries, model_id
 
