@@ -197,13 +197,8 @@ py_library(
     srcs = ["behaviour.py"],
     deps = [
         ":case",
-        ":fixtures",
         ":simulation_result",
-        "//finance/augur/model:deterministic",
-        "//finance/augur/model:gbm",
-        "//finance/augur/model:level_series_groups",
         "//finance/augur/model:series",
-        "//finance/augur/model:series_model",
         "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:locations",
         "//finance/augur/sim:scenario",
