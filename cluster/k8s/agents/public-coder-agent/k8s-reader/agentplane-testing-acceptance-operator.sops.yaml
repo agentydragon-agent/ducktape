@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: agentplane-testing-acceptance-operator
+    namespace: public-coder-agent
+    annotations:
+        description: Dedicated test-only Dex credentials for manual Agentplane acceptance.
+stringData:
+    username: ENC[AES256_GCM,data:r/tX3cKsSXzhwHDiMF6tlIY94Qn7T+FIsONj,iv:dfx6CNYVhonWeI6BEiSvlGg6LmhNfevPvb6HgzC1uqo=,tag:vQQsP5a3Y3e+mHG9UMUrtA==,type:str]
+    password: ENC[AES256_GCM,data:yPGxTdEuO2o=,iv:mmb2agFHosLWVvb1uUIQ3oTUGa+/t4LkveK5oP/KaQc=,tag:sy1/JyO6BR0kvKd0/MZ/xQ==,type:str]
+    issuer: ENC[AES256_GCM,data:/q2EsUad/b2mybQMg4MpN/aFfeTnGjqashubvsptPlsGKUJGt5TDkNqcjcmohQ==,iv:4+S6EsKj/OKifuZ0wPPcZucbnNPSDAgoR6v0A0+gUNg=,tag:lUpGUKx75ybCrhIujyl1JA==,type:str]
+    subject: ENC[AES256_GCM,data:tN522Siv0QPQL1G7HJI+OQeG0MawGDbAUYf1,iv:4biUESNlDxbVyQA12C7kL4HfL/7j33Iyymhjvbm0y0c=,tag:MLwT1gCxdVQVBFBmZjwtpg==,type:str]
+type: Opaque
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAyVXkvbkRncGxFc3g0eUF6
+            ZFMzSjQ1bXVibEc2R0pHdUQ5RjcrdnFjNHpVCjlXbFdOMy9kaGZicXlvR1c4TnNR
+            d0cxN0NPL09DZEtCY3ZxSUtMZDI3VUEKLS0tIGhZZHo0SDk5UXlsWE82amJPcVpq
+            cVRQVnNnSFY4VjVRdkJFQ0hNQ2d0MkkKhVapkQafFtWj9l8nynCZc9+dwQPusx2Z
+            bOYRZZi3fRRxvIAV0rHUdDONHiuNIGbyXFxALFhYIC0dintjSmzx5w==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-10T02:38:21Z"
+    mac: ENC[AES256_GCM,data:pw4+9yF8DHx7V+tmQqv3SA/dhaqaUQUHr03DKBaa0RA4hqBLcmk5HX6QSto67sncyifjIsobNpM3a2e1Ifj5EOKufOqLBkmmlBMK7+oX8x3GSZU07oH15CfC628fxceE08bS5T1gNnddm+1vqGTXu2QYmkx7gcMoQZO2yLPm7rA=,iv:/s/d7w7yZY5Q55rTTlIAXCrn8utL+GHHRTixuacjjY8=,tag:KYhTZ85oyIDYC24Y/SReuA==,type:str]
+    version: 3.13.3

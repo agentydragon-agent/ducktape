@@ -1,0 +1,26 @@
+# The app's own identity over the namespace's inventory: Sandboxes are stamped
+# from the template and deleted, patched for suspend, resume, and archive, and
+# the runner Pod's address is read to dial it. Egress policy is shown, and a
+# binding is created to grant and deleted to revoke -- nothing edits one in
+# place. The proxy, not the app, enforces them. No exec, logs, or Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-app
+  namespace: agentplane-testing
+rules:
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxtemplates"]
+    verbs: ["get"]
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes"]
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["agentplane.allegedly.works"]
+    resources: ["egresspolicies", "egressbindings", "egresscredentials"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["agentplane.allegedly.works"]
+    resources: ["egressbindings"]
+    verbs: ["create", "delete"]

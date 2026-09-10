@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: agentplane-mcp-everything
-  namespace: agentplane-staging
+  namespace: agentplane-testing
 spec:
   replicas: 1
   strategy:

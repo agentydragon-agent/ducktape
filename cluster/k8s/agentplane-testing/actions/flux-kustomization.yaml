@@ -1,15 +1,15 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: agentplane-staging-actions
+  name: agentplane-testing-actions
   namespace: ducktape-flux
   annotations:
-    description: Action Service with isolated PostgreSQL, migration init gate, workload-proxy ingress and public OAuth/MCP endpoint.
+    description: Action Service with isolated PostgreSQL, direct Dex operator federation, workload-proxy ingress and the testing-only MCP fixture.
 spec:
   retryInterval: 1m
   interval: 10m
   timeout: 10m
-  path: ./cluster/k8s/agentplane-staging/actions
+  path: ./cluster/k8s/agentplane-testing/actions
   prune: true
   wait: true
   sourceRef:
@@ -19,13 +19,15 @@ spec:
   dependsOn:
     - name: gateway
       namespace: ducktape-flux
-    - name: sso-providers-tf
+    - name: agentplane-testing-dex
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
-    - name: agentplane-staging-namespace
+    - name: agentplane-testing-mcp-everything
       namespace: ducktape-flux
-    - name: agentplane-staging-egress
+    - name: agentplane-testing-namespace
+      namespace: ducktape-flux
+    - name: agentplane-testing-egress
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux

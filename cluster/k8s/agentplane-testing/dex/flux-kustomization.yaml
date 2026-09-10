@@ -1,15 +1,15 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: agentplane-staging-mcp-everything
+  name: agentplane-testing-dex
   namespace: ducktape-flux
   annotations:
-    description: Upstream Everything MCP server for staging acceptance.
+    description: Dex OIDC provider for the isolated manual Agentplane testing instance.
 spec:
   retryInterval: 1m
   interval: 10m
   timeout: 5m
-  path: ./cluster/k8s/agentplane-staging/mcp-everything
+  path: ./cluster/k8s/agentplane-testing/dex
   prune: true
   wait: true
   sourceRef:
@@ -17,5 +17,7 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
-    - name: agentplane-staging-namespace
+    - name: agentplane-testing-namespace
+      namespace: ducktape-flux
+    - name: gateway
       namespace: ducktape-flux

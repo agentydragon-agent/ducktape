@@ -1,19 +1,8 @@
-# Reviewed credentialless remote binding; discovery supplies Actions at process startup.
-# Keep this endpoint aligned with the existing mcp-everything Service (no runner MCP access).
+# Staging intentionally has no acceptance-only Action fixture. It remains available for ad hoc
+# Authentik/Cilium click-through tests; the Flux-managed testing instance owns mcp-everything.
 allowed_service_account_namespaces:
   - agentplane-staging
 identities:
   personal:
     enabled: true
-action_groups:
-  everything:
-    title: Upstream Everything
-    description: Credentialless MCP reference server for staging acceptance.
-    executor:
-      kind: mcp
-      description: Community-built Everything image; no user account, workload token, or mounted credentials.
-      config:
-        transport: streamable-http
-        url: http://agentplane-mcp-everything.agentplane-staging.svc.cluster.local:3001/mcp
-fixture_auto_allow:
-  group: everything
+# No acceptance-only fixture is installed in staging.

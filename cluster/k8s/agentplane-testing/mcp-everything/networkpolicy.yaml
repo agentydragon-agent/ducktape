@@ -1,10 +1,10 @@
-# Only the staging control-plane callers may reach this no-auth upstream reference server.
+# Only the testing control-plane callers may reach this no-auth upstream reference server.
 # Runner isolation stays unchanged; there is no public route or fixture egress.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: agentplane-mcp-everything
-  namespace: agentplane-staging
+  namespace: agentplane-testing
 spec:
   endpointSelector:
     matchLabels:
@@ -12,10 +12,10 @@ spec:
   ingress:
     - fromEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
             app.kubernetes.io/name: agentplane-app
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
             app.kubernetes.io/name: agentplane-actions
       toPorts:
         - ports:
@@ -30,7 +30,7 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: agentplane-mcp-everything-callers
-  namespace: agentplane-staging
+  namespace: agentplane-testing
 spec:
   endpointSelector:
     matchExpressions:
@@ -42,7 +42,7 @@ spec:
   egress:
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
             app.kubernetes.io/name: agentplane-mcp-everything
       toPorts:
         - ports:

@@ -22,6 +22,7 @@ empty ring behind a green unit suite -- was caught by a person noticing.
 
 from __future__ import annotations
 
+import os
 import textwrap
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -47,7 +48,8 @@ PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # endpoint reports each target's header, the shape of its value and its scheme, so an agent does not
 # have to guess that GitHub wants `Bearer` -- both harnesses sent the placeholder bare and were
 # refused when it did not.
-RULES_URL = "http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules"
+ACCEPTANCE_NAMESPACE = os.environ.get("AGENTPLANE_ACCEPTANCE_NAMESPACE", "agentplane-testing")
+RULES_URL = f"http://agentplane-egress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local/v1/rules"
 # Whose PAT the policy substitutes: the identity GitHub reports back if substitution worked.
 BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
@@ -57,7 +59,7 @@ UNLISTED_HOST = "example.com"
 # is granted by the deployment's `default_policies` rather than by a caller, because an agent that
 # cannot reach it has nothing to run -- so a sandbox that names no policy still has this one.
 LITELLM = "litellm"
-LLM_INGRESS_HOST = "agentplane-llm-ingress.agentplane-staging.svc.cluster.local"
+LLM_INGRESS_HOST = f"agentplane-llm-ingress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local"
 
 # The proxy records a decision as it serves it; the app reads the ring over a separate hop, and a
 # binding's Active condition is written by the proxy's informer rather than by the grant itself.

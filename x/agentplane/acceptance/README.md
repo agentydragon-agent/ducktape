@@ -70,8 +70,8 @@ bazelisk test //x/agentplane/acceptance:test_egress --test_output=streamed --tes
 Run the other live scenarios by their explicit targets: `:test_launch_presets`,
 `:test_instructions`, and `:test_mcp`.
 
-By default it tests `https://agentplane-staging.allegedly.works` and mints its own bearer token with
-`kubectl -n agentplane-staging create token agentplane-agent --audience=agentplane`. That call needs
+By default it tests `https://agentplane-testing.allegedly.works` and mints its own bearer token with
+`kubectl -n agentplane-testing create token agentplane-agent --audience=agentplane`. That call needs
 RBAC on `serviceaccounts/token`, and the app only admits subjects its `AGENTPLANE_TOKEN_SUBJECTS`
 names, so a token for any other ServiceAccount is refused with `403`.
 
@@ -79,17 +79,17 @@ Override any of it through the environment:
 
 | Variable                                | Default                                      |
 | --------------------------------------- | -------------------------------------------- |
-| `AGENTPLANE_ACCEPTANCE_URL`             | `https://agentplane-staging.allegedly.works` |
+| `AGENTPLANE_ACCEPTANCE_URL`             | `https://agentplane-testing.allegedly.works` |
 | `AGENTPLANE_ACCEPTANCE_TOKEN`           | minted with `kubectl`                        |
-| `AGENTPLANE_ACCEPTANCE_NAMESPACE`       | `agentplane-staging`                         |
+| `AGENTPLANE_ACCEPTANCE_NAMESPACE`       | `agentplane-testing`                         |
 | `AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT` | `agentplane-agent`                           |
-| `AGENTPLANE_ACCEPTANCE_IDP`             | `authentik`                                  |
-| `AGENTPLANE_OPERATOR_SECRET_PATH`       | staging acceptance Secret path               |
+| `AGENTPLANE_ACCEPTANCE_IDP`             | `dex`                                        |
+| `AGENTPLANE_OPERATOR_SECRET_PATH`       | testing acceptance Secret path               |
 
-For `agentplane-testing`, set `AGENTPLANE_ACCEPTANCE_IDP=dex` and point
-`AGENTPLANE_OPERATOR_SECRET_PATH` at the testing instance's dedicated operator
-credential Secret. The testing instance is Flux-managed and internal; expose only the
-controlled devbox access path required by the manual run. Do not copy credentials into
+Staging remains available for ad hoc click-through tests by overriding the URL, namespace,
+IDP, and operator Secret path to the Authentik deployment. The shipped default is Dex/testing.
+The testing environment is Flux-managed and exposes only the app and Dex HTTPS routes needed
+for the browser authorization-code flow; the MCP fixture itself is cluster-internal. Do not copy credentials into
 the checkout or pass them as command-line arguments.
 
 ### Controlled-host preflight
@@ -106,8 +106,8 @@ Before starting a long run, check the client-side seams separately:
 command -v bazelisk kubectl
 bazelisk version
 kubectl config current-context
-kubectl -n agentplane-staging auth can-i create serviceaccounts/token/agentplane-agent
-kubectl -n agentplane-staging create token agentplane-agent \
+kubectl -n agentplane-testing auth can-i create serviceaccounts/token/agentplane-agent
+kubectl -n agentplane-testing create token agentplane-agent \
   --audience=agentplane --duration=600s >/dev/null
 ```
 
@@ -123,7 +123,7 @@ Use the first point at which the run fails to choose the next investigation:
 | Observation                                                   | Likely seam                                                                  |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | No `accept-*` Sandbox is created                              | Bazel client, module/repository rules, kubeconfig, or acceptance-token setup |
-| Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or staging capacity                |
+| Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or testing capacity                |
 | App rejects the initial API request                           | Acceptance token audience, subject allowlist, or app ingress                 |
 | Model turn hangs and the decision ring is empty               | Sandbox proxy environment, proxy route, or model ingress path                |
 | Ring records a deny for an expected destination               | Egress policy/binding or destination URL mismatch                            |
@@ -144,7 +144,7 @@ execution/caching or mint substitute credentials to work around that boundary.
 The controlled-host instructions above are operator-only, not an agent-pod fallback.
 See [repository instructions](../../../AGENTS.md).
 
-Afterwards, check that nothing leaked: `kubectl -n agentplane-staging get sandboxes.agents.x-k8s.io`
+Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agents.x-k8s.io`
 should show no `accept-*`.
 
 ## What it costs
@@ -152,13 +152,13 @@ should show no `accept-*`.
 Each scenario provisions a Pod and runs turns on the cheap-experiments LiteLLM key with Haiku, so a
 full run is minutes and a few cents. Sandboxes are suspended and deleted in fixture teardown,
 including after a failure; a teardown that cannot delete one fails loudly, because a leaked sandbox
-holds a PVC and a node slot on staging.
+holds a PVC and a node slot in testing.
 
 ## TODO: sweep sandboxes a killed run leaks
 
 Fixture teardown suspends and deletes every sandbox a scenario created, including after a failure.
 It cannot run if the process is killed outright — a Bazel timeout, a `^C`, a dropped connection —
-and each leaked sandbox holds a PVC and a node slot on staging until someone notices.
+and each leaked sandbox holds a PVC and a node slot in testing until someone notices.
 
 What that wants is a sweep at session start: list the sandboxes whose names carry this suite's
 `accept-` stem, and delete any older than a run could plausibly be. Deliberately not built yet,

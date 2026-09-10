@@ -1,4 +1,4 @@
-"""Real staging agents discover, submit, poll and report an MCP-backed Action."""
+"""Real testing agents discover, submit, poll and report an MCP-backed Action."""
 
 import logging
 import os
@@ -49,7 +49,7 @@ class PendingMcpReport(BaseModel):
 
 
 def operator_idp() -> Literal["authentik", "dex"]:
-    value = os.environ.get("AGENTPLANE_ACCEPTANCE_IDP", "authentik")
+    value = os.environ.get("AGENTPLANE_ACCEPTANCE_IDP", "dex")
     if value not in {"authentik", "dex"}:
         pytest.fail("BLOCKED: AGENTPLANE_ACCEPTANCE_IDP must be authentik or dex", pytrace=False)
     return cast(Literal["authentik", "dex"], value)

@@ -48,6 +48,7 @@ py_test(
     # kubectl reads the caller's own kubeconfig to mint the app's token; with neither of these it
     # falls back to http://localhost:8080 and fails for a reason that looks nothing like the cause.
     env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_NAMESPACE",
         "HOME",
         "KUBECONFIG",
     ],
@@ -119,7 +120,7 @@ py_test(
     ],
 )
 
-# Live staging, using the same real-agent fixtures and execution boundary as this suite.
+# Live testing, using the same real-agent fixtures and execution boundary as this suite.
 py_test(
     name = "test_mcp",
     timeout = "eternal",
