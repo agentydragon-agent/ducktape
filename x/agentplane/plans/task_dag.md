@@ -42,7 +42,8 @@ flowchart TB
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>real Claude.ai/Claude Code proof"]:::future
     CUTOVER["Planned milestone<br/>Haku Console affordance cutover<br/>Kubernetes + hostexec + GitHub"]:::active
     K8SAUTH["Planned support<br/>browser-mediated Kubernetes auth<br/>linkage, refresh, revocation"]:::future
-    HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
+    HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution<br/>bounded terminal output"]:::future
+    HOSTEXEC_PROGRESS["Deferred capability<br/>live stdout/stderr progress<br/>lease-authenticated updates"]:::future
     APPROVALUI["Needed live evidence<br/>deployed SSE/push operator federation + BFF<br/>identity and approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
@@ -75,6 +76,7 @@ flowchart TB
     APPROVALUI --> CUTOVER
     K8SAUTH --> CUTOVER
     MCPAUTH --> CUTOVER
+    HOSTEXEC --> HOSTEXEC_PROGRESS
     HOSTEXEC --> CUTOVER
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     APPROVALUI -. replacement surface .-> RETIRE_TOOLS
@@ -142,8 +144,9 @@ provenance, result recovery, and rollback evidence exists. The initial cutoff se
   Do not copy a kubeconfig or reusable bearer into the MCP client, Sandbox, or transcript; Kubernetes
   RBAC remains authoritative and the browser flow returns only the reviewed linkage needed to call it.
 - **hostexec:** prefer an Action Service Executor adapter over a second hostexec MCP facade. Preserve
-  hostexec's machine/user authorization, credential exchange, bounded output, progress,
-  duplicate-start refusal, and unknown-outcome semantics. Repoint existing hostexec instances at an
+  hostexec's machine/user authorization, credential exchange, bounded terminal output,
+  duplicate-start refusal, and unknown-outcome semantics. Live stdout/stderr progress is a
+  separate deferred capability (`HOSTEXEC_PROGRESS`). Repoint existing hostexec instances at an
   Agentplane-owned route through a compatibility and reversible rollout, rather than changing all
   daemons and the frontend in one cutover.
 - **GitHub:** use the credentialed-upstream account track (`MCPAUTH`) behind the generic MCP frontend.
@@ -353,12 +356,21 @@ Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` mil
 ### `HOSTEXEC` — hostexec-backed Action execution
 
 **Deferred support:** add hostexec as an Action Service Executor adapter, preserving hostexec's
-existing machine/user authorization, credential exchange, process-state, output, and no-retry
-boundaries. This is an adapter behind the existing execution contract, not a reason to build a generic worker framework first.
+existing machine/user authorization, credential exchange, process-state, bounded terminal output,
+and no-retry boundaries. The first slice deliberately excludes streamed stdout/stderr progress;
+this is an adapter behind the existing execution contract, not a reason to build a generic worker
+framework first.
 
-**Acceptance evidence:** one approved host command produces one durable Execution with bounded output
-and safe terminal/unknown handling; duplicate starts do not run the command twice, and the Action
-Service never receives a reusable host credential.
+**Acceptance evidence:** one approved host command produces one durable Execution with bounded
+terminal output and safe terminal/unknown handling; duplicate starts do not run the command twice,
+and the Action Service never receives a reusable host credential.
+
+### `HOSTEXEC_PROGRESS` — live hostexec stdout/stderr progress
+
+**Deferred capability:** after the base hostexec adapter is proven, add lease-authenticated,
+coalesced stdout/stderr updates while a command is running. Persist only bounded, reconnectable
+progress snapshots or events; never create a second execution/progress authority. Preserve the
+same liveness, no-retry, output-limit, and credential-boundary rules as the base adapter.
 
 ### `LIVE_CLEAN` — executor heartbeat retention cleanup
 
