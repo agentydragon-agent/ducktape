@@ -238,7 +238,6 @@ py_test(
         "//finance/augur/sim:session",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
