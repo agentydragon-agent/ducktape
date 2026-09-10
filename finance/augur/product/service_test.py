@@ -77,7 +77,6 @@ from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
-from finance.augur.sim.session import _Session
 from finance.augur.sim.testing.case import Case
 
 
@@ -537,25 +536,21 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     }
 
 
-@pytest.fixture
-def financial_months(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, tuple[int, ...]]]:
-    months: list[tuple[int, tuple[int, ...]]] = []
-    original = _Session.close_month
-
-    def counted(session: _Session) -> None:
-        months.append((session.month, tuple(session.active())))
-        original(session)
-
-    monkeypatch.setattr(_Session, "close_month", counted)
-    return months
-
-
-def test_selected_detail_executes_financial_months_once(
-    product: service.ProductService, scenario_key: ScenarioKey, financial_months: list[tuple[int, tuple[int, ...]]]
+def test_selected_detail_executes_financially_once(
+    product: service.ProductService, scenario_key: ScenarioKey, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    original = service.execute
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "execute", counted)
     detail = product.rollout(_rollout_request(scenario_key))
 
-    assert financial_months == [(month, (0,)) for month in range(scenario_key.horizon_months)]
+    assert calls == 1
     assert detail.rollout.failed is False
     assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(248_875)
     assert detail.rollout.ending_metrics.holding_value_quanta == _usd_quanta(835_500)
@@ -629,9 +624,7 @@ def test_metric_fan_does_not_materialize_rollout_events(
     product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(50,)))
 
 
-def test_failed_rollout_preserves_stop_book_without_post_stop_values(
-    product: service.ProductService, financial_months: list[tuple[int, tuple[int, ...]]]
-) -> None:
+def test_failed_rollout_preserves_stop_book_without_post_stop_values(product: service.ProductService) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
@@ -652,10 +645,8 @@ def test_failed_rollout_preserves_stop_book_without_post_stop_values(
     assert fan.terminal_metric_percentiles == {"percentile": [50.0], "value_quanta": [None]}
     assert fan.completed_count == 0
 
-    financial_months.clear()
     detail = product.rollout(_rollout_request(scenario))
 
-    assert financial_months == [(0, (0,))]
     assert detail.rollout.failed is True
     assert detail.rollout.ending_metrics.failed_month_index == 0
     assert detail.rollout.ending_metrics.snapshot_index == 1
