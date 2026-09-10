@@ -26,14 +26,15 @@ static binding model require operator design confirmation; they do not gate the 
 
 ## Concrete long-running adapters (`HOSTEXEC`)
 
-A concrete long-running consumer must define the backend's supported, authenticated and bounded
-progress/status/output-so-far observations for the existing Execution. Use authoritative
-reconciliation only where the backend supports it; otherwise retain an unknown outcome. A missed
-heartbeat cannot prove an external effect stopped. Status reads never create another dispatch or
-blind retry. Preserve backend machine/user authorization and keep reusable privileged credentials
-outside the harness.
+The initial hostexec slice is deliberately limited to one approved invocation, bounded terminal
+output, and safe terminal/unknown handling. Live progress/status/output-so-far observations are a
+separate deferred capability on the task DAG (`HOSTEXEC_PROGRESS`). When that capability is picked
+up, it must use authenticated lease-bound updates and durable bounded snapshots; a missed heartbeat
+cannot prove an external effect stopped. Status reads must never create another dispatch or blind
+retry. Preserve backend machine/user authorization and keep reusable privileged credentials outside
+the harness.
 
-Prove exactly one invocation, authorized/redacted observations, safe terminal or unknown results,
+Prove exactly one invocation, authorized/redacted terminal output, safe terminal or unknown results,
 and duplicate-start refusal against the concrete backend. Do not build a generic worker transport
 without a consumer requiring it. Broader delegated-versus-brokered policy is in
 [external access](external_access.md); standing grants remain separate access objects.
