@@ -65,6 +65,17 @@ spec:
               protocol: TCP
           serverNames:
             - auth.allegedly.works
+    # Remote MCP OAuth metadata/token and MCP traffic use the public Gateway/remote-node path.
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.githubcopilot.com
+            - kubectl-passthrough-mcp.allegedly.works
     # Gateway Service traffic is checked against the selected backend, with
     # the client's original SNI. See cluster/debug/agentplane_oidc/gateway_service_probe.md.
     - toEndpoints:

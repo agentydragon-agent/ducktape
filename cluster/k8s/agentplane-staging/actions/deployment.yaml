@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: agentplane-actions
   annotations:
-    secret.reloader.stakater.com/reload: agentplane-action-federation,agentplane-mcp-oauth
+    secret.reloader.stakater.com/reload: agentplane-action-federation,agentplane-mcp-oauth,haku-console-github-mcp-client-credentials
 spec:
   replicas: 1
   strategy:
@@ -41,6 +41,11 @@ spec:
                 secretKeyRef:
                   name: agentplane-mcp-oauth
                   key: oauth
+            - name: AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-github-mcp-client-credentials
+                  key: client_id
             - name: AGENTPLANE_ACTIONS_OPERATOR_OIDC
               valueFrom:
                 secretKeyRef:
@@ -98,6 +103,10 @@ spec:
             - name: oauth
               mountPath: /etc/agentplane-mcp
               readOnly: true
+            - name: github-mcp-client
+              mountPath: /etc/agentplane-mcp/github-client-secret
+              subPath: client_secret
+              readOnly: true
             - name: settings
               mountPath: /etc/agentplane-actions
               readOnly: true
@@ -125,6 +134,10 @@ spec:
               memory: 512Mi
           securityContext: *container-security
       volumes:
+        - name: github-mcp-client
+          secret:
+            secretName: haku-console-github-mcp-client-credentials
+            defaultMode: 0440
         - name: oauth
           secret:
             secretName: agentplane-mcp-oauth
