@@ -27,6 +27,13 @@ let
   proxyUrl = "http://${proxyHost}:8080";
   buildbuddyKeyDevice = "/dev/disk/by-id/virtio-pcbuildbuddy";
   buildbuddyRuntimeDir = "/run/public-coder-devbox-buildbuddy";
+  buildbuddyEnvironmentFile = "${buildbuddyRuntimeDir}/environment";
+  buildbuddyBashEnvFile = "/etc/public-coder-devbox/bash-env";
+  buildbuddyShellInit = ''
+    if [ -r "${buildbuddyEnvironmentFile}" ]; then
+      . "${buildbuddyEnvironmentFile}"
+    fi
+  '';
   proxyCaDevice = "/dev/disk/by-id/virtio-pcproxyca";
   proxyCaRuntimeDir = "/run/public-coder-devbox-proxy-ca";
   proxyCaBundle = "${proxyCaRuntimeDir}/ca-bundle.crt";
@@ -163,7 +170,7 @@ in
   users.users.coder = {
     isNormalUser = true;
     home = "/home/coder";
-    shell = pkgs.zsh;
+    shell = pkgs.bash;
     openssh.authorizedKeys.keys = [
       keys.publicCoderDevbox
       # sshpiper's mapping key (cluster/k8s/agents/public-coder-agent/sshpiper). Authorized here
@@ -172,6 +179,20 @@ in
       keys.publicCoderAgentSshpiper
     ];
   };
+
+  # SSH commands use non-interactive Bash, so propagate the non-secret loader path
+  # there. The loader reads the credential only at runtime after the key service runs.
+  services.openssh.extraConfig = ''
+    Match User coder
+      SetEnv BASH_ENV=${buildbuddyBashEnvFile}
+      SetEnv GH_PAT=proxy-github-placeholder
+      SetEnv GH_TOKEN=proxy-github-placeholder
+      SetEnv KUBECONFIG=/home/coder/.kube/config
+  '';
+
+  environment.etc."public-coder-devbox/bash-env".text = buildbuddyShellInit;
+  environment.loginShellInit = buildbuddyShellInit;
+  programs.bash.interactiveShellInit = buildbuddyShellInit;
 
   environment.systemPackages = with pkgs; [
     htop
@@ -346,7 +367,9 @@ in
       [ "$mounted" -eq 1 ] || { echo "BuildBuddy key disk missing" >&2; exit 1; }
       test -s "$src/api-key"
       umask 077
-      { printf 'BUILDBUDDY_API_KEY='; cat "$src/api-key"; printf '\n'; } > "${buildbuddyRuntimeDir}/environment"
+      { printf 'export BUILDBUDDY_API_KEY='; cat "$src/api-key"; printf '\n'; } > "${buildbuddyEnvironmentFile}"
+      chown coder:users "${buildbuddyEnvironmentFile}"
+      chmod 0600 "${buildbuddyEnvironmentFile}"
       install -d -m0700 -o coder -g users /home/coder/.config/bazel
       { printf 'common:rbe --remote_header=x-buildbuddy-api-key='; cat "$src/api-key"; printf '\n'; } > /home/coder/.config/bazel/buildbuddy.bazelrc
       chown coder:users /home/coder/.config/bazel/buildbuddy.bazelrc
