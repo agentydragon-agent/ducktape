@@ -199,9 +199,10 @@ async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() ->
             return httpx.Response(302, headers={"location": f"{dex}/dex/auth/local?req=test-request"})
         if request.url.path == "/dex/auth/local" and request.method == "GET":
             return httpx.Response(
-                200, text='<form method="post" action="/dex/auth/local"><input value="test-request" name="req"></form>'
+                200,
+                text='<form method="post" action="/dex/auth/local/login"><input value="test-request" name="req"></form>',
             )
-        if request.url.path == "/dex/auth/local" and request.method == "POST":
+        if request.url.path == "/dex/auth/local/login" and request.method == "POST":
             assert request.content == b"req=test-request&login=test-user&password=test-password"
             return httpx.Response(302, headers={"location": f"{APP}/auth/callback?state=server-state&code=***"})
         if request.url.path == "/auth/callback":
@@ -218,7 +219,7 @@ async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() ->
         "GET /auth/login",
         "GET /dex/auth",
         "GET /dex/auth/local",
-        "POST /dex/auth/local",
+        "POST /dex/auth/local/login",
         "GET /auth/callback",
         "GET /auth/me",
     ]
