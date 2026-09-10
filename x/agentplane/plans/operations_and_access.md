@@ -8,7 +8,7 @@ Claims, leases, unknown outcomes, and reconciliation live in
 [operator federation](../docs/operator_federation.md). Do not reopen these as first-adapter design gates.
 
 The [task DAG](task_dag.md) tracks the remaining work. The existing credentialless MCP runtime and
-review UI need deployed acceptance (`MCP0` / `APPROVALUI`), not reimplementation; use the
+review UI need deployed acceptance (`MCPDEPLOY` / `APPROVALUI`), not reimplementation; use the
 [acceptance instructions](../acceptance/README.md).
 
 ## Credentialed upstream accounts (`MCPAUTH` / `CRED`)
