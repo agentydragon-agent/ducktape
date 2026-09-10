@@ -97,7 +97,7 @@ spec:
             # AGENTPLANE_TOKEN_SUBJECTS below: the audience `--token-audience` defaults to gates
             # nothing on its own, because whoever mints a token chooses what audience it carries.
             - name: AGENTPLANE_OIDC_ISSUER
-              value: https://agentplane-dex-testing.allegedly.works
+              value: https://agentplane-dex-testing.allegedly.works/dex
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
               value: https://agentplane-testing.allegedly.works
             - name: AGENTPLANE_OIDC_CLIENT_ID
