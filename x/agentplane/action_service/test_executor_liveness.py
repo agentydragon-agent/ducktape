@@ -350,6 +350,48 @@ async def test_drain_includes_a_claim_whose_database_reply_is_still_in_flight(
         await service.close()
 
 
+async def test_drain_waits_for_terminal_persistence_and_renews_its_lease(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    store = ActionStore(make_sessionmaker(engine))
+    executor = GatedExecutor()
+    persisting, release_persistence, renewed = (asyncio.Event() for _ in range(3))
+    finish = store.finish_execution
+    heartbeat = store.heartbeat_execution
+    service = ActionService(store, echo_catalog, {"agentplane": executor}, lease_duration=timedelta(milliseconds=300))
+    request_id = await _allowed_execution(store, idempotency_key="terminal-persistence")
+
+    async def delayed_finish(request_id: UUID, executor_id: str, lease_token: UUID, result: ExecutionResult) -> None:
+        persisting.set()
+        await release_persistence.wait()
+        await finish(request_id, executor_id, lease_token, result)
+
+    async def renew(request_id: UUID, executor_id: str, lease_token: UUID, *, lease_duration: timedelta) -> bool:
+        accepted = await heartbeat(request_id, executor_id, lease_token, lease_duration=lease_duration)
+        if persisting.is_set() and accepted:
+            renewed.set()
+        return accepted
+
+    try:
+        with patch.object(store, "finish_execution", delayed_finish), patch.object(store, "heartbeat_execution", renew):
+            await service.start()
+            async with asyncio.timeout(5):
+                await executor.started.wait()
+                service.begin_drain()
+                executor.release.set()
+                await persisting.wait()
+                await renewed.wait()
+                assert (await store.get(request_id, CALLER)).state is ActionState.RUNNING
+                release_persistence.set()
+                await service.close()
+        assert (await store.get(request_id, CALLER)).state is ActionState.SUCCEEDED
+        assert not any(task.get_name() == "action-completion-renewal" for task in asyncio.all_tasks())
+    finally:
+        executor.release.set()
+        release_persistence.set()
+        await service.close()
+
+
 async def test_forced_drain_persists_unknown_and_never_replays(
     engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:

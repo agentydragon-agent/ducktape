@@ -468,6 +468,45 @@ async def test_mcp_renewal_failure_stops_waiting_without_retry(failure: str) -> 
         await executor.close()
 
 
+async def test_discovery_wait_renews_and_lost_lease_prevents_tool_call() -> None:
+    server = FastMCP("discovery-lease-test")
+    listing, release_list = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    @server.tool
+    def echo() -> str:
+        calls.append("called")
+        return "echo"
+
+    lease = ControlledLease(listing, "healthy")
+    executor = McpActionGroupExecutor(GROUP_KEY, _group(), server)
+    await executor.start()
+    list_tools = executor._client.list_tools
+
+    async def gated_list():
+        listing.set()
+        await release_list.wait()
+        return await list_tools()
+
+    try:
+        with patch.object(executor._client, "list_tools", gated_list):
+            task = asyncio.create_task(
+                executor.execute(_request(action=ActionIdentity(group=GROUP_KEY, name="echo"), arguments={}), lease)
+            )
+            async with asyncio.timeout(5):
+                await lease.renewed.wait()
+                lease.failure = "lost"
+                release_list.set()
+                with pytest.raises(ExecutionOutcomeUnknownError, match="lease"):
+                    await task
+        assert calls == []
+        assert lease.active == 0
+        assert not any(task.get_name() == "mcp-execution-renewal" for task in asyncio.all_tasks())
+    finally:
+        release_list.set()
+        await executor.close()
+
+
 async def test_mcp_cancellation_joins_renewal_task() -> None:
     server = FastMCP("cancel-test")
     started = asyncio.Event()
