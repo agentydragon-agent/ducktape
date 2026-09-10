@@ -12,11 +12,13 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 from uuid import uuid4
 
+import pytest
 import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -38,7 +40,7 @@ from x.agentplane.action_service.models import (
     Verdict,
 )
 from x.agentplane.action_service.runtime import running_executor
-from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
 
 CALLER = Principal(issuer="test-workload", subject="sandbox-a", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
@@ -407,6 +409,182 @@ async def test_runtime_binds_configured_mcp_group(engine: AsyncEngine, tmp_path:
             assert marker.read_text() == "started"
         finally:
             await service.close()
+
+
+class ControlledLease:
+    renewal_interval = timedelta(milliseconds=10)
+
+    def __init__(self, started: asyncio.Event, failure: str) -> None:
+        self.started = started
+        self.failure = failure
+        self.renewed = asyncio.Event()
+        self.calls = 0
+        self.active = 0
+
+    async def heartbeat(self) -> bool:
+        self.active += 1
+        self.calls += 1
+        try:
+            if self.started.is_set():
+                self.renewed.set()
+                if self.failure == "lost":
+                    return False
+                if self.failure == "database":
+                    raise RuntimeError("test-private-database-detail")
+                if self.failure == "hung":
+                    await asyncio.Event().wait()
+            return True
+        finally:
+            self.active -= 1
+
+
+@pytest.mark.parametrize("failure", ["lost", "database", "hung"])
+async def test_mcp_renewal_failure_stops_waiting_without_retry(failure: str) -> None:
+    server = FastMCP("lease-test")
+    started = asyncio.Event()
+    calls = []
+
+    @server.tool
+    async def blocked() -> str:
+        calls.append("called")
+        started.set()
+        await asyncio.Event().wait()
+        return "unreachable"
+
+    lease = ControlledLease(started, failure)
+    executor = McpActionGroupExecutor(GROUP_KEY, _group(), server)
+    await executor.start()
+    try:
+        async with asyncio.timeout(5):
+            with pytest.raises(ExecutionOutcomeUnknownError, match="lease") as error:
+                await executor.execute(
+                    _request(action=ActionIdentity(group=GROUP_KEY, name="blocked"), arguments={}), lease
+                )
+        assert "test-private" not in str(error.value)
+        assert calls == ["called"]
+        assert lease.active == 0
+        assert not any(task.get_name() == "mcp-execution-renewal" for task in asyncio.all_tasks())
+    finally:
+        await executor.close()
+
+
+async def test_mcp_cancellation_joins_renewal_task() -> None:
+    server = FastMCP("cancel-test")
+    started = asyncio.Event()
+
+    @server.tool
+    async def blocked() -> str:
+        started.set()
+        await asyncio.Event().wait()
+        return "unreachable"
+
+    lease = ControlledLease(started, "healthy")
+    executor = McpActionGroupExecutor(GROUP_KEY, _group(), server)
+    await executor.start()
+    try:
+        task = asyncio.create_task(
+            executor.execute(_request(action=ActionIdentity(group=GROUP_KEY, name="blocked"), arguments={}), lease)
+        )
+        async with asyncio.timeout(5):
+            await lease.renewed.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert lease.active == 0
+        assert not any(task.get_name() == "mcp-execution-renewal" for task in asyncio.all_tasks())
+    finally:
+        await executor.close()
+
+
+async def test_mcp_deadline_stops_healthy_renewal(execution_lease: ExecutionLease) -> None:
+    server = FastMCP("deadline-test")
+
+    @server.tool
+    async def blocked() -> str:
+        await asyncio.Event().wait()
+        return "unreachable"
+
+    executor = McpActionGroupExecutor(GROUP_KEY, _group(), server, execution_timeout=timedelta(milliseconds=30))
+    await executor.start()
+    try:
+        async with asyncio.timeout(5):
+            with pytest.raises(ExecutionOutcomeUnknownError, match="deadline"):
+                await executor.execute(
+                    _request(action=ActionIdentity(group=GROUP_KEY, name="blocked"), arguments={}), execution_lease
+                )
+        assert not any(task.get_name() == "mcp-execution-renewal" for task in asyncio.all_tasks())
+    finally:
+        await executor.close()
+
+
+async def test_long_mcp_call_drains_with_live_execution_and_executor_leases(engine: AsyncEngine) -> None:
+    server = FastMCP("drain-test")
+    started, release, renewed_past_window, process_heartbeat = (asyncio.Event() for _ in range(4))
+    calls = []
+
+    @server.tool
+    async def echo_once(text: str) -> dict[str, str]:
+        calls.append(text)
+        started.set()
+        await release.wait()
+        return {"echoed": text}
+
+    group = _group()
+    executor = McpActionGroupExecutor(GROUP_KEY, group, server)
+    store = ActionStore(make_sessionmaker(engine))
+    service = ActionService(
+        store,
+        ActionCatalog(groups={GROUP_KEY: group}),
+        {GROUP_KEY: executor},
+        lease_duration=timedelta(milliseconds=300),
+        executor_heartbeat_interval=timedelta(milliseconds=30),
+    )
+    heartbeat = store.heartbeat_execution
+    record = store.record_executor_heartbeat
+    original_deadline: datetime | None = None
+
+    async def renew(*args, **kwargs):
+        nonlocal original_deadline
+        result = await heartbeat(*args, **kwargs)
+        if original_deadline is None:
+            original_deadline = datetime.now(UTC) + kwargs["lease_duration"]
+        elif datetime.now(UTC) > original_deadline and service.draining:
+            renewed_past_window.set()
+        return result
+
+    async def record_process(*args, **kwargs):
+        await record(*args, **kwargs)
+        if service.draining:
+            process_heartbeat.set()
+
+    await executor.start()
+    try:
+        with (
+            patch.object(store, "heartbeat_execution", renew),
+            patch.object(store, "record_executor_heartbeat", record_process),
+        ):
+            await service.start()
+            request_id = await _allowed_execution(service, idempotency_key="long-drain")
+            async with asyncio.timeout(5):
+                await started.wait()
+                service.begin_drain()
+                closing = asyncio.create_task(service.close())
+                await renewed_past_window.wait()
+                await process_heartbeat.wait()
+                assert await store.expire_stale_leases(executor_health_timeout=timedelta(seconds=1)) == []
+                assert (await store.get(request_id, CALLER)).state is ActionState.RUNNING
+                assert not closing.done()
+                release.set()
+                await closing
+            final = await store.get(request_id, CALLER)
+            assert final.state is ActionState.SUCCEEDED
+            assert final.execution is not None
+            assert final.execution.result == {"echoed": "hi"}
+            assert calls == ["hi"]
+    finally:
+        release.set()
+        await service.close()
+        await executor.close()
 
 
 if __name__ == "__main__":

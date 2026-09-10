@@ -7,6 +7,7 @@ import logging
 import os
 from contextlib import AsyncExitStack
 from pathlib import Path
+from types import FrameType
 
 import uvicorn
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
@@ -39,6 +40,18 @@ from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 # gazelle:include_dep @pypi//pyyaml
 
 logger = logging.getLogger(__name__)
+
+
+class ActionServer(uvicorn.Server):
+    def __init__(self, config: uvicorn.Config, service: ActionService) -> None:
+        super().__init__(config)
+        self._service = service
+
+    def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+        # Lifespan teardown happens AFTER HTTP/SSE shutdown. Fence admission and start
+        # the execution deadline at signal receipt, not after that budget is spent.
+        self._service.begin_drain()
+        super().handle_exit(sig, frame)
 
 
 class Settings(BaseSettings):
@@ -198,7 +211,9 @@ async def async_main(settings: Settings) -> None:
             else None,
             mcp_linkage=mcp_linkage,
         )
-        await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
+        await ActionServer(
+            uvicorn.Config(app, host=settings.host, port=settings.port, timeout_graceful_shutdown=5), service
+        ).serve()
 
 
 if __name__ == "__main__":

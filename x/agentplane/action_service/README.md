@@ -380,3 +380,15 @@ Only pending requests need an actionable notification. Requests resolved before 
 need no new alert; browsers previously notified receive a non-actionable resolution notice. Push
 payloads contain Action identity/version, not arguments, credentials, or results. Notification
 buttons use the integration app's ordinary operator session and canonical Decision contract.
+
+## Shutdown budgets
+
+SIGTERM/SIGINT synchronously fence dispatch and HTTP admission. `/readyz` becomes unavailable;
+`/healthz` remains a liveness check. Uvicorn waits at most 5 seconds for HTTP requests (including
+SSE); this time counts against the 20-second execution drain. Forced cancellation gets another
+5 seconds to record unknown outcomes. Both deployed environments allow 60 seconds for termination,
+leaving a margin for transport/database cleanup. No preStop delay consumes that budget.
+
+MCP renewals run every third of the granted lease duration, with each renewal RPC bounded by the
+same interval. The entire execution exchange has a 10-minute deadline. Cancellation joins the
+local exchange and renewal tasks; it cannot establish that a remote effect was cancelled.

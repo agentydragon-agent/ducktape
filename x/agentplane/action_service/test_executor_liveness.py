@@ -8,8 +8,10 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 from typing import Any
-from uuid import uuid4
+from unittest.mock import patch
+from uuid import UUID, uuid4
 
+import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -19,6 +21,7 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
     DecisionInput,
+    ExecutionClaim,
     ExecutionLease,
     ExecutionRequest,
     ExecutionResult,
@@ -29,7 +32,7 @@ from x.agentplane.action_service.models import (
     UnknownOutcomeReason,
     Verdict,
 )
-from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.service import ActionService, ServiceDrainingError
 
 CALLER = Principal(issuer="test-workload", subject="sandbox-a", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
@@ -270,6 +273,145 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
         assert len(executor.requests) == 1
     finally:
         await service.close()
+
+
+class GatedExecutor:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls = 0
+
+    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
+        self.calls += 1
+        self.started.set()
+        await self.release.wait()
+        return ExecutionResult(state=ExecutionState.SUCCEEDED, result="finished")
+
+
+async def test_drain_fences_queued_dispatch_and_another_replica_claims_it(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    store = ActionStore(make_sessionmaker(engine))
+    executor = GatedExecutor()
+    executor.release.set()
+    request_id = await _allowed_execution(store, idempotency_key="queued-drain")
+    first = ActionService(store, echo_catalog, {"agentplane": executor})
+    second = ActionService(store, echo_catalog, {"agentplane": executor})
+    try:
+        await first.start()
+        # start() schedules the durable row, but the queued task has not entered the claim RPC.
+        first.begin_drain()
+        await first.close()
+        assert await store.pending_dispatches() == [request_id]
+        assert executor.calls == 0
+        with pytest.raises(ServiceDrainingError):
+            await first.submit(ActionRequestInput(idempotency_key="late", action=ACTION_ID, arguments={}), CALLER)
+        await second.start()
+        await _poll_state(store, request_id, want=ActionState.SUCCEEDED)
+        assert executor.calls == 1
+    finally:
+        await first.close()
+        await second.close()
+
+
+async def test_drain_includes_a_claim_whose_database_reply_is_still_in_flight(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    store = ActionStore(make_sessionmaker(engine))
+    executor = GatedExecutor()
+    claimed, return_claim = asyncio.Event(), asyncio.Event()
+    claim_execution = store.claim_execution
+
+    async def delayed_claim(request_id: UUID, *, executor_id: str, lease_duration: timedelta) -> ExecutionClaim | None:
+        result = await claim_execution(request_id, executor_id=executor_id, lease_duration=lease_duration)
+        claimed.set()
+        await return_claim.wait()
+        return result
+
+    request_id = await _allowed_execution(store, idempotency_key="claim-race")
+    service = ActionService(store, echo_catalog, {"agentplane": executor})
+    try:
+        with patch.object(store, "claim_execution", delayed_claim):
+            await service.start()
+            async with asyncio.timeout(5):
+                await claimed.wait()
+                service.begin_drain()
+                closing = asyncio.create_task(service.close())
+                return_claim.set()
+                await executor.started.wait()
+                assert not closing.done()
+                executor.release.set()
+                await closing
+        assert (await store.get(request_id, CALLER)).state is ActionState.SUCCEEDED
+        assert executor.calls == 1
+    finally:
+        return_claim.set()
+        executor.release.set()
+        await service.close()
+
+
+async def test_forced_drain_persists_unknown_and_never_replays(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    store = ActionStore(make_sessionmaker(engine))
+    executor = GatedExecutor()
+    request_id = await _allowed_execution(store, idempotency_key="forced-drain")
+    first = ActionService(store, echo_catalog, {"agentplane": executor}, drain_timeout=timedelta(0))
+    second = ActionService(store, echo_catalog, {"agentplane": executor})
+    try:
+        await first.start()
+        async with asyncio.timeout(5):
+            await executor.started.wait()
+            await first.close()
+        final = await store.get(request_id, CALLER)
+        assert final.state is ActionState.EXECUTION_UNKNOWN
+        assert final.execution is not None
+        assert final.execution.error is not None
+        assert final.execution.error["kind"] == UnknownOutcomeReason.COORDINATOR_STOPPED
+        assert await store.pending_dispatches() == []
+        await second.start()
+        await second.close()
+        assert executor.calls == 1
+    finally:
+        await first.close()
+        await second.close()
+
+
+async def test_forced_drain_bounds_unavailable_outcome_persistence(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    store = ActionStore(make_sessionmaker(engine))
+    executor = GatedExecutor()
+    request_id = await _allowed_execution(store, idempotency_key="hung-persistence")
+    service = ActionService(
+        store,
+        echo_catalog,
+        {"agentplane": executor},
+        drain_timeout=timedelta(0),
+        stop_timeout=timedelta(milliseconds=30),
+    )
+    persisting = asyncio.Event()
+    persistence_stopped = asyncio.Event()
+
+    async def unavailable_finish(
+        request_id: UUID, executor_id: str, lease_token: UUID, result: ExecutionResult
+    ) -> None:
+        persisting.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            persistence_stopped.set()
+
+    with patch.object(store, "finish_execution", unavailable_finish):
+        await service.start()
+        async with asyncio.timeout(5):
+            await executor.started.wait()
+            await service.close()
+    assert persisting.is_set()
+    assert persistence_stopped.is_set()
+    assert await store.pending_dispatches() == []
+    # With persistence unavailable, the durable claim remains fenced for lease-sweep recovery.
+    assert (await store.get(request_id, CALLER)).state is ActionState.RUNNING
 
 
 if __name__ == "__main__":

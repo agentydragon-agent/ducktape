@@ -114,3 +114,17 @@ across replacement/replicas. Enabling these contracts does not imply deployed cl
 MCP cancellation uses the same owner-only, pre-dispatch-claim cutoff and typed outcomes as the
 HTTP cancellation route. It requires no version and never stops in-progress execution. This is
 an explicit tool operation, separate from cancelling or disconnecting a receipt wait.
+
+## Execution ownership and shutdown
+
+MCP execution renews its ownership lease while waiting for schema discovery and the tool result.
+Renewal proves that the local owner is alive, not that the backend is making progress. Loss of
+ownership, inability to renew, or an execution deadline stops local waiting and reports an unknown
+outcome. None is evidence that a remote side effect stopped or permission to replay it.
+
+Termination removes readiness and refuses new traffic before waiting for HTTP shutdown. Queued
+work is left unclaimed for another replica. A claim already in progress belongs to the draining
+replica, which keeps execution and executor liveness active while waiting for its outcome.
+Completed work is persisted before adapters and database connections close. The drain has a bounded
+budget; forced cancellation records uncertainty when storage is available, otherwise lease expiry
+recovers it. Claimed work is never automatically replayed.

@@ -114,7 +114,11 @@ class McpActionGroupExecutor:
         transport: ClientTransport | Any,
         *,
         catalog_refresh_interval: timedelta = DEFAULT_CATALOG_REFRESH_INTERVAL,
+        execution_timeout: timedelta = timedelta(minutes=10),
     ) -> None:
+        if execution_timeout <= timedelta(0):
+            raise ValueError("execution_timeout must be positive")
+        self._execution_timeout = execution_timeout
         self._group_key = group_key
         self._group = group
         self._catalog_refresh_interval = catalog_refresh_interval
@@ -224,6 +228,42 @@ class McpActionGroupExecutor:
         self._group.available = True
 
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
+        # Ownership/liveness, not evidence of backend progress. Bound the whole exchange so
+        # an unresponsive remote call cannot be kept running indefinitely by our renewals.
+        await self._renew(lease)
+        execution = asyncio.create_task(self._execute(request, lease), name="mcp-execution")
+        renewal = asyncio.create_task(self._renew_loop(lease), name="mcp-execution-renewal")
+        try:
+            async with asyncio.timeout(self._execution_timeout.total_seconds()):
+                await asyncio.wait((execution, renewal), return_when=asyncio.FIRST_COMPLETED)
+                if execution.done():
+                    return await execution
+                await renewal
+                raise AssertionError("lease renewal loop returned")
+        except TimeoutError:
+            raise ExecutionOutcomeUnknownError("MCP execution deadline exceeded") from None
+        finally:
+            execution.cancel()
+            renewal.cancel()
+            await asyncio.gather(execution, renewal, return_exceptions=True)
+
+    async def _renew(self, lease: ExecutionLease) -> None:
+        try:
+            async with asyncio.timeout(lease.renewal_interval.total_seconds()):
+                owned = await lease.heartbeat()
+        except Exception:
+            # Database/transport errors can contain credentials. Losing proof of ownership
+            # stops local waiting, not the remote side effect, and never permits replay.
+            raise ExecutionOutcomeUnknownError("MCP lease renewal failed") from None
+        if not owned:
+            raise ExecutionOutcomeUnknownError("MCP execution lease lost")
+
+    async def _renew_loop(self, lease: ExecutionLease) -> None:
+        while True:
+            await asyncio.sleep(lease.renewal_interval.total_seconds())
+            await self._renew(lease)
+
+    async def _execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult:
         group_key, name = request.action.group, request.action.name
         if group_key != self._group_key:
             return ExecutionResult(
@@ -263,6 +303,7 @@ class McpActionGroupExecutor:
                 },
             )
 
+        await self._renew(lease)
         try:
             result = await self._client.call_tool(name, request.arguments, raise_on_error=False)
         except Exception as error:

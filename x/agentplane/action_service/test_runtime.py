@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 import sys
 import textwrap
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
 import pytest_bazel
 import uvicorn
@@ -20,10 +22,12 @@ from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from util.bazel.runfiles import get_required_path
+from x.agentplane.action_service.api import create_app
+from x.agentplane.action_service.auth import DisabledOperatorAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from x.agentplane.action_service.db import ActionStore, make_sessionmaker
 from x.agentplane.action_service.fixture_policy import FixtureAutoAllow
-from x.agentplane.action_service.main import Settings, async_main
+from x.agentplane.action_service.main import ActionServer, Settings, async_main
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
     ActionRequestInput,
@@ -38,6 +42,8 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, UnsupportedActionError
+from x.agentplane.action_service.updates import ActionUpdates
+from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
 CALLER = Principal(issuer="test", subject="sandbox", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
@@ -387,6 +393,36 @@ async def test_main_auto_allows_upstream_everything(db_url: str, everything_url:
         patch.object(uvicorn.Server, "serve", serve),
     ):
         await async_main(settings)
+
+
+async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine: AsyncEngine, db_url: str) -> None:
+    catalog = ActionCatalog(groups={})
+    service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
+    app = create_app(
+        service,
+        MagicMock(spec=SandboxPrincipalAuthenticator),
+        DisabledOperatorAuthenticator(),
+        catalog,
+        updates=ActionUpdates(db_url),
+    )
+    server = ActionServer(uvicorn.Config(app, timeout_graceful_shutdown=5), service)
+    original_handler = signal.getsignal(signal.SIGTERM)
+    # Uvicorn re-raises captured signals to the previous handler on context exit.
+    signal.signal(signal.SIGTERM, lambda sig, frame: None)
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test-actions") as client:
+            assert (await client.get("/readyz")).status_code == 200
+            with server.capture_signals():
+                signal.raise_signal(signal.SIGTERM)
+                assert server.should_exit
+                assert service.draining
+                assert (await client.get("/readyz")).status_code == 503
+                assert (await client.get("/healthz")).status_code == 200
+                assert (await client.post("/v1/action-requests", json={})).status_code == 503
+                assert (await client.post("/mcp", json={})).status_code == 503
+        await service.close()
+    finally:
+        signal.signal(signal.SIGTERM, original_handler)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,8 @@ spec:
     spec:
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
+      terminationGracePeriodSeconds: 60
       serviceAccountName: agentplane-actions
       imagePullSecrets:
         - name: forgejo-images-creds
@@ -99,7 +101,7 @@ spec:
               protocol: TCP
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10

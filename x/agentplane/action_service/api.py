@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.middleware.base import RequestResponseEndpoint
 from starlette.routing import Route
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
@@ -61,7 +62,12 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.push import PushIdentity, PushSubscriptionStore
-from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
+from x.agentplane.action_service.service import (
+    ActionService,
+    InvalidActionArgumentsError,
+    ServiceDrainingError,
+    UnsupportedActionError,
+)
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
@@ -196,6 +202,20 @@ def create_app(
     async def invalid_arguments(request: Request, error: InvalidActionArgumentsError) -> JSONResponse:
         del request
         return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error))
+
+    @app.exception_handler(ServiceDrainingError)
+    async def draining_error(request: Request, error: ServiceDrainingError) -> JSONResponse:
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Action Service is draining")
+
+    @app.middleware("http")
+    async def drain_admission(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if service.draining and request.url.path not in {"/healthz", "/metrics"}:
+            return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Action Service is draining")
+        return await call_next(request)
+
+    @app.get("/readyz")
+    async def readyz() -> dict[str, str]:
+        return {"status": "ok"}
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
