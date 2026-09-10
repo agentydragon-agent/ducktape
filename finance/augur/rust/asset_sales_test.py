@@ -15,10 +15,10 @@ from finance.augur.sim.actions import Action, DecisionActions, LotSale, Sell
 from finance.augur.sim.books import SecurityLotState
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
-from finance.augur.sim.scenario import InitialLot
+from finance.augur.sim.scenario import InitialLot, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case, levels, sampled, scenario
-from finance.augur.sim.testing.fixtures import VTI, checking
+from finance.augur.sim.testing.fixtures import VTI, checking, taxed
 
 QQQ = SecurityKey(symbol=SecuritySymbol("qqq"))
 BTC = SecurityKey(symbol=SecuritySymbol("btc"))
@@ -44,13 +44,20 @@ def _lot(
     )
 
 
-def _case(lots: list[InitialLot], prices: dict[SecurityKey, list[Decimal]], *, rollouts: int = 1) -> Case:
+def _case(
+    lots: list[InitialLot],
+    prices: dict[SecurityKey, list[Decimal]],
+    *,
+    rollouts: int = 1,
+    tax_profiles: list[TaxProfile] | None = None,
+) -> Case:
+    profiles = [] if tax_profiles is None else tax_profiles
+    balances = checking(("alice", Decimal(0)))
+    if profiles:
+        balances.extend(checking(("irs", Decimal(0))))
     return Case(
         scenario=scenario(
-            checking(("alice", Decimal(0))),
-            initial_lots=lots,
-            tax_profiles=[],
-            horizon_months=len(next(iter(prices.values()))) - 1,
+            balances, initial_lots=lots, tax_profiles=profiles, horizon_months=len(next(iter(prices.values()))) - 1
         ),
         rollout_count=rollouts,
         series={asset: levels([path] * rollouts) for asset, path in prices.items()},
@@ -198,6 +205,7 @@ def test_fifo_holding_period_classifies_each_disposition() -> None:
     case = _case(
         [_lot("long", 2, Decimal(40000), -12, asset=BTC), _lot("short", 1, Decimal(40000), 2, asset=BTC)],
         {BTC: [Decimal(60000)] * 8},
+        tax_profiles=[taxed("alice", "federal_us")],
     )
     [rollout] = _run(case, lambda obs: [_sale(obs, Fraction(5, 2), asset="btc")] if obs.month == 6 else [])
     assert rollout.stop is None
