@@ -7,13 +7,13 @@ scoped subjects need an explicit reviewed mapping; identical strings are never a
 from __future__ import annotations
 
 import time
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 import httpx
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mcp_infra.authentik_auth.oidc_principal import (
     AuthentikOidcPrincipalResolver,
@@ -29,12 +29,10 @@ class OperatorFederationError(Exception):
     """Fixed public failure codes only; never provider bodies or token material."""
 
 
-class ActionFederationSettings(BaseModel):
+class _ActionFederationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     service_url: str
-    mode: Literal["exchange", "direct"] = "exchange"
-    token_endpoint: str | None = None
     login_jwks_uri: str
     target: OperatorOidcSettings
     subject_mapping: dict[str, str] = Field(min_length=1)
@@ -55,11 +53,14 @@ class ActionFederationSettings(BaseModel):
             raise ValueError("service_url must be an HTTP(S) URL without credentials, query, or fragment")
         return value
 
+
+class ExchangeFederationSettings(_ActionFederationSettings):
+    mode: Literal["exchange"] = "exchange"
+    token_endpoint: str
+
     @field_validator("token_endpoint")
     @classmethod
-    def secure_exchange_endpoint(cls, value: str | None) -> str | None:
-        if value is None:
-            return value
+    def secure_exchange_endpoint(cls, value: str) -> str:
         url = urlsplit(value)
         if (
             not url.hostname
@@ -72,13 +73,13 @@ class ActionFederationSettings(BaseModel):
             raise ValueError("token_endpoint must be HTTPS (loopback HTTP is allowed for tests)")
         return value
 
-    @model_validator(mode="after")
-    def validate_mode(self) -> ActionFederationSettings:
-        if self.mode == "exchange" and self.token_endpoint is None:
-            raise ValueError("exchange federation requires token_endpoint")
-        if self.mode == "direct" and self.token_endpoint is not None:
-            raise ValueError("direct federation must not configure token_endpoint")
-        return self
+
+class DirectFederationSettings(_ActionFederationSettings):
+    mode: Literal["direct"] = "direct"
+    token_endpoint: None = None
+
+
+ActionFederationSettings = Annotated[ExchangeFederationSettings | DirectFederationSettings, Field(discriminator="mode")]
 
 
 class FederatedOperatorActions:
