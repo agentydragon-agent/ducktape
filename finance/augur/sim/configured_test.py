@@ -10,8 +10,15 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
+from finance.augur.sim import configured
 from finance.augur.sim.compiler.execution import compile_run
-from finance.augur.sim.configured import simulate_events, simulate_product_metrics
+from finance.augur.sim.configured import (
+    execute,
+    project_events,
+    project_product_metrics,
+    simulate_events,
+    simulate_product_metrics,
+)
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
@@ -29,6 +36,7 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyPurchase,
     TaxProfile,
 )
+from finance.augur.sim.session import Capture
 
 AGENT = "alice"
 HORIZON_MONTHS = 30
@@ -55,7 +63,7 @@ FRACTIONAL_CLOSING_COST_PCT = 6.375
 FRACTIONAL_CLOSING_COST_PROCEEDS_QUANTA = 56_175_001
 
 
-def sale_and_tax_year() -> CompiledRun:
+def sale_and_tax_year(*, rollout_count: int = 1) -> CompiledRun:
     """One long-term lot sold mid-horizon, and the tax year that closes after it.
 
     Small on purpose. The contract below is about shapes, schemas and consequences the
@@ -95,11 +103,17 @@ def sale_and_tax_year() -> CompiledRun:
         horizon_months=HORIZON_MONTHS,
     )
     external_series = ExternalSeriesContext.from_level_blocks(
-        [(VTI, np.full((1, HORIZON_MONTHS + 1), float(SALE_PRICE)))], rollout_count=1, horizon_months=HORIZON_MONTHS
+        [(VTI, np.full((rollout_count, HORIZON_MONTHS + 1), float(SALE_PRICE)))],
+        rollout_count=rollout_count,
+        horizon_months=HORIZON_MONTHS,
     )
     jurisdictions = load_jurisdictions_for(scenario)
     return compile_run(
-        scenario, rollout_count=1, external_series=external_series, jurisdictions=jurisdictions, locations={}
+        scenario,
+        rollout_count=rollout_count,
+        external_series=external_series,
+        jurisdictions=jurisdictions,
+        locations={},
     )
 
 
@@ -283,6 +297,59 @@ class TestConfigured:
         assert list(both.terminal_distribution.terminal_samples) == list(
             terminal_summary(arrays, metric="cash_quanta").terminal_samples
         )
+
+
+@pytest.mark.parametrize("capture", ["summary", "dense", "forensic"])
+def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> None:
+    run = sale_and_tax_year()
+    completed = execute(run, capture, product_actor=AGENT)
+    arrays = project_product_metrics(run, completed)
+    compact = simulate_product_metrics(run, primary_agent_id=AGENT)
+
+    assert arrays.rollout_ids == compact.rollout_ids
+    np.testing.assert_array_equal(arrays.failed_month, compact.failed_month)
+    for actual, expected in zip(arrays.base_series, compact.base_series, strict=True):
+        np.testing.assert_array_equal(actual, expected)
+    if capture == "summary":
+        assert all(result.financial is None and result.event_frames is None for result in completed)
+        with pytest.raises(RuntimeError, match="event projection requires"):
+            project_events(completed)
+    else:
+        assert all(result.configured_summary is None for result in completed)
+        assert project_events(completed) == simulate_events(run)
+        assert all(result.financial is not None for result in completed)
+        for result in completed:
+            assert result.financial is not None
+            assert bool(result.financial.journal) == (capture == "forensic")
+
+
+def test_projection_preserves_selected_original_path_identity() -> None:
+    run = sale_and_tax_year(rollout_count=3)
+    completed = execute(run, "dense", product_actor=AGENT)
+    selected = (completed[-1], completed[0])
+    arrays = project_product_metrics(run, selected)
+    expected = project_product_metrics(run, completed).select(tuple(result.rollout_id for result in selected))
+
+    assert arrays.rollout_ids == project_events(selected).rollout_ids == expected.rollout_ids
+    for actual, block in zip(arrays.base_series, expected.base_series, strict=True):
+        np.testing.assert_array_equal(actual, block)
+
+
+def test_in_process_events_do_not_export_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    def reject_export(*_args, **_kwargs):
+        raise AssertionError("in-process event projection must not serialize a configured artifact")
+
+    monkeypatch.setattr(configured, "_export", reject_export)
+    events = simulate_events(sale_and_tax_year())
+    assert events.lot_dispositions.height > 0
+    assert events.tax_accruals.height > 0
+
+
+def test_metrics_require_product_capture() -> None:
+    run = sale_and_tax_year()
+    completed = execute(run, "dense")
+    with pytest.raises(ValueError, match="product snapshots, expected"):
+        project_product_metrics(run, completed)
 
 
 if __name__ == "__main__":

@@ -208,6 +208,7 @@ py_test(
         "//finance/augur/sim:product_metrics",
         "//finance/augur/sim:quantiles",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:case",
         "@pypi//more_itertools",
         "@pypi//numpy",
