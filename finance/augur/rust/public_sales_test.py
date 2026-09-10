@@ -5,15 +5,18 @@ assessment, exact lot accounting and payment still use the common action session
 """
 
 from decimal import Decimal
+from typing import Any
 
 import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.simulator import Action, ActionSession, Decision, DecisionActions
-from finance.augur.sim.books import TaxAccrual
+from finance.augur.sim.actions import Action, DecisionActions, LotSale, PayClaim, Sell, Transfer
+from finance.augur.sim.books import AccountRef, TaxAccrual
+from finance.augur.sim.observations import Decision
 from finance.augur.sim.results import Executed, Finished, Rejected, RejectedAction, Rollout
 from finance.augur.sim.scenario import InitialLot, OrdinaryIncome, ScheduledTransfer
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import VTI, checking, taxed
 
@@ -30,28 +33,28 @@ def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionAc
     responses = []
     for decision in decisions:
         observation = decision.observation
-        actions = []
+        actions: list[Action] = []
         if observation.month == sale_month:
             actions.append(
-                Action.sell(
+                Sell(
                     cause_id="sell-vti",
                     agent_id="alice",
                     proceeds_account_id="checking",
                     asset_id="vti",
-                    lots=[
-                        (lot.account_id, lot.lot_id, lot.units)
+                    lots=tuple(
+                        LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=lot.units)
                         for lot in observation.public_positions
                         if lot.asset_id == "vti" and lot.account_id == "checking"
-                    ],
+                    ),
                 )
             )
         # Author order is sale, then this month's due payments. No engine allocator.
         actions.extend(
-            Action.pay_claim(
+            PayClaim(
                 request_id=index,
                 cause_id=claim.cause_id,
                 claim=claim,
-                from_account=("alice", "checking"),
+                from_account=AccountRef(agent_id="alice", account_id="checking"),
                 amount=claim.amount_due,
             )
             for index, claim in enumerate(observation.claims)
@@ -67,6 +70,39 @@ def _run(case: Case, *, sale_month: int, rollout_ids: list[int]) -> Finished:
         while not isinstance(batch, Finished):
             batch = session.advance(_sell_and_pay(batch, sale_month))
         return batch
+    finally:
+        session.close()
+
+
+def test_sale_receipt_cannot_be_rewritten_through_policy_memory() -> None:
+    session = ActionSession(_gain_case(wages=Decimal(0)).compiled_run, "alice", [0])
+    try:
+        batch = session.start()
+        assert not isinstance(batch, Finished)
+        lots = [
+            LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=lot.units)
+            for lot in batch[0].observation.public_positions
+        ]
+        request = Sell(
+            cause_id="sell-once", agent_id="alice", proceeds_account_id="checking", asset_id="vti", lots=tuple(lots)
+        )
+        batch = session.advance([DecisionActions(0, 0, [request])])
+        assert not isinstance(batch, Finished)
+        [receipt] = batch[0].observation.previous_receipts
+        assert isinstance(receipt.action, Sell)
+        expected = tuple(lots)
+        lots.clear()
+        recorded_lots: Any = receipt.action.lots
+        with pytest.raises(TypeError, match="does not support item assignment"):
+            recorded_lots[0] = LotSale(account_id="checking", lot_id="invented", units=1)
+        assert receipt.action.lots == expected
+        while not isinstance(batch, Finished):
+            batch = session.advance(_sell_and_pay(batch, sale_month=-1))
+        [rollout] = batch.rollouts
+        assert rollout.trace is not None
+        assert rollout.trace.receipts[0].action == request
+        assert len(rollout.trace.events.lot_dispositions) == 1
+        assert all(lot.units_remaining == 0 for lot in rollout.summary.ending_book.lots)
     finally:
         session.close()
 
@@ -280,14 +316,19 @@ def test_rejected_sale_preserves_successful_prefix_and_stops_only_its_path(indep
                         response.month,
                         [
                             *response.actions,
-                            Action.sell(
+                            Sell(
                                 cause_id="sell-exhausted-lot",
                                 agent_id="alice",
                                 proceeds_account_id="checking",
                                 asset_id="vti",
-                                lots=[("checking", "alice-vti", 1)],
+                                lots=(LotSale(account_id="checking", lot_id="alice-vti", units=1),),
                             ),
-                            Action.transfer("unattempted", ("alice", "checking"), ("irs", "checking"), 1),
+                            Transfer(
+                                cause_id="unattempted",
+                                from_account=AccountRef(agent_id="alice", account_id="checking"),
+                                to_account=AccountRef(agent_id="irs", account_id="checking"),
+                                amount=1,
+                            ),
                         ],
                     )
             batch = session.advance(responses)

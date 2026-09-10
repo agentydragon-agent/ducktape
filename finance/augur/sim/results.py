@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import Field, InstanceOf, JsonValue, TypeAdapter, field_serializer, field_validator, model_validator
 
+from finance.augur.sim.actions import Action, ClaimId
 from finance.augur.sim.books import (
     AccountRef,
     BondCashflowOutcome,
@@ -16,11 +17,6 @@ from finance.augur.sim.books import (
     TaxSettlementOutcome,
 )
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
-
-
-class ClaimId(Record):
-    month: int
-    index: int
 
 
 class RejectedAction(Record):
@@ -91,63 +87,6 @@ class PaymentReceipt(Record):
     @property
     def amount_paid(self) -> int:
         return self.amount_requested if isinstance(self.outcome, Paid) else 0
-
-
-class LotSale(Record):
-    account_id: str
-    lot_id: str
-    units: int
-
-
-class Sell(Record):
-    kind: Literal["Sell"] = "Sell"
-    cause_id: str
-    agent_id: str
-    proceeds_account_id: str
-    asset_id: str
-    lots: list[LotSale]
-
-
-class Buy(Record):
-    kind: Literal["Buy"] = "Buy"
-    cause_id: str
-    agent_id: str
-    cash_account_id: str
-    holding_account_id: str
-    asset_id: str
-    lot_id: str
-    quantity_scale: int
-    units: int
-
-
-class Transfer(Record):
-    kind: Literal["Transfer"] = "Transfer"
-    cause_id: str
-    from_account: AccountRef = Field(alias="from")
-    to_account: AccountRef = Field(alias="to")
-    amount: int
-
-
-class PayClaim(Record):
-    kind: Literal["PayClaim"] = "PayClaim"
-    request_id: int
-    cause_id: str
-    claim: ClaimId
-    from_account: AccountRef = Field(alias="from")
-    amount: int
-
-
-class Consume(Record):
-    kind: Literal["Consume"] = "Consume"
-    request_id: int
-    cause_id: str
-    component_id: str
-    from_account: AccountRef = Field(alias="from")
-    to_account: AccountRef = Field(alias="to")
-    amount: int
-
-
-type Action = Annotated[Sell | Buy | Transfer | PayClaim | Consume, Field(discriminator="kind")]
 
 
 class InvalidRequest(Record):

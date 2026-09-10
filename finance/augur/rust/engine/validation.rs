@@ -54,6 +54,35 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 expected,
             });
         }
+        // A managed component can release basis at a worthless mark. Ordinary
+        // security pools retain positive quotes for their trading conventions.
+        let managed_only = series
+            .series_id
+            .strip_prefix("security:")
+            .is_some_and(|asset| {
+                fixture
+                    .scenario
+                    .tlh_portfolios
+                    .iter()
+                    .any(|item| item.asset_id == asset)
+                    && !fixture
+                        .scenario
+                        .initial_lots
+                        .iter()
+                        .any(|lot| lot.asset_id == asset)
+                    && fixture
+                        .scenario
+                        .holding_pools
+                        .iter()
+                        .filter(|pool| pool.asset_id == asset)
+                        .all(|pool| {
+                            fixture.scenario.tlh_portfolios.iter().any(|item| {
+                                item.asset_id == asset
+                                    && item.owner_agent_id == pool.agent_id
+                                    && item.account_id == pool.account_id
+                            })
+                        })
+            });
         if (series.series_id.starts_with("security:")
             || series.series_id.starts_with("home_value:"))
             && let Some((index, value)) = series
@@ -61,7 +90,7 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 .iter()
                 .copied()
                 .enumerate()
-                .find(|(_, value)| *value <= 0)
+                .find(|(_, value)| *value < 0 || (*value == 0 && !managed_only))
         {
             return Err(SimulationError::InvalidSecurityPrice {
                 series_id: series.series_id.clone(),
@@ -348,28 +377,32 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
     for issuer_id in private_equity_issuers.keys() {
         validate_private_equity_channels(fixture, issuer_id)?;
     }
-    for (policy_index, policy) in fixture.scenario.harvest_policies.iter().enumerate() {
-        let valid = agents.contains(&policy.owner_agent_id)
-            && policy.peak_annual_yield_ppb > 0
-            && policy.floor_annual_yield_ppb >= 0
-            && policy.floor_annual_yield_ppb <= policy.peak_annual_yield_ppb
-            && policy.maturity_decay_exponent_ppb > 0
-            && policy.maturity_decay_exponent_ppb % (WIRE_RATE_SCALE / 2) == 0
-            && policy.drawdown_sensitivity_ppb >= 0
-            && (0..=WIRE_RATE_SCALE).contains(&policy.short_term_fraction_ppb)
-            && private_equity_issuer(&policy.asset_id).is_none()
-            && fixture
-                .series
-                .iter()
-                .any(|series| series.series_id == format!("security:{}", policy.asset_id));
-        if !valid {
-            return Err(SimulationError::InvalidHarvestPolicy { policy_index });
+    let mut portfolio_ids = BTreeSet::new();
+    let mut portfolio_pools = BTreeSet::new();
+    for portfolio in &fixture.scenario.tlh_portfolios {
+        validate_identifier("TLH portfolio", &portfolio.portfolio_id)?;
+        validate_identifier("component owner", &portfolio.owner_agent_id)?;
+        validate_identifier("component account", &portfolio.account_id)?;
+        validate_identifier("component asset", &portfolio.asset_id)?;
+        if !portfolio_pools.insert((
+            &portfolio.owner_agent_id,
+            &portfolio.account_id,
+            &portfolio.asset_id,
+        )) || fixture.scenario.initial_lots.iter().any(|lot| {
+            lot.agent_id == portfolio.owner_agent_id
+                && lot.account_id == portfolio.account_id
+                && lot.asset_id == portfolio.asset_id
+        }) || !portfolio_ids.insert(&portfolio.portfolio_id)
+            || private_equity_issuer(&portfolio.asset_id).is_some()
+        {
+            return Err(SimulationError::InvalidComponentEffect {
+                reason: "managed portfolio has duplicate identity or invalid owner/asset".into(),
+            });
         }
-        validate_account(
-            &accounts,
-            &AccountRef::new(&policy.owner_agent_id, &policy.account_id),
-            "harvest policy",
-        )?;
+        let series_id = format!("security:{}", portfolio.asset_id);
+        if !series_ids.contains(&series_id) {
+            return Err(SimulationError::MissingSeries { series_id });
+        }
     }
     let mut bonds = BTreeSet::new();
     for bond in &fixture.scenario.initial_bonds {
@@ -495,7 +528,11 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
             sale.agent_id.clone(),
             sale.account_id.clone(),
             sale.asset_id.clone(),
-        )) {
+        )) && !fixture.scenario.tlh_portfolios.iter().any(|item| {
+            item.owner_agent_id == sale.agent_id
+                && item.account_id == sale.account_id
+                && item.asset_id == sale.asset_id
+        }) {
             return Err(SimulationError::MissingSalePool {
                 cause_id: sale.cause_id.clone(),
                 agent_id: sale.agent_id.clone(),
@@ -523,7 +560,13 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
                 asset_id: pool.2,
             });
         }
-        if !pool_scales.contains_key(&pool) {
+        if !pool_scales.contains_key(&pool)
+            && !fixture.scenario.tlh_portfolios.iter().any(|item| {
+                item.owner_agent_id == pool.0
+                    && item.account_id == pool.1
+                    && item.asset_id == pool.2
+            })
+        {
             return Err(SimulationError::MissingDistributionPool {
                 agent_id: pool.0,
                 account_id: pool.1,
@@ -570,149 +613,6 @@ pub(super) fn validate_fixture(fixture: &ExecutionInput) -> Result<(), Simulatio
         let series_id = format!("security_distribution:{}", distribution.asset_id);
         if !series_ids.contains(&series_id) {
             return Err(SimulationError::MissingSeries { series_id });
-        }
-    }
-    let mut target_allocation_accounts = BTreeSet::new();
-    for (policy_index, policy) in fixture
-        .scenario
-        .target_allocation_policies
-        .iter()
-        .enumerate()
-    {
-        validate_identifier("target-allocation cause", &policy.cause_id_prefix)?;
-        validate_account(
-            &accounts,
-            &AccountRef::new(&policy.agent_id, &policy.account_id),
-            &policy.cause_id_prefix,
-        )?;
-        if !target_allocation_accounts.insert((policy.agent_id.clone(), policy.account_id.clone()))
-        {
-            return Err(SimulationError::DuplicateTargetAllocationPolicy {
-                agent_id: policy.agent_id.clone(),
-                account_id: policy.account_id.clone(),
-            });
-        }
-        if let Some(tolerance) = policy.rebalance_tolerance_ppb {
-            let reconstructed = ((tolerance as f64 / WIRE_RATE_SCALE as f64)
-                * WIRE_RATE_SCALE as f64)
-                .round() as i64;
-            if !(0..=MAX_EXACT_F64_INTEGER).contains(&tolerance)
-                || reconstructed != tolerance
-                || !policy.allow_purchases
-            {
-                return Err(SimulationError::InvalidTargetAllocationPolicy {
-                    agent_id: policy.agent_id.clone(),
-                    account_id: policy.account_id.clone(),
-                });
-            }
-        }
-        if policy.sleeves.is_empty()
-            || !policy.sleeves.iter().any(|sleeve| sleeve.weight > 0)
-            || policy.cash_floor.base_amount().0 < 0
-            || policy.cash_floor.base_amount().0 > policy.cash_ceiling.base_amount().0
-        {
-            return Err(SimulationError::InvalidTargetAllocationPolicy {
-                agent_id: policy.agent_id.clone(),
-                account_id: policy.account_id.clone(),
-            });
-        }
-        validate_amount_spec(
-            fixture,
-            "target-allocation floor",
-            &policy.cause_id_prefix,
-            &policy.cash_floor,
-            0..fixture.scenario.horizon_months,
-        )?;
-        validate_amount_spec(
-            fixture,
-            "target-allocation ceiling",
-            &policy.cause_id_prefix,
-            &policy.cash_ceiling,
-            0..fixture.scenario.horizon_months,
-        )?;
-        let sources = if policy.source_account_ids.is_empty() {
-            vec![policy.account_id.as_str()]
-        } else {
-            policy
-                .source_account_ids
-                .iter()
-                .map(String::as_str)
-                .collect()
-        };
-        if sources.iter().copied().collect::<BTreeSet<_>>().len() != sources.len() {
-            return Err(SimulationError::InvalidTargetAllocationPolicy {
-                agent_id: policy.agent_id.clone(),
-                account_id: policy.account_id.clone(),
-            });
-        }
-        let mut assets = BTreeSet::new();
-        for (sleeve_index, sleeve) in policy.sleeves.iter().enumerate() {
-            validate_identifier("target-allocation asset", &sleeve.asset_id)?;
-            if sleeve.weight < 0 || !is_quantity_scale(sleeve.quantity_scale) {
-                return Err(SimulationError::InvalidTargetAllocationPolicy {
-                    agent_id: policy.agent_id.clone(),
-                    account_id: policy.account_id.clone(),
-                });
-            }
-            if !assets.insert(sleeve.asset_id.clone()) {
-                return Err(SimulationError::DuplicateTargetAllocationSleeve {
-                    agent_id: policy.agent_id.clone(),
-                    account_id: policy.account_id.clone(),
-                    asset_id: sleeve.asset_id.clone(),
-                });
-            }
-            let scales: BTreeSet<_> = sources
-                .iter()
-                .filter_map(|source| {
-                    pool_scales
-                        .get(&(
-                            policy.agent_id.clone(),
-                            (*source).to_owned(),
-                            sleeve.asset_id.clone(),
-                        ))
-                        .copied()
-                })
-                .collect();
-            if scales.len() > 1
-                || scales
-                    .iter()
-                    .next()
-                    .is_some_and(|scale| *scale != sleeve.quantity_scale)
-            {
-                return Err(SimulationError::InvalidTargetAllocationPolicy {
-                    agent_id: policy.agent_id.clone(),
-                    account_id: policy.account_id.clone(),
-                });
-            }
-            if policy.allow_purchases {
-                if !pool_scales.contains_key(&(
-                    policy.agent_id.clone(),
-                    sources[0].to_owned(),
-                    sleeve.asset_id.clone(),
-                )) {
-                    return Err(SimulationError::InvalidHoldingPool {
-                        agent_id: policy.agent_id.clone(),
-                        account_id: sources[0].to_owned(),
-                        asset_id: sleeve.asset_id.clone(),
-                        reason: "allocation purchase pool is not declared".into(),
-                    });
-                }
-                let prefix = format!(
-                    "{}_buy_p{policy_index}_s{sleeve_index}_",
-                    policy.cause_id_prefix
-                );
-                for lot_id in &lots {
-                    if lot_id.strip_prefix(&prefix).is_some_and(|suffix| {
-                        suffix
-                            .parse::<u32>()
-                            .is_ok_and(|index| index.to_string() == suffix)
-                    }) {
-                        return Err(SimulationError::DuplicateLot {
-                            lot_id: lot_id.clone(),
-                        });
-                    }
-                }
-            }
         }
     }
     let mut tax_jurisdictions = BTreeSet::new();

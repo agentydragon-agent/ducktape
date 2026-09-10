@@ -29,6 +29,7 @@ pub(super) struct Recorder {
     pub(super) journal: Vec<JournalEntry>,
     pub(super) transfers: Vec<TransferOutcome>,
     pub(super) dispositions: Vec<LotDisposition>,
+    pub(super) tlh_financial_effects: Vec<TlhFinancialEffect>,
     pub(super) private_equity_events: Vec<PrivateEquityProtocolOutcome>,
     pub(super) private_equity_opportunities: Vec<PrivateEquityOpportunityOutcome>,
     pub(super) obligations: Vec<ObligationOutcome>,
@@ -47,6 +48,7 @@ pub(super) struct Recorder {
     pub(super) mortgage_payments: Vec<MortgagePaymentOutcome>,
     pub(super) journal_entry_count: u64,
     pub(super) disposition_count: u64,
+    pub(super) tlh_financial_effect_count: u64,
     pub(super) private_equity_event_count: u64,
     pub(super) private_equity_opportunity_count: u64,
     pub(super) tax_accrual_count: u64,
@@ -71,6 +73,7 @@ impl Recorder {
             journal: Vec::new(),
             transfers: Vec::new(),
             dispositions: Vec::new(),
+            tlh_financial_effects: Vec::new(),
             private_equity_events: Vec::new(),
             private_equity_opportunities: Vec::new(),
             obligations: Vec::new(),
@@ -89,6 +92,7 @@ impl Recorder {
             mortgage_payments: Vec::new(),
             journal_entry_count: 0,
             disposition_count: 0,
+            tlh_financial_effect_count: 0,
             private_equity_event_count: 0,
             private_equity_opportunity_count: 0,
             tax_accrual_count: 0,
@@ -149,6 +153,27 @@ impl Recorder {
         Ok(())
     }
 
+    /// The cash journal and event capture succeed together, including in dense mode.
+    pub(super) fn apply_tlh_effect(
+        &mut self,
+        ledger: &mut Ledger,
+        entry: JournalEntry,
+        effect: TlhFinancialEffect,
+    ) -> Result<(), SimulationError> {
+        let count =
+            self.tlh_financial_effect_count
+                .checked_add(1)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "TLH financial effect count",
+                })?;
+        self.apply_entry(ledger, entry)?;
+        self.tlh_financial_effect_count = count;
+        if self.capture_mode.captures_output() {
+            self.tlh_financial_effects.push(effect);
+        }
+        Ok(())
+    }
+
     pub(super) fn record_private_equity_event(
         &mut self,
         event: PrivateEquityProtocolOutcome,
@@ -200,7 +225,6 @@ impl Recorder {
                     amount_due: obligation.amount_due,
                     amount_paid: obligation.amount_paid,
                     shortfall: obligation.shortfall,
-                    attempted_funding_sources: obligation.attempted_funding_sources.clone(),
                 });
             }
             self.obligations.push(obligation);
@@ -405,7 +429,7 @@ pub(super) fn month_output(
     mortgages: &[MortgageState],
     tax_liabilities: &[TaxLiabilityState],
     tax: &TaxState,
-    tlh_cumulative_harvest: &[Money],
+    tlh_portfolios: &[TlhPortfolioObservation],
     failed: bool,
 ) -> Result<MonthOutput, SimulationError> {
     Ok(MonthOutput {
@@ -423,7 +447,7 @@ pub(super) fn month_output(
         mortgages: mortgages.to_vec(),
         tax_liabilities: tax_liabilities.to_vec(),
         capital_gains: capital_gain_states(fixture, &tax.facts),
-        tlh_cumulative_harvest: tlh_cumulative_harvest.to_vec(),
+        tlh_portfolios: tlh_portfolios.to_vec(),
         failed,
     })
 }

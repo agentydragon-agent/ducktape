@@ -69,6 +69,7 @@ macro_rules! frame_type {
     (month) => { i32 };
     (rate) => { f64 };
     (units) => { f64 };
+    (tlh_operation) => { execution::TlhOperation };
 }
 
 /// How each carry-word reads its engine field. The only two that do arithmetic are the two
@@ -82,6 +83,7 @@ macro_rules! frame_value {
     (month $row:ident, $($path:ident).+) => { $row.$($path).+ };
     (rate $row:ident, $($path:ident).+) => { rate($row.$($path).+) };
     (units $row:ident, $($path:ident).+) => { units($row.$($path).+, $row.quantity_scale) };
+    (tlh_operation $row:ident, $($path:ident).+) => { $row.$($path).+ };
 }
 
 /// Declare the canonical frames: `<frame name>: <row type> from <engine field> { columns }`.
@@ -154,6 +156,20 @@ event_frames! {
         text proceeds_account_id = proceeds_account_id,
     }
 
+    tlh_financial_effects: TlhFinancialEffect from tlh_financial_effects {
+        text cause_id = cause_id,
+        text portfolio_id = portfolio_id,
+        text agent_id = agent_id,
+        text account_id = account_id,
+        maybe cash_account_id = cash_account_id,
+        tlh_operation operation = operation,
+        money cash_amount_quanta = cash_amount,
+        money short_term_gain_quanta = short_term_gain,
+        money long_term_gain_quanta = long_term_gain,
+        money basis_change_quanta = basis_change,
+        money interest_income_quanta = interest_income,
+    }
+
     private_equity_events: PrivateEquityEvent from private_equity_events {
         text issuer_id = issuer_id,
         text asset_id = asset_id,
@@ -208,7 +224,6 @@ event_frames! {
         money amount_due_quanta = amount_due,
         money amount_paid_quanta = amount_paid,
         money shortfall_quanta = shortfall,
-        text attempted_funding_sources = attempted_funding_sources,
     }
 
     rollout_failures: RolloutFailure from rollout_failures {
@@ -220,7 +235,6 @@ event_frames! {
         money amount_due_quanta = amount_due,
         money amount_paid_quanta = amount_paid,
         money shortfall_quanta = shortfall,
-        text attempted_funding_sources = attempted_funding_sources,
     }
 
     property_purchases: PropertyPurchase from property_purchases {

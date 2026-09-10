@@ -11,8 +11,9 @@ py_library(
     name = "sleeves",
     srcs = ["sleeves.py"],
     deps = [
-        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:actions",
         "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:observations",
     ],
 )
 
@@ -37,10 +38,12 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
+        "//finance/augur/sim:session",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
         "@pypi//pytest",
@@ -53,6 +56,37 @@ py_library(
     srcs = ["funding.py"],
     deps = [
         ":sleeves",
-        "//finance/augur/rust:simulator_ext",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:observations",
+    ],
+)
+
+py_library(
+    name = "configured_allocation",
+    srcs = ["configured_allocation.py"],
+    deps = [
+        ":cash_band",
+        ":sleeves",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:prepared",
+    ],
+)
+
+py_test(
+    name = "configured_allocation_test",
+    srcs = ["configured_allocation_test.py"],
+    deps = [
+        ":configured_allocation",
+        ":sleeves",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:prepared",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

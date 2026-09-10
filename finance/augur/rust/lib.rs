@@ -4,7 +4,6 @@
 //! no floating-point monetary type and does not deserialize JSON numbers into
 //! one.
 
-pub mod allocation;
 pub mod engine;
 pub mod event_frames;
 pub mod execution;
@@ -18,6 +17,7 @@ pub mod tax;
 #[cfg(test)]
 mod money_proptest;
 
+#[cfg(test)]
 pub use engine::{
     SimulationError, ValidatedInput, simulate, simulate_dense, simulate_dense_validated,
     simulate_product_metrics, simulate_product_metrics_validated, simulate_summaries,

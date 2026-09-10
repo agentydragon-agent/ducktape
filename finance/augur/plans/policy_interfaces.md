@@ -1,9 +1,11 @@
 # Actor-facing policy interfaces
 
 Target design for the remaining migration and gates GP/GL/GE in [the roadmap](roadmap.md).
-The common action session is implemented in `rust/simulator.pyi`; module names and
-richer types below are sketches, not additional API declarations. Reuse existing
-domain types and introduce fields only for a supported consumer.
+Reuse the common `ActionSession` and its single batch contract. Public requests
+already belong to `sim/actions.py`, current facts to `sim/observations.py`, and
+lifecycle to `sim/session.py`; there is no public native wrapper counterpart.
+The richer types below are sketches, not additional API declarations. Extend
+existing domain types only for a supported consumer.
 
 The boundary is economic agency: a policy sees information available to its actor
 and requests actions that actor could take. The environment owns contracts,
@@ -39,6 +41,14 @@ actor's private books. Path routing and capture configuration belong to the runn
 The common observation exposes exact current/origin CPI when modeled; a dependent
 policy rejects its absence. No policy receives the future sampled CPI path.
 
+`tax_records` above is still a target, not a field on the Python observation.
+CAP must expose actor-scoped recorded income, jurisdiction gain/carryforward
+facts and assessed outstanding liabilities from the existing native `ActorBooks`
+views when a tax-aware policy needs them. Current TLH value/basis and payment
+claims are not a substitute. Test visibility after the month's modeled losses,
+after a prior sale and across year-end/reset; exclude future assessments and
+other actors' facts. Reuse the canonical records, not a policy-side tax ledger.
+
 ## `actions.py`
 
 ```python
@@ -55,7 +65,7 @@ class PayClaim:
     claim: ClaimId
     amount: Money
 
-type Action = Sell | Buy | Transfer | PayClaim | Consume
+type Action = Sell | Buy | Transfer | PayClaim | Consume | Contribute | Withdraw | Liquidate
 ```
 
 `Buy` names an account, instrument and quantity; `Transfer` names source,
@@ -130,8 +140,9 @@ and decide once, execute the ordered actions, then stop if any due claim remains
 unpaid. Its supported trades retain their explicitly declared immediate-cash
 control; this is not a promise about real products' settlement delays.
 Ordering between additional decision-making actors and expanded product/housing
-timing remain GP choices, not an accident of batch row order. Books and paths
-stay in the existing executor. Native unit tests may drive the step primitives;
+timing remain GP choices, not an accident of batch row order. The executor keeps
+ordinary books and prepared paths; the opaque Python TLH component owns its
+private holdings and supplies settled effects/statements. Native unit tests may drive the step primitives;
 production consumers converge on the Python loop, not two supported drivers.
 
 Future PE support distinguishes mandatory issuer events from holder decisions.
@@ -200,17 +211,25 @@ explicit standing instruction with modeled terms. Non-mutating tax/trade preview
 reuse canonical calculations with observable inputs and explicit assumptions,
 never the future realized path.
 
-## Managed-account composition
+## Opaque TLH portfolio composition
 
-A household-owned managed portfolio attaches a modeled investment service to an
-account. The policy requests contributions/withdrawals and reads current account
-facts; it does not manufacture tax losses or trigger the service's internal
-harvesting each month. Typed model consequences enter canonical execution through
-a separate, narrowly scoped financial-step boundary, not the investor action API.
-The [managed-portfolio plan](managed_portfolio.md) gives the Python composition
-sketch, phase/interface decisions and passive-account → investor-actions → runnable
-comparison slices. These are proposed extensions to the same batch session, not
-implemented APIs or a general entity/plugin framework.
+The approved concrete `TlhPortfolio` is Python-owned and described in the
+[TLH contract](../docs/tlh.md). Its investor view contains value and reported tax
+basis, not private cohorts/harvesting memory. Contributions, gross withdrawals
+and liquidation use the common ordered-action contract. The policy does not
+manufacture losses or trigger monthly harvesting.
+
+The Python session advances each component once before investor operations,
+including scheduled/configured redemptions, then settles its financial effects
+through private native-world financial calls. Candidate state is adopted only with accepted
+cash/tax settlement. Native code may retain immutable reporting statements, never
+a mirrored mutable position/basis book. No custom exception taxonomy, model
+callback handoff or generic managed-account API is needed.
+
+The [TLH migration plan](managed_portfolio.md) retains acceptance of the implemented
+component/all-driver integration and native deletion. MA3's runnable comparison
+is still future work. Tax-aware rules additionally need the CAP tax-observation
+slice above; fixed investor-flow controls do not.
 
 ## Acceptance and remaining choices
 
@@ -218,7 +237,9 @@ implemented APIs or a general entity/plugin framework.
 session, including its population/profile and selected-replay entrypoints. Its CI
 controls cover immediate sale cash, lot/basis/tax reconciliation, fatal action
 prefixes and summary/trace agreement with generated financial inputs. Native tests
-exercise the same steps, not an alternative production callback driver.
+exercise world operations directly; Python session tests own lifecycle, batch
+routing and claim-authority controls. Retained historical receipts must not retain
+executable claim authority or permit request mutation to rewrite history.
 
 A failing middle action must leave the successful prefix intact, apply none of
 the failed action, and execute neither later actions nor later policy calls for
@@ -241,11 +262,14 @@ is absent but actual paid consumption is zero for that observed month, not for
 unobserved post-stop months. The bounded-rule scalar/batch comparison and profiler
 use this same session, not a second policy interface.
 
-P12 migrates configured consumers and removes old full-run loops and implicit
-public-portfolio strategy, preserving required existing housing/PE capabilities.
-The feature-rich benchmark, app and legacy acceptance readers remain.
-ACCEPT moves supported consumers to the common session; BENCH retains its
-housing/PE/harvest/multiple-actor dependencies. Existing Python funding, common
+P12 migrates the remaining configured Python consumers to common actions/results
+and removes implicit public-portfolio strategy, preserving required existing
+housing/PE capabilities. The app and legacy acceptance
+readers remain. Their configured allocation proposer is Python-owned and reuses
+shared sleeve helpers; retiring its implicit schema/orchestration is distinct from
+moving the strategy's implementation. The remaining `engine.rs::simulate*`
+configured helpers are test-only, not a second public driver.
+ACCEPT moves supported consumers to the common session. Existing Python funding, common
 reporting and held-bond capture are reused, not reimplemented. New `product/`
 features are deferred; its remaining adapter work must simplify existing behavior
 or retire legacy execution. The roadmap names the narrow harvesting,

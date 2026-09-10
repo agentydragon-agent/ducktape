@@ -9,7 +9,7 @@ use crate::{
     tax::{IncomeSource, JurisdictionLevel, TaxRules},
 };
 
-pub const INPUT_SCHEMA_VERSION: u32 = 14;
+pub const INPUT_SCHEMA_VERSION: u32 = 15;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -57,11 +57,9 @@ pub struct ScenarioSpec {
     #[serde(default)]
     pub distributions: Vec<DistributionSpec>,
     #[serde(default)]
-    pub target_allocation_policies: Vec<TargetAllocationPolicySpec>,
-    #[serde(default)]
     pub private_equity_tender_policies: Vec<PrivateEquityTenderPolicySpec>,
     #[serde(default)]
-    pub harvest_policies: Vec<HarvestPolicySpec>,
+    pub tlh_portfolios: Vec<TlhPortfolioSpec>,
     #[serde(default)]
     pub scheduled_property_purchases: Vec<ScheduledPropertyPurchaseSpec>,
     #[serde(default)]
@@ -404,24 +402,6 @@ fn default_distribution_tax_character() -> Vec<DistributionTaxSliceSpec> {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct TargetAllocationPolicySpec {
-    pub agent_id: String,
-    pub account_id: String,
-    #[serde(default)]
-    pub source_account_ids: Vec<String>,
-    pub sleeves: Vec<SleeveTargetSpec>,
-    #[serde(default = "default_zero_amount")]
-    pub cash_floor: AmountSpec,
-    pub cash_ceiling: AmountSpec,
-    #[serde(default = "default_allocation_cause_id_prefix")]
-    pub cause_id_prefix: String,
-    pub allow_purchases: bool,
-    #[serde(default)]
-    pub rebalance_tolerance_ppb: Option<i64>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PrivateEquityTenderPolicySpec {
     pub owner_agent_id: String,
     #[serde(default = "default_account_id")]
@@ -431,37 +411,23 @@ pub struct PrivateEquityTenderPolicySpec {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct HarvestPolicySpec {
+pub struct TlhPortfolioSpec {
+    pub portfolio_id: String,
     pub owner_agent_id: String,
-    #[serde(default = "default_account_id")]
     pub account_id: String,
     pub asset_id: String,
-    pub peak_annual_yield_ppb: i64,
-    pub floor_annual_yield_ppb: i64,
-    pub maturity_decay_exponent_ppb: i64,
-    pub drawdown_sensitivity_ppb: i64,
-    #[serde(default = "default_rate_scale")]
-    pub short_term_fraction_ppb: i64,
 }
 
-const fn default_rate_scale() -> i64 {
-    1_000_000_000
-}
-
+/// A Python-owned component's reported financial facts, not its cohort state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct SleeveTargetSpec {
+pub struct TlhPortfolioObservation {
+    pub portfolio_id: String,
+    pub owner_agent_id: String,
+    pub account_id: String,
     pub asset_id: String,
-    pub weight: i64,
-    pub quantity_scale: i64,
-}
-
-fn default_allocation_cause_id_prefix() -> String {
-    "allocation_sale".into()
-}
-
-fn default_zero_amount() -> AmountSpec {
-    AmountSpec::Fixed(Money(0))
+    pub value: Money,
+    pub reported_tax_basis: Money,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -642,7 +608,7 @@ pub struct MonthOutput {
     pub mortgages: Vec<MortgageState>,
     pub tax_liabilities: Vec<TaxLiabilityState>,
     pub capital_gains: Vec<CapitalGainState>,
-    pub tlh_cumulative_harvest: Vec<Money>,
+    pub tlh_portfolios: Vec<TlhPortfolioObservation>,
     pub failed: bool,
 }
 
@@ -756,6 +722,33 @@ pub struct LotDisposition {
     pub realized_gain: Money,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TlhOperation {
+    Contribution,
+    Redemption,
+    ModeledRealization,
+    Distribution,
+}
+
+/// Settled aggregate component effects; not constituent security dispositions.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TlhFinancialEffect {
+    pub month: u32,
+    pub cause_id: String,
+    pub portfolio_id: String,
+    pub agent_id: String,
+    pub account_id: String,
+    pub cash_account_id: Option<String>,
+    pub operation: TlhOperation,
+    /// Positive into household cash, negative for a contribution.
+    pub cash_amount: Money,
+    pub short_term_gain: Money,
+    pub long_term_gain: Money,
+    pub basis_change: Money,
+    pub interest_income: Money,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PrivateEquityProtocolOutcome {
     pub month: u32,
@@ -805,7 +798,6 @@ pub struct ObligationOutcome {
     pub amount_due: Money,
     pub amount_paid: Money,
     pub shortfall: Money,
-    pub attempted_funding_sources: String,
     pub failure_active: bool,
 }
 
@@ -820,7 +812,6 @@ pub struct RolloutFailureOutcome {
     pub amount_due: Money,
     pub amount_paid: Money,
     pub shortfall: Money,
-    pub attempted_funding_sources: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -878,7 +869,7 @@ pub struct DistributionOutcome {
     pub slice_index: u32,
     pub fraction_ppb: i64,
     pub issuer_jurisdiction_id: Option<String>,
-    pub units: Quantity,
+    pub units: Option<Quantity>,
     pub amount: Money,
 }
 
@@ -984,6 +975,7 @@ pub struct RolloutOutput {
     pub journal: Vec<JournalEntry>,
     pub transfers: Vec<TransferOutcome>,
     pub dispositions: Vec<LotDisposition>,
+    pub tlh_financial_effects: Vec<TlhFinancialEffect>,
     pub private_equity_events: Vec<PrivateEquityProtocolOutcome>,
     pub private_equity_opportunities: Vec<PrivateEquityOpportunityOutcome>,
     pub obligations: Vec<ObligationOutcome>,
@@ -1017,7 +1009,7 @@ pub struct RolloutSummary {
     pub ending_properties: Vec<PropertyState>,
     pub ending_mortgages: Vec<MortgageState>,
     pub ending_tax_liabilities: Vec<TaxLiabilityState>,
-    pub ending_tlh_cumulative_harvest: Vec<Money>,
+    pub ending_tlh_portfolios: Vec<TlhPortfolioObservation>,
     pub journal_entry_count: u64,
     pub disposition_count: u64,
     pub private_equity_event_count: u64,

@@ -9,11 +9,6 @@ package(default_visibility = ["//visibility:public"])
 package_group(
     name = "inside_the_simulator",
     packages = [
-        # A benchmark measures an engine rather than reading its results as a product would,
-        # and it times compilation and execution separately — which is naming the insides on
-        # purpose. Routing it through the contract would move compilation out of the timed
-        # region and quietly change what the published numbers mean.
-        "//finance/augur/benchmark/...",
         "//finance/augur/sim/...",
     ],
 )
@@ -96,16 +91,6 @@ py_test(
 )
 
 py_library(
-    name = "tlh_harvest",
-    srcs = ["tlh_harvest.py"],
-    deps = [
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "fixed_point",
     srcs = ["fixed_point.py"],
     deps = [
@@ -124,19 +109,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "tlh_harvest_test",
-    srcs = ["tlh_harvest_test.py"],
-    deps = [
-        ":tlh_harvest",
-        "//:conftest",
-        "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -169,7 +141,7 @@ py_library(
     deps = [
         ":enums",
         ":fixed_point",
-        ":tlh_harvest",
+        ":tlh",
         "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
@@ -317,6 +289,7 @@ py_library(
     name = "results",
     srcs = ["results.py"],
     deps = [
+        ":actions",
         ":books",
         ":events",
         "@pypi//pydantic",
@@ -328,9 +301,9 @@ py_test(
     srcs = ["test_results.py"],
     deps = [
         ":results",
+        ":session",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/rust:simulator_ext",
         "//finance/augur/x/monthly_actions:policy",
         "//finance/augur/x/monthly_actions:run",
         "@pypi//pydantic",
@@ -346,8 +319,151 @@ py_library(
         ":books",
         ":jurisdictions",
         ":scenario",
+        ":tlh",
         "//finance/augur/sim/compiler:income_sources",
         "//finance/augur/sim/compiler:tax",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "tlh",
+    srcs = ["tlh.py"],
+    deps = [
+        ":fixed_point",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "tlh_test",
+    srcs = ["tlh_test.py"],
+    deps = [
+        ":fixed_point",
+        ":tlh",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "configured",
+    srcs = ["configured.py"],
+    deps = [
+        ":_native",
+        ":actions",
+        ":metric_composition",
+        ":prepared",
+        ":results",
+        ":session",
+        "//finance/augur/policy:configured_allocation",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "session",
+    srcs = ["session.py"],
+    deps = [
+        ":_native",
+        ":actions",
+        ":observations",
+        ":prepared",
+        ":results",
+        ":tlh",
+        "//finance/augur/rust:simulator_ext",
+    ],
+)
+
+py_test(
+    name = "tlh_session_test",
+    srcs = ["tlh_session_test.py"],
+    deps = [
+        ":actions",
+        ":books",
+        ":configured",
+        ":results",
+        ":scenario",
+        ":session",
+        ":tlh",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/product:action_projection",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "actions",
+    srcs = ["actions.py"],
+    deps = [
+        ":books",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "observations",
+    srcs = ["observations.py"],
+    deps = [
+        ":actions",
+        ":books",
+        ":results",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_actions",
+    srcs = ["test_actions.py"],
+    deps = [
+        ":actions",
+        ":books",
+        ":observations",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "_native",
+    srcs = ["_native.py"],
+    deps = [
+        ":books",
+        ":events",
+        ":observations",
+        ":results",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "configured_allocation_test",
+    srcs = ["configured_allocation_test.py"],
+    deps = [
+        ":backend",
+        ":configured",
+        ":jurisdictions",
+        ":prepared",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/policy:configured_allocation",
+        "//finance/augur/rust:prepared",
+        "//finance/augur/rust:result",
+        "//finance/augur/sim/testing:case",
+        "//finance/augur/sim/testing:fixtures",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

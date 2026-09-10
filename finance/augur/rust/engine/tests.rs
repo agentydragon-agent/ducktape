@@ -5,7 +5,7 @@ use crate::execution::{
     InitialLotSpec, JurisdictionIdentitySpec, LocationSpec, MortgageFinancingSpec, ObligationSpec,
     PropertyTaxPolicySpec, RecurringObligationSpec, ScenarioSpec, ScheduledPropertyPurchaseSpec,
     ScheduledSaleSpec, ScheduledTransferSpec, SeriesIndexedAmountKind, SeriesIndexedAmountSpec,
-    SeriesSpec, SleeveTargetSpec, TargetAllocationPolicySpec, TaxProfileSpec,
+    SeriesSpec, TaxProfileSpec,
 };
 use crate::tax::TaxBracket;
 
@@ -22,6 +22,9 @@ mod trades;
 
 #[path = "transfers_test.rs"]
 mod transfers;
+
+#[path = "components_test.rs"]
+mod components;
 
 fn holding_pool(agent: &str, account: &str, asset: &str, scale: i64) -> HoldingPoolSpec {
     HoldingPoolSpec {
@@ -58,9 +61,8 @@ pub(super) fn minimal_fixture() -> ExecutionInput {
             scheduled_sales: vec![],
             tax_profiles: vec![],
             distributions: vec![],
-            target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
-            harvest_policies: vec![],
+            tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
             initial_primary_residences: vec![],
             primary_residence_events: vec![],
@@ -104,7 +106,7 @@ fn inspect_opening_books(
                     mortgages: &state.mortgages,
                     tax: &state.tax,
                     tax_liabilities: &state.tax_liabilities,
-                    tlh_cumulative_harvest: &state.tlh_cumulative_harvest,
+                    tlh_portfolios: &state.tlh_portfolios,
                 },
                 input,
                 rollout,
@@ -147,100 +149,7 @@ pub(super) fn spending_fixture() -> (ExecutionInput, CashRoute) {
     (fixture, spending)
 }
 
-#[test]
-fn configured_indexed_consumption_retains_funding_and_tax_events() {
-    let (mut fixture, spending) = spending_fixture();
-    fixture.scenario.accounts[0].opening_balance = Money(0);
-    fixture.scenario.holding_pools = vec![holding_pool("alice", "checking", "stock", 1_000_000)];
-    fixture.scenario.initial_lots.push(InitialLotSpec {
-        lot_id: "stock".into(),
-        agent_id: "alice".into(),
-        account_id: "checking".into(),
-        asset_id: "stock".into(),
-        purchase_month: -24,
-        quantity_scale: 1_000_000,
-        units: Quantity(100_000_000),
-        basis: Money(50_000),
-    });
-    fixture.series.push(SeriesSpec {
-        series_id: "security:stock".into(),
-        snapshots: 14,
-        values: vec![1_000; 28],
-    });
-    fixture
-        .scenario
-        .target_allocation_policies
-        .push(TargetAllocationPolicySpec {
-            agent_id: "alice".into(),
-            account_id: "checking".into(),
-            source_account_ids: vec!["checking".into()],
-            sleeves: vec![SleeveTargetSpec {
-                asset_id: "stock".into(),
-                weight: 1,
-                quantity_scale: 1_000_000,
-            }],
-            cash_floor: Money(0).into(),
-            cash_ceiling: Money(0).into(),
-            cause_id_prefix: "fund".into(),
-            allow_purchases: false,
-            rebalance_tolerance_ppb: None,
-        });
-    // Deliberately synthetic flat tax: checks engine integration, not a jurisdiction's statute.
-    fixture.scenario.tax_profiles.push(TaxProfileSpec {
-        agent_id: "alice".into(),
-        tax_authority_agent_id: "world".into(),
-        payment_account_id: "checking".into(),
-        tax_authority_account_id: "checking".into(),
-        prior_year_tax: Money(0),
-        section_121_exclusion: Money(0),
-        jurisdictions: vec![TaxRules {
-            jurisdiction_id: "test".into(),
-            exempt_interest_from_levels: vec![],
-            exempts_own_issue: false,
-            ordinary_brackets: vec![TaxBracket {
-                upper: None,
-                rate_ppb: 200_000_000,
-            }],
-            long_term_capital_gain_brackets: vec![TaxBracket {
-                upper: None,
-                rate_ppb: 100_000_000,
-            }],
-            standard_deduction: Money(0),
-            max_capital_loss_ordinary_offset: Money(0),
-            section_1250_rate_ppb: 0,
-        }],
-    });
-    fixture
-        .scenario
-        .recurring_obligations
-        .push(RecurringObligationSpec {
-            start_month: 0,
-            end_month: None,
-            obligation_id: spending.cause_id.clone(),
-            obligation_type: "cash_spend".into(),
-            from: spending.from.clone(),
-            to: spending.to.clone(),
-            amount_due: AmountSpec::SeriesIndexed(SeriesIndexedAmountSpec {
-                kind: SeriesIndexedAmountKind::SeriesIndexed,
-                base_amount: Money(1_000),
-                series_id: "inflation".into(),
-                base_month_index: 0,
-                adjustment_period_months: 1,
-            }),
-            property_id: None,
-            deduction_category: None,
-            deductible_fraction_ppb: WIRE_RATE_SCALE,
-        });
-    let scheduled = simulate(&fixture).unwrap();
-    for rollout in &scheduled.rollouts {
-        assert_eq!(rollout.failed_month, None);
-        assert!(!rollout.dispositions.is_empty());
-        assert!(!rollout.tax_accruals.is_empty());
-        assert!(!rollout.tax_payments.is_empty());
-    }
-}
-
-fn policy_timing_fixture(horizon_months: u32) -> (ExecutionInput, CashRoute) {
+pub(super) fn policy_timing_fixture(horizon_months: u32) -> (ExecutionInput, CashRoute) {
     let (mut input, spending) = spending_fixture();
     input.rollout_count = 1;
     input.scenario.horizon_months = horizon_months;
@@ -263,24 +172,6 @@ fn policy_timing_fixture(horizon_months: u32) -> (ExecutionInput, CashRoute) {
         snapshots: horizon_months + 1,
         values: vec![1_000; horizon_months as usize + 1],
     });
-    input
-        .scenario
-        .target_allocation_policies
-        .push(TargetAllocationPolicySpec {
-            agent_id: "alice".into(),
-            account_id: "checking".into(),
-            source_account_ids: vec!["checking".into()],
-            sleeves: vec![SleeveTargetSpec {
-                asset_id: "stock".into(),
-                weight: 1,
-                quantity_scale: 1_000_000,
-            }],
-            cash_floor: Money(0).into(),
-            cash_ceiling: Money(0).into(),
-            cause_id_prefix: "timing-funding".into(),
-            allow_purchases: false,
-            rebalance_tolerance_ppb: None,
-        });
     (input, spending)
 }
 
@@ -302,13 +193,6 @@ fn allocation_fixture(horizon_months: u32) -> ExecutionInput {
         snapshots: horizon_months + 1,
         values: vec![1_000; horizon_months as usize + 1],
     });
-    input.scenario.target_allocation_policies[0]
-        .sleeves
-        .push(SleeveTargetSpec {
-            asset_id: "second".into(),
-            weight: 1,
-            quantity_scale: 1_000_000,
-        });
     input
 }
 
@@ -353,14 +237,6 @@ fn scoped_observation_fixture() -> (ExecutionInput, CashRoute) {
         snapshots: 4,
         values: vec![2, 4, 6, 8],
     });
-    input.scenario.target_allocation_policies[0].sleeves = ["stock", "second"]
-        .into_iter()
-        .map(|asset| SleeveTargetSpec {
-            asset_id: asset.into(),
-            weight: 1,
-            quantity_scale: 10,
-        })
-        .collect();
     (input, spending)
 }
 
@@ -501,7 +377,6 @@ fn actor_books_follow_partial_sales_and_hide_exhausted_lots() {
 #[test]
 fn actor_books_reject_unpriced_public_positions_before_inspection() {
     let (mut input, _) = scoped_observation_fixture();
-    input.scenario.target_allocation_policies.clear();
     input
         .series
         .retain(|series| series.series_id != "security:second");
@@ -596,12 +471,52 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
                 .map(|value| value * multiplier),
         );
     }
-    let validated = ValidatedInput::new(&input).unwrap();
+    let prepared = crate::engine::world::Prepared::new(input).unwrap();
     // Both states exist before either runs, and execution need not follow path order.
-    let [second, first] = [1, 0]
-        .map(|id| RolloutState::new(validated.input, id, CaptureMode::Forensic, None).unwrap());
-    for (state, tax_paid, remaining_basis) in [(second, 3_000, 40_000), (first, 2_000, 30_000)] {
-        let output = state.run(&input, None).unwrap().into_output();
+    let [second, first] = [1, 0].map(|id| {
+        prepared
+            .world(id, Vec::new(), CaptureMode::Forensic, None, None)
+            .unwrap()
+    });
+    for (mut world, units, tax_paid, remaining_basis) in [
+        (second, 10_000_000, 3_000, 40_000),
+        (first, 20_000_000, 2_000, 30_000),
+    ] {
+        for month in 0..13 {
+            world.prepare_month(month).unwrap();
+            if month == 0 {
+                for (index, (asset, lot)) in
+                    [("stock", "timing-stock"), ("second", "test-second-lot")]
+                        .into_iter()
+                        .enumerate()
+                {
+                    let outcome = world
+                        .apply(
+                            "alice",
+                            &crate::engine::actors::Action::Sell(
+                                crate::engine::trades::SaleRequest {
+                                    cause_id: format!("sell-{asset}"),
+                                    agent_id: "alice".into(),
+                                    proceeds_account_id: "checking".into(),
+                                    asset_id: asset.into(),
+                                    lots: vec![crate::engine::trades::LotSale {
+                                        account_id: "checking".into(),
+                                        lot_id: lot.into(),
+                                        units: Quantity(units),
+                                    }],
+                                },
+                            ),
+                            index,
+                        )
+                        .unwrap();
+                    assert!(matches!(outcome, crate::engine::actors::Outcome::Executed));
+                }
+            }
+            let settled = world.settle_claims().unwrap();
+            assert!(!settled.failed);
+            world.close_month(false, settled.product_shortfall).unwrap();
+        }
+        let output = world.finish().unwrap().financial.unwrap();
         assert_eq!(output.failed_month, None);
         assert_eq!(output.tax_payments[0].month, 12);
         assert_eq!(output.tax_payments[0].amount_paid, Money(tax_paid));
@@ -637,8 +552,23 @@ fn retained_rollouts_keep_opening_books_lots_and_tax_state_independent() {
 
 #[test]
 fn month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode() {
+    let mut scheduled = allocation_tax_and_consumption_fixture();
+    scheduled.scenario.scheduled_sales = scheduled
+        .scenario
+        .initial_lots
+        .iter()
+        .map(|lot| ScheduledSaleSpec {
+            month: 0,
+            cause_id: format!("explicit-sale-{}", lot.asset_id),
+            agent_id: lot.agent_id.clone(),
+            account_id: lot.account_id.clone(),
+            asset_id: lot.asset_id.clone(),
+            units: Quantity(20_000_000),
+            proceeds_account_id: "checking".into(),
+        })
+        .collect();
     for (input, year_end_tax) in [
-        (allocation_tax_and_consumption_fixture(), Money(2_000)),
+        (scheduled, Money(2_000)),
         (stopped_book_fixture(15, 9).0, Money(50)),
     ] {
         ValidatedInput::new(&input).unwrap();
@@ -671,321 +601,12 @@ fn month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode() {
     }
 }
 
-#[test]
-fn configured_allocation_funds_consumption_and_tax() {
-    for purchases in [false, true] {
-        let mut input = allocation_tax_and_consumption_fixture();
-        input.scenario.target_allocation_policies[0].allow_purchases = purchases;
-        let output = simulate(&input).unwrap();
-        assert_eq!(output.rollouts[0].tax_payments[0].amount_paid, Money(2_000));
-        assert_eq!(
-            output.rollouts[0]
-                .obligations
-                .iter()
-                .filter(|row| row.obligation_type == "cash_spend")
-                .map(|row| row.amount_paid.0)
-                .sum::<i64>(),
-            55_000
-        );
-    }
-}
-
-#[test]
-fn zero_targets_keep_cashflow_only_and_deposit_controls() {
-    let mut input = allocation_fixture(1);
-    input.scenario.target_allocation_policies[0].sleeves[0].weight = 0;
-    input.scenario.accounts[0].opening_balance = Money(0);
-    let quiet = simulate(&input).unwrap();
-    assert!(quiet.rollouts[0].dispositions.is_empty());
-    assert_eq!(quiet.rollouts[0].months.last().unwrap().lots.len(), 2);
-
-    input.scenario.accounts[0].opening_balance = Money(10_000);
-    input.scenario.target_allocation_policies[0].allow_purchases = true;
-    input.scenario.target_allocation_policies[0].rebalance_tolerance_ppb = Some(0);
-    let deposit = simulate(&input).unwrap();
-    let rollout = &deposit.rollouts[0];
-    assert!(rollout.dispositions.is_empty()); // Active cash band suppresses drift exits.
-    let purchased: Vec<_> = rollout
-        .months
-        .last()
-        .unwrap()
-        .lots
-        .iter()
-        .filter(|lot| lot.purchase_month == 0)
-        .collect();
-    assert_eq!(purchased.len(), 1);
-    assert_eq!(purchased[0].asset_id, "security:second");
-    assert_eq!(purchased[0].basis_remaining, Money(10_000));
-    input.scenario.target_allocation_policies[0].sleeves[1].weight = 0;
-    assert!(matches!(
-        simulate(&input),
-        Err(SimulationError::InvalidTargetAllocationPolicy { .. })
-    ));
-}
-
-#[test]
-fn zero_target_exit_and_later_sale_fund_canonical_tax_and_consumption() {
-    let mut input = allocation_tax_and_consumption_fixture();
-    input.scenario.scheduled_transfers.clear();
-    let policy = &mut input.scenario.target_allocation_policies[0];
-    policy.sleeves[0].weight = 0;
-    policy.allow_purchases = true;
-    policy.rebalance_tolerance_ppb = Some(0);
-    let output = simulate(&input).unwrap();
-    let rollout = &output.rollouts[0];
-    assert_eq!(rollout.failed_month, None);
-    assert_eq!(
-        rollout
-            .dispositions
-            .iter()
-            .map(|sale| (sale.month, sale.asset_id.as_str(), sale.proceeds))
-            .collect::<Vec<_>>(),
-        [
-            (0, "security:stock", Money(40_000)),
-            (1, "security:stock", Money(10_000)),
-            (12, "security:second", Money(7_500))
-        ]
-    );
-    // Month 0's funding raise stops short of the zero target. The quiet month exits
-    // the remaining stock; the next tax year raises from the retained sleeve.
-    assert_eq!(
-        rollout.months[1].lots[0].units_remaining,
-        Quantity(10_000_000)
-    );
-    assert_eq!(rollout.months[2].lots[0].units_remaining, Quantity(0));
-    assert_eq!(rollout.tax_payments[0].amount_paid, Money(2_500));
-    assert_eq!(rollout.tax_payments[0].month, 12);
-    assert_eq!(
-        rollout
-            .obligations
-            .iter()
-            .filter(|claim| claim.obligation_type == "cash_spend")
-            .map(|claim| claim.amount_paid.0)
-            .sum::<i64>(),
-        55_000
-    );
-}
-
-#[test]
-fn allocation_missing_prices_are_not_zero_valued_holdings() {
-    let mut input = allocation_fixture(1);
-    input
-        .series
-        .retain(|series| series.series_id != "security:second");
-    assert!(matches!(
-        simulate(&input),
-        Err(SimulationError::MissingSeries { .. })
-    ));
-}
-
-#[test]
-fn configured_timing_low_and_unfunded_consumption() {
-    let (mut input, spending) = policy_timing_fixture(1);
-    input.scenario.obligations.push(ObligationSpec {
-        month: 0,
-        obligation_id: "existing-rent".into(),
-        obligation_type: "outside_rent".into(),
-        from: spending.from.clone(),
-        to: spending.to.clone(),
-        amount_due: Money(70_000).into(),
-        property_id: None,
-        deduction_category: None,
-        deductible_fraction_ppb: WIRE_RATE_SCALE,
-    });
-    for allow_cut in [false, true] {
-        let mut selected = input.clone();
-        // These are configured demand arms, not a live policy callback. The common
-        // action-session tests cover authored cuts and ordered payment priority.
-        let amount = Money(if allow_cut { 30_000 } else { 50_000 });
-        selected.scenario.obligations.push(ObligationSpec {
-            month: 0,
-            obligation_id: spending.cause_id.clone(),
-            obligation_type: "cash_spend".into(),
-            from: spending.from.clone(),
-            to: spending.to.clone(),
-            amount_due: amount.into(),
-            property_id: None,
-            deduction_category: None,
-            deductible_fraction_ppb: WIRE_RATE_SCALE,
-        });
-        let rollout = simulate(&selected).unwrap().rollouts.remove(0);
-        assert_eq!(rollout.failed_month, if allow_cut { None } else { Some(0) });
-        let consumption = rollout
-            .obligations
-            .iter()
-            .find(|row| row.cause_id == "consumption_m0")
-            .unwrap();
-        assert_eq!(
-            consumption.amount_due,
-            Money(if allow_cut { 30_000 } else { 50_000 })
-        );
-        assert_eq!(
-            consumption.amount_paid,
-            Money(if allow_cut { 30_000 } else { 0 })
-        );
-        assert_eq!(
-            consumption.shortfall,
-            Money(if allow_cut { 0 } else { 50_000 })
-        );
-        let rent = rollout
-            .obligations
-            .iter()
-            .find(|row| row.cause_id == "existing-rent_m0")
-            .unwrap();
-        assert_eq!(rent.amount_due, Money(70_000));
-        assert_eq!(rent.amount_paid, Money(if allow_cut { 70_000 } else { 0 }));
-        // Funding sales precede the group decision and are not rolled back on failure.
-        assert_eq!(
-            rollout
-                .dispositions
-                .iter()
-                .map(|row| row.proceeds.0)
-                .sum::<i64>(),
-            if allow_cut { 90_000 } else { 100_000 }
-        );
-        assert!(rollout.tax_payments.is_empty());
-    }
-}
-
-#[test]
-fn configured_timing_surplus_investment_reserves_tax_and_consumption() {
-    let (mut input, spending) = policy_timing_fixture(13);
-    input
-        .scenario
-        .scheduled_transfers
-        .push(ScheduledTransferSpec {
-            month: 12,
-            cause_id: "test-cash-contribution".into(),
-            from: spending.to.clone(),
-            to: spending.from.clone(),
-            amount: Money(10_000).into(),
-            income_category: None,
-            deduction_category: None,
-        });
-    // Synthetic flat taxes test timing, not any real jurisdiction's rules.
-    input.scenario.tax_profiles.push(TaxProfileSpec {
-        agent_id: "alice".into(),
-        tax_authority_agent_id: "world".into(),
-        payment_account_id: "checking".into(),
-        tax_authority_account_id: "checking".into(),
-        prior_year_tax: Money(0),
-        section_121_exclusion: Money(0),
-        jurisdictions: vec![TaxRules {
-            jurisdiction_id: "test-timing".into(),
-            exempt_interest_from_levels: vec![],
-            exempts_own_issue: false,
-            ordinary_brackets: vec![TaxBracket {
-                upper: None,
-                rate_ppb: 200_000_000,
-            }],
-            long_term_capital_gain_brackets: vec![TaxBracket {
-                upper: None,
-                rate_ppb: 100_000_000,
-            }],
-            standard_deduction: Money(0),
-            max_capital_loss_ordinary_offset: Money(0),
-            section_1250_rate_ppb: 0,
-        }],
-    });
-    for reinvest_surplus in [false, true] {
-        input.scenario.target_allocation_policies[0].allow_purchases = reinvest_surplus;
-        let mut selected = input.clone();
-        for (month, amount) in [(0, 50_000), (12, 5_000)] {
-            selected.scenario.obligations.push(ObligationSpec {
-                month,
-                obligation_id: spending.cause_id.clone(),
-                obligation_type: "cash_spend".into(),
-                from: spending.from.clone(),
-                to: spending.to.clone(),
-                amount_due: Money(amount).into(),
-                property_id: None,
-                deduction_category: None,
-                deductible_fraction_ppb: WIRE_RATE_SCALE,
-            });
-        }
-        let rollout = inspect_opening_books(&selected, "alice", |books| {
-            assert_eq!(
-                books.cash()?,
-                Money(if books.month() == 0 { 10_000 } else { 0 })
-            );
-            assert_eq!(
-                books.public_value()?,
-                Money(if books.month() == 0 { 100_000 } else { 60_000 })
-            );
-            Ok(())
-        })
-        .unwrap()
-        .rollouts
-        .remove(0);
-        assert_eq!(rollout.failed_month, None);
-        assert_eq!(
-            rollout
-                .dispositions
-                .iter()
-                .map(|row| (row.month, row.proceeds, row.basis, row.realized_gain))
-                .collect::<Vec<_>>(),
-            vec![(0, Money(40_000), Money(20_000), Money(20_000))]
-        );
-        assert_eq!(
-            rollout
-                .tax_accruals
-                .iter()
-                .map(|row| (row.month, row.total_tax))
-                .collect::<Vec<_>>(),
-            vec![(11, Money(2_000))]
-        );
-        assert_eq!(
-            rollout
-                .tax_payments
-                .iter()
-                .map(|row| (row.month, row.amount_paid))
-                .collect::<Vec<_>>(),
-            vec![(12, Money(2_000))]
-        );
-        assert_eq!(
-            rollout
-                .obligations
-                .iter()
-                .filter(|row| row.obligation_type == "cash_spend")
-                .map(|row| (row.month, row.amount_due, row.amount_paid))
-                .collect::<Vec<_>>(),
-            vec![
-                (0, Money(50_000), Money(50_000)),
-                (12, Money(5_000), Money(5_000))
-            ]
-        );
-        let final_month = rollout.months.last().unwrap();
-        assert_eq!(
-            final_month
-                .balances
-                .iter()
-                .find(|row| row.account == spending.from)
-                .unwrap()
-                .balance,
-            Money(if reinvest_surplus { 0 } else { 3_000 })
-        );
-        let new_lots = final_month
-            .lots
-            .iter()
-            .filter(|lot| lot.purchase_month == 12)
-            .collect::<Vec<_>>();
-        if reinvest_surplus {
-            assert_eq!(new_lots.len(), 1);
-            assert_eq!(new_lots[0].units_remaining, Quantity(3_000_000));
-            assert_eq!(new_lots[0].basis_remaining, Money(3_000));
-        } else {
-            assert!(new_lots.is_empty());
-        }
-    }
-}
-
 pub(super) fn stopped_book_fixture(
     horizon: u32,
     future_multiplier: i64,
 ) -> (ExecutionInput, CashRoute) {
     let (mut input, mut component) = policy_timing_fixture(horizon);
     input.scenario.accounts[0].opening_balance = Money(2_100);
-    input.scenario.target_allocation_policies.clear();
     component.from = AccountRef::new("alice", "budget");
     input.scenario.accounts.push(AccountSpec {
         account: component.from.clone(),
@@ -1343,50 +964,6 @@ fn actor_books_expose_only_originated_contracts_and_recorded_tax() {
         })
         .unwrap();
     }
-}
-
-#[test]
-fn actor_books_keep_pool_harvest_adjustments_separate_from_lot_basis() {
-    let (mut input, component) = stopped_book_fixture(15, 2);
-    input.scenario.harvest_policies.push(HarvestPolicySpec {
-        owner_agent_id: "alice".into(),
-        account_id: "checking".into(),
-        asset_id: "stock".into(),
-        peak_annual_yield_ppb: 120_000_000,
-        floor_annual_yield_ppb: 120_000_000,
-        maturity_decay_exponent_ppb: WIRE_RATE_SCALE,
-        drawdown_sensitivity_ppb: 0,
-        short_term_fraction_ppb: WIRE_RATE_SCALE,
-    });
-    input.scenario.obligations.push(ObligationSpec {
-        month: 1,
-        obligation_id: component.cause_id.clone(),
-        obligation_type: "cash_spend".into(),
-        from: component.from.clone(),
-        to: component.to.clone(),
-        amount_due: Money(1_000_000).into(),
-        property_id: None,
-        deduction_category: None,
-        deductible_fraction_ppb: WIRE_RATE_SCALE,
-    });
-    inspect_opening_books(&input, "alice", |books| {
-        let adjustments = books.harvest_adjustments().collect::<Vec<_>>();
-        assert_eq!(adjustments.len(), 1);
-        assert_eq!(adjustments[0].account_id, "checking");
-        assert_eq!(adjustments[0].asset_id, "stock");
-        assert_eq!(
-            adjustments[0].cumulative_harvest,
-            Money(if books.month() == 0 { 0 } else { 990 })
-        );
-        let lot = books.public_positions().next().unwrap()?;
-        assert_eq!(
-            lot.book_basis(),
-            Money(if books.month() == 0 { 50_000 } else { 49_500 })
-        );
-        // Stop in m1, after observing one month's harvest of 1% of 99,000.
-        Ok(())
-    })
-    .unwrap();
 }
 
 #[test]
@@ -2178,9 +1755,8 @@ fn transfer_and_fifo_sale_remain_balanced() {
             }],
             tax_profiles: vec![],
             distributions: vec![],
-            target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
-            harvest_policies: vec![],
+            tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
             initial_primary_residences: vec![],
             primary_residence_events: vec![],
@@ -2566,9 +2142,8 @@ fn oversell_is_rejected_before_any_disposition() {
             }],
             tax_profiles: vec![],
             distributions: vec![],
-            target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
-            harvest_policies: vec![],
+            tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
             initial_primary_residences: vec![],
             primary_residence_events: vec![],
@@ -2649,9 +2224,8 @@ fn failure_stops_future_actions_and_preserves_the_observed_book() {
             scheduled_sales: vec![],
             tax_profiles: vec![],
             distributions: vec![],
-            target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
-            harvest_policies: vec![],
+            tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
             initial_primary_residences: vec![],
             primary_residence_events: vec![],
@@ -2744,9 +2318,8 @@ fn same_source_recurring_obligations_settle_all_or_none() {
             scheduled_sales: vec![],
             tax_profiles: vec![],
             distributions: vec![],
-            target_allocation_policies: vec![],
             private_equity_tender_policies: vec![],
-            harvest_policies: vec![],
+            tlh_portfolios: vec![],
             scheduled_property_purchases: vec![],
             initial_primary_residences: vec![],
             primary_residence_events: vec![],
@@ -2788,213 +2361,4 @@ fn same_source_recurring_obligations_settle_all_or_none() {
     assert_eq!(rollout.obligations[2].amount_paid, Money(0));
     assert_eq!(rollout.obligations[2].shortfall, Money(1));
     assert!(rollout.obligations[2].failure_active);
-}
-
-fn buying_fixture(horizon_months: u32) -> ExecutionInput {
-    let mut fixture = minimal_fixture();
-    fixture.scenario.holding_pools = vec![holding_pool("alice", "brokerage", "stock", 1_000_000)];
-    fixture.scenario.horizon_months = horizon_months;
-    fixture.scenario.accounts[0].opening_balance = Money(20_000);
-    fixture.scenario.target_allocation_policies = vec![TargetAllocationPolicySpec {
-        agent_id: "alice".into(),
-        account_id: "checking".into(),
-        source_account_ids: vec!["brokerage".into()],
-        sleeves: vec![SleeveTargetSpec {
-            asset_id: "stock".into(),
-            weight: 1,
-            quantity_scale: 1_000_000,
-        }],
-        cash_floor: Money(0).into(),
-        cash_ceiling: Money(0).into(),
-        cause_id_prefix: "test-buy".into(),
-        allow_purchases: true,
-        rebalance_tolerance_ppb: None,
-    }];
-    fixture.series = vec![SeriesSpec {
-        series_id: "security:stock".into(),
-        snapshots: horizon_months + 1,
-        values: vec![10_000; horizon_months as usize + 1],
-    }];
-    fixture
-}
-
-#[test]
-fn empty_buyable_pool_distributes_zero_until_its_first_purchase_settles() {
-    let mut fixture = buying_fixture(2);
-    fixture
-        .scenario
-        .income_sources
-        .push(IncomeSource::interest(None));
-    fixture.scenario.distributions = vec![DistributionSpec {
-        agent_id: "alice".into(),
-        holding_account_id: "brokerage".into(),
-        asset_id: "stock".into(),
-        to_account_id: "checking".into(),
-        tax_character: vec![DistributionTaxSliceSpec {
-            fraction_ppb: WIRE_RATE_SCALE,
-            issuer_jurisdiction_id: None,
-        }],
-    }];
-    fixture.series.push(SeriesSpec {
-        series_id: "security_distribution:stock".into(),
-        snapshots: 3,
-        values: vec![100 * WIRE_RATE_SCALE; 3],
-    });
-    let rollout = simulate(&fixture).unwrap().rollouts.remove(0);
-    assert_eq!(rollout.failed_month, None);
-    assert!(rollout.months[0].lots.is_empty());
-    assert_eq!(rollout.months[1].lots.len(), 1);
-    assert_eq!(
-        rollout.months[1].lots[0].units_remaining,
-        Quantity(2_000_000)
-    );
-    assert_eq!(rollout.months[1].lots[0].basis_remaining, Money(20_000));
-    assert_eq!(
-        rollout
-            .distributions
-            .iter()
-            .map(|row| (row.month, row.units, row.amount))
-            .collect::<Vec<_>>(),
-        vec![
-            (0, Quantity(0), Money(0)),
-            (1, Quantity(2_000_000), Money(200))
-        ]
-    );
-}
-
-#[test]
-fn fifo_uses_purchase_month_across_policies_and_preserves_each_lots_tax_basis() {
-    let mut fixture = buying_fixture(13);
-    fixture.scenario.accounts[0].opening_balance = Money(0);
-    fixture.scenario.accounts.extend([
-        AccountSpec {
-            account: AccountRef::new("alice", "early-cash"),
-            opening_balance: Money(20_000),
-        },
-        AccountSpec {
-            account: AccountRef::new("alice", "proceeds"),
-            opening_balance: Money(0),
-        },
-        AccountSpec {
-            account: AccountRef::new("world", "checking"),
-            opening_balance: Money(30_000),
-        },
-    ]);
-    let mut early_policy = fixture.scenario.target_allocation_policies[0].clone();
-    early_policy.account_id = "early-cash".into();
-    early_policy.cause_id_prefix = "early".into();
-    fixture
-        .scenario
-        .target_allocation_policies
-        .push(early_policy);
-    // Policy 1 buys first; policy 0 buys a month later into the same brokerage pool.
-    fixture
-        .scenario
-        .scheduled_transfers
-        .push(ScheduledTransferSpec {
-            month: 1,
-            cause_id: "later-deposit".into(),
-            from: AccountRef::new("world", "checking"),
-            to: AccountRef::new("alice", "checking"),
-            amount: Money(30_000).into(),
-            income_category: None,
-            deduction_category: None,
-        });
-    fixture.series[0].values = vec![20_000; 14];
-    fixture.series[0].values[0] = 10_000;
-    fixture.series[0].values[1] = 15_000;
-    fixture.scenario.scheduled_sales.push(ScheduledSaleSpec {
-        month: 12,
-        cause_id: "fifo-sale".into(),
-        agent_id: "alice".into(),
-        account_id: "brokerage".into(),
-        asset_id: "stock".into(),
-        units: Quantity(3_000_000),
-        proceeds_account_id: "proceeds".into(),
-    });
-    // Synthetic zero-rate rules expose holding-period classification without payment effects.
-    fixture.scenario.tax_profiles.push(TaxProfileSpec {
-        agent_id: "alice".into(),
-        tax_authority_agent_id: "world".into(),
-        payment_account_id: "proceeds".into(),
-        tax_authority_account_id: "checking".into(),
-        prior_year_tax: Money(0),
-        section_121_exclusion: Money(0),
-        jurisdictions: vec![TaxRules {
-            jurisdiction_id: "test".into(),
-            exempt_interest_from_levels: vec![],
-            exempts_own_issue: false,
-            ordinary_brackets: vec![TaxBracket {
-                upper: None,
-                rate_ppb: 0,
-            }],
-            long_term_capital_gain_brackets: vec![TaxBracket {
-                upper: None,
-                rate_ppb: 0,
-            }],
-            standard_deduction: Money(0),
-            max_capital_loss_ordinary_offset: Money(0),
-            section_1250_rate_ppb: 0,
-        }],
-    });
-    let rollout = simulate(&fixture).unwrap().rollouts.remove(0);
-    assert_eq!(rollout.failed_month, None);
-    assert_eq!(
-        rollout
-            .dispositions
-            .iter()
-            .map(|row| (
-                row.purchase_month,
-                row.units,
-                row.basis,
-                row.proceeds,
-                row.realized_gain
-            ))
-            .collect::<Vec<_>>(),
-        vec![
-            (
-                0,
-                Quantity(2_000_000),
-                Money(20_000),
-                Money(40_000),
-                Money(20_000)
-            ),
-            (
-                1,
-                Quantity(1_000_000),
-                Money(15_000),
-                Money(20_000),
-                Money(5_000)
-            ),
-        ]
-    );
-    let gains = &rollout.months.last().unwrap().capital_gains[0];
-    assert_eq!(gains.long_term_gain, Money(20_000));
-    assert_eq!(gains.short_term_gain, Money(5_000));
-}
-
-#[test]
-fn future_purchase_lot_ids_are_reserved_before_execution() {
-    let mut fixture = buying_fixture(1);
-    // Reservation covers future purchase numbers, not only those reachable in this horizon.
-    let reserved = "test-buy_buy_p0_s0_1000000";
-    fixture.scenario.initial_lots.push(InitialLotSpec {
-        lot_id: reserved.into(),
-        agent_id: "alice".into(),
-        account_id: "brokerage".into(),
-        asset_id: "stock".into(),
-        purchase_month: -1,
-        quantity_scale: 1_000_000,
-        units: Quantity(1_000_000),
-        basis: Money(10_000),
-    });
-    assert!(matches!(
-        ValidatedInput::new(&fixture),
-        Err(SimulationError::DuplicateLot { lot_id }) if lot_id == reserved
-    ));
-    fixture.scenario.target_allocation_policies[0].allow_purchases = false;
-    assert!(ValidatedInput::new(&fixture).is_ok());
-    fixture.scenario.target_allocation_policies[0].allow_purchases = true;
-    fixture.scenario.initial_lots[0].lot_id.push('x');
-    assert!(ValidatedInput::new(&fixture).is_ok());
 }

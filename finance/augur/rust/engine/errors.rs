@@ -8,12 +8,10 @@ use super::*;
 
 #[derive(Debug, Error)]
 pub enum SimulationError {
-    #[error("unsupported actor control input: {reason}")]
-    UnsupportedActorInput { reason: String },
-    #[error("actor responses must name each active path/month exactly once")]
-    InvalidActorResponses,
-    #[error("actor session operation does not match its pending lifecycle state")]
-    InvalidActorSessionState,
+    #[error("financial books are at month {expected}, request names {actual}")]
+    InvalidFinancialMonth { expected: u32, actual: u32 },
+    #[error("unknown scheduled sale index {index}")]
+    InvalidScheduledSale { index: usize },
     #[error(transparent)]
     PropertyValuation(#[from] crate::property::ValuationError),
     #[error(transparent)]
@@ -305,24 +303,6 @@ pub enum SimulationError {
     InvalidPropertyTaxPolicy { property_id: String },
     #[error("federal SALT policy for {profile_id:?} is invalid")]
     InvalidSaltPolicy { profile_id: String },
-    #[error("duplicate target-allocation policy for {agent_id}:{account_id}")]
-    DuplicateTargetAllocationPolicy {
-        agent_id: String,
-        account_id: String,
-    },
-    #[error("target-allocation policy for {agent_id}:{account_id} has invalid configuration")]
-    InvalidTargetAllocationPolicy {
-        agent_id: String,
-        account_id: String,
-    },
-    #[error(
-        "target-allocation policy for {agent_id}:{account_id} names duplicate asset {asset_id:?}"
-    )]
-    DuplicateTargetAllocationSleeve {
-        agent_id: String,
-        account_id: String,
-        asset_id: String,
-    },
     #[error("private-equity policy for {owner_agent_id:?} has invalid configuration")]
     InvalidPrivateEquityPolicy { owner_agent_id: String },
     #[error("private-equity issuer {issuer_id:?} is missing protocol series {series_id:?}")]
@@ -341,10 +321,8 @@ pub enum SimulationError {
     },
     #[error("private-equity issuer {issuer_id:?} is held by multiple agents")]
     MixedPrivateEquityOwners { issuer_id: String },
-    #[error("harvest policy {policy_index} has invalid configuration")]
-    InvalidHarvestPolicy { policy_index: usize },
-    #[error(transparent)]
-    Allocation(#[from] AllocationError),
+    #[error("invalid component financial effects: {reason}")]
+    InvalidComponentEffect { reason: String },
     #[error(transparent)]
     Ledger(#[from] LedgerError),
     #[error(transparent)]

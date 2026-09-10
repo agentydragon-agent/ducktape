@@ -47,7 +47,7 @@ pub struct Payment {
 }
 
 impl Payment {
-    pub(super) fn new(
+    pub(in crate::engine) fn new(
         month: u32,
         action_index: usize,
         request: &payments::Request,
@@ -102,12 +102,9 @@ pub struct Summary {
     /// This is a result, not the actor's policy observation.
     pub ending_book: MonthOutput,
     pub ending_mark_month: u32,
-    /// Final month's attempted prefix, including a rejected action. Sufficient to
-    /// resolve `Stop::RejectedAction` without retaining the whole action history.
-    pub last_receipts: Vec<Receipt>,
 }
 
-pub(super) struct Capture {
+pub(in crate::engine) struct Capture {
     cash: Vec<CashSeries>,
     holdings: BTreeMap<(AccountRef, String), Vec<Money>>,
     bond_principal: Vec<(usize, BondSeries)>,
@@ -182,20 +179,44 @@ impl Capture {
                 .entry((account, lot.spec.asset_id.clone()))
                 .or_insert_with(|| vec![Money(0); state.month as usize]);
         }
+        for portfolio in state
+            .tlh_portfolios
+            .iter()
+            .filter(|item| item.owner_agent_id == holdings.agent_id())
+        {
+            self.holdings
+                .entry((
+                    AccountRef::new(&portfolio.owner_agent_id, &portfolio.account_id),
+                    portfolio.asset_id.clone(),
+                ))
+                .or_insert_with(|| vec![Money(0); state.month as usize]);
+        }
         for ((account, asset), values) in &mut self.holdings {
+            let managed = state
+                .tlh_portfolios
+                .iter()
+                .filter(|item| {
+                    item.owner_agent_id == account.agent_id
+                        && item.account_id == account.account_id
+                        && item.asset_id == *asset
+                })
+                .try_fold(Money(0), |sum, item| sum.checked_add(item.value))?;
             values.push(
-                holdings.public_value(
-                    input,
-                    state
-                        .lots
-                        .iter()
-                        .filter(|lot| {
-                            lot.spec.account_id == account.account_id && lot.spec.asset_id == *asset
-                        })
-                        .map(LotState::view),
-                    state.rollout_id,
-                    state.failed_month.unwrap_or(state.month),
-                )?,
+                holdings
+                    .public_value(
+                        input,
+                        state
+                            .lots
+                            .iter()
+                            .filter(|lot| {
+                                lot.spec.account_id == account.account_id
+                                    && lot.spec.asset_id == *asset
+                            })
+                            .map(LotState::view),
+                        state.rollout_id,
+                        state.failed_month.unwrap_or(state.month),
+                    )?
+                    .checked_add(managed)?,
             );
         }
         Ok(())
@@ -206,7 +227,6 @@ impl Capture {
         input: &ExecutionInput,
         actor: &str,
         state: &mut RolloutState,
-        last_receipts: Vec<Receipt>,
     ) -> Result<Summary, SimulationError> {
         let recorder = &mut state.recorder;
         // Dense/forensic traces also retain these records; compact capture moves them.
@@ -257,11 +277,10 @@ impl Capture {
                 &state.mortgages,
                 &state.tax_liabilities,
                 &state.tax,
-                &state.tlh_cumulative_harvest,
+                &state.tlh_portfolios,
                 state.failed_month.is_some(),
             )?,
             ending_mark_month: state.failed_month.unwrap_or(state.month),
-            last_receipts,
         })
     }
 }
