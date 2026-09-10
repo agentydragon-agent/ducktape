@@ -45,12 +45,17 @@ export function McpServers({ service = mcpLinkageService }: { service?: McpLinka
     <Stack>
       <Group justify="space-between">
         <Title order={2}>MCP servers</Title>
-        <Button variant="light" loading={busy} onClick={() => void load().catch((failure) => setError(displayableError(failure)))}>
+        <Button
+          variant="light"
+          loading={busy}
+          onClick={() => void load().catch((failure) => setError(displayableError(failure)))}
+        >
           Refresh
         </Button>
       </Group>
       <Text c="dimmed" size="sm">
-        Link one shared operator-managed OAuth account per configured MCP server. Agents never receive these credentials.
+        Link one shared operator-managed OAuth account per configured MCP server. Agents never receive these
+        credentials.
       </Text>
       {error && <Alert color="red">{error}</Alert>}
       {rows.map((row) => (
@@ -58,16 +63,26 @@ export function McpServers({ service = mcpLinkageService }: { service?: McpLinka
           <Group justify="space-between" align="flex-start">
             <div>
               <Text fw={600}>{row.server_id}</Text>
-              <Text size="sm" c="dimmed">{row.provider} · {row.server_url}</Text>
-              <Text size="xs" c="dimmed">Scopes: {row.scopes.length ? row.scopes.join(", ") : "provider default"}</Text>
+              <Text size="sm" c="dimmed">
+                {row.provider} · {row.server_url}
+              </Text>
+              <Text size="xs" c="dimmed">
+                Scopes: {row.scopes.length ? row.scopes.join(", ") : "provider default"}
+              </Text>
             </div>
             <Badge color={row.status === "linked" ? "green" : row.status === "expired" ? "orange" : "gray"}>
               {row.status}
             </Badge>
           </Group>
           <Group justify="flex-end" mt="sm">
-            <Button loading={busy} onClick={() => void link(row)}>{row.status === "linked" ? "Reconnect" : "Link account"}</Button>
-            {row.status === "linked" && <Button color="red" variant="light" loading={busy} onClick={() => void disconnect(row)}>Disconnect</Button>}
+            <Button loading={busy} onClick={() => void link(row)}>
+              {row.status === "linked" ? "Reconnect" : "Link account"}
+            </Button>
+            {row.status === "linked" && (
+              <Button color="red" variant="light" loading={busy} onClick={() => void disconnect(row)}>
+                Disconnect
+              </Button>
+            )}
           </Group>
         </Paper>
       ))}

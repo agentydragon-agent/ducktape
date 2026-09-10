@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import contextlib
 import hashlib
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -18,6 +21,10 @@ from sqlalchemy import select
 from x.agentplane.action_service.catalog import Key
 from x.agentplane.action_service.db import McpLinkageFlowRow, McpServerLinkageRow, SessionMaker
 from x.agentplane.action_service.models import Principal, PrincipalRole
+
+logger = logging.getLogger(__name__)
+_REFRESH_SKEW = timedelta(minutes=1)
+_MAX_REFRESH_WAKE = timedelta(minutes=5)
 
 
 class McpProvider(StrEnum):
@@ -94,6 +101,20 @@ class McpLinkageAuthority:
         self._sessions = sessions
         self._servers = dict(servers)
         self._http = http
+        self._stop = asyncio.Event()
+        self._refresh_task: asyncio.Task[None] | None = None
+
+    async def start_refresh_loop(self) -> None:
+        if self._refresh_task is None:
+            self._stop.clear()
+            self._refresh_task = asyncio.create_task(self._refresh_loop(), name="mcp-linkage-refresh")
+
+    async def close(self) -> None:
+        if self._refresh_task is None:
+            return
+        self._stop.set()
+        await self._refresh_task
+        self._refresh_task = None
 
     def servers(self) -> dict[str, McpOAuthServer]:
         return dict(self._servers)
@@ -193,7 +214,7 @@ class McpLinkageAuthority:
             row = await db.get(McpServerLinkageRow, server_id, with_for_update=True)
             if row is not None:
                 row.revision += 1
-                row.token_ciphertext = None
+                row.token = None
                 row.expires_at = None
                 row.linked_at = None
                 row.linked_by = None
@@ -214,6 +235,37 @@ class McpLinkageAuthority:
         if not isinstance(access_token, str) or not access_token:
             raise McpLinkageConflictError("MCP linkage token is invalid")
         return access_token
+
+    async def _refresh_loop(self) -> None:
+        while not self._stop.is_set():
+            wake_after = _MAX_REFRESH_WAKE.total_seconds()
+            for server_id in self._servers:
+                try:
+                    wake_after = min(wake_after, await self._refresh_if_due(server_id))
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning("MCP OAuth refresh failed for %s", server_id)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._stop.wait(), timeout=max(1.0, wake_after))
+
+    async def _refresh_if_due(self, server_id: str) -> float:
+        server = self._server(server_id)
+        async with self._sessions.begin() as db:
+            row = await db.get(McpServerLinkageRow, server_id, with_for_update=True)
+            if row is None or row.token is None:
+                return _MAX_REFRESH_WAKE.total_seconds()
+            refresh_token = row.token.get("refresh_token")
+            if not isinstance(refresh_token, str) or not refresh_token:
+                return _MAX_REFRESH_WAKE.total_seconds()
+            now = datetime.now(UTC)
+            if row.expires_at is not None and row.expires_at > now + _REFRESH_SKEW:
+                return max(1.0, (row.expires_at - now - _REFRESH_SKEW).total_seconds())
+            token = await self._refresh(server, refresh_token, row.scopes)
+            token.setdefault("refresh_token", refresh_token)
+            row.token = token
+            row.expires_at = _expiry(token)
+            return _MAX_REFRESH_WAKE.total_seconds()
 
     def _server(self, server_id: str) -> McpOAuthServer:
         try:
@@ -254,9 +306,31 @@ class McpLinkageAuthority:
             raise McpLinkageConflictError("MCP OAuth provider returned no access token")
         return body
 
+    async def _refresh(self, server: McpOAuthServer, refresh_token: str, scopes: list[str]) -> dict[str, object]:
+        client_secret = server.client_secret_file.read_text().strip() if server.client_secret_file else None
+        data = {"grant_type": "refresh_token", "refresh_token": refresh_token, "client_id": server.client_id}
+        if scopes:
+            data["scope"] = " ".join(scopes)
+        if client_secret:
+            data["client_secret"] = client_secret
+        client = self._http or httpx.AsyncClient(timeout=15)
+        close = self._http is None
+        try:
+            response = await client.post(server.token_endpoint, data=data)
+            response.raise_for_status()
+            body = response.json()
+        except (httpx.HTTPError, ValueError):
+            raise McpLinkageConflictError("MCP OAuth token refresh failed") from None
+        finally:
+            if close:
+                await client.aclose()
+        if not isinstance(body, dict) or not isinstance(body.get("access_token"), str):
+            raise McpLinkageConflictError("MCP OAuth provider returned no refreshed access token")
+        return body
+
 
 def _view(server: McpOAuthServer, row: McpServerLinkageRow | None) -> McpLinkageView:
-    if row is None or row.token_ciphertext is None:
+    if row is None or row.token is None:
         status = McpLinkageStatus.UNLINKED
         revision = row.revision if row else 0
         scopes = row.scopes if row else server.scopes

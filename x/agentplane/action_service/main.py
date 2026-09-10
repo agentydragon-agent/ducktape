@@ -136,6 +136,8 @@ async def async_main(settings: Settings) -> None:
         connections = ConnectionAuthority(make_sessionmaker(engine), settings.identities)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         mcp_linkage = McpLinkageAuthority(make_sessionmaker(engine), settings.mcp_servers)
+        await mcp_linkage.start_refresh_loop()
+        stack.push_async_callback(mcp_linkage.close)
         push_notifier: ActionPushNotifier | None = None
         if settings.web_push is not None:
             push_notifier = ActionPushNotifier(
