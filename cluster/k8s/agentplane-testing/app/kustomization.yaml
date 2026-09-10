@@ -4,7 +4,6 @@ kind: Kustomization
 namespace: agentplane-testing
 resources:
   - forgejo-images-creds-eso.yaml
-  - secret.sops.yaml
   - serviceaccount-agentplane-runner.yaml
   - sandboxtemplate-agentplane-runner.yaml
   - serviceaccount-agentplane-app.yaml
