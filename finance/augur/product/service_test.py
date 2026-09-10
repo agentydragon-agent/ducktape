@@ -537,8 +537,17 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
 
 
 def test_selected_detail_executes_financially_once(
-    product: service.ProductService, scenario_key: ScenarioKey, monkeypatch: pytest.MonkeyPatch
+    make_product_service: MakeProductService, scenario_key: ScenarioKey, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Flat supplied marks make the terminal holdings an independent fixed-value control,
+    # rather than assuming the default GBM fixture leaves opening wealth unchanged.
+    product = make_product_service(
+        ConstantFrameModel(
+            levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
+            private_equity={IssuerId("private_holding_a"): PrivateEquityChannels(mark_usd_per_unit=25.0)},
+            model_id="flat_selected_detail",
+        )
+    )
     original = service.execute
     calls = 0
 
@@ -566,7 +575,7 @@ def test_combined_product_projection_simulates_once(
     monkeypatch: pytest.MonkeyPatch,
     scenario_key: ScenarioKey,
 ) -> None:
-    original = service.execute
+    original = service.simulate_product_metrics
     calls = 0
 
     def counted(*args, **kwargs):
@@ -574,7 +583,7 @@ def test_combined_product_projection_simulates_once(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "execute", counted)
+    monkeypatch.setattr(service, "simulate_product_metrics", counted)
 
     response = product.projection_summary(
         ProductProjectionRequest(
@@ -597,7 +606,7 @@ def test_combined_product_projection_simulates_once(
 def test_metric_fan_runs_reduced_product_projection_once_per_batch(
     product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
-    original = service.execute
+    original = service.simulate_product_metrics
     calls = 0
 
     def counted(*args, **kwargs):
@@ -605,7 +614,7 @@ def test_metric_fan_runs_reduced_product_projection_once_per_batch(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "execute", counted)
+    monkeypatch.setattr(service, "simulate_product_metrics", counted)
 
     product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=4, metric="cash", percentiles=(50,)))
 
