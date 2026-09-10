@@ -1,10 +1,17 @@
 # Agentplane acceptance suite
 
-Scenarios run against a **deployed** Agentplane: the suite creates real sandboxes through the app's
-HTTP API, opens sessions on the real harnesses, and asserts on what the egress proxy recorded. It is
-not a unit test with a live backend — it is the check that the deployed system does what
-<../egress/SPEC.md> says it does, and that a session's standing instructions reach the model that
-serves it.
+The default acceptance scenarios are **deployed vertical tests**: they create real sandboxes through
+the app's HTTP API, open sessions on the real harnesses, use the deployed LLM, and assert on
+cross-component behavior and durable system evidence. They are not unit tests with a live backend —
+they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
+session's standing instructions reach the model that serves it.
+
+There is one deliberate exception: `test_operator_login` is a fast, offline provider-adapter test.
+It uses mocked Authentik and Dex responses, creates no sandbox, and does not prove that deployed Dex
+or Agentplane is reachable. It stays in this package because login choreography is a high-churn
+prerequisite for the vertical scenarios, and keeping its regression loop beside them makes it useful
+when changing the real login path. The deployed login path remains covered as setup for the MCP
+vertical scenario.
 
 The general egress and instruction scenarios run on **both harnesses**. The runner protocol is the
 same for Claude and Codex, so one test body covers both: the `provider` fixture is parametrised over
@@ -59,9 +66,9 @@ restriction below still applies: remote choreography tests are not live acceptan
 Not in CI, and not on RBE: the target is `manual`, so `//...` never selects it, and it needs a
 kubeconfig and a route to the cluster.
 
-Bazel excludes `manual` targets from package patterns, so `:all` only runs the non-live
-`test_operator_login` unit test. Name the live scenario explicitly. Start with the egress
-vertical slice:
+Bazel excludes `manual` targets from package patterns, so `:all` only runs the fast
+`test_operator_login` exception. It does not run any deployed vertical scenario. Name the live
+scenario explicitly. Start with the egress vertical slice:
 
 ```bash
 bazelisk test //x/agentplane/acceptance:test_egress --test_output=streamed --test_arg=-s
