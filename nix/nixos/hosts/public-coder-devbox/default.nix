@@ -185,6 +185,14 @@ in
     ];
   };
 
+  # Give every Git invocation in the ephemeral devbox a stable, non-interactive
+  # author identity. Individual repositories can still override it locally when needed.
+  programs.git.enable = true;
+  programs.git.config.user = {
+    name = "agentydragon-agent";
+    email = "agentydragon-agent@users.noreply.github.com";
+  };
+
   # SSH commands use non-interactive Bash, so propagate the non-secret loader path
   # there. The loader reads the credential only at runtime after the key service runs.
   services.openssh.extraConfig = ''
