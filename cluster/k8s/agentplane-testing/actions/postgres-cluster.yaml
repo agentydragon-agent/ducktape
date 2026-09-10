@@ -20,7 +20,7 @@ spec:
         operator: Exists
         effect: NoSchedule
   storage:
-    storageClass: local-path-ovh-ssd
+    storageClass: local-path-ovh-hdd
     size: 2Gi
   monitoring:
     enablePodMonitor: true
