@@ -146,10 +146,10 @@ def test_fifo_crosses_two_lots_and_preserves_each_basis() -> None:
     assert rollout.trace is not None
     assert rollout.trace.events.lot_dispositions.sort("purchase_month_index").select(
         "lot_id", "units_sold", "cost_basis_consumed_quanta", "proceeds_quanta"
-    ).rows() == [("old", 100, 800_000, 2_000_000), ("young", 20, 200_000, 400_000)]
+    ).rows() == [("old", Fraction(100), 800_000, 2_000_000), ("young", Fraction(20), 200_000, 400_000)]
     assert [(lot.lot_id, _remaining(lot), lot.basis_remaining) for lot in rollout.trace.books[9].lots] == [
-        ("old", 0, 0),
-        ("young", 30, 300_000),
+        ("old", Fraction(0), 0),
+        ("young", Fraction(30), 300_000),
     ]
     assert rollout.summary.cash[0].values == [0] * 9 + [2_400_000] * 2
 
@@ -233,8 +233,8 @@ def test_sales_of_different_assets_do_not_consume_each_others_lots() -> None:
     [rollout] = _run(case, propose)
     assert rollout.stop is None
     assert {lot.lot_id: (_remaining(lot), lot.basis_remaining) for lot in rollout.summary.ending_book.lots} == {
-        "vti": (6, 60_000),
-        "qqq": (7, 140_000),
+        "vti": (Fraction(6), 60_000),
+        "qqq": (Fraction(7), 140_000),
     }
     assert rollout.summary.cash[0].values == [0, 0, 0, 60_000, 60_000, 60_000, 135_000]
     assert rollout.trace is not None
@@ -249,8 +249,8 @@ def test_sale_consumes_only_source_account_fifo_pool() -> None:
     [rollout] = _run(case, lambda obs: [_sale(obs, Fraction(8), account="taxable")] if obs.month == 1 else [])
     assert rollout.stop is None
     assert {lot.account_id: (_remaining(lot), lot.basis_remaining) for lot in rollout.summary.ending_book.lots} == {
-        "taxable": (2, 16_000),
-        "ira": (10, 70_000),
+        "taxable": (Fraction(2), 16_000),
+        "ira": (Fraction(10), 70_000),
     }
     assert rollout.trace is not None
     assert rollout.trace.events.lot_dispositions.select("source_account_id", "lot_id", "units_sold").rows() == [
