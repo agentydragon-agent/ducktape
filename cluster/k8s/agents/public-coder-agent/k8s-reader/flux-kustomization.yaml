@@ -15,5 +15,9 @@ spec:
     namespace: ducktape-flux
   timeout: 5m
   retryInterval: 1m
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: public-coder-agent-namespace
