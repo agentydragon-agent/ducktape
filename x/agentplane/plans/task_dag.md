@@ -35,7 +35,6 @@ flowchart TB
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     POLICYBIND["Design gate<br/>shared ActionPolicySets + bindings<br/>model, storage, ownership"]:::decision
     MCPDEPLOY["In progress<br/>OAuth-capable images + staging wiring<br/>public MCP and Sandbox reachability"]:::active
-    RECONNECT["Remaining support<br/>fresh consent for existing Connection<br/>explicit reconnect or Identity change"]:::future
     CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
     SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>through concrete Sandbox bindings"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
@@ -100,10 +99,9 @@ vertical and the broader `AG` model.
 Its product terms are Identity (configured authority), Connection (runtime named client enrollment), and Thread
 (execution/conversation state); it adds no multi-operator management or per-operator ownership model.
 Configured static Identities, runtime Connection/grant authority, OAuth/DCR enrollment with app
-consent, the generic MCP frontend, Connection list/rename/unbind UI, and provenance display are implemented.
-The remaining first-delivery work is staging rollout (`MCPDEPLOY`) and real operator/client proof
-(`APPROVALUI` / `CLAUDEAI`). `RECONNECT` extends management independently and does not gate
-the initial new-Connection flow. `EXTERNALMCP` additionally proves independently
+consent, the generic MCP frontend, Connection list/rename/unbind UI, reconnect/rebind, and
+provenance display are implemented. The remaining first-delivery work is staging rollout
+(`MCPDEPLOY`) and real operator/client proof (`APPROVALUI` / `CLAUDEAI`). `EXTERNALMCP` additionally proves independently
 running Claude Code. The [external connection plan](external_mcp_connections.md) owns remaining
 delivery and compatibility work, not a duplicate of the implemented contracts.
 The first external slice uses human approval. `POLICYBIND` settles policy-definition/assignment
@@ -196,22 +194,6 @@ are compatible. A merged source PR or a healthy old pod does not establish readi
 public discovery/callback/resource URLs, and external MCP reachability. Follow the rollout runbook
 in that PR. Then run `CLAUDEAI`; this configuration task alone cannot satisfy it. Verify Sandbox
 MCP reachability in parallel; that caller's acceptance is not a prerequisite for `CLAUDEAI`.
-
-### `RECONNECT` — authorize an existing Connection through fresh consent
-
-**Remaining support:** extend enrollment and the app consent UI with an explicit new/existing
-Connection choice, reviewed Connection version, and authority-change confirmation. The trusted
-`ReconnectConnection` primitive already exists, but enrollment currently always uses
-`NewConnection`. Reuse the existing browser-bound consent and operator authority.
-
-The grant semantics are settled: replacement ends the old grant when the pending revision is
-bound; old tokens never gain the replacement Identity, and failed activation does not restore the
-old grant. Preserve historical Action provenance and original-grant dispatch checks. Do not infer
-an existing Connection from a display name or fresh DCR client ID.
-
-**Acceptance:** same-Identity reconnect and explicit A-to-B rebind, stale/conflicting browser
-submissions, failed replacement issuance, old-token rejection, and unchanged historical receipts.
-Neither this feature nor configurable policies gates the initial Claude.ai connection.
 
 ### `POLICYBIND` — policy-binding model and storage
 
