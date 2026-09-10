@@ -31,10 +31,8 @@ flowchart TB
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
-    MCP0["P0 behavior<br/>credentialless remote MCP Action<br/>real staging LLM acceptance"]:::active
     MCPAUTH["Deferred support<br/>credentialed MCP account<br/>OAuth + credential-broker boundary"]:::future
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
-    MCPACCEPT["Milestone<br/>rerunnable Action/MCP acceptance<br/>against the deployed stack"]:::milestone
     POLICYBIND["Design gate<br/>shared ActionPolicySets + bindings<br/>model, storage, ownership"]:::decision
     MCPDEPLOY["In progress<br/>OAuth-capable images + staging wiring<br/>public MCP and Sandbox reachability"]:::active
     RECONNECT["Remaining support<br/>fresh consent for existing Connection<br/>explicit reconnect or Identity change"]:::future
@@ -43,6 +41,8 @@ flowchart TB
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>real Claude.ai/Claude Code proof"]:::future
+    CUTOVER["Planned milestone<br/>Haku Console affordance cutover<br/>Kubernetes + hostexec + GitHub"]:::active
+    K8SAUTH["Planned support<br/>browser-mediated Kubernetes auth<br/>linkage, refresh, revocation"]:::future
     HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution"]:::future
     APPROVALUI["Needed live evidence<br/>deployed SSE/push operator federation + BFF<br/>identity and approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
@@ -65,8 +65,6 @@ flowchart TB
     IDENTITY_SCOPE["Deferred discussion<br/>cross-service static Identity access<br/>MCP and binding-authority placement"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
 
-    MCP0 --> MCPACCEPT
-    MCP0 --> MCPAUTH
     CRED --> MCPAUTH
     MCPAUTH --> PROD
     POLICYBIND --> CALLERPOLICY
@@ -75,6 +73,11 @@ flowchart TB
     APPROVALUI --> CLAUDEAI
     CLAUDEAI --> EXTERNALMCP
     EXTERNALMCP --> MCPAGG
+    CLAUDEAI --> CUTOVER
+    APPROVALUI --> CUTOVER
+    K8SAUTH --> CUTOVER
+    MCPAUTH --> CUTOVER
+    HOSTEXEC --> CUTOVER
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     APPROVALUI -. replacement surface .-> RETIRE_TOOLS
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
@@ -84,18 +87,17 @@ flowchart TB
     PR -. independent reliability .-> PROD
     PR --> PC_EGRESS
 
-    MCP0 --> AG
     ACCESS -. authority choice .-> EGRESS_CHANGE
 ```
 
-The credentialless deployed gate is `MCP0 -> MCPACCEPT`: use the existing staging-owned
-streamable-HTTP fixture and real Claude/Codex acceptance turns. Implementation and CI evidence
-already exist. A real two-provider echo pass is recorded in
-[#5922](https://github.com/agentydragon/ducktape/pull/5922); the full rerunnable evidence gate remains.
-Credentialed upstream access is separate (`MCPAUTH`).
-Input delivery and proxy survivability can proceed independently of the external-client track.
+The credentialless MCP vertical is complete and is intentionally removed from this remaining-work
+board. Its deployed Claude/Codex evidence is recorded in the component and acceptance docs. The
+remaining operator-decision, browser/BFF, and Web Push evidence is tracked under `APPROVALUI` and
+`NOTIFY`; credentialed upstream access is separate (`MCPAUTH`). Input delivery and proxy survivability
+can proceed independently of the external-client track.
 
-The external-client track is single-operator and independent of `MCP0` and the broader `AG` model.
+The external-client track is single-operator and independent of the completed credentialless MCP
+vertical and the broader `AG` model.
 Its product terms are Identity (configured authority), Connection (runtime named client enrollment), and Thread
 (execution/conversation state); it adds no multi-operator management or per-operator ownership model.
 Configured static Identities, runtime Connection/grant authority, OAuth/DCR enrollment with app
@@ -131,27 +133,38 @@ path and does not block current credential-placeholder egress.
 
 ## Named gates and acceptance evidence
 
-### `MCP0` — credentialless remote MCP vertical slice
+### `CUTOVER` — Haku Console affordance cutover
 
-**P0 behavior:** a real staging Claude/Codex Agent discovers one configured ActionGroup, submits one
-read-only ActionRequest, and polls durable Action events to a safe result produced by a remote MCP
-server without the Agent or Action Service holding a provider credential.
+**Planned milestone:** move the highest-value Haku Console affordances behind Agentplane's generic
+MCP frontend, then retire the old tool-call/approval surface only after equivalent authority,
+provenance, result recovery, and rollback evidence exists. The initial cutoff set is:
 
-**Observed evidence:** production composition, remote transport, staging Everything binding,
-bounded echo auto-allow policy, and `x/agentplane/acceptance/test_mcp.py` are implemented.
-[#5922](https://github.com/agentydragon/ducktape/pull/5922) records a real Claude/Codex echo pass.
-The broader independent-evidence scenarios in
-[#5822](https://github.com/agentydragon/ducktape/pull/5822) remain open; reconcile that PR against
-current federation/cancellation contracts before adding overlapping acceptance work.
+- **Kubernetes MCP:** expose the existing Kubernetes affordances through the frontend, but first
+  implement browser-mediated cluster/auth linkage. The linkage needs an explicit cluster identity,
+  consent or re-authentication, expiry/refresh, revocation, and wrong-cluster/wrong-user isolation.
+  Do not copy a kubeconfig or reusable bearer into the MCP client, Sandbox, or transcript; Kubernetes
+  RBAC remains authoritative and the browser flow returns only the reviewed linkage needed to call it.
+- **hostexec:** prefer an Action Service Executor adapter over a second hostexec MCP facade. Preserve
+  hostexec's machine/user authorization, credential exchange, bounded output, progress,
+  duplicate-start refusal, and unknown-outcome semantics. Repoint existing hostexec instances at an
+  Agentplane-owned route through a compatibility and reversible rollout, rather than changing all
+  daemons and the frontend in one cutover.
+- **GitHub:** use the credentialed-upstream account track (`MCPAUTH`) behind the generic MCP frontend.
+  Prove account linkage, safe read execution, refresh/reconnect, revocation, and account isolation;
+  PAT or OAuth refresh credentials stay with the broker/account authority, never in the MCP client,
+  Sandbox, or Action prompt.
 
-**Needed support:** verify deployed images/configuration and run that suite through the real
-OIDC/BFF and harness paths. Keep real MCP tools for success cases and isolated doubles only for
-controlled failures/concurrency. CI composition tests do not satisfy this live gate.
+**Needed support:** inventory every remaining Haku Console affordance and classify it as cutover-P0,
+required support, or deferred. At minimum record whether Gmail, Calendar, Home Assistant, Tana,
+messaging, browser, image, and similar tools need Agentplane routes, Actions, or can remain on the old
+surface temporarily. Preserve stable tool semantics where compatibility matters, but do not build
+parity for unused affordances.
 
-**Acceptance evidence:** `//x/agentplane/acceptance:all` runs the scenario against the deployed
-stack for both real harness providers, verifies catalog discovery, exactly one Action execution,
-cursor-based event polling, and the exact safe tool result. It must not assert success from the
-Agent's prose alone.
+**Acceptance:** from a real external client, exercise one harmless Kubernetes read after browser
+linkage, one hostexec Action through the existing daemon path, and one GitHub read through a linked
+account. For each, inspect canonical caller identity, authorization, Action/Execution provenance,
+redacted results, retry/reconnect behavior, and revocation. Run the old and new routes in parallel
+behind a rollback switch before retiring Haku Console's corresponding tool surface.
 
 ### `MCPAUTH` — credentialed MCP account and OAuth boundary
 
@@ -166,7 +179,7 @@ confirmation before implementation begins.
 
 **Acceptance evidence:** a separate credentialed live scenario proves account linkage, catalog
 refresh, one safe GitHub read, token refresh/reconnect, and negative isolation for an unbound or
-different account. This milestone must not block `MCP0` or be folded into the credentialless fixture
+different account. This milestone must not block the completed credentialless MCP vertical or be folded into the credentialless fixture
 test.
 
 ### `MCPDEPLOY` — stage the external MCP endpoint
@@ -312,7 +325,7 @@ with explicit precedence and negative tests for stale, cross-Agent, or caller-su
 **Deferred design:** choose per-system whether an Action uses the Agent's delegated identity, a
 brokered operator credential, or a hybrid. Keep target-side RBAC and egress enforcement authoritative;
 use grants/revocation reconciliation where a broker mints delegated authority. This is the broader
-external-access policy behind `MCPAUTH` and `HOSTEXEC`, not a prerequisite for `MCP0`.
+external-access policy behind `MCPAUTH` and `HOSTEXEC`, not a prerequisite for the completed credentialless MCP vertical.
 
 **Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
 revocation/expiry semantics without putting a reusable privileged credential in the harness.
