@@ -70,7 +70,15 @@ export function McpServers({ service = mcpLinkageService }: { service?: McpLinka
                 Scopes: {row.scopes.length ? row.scopes.join(", ") : "provider default"}
               </Text>
             </div>
-            <Badge color={row.status === "linked" ? "green" : row.status === "expired" ? "orange" : "gray"}>
+            <Badge
+              color={
+                row.status === "linked"
+                  ? "green"
+                  : row.status === "degraded" || row.status === "expired"
+                    ? "orange"
+                    : "gray"
+              }
+            >
               {row.status}
             </Badge>
           </Group>

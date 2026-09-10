@@ -135,7 +135,8 @@ async def async_main(settings: Settings) -> None:
         executors = await stack.enter_async_context(running_executor(catalog))
         connections = ConnectionAuthority(make_sessionmaker(engine), settings.identities)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
-        mcp_linkage = McpLinkageAuthority(make_sessionmaker(engine), settings.mcp_servers)
+        mcp_linkage = McpLinkageAuthority(make_sessionmaker(engine), settings.mcp_servers, engine=engine)
+        await mcp_linkage.cleanup_removed_servers()
         await mcp_linkage.start_refresh_loop()
         stack.push_async_callback(mcp_linkage.close)
         push_notifier: ActionPushNotifier | None = None

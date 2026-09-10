@@ -1,4 +1,4 @@
-"""Store shared MCP OAuth linkage and short-lived PKCE flows in Postgres."""
+"""Store shared MCP OAuth linkage, normalized token state, and PKCE flows."""
 
 import sqlalchemy as sa
 from alembic import op
@@ -12,14 +12,37 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
+        "mcp_oauth_token_state",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("server_id", sa.Text(), nullable=False, unique=True),
+        sa.Column("access_token", sa.Text(), nullable=False),
+        sa.Column("refresh_token", sa.Text(), nullable=True),
+        sa.Column("token_type", sa.Text(), nullable=False),
+        sa.Column("scope", postgresql.JSONB(), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("token_revision", sa.Integer(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("refresh_claim_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("refresh_claim_expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("refresh_failure_count", sa.Integer(), nullable=False),
+        sa.Column("refresh_failure_started_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("refresh_failure_latest_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("refresh_failure_action", sa.Text(), nullable=True),
+        sa.Column("refresh_retry_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.create_table(
         "mcp_server_linkage",
         sa.Column("server_id", sa.Text(), primary_key=True),
         sa.Column("provider", sa.Text(), nullable=False),
         sa.Column("server_url", sa.Text(), nullable=False),
         sa.Column("revision", sa.Integer(), nullable=False),
         sa.Column("scopes", postgresql.JSONB(), nullable=False),
-        sa.Column("token", postgresql.JSONB(), nullable=True),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "token_state_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("mcp_oauth_token_state.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("linked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("linked_by", sa.Text(), nullable=True),
     )
@@ -39,3 +62,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("mcp_linkage_flow")
     op.drop_table("mcp_server_linkage")
+    op.drop_table("mcp_oauth_token_state")
