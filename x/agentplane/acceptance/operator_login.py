@@ -61,7 +61,15 @@ def read_operator_credentials() -> OperatorCredentials:
     server = _kubectl("config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
     if server.strip() != KUBE_PROXY.encode():
         raise LoginBlockedError("BLOCKED: current kubeconfig must use the Haku Console Kubernetes proxy")
-    raw = _kubectl("get", f"--raw={os.environ.get('AGENTPLANE_OPERATOR_SECRET_PATH', DEFAULT_SECRET_PATH)}")
+    secret_path = os.environ.get("AGENTPLANE_OPERATOR_SECRET_PATH", DEFAULT_SECRET_PATH)
+    if (
+        re.fullmatch(
+            r"/api/v1/namespaces/[a-z0-9]([-a-z0-9]*[a-z0-9])?/secrets/[a-z0-9]([-a-z0-9]*[a-z0-9])?", secret_path
+        )
+        is None
+    ):
+        raise LoginBlockedError("BLOCKED: operator Secret path must name one Kubernetes Secret")
+    raw = _kubectl("get", f"--raw={secret_path}")
     try:
         data = json.loads(raw)["data"]
         values = {
