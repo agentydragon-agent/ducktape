@@ -181,9 +181,9 @@ def test_same_month_sales_consume_lots_sequentially() -> None:
     assert rollout.trace.events.lot_dispositions.sort(["cause_id", "purchase_month_index"]).select(
         "cause_id", "lot_id", "units_sold", "cost_basis_consumed_quanta", "proceeds_quanta"
     ).rows() == [
-        ("first", "old", 70, 560_000, 1_050_000),
-        ("second", "old", 30, 240_000, 450_000),
-        ("second", "new", 40, 400_000, 600_000),
+        ("first", "old", Fraction(70), 560_000, 1_050_000),
+        ("second", "old", Fraction(30), 240_000, 450_000),
+        ("second", "new", Fraction(40), 400_000, 600_000),
     ]
     assert [(lot.lot_id, _remaining(lot), lot.basis_remaining) for lot in rollout.summary.ending_book.lots] == [
         ("old", 0, 0),
