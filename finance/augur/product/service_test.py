@@ -536,6 +536,39 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     }
 
 
+def test_selected_detail_executes_financially_once(
+    make_product_service: MakeProductService, scenario_key: ScenarioKey, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Flat supplied marks make the terminal holdings an independent fixed-value control,
+    # rather than assuming the default GBM fixture leaves opening wealth unchanged.
+    product = make_product_service(
+        ConstantFrameModel(
+            levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
+            private_equity={IssuerId("private_holding_a"): PrivateEquityChannels(mark_usd_per_unit=25.0)},
+            model_id="flat_selected_detail",
+        )
+    )
+    original = service.execute
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "execute", counted)
+    detail = product.rollout(_rollout_request(scenario_key))
+
+    assert calls == 1
+    assert detail.rollout.failed is False
+    assert detail.rollout.ending_metrics.cash_quanta == _usd_quanta(248_875)
+    assert detail.rollout.ending_metrics.holding_value_quanta == _usd_quanta(835_500)
+    assert detail.rollout.monthly_metrics["month_index"] == [0, 1, 2, 3]
+    assert [event.amount_paid_quanta for event in detail.rollout.events if isinstance(event, MonthlyExpenseEvent)] == [
+        _usd_quanta(1_000)
+    ] * 3
+
+
 def test_combined_product_projection_simulates_once(
     product: service.ProductService,
     counting_model: CountingModel,

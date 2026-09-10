@@ -487,6 +487,7 @@ py_test(
         ":product_metrics",
         ":runtime",
         ":scenario",
+        ":session",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",

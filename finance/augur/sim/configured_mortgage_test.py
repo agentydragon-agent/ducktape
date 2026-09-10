@@ -6,18 +6,16 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.configured import _run
+from finance.augur.sim.configured import execute
 from finance.augur.sim.scenario import MortgageFinancing, PropertySaleEvent, ScheduledObligation
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import SF, SF_HOME, checking, financed_property_case, home_purchase
 
 
 def test_financed_purchase_and_first_installment_match_contract() -> None:
-    session = _run(financed_property_case().compiled_run, "forensic")
-    path = session.paths[0]
-    assert path.result is not None
-    assert path.result.financial is not None
-    books = path.result.financial.months
+    [result] = execute(financed_property_case().compiled_run, "forensic")
+    assert result.financial is not None
+    books = result.financial.months
     assert not books[0].mortgages
     opening, ending = books[1], books[2]
     assert opening.properties[0].adjusted_basis == 51_000_000
@@ -31,8 +29,8 @@ def test_financed_purchase_and_first_installment_match_contract() -> None:
         "bank": 239_820,
         "county": 50_000,
     }
-    assert path.mortgages["home-mortgage"].observe(39_960_180) == ending.mortgages[0]
-    assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in path.result.financial.journal)
+    assert ending.mortgages[0].principal == 39_960_180
+    assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in result.financial.journal)
 
 
 @pytest.mark.parametrize("closing_cost_pct", [0, 10])
@@ -69,20 +67,18 @@ def test_sale_pays_off_ledger_principal_before_sale_month_installment(closing_co
             )
         },
     )
-    session = _run(case.compiled_run, "forensic")
-    for path in session.paths.values():
-        assert path.result is not None
-        assert path.result.financial is not None
-        books = path.result.financial.months
+    results = execute(case.compiled_run, "forensic")
+    for result in results:
+        assert result.financial is not None
+        books = result.financial.months
         assert not books[2].mortgages
         ending = books[-1]
         if financed:
             assert [book.mortgages[0].principal for book in books[3:]] == [60_000, 59_000, 58_000, 0]
             assert not ending.mortgages[0].active
-            assert not path.mortgages["loan"].active
         else:
             assert not ending.mortgages
-            assert not path.mortgages
+            assert not any(book.mortgages for book in books[3:])
         cash = {row.account.agent_id: row.balance for row in ending.balances if row.account.account_id == "checking"}
         assert cash["alice"] == 158_000 + (122_000 if closing_cost_pct == 0 else 104_000)
         # Configured payoff closes the lender's funding control, not its cash account.
@@ -122,14 +118,12 @@ def test_paid_groups_update_entities_but_failed_year_end_does_not_reset_interest
         if fail_year_end
         else [],
     )
-    session = _run(replace(case, scenario=authored).compiled_run, "forensic")
-    path = session.paths[0]
-    assert path.result is not None
-    assert path.result.financial is not None
-    previous, ending = path.result.financial.months[-2:]
+    [result] = execute(replace(case, scenario=authored).compiled_run, "forensic")
+    assert result.financial is not None
+    previous, ending = result.financial.months[-2:]
     before = {loan.liability_id: loan for loan in previous.mortgages}
     after = {loan.liability_id: loan for loan in ending.mortgages}
-    assert path.failed == fail_year_end
+    assert (result.financial.failed_month is not None) == fail_year_end
     assert after["bob-loan"].principal < before["bob-loan"].principal
     if fail_year_end:
         assert after["home-mortgage"].principal == before["home-mortgage"].principal
@@ -137,12 +131,11 @@ def test_paid_groups_update_entities_but_failed_year_end_does_not_reset_interest
         assert after["bob-loan"].interest_paid_ytd > before["bob-loan"].interest_paid_ytd
     else:
         assert all(loan.interest_paid_ytd == 0 for loan in after.values())
-    for id_, loan in path.mortgages.items():
-        assert loan.observe(after[id_].principal) == after[id_]
+    for id_, loan in after.items():
         liability = next(
             row.balance for row in ending.balances if row.account.account_id == f"liability:mortgage:{id_}"
         )
-        assert liability == -after[id_].principal
+        assert liability == -loan.principal
 
 
 if __name__ == "__main__":

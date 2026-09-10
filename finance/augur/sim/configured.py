@@ -14,7 +14,7 @@ from pydantic import JsonValue
 from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan, validate_prepared
 from finance.augur.sim import _native, results
 from finance.augur.sim.actions import Buy, DecisionActions
-from finance.augur.sim.events import EventLog, decode_serialized_event_log
+from finance.augur.sim.events import EventLog
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
 from finance.augur.sim.prepared import CompiledRun, PreparedAmount, PreparedFixedAmount
 from finance.augur.sim.product_metrics import ProductMetricArrays
@@ -35,7 +35,7 @@ def _amount(session: _Session, rollout_id: int, amount: PreparedAmount) -> int:
     return rounded if numerator >= 0 else -rounded
 
 
-def _run(run: CompiledRun, capture: Capture, product_actor: str | None = None) -> _Session:
+def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None) -> tuple[_native.WorldResult, ...]:
     if not isinstance(run, CompiledRun):
         raise TypeError("execution requires a CompiledRun, not serialized input")
     validate_prepared(run)
@@ -121,28 +121,30 @@ def _run(run: CompiledRun, capture: Capture, product_actor: str | None = None) -
                 if not path.failed:
                     path.world.run_private_equity()
             session.close_month()
-        return session
-    except BaseException:
+        completed = []
+        for path in session.paths.values():
+            if path.result is None:
+                raise RuntimeError("configured execution requires finished rollouts")
+            completed.append(path.result)
+        return tuple(completed)
+    finally:
         session.close()
-        raise
 
 
 def _export(run: CompiledRun, capture: Capture) -> str:
-    session = _run(run, capture)
+    completed = execute(run, capture)
     rollouts = []
     frames: dict[str, list[dict[str, JsonValue]]] = {}
-    for path in session.paths.values():
-        if path.result is None:
-            raise RuntimeError("configured export requires finished rollouts")
+    for result in completed:
         if capture == "summary":
-            if path.result.configured_summary is None:
+            if result.configured_summary is None:
                 raise RuntimeError("summary export requires a financial terminal summary")
-            rollouts.append(path.result.configured_summary.model_dump(mode="json", by_alias=True))
-        elif path.result.financial is not None:
-            rollouts.append(path.result.financial.model_dump(mode="json", by_alias=True))
-            if path.result.event_frames is None:
+            rollouts.append(result.configured_summary.model_dump(mode="json", by_alias=True))
+        elif result.financial is not None:
+            rollouts.append(result.financial.model_dump(mode="json", by_alias=True))
+            if result.event_frames is None:
                 raise RuntimeError("dense export requires event frames")
-            for name, rows in path.result.event_frames.items():
+            for name, rows in result.event_frames.items():
                 frames.setdefault(name, []).extend(rows)
         else:
             raise RuntimeError("dense export requires financial capture")
@@ -166,37 +168,49 @@ def simulate_summaries_json(run: CompiledRun) -> str:
 def simulate_events(run: CompiledRun) -> EventLog:
     """Dense canonical frames without the forensic journal."""
 
-    return decode_serialized_event_log(json.loads(simulate_dense_json(run)))
+    return project_events(execute(run, "dense"))
+
+
+def project_events(completed: tuple[_native.WorldResult, ...]) -> EventLog:
+    logs = []
+    for result in completed:
+        if result.event_frames is None:
+            raise RuntimeError("event projection requires dense or forensic capture")
+        logs.append(EventLog.from_serialized(result.event_frames, rollout_ids=[result.rollout_id]))
+    return EventLog.concat(logs)
 
 
 def simulate_product_metrics(run: CompiledRun, primary_agent_id: str) -> ProductMetricArrays:
-    session = _run(run, "summary", primary_agent_id)
+    return project_product_metrics(run, execute(run, "summary", primary_agent_id))
+
+
+def project_product_metrics(run: CompiledRun, completed: tuple[_native.WorldResult, ...]) -> ProductMetricArrays:
+    rollout_count = len(completed)
     snapshots = run.scenario.horizon_months + 1
-    base_series = [[0] * (snapshots * run.rollout_count) for _ in BASE_METRIC_NAMES]
+    base_series = [[0] * (snapshots * rollout_count) for _ in BASE_METRIC_NAMES]
     failures = []
-    for rollout_id, path in session.paths.items():
-        if path.result is None:
-            raise RuntimeError("product aggregation requires finished rollouts")
-        rows = path.result.product_metrics
-        summary = path.result.configured_summary
-        if summary is None:
-            raise RuntimeError("product aggregation requires a financial terminal summary")
-        failed = summary.failed_month
+    for column, result in enumerate(completed):
+        rows = result.product_metrics
+        if result.financial is not None:
+            failed = result.financial.failed_month
+        elif result.configured_summary is not None:
+            failed = result.configured_summary.failed_month
+        else:
+            raise RuntimeError("product aggregation requires configured financial capture")
         expected = snapshots if failed is None else failed + 2
         if len(rows) != expected:
             raise ValueError(f"rollout produced {len(rows)} product snapshots, expected {expected}")
         failures.append(-1 if failed is None else failed)
         for snapshot, row in enumerate(rows):
             for metric, value in enumerate(row):
-                base_series[metric][snapshot * run.rollout_count + rollout_id] = value
+                base_series[metric][snapshot * rollout_count + column] = value
     return ProductMetricArrays(
-        # Configured full runs emit every prepared row in its original order.
-        rollout_ids=tuple(range(run.rollout_count)),
+        rollout_ids=tuple(result.rollout_id for result in completed),
         month_index=np.arange(snapshots, dtype=np.int64),
         failed_month=np.asarray(failures, dtype=np.int64),
         currency_code=run.currency_code,
         currency_quantum=run.currency_quantum,
         base_series=tuple(
-            np.asarray(block, dtype=np.int64).reshape((snapshots, run.rollout_count)) for block in base_series
+            np.asarray(block, dtype=np.int64).reshape((snapshots, rollout_count)) for block in base_series
         ),
     )
