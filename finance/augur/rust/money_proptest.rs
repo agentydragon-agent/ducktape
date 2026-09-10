@@ -9,8 +9,8 @@
 use proptest::prelude::*;
 
 use crate::money::{
-    ArithmeticError, Factor, Money, PerUnit, Quantity, Units, is_quantity_scale,
-    mul_div_i128_round_half_up, mul_div_round_half_up,
+    ArithmeticError, Factor, Money, Quantity, is_quantity_scale, mul_div_i128_round_half_up,
+    mul_div_round_half_up,
 };
 
 /// Assert `quotient` is the integer nearest `product / denominator`, an exact tie
@@ -211,23 +211,6 @@ proptest! {
             (recombined.0 - amount).abs() <= 1,
             "{taken:?} + {left:?} is not {amount} back, give or take the two roundings"
         );
-    }
-
-    /// Over a whole number of units, the per-unit of a total is the price it came from.
-    ///
-    /// Only where the division is exact, which whole units make it. A fractional holding
-    /// generally has no exact per-unit figure at all -- which is why a lot keeps its basis
-    /// and derives this only to report it.
-    #[test]
-    fn per_unit_inverts_times_over_whole_units(
-        price in -1_000_000_000i64..=1_000_000_000,
-        whole_units in 1i64..=1_000,
-        scale in prop_oneof![Just(100i64), Just(1_000_000), Just(100_000_000)],
-    ) {
-        let units = Units::new(Quantity(whole_units * scale), scale);
-        let total = PerUnit(price).times(units, "proptest").unwrap();
-        prop_assert_eq!(total, Money(price * whole_units));
-        prop_assert_eq!(total.per_unit(units, "proptest").unwrap(), PerUnit(price));
     }
 
     /// Scaling a quantity is the same arithmetic as scaling money, so it rounds the same way.

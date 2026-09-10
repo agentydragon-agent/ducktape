@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     ledger::{AccountRef, JournalEntry},
-    money::{Money, PerUnit, Quantity, WIRE_RATE_SCALE},
+    money::{Money, Quantity, WIRE_RATE_SCALE},
     tax::{IncomeSource, JurisdictionLevel, TaxRules},
 };
 
@@ -671,7 +671,6 @@ pub struct SecurityLotState {
     pub quantity_scale: i64,
     pub units_remaining: Quantity,
     pub basis_remaining: Money,
-    pub cost_basis_per_unit: PerUnit,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
