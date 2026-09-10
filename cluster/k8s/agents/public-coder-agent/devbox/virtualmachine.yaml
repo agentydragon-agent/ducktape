@@ -55,10 +55,7 @@ spec:
               serial: pcbazelcache
               disk:
                 bus: virtio
-            - name: bazel-cache
-          persistentVolumeClaim:
-            claimName: public-coder-devbox-bazel-cache
-        - name: proxy-ca
+            - name: proxy-ca
               serial: pcproxyca
               disk:
                 bus: virtio
