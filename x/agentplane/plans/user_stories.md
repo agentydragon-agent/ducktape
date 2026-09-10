@@ -17,8 +17,11 @@ what it can and cannot do, rather than treating a refusal or missing tool as an 
 When a task needs unavailable capability, the agent should inspect the governed Action and egress
 surfaces, explain the blocker, and propose the minimum additional authority that could complete the
 task. A proposal names the operation, target, data sensitivity, duration, alternatives, and
-rollback/revocation boundary. It goes through the canonical operator Decision or grant path; the
-agent never self-grants, broadens egress, or converts repeated approval into a standing rule.
+rollback/revocation boundary. The agent should use its own judgment to co-author with the operator
+a durable sandbox and policy boundary: broad enough to make the recurring work useful, narrow
+enough to make the risk legible, and stable enough not to turn every ordinary step into an approval
+prompt. It goes through the canonical operator Decision or grant path; the agent never self-grants,
+broadens egress, or converts repeated approval into a standing rule.
 
 Delegation is capability attenuation, not ambient authority transfer. A child receives only the
 intersection of the parent authority, delegated task scope, and child trust policy, plus the
@@ -30,8 +33,10 @@ propose a clearer boundary; it does not make the child more authorized by observ
 This principle is a behavioral acceptance target as well as a security constraint. Manual tests with
 a real low-cost model should evaluate the child's durable Action/egress trace, authority boundary,
 and outcome—not exact wording—to check that it recognizes the Agentplane environment, asks for
-specific governed escalation when blocked, avoids bypass or fabricated success, and resumes with
-the resulting decision.
+specific governed escalation when blocked, proposes a useful standing boundary when repetition is
+evident, avoids bypass or fabricated success, and resumes with the resulting decision. Approval
+frequency and operator comprehension are part of the outcome: a boundary that is technically safe
+but operationally forces approval for every routine step is not a successful co-designed policy.
 
 ## 1. Ask me, I decide
 
