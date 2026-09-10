@@ -198,36 +198,14 @@ in
   environment.loginShellInit = buildbuddyShellInit;
   programs.bash.interactiveShellInit = buildbuddyShellInit;
 
-  # Keep Bazel outputs and repositories on a separately deletable PVC rather
-  # than the ephemeral container disk. The PVC storage class formats this
-  # virtio disk as ext4.
-  systemd.services.public-coder-devbox-bazel-cache = {
-    description = "Mount the public-coder-devbox Bazel cache PVC";
-    wantedBy = [ "multi-user.target" ];
-    after = [ "local-fs.target" ];
-    before = [ "sshd.service" ];
-    path = [ pkgs.coreutils pkgs.e2fsprogs pkgs.util-linux ];
-    serviceConfig = { Type = "oneshot"; RemainAfterExit = true; };
-    script = ''
-      set -eu
-      mkdir -p "${bazelCacheMount}"
-      fs_type="$(blkid -o value -s TYPE "${bazelCacheDevice}" 2>/dev/null || true)"
-      case "$fs_type" in
-        "") mkfs.ext4 -F -L bazel-cache "${bazelCacheDevice}" ;;
-        ext4) ;;
-        *) echo "Unexpected Bazel cache PVC filesystem: $fs_type" >&2; exit 1 ;;
-      esac
-      mounted=0
-      for _ in $(seq 1 60); do
-        if mountpoint -q "${bazelCacheMount}" || mount -o noatime "${bazelCacheDevice}" "${bazelCacheMount}" 2>/dev/null; then
-          mounted=1
-          break
-        fi
-        sleep 1
-      done
-      [ "$mounted" -eq 1 ] || { echo "Bazel cache PVC disk did not appear at ${bazelCacheDevice}" >&2; exit 1; }
-      install -d -m0700 -o coder -g users "${bazelOutputUserRoot}" "${bazelRepositoryCache}" "${bazelDiskCache}"
-    '';
+  # Mount the separately deletable raw cache PVC declaratively. `autoFormat` is
+  # safe for this dedicated blank block PVC and makes its first attachment usable.
+  fileSystems."${bazelCacheMount}" = {
+    device = bazelCacheDevice;
+    fsType = "ext4";
+    options = [ "noatime" ];
+    autoFormat = true;
+    autoResize = true;
   };
 
   environment.systemPackages = with pkgs; [

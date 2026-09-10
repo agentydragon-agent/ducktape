@@ -82,8 +82,8 @@ spec:
       volumes:
         - name: rootdisk
           containerDisk:
-            # This is an ephemeral VM disk (accepted tradeoff: no Bazel/BuildBuddy
-            # cache, checkout, or other local state survives an image update or VM
+            # This is an ephemeral VM disk (accepted tradeoff: no checkout or
+            # other local state survives an image update or VM
             # restart). Flux ImageUpdateAutomation rewrites this tag after
             # .github/workflows/public-coder-devbox-image.yml publishes a new one --
             # see the public-coder-devbox ImagePolicy in
