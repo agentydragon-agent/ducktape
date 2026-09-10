@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecurityKey
-from finance.augur.sim.backend import compile_run
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount

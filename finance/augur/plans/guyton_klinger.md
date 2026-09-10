@@ -38,7 +38,7 @@ annual policy, and run/report. Configuration names the resolved conventions.
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.backend import compile_run
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.results import Finished
 
 history = load_history(source_files)  # Named, validated annual returns and CPI.

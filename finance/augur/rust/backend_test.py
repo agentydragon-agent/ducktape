@@ -1,21 +1,11 @@
-"""The Rust engine against the shared acceptance suites.
-
-Nothing here but the name of the engine. What it has to satisfy is not particular to it and
-lives in `sim/testing/`.
-
-Stating the answer rather than comparing two engines is what outlived the second engine.
-A comparison is blind to a rule both implementations get the same way and both get wrong;
-these assertions say what the answer must be, so they still bind with one engine left.
-"""
+"""Configured financial execution against the legacy acceptance readers."""
 
 from decimal import Decimal
 
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.backend import RustEngine
 from finance.augur.rust.result import run_rust
-from finance.augur.sim.backend import Engine
 from finance.augur.sim.testing.behaviour import (
     AssetSaleAcceptance,
     PropertyCarryingCostAcceptance,
@@ -24,7 +14,6 @@ from finance.augur.sim.testing.behaviour import (
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
 from finance.augur.sim.testing.deductions import DeductionAcceptance
-from finance.augur.sim.testing.engine_acceptance import EngineAcceptance
 from finance.augur.sim.testing.engine_edges import HarvestAcceptance, ScanPhaseAcceptance, ValidationEdgeAcceptance
 from finance.augur.sim.testing.fixtures import SF, checking, home_purchase
 from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
@@ -41,12 +30,6 @@ from finance.augur.sim.testing.rental_lifecycle import (
 )
 from finance.augur.sim.testing.simulation_result import Backend
 from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
-
-
-class TestRustEngine(EngineAcceptance):
-    @pytest.fixture
-    def engine(self) -> Engine:
-        return RustEngine()
 
 
 class TestRustIncomeSources(IncomeSourceAcceptance):

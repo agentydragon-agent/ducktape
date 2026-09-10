@@ -17,7 +17,7 @@ from finance.augur.policy.configured_allocation import validate_prepared
 from finance.augur.rust.prepared import _decode, _encode
 from finance.augur.rust.result import RustResult, rust_result
 from finance.augur.sim import configured
-from finance.augur.sim.backend import compile_run
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.configured import simulate_forensic_json
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.prepared import CompiledRun, PreparedIndexedAmount, PreparedSeries

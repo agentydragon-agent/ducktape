@@ -72,7 +72,7 @@ from finance.augur.product.wire import (
     SetRentedFractionEventWire,
     SleeveWeight,
 )
-from finance.augur.rust.backend import RustEngine
+from finance.augur.sim.configured import simulate_product_metrics
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.quantiles import currency_quantiles
@@ -294,7 +294,7 @@ def test_product_metrics_fail_when_holding_price_series_is_missing() -> None:
     )
     case = Case(scenario=scenario, rollout_count=1, paths=ExternalSeriesContext())
     with pytest.raises(ValueError, match="security:missing"):
-        RustEngine().product_metrics(case.compiled_run, primary_agent_id="agent_a")
+        simulate_product_metrics(case.compiled_run, primary_agent_id="agent_a")
 
 
 def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(

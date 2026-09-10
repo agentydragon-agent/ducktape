@@ -8,7 +8,7 @@ They share financial steps but differ in policy control and supported domains.
 ## Preparation and dependencies
 
 `Scenario` describes actors, accounts, holdings, contracts and path bindings.
-`compile_run` in <backend.py> resolves those inputs into the typed `CompiledRun`
+`compile_run` in <compiler/execution.py> resolves those inputs into the typed `CompiledRun`
 defined in <prepared.py>.
 It does not fetch market evidence, fit a model or load tax law independently.
 Prepared records own exact monetary terms, quantized market paths and variable-length
@@ -72,8 +72,9 @@ comparing stopped books with completed horizons.
 
 ## Remaining configured consumers
 
-`Engine` in <backend.py> and `RustEngine` in <../rust/backend.py> serve the
-existing product methods. Their configured runner owns full-horizon loops and
+`ProductService` calls <configured.py> for compact product arrays or dense event
+frames, then applies the reducers in <product_metrics.py> and the selected-rollout
+projection in <../product/projection.py>. The configured runner owns full-horizon loops and
 implicit allocation/grouped-funding behavior. `policy/configured_allocation.py`
 proposes trades through shared Python helpers; native operations settle them.
 The app's projections do not define

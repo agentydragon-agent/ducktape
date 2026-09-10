@@ -462,21 +462,20 @@ tax assessment owns a mutable loan mirror. Configured lifecycle conventions:
 
 `simulate_product_metrics(prepared, primary_agent_id)` emits the seven base product metric
 series plus the per-rollout failure month, under the compact capture mode — no monthly
-snapshot, journal, or event trace. `backend.py` wraps it as the product API's
-`ProductMetricArrays` and `ProductProjectionSummaries`, composing the derived metrics and
-the percentile fan with `sim/metric_composition.py` and `sim/quantiles.py`.
+snapshot, journal, or event trace. The configured runner returns `ProductMetricArrays`;
+`ProductService` applies `sim/product_metrics.py` reducers for the fan and terminal
+distribution, using `sim/metric_composition.py` and `sim/quantiles.py`.
 Metric valuation and observation boundaries:
 [docs/product_metrics.md](docs/product_metrics.md).
 
 `sim/compiler/execution.py` connects this to a live request: the authored scenario,
 supplied rules and materialized paths become the prepared integer execution input
-once. The backend transports it without further financial compilation.
+once. Configured execution consumes it without further financial compilation.
 
 The configured Python driver serves all four projection endpoints, the selected rollout included.
-`ProductService` holds an `Engine` (<../sim/backend.py>) rather than reaching for this
-package directly, so everything above that contract — the derived metrics, the terminal
-reduction, the percentile brackets, and the rollout projection — is written against the
-canonical event frames rather than against native storage. The common action-session
+`ProductService` calls `sim/configured.py` directly. Derived metrics, terminal
+reduction, percentile brackets and rollout projection consume compact arrays
+and canonical event frames, not native storage. The common action-session
 projection in `product/action_projection.py` uses the same financial facts; it does
 not yet replace the configured app's housing/PE and grouped-funding capabilities.
 

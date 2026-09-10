@@ -7,7 +7,7 @@ experiment policies and their outer time loops are Python code.
 ## Experiment path
 
 An experiment supplies a `Scenario`, market paths, jurisdiction rules and
-locations to `compile_run` in <backend.py>. It starts the common `ActionSession`,
+locations to `compile_run` in <compiler/execution.py>. It starts the common `ActionSession`,
 submits one batch of ordered actions per decision month, and reads typed results
 from <results.py> and books from <books.py>. Exact requests are defined in
 <actions.py>, and current actor facts in <observations.py>. Sampling, fitting, policy choice and
@@ -21,7 +21,7 @@ Shared proposal helpers live in <../policy/>; they do not settle trades or taxes
 quantities, tax rules and supplied paths. The compiler constructs these directly;
 file/native serialization is private to the I/O boundaries. Sessions accept the prepared value,
 not a mutable wire dictionary. The app and remaining legacy acceptance
-consumers use the same prepared facts through the configured `Engine` contract;
+consumers use the same prepared facts through <configured.py>;
 it is not the interface new experiments should extend.
 
 ## Outcomes and failure

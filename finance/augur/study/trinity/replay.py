@@ -141,7 +141,7 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.policy.funding import fund_claims
-from finance.augur.sim.backend import compile_run
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import Finished, Rollout

@@ -1,18 +1,4 @@
-"""What every simulation engine must do, asserted once and run against each of them.
-
-The suite is the contract in `sim/backend.py` made executable. A new engine gets a module
-that names it and inherits from here; it should not need tests of its own, because what it
-has to satisfy is not particular to it.
-
-That is a different claim from the differential harness's. Comparing two engines finds where
-they disagree and is blind to a rule both implement the same way and both get wrong — which
-has happened here. These assertions state what the answer must be, so an engine can fail them
-alone or the engines can fail them together, and either is informative.
-
-Assert the contract, not an engine's arithmetic: shapes, schemas, and consequences the
-scenario forces regardless of who computes them. A number that only one engine's rounding
-produces belongs in that engine's own test.
-"""
+"""Configured capture and product reductions against independent financial expectations."""
 
 from __future__ import annotations
 
@@ -21,14 +7,17 @@ from decimal import Decimal
 import numpy as np
 import polars as pl
 import pytest
+import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
-from finance.augur.sim.backend import Engine, compile_run
+from finance.augur.sim.compiler.execution import compile_run
+from finance.augur.sim.configured import simulate_events, simulate_product_metrics
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
 from finance.augur.sim.metric_composition import METRIC_NAMES
 from finance.augur.sim.prepared import CompiledRun
+from finance.augur.sim.product_metrics import metric_fan, projection_summaries, terminal_summary
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     Agent,
@@ -168,13 +157,7 @@ def a_property_bought_and_sold(closing_cost_pct: float = 0.0) -> CompiledRun:
     )
 
 
-class EngineAcceptance:
-    """Inherit and supply `engine`. Add nothing unless the engine owes something extra."""
-
-    @pytest.fixture
-    def engine(self) -> Engine:
-        raise NotImplementedError("an acceptance module names the engine it runs")
-
+class TestConfigured:
     @pytest.fixture(scope="class")
     def run(self) -> CompiledRun:
         return sale_and_tax_year()
@@ -187,22 +170,19 @@ class EngineAcceptance:
     def fractional_closing_cost_run(self) -> CompiledRun:
         return a_property_bought_and_sold(closing_cost_pct=FRACTIONAL_CLOSING_COST_PCT)
 
-    def test_it_says_which_engine_it_is(self, engine: Engine) -> None:
-        assert engine.name, "an engine identifies itself in responses and test failures"
-
-    def test_events_carry_every_canonical_frame(self, engine: Engine, run: CompiledRun) -> None:
+    def test_events_carry_every_canonical_frame(self, run: CompiledRun) -> None:
         """A frame an engine omits reads downstream as "nothing happened", not as a gap."""
 
-        events = engine.events(run)
+        events = simulate_events(run)
         for spec in EVENT_FRAME_SPECS:
             frame = getattr(events, spec.name)
             assert isinstance(frame, pl.DataFrame), f"{spec.name} is not a frame"
             assert frame.schema == spec.schema, f"{spec.name} does not match its declared schema"
 
-    def test_the_scheduled_sale_is_reported_as_a_disposition(self, engine: Engine, run: CompiledRun) -> None:
+    def test_the_scheduled_sale_is_reported_as_a_disposition(self, run: CompiledRun) -> None:
         """Proceeds and basis follow from the scenario, so every engine owes the same ones."""
 
-        rows = engine.events(run).lot_dispositions.filter(pl.col("month_index") == SALE_MONTH).to_dicts()
+        rows = simulate_events(run).lot_dispositions.filter(pl.col("month_index") == SALE_MONTH).to_dicts()
         assert len(rows) == 1, f"one lot sold once, got {len(rows)} rows"
         sold = rows[0]
         assert sold["agent_id"] == AGENT
@@ -210,22 +190,17 @@ class EngineAcceptance:
         assert sold["proceeds_quanta"] == int(SALE_PRICE * 100) * UNITS
         assert sold["cost_basis_consumed_quanta"] == int(LOT_BASIS * 100) * UNITS
 
-    def test_the_gain_is_assessed_at_the_tax_year_that_closes_after_it(self, engine: Engine, run: CompiledRun) -> None:
+    def test_the_gain_is_assessed_at_the_tax_year_that_closes_after_it(self, run: CompiledRun) -> None:
         """A realized gain reaches an accrual. Which figure is the statute suites' business."""
 
-        accruals = engine.events(run).tax_accruals.filter(pl.col("agent_id") == AGENT)
+        accruals = simulate_events(run).tax_accruals.filter(pl.col("agent_id") == AGENT)
         assert accruals.height, "a long-term gain went unassessed"
         assert accruals.filter(pl.col("month_index") > SALE_MONTH).height, "no accrual after the sale"
 
-    def test_product_metrics_cover_every_metric_the_product_renders(self, engine: Engine, run: CompiledRun) -> None:
-        """An engine supplies the seven base series; all ten come back.
+    def test_product_metrics_cover_every_metric_the_product_renders(self, run: CompiledRun) -> None:
+        """Configured base series support every derived product metric."""
 
-        The derived three are composed by shared Python, so this also says the composition
-        runs over whatever engine produced the base — which is the property that makes one
-        engine's fan equal another's.
-        """
-
-        metrics = engine.product_metrics(run, primary_agent_id=AGENT)
+        metrics = simulate_product_metrics(run, primary_agent_id=AGENT)
         arrays = metrics.metric_arrays()
         assert set(arrays) == {"month_index", *METRIC_NAMES}
         assert len(arrays["month_index"]) == HORIZON_MONTHS + 1
@@ -234,13 +209,13 @@ class EngineAcceptance:
         assert metrics.failed_month.shape == (1,)
         assert metrics.currency_code == run.currency_code
 
-    def test_a_funded_rollout_does_not_report_a_failure(self, engine: Engine, run: CompiledRun) -> None:
+    def test_a_funded_rollout_does_not_report_a_failure(self, run: CompiledRun) -> None:
         """Anti-vacuity for the assertions above: they describe a rollout that ran to the end."""
 
-        assert int(engine.product_metrics(run, primary_agent_id=AGENT).failed_month[0]) < 0
-        assert engine.events(run).rollout_failures.height == 0
+        assert int(simulate_product_metrics(run, primary_agent_id=AGENT).failed_month[0]) < 0
+        assert simulate_events(run).rollout_failures.height == 0
 
-    def test_the_fan_is_ordered_and_agrees_with_the_terminal_samples(self, engine: Engine, run: CompiledRun) -> None:
+    def test_the_fan_is_ordered_and_agrees_with_the_terminal_samples(self, run: CompiledRun) -> None:
         """The two reductions are of one population, so the fan must sit inside its range.
 
         An engine that reduced the wrong axis, or reduced a different run, passes every shape
@@ -248,8 +223,12 @@ class EngineAcceptance:
         """
 
         percentiles = (5.0, 50.0, 95.0)
-        fan = engine.product_fan(run, primary_agent_id=AGENT, metric="cash_quanta", percentiles=percentiles)
-        samples = engine.product_terminal(run, primary_agent_id=AGENT, metric="cash_quanta").terminal_samples
+        fan = metric_fan(
+            simulate_product_metrics(run, primary_agent_id=AGENT), metric="cash_quanta", percentiles=percentiles
+        )
+        samples = terminal_summary(
+            simulate_product_metrics(run, primary_agent_id=AGENT), metric="cash_quanta"
+        ).terminal_samples
 
         assert fan.percentiles == percentiles
         assert fan.monthly_percentiles.shape == (HORIZON_MONTHS + 1, len(percentiles))
@@ -258,9 +237,7 @@ class EngineAcceptance:
         assert min(samples) <= min(fan.terminal_percentiles)
         assert max(fan.terminal_percentiles) <= max(samples)
 
-    def test_a_property_sells_for_what_the_series_says_it_is_worth(
-        self, engine: Engine, property_run: CompiledRun
-    ) -> None:
+    def test_a_property_sells_for_what_the_series_says_it_is_worth(self, property_run: CompiledRun) -> None:
         """A money level is money, whichever cube an engine happens to keep it in.
 
         The house was bought at the month-0 home value and sold at 0% closing cost, so its gross
@@ -269,7 +246,7 @@ class EngineAcceptance:
         every fractional level a real sampled path produces.
         """
 
-        rows = engine.events(property_run).property_sale_events.to_dicts()
+        rows = simulate_events(property_run).property_sale_events.to_dicts()
         assert len(rows) == 1, f"one property sold once, got {len(rows)} rows"
         assert rows[0]["month_index"] == PROPERTY_SALE_MONTH
         assert rows[0]["gross_proceeds_quanta"] == HOME_VALUE_AT_SALE_QUANTA, (
@@ -278,7 +255,7 @@ class EngineAcceptance:
         )
 
     def test_a_closing_cost_finer_than_a_basis_point_is_charged_exactly(
-        self, engine: Engine, fractional_closing_cost_run: CompiledRun
+        self, fractional_closing_cost_run: CompiledRun
     ) -> None:
         """A rate is a rate; nothing about it has to land on a hundredth of a percent.
 
@@ -289,19 +266,24 @@ class EngineAcceptance:
         whole scenario was refused.
         """
 
-        rows = engine.events(fractional_closing_cost_run).property_sale_events.to_dicts()
+        rows = simulate_events(fractional_closing_cost_run).property_sale_events.to_dicts()
         assert len(rows) == 1, f"one property sold once, got {len(rows)} rows"
         assert rows[0]["gross_proceeds_quanta"] == FRACTIONAL_CLOSING_COST_PROCEEDS_QUANTA
 
-    def test_one_execution_answers_both_summaries(self, engine: Engine, run: CompiledRun) -> None:
-        """`product_summaries` is the two of them together, not a third reduction."""
+    def test_combined_and_separate_summaries_agree(self, run: CompiledRun) -> None:
+        """Combined and separate reducers agree on the same captured population."""
 
         percentiles = (5.0, 50.0, 95.0)
-        both = engine.product_summaries(run, primary_agent_id=AGENT, metric="cash_quanta", percentiles=percentiles)
-        separate = engine.product_fan(run, primary_agent_id=AGENT, metric="cash_quanta", percentiles=percentiles)
+        arrays = simulate_product_metrics(run, primary_agent_id=AGENT)
+        both = projection_summaries(arrays, metric="cash_quanta", percentiles=percentiles)
+        separate = metric_fan(arrays, metric="cash_quanta", percentiles=percentiles)
         assert both.metric_fan.terminal_percentiles is not None
         assert separate.terminal_percentiles is not None
         assert list(both.metric_fan.terminal_percentiles) == list(separate.terminal_percentiles)
         assert list(both.terminal_distribution.terminal_samples) == list(
-            engine.product_terminal(run, primary_agent_id=AGENT, metric="cash_quanta").terminal_samples
+            terminal_summary(arrays, metric="cash_quanta").terminal_samples
         )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

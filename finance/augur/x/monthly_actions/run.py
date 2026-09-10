@@ -14,7 +14,7 @@ import numpy as np
 
 from finance.augur.model.series import SecurityKey
 from finance.augur.rust.invocation import read_prepared_input, write_prepared_input
-from finance.augur.sim.backend import compile_run
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.prepared import CompiledRun

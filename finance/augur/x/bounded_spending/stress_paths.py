@@ -3,7 +3,7 @@
 import numpy as np
 
 from finance.augur.model.series import InflationKey, SecurityKey
-from finance.augur.sim.backend import compile_run
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.study.trinity.replay import EQUITY, build_scenario
