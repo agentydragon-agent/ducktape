@@ -183,7 +183,7 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
         {
             "apiGroups": [""],
             "resources": ["secrets"],
-            "resourceNames": ["agentplane-acceptance-operator"],
+            "resourceNames": ["agentplane-acceptance-operator", "agentplane-testing-acceptance-operator"],
             "verbs": ["get"],
         }
     ]
@@ -205,20 +205,20 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
     kustomization = yaml.safe_load((agent_dir / "k8s-reader/kustomization.yaml").read_text())
     assert manifest.name in kustomization["resources"]
 
-    secret_name = one(one(role["rules"])["resourceNames"])
+    secret_names = set(one(role["rules"])["resourceNames"])
     for layer in ("app", "proxy"):
         deployment = yaml.safe_load((agent_dir / layer / "deployment.yaml").read_text())
         pod = deployment["spec"]["template"]["spec"]
         for container in pod.get("initContainers", []) + pod["containers"]:
             for entry in container.get("env", []):
                 assert not entry["name"].startswith("AGENTPLANE_ACCEPTANCE_OPERATOR_")
-                assert entry.get("valueFrom", {}).get("secretKeyRef", {}).get("name") != secret_name
+                assert entry.get("valueFrom", {}).get("secretKeyRef", {}).get("name") not in secret_names
             for source in container.get("envFrom", []):
-                assert source.get("secretRef", {}).get("name") != secret_name
+                assert source.get("secretRef", {}).get("name") not in secret_names
         for volume in pod.get("volumes", []):
-            assert volume.get("secret", {}).get("secretName") != secret_name
+            assert volume.get("secret", {}).get("secretName") not in secret_names
             for source in volume.get("projected", {}).get("sources", []):
-                assert source.get("secret", {}).get("name") != secret_name
+                assert source.get("secret", {}).get("name") not in secret_names
 
 
 def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:

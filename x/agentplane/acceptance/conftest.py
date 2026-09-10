@@ -1,8 +1,8 @@
 """Fixtures for the live acceptance suite: a client against a deployed app, both harnesses, and
 sandboxes that clean up after themselves.
 
-Which instance is under test comes from the environment; the shipped default is the staging
-deployment this suite exists for.
+Which instance is under test comes from the environment; the shipped default is the isolated
+testing deployment. Staging remains available for explicit ad hoc runs.
 """
 
 from __future__ import annotations
@@ -24,9 +24,9 @@ TOKEN = "AGENTPLANE_ACCEPTANCE_TOKEN"
 NAMESPACE = "AGENTPLANE_ACCEPTANCE_NAMESPACE"
 SERVICE_ACCOUNT = "AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT"
 
-STAGING_URL = "https://agentplane-staging.allegedly.works"
-STAGING_NAMESPACE = "agentplane-staging"
-STAGING_SERVICE_ACCOUNT = "agentplane-agent"
+TESTING_URL = "https://agentplane-testing.allegedly.works"
+TESTING_NAMESPACE = "agentplane-testing"
+TESTING_SERVICE_ACCOUNT = "agentplane-agent"
 AUDIENCE = "agentplane"
 
 # A sandbox's first Pod has to be scheduled and pull the runner image.
@@ -70,7 +70,7 @@ def mint_token(*, namespace: str, service_account: str, audience: str, lifetime:
 
 @pytest.fixture(scope="session")
 def base_url() -> str:
-    return os.environ.get(BASE_URL, STAGING_URL)
+    return os.environ.get(BASE_URL, TESTING_URL)
 
 
 @pytest.fixture(scope="session")
@@ -79,8 +79,8 @@ def token() -> str:
     if (supplied := os.environ.get(TOKEN)) is not None:
         return supplied
     return mint_token(
-        namespace=os.environ.get(NAMESPACE, STAGING_NAMESPACE),
-        service_account=os.environ.get(SERVICE_ACCOUNT, STAGING_SERVICE_ACCOUNT),
+        namespace=os.environ.get(NAMESPACE, TESTING_NAMESPACE),
+        service_account=os.environ.get(SERVICE_ACCOUNT, TESTING_SERVICE_ACCOUNT),
         audience=AUDIENCE,
     )
 

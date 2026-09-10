@@ -222,7 +222,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    data = ["//cluster/k8s:agentplane-staging/mcp-everything/deployment.yaml"],
+    data = ["//cluster/k8s:agentplane-testing/mcp-everything/deployment.yaml"],
     deps = [
         ":catalog",
         ":database_migrate",

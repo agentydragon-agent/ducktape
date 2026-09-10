@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 from x.agentplane.app.oidc import SECURE_COOKIE
 
 KUBE_PROXY = "https://haku-kubeapi.allegedly.works"
-DEFAULT_SECRET_PATH = "/api/v1/namespaces/public-coder-agent/secrets/agentplane-acceptance-operator"
+DEFAULT_SECRET_PATH = "/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator"
 SECRET_PATH = DEFAULT_SECRET_PATH
 
 

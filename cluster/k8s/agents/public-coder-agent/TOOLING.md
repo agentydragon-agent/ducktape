@@ -292,8 +292,9 @@ cd "$checkout"
 bazelisk test //x/agentplane/acceptance:test_mcp --test_output=streamed --test_arg=-s
 ```
 
-The `agentplane-testing` environment uses `AGENTPLANE_ACCEPTANCE_IDP=dex` and a testing-instance
-operator Secret path; staging keeps the default Authentik settings. Do not put the acceptance
+The default acceptance target is `agentplane-testing` with `AGENTPLANE_ACCEPTANCE_IDP=dex` and its
+dedicated operator Secret path. Staging remains available for ad hoc Authentik click-through tests
+by overriding the URL, namespace, IDP, and Secret path. Do not put the acceptance
 operator password or workload token in shell history, command arguments, checkout files, or test
 artifacts. The devbox's mediated kubeconfig is the only supported way for the test to mint its
 short-lived workload token and read the named operator Secret.
