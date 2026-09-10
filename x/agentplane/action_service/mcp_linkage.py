@@ -438,7 +438,7 @@ class McpLinkageAuthority:
                 if linkage and linkage.token_state_id
                 else None
             )
-            if state is None or not state.refresh_token:
+            if linkage is None or state is None or not state.refresh_token:
                 return
             now = datetime.now(UTC)
             if state.expires_at is not None and state.expires_at > now + _REFRESH_SKEW:

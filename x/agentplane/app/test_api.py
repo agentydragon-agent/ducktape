@@ -572,6 +572,11 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/threads/{thread_id}/events",
         "/live/sandboxes",
         "/live/sandboxes/{name}",
+        "/mcp-linkage/callback",
+        "/mcp-servers",
+        "/mcp-servers/{server_id}/linkage",
+        "/mcp-servers/{server_id}/linkage/start",
+        "/mcp-servers/{server_id}/linkage/disconnect",
     }
     assert set(paths["/actions"]) == {"get"}
     assert set(paths["/actions/stream"]) == {"get"}
