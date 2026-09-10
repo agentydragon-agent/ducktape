@@ -472,7 +472,7 @@ def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
     @app.get("/v1/operator/mcp-servers", response_model=list[McpLinkageView])
     async def list_mcp_linkages(principal: Annotated[Principal, Depends(_operator)]) -> list[McpLinkageView]:
         del principal
-        return await authority.list()
+        return await authority.statuses()
 
     @app.post("/v1/operator/mcp-servers/{server_id}/linkage/start", response_model=McpLinkageStartView)
     async def linkage_start(

@@ -25,6 +25,7 @@ py_library(
     srcs = ["mcp_executor.py"],
     deps = [
         ":catalog",
+        ":mcp_linkage",
         ":models",
         ":service",
         "@pypi//fastmcp_slim",

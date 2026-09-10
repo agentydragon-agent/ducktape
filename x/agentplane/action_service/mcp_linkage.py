@@ -183,7 +183,7 @@ class McpLinkageAuthority:
     def servers(self) -> dict[str, McpOAuthServer]:
         return dict(self._servers)
 
-    async def list(self) -> list[McpLinkageView]:
+    async def statuses(self) -> list[McpLinkageView]:
         return [await self.status(server_id) for server_id in self._servers]
 
     async def status(self, server_id: str) -> McpLinkageView:
@@ -350,9 +350,9 @@ class McpLinkageAuthority:
             for url in build_protected_resource_metadata_discovery_urls(
                 extract_resource_metadata_from_www_auth(probe), server.server_url
             ):
-                metadata = await handle_protected_resource_response(await client.get(url))
-                if metadata is not None:
-                    resource_metadata = metadata
+                resource_candidate = await handle_protected_resource_response(await client.get(url))
+                if resource_candidate is not None:
+                    resource_metadata = resource_candidate
                     break
             auth_server_url = (
                 str(resource_metadata.authorization_servers[0])
@@ -361,9 +361,9 @@ class McpLinkageAuthority:
             )
             oauth_metadata: OAuthMetadata | None = None
             for url in build_oauth_authorization_server_metadata_discovery_urls(auth_server_url, server.server_url):
-                ok, metadata = await handle_auth_metadata_response(await client.get(url))
-                if metadata is not None:
-                    oauth_metadata = metadata
+                ok, auth_candidate = await handle_auth_metadata_response(await client.get(url))
+                if auth_candidate is not None:
+                    oauth_metadata = auth_candidate
                     break
                 if not ok:
                     break
@@ -452,19 +452,23 @@ class McpLinkageAuthority:
             claim_id = uuid4()
             claim_revision = state.token_revision
             claim_refresh_token = state.refresh_token
+            linkage_token_state_id = linkage.token_state_id
+            linkage_token_endpoint = linkage.token_endpoint
+            linkage_resource = linkage.resource
+            state_scope = list(state.scope)
             state.refresh_claim_id = claim_id
             state.refresh_claim_expires_at = now + _REFRESH_CLAIM_TTL
         try:
             refreshed = await self._refresh(
-                server, claim_refresh_token, list(state.scope), linkage.token_endpoint, linkage.resource
+                server, claim_refresh_token, state_scope, linkage_token_endpoint, linkage_resource
             )
         except Exception as error:
             await self._store_refresh_failure(server_id, claim_id, error)
             return
         async with self._sessions.begin() as db:
             current = (
-                await db.get(McpOAuthTokenStateRow, linkage.token_state_id, with_for_update=True)
-                if linkage and linkage.token_state_id
+                await db.get(McpOAuthTokenStateRow, linkage_token_state_id, with_for_update=True)
+                if linkage_token_state_id
                 else None
             )
             if (
