@@ -6,3 +6,4 @@ resources:
   - httproute.yaml
   - networkpolicy.yaml
   - secret.sops.yaml
+  - credentials-eso.yaml

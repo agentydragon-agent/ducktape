@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - role.yaml
   - agentplane-acceptance-operator.yaml
-  - agentplane-testing-acceptance-operator.sops.yaml
   - node-reader.yaml
   - cluster-metadata-reader.yaml
   - extended-diagnostics-reader.yaml
