@@ -295,6 +295,7 @@ py_library(
     srcs = ["tlh.py"],
     deps = [
         ":fixed_point",
+        ":money",
         "@pypi//pydantic",
     ],
 )
@@ -443,6 +444,7 @@ py_library(
     deps = [
         ":books",
         ":fixed_point",
+        ":money",
     ],
 )
 
@@ -494,6 +496,49 @@ py_test(
         "//finance/augur/sim/compiler:execution",
         "@pypi//numpy",
         "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "money",
+    srcs = ["money.py"],
+    deps = [":fixed_point"],
+)
+
+py_library(
+    name = "ledger",
+    srcs = ["ledger.py"],
+    deps = [
+        ":books",
+        ":money",
+    ],
+)
+
+py_test(
+    name = "test_money",
+    srcs = ["test_money.py"],
+    deps = [
+        ":fixed_point",
+        ":money",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//hypothesis",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_ledger",
+    srcs = ["test_ledger.py"],
+    deps = [
+        ":books",
+        ":ledger",
+        ":money",
+        "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
