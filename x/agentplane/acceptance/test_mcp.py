@@ -1,9 +1,10 @@
 """Real staging agents discover, submit, poll and report an MCP-backed Action."""
 
 import logging
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from http import HTTPStatus
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID, uuid4
 
 import httpx
@@ -47,6 +48,13 @@ class PendingMcpReport(BaseModel):
     state: Literal["decision_pending"]
 
 
+def operator_idp() -> Literal["authentik", "dex"]:
+    value = os.environ.get("AGENTPLANE_ACCEPTANCE_IDP", "authentik")
+    if value not in {"authentik", "dex"}:
+        pytest.fail("BLOCKED: AGENTPLANE_ACCEPTANCE_IDP must be authentik or dex", pytrace=False)
+    return cast(Literal["authentik", "dex"], value)
+
+
 async def test_agent_executes_mcp_action(
     client: Client, sandbox: Callable[..., Awaitable[SandboxView]], provider: Provider, model: str
 ) -> None:
@@ -84,7 +92,7 @@ async def operator_bff(base_url: str, operator_credentials: OperatorCredentials)
         origin = str(app_origin(base_url)).rstrip("/")
         async with httpx.AsyncClient(base_url=origin, timeout=30, follow_redirects=False) as http:
             try:
-                await login_operator(http, operator_credentials)
+                await login_operator(http, operator_credentials, provider=operator_idp())
             except LoginBlockedError as exc:
                 pytest.fail(str(exc), pytrace=False)
             except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError):

@@ -8,8 +8,10 @@ Only that non-interactive path is supported; other stages require operator actio
 import base64
 import binascii
 import json
+import os
 import re
 import subprocess
+from typing import Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, SecretStr
@@ -17,7 +19,8 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 from x.agentplane.app.oidc import SECURE_COOKIE
 
 KUBE_PROXY = "https://haku-kubeapi.allegedly.works"
-SECRET_PATH = "/api/v1/namespaces/public-coder-agent/secrets/agentplane-acceptance-operator"
+DEFAULT_SECRET_PATH = "/api/v1/namespaces/public-coder-agent/secrets/agentplane-acceptance-operator"
+SECRET_PATH = DEFAULT_SECRET_PATH
 
 
 class LoginBlockedError(Exception):
@@ -58,7 +61,7 @@ def read_operator_credentials() -> OperatorCredentials:
     server = _kubectl("config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
     if server.strip() != KUBE_PROXY.encode():
         raise LoginBlockedError("BLOCKED: current kubeconfig must use the Haku Console Kubernetes proxy")
-    raw = _kubectl("get", f"--raw={SECRET_PATH}")
+    raw = _kubectl("get", f"--raw={os.environ.get('AGENTPLANE_OPERATOR_SECRET_PATH', DEFAULT_SECRET_PATH)}")
     try:
         data = json.loads(raw)["data"]
         values = {
@@ -89,7 +92,9 @@ def app_origin(base_url: str) -> httpx.URL:
     return _origin(url)
 
 
-def _destination(source: httpx.URL, location: str, app: httpx.URL, idp: httpx.URL) -> httpx.URL:
+def _destination(
+    source: httpx.URL, location: str, app: httpx.URL, idp: httpx.URL, provider: Literal["authentik", "dex"]
+) -> httpx.URL:
     __tracebackhide__ = True
     url = source.join(location)
     if url.scheme != "https" or url.userinfo or url.fragment:
@@ -105,12 +110,15 @@ def _destination(source: httpx.URL, location: str, app: httpx.URL, idp: httpx.UR
             and url.path == source.path
             and re.fullmatch(r"/api/v3/flows/executor/[a-zA-Z0-9_-]+/", url.path)
         )
+        or (provider == "dex" and re.fullmatch(r"/dex/(auth|auth/local|approval|callback)/?", url.path))
     ):
         return url
     raise LoginBlockedError("BLOCKED: OIDC redirect outside the app callback or Authentik authorization/flow endpoints")
 
 
-async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentials) -> None:
+async def login_operator(
+    http: httpx.AsyncClient, credentials: OperatorCredentials, *, provider: Literal["authentik", "dex"] = "authentik"
+) -> None:
     """Follow app-created state/PKCE/nonce unchanged; callback alone issues the logged-in cookie.
 
     Caller must suppress HTTP logging and local-variable dumps for this sensitive exchange.
@@ -147,11 +155,33 @@ async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentia
         if response.is_redirect:
             if response.request.method == "POST" and response.status_code in (307, 308):
                 raise LoginBlockedError("BLOCKED: Authentik requested replay of a credential POST")
-            target = _destination(response.url, response.headers["location"], app, idp)
+            target = _destination(response.url, response.headers["location"], app, idp, provider)
             response = await http.get(target)
             continue
         if response.status_code != 200:
             raise LoginBlockedError("BLOCKED: Authentik refused login; check user, flow and CSRF configuration")
+        if provider == "dex" and re.fullmatch(r"/dex/auth/local/?", response.url.path):
+            # Dex's local connector is a normal HTML form. Keep the provider adapter deliberately
+            # small: the app's authorization-code, state, nonce, PKCE, and callback checks remain
+            # the contract under test; this only avoids reproducing Authentik's FlowExecutor.
+            form = re.search(r"<form[^>]+action=[\"']([^\"']+)[\"']", response.text, flags=re.IGNORECASE)
+            if form is None:
+                raise LoginBlockedError("BLOCKED: Dex login form was not found")
+            target = _destination(response.url, form.group(1), app, idp, provider)
+            payload = dict(
+                re.findall(
+                    r"<input[^>]+name=[\"']([^\"']+)[\"'][^>]+value=[\"']([^\"']*)[\"']",
+                    response.text,
+                    flags=re.IGNORECASE,
+                )
+            )
+            payload.update(
+                login=credentials.username.get_secret_value(), password=credentials.password.get_secret_value()
+            )
+            response = await http.post(
+                target, data=payload, headers={"Origin": str(idp).rstrip("/"), "Referer": str(response.url)}
+            )
+            continue
         if re.fullmatch(r"/if/flow/[a-zA-Z0-9_-]+/", response.url.path):
             # GET the UI first to obtain Authentik's normal session/CSRF cookies, then do what its UI does.
             flow_page = response.url
@@ -168,7 +198,7 @@ async def login_operator(http: httpx.AsyncClient, credentials: OperatorCredentia
             raise LoginBlockedError("BLOCKED: Authentik requires an interactive CAPTCHA challenge")
         component = challenge.get("component")
         if component == "xak-flow-redirect":
-            target = _destination(response.url, challenge["to"], app, idp)
+            target = _destination(response.url, challenge["to"], app, idp, provider)
             response = await http.get(target)
             continue
         payload: dict[str, str] = {}

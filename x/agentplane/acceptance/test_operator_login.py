@@ -175,6 +175,55 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool, csrf_coo
     assert len(steps) == (9 if combined else 11)
 
 
+async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() -> None:
+    dex = "https://dex.test.invalid"
+    credentials = OperatorCredentials(
+        username=SecretStr("test-user"),
+        password=SecretStr("test-password"),
+        issuer=SecretStr(f"{dex}/dex"),
+        subject=SecretStr("test-subject"),
+    )
+    steps: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        steps.append(f"{request.method} {request.url.path}")
+        if request.url.path == "/auth/login":
+            return httpx.Response(
+                302,
+                headers={
+                    "location": f"{dex}/dex/auth?state=server-state&code_challenge=server-pkce",
+                    "set-cookie": f"{SECURE_COOKIE}=pending; Path=/; Secure; HttpOnly",
+                },
+            )
+        if request.url.path == "/dex/auth":
+            return httpx.Response(302, headers={"location": f"{dex}/dex/auth/local?req=test-request"})
+        if request.url.path == "/dex/auth/local" and request.method == "GET":
+            return httpx.Response(
+                200, text='<form action="/dex/auth/local"><input name="req" value="test-request"></form>'
+            )
+        if request.url.path == "/dex/auth/local" and request.method == "POST":
+            assert request.content == b"req=test-request&login=test-user&password=test-password"
+            return httpx.Response(302, headers={"location": f"{APP}/auth/callback?state=server-state&code=***"})
+        if request.url.path == "/auth/callback":
+            return httpx.Response(
+                303, headers={"location": "/", "set-cookie": f"{SECURE_COOKIE}=app-issued; Path=/; Secure; HttpOnly"}
+            )
+        if request.url.path == "/auth/me":
+            return httpx.Response(200, json={"username": "test-user"})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
+        await login_operator(http, credentials, provider="dex")
+    assert steps == [
+        "GET /auth/login",
+        "GET /dex/auth",
+        "GET /dex/auth/local",
+        "POST /dex/auth/local",
+        "GET /auth/callback",
+        "GET /auth/me",
+    ]
+
+
 @pytest.mark.parametrize(
     "failure",
     ["foreign", "http", "userinfo", "wrong_callback", "broad_cookie", "mfa", "rejected", "loop", "callback", "captcha"],

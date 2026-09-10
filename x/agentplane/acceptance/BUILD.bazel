@@ -125,8 +125,10 @@ py_test(
     timeout = "eternal",
     srcs = ["test_mcp.py"],
     env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_IDP",
         "AGENTPLANE_ACCEPTANCE_TOKEN",
         "AGENTPLANE_ACCEPTANCE_URL",
+        "AGENTPLANE_OPERATOR_SECRET_PATH",
         "HOME",
         "KUBECONFIG",
     ],

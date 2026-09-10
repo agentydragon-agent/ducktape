@@ -39,13 +39,14 @@ using the existing kubeconfig and Haku Console Kubernetes proxy
 pre-issued cookie are used. Missing proxy/RBAC/reflection or malformed Secret data
 fails **BLOCKED**, without printing kubectl output or decoded values.
 
-A fresh `httpx` cookie jar starts at the app's `/auth/login`, follows Authentik's
-normal redirects and username/password FlowExecutor challenges with its CSRF cookie,
-and returns to the app's `/auth/callback`. The app owns OAuth state, nonce, PKCE,
-token exchange and server-side session storage. Mutation requests use the app's
-exact same-origin `Origin`. Unexpected redirects, MFA, consent or browser-only
-challenges fail **BLOCKED**; the test never fabricates a cookie or inserts a session.
-The challenge handling matches Authentik 2026.2.1, the GitOps-pinned release.
+A fresh `httpx` cookie jar starts at the app's `/auth/login`, follows the configured
+OIDC provider's redirects and returns to the app's `/auth/callback`. The app owns OAuth
+state, nonce, PKCE, token exchange and server-side session storage. Mutation requests use
+the app's exact same-origin `Origin`. Authentik staging uses its pinned FlowExecutor
+adapter and fails **BLOCKED** for MFA, consent or browser-only challenges. The testing
+instance uses Dex's ordinary local password form; the test does not reproduce an
+Authentik-specific web flow and still exercises the app's real authorization-code/session
+boundary. The test never fabricates a cookie or inserts a session.
 
 Credentials stay in process memory. HTTP logging is suppressed for the BFF client's
 lifetime; pytest local-variable dumps are refused before Secret access. Do not add
@@ -82,6 +83,14 @@ Override any of it through the environment:
 | `AGENTPLANE_ACCEPTANCE_TOKEN`           | minted with `kubectl`                        |
 | `AGENTPLANE_ACCEPTANCE_NAMESPACE`       | `agentplane-staging`                         |
 | `AGENTPLANE_ACCEPTANCE_SERVICE_ACCOUNT` | `agentplane-agent`                           |
+| `AGENTPLANE_ACCEPTANCE_IDP`             | `authentik`                                  |
+| `AGENTPLANE_OPERATOR_SECRET_PATH`       | staging acceptance Secret path               |
+
+For `agentplane-testing`, set `AGENTPLANE_ACCEPTANCE_IDP=dex` and point
+`AGENTPLANE_OPERATOR_SECRET_PATH` at the testing instance's dedicated operator
+credential Secret. The testing instance is Flux-managed and internal; expose only the
+controlled devbox access path required by the manual run. Do not copy credentials into
+the checkout or pass them as command-line arguments.
 
 ### Controlled-host preflight
 
