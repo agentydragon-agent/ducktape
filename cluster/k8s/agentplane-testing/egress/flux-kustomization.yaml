@@ -12,6 +12,13 @@ spec:
   path: ./cluster/k8s/agentplane-testing/egress
   prune: true
   wait: true
+  # The Bundle is applied before trust-manager asynchronously creates this target.
+  # Do not advertise egress readiness until runner Sandboxes can mount the bundle.
+  healthChecks:
+    - apiVersion: v1
+      kind: ConfigMap
+      name: agentplane-egress-ca
+      namespace: agentplane-testing
   sourceRef:
     kind: GitRepository
     name: ducktape
