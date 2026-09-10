@@ -67,7 +67,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: indexer
-          image: git.allegedly.works/ducktape-ci/haku-indexer:devel-20260907042805-2621d92 # {"$imagepolicy": "flux-system:haku-indexer"}
+          image: git.allegedly.works/ducktape-ci/haku-indexer:devel-20260910004744-9d1a996 # {"$imagepolicy": "flux-system:haku-indexer"}
           imagePullPolicy: Always
           args: ["--role=chunk"]
           env:
