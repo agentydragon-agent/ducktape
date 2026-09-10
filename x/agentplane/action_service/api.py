@@ -40,6 +40,14 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentRejectedError,
 )
 from x.agentplane.action_service.mcp_frontend import ActionsMcp, create_server
+from x.agentplane.action_service.mcp_linkage import (
+    McpLinkageAuthority,
+    McpLinkageConflictError,
+    McpLinkageNotFoundError,
+    McpLinkageStart,
+    McpLinkageStartView,
+    McpLinkageView,
+)
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -125,6 +133,7 @@ def create_app(
     oauth: ActionsOAuthProxy | None = None,
     push_identity: PushIdentity | None = None,
     push_subscriptions: PushSubscriptionStore | None = None,
+    mcp_linkage: McpLinkageAuthority | None = None,
 ) -> FastAPI:
     caller_authenticator = CallerAuthenticator(workload_authenticator, oauth)
     mcp_app = create_server(service, catalog, updates, caller_authenticator).http_app(
@@ -154,6 +163,8 @@ def create_app(
         _connection_routes(app, connections)
     if enrollments is not None:
         _enrollment_routes(app, enrollments)
+    if mcp_linkage is not None:
+        _mcp_linkage_routes(app, mcp_linkage)
 
     @app.exception_handler(ActionNotFoundError)
     async def not_found(request: Request, error: ActionNotFoundError) -> JSONResponse:
@@ -435,3 +446,39 @@ def _enrollment_routes(app: FastAPI, authority: EnrollmentAuthority) -> None:
 
 def _error(status_code: int, detail: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": detail})
+
+
+def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
+    @app.exception_handler(McpLinkageConflictError)
+    async def mcp_linkage_conflict(request: Request, error: McpLinkageConflictError) -> JSONResponse:
+        del request
+        return _error(status.HTTP_409_CONFLICT, str(error))
+
+    @app.exception_handler(McpLinkageNotFoundError)
+    async def mcp_linkage_not_found(request: Request, error: McpLinkageNotFoundError) -> JSONResponse:
+        del request
+        return _error(status.HTTP_404_NOT_FOUND, str(error))
+
+    @app.get("/v1/operator/mcp-servers/{server_id}/linkage", response_model=McpLinkageView)
+    async def linkage_status(server_id: str, principal: Annotated[Principal, Depends(_operator)]) -> McpLinkageView:
+        del principal
+        return await authority.status(server_id)
+
+    @app.get("/v1/operator/mcp-servers", response_model=list[McpLinkageView])
+    async def list_mcp_linkages(principal: Annotated[Principal, Depends(_operator)]) -> list[McpLinkageView]:
+        del principal
+        return await authority.list()
+
+    @app.post("/v1/operator/mcp-servers/{server_id}/linkage/start", response_model=McpLinkageStartView)
+    async def linkage_start(
+        server_id: str, body: McpLinkageStart, principal: Annotated[Principal, Depends(_operator)]
+    ) -> McpLinkageStartView:
+        return await authority.start(server_id, body, principal)
+
+    @app.get("/v1/mcp-linkage/callback", response_model=McpLinkageView)
+    async def linkage_callback(state: str, code: str) -> McpLinkageView:
+        return await authority.callback(state, code)
+
+    @app.post("/v1/operator/mcp-servers/{server_id}/linkage/disconnect", response_model=McpLinkageView)
+    async def linkage_disconnect(server_id: str, principal: Annotated[Principal, Depends(_operator)]) -> McpLinkageView:
+        return await authority.disconnect(server_id, principal)

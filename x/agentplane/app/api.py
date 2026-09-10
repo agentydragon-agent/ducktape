@@ -10,13 +10,14 @@ from uuid import UUID
 import grpc
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.action_service.client import OperatorActionServiceClient
 from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion, Identity
 from x.agentplane.action_service.enrollments import EnrollmentDecisionResult
+from x.agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
 from x.agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
 from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.app.action_federation import FederatedOperatorActions, OperatorFederationError
@@ -314,6 +315,32 @@ async def connection_decision(
 
 
 connections_router = APIRouter(tags=["connections"])
+
+
+@connections_router.get("/mcp-linkage/callback")
+async def complete_mcp_linkage(state: str, code: str, client: OperatorActions) -> RedirectResponse:
+    await client.complete_mcp_linkage(state, code)
+    return RedirectResponse("/#/mcp-servers?linked=1", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@connections_router.get("/mcp-servers/{server_id}/linkage")
+async def mcp_linkage(server_id: str, client: OperatorActions) -> McpLinkageView:
+    return await client.mcp_linkage(server_id)
+
+
+@connections_router.get("/mcp-servers")
+async def list_mcp_linkages(client: OperatorActions) -> list[McpLinkageView]:
+    return await client.mcp_linkages()
+
+
+@connections_router.post("/mcp-servers/{server_id}/linkage/start")
+async def start_mcp_linkage(server_id: str, body: McpLinkageStart, client: OperatorActions) -> McpLinkageStartView:
+    return await client.start_mcp_linkage(server_id, body.scopes)
+
+
+@connections_router.post("/mcp-servers/{server_id}/linkage/disconnect")
+async def disconnect_mcp_linkage(server_id: str, client: OperatorActions) -> McpLinkageView:
+    return await client.disconnect_mcp_linkage(server_id)
 
 
 @connections_router.get("/connection-identities")

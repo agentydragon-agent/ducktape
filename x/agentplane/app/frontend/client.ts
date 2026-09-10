@@ -40,7 +40,8 @@ export type ActionState = components["schemas"]["ActionState"];
 export type Verdict = components["schemas"]["Verdict"];
 export type Connection = components["schemas"]["Connection"];
 export type ConnectionIdentity = components["schemas"]["Identity"];
-
+export type McpLinkageView = components["schemas"]["McpLinkageView"];
+export type McpLinkageStartView = components["schemas"]["McpLinkageStartView"];
 export class ConnectionRequestError extends Error {
   constructor(
     public readonly status: number,
@@ -84,6 +85,43 @@ export const connectionService: ConnectionService = {
       body: { expected_version: connection.version },
     });
     if (error) throw new ConnectionRequestError(response.status, displayableError(error));
+    return data;
+  },
+};
+
+export interface McpLinkageService {
+  list(): Promise<McpLinkageView[]>;
+  status(serverId: string): Promise<McpLinkageView>;
+  start(serverId: string, scopes: string[]): Promise<McpLinkageStartView>;
+  disconnect(serverId: string): Promise<McpLinkageView>;
+}
+
+export const mcpLinkageService: McpLinkageService = {
+  async list() {
+    const { data, error } = await api.GET("/mcp-servers");
+    if (error) throw new Error(displayableError(error));
+    return data;
+  },
+  async status(serverId) {
+    const { data, error } = await api.GET("/mcp-servers/{server_id}/linkage", {
+      params: { path: { server_id: serverId } },
+    });
+    if (error) throw new Error(displayableError(error));
+    return data;
+  },
+  async start(serverId, scopes) {
+    const { data, error } = await api.POST("/mcp-servers/{server_id}/linkage/start", {
+      params: { path: { server_id: serverId } },
+      body: { scopes },
+    });
+    if (error) throw new Error(displayableError(error));
+    return data;
+  },
+  async disconnect(serverId) {
+    const { data, error } = await api.POST("/mcp-servers/{server_id}/linkage/disconnect", {
+      params: { path: { server_id: serverId } },
+    });
+    if (error) throw new Error(displayableError(error));
     return data;
   },
 };

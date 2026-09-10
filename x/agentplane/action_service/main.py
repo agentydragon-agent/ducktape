@@ -25,6 +25,7 @@ from x.agentplane.action_service.connections import ConnectionAuthority, Identit
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
 from x.agentplane.action_service.enrollments import EnrollmentAuthority
 from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
+from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpOAuthServer
 from x.agentplane.action_service.oauth import OAuthSettings, running_oauth
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.push import ActionPushNotifier, PushIdentity, PushSubscriptionStore, WebPushSettings
@@ -71,6 +72,7 @@ class Settings(BaseSettings):
         default_factory=dict,
         description="Configured external caller Identities; runtime Connections bind to these keys.",
     )
+    mcp_servers: dict[Key, McpOAuthServer] = Field(default_factory=dict)
 
     fixture_auto_allow: FixtureAutoAllow | None = Field(
         default=None,
@@ -133,6 +135,7 @@ async def async_main(settings: Settings) -> None:
         executors = await stack.enter_async_context(running_executor(catalog))
         connections = ConnectionAuthority(make_sessionmaker(engine), settings.identities)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
+        mcp_linkage = McpLinkageAuthority(make_sessionmaker(engine), settings.mcp_servers)
         push_notifier: ActionPushNotifier | None = None
         if settings.web_push is not None:
             push_notifier = ActionPushNotifier(
@@ -191,6 +194,7 @@ async def async_main(settings: Settings) -> None:
             push_subscriptions=PushSubscriptionStore(make_sessionmaker(engine))
             if settings.web_push is not None
             else None,
+            mcp_linkage=mcp_linkage,
         )
         await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
 

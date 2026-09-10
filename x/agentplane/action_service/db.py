@@ -217,6 +217,37 @@ class PushDeliveryRow(Base):
     kind: Mapped[str] = mapped_column(Text)
 
 
+class McpServerLinkageRow(Base):
+    """One shared OAuth token family for a configured MCP server."""
+
+    __tablename__ = "mcp_server_linkage"
+
+    server_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    provider: Mapped[str] = mapped_column(Text)
+    server_url: Mapped[str] = mapped_column(Text)
+    revision: Mapped[int] = mapped_column(Integer)
+    scopes: Mapped[list[str]] = mapped_column(JSONB)
+    token: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    linked_by: Mapped[str | None] = mapped_column(Text)
+
+
+class McpLinkageFlowRow(Base):
+    """Short-lived PKCE state; never expose the verifier or token to the browser."""
+
+    __tablename__ = "mcp_linkage_flow"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    server_id: Mapped[str] = mapped_column(Text)
+    state_hash: Mapped[str] = mapped_column(Text, unique=True)
+    verifier: Mapped[str] = mapped_column(Text)
+    operator_principal: Mapped[str] = mapped_column(Text)
+    scopes: Mapped[list[str]] = mapped_column(JSONB)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ActionNotFoundError(Exception):
     pass
 

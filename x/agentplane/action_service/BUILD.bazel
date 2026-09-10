@@ -35,6 +35,19 @@ py_library(
 )
 
 py_library(
+    name = "mcp_linkage",
+    srcs = ["mcp_linkage.py"],
+    deps = [
+        ":catalog",
+        ":db",
+        ":models",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "auth",
     srcs = ["auth.py"],
     deps = [
@@ -95,6 +108,7 @@ py_library(
         ":db",
         ":enrollments",
         ":mcp_frontend",
+        ":mcp_linkage",
         ":models",
         ":oauth",
         ":push",
@@ -113,6 +127,7 @@ py_library(
     deps = [
         ":connections",
         ":enrollments",
+        ":mcp_linkage",
         ":models",
         "@pypi//httpx",
     ],
@@ -142,6 +157,7 @@ py_library(
         ":db",
         ":enrollments",
         ":fixture_policy",
+        ":mcp_linkage",
         ":oauth",
         ":operator_oidc",
         ":push",

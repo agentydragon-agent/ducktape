@@ -132,6 +132,18 @@ ts_library(
 )
 
 ts_library(
+    name = "mcp_servers",
+    srcs = ["mcp_servers.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "connections_fixture",
     testonly = True,
     srcs = ["connections_fixture.ts"],
@@ -378,6 +390,7 @@ ts_library(
         ":actions",
         ":connections",
         ":consent",
+        ":mcp_servers",
         ":push",
         ":sandbox_page",
         ":sandboxes",
