@@ -543,3 +543,31 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "tax",
+    srcs = ["tax.py"],
+    deps = [
+        ":fixed_point",
+        ":jurisdictions",
+        ":money",
+        ":scenario",
+        "//finance/augur/sim/compiler:tax",
+    ],
+)
+
+py_test(
+    name = "test_tax",
+    srcs = ["test_tax.py"],
+    deps = [
+        ":jurisdictions",
+        ":money",
+        ":scenario",
+        ":tax",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/compiler:tax",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -1,6 +1,6 @@
 # Native financial test cutover map
 
-Inventory at `fe377a2764`. A mapped test is authored, not evidence of a passing run.
+Inventory at `fe377a2764`. Mapped cases state their observed validation status.
 Keep this checklist until the integrated Python world and retained acceptance suites pass.
 The native counterpart remains development-only during this draft; remove it at cutover.
 
@@ -106,45 +106,50 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/ledger.rs`
 
-- `compound_entry_balances_and_applies_atomically` → `sim/test_ledger.py::test_compound_entry_balances_and_applies_atomically` (authored; validation pending)
-- `rejects_unbalanced_entry_without_mutation` → `sim/test_ledger.py::test_rejects_unbalanced_entry_without_mutation` (authored; validation pending)
-- `repeated_account_postings_are_accumulated_before_mutation` → `sim/test_ledger.py::test_repeated_account_postings_are_accumulated_before_mutation` (authored; validation pending)
+- `compound_entry_balances_and_applies_atomically` → `sim/test_ledger.py::test_compound_entry_balances_and_applies_atomically` (passed in focused RBE run)
+- `rejects_unbalanced_entry_without_mutation` → `sim/test_ledger.py::test_rejects_unbalanced_entry_without_mutation` (passed in focused RBE run)
+- `repeated_account_postings_are_accumulated_before_mutation` → `sim/test_ledger.py::test_repeated_account_postings_are_accumulated_before_mutation` (passed in focused RBE run)
 
 ## `rust/money.rs`
 
-- `half_up_rounding_is_symmetric` → `sim/test_money.py::test_half_up_rounding_is_symmetric` (authored; validation pending)
-- `wide_half_up_rounding_is_symmetric` → `sim/test_money.py::test_half_up_rounding_is_symmetric` (authored; validation pending)
-- `a_rate_of_whole_quanta_per_unit_agrees_with_a_price` → `sim/test_money.py::test_a_rate_of_whole_quanta_per_unit_agrees_with_a_price` (authored; validation pending)
-- `a_rate_below_one_quantum_per_unit_still_comes_to_money` → `sim/test_money.py::test_a_rate_below_one_quantum_per_unit_still_comes_to_money` (authored; validation pending)
-- `the_product_is_formed_before_either_scale_divides_out` → `sim/test_money.py::test_the_product_is_formed_before_either_scale_divides_out` (authored; validation pending)
-- `a_gwei_scaled_position_does_not_overflow_the_denominator` → `sim/test_money.py::test_a_gwei_scaled_position_does_not_overflow_the_denominator` (authored; validation pending)
+- `half_up_rounding_is_symmetric` → `sim/test_money.py::test_half_up_rounding_is_symmetric` (passed in focused RBE run)
+- `wide_half_up_rounding_is_symmetric` → `sim/test_money.py::test_half_up_rounding_is_symmetric` (passed in focused RBE run)
+- `a_rate_of_whole_quanta_per_unit_agrees_with_a_price` → `sim/test_money.py::test_a_rate_of_whole_quanta_per_unit_agrees_with_a_price` (passed in focused RBE run)
+- `a_rate_below_one_quantum_per_unit_still_comes_to_money` → `sim/test_money.py::test_a_rate_below_one_quantum_per_unit_still_comes_to_money` (passed in focused RBE run)
+- `the_product_is_formed_before_either_scale_divides_out` → `sim/test_money.py::test_the_product_is_formed_before_either_scale_divides_out` (passed in focused RBE run)
+- `a_gwei_scaled_position_does_not_overflow_the_denominator` → `sim/test_money.py::test_a_gwei_scaled_position_does_not_overflow_the_denominator` (passed in focused RBE run)
 
 ## `rust/money_proptest.rs`
 
-- `narrow_mul_div_rounds_half_away_from_zero` → `sim/test_money.py::test_narrow_mul_div_rounds_half_away_from_zero` (authored; validation pending)
-- `an_exact_tie_rounds_away_from_zero` → `sim/test_money.py::test_an_exact_tie_rounds_away_from_zero` (authored; validation pending)
-- `narrow_mul_div_is_sign_symmetric` → `sim/test_money.py::test_narrow_mul_div_is_sign_symmetric` (authored; validation pending)
-- `a_zero_denominator_is_refused` → `sim/test_money.py::test_a_zero_denominator_is_refused` (authored; validation pending)
-- `wide_mul_div_rounds_half_away_from_zero` → `sim/test_money.py::test_wide_mul_div_rounds_half_away_from_zero` (authored; validation pending)
-- `apportioning_everything_moves_everything` → `sim/test_money.py::test_apportioning_everything_moves_everything` (authored; validation pending)
-- `equal_factors_scale_money_identically` → `sim/test_money.py::test_equal_factors_scale_money_identically` (authored; validation pending)
-- `a_factor_and_its_complement_split_an_amount` → `sim/test_money.py::test_a_factor_and_its_complement_split_an_amount` (authored; validation pending)
-- `a_quantity_scales_like_money` → `sim/test_money.py::test_a_quantity_scales_like_money` (authored; validation pending)
-- `only_powers_of_ten_are_quantity_scales` → `sim/test_money.py::test_only_powers_of_ten_are_quantity_scales` (authored; validation pending)
-- `a_scale_that_is_not_a_power_of_ten_is_refused` → `sim/test_money.py::test_a_scale_that_is_not_a_power_of_ten_is_refused` (authored; validation pending)
-- `a_rate_spread_over_periods_re_totals` → `sim/test_money.py::test_a_rate_spread_over_periods_re_totals` (authored; validation pending)
-- `liquidating_a_lot_consumes_exactly_its_basis` → `sim/test_money.py::test_liquidating_a_lot_consumes_exactly_its_basis` (authored; validation pending)
+- `narrow_mul_div_rounds_half_away_from_zero` → `sim/test_money.py::test_narrow_mul_div_rounds_half_away_from_zero` (passed in focused RBE run)
+- `an_exact_tie_rounds_away_from_zero` → `sim/test_money.py::test_an_exact_tie_rounds_away_from_zero` (passed in focused RBE run)
+- `narrow_mul_div_is_sign_symmetric` → `sim/test_money.py::test_narrow_mul_div_is_sign_symmetric` (passed in focused RBE run)
+- `a_zero_denominator_is_refused` → `sim/test_money.py::test_a_zero_denominator_is_refused` (passed in focused RBE run)
+- `wide_mul_div_rounds_half_away_from_zero` → `sim/test_money.py::test_wide_mul_div_rounds_half_away_from_zero` (passed in focused RBE run)
+- `apportioning_everything_moves_everything` → `sim/test_money.py::test_apportioning_everything_moves_everything` (passed in focused RBE run)
+- `equal_factors_scale_money_identically` → `sim/test_money.py::test_equal_factors_scale_money_identically` (passed in focused RBE run)
+- `a_factor_and_its_complement_split_an_amount` → `sim/test_money.py::test_a_factor_and_its_complement_split_an_amount` (passed in focused RBE run)
+- `a_quantity_scales_like_money` → `sim/test_money.py::test_a_quantity_scales_like_money` (passed in focused RBE run)
+- `only_powers_of_ten_are_quantity_scales` → `sim/test_money.py::test_only_powers_of_ten_are_quantity_scales` (passed in focused RBE run)
+- `a_scale_that_is_not_a_power_of_ten_is_refused` → `sim/test_money.py::test_a_scale_that_is_not_a_power_of_ten_is_refused` (passed in focused RBE run)
+- `a_rate_spread_over_periods_re_totals` → `sim/test_money.py::test_a_rate_spread_over_periods_re_totals` (passed in focused RBE run)
+- `liquidating_a_lot_consumes_exactly_its_basis` → `sim/test_money.py::test_liquidating_a_lot_consumes_exactly_its_basis` (passed in focused RBE run)
 
 ## `rust/tax.rs`
 
-- [ ] `bracket_tax_rounds_aggregate_once`
-- [ ] `preferential_gain_stacks_above_ordinary_income`
-- [ ] `section_1250_uses_incremental_brackets_below_the_rate_cap`
-- [ ] `losses_cross_net_and_carry_forward`
-- [ ] `capital_gain_netting_reports_overflow`
-- [ ] `rejects_negative_rule_amounts`
+- `bracket_tax_rounds_aggregate_once` → `sim/test_tax.py::test_bracket_tax_rounds_aggregate_once` (passed in focused RBE run)
+- `preferential_gain_stacks_above_ordinary_income` → `sim/test_tax.py::test_preferential_gain_stacks_above_ordinary_income` (passed in focused RBE run)
+- `section_1250_uses_incremental_brackets_below_the_rate_cap` → `sim/test_tax.py::test_section_1250_uses_incremental_brackets_below_the_rate_cap` (passed in focused RBE run)
+- `losses_cross_net_and_carry_forward` → `sim/test_tax.py::test_losses_cross_net_and_carry_forward` (passed in focused RBE run)
+- `capital_gain_netting_reports_overflow` → `sim/test_tax.py::test_capital_gain_netting_reports_overflow` (passed in focused RBE run)
+- `rejects_negative_rule_amounts` → `sim/test_tax.py::test_rejects_negative_rule_amounts` (passed in focused RBE run)
 
 ## Existing Python coverage
 
 Retain and retarget every Python test in `rust/` and the existing `sim/` suites.
 No transport-only expectations have been dropped at this checkpoint.
+
+## Validation evidence
+
+- Money, ledger and existing mortgage/TLH suites: 70 pytest cases passed, with changed-library lint/typechecks, at [BuildBuddy](https://app.buildbuddy.io/invocation/89156cfe-8c37-456a-b927-7903cee4b966).
+- Tax assessment controls and generated dependency manifest passed, with tax-library lint/typechecks, at [BuildBuddy](https://app.buildbuddy.io/invocation/d1b76b65-08ae-436a-8930-832346db4712). Gazelle drift check also passed.
