@@ -562,7 +562,7 @@ all the others to be solved first.
 
 ## Current dispatch and priorities
 
-1. **ACCEPT** retires remaining sale/tax, cash-conservation and feature-specific
+1. **ACCEPT** retires remaining year-end tax, cash-conservation and feature-specific
    legacy readers. Household obligation/failure controls already use the common
    session. The remaining suites retire independently as their capabilities
    permit; multiple-taxpayer cases still need GP's scoped actor sequencing.

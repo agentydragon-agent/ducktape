@@ -6,11 +6,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.rust.result import run_rust
-from finance.augur.sim.testing.behaviour import (
-    AssetSaleAcceptance,
-    PropertyCarryingCostAcceptance,
-    YearEndTaxAcceptance,
-)
+from finance.augur.sim.testing.behaviour import PropertyCarryingCostAcceptance, YearEndTaxAcceptance
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
 from finance.augur.sim.testing.deductions import DeductionAcceptance
@@ -105,12 +101,6 @@ class TestRustRentalIncomeTaxation(RentalIncomeTaxationAcceptance):
 
 
 class TestRustRentalCashflowReconciliation(RentalCashflowReconciliationAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_rust
-
-
-class TestRustAssetSale(AssetSaleAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_rust

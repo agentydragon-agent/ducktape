@@ -9,7 +9,7 @@ or a second migration plan. Remove each section with its last reader.
 Remaining TLH and native-test consumers still use scheduled public sales.
 Move those decisions to explicit actions as each consumer migrates; P12 deletes
 the scheduled-sale schema and executor branch with the last one. Reuse the
-existing public-sale/tax controls as independent financial coverage.
+existing explicit asset-sale and public-sale/tax controls as independent financial coverage.
 
 **ACCEPT — remaining legacy acceptance readers.** `rust/result.py::RustResult`
 decodes configured forensic output into the separate
@@ -21,7 +21,7 @@ old/new equivalence; delete superseded test contracts/adapters with their last
 readers. Reuse the common-session distribution, public-sale/tax and dated-bond
 controls rather than restoring their configured-runner suites. The household
 obligation/failure, transfer and indexed-payment controls also use the common
-session; do not restore their deleted legacy suite classes. Remaining sale/tax,
+session; do not restore their deleted legacy suite classes. Remaining year-end tax,
 cash-conservation and feature-specific suites retain their actual numerical
 coverage until their own consumers migrate.
 The multiple-taxpayer cases in `sim/testing/income_sources.py` need GP's scoped

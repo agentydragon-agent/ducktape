@@ -301,13 +301,20 @@ two $500 bills against $600 pay the first bill, reject the second with $100
 unchanged, and skip later actions. Stopped paths receive neither future scheduled
 cashflows nor policy calls; another path in the same batch can continue.
 
+`bbr test //finance/augur/rust:asset_sales_test` checks partial/full sales,
+FIFO lot selection, account/asset isolation, sequential batch sales, holding-period
+classification, sampled-price reproducibility and exact residual basis through the
+common action session. Sales are policy-authored after current-month cashflows and
+claims are observed; these no-claim controls retain their original sale month and
+price. Overselling yields a typed rejection and stopped prefix, not a configured
+runner exception. The existing `public_sales_test` covers common sale/tax integration.
+
 The remaining legacy acceptance suites in `sim/testing/` assert integer answers for:
 
 - opening balances and opening equity;
 - scalar, tagged-fixed, and inflation/rent-series-indexed amounts across
   transfers, property cashflows, and obligations, including rollout-specific
   monthly or periodic reset boundaries and exact half-up ratio scaling;
-- initial tax lots and FIFO scheduled sales;
 - monthly security distributions based on currently held units, including
   independently rounded issuer tax-character slices for Treasury, municipal,
   corporate, and mixed funds;
