@@ -128,6 +128,8 @@ def workload_authenticator() -> tuple[SandboxPrincipalAuthenticator, FakeAuthent
 
 
 class RecordingActionService:
+    draining = False
+
     def __init__(self) -> None:
         self.principals: list[Principal] = []
         self.bodies: list[ActionRequestInput] = []

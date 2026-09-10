@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import AsyncIterator, Iterator
+from datetime import timedelta
 
 import pytest
 import yaml
@@ -82,6 +83,8 @@ def everything_url() -> Iterator[str]:
 
 
 class AlwaysLiveLease:
+    renewal_interval = timedelta(seconds=1)
+
     async def heartbeat(self) -> bool:
         return True
 

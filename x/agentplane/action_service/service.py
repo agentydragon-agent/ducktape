@@ -60,6 +60,8 @@ DEFAULT_LEASE_SWEEP_INTERVAL = timedelta(seconds=5)
 DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL = timedelta(seconds=10)
 DEFAULT_EXECUTOR_HEALTH_TIMEOUT = timedelta(seconds=45)
 DEFAULT_DISPATCH_POLL_INTERVAL = timedelta(seconds=1)
+DEFAULT_DRAIN_TIMEOUT = timedelta(seconds=20)
+DEFAULT_STOP_TIMEOUT = timedelta(seconds=5)
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,10 @@ class _ProviderVote:
 
 class ExecutionOutcomeUnknownError(Exception):
     """The adapter cannot prove whether the external effect started, so replay is forbidden."""
+
+
+class ServiceDrainingError(Exception):
+    """This replica no longer accepts new work."""
 
 
 class UnsupportedActionError(Exception):
@@ -87,6 +93,10 @@ class _StoreBackedLease:
         self._store = store
         self._claim = claim
         self._lease_duration = lease_duration
+
+    @property
+    def renewal_interval(self) -> timedelta:
+        return self._lease_duration / 3
 
     async def heartbeat(self) -> bool:
         return await self._store.heartbeat_execution(
@@ -114,7 +124,15 @@ class ActionService:
         executor_heartbeat_interval: timedelta = DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL,
         executor_health_timeout: timedelta = DEFAULT_EXECUTOR_HEALTH_TIMEOUT,
         dispatch_poll_interval: timedelta = DEFAULT_DISPATCH_POLL_INTERVAL,
+        drain_timeout: timedelta = DEFAULT_DRAIN_TIMEOUT,
+        stop_timeout: timedelta = DEFAULT_STOP_TIMEOUT,
     ) -> None:
+        if lease_duration <= timedelta(0) or drain_timeout < timedelta(0) or stop_timeout <= timedelta(0):
+            raise ValueError("lease/stop timeouts must be positive and drain timeout nonnegative")
+        self._drain_timeout = drain_timeout
+        self._stop_timeout = stop_timeout
+        self._drain_deadline: float | None = None
+        self._close_task: asyncio.Task[None] | None = None
         self._store = store
         self._catalog = catalog
         self._executors = dict(executors)
@@ -145,22 +163,54 @@ class ActionService:
         for request_id in await self._store.pending_dispatches():
             self._schedule(request_id)
 
+    @property
+    def draining(self) -> bool:
+        return self._drain_deadline is not None
+
+    def begin_drain(self) -> None:
+        # Synchronous fence: queued dispatches must observe this before entering claim_execution.
+        # Claims already awaiting the database remain in _tasks and belong to the drain.
+        if self._drain_deadline is None:
+            self._drain_deadline = asyncio.get_running_loop().time() + self._drain_timeout.total_seconds()
+            self._close_task = asyncio.create_task(self._close(), name="action-service-drain")
+
     async def close(self) -> None:
-        background = [
-            task for task in (self._heartbeat_task, self._sweep_task, self._dispatch_task) if task is not None
-        ]
-        for task in [*self._tasks, *background]:
+        self.begin_drain()
+        assert self._close_task is not None
+        await asyncio.shield(self._close_task)
+
+    async def _close(self) -> None:
+        assert self._drain_deadline is not None
+        if self._dispatch_task is not None:
+            self._dispatch_task.cancel()
+            await asyncio.gather(self._dispatch_task, return_exceptions=True)
+            self._dispatch_task = None
+        tasks = set(self._tasks)
+        if tasks:
+            _, pending = await asyncio.wait(
+                tasks, timeout=max(0, self._drain_deadline - asyncio.get_running_loop().time())
+            )
+            for task in pending:
+                task.cancel()
+            # Adapters and database stay open while cancellation records uncertainty. If
+            # persistence is unavailable, bounded lease expiry supplies the same no-replay state.
+            if pending:
+                _, unfinished = await asyncio.wait(pending, timeout=self._stop_timeout.total_seconds())
+                for task in unfinished:
+                    task.cancel()
+                await asyncio.gather(*unfinished, return_exceptions=True)
+        background = [task for task in (self._heartbeat_task, self._sweep_task) if task is not None]
+        for task in background:
             task.cancel()
-        await asyncio.gather(*self._tasks, *background, return_exceptions=True)
-        self._tasks.clear()
+        await asyncio.gather(*background, return_exceptions=True)
         self._heartbeat_task = None
         self._sweep_task = None
-        self._dispatch_task = None
-        self._scheduled.clear()
 
     async def submit(
         self, body: ActionRequestInput, principal: Principal, *, external_grant: ExternalGrantProvenance | None = None
     ) -> ActionRequestView:
+        if self.draining:
+            raise ServiceDrainingError("Action Service is draining")
         self._resolve_executor(body.action)
         _, action = self._catalog.resolve(body.action.group, body.action.name)
         try:
@@ -256,13 +306,15 @@ class ActionService:
         return await self._store.events(request_id, principal, after_sequence=after_sequence, limit=limit)
 
     async def decide(self, request_id: UUID, body: DecisionInput, principal: Principal) -> ActionRequestView:
+        if self.draining:
+            raise ServiceDrainingError("Action Service is draining")
         view, should_dispatch = await self._store.decide(request_id, body, principal, provider=self.HUMAN_PROVIDER)
         if should_dispatch:
             self._schedule(request_id)
         return view
 
     def _schedule(self, request_id: UUID) -> None:
-        if request_id in self._scheduled:
+        if self.draining or request_id in self._scheduled:
             return
         self._scheduled.add(request_id)
         task = asyncio.create_task(self._dispatch_once(request_id), name=f"action-dispatch-{request_id}")
@@ -318,18 +370,39 @@ class ActionService:
             await asyncio.sleep(self._lease_sweep_interval.total_seconds())
 
     async def _dispatch_once(self, request_id: UUID) -> None:
+        if self.draining:
+            return
         claim = await self._store.claim_execution(
             request_id, executor_id=self._executor_id, lease_duration=self._lease_duration
         )
         if claim is None:
             return
+        try:
+            await self._execute_claim(claim)
+        except asyncio.CancelledError:
+            # A cancelled claim RPC may have committed without returning its token: no adapter
+            # is invoked in that case, and lease expiry resolves the stranded dispatch. Once
+            # we have the claim, try to publish uncertainty before closing the database.
+            await self._store.finish_execution(
+                request_id,
+                claim.executor_id,
+                claim.lease_token,
+                ExecutionResult(
+                    state=ExecutionState.EXECUTION_UNKNOWN,
+                    error={
+                        "kind": UnknownOutcomeReason.COORDINATOR_STOPPED,
+                        "message": "dispatch outcome unknown; not replayed",
+                    },
+                ),
+            )
+            raise
+
+    async def _execute_claim(self, claim: ExecutionClaim) -> None:
         lease = _StoreBackedLease(self._store, claim, self._lease_duration)
         try:
-            request = await self._store.mark_running(request_id)
+            request = await self._store.mark_running(claim.request_id)
             result = await self._resolve_executor(request.action).execute(request, lease)
         except ExecutionOutcomeUnknownError:
-            # Adapter exception text can contain provider responses or credentials. Persist and
-            # return only the stable classification; the service never projects raw exceptions.
             result = ExecutionResult(
                 state=ExecutionState.EXECUTION_UNKNOWN,
                 error={
@@ -337,30 +410,32 @@ class ActionService:
                     "message": "execution outcome is unknown; not replayed",
                 },
             )
-        except asyncio.CancelledError:
-            # A graceful stop can record uncertainty immediately rather than waiting on the
-            # lease to lapse. A hard process loss leaves no code running to reach this branch;
-            # the lease sweep makes the same transition instead, on its own schedule.
-            await asyncio.shield(
-                self._store.finish_execution(
-                    request_id,
-                    claim.executor_id,
-                    claim.lease_token,
-                    ExecutionResult(
-                        state=ExecutionState.EXECUTION_UNKNOWN,
-                        error={
-                            "kind": UnknownOutcomeReason.COORDINATOR_STOPPED,
-                            "message": "dispatch outcome unknown; not replayed",
-                        },
-                    ),
-                )
-            )
-            raise
-        except Exception as error:  # a failed executor call is terminal; this request is never retried
-            # Do not retain exception text: provider SDK errors routinely echo Authorization or
-            # request material. The exception class is enough to diagnose the adapter category.
+        except Exception as error:
             result = ExecutionResult(
                 state=ExecutionState.FAILED,
                 error={"kind": type(error).__name__, "message": "executor failed; see credential-safe adapter metrics"},
             )
-        await self._store.finish_execution(request_id, claim.executor_id, claim.lease_token, result)
+        completion = asyncio.create_task(
+            self._store.finish_execution(claim.request_id, claim.executor_id, claim.lease_token, result),
+            name="action-completion",
+        )
+        renewal = asyncio.create_task(self._renew_completion_lease(lease), name="action-completion-renewal")
+        try:
+            await completion
+        finally:
+            completion.cancel()
+            renewal.cancel()
+            await asyncio.gather(completion, renewal, return_exceptions=True)
+
+    async def _renew_completion_lease(self, lease: _StoreBackedLease) -> None:
+        # A known result remains worth delivering even when renewal fails: finish_execution
+        # authenticates the original claim and supports late reconciliation, not replay.
+        while True:
+            await asyncio.sleep(lease.renewal_interval.total_seconds())
+            try:
+                async with asyncio.timeout(lease.renewal_interval.total_seconds()):
+                    if not await lease.heartbeat():
+                        return
+            except Exception:
+                logger.warning("completion lease renewal failed; authenticated outcome delivery still pending")
+                return

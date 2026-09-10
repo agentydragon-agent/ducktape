@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
@@ -235,6 +235,11 @@ class ExecutionClaim(BaseModel):
 
 class ExecutionLease(Protocol):
     """Handle an executor holds for the one Execution it is currently attempting."""
+
+    @property
+    def renewal_interval(self) -> timedelta:
+        """Maximum interval and RPC timeout for renewals, each below half the lease window."""
+        ...
 
     async def heartbeat(self) -> bool:
         """Renew the lease. False means it is no longer recognized as the owner —
