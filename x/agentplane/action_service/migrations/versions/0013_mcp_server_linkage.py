@@ -43,6 +43,8 @@ def upgrade() -> None:
             sa.ForeignKey("mcp_oauth_token_state.id", ondelete="SET NULL"),
             nullable=True,
         ),
+        sa.Column("token_endpoint", sa.Text(), nullable=True),
+        sa.Column("resource", sa.Text(), nullable=True),
         sa.Column("linked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("linked_by", sa.Text(), nullable=True),
     )
@@ -54,6 +56,9 @@ def upgrade() -> None:
         sa.Column("verifier", sa.Text(), nullable=False),
         sa.Column("operator_principal", sa.Text(), nullable=False),
         sa.Column("scopes", postgresql.JSONB(), nullable=False),
+        sa.Column("authorization_endpoint", sa.Text(), nullable=False),
+        sa.Column("token_endpoint", sa.Text(), nullable=False),
+        sa.Column("resource", sa.Text(), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
     )

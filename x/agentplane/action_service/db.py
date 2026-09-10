@@ -230,6 +230,8 @@ class McpServerLinkageRow(Base):
     token_state_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("mcp_oauth_token_state.id", ondelete="SET NULL"), nullable=True
     )
+    token_endpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resource: Mapped[str | None] = mapped_column(Text, nullable=True)
     linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     linked_by: Mapped[str | None] = mapped_column(Text)
 
@@ -269,6 +271,9 @@ class McpLinkageFlowRow(Base):
     verifier: Mapped[str] = mapped_column(Text)
     operator_principal: Mapped[str] = mapped_column(Text)
     scopes: Mapped[list[str]] = mapped_column(JSONB)
+    authorization_endpoint: Mapped[str] = mapped_column(Text)
+    token_endpoint: Mapped[str] = mapped_column(Text)
+    resource: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

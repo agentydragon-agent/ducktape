@@ -15,6 +15,18 @@ from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 import httpx
+from mcp.client.auth.utils import (
+    build_oauth_authorization_server_metadata_discovery_urls,
+    build_protected_resource_metadata_discovery_urls,
+    extract_resource_metadata_from_www_auth,
+    extract_scope_from_www_auth,
+    get_client_metadata_scopes,
+    handle_auth_metadata_response,
+    handle_protected_resource_response,
+)
+from mcp.shared.auth import OAuthMetadata, ProtectedResourceMetadata
+from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
+from prometheus_client import Histogram
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -31,6 +43,11 @@ _REFRESH_CLAIM_WAIT = timedelta(milliseconds=100)
 _REFRESH_RETRY_BASE = timedelta(seconds=30)
 _REFRESH_RETRY_MAX = timedelta(minutes=15)
 _REFRESH_ADVISORY_LOCK = 0x4147504D43524546
+MCP_OAUTH_TOKEN_REQUEST_DURATION = Histogram(
+    "agentplane_mcp_oauth_token_request_duration_seconds",
+    "MCP OAuth discovery and token endpoint request duration",
+    ["operation", "outcome"],
+)
 
 
 class McpProvider(StrEnum):
@@ -44,8 +61,8 @@ class McpOAuthServer(BaseModel):
     server_id: Key
     provider: McpProvider
     server_url: str = Field(min_length=1)
-    authorization_endpoint: str = Field(min_length=1)
-    token_endpoint: str = Field(min_length=1)
+    authorization_endpoint: str | None = None
+    token_endpoint: str | None = None
     client_id: str = Field(min_length=1)
     client_secret_file: Path | None = None
     redirect_uri: str = Field(min_length=1)
@@ -179,7 +196,8 @@ class McpLinkageAuthority:
     async def start(self, server_id: str, request: McpLinkageStart, operator: Principal) -> McpLinkageStartView:
         self._require_operator(operator)
         server = self._server(server_id)
-        scopes = _scopes(request.scopes or server.scopes, server.scopes)
+        authorization_endpoint, token_endpoint, resource, discovered_scopes = await self._discover(server)
+        scopes = _scopes(request.scopes or server.scopes or discovered_scopes, server.scopes or discovered_scopes)
         now = datetime.now(UTC)
         expires_at = now + timedelta(minutes=10)
         state = secrets.token_urlsafe(32)
@@ -194,6 +212,9 @@ class McpLinkageAuthority:
                     verifier=verifier,
                     operator_principal=operator.key,
                     scopes=scopes,
+                    authorization_endpoint=authorization_endpoint,
+                    token_endpoint=token_endpoint,
+                    resource=resource,
                     expires_at=expires_at,
                     consumed_at=None,
                 )
@@ -208,12 +229,10 @@ class McpLinkageAuthority:
         }
         if scopes:
             query["scope"] = " ".join(scopes)
-        if server.resource:
-            query["resource"] = server.resource
+        if resource:
+            query["resource"] = resource
         return McpLinkageStartView(
-            flow_id=flow_id,
-            authorization_url=f"{server.authorization_endpoint}?{urlencode(query)}",
-            expires_at=expires_at,
+            flow_id=flow_id, authorization_url=f"{authorization_endpoint}?{urlencode(query)}", expires_at=expires_at
         )
 
     async def callback(self, state: str, code: str) -> McpLinkageView:
@@ -229,8 +248,10 @@ class McpLinkageAuthority:
             verifier = flow.verifier
             operator_principal = flow.operator_principal
             scopes = list(flow.scopes)
+            token_endpoint = flow.token_endpoint
+            resource = flow.resource
             flow.consumed_at = datetime.now(UTC)
-        token = await self._exchange(server, code, verifier, scopes)
+        token = await self._exchange(server, code, verifier, scopes, token_endpoint, resource)
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             current = await db.get(McpServerLinkageRow, server.server_id, with_for_update=True)
@@ -252,6 +273,8 @@ class McpLinkageAuthority:
                     revision=revision,
                     scopes=scopes,
                     token_state_id=token_state.id,
+                    token_endpoint=token_endpoint,
+                    resource=resource,
                     linked_at=now,
                     linked_by=operator_principal,
                 )
@@ -262,6 +285,8 @@ class McpLinkageAuthority:
                 current.revision = revision
                 current.scopes = scopes
                 current.token_state_id = token_state.id
+                current.token_endpoint = token_endpoint
+                current.resource = resource
                 current.linked_at = now
                 current.linked_by = operator_principal
             await db.flush()
@@ -299,6 +324,86 @@ class McpLinkageAuthority:
         if state.expires_at is not None and state.expires_at <= datetime.now(UTC):
             raise McpLinkageConflictError("MCP linkage token has expired; reconnect the server")
         return state.access_token
+
+    async def access_token_for_execution(self, server_id: str) -> str:
+        """Resolve the current token at the moment the MCP executor sends a request."""
+        await self._refresh_if_due(server_id)
+        async with self._sessions() as db:
+            linkage = await db.get(McpServerLinkageRow, server_id)
+            state = (
+                await db.get(McpOAuthTokenStateRow, linkage.token_state_id)
+                if linkage and linkage.token_state_id
+                else None
+            )
+        if state is None or (state.expires_at is not None and state.expires_at <= datetime.now(UTC)):
+            raise McpLinkageConflictError("MCP server is not linked or its token has expired")
+        return state.access_token
+
+    async def _discover(self, server: McpOAuthServer) -> tuple[str, str, str | None, list[str]]:
+        """Discover MCP protected-resource and authorization-server metadata before linking."""
+        started = asyncio.get_running_loop().time()
+        client = self._http or httpx.AsyncClient(timeout=10, follow_redirects=False)
+        close = self._http is None
+        try:
+            probe = await client.get(server.server_url)
+            resource_metadata: ProtectedResourceMetadata | None = None
+            for url in build_protected_resource_metadata_discovery_urls(
+                extract_resource_metadata_from_www_auth(probe), server.server_url
+            ):
+                metadata = await handle_protected_resource_response(await client.get(url))
+                if metadata is not None:
+                    resource_metadata = metadata
+                    break
+            auth_server_url = (
+                str(resource_metadata.authorization_servers[0])
+                if resource_metadata and resource_metadata.authorization_servers
+                else None
+            )
+            oauth_metadata: OAuthMetadata | None = None
+            for url in build_oauth_authorization_server_metadata_discovery_urls(auth_server_url, server.server_url):
+                ok, metadata = await handle_auth_metadata_response(await client.get(url))
+                if metadata is not None:
+                    oauth_metadata = metadata
+                    break
+                if not ok:
+                    break
+            authorization_endpoint = (
+                str(oauth_metadata.authorization_endpoint)
+                if oauth_metadata and oauth_metadata.authorization_endpoint
+                else server.authorization_endpoint
+            )
+            token_endpoint = (
+                str(oauth_metadata.token_endpoint)
+                if oauth_metadata and oauth_metadata.token_endpoint
+                else server.token_endpoint
+            )
+            if not authorization_endpoint or not token_endpoint:
+                raise McpLinkageConflictError("MCP OAuth metadata did not provide authorization and token endpoints")
+            configured_resource = (
+                str(resource_metadata.resource) if resource_metadata and resource_metadata.resource else None
+            )
+            requested_resource = resource_url_from_server_url(server.server_url)
+            resource = (
+                configured_resource
+                if configured_resource and check_resource_allowed(requested_resource, configured_resource)
+                else server.resource or requested_resource
+            )
+            scope = (
+                " ".join(server.scopes)
+                if server.scopes
+                else get_client_metadata_scopes(extract_scope_from_www_auth(probe), resource_metadata, oauth_metadata)
+            )
+            _observe_oauth_metric("discovery", "success", started)
+            return authorization_endpoint, token_endpoint, resource, scope.split() if scope else []
+        except McpLinkageError:
+            _observe_oauth_metric("discovery", "rejected", started)
+            raise
+        except (httpx.HTTPError, ValueError):
+            _observe_oauth_metric("discovery", "transport", started)
+            raise McpLinkageConflictError("MCP OAuth metadata discovery failed") from None
+        finally:
+            if close:
+                await client.aclose()
 
     async def _refresh_loop(self) -> None:
         while not self._stop.is_set():
@@ -350,7 +455,9 @@ class McpLinkageAuthority:
             state.refresh_claim_id = claim_id
             state.refresh_claim_expires_at = now + _REFRESH_CLAIM_TTL
         try:
-            refreshed = await self._refresh(server, claim_refresh_token, list(state.scope))
+            refreshed = await self._refresh(
+                server, claim_refresh_token, list(state.scope), linkage.token_endpoint, linkage.resource
+            )
         except Exception as error:
             await self._store_refresh_failure(server_id, claim_id, error)
             return
@@ -405,7 +512,15 @@ class McpLinkageAuthority:
         if operator.role is not PrincipalRole.OPERATOR:
             raise McpLinkageError("operator authority is required")
 
-    async def _exchange(self, server: McpOAuthServer, code: str, verifier: str, scopes: list[str]) -> dict[str, object]:
+    async def _exchange(
+        self,
+        server: McpOAuthServer,
+        code: str,
+        verifier: str,
+        scopes: list[str],
+        token_endpoint: str,
+        resource: str | None,
+    ) -> dict[str, object]:
         data = {
             "grant_type": "authorization_code",
             "code": code,
@@ -415,38 +530,60 @@ class McpLinkageAuthority:
         }
         if scopes:
             data["scope"] = " ".join(scopes)
-        return await self._post_token(server, data)
+        return await self._post_token(server, token_endpoint, resource, data, operation="exchange")
 
-    async def _refresh(self, server: McpOAuthServer, refresh_token: str, scopes: list[str]) -> dict[str, object]:
+    async def _refresh(
+        self,
+        server: McpOAuthServer,
+        refresh_token: str,
+        scopes: list[str],
+        token_endpoint: str | None,
+        resource: str | None,
+    ) -> dict[str, object]:
+        if token_endpoint is None:
+            raise _RefreshError("MCP OAuth token endpoint is not configured", action="reconnect")
         data = {"grant_type": "refresh_token", "refresh_token": refresh_token, "client_id": server.client_id}
         if scopes:
             data["scope"] = " ".join(scopes)
-        return await self._post_token(server, data)
+        return await self._post_token(server, token_endpoint, resource, data, operation="refresh")
 
-    async def _post_token(self, server: McpOAuthServer, data: dict[str, str]) -> dict[str, object]:
+    async def _post_token(
+        self, server: McpOAuthServer, token_endpoint: str, resource: str | None, data: dict[str, str], *, operation: str
+    ) -> dict[str, object]:
+        started = asyncio.get_running_loop().time()
         client_secret = server.client_secret_file.read_text().strip() if server.client_secret_file else None
-        if server.resource:
-            data["resource"] = server.resource
+        if resource:
+            data["resource"] = resource
         if client_secret:
             data["client_secret"] = client_secret
         client = self._http or httpx.AsyncClient(timeout=15)
         close = self._http is None
         try:
-            response = await client.post(server.token_endpoint, data=data)
+            response = await client.post(token_endpoint, data=data)
             if response.status_code == 400:
+                _observe_oauth_metric(operation, "rejected", started)
                 raise _RefreshError("MCP OAuth provider rejected the token", action="reconnect")
             response.raise_for_status()
             body = response.json()
         except _RefreshError:
             raise
         except (httpx.HTTPError, ValueError):
+            _observe_oauth_metric(operation, "transport", started)
             raise _RefreshError("MCP OAuth token endpoint unavailable", action="retrying") from None
         finally:
             if close:
                 await client.aclose()
         if not isinstance(body, dict) or not isinstance(body.get("access_token"), str):
+            _observe_oauth_metric(operation, "invalid_response", started)
             raise _RefreshError("MCP OAuth provider returned no access token", action="reconnect")
+        _observe_oauth_metric(operation, "success", started)
         return body
+
+
+def _observe_oauth_metric(operation: str, outcome: str, started: float) -> None:
+    MCP_OAUTH_TOKEN_REQUEST_DURATION.labels(operation=operation, outcome=outcome).observe(
+        asyncio.get_running_loop().time() - started
+    )
 
 
 def _replace_token_state(
