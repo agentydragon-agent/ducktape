@@ -7,6 +7,7 @@ scoped subjects need an explicit reviewed mapping; identical strings are never a
 from __future__ import annotations
 
 import time
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -28,11 +29,10 @@ class OperatorFederationError(Exception):
     """Fixed public failure codes only; never provider bodies or token material."""
 
 
-class ActionFederationSettings(BaseModel):
+class _ActionFederationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     service_url: str
-    token_endpoint: str
     login_jwks_uri: str
     target: OperatorOidcSettings
     subject_mapping: dict[str, str] = Field(min_length=1)
@@ -53,6 +53,11 @@ class ActionFederationSettings(BaseModel):
             raise ValueError("service_url must be an HTTP(S) URL without credentials, query, or fragment")
         return value
 
+
+class ExchangeFederationSettings(_ActionFederationSettings):
+    mode: Literal["exchange"] = "exchange"
+    token_endpoint: str
+
     @field_validator("token_endpoint")
     @classmethod
     def secure_exchange_endpoint(cls, value: str) -> str:
@@ -67,6 +72,14 @@ class ActionFederationSettings(BaseModel):
         ):
             raise ValueError("token_endpoint must be HTTPS (loopback HTTP is allowed for tests)")
         return value
+
+
+class DirectFederationSettings(_ActionFederationSettings):
+    mode: Literal["direct"] = "direct"
+    token_endpoint: None = None
+
+
+ActionFederationSettings = Annotated[ExchangeFederationSettings | DirectFederationSettings, Field(discriminator="mode")]
 
 
 class FederatedOperatorActions:
@@ -100,15 +113,19 @@ class FederatedOperatorActions:
             )
             if (upstream.issuer, upstream.subject) != (session.issuer, session.subject):
                 raise OperatorFederationError("operator_federation_identity_mismatch")
-            # Authlib mutates token state: create a fresh OAuth client for each exchange.
-            async with AsyncOAuth2Client(client_id=self._config.target.audience, timeout=10) as client:
-                token = await client.fetch_token(
-                    url=self._config.token_endpoint,
-                    grant_type="client_credentials",
-                    client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-                    client_assertion=session.access_token.get_secret_value(),
-                    scope=self._config.scope,
-                )
+            if self._config.mode == "direct":
+                token = {"access_token": session.access_token.get_secret_value()}
+            else:
+                assert self._config.token_endpoint is not None
+                # Authlib mutates token state: create a fresh OAuth client for each exchange.
+                async with AsyncOAuth2Client(client_id=self._config.target.audience, timeout=10) as client:
+                    token = await client.fetch_token(
+                        url=self._config.token_endpoint,
+                        grant_type="client_credentials",
+                        client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                        client_assertion=session.access_token.get_secret_value(),
+                        scope=self._config.scope,
+                    )
             downstream = await self._target.resolve(token)
             if downstream.subject != target_subject:
                 raise OperatorFederationError("operator_federation_identity_mismatch")

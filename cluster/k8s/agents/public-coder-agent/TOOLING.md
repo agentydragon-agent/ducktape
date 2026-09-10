@@ -276,6 +276,32 @@ Two things it deliberately cannot do, both rejected at the piper rather than by 
 port forwarding (`ssh -L`/`-D`/`-R`), and reaching any account but `coder` — the destination user
 is fixed upstream and no `ssh root@…` spelling changes it.
 
+### Manual Agentplane acceptance from the devbox
+
+The public-coder devbox is the controlled host for Agentplane's live acceptance targets. Run these
+tests from the devbox, not from the OpenClaw Pod and not through `bbr`/RBE: the test process needs
+the devbox's local Bazel execution, mediated kubeconfig, cluster route, and teardown lifecycle.
+
+Use a fresh checkout path for each run and invoke only an explicit manual target:
+
+```bash
+ssh devbox
+checkout=/home/coder/agentplane-acceptance-$(date -u +%Y%m%d%H%M%S)
+git clone https://github.com/agentydragon/ducktape.git "$checkout"
+cd "$checkout"
+bazelisk test //x/agentplane/acceptance:test_mcp --test_output=streamed --test_arg=-s
+```
+
+The `agentplane-testing` environment uses `AGENTPLANE_ACCEPTANCE_IDP=dex` and a testing-instance
+operator Secret path; staging keeps the default Authentik settings. Do not put the acceptance
+operator password or workload token in shell history, command arguments, checkout files, or test
+artifacts. The devbox's mediated kubeconfig is the only supported way for the test to mint its
+short-lived workload token and read the named operator Secret.
+
+This is a manual behavioral test, not a CI gate. It creates real Sandboxes and can call the existing
+cheap-model LiteLLM route; inspect the Action/egress evidence and complete teardown before starting
+another run. Retain the devbox checkout only as long as needed for the run.
+
 ## Current auto-approval summary
 
 As of 2026-09-06, `public-coder-agent` uses the `public-coder` access profile. Its standing Haku

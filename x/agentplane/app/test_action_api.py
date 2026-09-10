@@ -47,7 +47,7 @@ from x.agentplane.action_service.models import (
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
+from x.agentplane.app.action_federation import ExchangeFederationSettings, FederatedOperatorActions
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
@@ -211,7 +211,7 @@ async def review(
             session_secret="test-only-session-secret",
             public_base_url=app_url,
         )
-        federation = ActionFederationSettings(
+        federation = ExchangeFederationSettings(
             service_url="http://test-actions.invalid",
             token_endpoint=f"{idp_origin}/exchange",
             login_jwks_uri=f"{idp_url}jwks/",
