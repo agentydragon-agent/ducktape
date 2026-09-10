@@ -57,7 +57,6 @@ flowchart TB
     LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
-    PROVIDERLOG["Ready fix<br/>safe formatted provider-error logs"]:::active
     NOTIFY["Observed evidence<br/>web push approval notifications<br/>delivery implementation complete"]:::milestone
     ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
     DT["Deferred<br/>driver-provided declarations/background control"]:::future
@@ -420,14 +419,6 @@ required workflows.
 This track may move independently of Agent/conversation management: Haku Console may continue to own
 conversations while Agentplane owns external tool calls, or the reverse during a staged migration.
 Preserve tool-call audit/export and rollback evidence before removing the old owner.
-
-### `PROVIDERLOG` — safe provider failure logging
-
-**Ready fix:** `ActionService._ask` uses `logger.exception`; its formatted traceback can contain
-credential-bearing provider exception text. The existing test inspects `record.getMessage()`,
-which excludes exception formatting. Remove unsafe exception material from emitted logs and test
-the full formatted output with a sentinel secret. Preserve bounded durable error codes and the
-existing provider aggregation behavior; do not label log safety implemented before this fix.
 
 ### `NOTIFY` — web push approval notification delivery
 
