@@ -571,7 +571,7 @@ def test_combined_product_projection_simulates_once(
     monkeypatch: pytest.MonkeyPatch,
     scenario_key: ScenarioKey,
 ) -> None:
-    original = service.simulate_product_metrics
+    original = service.execute
     calls = 0
 
     def counted(*args, **kwargs):
@@ -579,7 +579,7 @@ def test_combined_product_projection_simulates_once(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "simulate_product_metrics", counted)
+    monkeypatch.setattr(service, "execute", counted)
 
     response = product.projection_summary(
         ProductProjectionRequest(
@@ -602,7 +602,7 @@ def test_combined_product_projection_simulates_once(
 def test_metric_fan_runs_reduced_product_projection_once_per_batch(
     product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
-    original = service.simulate_product_metrics
+    original = service.execute
     calls = 0
 
     def counted(*args, **kwargs):
@@ -610,7 +610,7 @@ def test_metric_fan_runs_reduced_product_projection_once_per_batch(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "simulate_product_metrics", counted)
+    monkeypatch.setattr(service, "execute", counted)
 
     product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=4, metric="cash", percentiles=(50,)))
 
