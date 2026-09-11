@@ -293,7 +293,7 @@ rollout-specific indexed reset boundaries and invalid path admission; bond
 principal through redemption, indexed accretion and face-floor redemption; a
 failed rollout's observed-book freeze and skipped future actions; and grouped
 same-source obligation preflight. The named tests were rerun as focused targets
-at [BuildBuddy]([BuildBuddy invocation](https://app.buildbuddy.io/invocation/d674a60c-dba5-4e79-8a7f-bf3af45b9929)) before this
+at [BuildBuddy](https://app.buildbuddy.io/invocation/d674a60c-dba5-4e79-8a7f-bf3af45b9929) before this
 mapping was checked in. Their existing names are retained because they already
 state the behavior under test.
 
@@ -326,3 +326,13 @@ stopped capture for forensic/dense/summary modes; exact transfer/FIFO balances a
 journal trial balance; the purchase-month property valuation anchor through sale;
 and oversell rejection before any disposition. Native deletion and full-product
 validation remain the parent milestone.
+
+## Reconciled final-five validation
+
+The exact integrated test tree passed all four world/holdings/mortgage targets in
+[a576392f](https://app.buildbuddy.io/invocation/a576392f-b4b0-4588-8281-de004dada587).
+`test_world` freshly executed; the other three used their successful preceding
+results from [c24954e0](https://app.buildbuddy.io/invocation/c24954e0-a627-42c7-b30f-4c9adb17dea2).
+The stopped-result control compares every result field and exact event frames,
+copying the immutable frame mapping explicitly rather than relying on deepcopy
+of a mappingproxy. No financial expectation or capture mode was dropped.

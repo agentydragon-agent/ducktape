@@ -10,7 +10,7 @@ from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, DecisionAct
 from finance.augur.sim.capture import WorldResult
 from finance.augur.sim.compiler.tax import PreparedTaxBracket
 from finance.augur.sim.configured import execute
-from finance.augur.sim.events import EVENT_FRAME_SPECS
+from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
 from finance.augur.sim.prepared import (
     CompiledRun,
     PreparedHoldingPool,
@@ -566,7 +566,15 @@ def test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mo
             session.close_month()
         assert path.result is not None
         assert_same_result(path.result, baseline)
-        terminal = deepcopy(path.result)
+        terminal = deepcopy(replace(path.result, events=None))
+        if path.result.events is not None:
+            terminal = replace(
+                terminal,
+                events=EventLog.from_frames(
+                    {spec.name: path.result.events.frame(spec).clone() for spec in EVENT_FRAME_SPECS},
+                    rollout_ids=path.result.events.rollout_ids,
+                ),
+            )
         stopped_book = deepcopy(path.world.book([]))
         session.close_month()
         assert_same_result(path.result, terminal)
