@@ -132,8 +132,8 @@ prerequisite for the first Action/MCP acceptance.
 The remaining work is delivery and live evidence, not another diagnostic history store, binding
 status controller, or leader election. Runtime contracts belong in the [egress specification](../egress/SPEC.md).
 
-- Merge and publish the read-only-informer/freshness/drain proxy and compatible app images. Verify
-  every old proxy retires **before** removing the shared CRD status schema and status-patch RBAC;
+- Verify every old proxy retires on the published safety image **before** removing the shared
+  CRD status schema and status-patch RBAC;
   old informers fail their task group when a status patch is rejected.
 - Verify the database and per-Pod migration init container, and clear the egress Flux dependency
   gates; then deliver staging's
