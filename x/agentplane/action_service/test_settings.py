@@ -14,7 +14,7 @@ import yaml
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from more_itertools import one
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 from util.bazel.runfiles import get_required_path
 from x.agentplane.action_service.catalog import ActionCatalog
@@ -51,7 +51,7 @@ def settings(rendered: list[dict[str, Any]], tmp_path: Path, monkeypatch: pytest
 
 def test_rendered_ssh_binding_uses_shared_bearer_file(settings: Settings) -> None:
     group = settings.action_groups["ssh"]
-    config = McpHttpServerConfig.model_validate(group.executor.config)
+    config = TypeAdapter(McpHttpServerConfig).validate_python(group.executor.config)
     assert config.auth == "static_bearer"
     assert config.bearer_file == Path("/etc/agentplane-actions/ssh-mcp-bearer")
     McpActionGroupExecutor.from_group("ssh", group)
@@ -60,7 +60,7 @@ def test_rendered_ssh_binding_uses_shared_bearer_file(settings: Settings) -> Non
 def test_rendered_remote_binding_reaches_existing_service(settings: Settings, rendered: list[dict[str, Any]]) -> None:
     assert settings.fixture_auto_allow is not None
     group = settings.action_groups[settings.fixture_auto_allow.group]
-    config = McpHttpServerConfig.model_validate(group.executor.config)
+    config = TypeAdapter(McpHttpServerConfig).validate_python(group.executor.config)
     endpoint = urlsplit(str(config.url))
     service = one(
         r

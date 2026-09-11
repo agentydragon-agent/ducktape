@@ -17,7 +17,7 @@ from collections.abc import Callable
 from contextlib import AsyncExitStack
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 import httpx
 import jsonschema
@@ -25,17 +25,7 @@ import mcp.types
 from fastmcp.client import Client, ClientTransport
 from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
-from pydantic import (
-    AnyHttpUrl,
-    BaseModel,
-    ConfigDict,
-    Field,
-    JsonValue,
-    TypeAdapter,
-    ValidationError,
-    field_validator,
-    model_validator,
-)
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
 
 from x.agentplane.action_service.catalog import ActionDefinition, ActionGroup, Key, McpExecutorBinding
 from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStatus
@@ -59,26 +49,11 @@ class McpStdioServerConfig(BaseModel):
     cwd: str | None = None
 
 
-class McpHttpServerConfig(BaseModel):
-    """Credentialless endpoint; authentication and header forwarding are not configurable here."""
-
+class _McpHttpServerConfigBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     transport: Literal["streamable-http"]
     url: AnyHttpUrl
-    server_id: Key | None = None
-    auth: Literal["none", "oauth", "static_bearer"] = "none"
-    bearer_file: Path | None = None
-
-    @model_validator(mode="after")
-    def require_linkage_server(self) -> McpHttpServerConfig:
-        if self.auth == "oauth" and self.server_id is None:
-            raise ValueError("OAuth MCP HTTP config requires server_id")
-        if self.auth == "static_bearer" and self.bearer_file is None:
-            raise ValueError("static bearer MCP HTTP config requires bearer_file")
-        if self.auth != "static_bearer" and self.bearer_file is not None:
-            raise ValueError("bearer_file is only valid for static bearer MCP HTTP config")
-        return self
 
     @field_validator("url")
     @classmethod
@@ -88,7 +63,28 @@ class McpHttpServerConfig(BaseModel):
         return url
 
 
-McpServerConfig = McpStdioServerConfig | McpHttpServerConfig
+class McpHttpNoAuthServerConfig(_McpHttpServerConfigBase):
+    auth: Literal["none"] = "none"
+    server_id: None = None
+    bearer_file: None = None
+
+
+class McpHttpOAuthServerConfig(_McpHttpServerConfigBase):
+    auth: Literal["oauth"] = "oauth"
+    server_id: Key
+    bearer_file: None = None
+
+
+class McpHttpStaticBearerServerConfig(_McpHttpServerConfigBase):
+    auth: Literal["static_bearer"] = "static_bearer"
+    server_id: None = None
+    bearer_file: Path
+
+
+McpHttpServerConfig = Annotated[
+    McpHttpNoAuthServerConfig | McpHttpOAuthServerConfig | McpHttpStaticBearerServerConfig, Field(discriminator="auth")
+]
+McpServerConfig = Annotated[McpStdioServerConfig | McpHttpServerConfig, Field(discriminator="transport")]
 _SERVER_CONFIG_ADAPTER: TypeAdapter[McpServerConfig] = TypeAdapter(McpServerConfig)
 
 
@@ -206,7 +202,7 @@ class McpActionGroupExecutor:
         if not isinstance(group.executor, McpExecutorBinding):
             raise ValueError("unsupported executor binding; expected MCP")
         config = _SERVER_CONFIG_ADAPTER.validate_python(group.executor.config)
-        if not isinstance(config, McpHttpServerConfig) or config.auth != "oauth" or config.server_id is None:
+        if not isinstance(config, McpHttpOAuthServerConfig):
             return cls.from_group(group_key, group, catalog_refresh_interval=catalog_refresh_interval)
         server_id = config.server_id
 
