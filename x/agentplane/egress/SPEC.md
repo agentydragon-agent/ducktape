@@ -130,19 +130,31 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Decisions
 
-- Every decision is logged as one JSON line naming the subject, method, host, port, path, outcome,
-  reason, and the binding, policy, and rule that decided it. Credential values and placeholders
-  never appear in logs, decisions, or responses.
-- The last decisions per subject (a configured ring, 200 by default) are served on the admin port
-  at `GET /decisions?sandbox=<name>`; decisions with no proven subject at `GET /decisions`.
-  `GET /healthz` is `200` while the index is both complete and moving: every kind listed at least
-  once, and none more than three resync periods since it last completed a list-and-watch cycle. It
-  reports how long ago each kind last completed one, so a wedged watch reads as an age rather than
-  as a proxy quietly enforcing rules it stopped receiving updates to.
-- **One replica**, because the ring is per-process and the admin Service selects every Pod: a second
-  would split the view the app and the acceptance suite read. Model traffic takes the proxy like
-  every other request, so a proxy that restarts ends the turns in flight, and that cost was accepted
-  rather than designed around.
+- Decisions are admissions, not upstream completions. CONNECT and HTTP requests are distinct
+  events correlated by connection ID, with event time and stable producer/event IDs.
+- Recent history is shared PostgreSQL state, not a per-replica ring. Replacing a proxy does not
+  remove committed history. `/decisions?sandbox=<name>` keeps the list response and existing
+  field names (`at` is decision time); omission of `sandbox` selects unidentified requests.
+- Responses contain at most 200 recent records by default, ordered by decision time then event
+  ID, oldest first within that window. This is not a global causal or insertion order.
+- Paths are always null: query stripping cannot protect secrets embedded in arbitrary paths.
+  Bodies, headers, query strings, raw exceptions, and Kubernetes object payloads are not recorded.
+- Logging is diagnostic and best effort, not a mandatory lossless audit. A bounded asynchronous
+  queue, finite retry budget, and bounded shutdown flush keep database failures off the admission
+  path. Queue overflow, expired events, exhausted retries and shutdown loss are counted explicitly.
+- `/healthz` exposes decision-writer diagnostics without making DB availability an enforcement
+  readiness/liveness requirement. A failed history read returns 503, never an empty success or
+  a local fallback. A successful read may lag queued admissions.
+- Retention defaults to seven days. Queries exclude expired records, and bounded indexed cleanup
+  deletes them eventually. Database outages delay physical cleanup, not the visible time window.
+- Schema changes are Alembic-managed and run separately from proxy startup. Runtime never creates
+  or migrates tables. Deployment gates new releases on the dedicated migration Job.
+
+## Replica scope
+
+Shared history is not full multi-replica enforcement safety. The deployment remains one replica
+with `Recreate`. Informer status writes, shared enforcement/readiness freshness, and rolling
+connection draining are independent work; only the diagnostic writer has a bounded shutdown flush.
 
 ## What the proxy does not decide
 

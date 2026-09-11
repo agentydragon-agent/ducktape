@@ -14,11 +14,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from ipaddress import ip_address
+from uuid import uuid4
 
 from mitmproxy import connection, http
 from mitmproxy.proxy import server_hooks
 
-from x.agentplane.egress.decisions import DecisionRecord, DecisionRing, Outcome
+from x.agentplane.egress.decision_log import DecisionLog
+from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
 from x.agentplane.egress.identity import IdentityRejectedError, PodIdentity, PodIdentityVerifier
 from x.agentplane.egress.policy import (
     CONNECT,
@@ -66,10 +68,11 @@ class EgressAddon:
         *,
         index: Index,
         verifier: PodIdentityVerifier,
-        ring: DecisionRing,
+        ring: DecisionLog,
         resolver: UpstreamResolver,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
+        self._producer_id = uuid4()
         self._index = index
         self._verifier = verifier
         self._ring = ring
@@ -158,6 +161,7 @@ class EgressAddon:
             headers={name.lower(): request.headers.get_all(name) for name in set(request.headers.keys())},
         )
         sandbox_name: str | None = None
+        authenticated_workload: AuthenticatedWorkloadContext | None = None
         pin: Pin | None = None
         decision: Decision
         try:
@@ -190,7 +194,12 @@ class EgressAddon:
             "method": egress.method,
             "host": egress.host,
             "port": egress.port,
-            "path": egress.path,
+            "producer_id": self._producer_id,
+            "connection_id": flow.client_conn.id,
+            "phase": Phase.CONNECT if egress.method == CONNECT else Phase.HTTP_REQUEST,
+            "sandbox_namespace": self._verifier.namespace if sandbox_name is not None else None,
+            "sandbox_uid": authenticated_workload.sandbox_uid if authenticated_workload is not None else None,
+            "source_pod_uid": authenticated_workload.pod_uid if authenticated_workload is not None else None,
         }
         match decision:
             case Allowed():

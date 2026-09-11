@@ -77,6 +77,7 @@ class PodIdentityVerifier:
         cache_seconds: float,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
+        self.namespace = namespace
         self._cache_seconds = cache_seconds
         self._clock = clock
         self._cache: dict[str, _CachedIdentity] = {}

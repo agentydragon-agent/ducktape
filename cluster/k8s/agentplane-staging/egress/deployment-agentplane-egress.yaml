@@ -4,7 +4,7 @@
 # agentplane-egress-credentials. It intercepts TLS with the CA in certificate-agentplane-egress-ca.yaml,
 # assembled into a writable confdir at startup (reloader restarts it when that Secret rotates).
 # One replica with Recreate: the rules Service must reach the same enforcement Index, and
-# the identity cache and decision ring are in memory.
+# identity caches are process-local. Shared history alone does not make enforcement replica-safe.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,6 +36,7 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
+      terminationGracePeriodSeconds: 30
       serviceAccountName: agentplane-egress
       automountServiceAccountToken: true
       imagePullSecrets:
@@ -65,6 +66,12 @@ spec:
             # Must equal the audience of the projected token in the runner SandboxTemplate
             # (../app/sandboxtemplate-agentplane-runner.yaml); a token for any other audience is refused.
             - --token-audience=agentplane-egress
+          env:
+            - name: AGENTPLANE_EGRESS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-egress-db-app
+                  key: uri
           ports:
             - name: proxy
               containerPort: 8888

@@ -1,8 +1,7 @@
 """The proxy's recent decisions for a sandbox, read off its cluster-internal admin port.
 
-The proxy keeps a bounded ring per subject and serves it at `GET /decisions?sandbox=<name>`
-(x/agentplane/egress SPEC § Decisions). The app only shows them: an unreachable proxy leaves the
-rules readable and the decisions absent, never fails the page.
+The proxy reads shared PostgreSQL history at `GET /decisions?sandbox=<name>`.
+Database read failures are explicit non-success responses, surfaced as DecisionsUnavailableError.
 """
 
 from __future__ import annotations

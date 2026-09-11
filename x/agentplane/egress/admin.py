@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -9,10 +10,12 @@ from datetime import UTC, datetime
 from aiohttp import web
 from more_itertools import one
 
-from x.agentplane.egress.decisions import DecisionRing
+from x.agentplane.egress.decision_log import DB_ERRORS, DecisionLog
 from x.agentplane.egress.policy import Index
 
-_RING = web.AppKey("ring", DecisionRing)
+logger = logging.getLogger(__name__)
+
+_RING = web.AppKey("ring", DecisionLog)
 _INDEX = web.AppKey("index", Index)
 _STALE_AFTER = web.AppKey("stale_after", float)
 _CLOCK: web.AppKey[Callable[[], datetime]] = web.AppKey("clock")
@@ -23,7 +26,11 @@ STALE_AFTER_CYCLES = 3
 
 
 async def _decisions(request: web.Request) -> web.Response:
-    decisions = request.app[_RING].recent(request.query.get("sandbox"))
+    try:
+        decisions = await request.app[_RING].store.recent(request.query.get("sandbox"))
+    except DB_ERRORS as error:
+        logger.warning("decision history read failed (%s)", type(error).__name__)
+        return web.json_response({"error": "decision-history-unavailable"}, status=503)
     return web.json_response([decision.model_dump(mode="json") for decision in decisions])
 
 
@@ -42,6 +49,7 @@ async def _healthz(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "synced": index.synced,
+            "decisionHistory": request.app[_RING].health(),
             "staleAfterSeconds": stale_after,
             "refreshedSecondsAgo": {plural: round(age, 1) for plural, age in sorted(ages.items())},
         },
@@ -50,7 +58,7 @@ async def _healthz(request: web.Request) -> web.Response:
 
 
 def create_admin_app(
-    ring: DecisionRing, index: Index, *, resync_seconds: int, clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    ring: DecisionLog, index: Index, *, resync_seconds: int, clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 ) -> web.Application:
     app = web.Application()
     app[_RING] = ring

@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from datetime import timedelta
 from typing import Any, cast
+from uuid import uuid4
 
 import pytest
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
+from sqlalchemy.engine import make_url
+from testcontainers.postgres import PostgresContainer
 
 from util.kubernetes import CustomObjectsClient
+from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres_fixtures import postgres_container
+from x.agentplane.egress.database_migrate import apply_migrations
+from x.agentplane.egress.decision_log import DecisionLog
+from x.agentplane.egress.decision_store import DecisionStore, make_engine
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
@@ -124,3 +133,26 @@ async def api_client(fake: FakeApiServer) -> AsyncIterator[ApiClient]:
     configuration = k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")
     async with ApiClient(configuration=configuration) as api:
         yield api
+
+
+@pytest.fixture
+def history_db_url(postgres_container: PostgresContainer) -> Iterator[str]:
+    admin_url = (
+        f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
+        f":{postgres_container.get_exposed_port(5432)}/postgres"
+    )
+    name = f"history_{uuid4().hex}"
+    url = create_database_sync(admin_url, name)
+    apply_migrations(url)
+    yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+    force_drop_database_sync(admin_url, name)
+
+
+@pytest.fixture
+async def decision_log(history_db_url: str) -> AsyncIterator[DecisionLog]:
+    log = DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7)))
+    log.start()
+    try:
+        yield log
+    finally:
+        await log.close()
