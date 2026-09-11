@@ -57,7 +57,9 @@ def test_prepared_input_retains_original_path_cpi_and_selected_replay(tmp_path: 
     assert path.read_text() == encoded
 
 
-@pytest.mark.parametrize("invalid", ["unknown-field", "string-money", "boolean-money", "wrong-version"])
+@pytest.mark.parametrize(
+    "invalid", ["unknown-field", "string-money", "boolean-money", "float-money", "fractional-money", "wrong-version"]
+)
 def test_file_decode_rejects_invalid_prepared_facts(tmp_path: Path, invalid: str) -> None:
     path = tmp_path / "invalid.json"
     write_prepared_input(prepare(), path)
@@ -67,6 +69,10 @@ def test_file_decode_rejects_invalid_prepared_facts(tmp_path: Path, invalid: str
         document["scenario"]["accounts"][0]["ignored_money"] = 1
     elif invalid == "string-money":
         document["scenario"]["accounts"][0]["opening_balance"] = "100"
+    elif invalid == "float-money":
+        document["scenario"]["accounts"][0]["opening_balance"] = 100.0
+    elif invalid == "fractional-money":
+        document["scenario"]["accounts"][0]["opening_balance"] = 100.5
     elif invalid == "boolean-money":
         document["scenario"]["accounts"][0]["opening_balance"] = True
     else:

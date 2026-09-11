@@ -54,25 +54,25 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/engine/tests.rs`
 
-- [ ] `scoped_observations_match_output_at_same_marks_and_round_each_lot`
-- [ ] `actor_books_do_not_read_future_prices_or_cpi`
-- [ ] `actor_books_follow_partial_sales_and_hide_exhausted_lots`
-- [ ] `actor_books_reject_unpriced_public_positions_before_inspection`
+- [x] `scoped_observations_match_output_at_same_marks_and_round_each_lot` → `sim/test_observations.py::test_scoped_observations_match_output_at_same_marks_and_round_each_lot`
+- [x] `actor_books_do_not_read_future_prices_or_cpi` → `sim/test_observations.py::test_actor_books_do_not_read_future_prices_or_cpi`
+- [x] `actor_books_follow_partial_sales_and_hide_exhausted_lots` → `sim/test_observations.py::test_actor_books_follow_partial_sales_and_hide_exhausted_lots`
+- [x] `actor_books_reject_unpriced_public_positions_before_inspection` → `sim/test_observations.py::test_actor_books_reject_unpriced_public_positions_before_inspection`
 - [ ] `retained_rollouts_keep_opening_books_lots_and_tax_state_independent`
 - [ ] `month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode`
-- [ ] `claim_views_keep_assembled_amount_identity_and_payer_scope`
-- [ ] `rejects_invalid_fixture_metadata`
+- [x] `claim_views_keep_assembled_amount_identity_and_payer_scope` → `sim/test_observations.py::test_claim_views_keep_assembled_amount_identity_and_payer_scope`
+- [x] `rejects_invalid_fixture_metadata` → `sim/test_validation_contracts.py::test_rejects_invalid_fixture_metadata`
 - [x] `series_indexed_amounts_follow_rollout_specific_reset_boundaries` → `rust/indexed_payments_test.py::test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout`
 - [x] `series_indexed_amount_validation_rejects_invalid_paths` → `rust/indexed_payments_test.py::{test_series_indexed_amount_cannot_fire_before_base_month,test_series_indexed_amount_requires_external_series_coverage,test_series_indexed_amount_rejects_zero_base_level}`
 - [x] `bond_principal_remains_until_redemption_event` → `sim/test_held_bonds.py::{test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon,test_stopped_bond_snapshot_uses_the_last_observed_index}`
 - [x] `nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts` → `sim/test_held_bonds.py::test_tips_deflation_changes_income_but_redemption_has_a_face_floor`
-- [ ] `bond_validation_rejects_non_par_and_missing_index_paths`
-- [ ] `rejects_invalid_references_before_rollout_execution`
-- [ ] `rejects_income_from_a_source_the_scenario_did_not_declare`
-- [ ] `distribution_tax_character_requires_a_complete_known_issuer_split`
-- [ ] `rejects_invalid_property_contracts_before_rollout_execution`
-- [ ] `rejects_mixed_quantity_scales_and_invalid_security_prices`
-- [ ] `zero_distribution_is_valid_but_negative_distribution_and_zero_price_are_not`
+- [x] `bond_validation_rejects_non_par_and_missing_index_paths` → `sim/test_validation_contracts.py::test_bond_validation_rejects_non_par_and_missing_index_paths`
+- [x] `rejects_invalid_references_before_rollout_execution` → `sim/test_validation_contracts.py::test_rejects_invalid_references_before_rollout_execution`
+- [x] `rejects_income_from_a_source_the_scenario_did_not_declare` → `sim/test_validation_contracts.py::test_rejects_income_from_a_source_the_scenario_did_not_declare`
+- [x] `distribution_tax_character_requires_a_complete_known_issuer_split` → `sim/test_validation_contracts.py::test_distribution_tax_character_requires_a_complete_known_issuer_split`
+- [x] `rejects_invalid_property_contracts_before_rollout_execution` → `sim/test_validation_contracts.py::test_rejects_invalid_property_contracts_before_rollout_execution`
+- [x] `rejects_mixed_quantity_scales_and_invalid_security_prices` → `sim/test_validation_contracts.py::test_rejects_mixed_quantity_scales_and_invalid_security_prices`
+- [x] `zero_distribution_is_valid_but_negative_distribution_and_zero_price_are_not` → `sim/test_validation_contracts.py::test_zero_distribution_is_valid_but_negative_distribution_and_zero_price_are_not`
 - [ ] `transfer_and_fifo_sale_remain_balanced`
 - [ ] `mid_horizon_property_mark_and_sale_share_the_purchase_anchor`
 - [ ] `oversell_is_rejected_before_any_disposition`
@@ -102,7 +102,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/execution.rs`
 
-- [ ] `money_crosses_the_wire_only_as_an_integer`
+- [x] `money_crosses_the_wire_only_as_an_integer` → `rust/test_invocation.py::{test_file_decode_rejects_invalid_prepared_facts,test_prepared_input_retains_original_path_cpi_and_selected_replay}`
 
 ## `rust/ledger.rs`
 
@@ -296,3 +296,27 @@ same-source obligation preflight. The named tests were rerun as focused targets
 at [BuildBuddy]([BuildBuddy invocation](https://app.buildbuddy.io/invocation/d674a60c-dba5-4e79-8a7f-bf3af45b9929)) before this
 mapping was checked in. Their existing names are retained because they already
 state the behavior under test.
+
+## Final native ports — admission and observations checkpoint
+
+**90/95 mapped; five pending.** The final 14 mappings added above passed in
+[f8238d06](https://app.buildbuddy.io/invocation/f8238d06-3ba9-465d-8c5e-dbf2da4fe312):
+three freshly executed targets, `sim:{test_observations,test_validation_contracts}`
+and `rust:test_invocation`, plus explicit `sim:validation` lint/mypy.
+The new observation target also passed independently in
+[6463e472](https://app.buildbuddy.io/invocation/6463e472-05e5-4a5e-b0d0-03e08a78e0b6).
+
+Prepared-input controls exposed 13 rejection failures in
+[c9000f5b](https://app.buildbuddy.io/invocation/c9000f5b-45f0-40ce-8ede-ae615c85a228):
+currency metadata, transfer references and declared income sources, distribution
+splits/issuers, mixed lot scales, bond terms/index availability/issuers, and
+property location/funding terms. Admission now rejects these before constructing
+any world. The passing controls retain a valid anchor and immutable-input checks.
+The wire test corrupts the actual persisted prepared artifact with `100.0` and
+`100.5`; its positive control round-trips that artifact into an executed Python
+session. No raw JSON runtime entry point was introduced.
+
+Still pending here: retained-rollout independence, month stepping and stopped
+capture across tax years, balanced transfer/FIFO sale, property purchase-anchor
+marks/sale, and oversell atomicity. Native deletion and full-product validation
+remain the parent milestone.

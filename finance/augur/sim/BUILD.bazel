@@ -876,7 +876,9 @@ py_library(
         ":books",
         ":fixed_point",
         ":holdings",
+        ":money",
         ":prepared",
+        ":scenario",
     ],
 )
 
@@ -961,6 +963,42 @@ py_test(
         ":prepared",
         ":results",
         ":world",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_observations",
+    srcs = ["test_observations.py"],
+    deps = [
+        ":actions",
+        ":claims",
+        ":observations",
+        ":prepared",
+        ":results",
+        ":session",
+        ":world",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_validation_contracts",
+    srcs = ["test_validation_contracts.py"],
+    deps = [
+        ":books",
+        ":prepared",
+        ":scenario",
+        ":session",
+        ":validation",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim/testing:accounting",
