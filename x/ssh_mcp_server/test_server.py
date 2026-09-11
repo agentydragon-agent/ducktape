@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -32,7 +33,7 @@ async def test_list_targets_keeps_missing_identity_unavailable(tmp_path: Path) -
     settings = _settings(tmp_path, identity=False)
     async with Client(build_mcp(settings)) as client:
         result = await client.call_tool("list_targets", {})
-    assert [item.model_dump() for item in result.data] == [
+    assert json.loads(result.content[0].text) == [
         {
             "host": "host",
             "user": "coder",
@@ -50,7 +51,7 @@ async def test_exec_returns_bounded_result(tmp_path: Path, monkeypatch: pytest.M
     )
     async with Client(build_mcp(settings)) as client:
         result = await client.call_tool("exec", {"host": "host", "user": "coder", "command": "echo $HOME"})
-    assert result.data.model_dump() == {
+    assert json.loads(result.content[0].text) == {
         "host": "host",
         "user": "coder",
         "exit_code": 0,
@@ -108,15 +109,16 @@ def test_config_loads_and_rejects_duplicate_target(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_create_app_has_public_health_and_protected_mcp(tmp_path: Path) -> None:
     app = create_app(_settings(tmp_path), "token")
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        assert (await client.get("/healthz")).status_code == 200
-        assert (await client.post("/mcp", json={"jsonrpc": "2.0"})).status_code == 401
-        response = await client.post(
-            "/mcp",
-            headers={"Authorization": "Bearer token"},
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-        )
-        assert response.status_code != 401
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            assert (await client.get("/healthz")).status_code == 200
+            assert (await client.post("/mcp", json={"jsonrpc": "2.0"})).status_code == 401
+            response = await client.post(
+                "/mcp",
+                headers={"Authorization": "Bearer token"},
+                json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            )
+            assert response.status_code != 401
 
 
 if __name__ == "__main__":
