@@ -95,6 +95,20 @@ in
     ../../modules/bazel
   ];
 
+  # NixOS's disk-image builder uses LKL's cptofs to populate the ext4 image.
+  # Upstream cptofs hardcodes a 100 MiB guest and OOMs while copying this 50 GiB
+  # root filesystem; raise that build-only guest limit without changing VM RAM.
+  nixpkgs.overlays = [
+    (final: prev: {
+      lkl = prev.lkl.overrideAttrs (old: {
+        postPatch = (old.postPatch or "") + ''
+          substituteInPlace tools/lkl/cptofs.c \
+            --replace-fail 'mem=100M' 'mem=512M'
+        '';
+      });
+    })
+  ];
+
   # The containerDisk is ephemeral, but it must still accommodate one Ducktape
   # checkout plus the Nix inputs/tooling needed to start a remote BuildBuddy job.
   # Keep the qcow2 sparse; KubeVirt allocates blocks only as the guest writes them.
