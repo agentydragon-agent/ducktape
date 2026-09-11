@@ -158,9 +158,10 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Replica scope
 
-Shared history is not full multi-replica enforcement safety. The deployment remains one replica
-with `Recreate`. Informer status writes, shared enforcement/readiness freshness, and rolling
-connection draining are independent work; only the diagnostic writer has a bounded shutdown flush.
+Replicas enforce from independent bounded-fresh watch snapshots and drain independently.
+Committed diagnostic history is shared; informational rule/binding observations are not a
+cluster-wide acknowledgement. A source change is not deployed evidence: image publication,
+GitOps gates and live rollout acceptance remain separate operational requirements.
 
 ## What the proxy does not decide
 

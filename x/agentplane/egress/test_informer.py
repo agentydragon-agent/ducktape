@@ -1,4 +1,4 @@
-"""The informer against the fake API server: sync, watch events, relist, and binding status writes."""
+"""The informer against the fake API server: sync, watch events, relist, and absence of status writes."""
 
 from __future__ import annotations
 

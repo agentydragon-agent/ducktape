@@ -25,8 +25,9 @@ bbr test //x/agentplane/egress/...
 - `rules_api.py`: the agent-facing
   `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
   independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the
-  ordinary mitmproxy policy/substitution gate. `decisions.py` is the ring and
-  JSON log line; `admin.py` the `/decisions` and `/healthz` listener.
+  ordinary mitmproxy policy/substitution gate. `decisions.py` defines admission records;
+  `decision_log.py` queues them for `decision_store.py`. `admin.py` serves history, local
+  binding observations, readiness and liveness.
 - `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the
   entry point and its `Settings` (`--flags` and `AGENTPLANE_EGRESS_*`).
 - `sidecar.py`: the per-sandbox relay, image `agentplane-egress-sidecar`: reads the Pod's
@@ -161,7 +162,7 @@ database credential along with the ones it is meant to substitute.
 
 ## Open questions
 
-- **Whether an agent also reads its own recent decisions.** The ring already answers "why was I
+- **Whether an agent also reads its own recent decisions.** Shared history answers "why was I
   denied", and a failure the agent can diagnose itself is the practical win; nothing serves it to
   the agent-facing surface today.
 - **Whether that surface versions separately from the operator API.** Agents are long-lived and

@@ -1045,39 +1045,39 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                 token_audience=AUDIENCE,
                 resync_seconds=1,
                 database_url=history_db_url,
-                exempt_networks=[ip_network("127.0.0.0/8")],
+                exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
             )
             for i, fake in enumerate([first_api, second_api])
         ]
         async with replica(settings[0]) as first, replica(settings[1]) as second, aiohttp.ClientSession() as client:
 
-            async def get(port: int, path: str) -> int:
+            async def get(port: int, path: str, expected: int) -> None:
                 async with client.get(
                     f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/{path}",
                     proxy=f"http://127.0.0.1:{port}",
                     headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
                 ) as response:
                     await response.read()
-                    return response.status
+                    assert response.status == expected, response.headers.get(DENIED_HEADER)
 
-            assert await get(first.proxy_port, "first") == 200
-            assert await get(second.proxy_port, "second") == 200
+            await get(first.proxy_port, "first", 200)
+            await get(second.proxy_port, "second", 200)
             # Only one watch source observes revocation. No replica can acknowledge the other.
             first_api.delete(BINDINGS_PLURAL, BINDING)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
-                    assert await get(first.proxy_port, "revoked") == 403
-            assert await get(second.proxy_port, "still-current") == 200
+                    await get(first.proxy_port, "revoked", 403)
+            await get(second.proxy_port, "still-current", 200)
             second_api.watch_available = False
             second_api.close_watches()
             await second.health(503)
             before = len(upstream.requests)
-            assert await get(second.proxy_port, "stale-existing-connection") == 502
+            await get(second.proxy_port, "stale-existing-connection", 502)
             assert len(upstream.requests) == before
             second_api.watch_available = True
             second_api.delete(BINDINGS_PLURAL, BINDING)
             await second.health(200)
-            assert await get(second.proxy_port, "recovered-revocation") == 403
+            await get(second.proxy_port, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
                     rows = await decision_log.store.recent(SANDBOX_A)
