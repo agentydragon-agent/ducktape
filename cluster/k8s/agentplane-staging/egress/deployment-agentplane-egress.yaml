@@ -3,8 +3,7 @@
 # EgressPolicy and EgressBinding resources, and substitutes credentials it reads from
 # agentplane-egress-credentials. It intercepts TLS with the CA in certificate-agentplane-egress-ca.yaml,
 # assembled into a writable confdir at startup (reloader restarts it when that Secret rotates).
-# One replica with Recreate: the rules Service must reach the same enforcement Index, and
-# identity caches are process-local. Shared history alone does not make enforcement replica-safe.
+# Rules are informational per-replica snapshots; no Service affinity is required.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,9 +14,13 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  replicas: 1
+  replicas: 2
+  minReadySeconds: 5
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: agentplane-egress
@@ -31,12 +34,19 @@ spec:
       # The zone has five nodes, so this still reschedules; it just does not leave.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
-      # Stateless and single-replica; allow control-plane nodes as overflow, as LiteLLM does.
+      # Allow control-plane nodes as overflow, as LiteLLM does.
       tolerations:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
-      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: agentplane-egress
+      terminationGracePeriodSeconds: 60
       serviceAccountName: agentplane-egress
       automountServiceAccountToken: true
       imagePullSecrets:
@@ -105,7 +115,7 @@ spec:
             - name: agent-api
               containerPort: 8082
               protocol: TCP
-          # /healthz is 200 once the watches have synced; before that the proxy refuses everything.
+          # Readiness shares the fresh-index/draining predicate with every request admission.
           readinessProbe:
             httpGet:
               path: /healthz
@@ -114,7 +124,7 @@ spec:
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /livez
               port: admin
             initialDelaySeconds: 30
             periodSeconds: 30
