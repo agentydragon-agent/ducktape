@@ -25,7 +25,7 @@ class Diagnostics:
     dropped_shutdown: int = 0
     write_failures: int = 0
     cleanup_failures: int = 0
-    available: bool = True
+    available: bool | None = None
 
 
 class DecisionLog:
@@ -53,13 +53,23 @@ class DecisionLog:
         self.diagnostics.accepted += 1
         logger.info("%s", decision.model_dump_json())
 
-    def health(self) -> dict[str, int | bool]:
-        return {**asdict(self.diagnostics), "queued": self._queue.qsize()}
+    def health(self) -> dict[str, int | bool | None]:
+        return {
+            **asdict(self.diagnostics),
+            "queued": self._queue.qsize(),
+            "writer_running": self._worker is not None and not self._worker.done(),
+        }
 
     def start(self) -> None:
         if self._worker is not None:
             raise RuntimeError("decision writer already started")
         self._worker = asyncio.create_task(self._run(), name="egress-decision-writer")
+        self._worker.add_done_callback(self._finished)
+
+    def _finished(self, worker: asyncio.Task[None]) -> None:
+        if not worker.cancelled() and (error := worker.exception()) is not None:
+            self.diagnostics.available = False
+            logger.error("decision history writer stopped (%s)", type(error).__name__)
 
     async def flush(self) -> None:
         await self._queue.join()
@@ -107,6 +117,7 @@ class DecisionLog:
     async def _run(self) -> None:
         while True:
             batch: list[DecisionRecord] = []
+            pending = 0
             try:
                 try:
                     async with asyncio.timeout(60):
@@ -118,10 +129,11 @@ class DecisionLog:
                 cutoff = datetime.now(UTC) - self.store.retention
                 current = [record for record in batch if record.at >= cutoff]
                 self.diagnostics.dropped_expired += len(batch) - len(current)
+                pending = len(current)
                 if current:
                     await self._write(current)
             except asyncio.CancelledError:
-                self.diagnostics.dropped_shutdown += len(batch)
+                self.diagnostics.dropped_shutdown += pending
                 raise
             finally:
                 for _ in batch:
