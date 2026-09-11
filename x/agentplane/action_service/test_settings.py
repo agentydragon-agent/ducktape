@@ -90,7 +90,7 @@ def staging_settings(
 @pytest.fixture(scope="module")
 def ssh_resources() -> list[dict[str, Any]]:
     kustomize = get_required_path("multitool/tools/kustomize/kustomize")
-    root = get_required_path("_main/cluster/k8s/agentplane-ssh-mcp/kustomization.yaml").parent
+    root = get_required_path("_main/cluster/k8s/ssh-mcp/kustomization.yaml").parent
     return [
         resource
         for directory in (root, root / "secrets")
@@ -140,7 +140,7 @@ def test_rendered_ssh_binding_uses_shared_bearer_file(
 def test_bearer_is_generated_once_and_shared_only_with_approved_consumers(ssh_resources: list[dict[str, Any]]) -> None:
     password = one(r for r in ssh_resources if r["kind"] == "Password")
     source = one(r for r in ssh_resources if r["kind"] == "ExternalSecret" and "secretStoreRef" not in r["spec"])
-    assert source["metadata"]["namespace"] == password["metadata"]["namespace"] == "agentplane-ssh-mcp"
+    assert source["metadata"]["namespace"] == password["metadata"]["namespace"] == "ssh-mcp"
     assert source["spec"]["refreshPolicy"] == "CreatedOnce"
     assert source["spec"]["target"]["creationPolicy"] == "Owner"
     assert one(source["spec"]["dataFrom"])["sourceRef"]["generatorRef"] == {
@@ -168,12 +168,10 @@ def test_bearer_is_generated_once_and_shared_only_with_approved_consumers(ssh_re
 
 def test_testing_has_no_ssh_binding_or_credentials(settings: Settings, rendered: list[dict[str, Any]]) -> None:
     assert "ssh" not in settings.action_groups
-    assert not any(r["metadata"]["name"].startswith("agentplane-ssh") for r in rendered)
+    assert not any(r["metadata"]["name"].startswith("ssh-mcp") for r in rendered)
     for deployment in (r for r in rendered if r["kind"] == "Deployment"):
         pod = deployment["spec"]["template"]["spec"]
-        assert all(
-            not v.get("secret", {}).get("secretName", "").startswith("agentplane-ssh") for v in pod.get("volumes", [])
-        )
+        assert all(not v.get("secret", {}).get("secretName", "").startswith("ssh-mcp") for v in pod.get("volumes", []))
 
 
 def test_rendered_remote_binding_reaches_existing_service(settings: Settings, rendered: list[dict[str, Any]]) -> None:

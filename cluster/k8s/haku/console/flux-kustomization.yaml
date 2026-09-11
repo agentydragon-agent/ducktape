@@ -54,5 +54,5 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: agentplane-ssh-mcp-secrets
+    - name: ssh-mcp-secrets
       namespace: ducktape-flux

@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: agentplane-actions
   annotations:
-    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,agentplane-ssh-mcp-bearer
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth,haku-console-github-mcp-client-credentials,agentplane-staging-web-push-vapid,ssh-mcp-bearer
     configmap.reloader.stakater.com/reload: agentplane-action-federation
 spec:
   replicas: 2
@@ -158,7 +158,7 @@ spec:
       volumes:
         - name: ssh-mcp-bearer
           secret:
-            secretName: agentplane-ssh-mcp-bearer
+            secretName: ssh-mcp-bearer
             items:
               - key: bearer-token
                 path: bearer-token

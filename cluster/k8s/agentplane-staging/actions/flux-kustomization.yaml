@@ -35,5 +35,5 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
-    - name: agentplane-ssh-mcp-secrets
+    - name: ssh-mcp-secrets
       namespace: ducktape-flux

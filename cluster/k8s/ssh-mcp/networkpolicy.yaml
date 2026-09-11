@@ -3,12 +3,12 @@
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-ssh-mcp
-  namespace: agentplane-ssh-mcp
+  name: ssh-mcp
+  namespace: ssh-mcp
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: agentplane-ssh-mcp
+      app.kubernetes.io/name: ssh-mcp
   ingress:
     - fromEndpoints:
         - matchLabels:

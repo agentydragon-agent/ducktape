@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agentplane-ssh-mcp
-  namespace: agentplane-ssh-mcp
+  name: ssh-mcp
+  namespace: ssh-mcp
   labels:
-    app.kubernetes.io/name: agentplane-ssh-mcp
+    app.kubernetes.io/name: ssh-mcp
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
@@ -13,26 +13,26 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: agentplane-ssh-mcp
+      app.kubernetes.io/name: ssh-mcp
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: agentplane-ssh-mcp
+        app.kubernetes.io/name: ssh-mcp
     spec:
       automountServiceAccountToken: false
       imagePullSecrets:
         - name: forgejo-images-creds
       containers:
         - name: server
-          image: git.allegedly.works/ducktape-ci/agentplane-ssh-mcp:devel-20260911062617-5a3faf6 # {"$imagepolicy": "flux-system:agentplane-ssh-mcp"}
+          image: git.allegedly.works/ducktape-ci/ssh-mcp:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:ssh-mcp"}
           imagePullPolicy: Always
           env:
             - name: SSH_MCP_CONFIG_FILE
-              value: /etc/agentplane-ssh/settings.yaml
+              value: /etc/ssh-mcp/settings.yaml
             - name: SSH_MCP_BEARER_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: agentplane-ssh-mcp-bearer
+                  name: ssh-mcp-bearer
                   key: bearer-token
             - name: SSH_MCP_HOST
               value: 0.0.0.0
@@ -44,10 +44,10 @@ spec:
               protocol: TCP
           volumeMounts:
             - name: config
-              mountPath: /etc/agentplane-ssh
+              mountPath: /etc/ssh-mcp
               readOnly: true
             - name: keys
-              mountPath: /etc/agentplane-ssh/keys
+              mountPath: /etc/ssh-mcp/keys
               readOnly: true
           readinessProbe:
             httpGet:
@@ -79,11 +79,11 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: agentplane-ssh-mcp-config
+            name: ssh-mcp-config
         - name: keys
           secret:
             # Provision this Secret through the cluster's approved secret workflow. Mounting the
             # whole optional Secret means an absent individual key remains an absent file, so the
             # target can stay listed as unavailable instead of making the pod fail admission.
-            secretName: agentplane-ssh-keys
+            secretName: ssh-mcp-keys
             optional: true

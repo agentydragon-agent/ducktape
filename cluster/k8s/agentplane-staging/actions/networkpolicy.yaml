@@ -70,8 +70,8 @@ spec:
         - kube-apiserver
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: agentplane-ssh-mcp
-            app.kubernetes.io/name: agentplane-ssh-mcp
+            k8s:io.kubernetes.pod.namespace: ssh-mcp
+            app.kubernetes.io/name: ssh-mcp
       toPorts:
         - ports:
             - port: "8080"

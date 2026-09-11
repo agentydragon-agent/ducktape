@@ -6,7 +6,7 @@ consumer owns its approval policy; the backend owns SSH transport and private ke
 
 ## Credentials and reconciliation
 
-`secrets/bearer-eso.yaml` invokes one ESO Password generator in `agentplane-ssh-mcp`.
+`secrets/bearer-eso.yaml` invokes one ESO Password generator in `ssh-mcp`.
 `CreatedOnce` preserves the generated bearer across ordinary reconciliations.
 Reflector distributes that Secret to exactly `haku-console` and
 `agentplane-staging`; neither consumer invokes a generator. All three deployments
@@ -21,7 +21,12 @@ non-pruning Flux owner.
 
 ## Deployment prerequisites
 
-- Provision `agentplane-ssh-keys` **only** in the backend namespace using the approved
+- Publish the renamed `ssh-mcp` image through the registered CI target and let its
+  Flux image policy replace the initial placeholder with a published tag before
+  reconciling the backend. An image published under a different repository name
+  does not establish availability at the new name.
+
+- Provision `ssh-mcp-keys` **only** in the backend namespace using the approved
   machine-key workflow; consumer pods receive only the MCP bearer.
 - Populate reviewed host keys in `known_hosts`. Empty host trust and missing
   identity files do not authorize SSH; host verification must remain strict.
