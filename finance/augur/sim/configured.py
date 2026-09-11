@@ -169,14 +169,6 @@ def simulate_dense_json(run: CompiledRun) -> str:
     return json.dumps(export_results(run, "dense"))
 
 
-def simulate_forensic_json(run: CompiledRun) -> str:
-    return json.dumps(export_results(run, "forensic"))
-
-
-def simulate_summaries_json(run: CompiledRun) -> str:
-    return json.dumps(export_results(run, "summary"))
-
-
 def simulate_events(run: CompiledRun) -> EventLog:
     """Dense canonical frames without the forensic journal."""
 
