@@ -49,7 +49,7 @@ flowchart TB
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>provider research and captures first"]:::active
     T3["Deferred product work<br/>trajectory search and lookup<br/>later prioritization"]:::future
-    PR["P0 behavior, independent<br/>proxy rollout survivability"]:::active
+    PR["Remaining deployment acceptance<br/>egress safety image + two staging replicas<br/>bounded drain and watch-loss proof"]:::active
     PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
@@ -126,6 +126,24 @@ the complete target and command. The executor code, rather than runtime configur
 Haku Console migration is split: Agent/conversation management and tool-call/approval management
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
+
+### `PR` — egress rollout acceptance
+
+The remaining work is delivery and live evidence, not another diagnostic history store, binding
+status controller, or leader election. Runtime contracts belong in the [egress specification](../egress/SPEC.md).
+
+- Merge and publish the read-only-informer/freshness/drain proxy and compatible app images. Verify
+  every old proxy retires **before** removing the shared CRD status schema and status-patch RBAC;
+  old informers fail their task group when a status patch is rejected.
+- Verify the database and per-Pod migration init container, and clear the egress Flux dependency
+  gates; then deliver staging's
+  two replicas with RollingUpdate `maxUnavailable: 1`/`maxSurge: 1`, PDB `minAvailable: 1`, hostname
+  spread and 60-second termination grace. Testing stays at one replica.
+- Observe two ready Service endpoints on the safety image, shared committed decisions, a rollout
+  retaining an available endpoint, and bounded admitted-stream completion/interruption. Exercise
+  revocation/watch staleness on an already-open connection without replaying side-effecting requests.
+- Remove this entry only after deployed acceptance. PDBs do not protect against involuntary loss,
+  independent watches do not provide linearizable revocation, and existing TCP streams do not migrate.
 
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 

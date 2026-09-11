@@ -24,8 +24,6 @@ def test_service_routes_rules_to_the_separate_declared_listener() -> None:
     http = one(p for p in service["ports"] if p["port"] == 80)
     proxy = one(p for p in service["ports"] if p["port"] == 8888)
 
-    assert deployment["replicas"] == 1
-    assert deployment["strategy"]["type"] == "Recreate"
     assert service["selector"].items() <= pod["metadata"]["labels"].items()
     assert ports[http["targetPort"]] not in (ports[proxy["targetPort"]], ports["admin"])
     assert f"--agent-api-port={ports[http['targetPort']]}" in container["args"]
@@ -66,6 +64,26 @@ def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_cre
     assert rule["paths"] == ["/v1/rules"]
     assert rule["clusterInternal"] is True
     assert config["agent_egress_rules_url"] == f"http://{one(rule['hosts'])}{one(rule['paths'])}"
+
+
+def test_staging_egress_retains_one_available_replica_during_voluntary_changes() -> None:
+    deployment = manifest("egress/deployment-agentplane-egress.yaml")["spec"]
+    budget = manifest("egress/poddisruptionbudget-agentplane-egress.yaml")["spec"]
+    pod = deployment["template"]
+    assert deployment["replicas"] == 2  # Staging capacity requested by the operator.
+    assert deployment["strategy"]["type"] == "RollingUpdate"
+    rolling = deployment["strategy"]["rollingUpdate"]
+    assert deployment["replicas"] - rolling["maxUnavailable"] >= budget["minAvailable"] == 1
+    assert rolling["maxSurge"] == 1
+    assert budget["selector"] == deployment["selector"]
+    for spread in pod["spec"]["topologySpreadConstraints"]:
+        assert spread["labelSelector"] == deployment["selector"]
+        assert spread["topologyKey"] == "kubernetes.io/hostname"
+    assert pod["spec"]["terminationGracePeriodSeconds"] >= 60
+    container = one(c for c in pod["spec"]["containers"] if c["name"] == "proxy")
+    assert container["readinessProbe"]["httpGet"]["path"] == "/healthz"
+    assert container["livenessProbe"]["httpGet"]["path"] == "/livez"
+    assert "poddisruptionbudget-agentplane-egress.yaml" in manifest("egress/kustomization.yaml")["resources"]
 
 
 if __name__ == "__main__":
