@@ -492,6 +492,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
                 "executor_kind": "mcp",
                 "executor_description": "Connected as Rai's GitHub account.",
                 "available": True,
+                "health": None,
                 "actions": [
                     {
                         "group": "github",

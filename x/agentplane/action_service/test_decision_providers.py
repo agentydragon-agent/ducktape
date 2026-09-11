@@ -36,6 +36,7 @@ from x.agentplane.action_service.models import (
     Verdict,
 )
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError
+from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 
 CALLER = Principal(issuer="kubernetes-sandbox", subject="agentplane-staging:sandbox-a-uid", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
@@ -484,6 +485,7 @@ async def fixture_mcp_executor(fixture_catalog: ActionCatalog) -> AsyncIterator[
     executor = McpActionGroupExecutor("test_fixture", fixture_catalog.groups["test_fixture"], server)
     await executor.start()
     try:
+        await wait_available(fixture_catalog.groups["test_fixture"])
         yield executor
     finally:
         await executor.close()

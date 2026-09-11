@@ -23,6 +23,7 @@ from x.agentplane.action_service.database_migrate import apply_migrations
 from x.agentplane.action_service.db import make_engine
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
+from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 
 # SQLAlchemy loads these dialects from URLs; Gazelle cannot infer them.
 # gazelle:include_dep @pypi//asyncpg
@@ -119,6 +120,7 @@ async def mcp_executor(echo_catalog: ActionCatalog) -> AsyncIterator[McpActionGr
     executor = McpActionGroupExecutor("agentplane", echo_catalog.groups["agentplane"], server)
     await executor.start()
     try:
+        await wait_available(echo_catalog.groups["agentplane"])
         yield executor
     finally:
         await executor.close()
