@@ -9,5 +9,5 @@ resources:
 configMapGenerator:
   - name: agentplane-ssh-mcp-config
     files:
-      - settings.yaml=./settings.txt
+      - settings.yaml
       - known_hosts
