@@ -1,6 +1,5 @@
 """Current held-bond facts and compact carrying principal through real Python batches."""
 
-import json
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Literal
@@ -10,9 +9,9 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey
+from finance.augur.sim import configured
 from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.configured import simulate_dense_json
 from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
 from finance.augur.sim.results import BondSeries, Finished, Paid, RejectedAction, Rollout
 from finance.augur.sim.scenario import BondHolding, Currency
@@ -229,13 +228,14 @@ def test_compiled_fixed_coupon_funds_both_controls(
         ]
 
     [actor] = execute(case, spend, "dense")
-    [configured] = json.loads(simulate_dense_json(case.compiled_run))["rollouts"]
+    [configured_run] = configured.execute(case.compiled_run, "dense")
+    assert configured_run.financial is not None
     expected = [(period, coupon, 0), (2 * period, coupon, face)] if coupon else [(2 * period, 0, face)]
     assert actor.trace is not None
     assert [(row.month, row.coupon, row.redemption) for row in actor.trace.bond_cashflows] == expected
     assert all(row.accretion == 0 for row in actor.trace.bond_cashflows)
-    assert [(row["month"], row["coupon"], row["redemption"]) for row in configured["bond_cashflows"]] == expected
-    assert all(row["accretion"] == 0 for row in configured["bond_cashflows"])
+    assert [(row.month, row.coupon, row.redemption) for row in configured_run.financial.bond_cashflows] == expected
+    assert all(row.accretion == 0 for row in configured_run.financial.bond_cashflows)
     assert actor.stop is None
     assert sum(row.receipt.amount_requested for row in actor.summary.payments) == face + 2 * coupon
     assert actor.summary.cash[0].values == [0] * (2 * period + 2)

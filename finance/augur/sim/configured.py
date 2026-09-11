@@ -4,7 +4,6 @@ This preserves the configured consumers' financial ordering, without giving the
 financial kernel another policy or population loop.
 """
 
-import json
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any
@@ -163,10 +162,6 @@ def export_results(run: CompiledRun, capture: Capture) -> dict[str, Any]:
     if capture == "summary":
         return {"schema_version": run._schema_version, "rollouts": rollouts}
     return {"schema_version": run._schema_version, "rollouts": rollouts, "event_frames": frames}
-
-
-def simulate_dense_json(run: CompiledRun) -> str:
-    return json.dumps(export_results(run, "dense"))
 
 
 def simulate_events(run: CompiledRun) -> EventLog:
