@@ -536,7 +536,7 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
     await service.start()
     client = await _client(service, catalog=echo_catalog)
     try:
-        for group, name in [("missing", "echo"), ("agentplane", "missing"), ("unbound", "echo"), ("offline", "echo")]:
+        for group, name in [("missing", "echo"), ("agentplane", "missing"), ("unbound", "echo")]:
             response = await client.post(
                 "/v1/action-requests",
                 json={"idempotency_key": group, "action": {"group": group, "name": name}, "arguments": {}},
@@ -544,6 +544,13 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
             )
             assert response.status_code == 422
             assert "unsupported group/action" in response.text
+        offline = await client.post(
+            "/v1/action-requests",
+            json={"idempotency_key": "offline", "action": {"group": "offline", "name": "echo"}, "arguments": {}},
+            headers=_workload("workload-a"),
+        )
+        assert offline.status_code == 503
+        assert "temporarily unavailable" in offline.text
         for malformed in ["agentplane.echo", "agentplane:v0.echo", {"group": "agentplane", "name": "echo.extra"}]:
             response = await client.post(
                 "/v1/action-requests",

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import traceback
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
@@ -21,7 +21,6 @@ import pytest
 import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
-from httpx import HTTPStatusError
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -49,6 +48,7 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
+from x.agentplane.action_service.test_fixtures.lifecycle import wait_available, wait_retry
 
 
 class FakeMcpServer:
@@ -151,14 +151,10 @@ async def executor(http_group: ActionGroup, fake_server: FakeMcpServer) -> Async
     executor = McpActionGroupExecutor.from_group("remote", http_group, catalog_refresh_interval=timedelta(hours=1))
     try:
         await executor.start()
+        await wait_available(http_group)
         yield executor
     finally:
-        if fake_server.list_unavailable or fake_server.call_unavailable:
-            # The pinned client re-raises its terminal HTTP failure when joining the session task.
-            with pytest.raises(HTTPStatusError, match="503 Service Unavailable"):
-                await executor.close()
-        else:
-            await executor.close()
+        await executor.close()
 
 
 @pytest.fixture
@@ -182,6 +178,7 @@ async def test_http_session_discovery_call_and_shutdown(
     executor = McpActionGroupExecutor.from_group("remote", http_group)
     try:
         await executor.start()
+        await wait_available(http_group)
         assert http_group.available
         assert set(http_group.actions) == {"echo"}
         assert http_group.actions["echo"].description == "Echo text over HTTP."
@@ -388,23 +385,24 @@ async def test_invalid_live_schema_refuses_before_call(
 
 
 @pytest.mark.parametrize("failure", ["unavailable", "invalid_schema"])
-async def test_runtime_rejects_remote_discovery_without_leaking_transport(
+async def test_runtime_serves_unavailable_group_and_recovers_without_restart(
     http_group: ActionGroup, fake_server: FakeMcpServer, failure: str
 ) -> None:
     if failure == "unavailable":
         fake_server.list_unavailable = True
     else:
         fake_server.tools[0]["inputSchema"] = {"type": "test-invalid-type"}
-    with pytest.raises(RuntimeError) as error:
-        async with running_executor(ActionCatalog(groups={"remote": http_group})):
-            pytest.fail("unavailable remote was served")
-    rendered = "".join(traceback.format_exception(error.value))
-    assert "ActionGroup 'remote'" in rendered
-    assert str(http_group.executor.config["url"]) not in rendered
-    assert "HTTPStatusError" not in rendered
-    assert not http_group.available
-    assert http_group.actions == {}
-    assert fake_server.calls == []
+    async with running_executor(ActionCatalog(groups={"remote": http_group})):
+        assert not http_group.available
+        await wait_retry(http_group)
+        assert http_group.health is not None
+        assert http_group.actions == {}
+        assert str(http_group.executor.config["url"]) not in http_group.health.model_dump_json()
+        assert fake_server.calls == []
+        fake_server.list_unavailable = False
+        fake_server.tools[0]["inputSchema"] = {"type": "object"}
+        await wait_available(http_group)
+        assert set(http_group.actions) == {"echo"}
 
 
 @pytest.mark.parametrize("outcome", ["success", "tool_error", "unknown", "schema_mismatch", "invalid_schema"])
@@ -489,6 +487,39 @@ async def test_production_http_composition_one_execution_no_replay(
         else:
             await async_main(settings)
     assert not any(task.get_name().startswith("mcp-executor-refresh-") for task in asyncio.all_tasks())
+
+
+async def test_static_credential_mount_recovers(http_group: ActionGroup, tmp_path: Path) -> None:
+    token_file = tmp_path / "bearer"
+    http_group.executor.config.update(auth="static_bearer", bearer_file=str(token_file))
+    async with running_executor(ActionCatalog(groups={"remote": http_group})):
+        await wait_retry(http_group)
+        assert http_group.health is not None
+        assert not http_group.available
+        token_file.write_text("test-only-mounted-token")
+        await wait_available(http_group)
+        assert set(http_group.actions) == {"echo"}
+
+
+async def test_established_http_failure_reconnects_fresh_session(
+    executor: McpActionGroupExecutor,
+    http_group: ActionGroup,
+    fake_server: FakeMcpServer,
+    execution_request: ExecutionRequest,
+    execution_lease: ExecutionLease,
+) -> None:
+    old = executor._connection
+    fake_server.list_unavailable = True
+    result = await executor.execute(execution_request, execution_lease)
+    assert result.state is ExecutionState.FAILED
+    assert fake_server.calls == []
+    assert not http_group.available
+    fake_server.list_unavailable = False
+    await wait_available(http_group)
+    assert executor._connection is not old
+    assert sum(post["method"] == "initialize" for post in fake_server.posts) >= 2
+    assert (await executor.execute(execution_request, execution_lease)).state is ExecutionState.SUCCEEDED
+    assert len(fake_server.calls) == 1
 
 
 if __name__ == "__main__":

@@ -152,6 +152,7 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
 @pytest.mark.parametrize(
     "invalidate", ["revoke", "disable", "remove", "missing_authority", "reconnect_same", "reconnect_other"]
 )
+@pytest.mark.parametrize("available", [True, False])
 async def test_original_authority_is_rechecked_before_dispatch_without_rewriting_decision(
     engine: AsyncEngine,
     authority: ConnectionAuthority,
@@ -159,6 +160,7 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
     grant: Grant,
     envelope: ActionRequestInput,
     invalidate: str,
+    available: bool,
 ) -> None:
     request, _ = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
     allowed = await allow(store, request)
@@ -185,7 +187,12 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
     restarted = ActionStore(
         make_sessionmaker(engine), external_grants=None if invalidate == "missing_authority" else authority
     )
-    assert await restarted.claim_execution(request.id, executor_id="worker", lease_duration=LEASE_DURATION) is None
+    assert (
+        await restarted.claim_execution(
+            request.id, executor_id="worker", lease_duration=LEASE_DURATION, can_dispatch=lambda identity: available
+        )
+        is None
+    )
     failed = await restarted.get(request.id, OPERATOR)
     assert failed.state is ActionState.FAILED
     assert failed.decision == allowed.decision
@@ -200,7 +207,12 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
         ActionState.ALLOWED,
         ActionState.FAILED,
     ]
-    assert await restarted.claim_execution(request.id, executor_id="worker", lease_duration=LEASE_DURATION) is None
+    assert (
+        await restarted.claim_execution(
+            request.id, executor_id="worker", lease_duration=LEASE_DURATION, can_dispatch=lambda identity: available
+        )
+        is None
+    )
     assert await restarted.pending_dispatches() == []
 
 

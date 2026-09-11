@@ -33,6 +33,7 @@ py_library(
         "@pypi//jsonschema",
         "@pypi//mcp",
         "@pypi//pydantic",
+        "@pypi//tenacity",
     ],
 )
 
@@ -322,6 +323,7 @@ py_test(
         ":service",
         "//:conftest",
         "//util/bazel:runfiles",
+        "//x/agentplane/action_service/test_fixtures:lifecycle",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -395,7 +397,6 @@ py_library(
         ":catalog",
         ":mcp_executor",
         ":mcp_linkage",
-        ":models",
         "@pypi//pydantic",
     ],
 )
@@ -421,6 +422,7 @@ py_test(
         ":updates",
         "//:conftest",
         "//util/bazel:runfiles",
+        "//x/agentplane/action_service/test_fixtures:lifecycle",
         "//x/agentplane/sandbox_auth:http",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
@@ -450,6 +452,7 @@ py_test(
         ":service",
         "//:conftest",
         "//util/testing:asgi",
+        "//x/agentplane/action_service/test_fixtures:lifecycle",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pydantic",

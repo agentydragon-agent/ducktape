@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID, uuid4
@@ -585,7 +585,12 @@ class ActionStore:
             )
 
     async def claim_execution(
-        self, request_id: UUID, *, executor_id: str, lease_duration: timedelta
+        self,
+        request_id: UUID,
+        *,
+        executor_id: str,
+        lease_duration: timedelta,
+        can_dispatch: Callable[[ActionIdentity], bool] | None = None,
     ) -> ExecutionClaim | None:
         """Atomically reserve the only execution and grant its first lease window."""
         async with self._sessions.begin() as session:
@@ -613,6 +618,9 @@ class ActionStore:
                 row.version += 1
                 row.updated_at = now
                 _record_event(session, row, now)
+                return None
+            # Authority is checked even during outages. Replica-local availability is not stored.
+            if can_dispatch is not None and not can_dispatch(ActionIdentity.model_validate(row.action)):
                 return None
             lease_token = uuid4()
             lease_expires_at = now + lease_duration

@@ -7,6 +7,7 @@ import os
 import signal
 import sys
 import textwrap
+from datetime import timedelta
 from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -42,6 +43,7 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, UnsupportedActionError
+from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
@@ -187,6 +189,8 @@ async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionL
     with patch.object(McpActionGroupExecutor, "from_group", side_effect=lambda key, group: adapters[key]):
         async with running_executor(catalog) as executors:
             assert set(executors) == {"one", "two"}
+            for group in catalog.groups.values():
+                await wait_available(group)
             assert all(set(group.actions) == {"owner"} for group in catalog.groups.values())
             for key in servers:
                 result = await executors[key].execute(
@@ -204,7 +208,7 @@ async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionL
             assert catalog.groups["one"].actions == {}
 
 
-@pytest.mark.parametrize("failure", ["connect", "discovery", "cancel"])
+@pytest.mark.parametrize("failure", ["connect", "cancel"])
 async def test_partial_startup_closes_current_and_previous_adapter(failure: str) -> None:
     catalog = ActionCatalog(groups={key: _group({"transport": "stdio", "command": "unused"}) for key in ("one", "two")})
     events: list[str] = []
@@ -263,6 +267,7 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
         service = cast(ActionService, app.state.action_service)
         catalog = cast(ActionCatalog, app.state.action_catalog)
         assert catalog.groups["demo"] is group
+        await wait_available(group)
         assert set(group.actions) == {"slow_echo"}
         with pytest.raises(UnsupportedActionError):
             await service.submit(
@@ -366,6 +371,7 @@ async def test_main_auto_allows_upstream_everything(db_url: str, everything_url:
         app = cast(FastAPI, server.config.app)
         service = cast(ActionService, app.state.action_service)
         catalog = cast(ActionCatalog, app.state.action_catalog)
+        await wait_available(catalog.groups["fixture"])
         assert "echo" in catalog.groups["fixture"].actions
         body = ActionRequestInput(
             idempotency_key="fixture-once",
@@ -430,6 +436,63 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
         await service.close()
     finally:
         signal.signal(signal.SIGTERM, original_handler)
+
+
+async def test_http_serves_before_optional_backend_connects(db_url: str, tmp_path: Path) -> None:
+    group = _group(
+        {
+            "transport": "streamable-http",
+            "url": "https://test-offline.invalid/mcp",
+            "auth": "static_bearer",
+            "bearer_file": str(tmp_path / "not-mounted"),
+        }
+    )
+    settings = Settings(database_url=db_url, action_groups={"offline": group}, _cli_parse_args=False)
+
+    async def serve(server: uvicorn.Server) -> None:
+        app = cast(FastAPI, server.config.app)
+        assert not group.available
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test-actions") as client:
+            assert (await client.get("/healthz")).status_code == 200
+            assert (await client.get("/readyz")).status_code == 200
+
+    with (
+        patch("x.agentplane.action_service.main.k8s_config.load_incluster_config"),
+        patch.object(uvicorn.Server, "serve", serve),
+    ):
+        await async_main(settings)
+
+
+async def test_hung_group_does_not_block_healthy_group_or_runtime(execution_lease: ExecutionLease) -> None:
+    healthy, blocked = FastMCP("healthy"), FastMCP("blocked")
+    entered = asyncio.Event()
+
+    @healthy.tool
+    def echo() -> str:
+        return "healthy"
+
+    groups = {key: _group({}) for key in ("healthy", "blocked")}
+    adapters = {
+        key: McpActionGroupExecutor(key, groups[key], peer, lifecycle_timeout=timedelta(milliseconds=50))
+        for key, peer in (("healthy", healthy), ("blocked", blocked))
+    }
+
+    async def hung_connect() -> None:
+        entered.set()
+        await asyncio.Event().wait()
+
+    with (
+        patch.object(McpActionGroupExecutor, "from_group", side_effect=lambda key, group: adapters[key]),
+        patch.object(adapters["blocked"], "_connect_client", hung_connect),
+    ):
+        async with running_executor(ActionCatalog(groups=groups)) as executors:
+            await wait_available(groups["healthy"])
+            await entered.wait()
+            result = await executors["healthy"].execute(
+                _request(ActionIdentity(group="healthy", name="echo")), execution_lease
+            )
+            assert result.state is ExecutionState.SUCCEEDED
+            assert not groups["blocked"].available
 
 
 if __name__ == "__main__":

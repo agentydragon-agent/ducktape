@@ -20,7 +20,13 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from x.agentplane.action_service.caller_auth import CallerAuthenticator
-from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity, Key, UnknownActionError
+from x.agentplane.action_service.catalog import (
+    ActionCatalog,
+    ActionIdentity,
+    ActionUnavailableError,
+    Key,
+    UnknownActionError,
+)
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError
 from x.agentplane.action_service.models import (
     ActionEventView,
@@ -112,7 +118,13 @@ def _tool_errors[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitab
             raise ToolError(
                 "Action request not found for this caller; use a request ID returned to this connection."
             ) from None
-        except (ActionConflictError, UnknownActionError, InvalidActionArgumentsError, UpdatesUnavailableError) as error:
+        except (
+            ActionUnavailableError,
+            ActionConflictError,
+            UnknownActionError,
+            InvalidActionArgumentsError,
+            UpdatesUnavailableError,
+        ) as error:
             raise ToolError(str(error)) from None
         except UnsupportedActionError:
             raise ToolError(
