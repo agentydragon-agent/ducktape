@@ -99,14 +99,8 @@ spec:
             # Keep provider, compaction, and agent-loop debug records on
             # stdout so cluster logging captures them in Loki. OpenClaw's
             # sensitive-value redaction remains enabled at its default.
-            # CLEANUP(added 2026-09-05): revert to debug and remove startup
-            #   tracing once the gateway's current hang is root-caused. Log
-            #   level controls ordinary detail; startup step timings have a
-            #   separate upstream gate.
             - name: OPENCLAW_LOG_LEVEL
-              value: trace
-            - name: OPENCLAW_GATEWAY_STARTUP_TRACE
-              value: "1"
+              value: debug
             # A placeholder, not a credential. The real PAT lives in the egress
             # proxy, which swaps this value into `Authorization` on the way out to
             # GitHub — in `Bearer <value>` and inside base64 `Basic user:<value>`
@@ -272,12 +266,27 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            # Heap snapshots and Node reports. Separate from /tmp so a capture
+            # outlives the Pod; see pvc-diagnostics.yaml. The path is half of a
+            # contract with --diagnostic-dir/--report-directory in
+            # openclaw/default.nix -- moving it there without moving it here
+            # leaves Node writing diagnostics into the container layer, where
+            # the next roll discards them.
+            - name: diagnostics
+              mountPath: /diag
           resources:
             requests:
               cpu: 250m
               memory: 768Mi
             limits:
               cpu: "2"
+              # openclaw/default.nix pins --max-old-space-size at exactly what
+              # this limit derives today, so the two move together. The
+              # gap is not slack: it carries native allocations, and it has to
+              # absorb the transient growth when V8 raises its own limit to
+              # serialize a near-heap-limit snapshot. Raising this silently
+              # raises nothing -- the heap is pinned -- but lowering it below
+              # that headroom turns a clean heap-limit abort into an OOMKill.
               memory: 4Gi
       volumes:
         - name: data
@@ -310,3 +319,6 @@ spec:
                   name: public-coder-agent-devbox-ssh-key
         - name: tmp
           emptyDir: {}
+        - name: diagnostics
+          persistentVolumeClaim:
+            claimName: public-coder-agent-diagnostics
