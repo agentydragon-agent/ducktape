@@ -5,10 +5,10 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.result import run_rust
 from finance.augur.sim.testing.behaviour import PropertyCarryingCostAcceptance, YearEndTaxAcceptance
 from finance.augur.sim.testing.case import Case, scenario
 from finance.augur.sim.testing.cash_conservation import CashConservationAcceptance
+from finance.augur.sim.testing.configured_result import run_case
 from finance.augur.sim.testing.deductions import DeductionAcceptance
 from finance.augur.sim.testing.engine_edges import HarvestAcceptance, ScanPhaseAcceptance, ValidationEdgeAcceptance
 from finance.augur.sim.testing.fixtures import SF, checking, home_purchase
@@ -28,112 +28,112 @@ from finance.augur.sim.testing.simulation_result import Backend
 from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
 
 
-class TestRustIncomeSources(IncomeSourceAcceptance):
+class TestConfiguredIncomeSources(IncomeSourceAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustPropertyStakes(PropertyStakeAcceptance):
+class TestConfiguredPropertyStakes(PropertyStakeAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustPrivateEquity(PrivateEquityAcceptance):
+class TestConfiguredPrivateEquity(PrivateEquityAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustDeductions(DeductionAcceptance):
+class TestConfiguredDeductions(DeductionAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustTargetAllocation(TargetAllocationAcceptance):
+class TestConfiguredTargetAllocation(TargetAllocationAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustCashConservation(CashConservationAcceptance):
+class TestConfiguredCashConservation(CashConservationAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustFrozenRollout(FrozenRolloutAcceptance):
+class TestConfiguredFrozenRollout(FrozenRolloutAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustRentalIncome(RentalIncomeAcceptance):
+class TestConfiguredRentalIncome(RentalIncomeAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustManagementFee(ManagementFeeAcceptance):
+class TestConfiguredManagementFee(ManagementFeeAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustRentalLifecycleCashflows(RentalLifecycleCashflowsAcceptance):
+class TestConfiguredRentalLifecycleCashflows(RentalLifecycleCashflowsAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustLeasingFee(LeasingFeeAcceptance):
+class TestConfiguredLeasingFee(LeasingFeeAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustRentalIncomeTaxation(RentalIncomeTaxationAcceptance):
+class TestConfiguredRentalIncomeTaxation(RentalIncomeTaxationAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustRentalCashflowReconciliation(RentalCashflowReconciliationAcceptance):
+class TestConfiguredRentalCashflowReconciliation(RentalCashflowReconciliationAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustYearEndTax(YearEndTaxAcceptance):
+class TestConfiguredYearEndTax(YearEndTaxAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustPropertyCarryingCost(PropertyCarryingCostAcceptance):
+class TestConfiguredPropertyCarryingCost(PropertyCarryingCostAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustScanPhase(ScanPhaseAcceptance):
+class TestConfiguredScanPhase(ScanPhaseAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustValidationEdge(ValidationEdgeAcceptance):
+class TestConfiguredValidationEdge(ValidationEdgeAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
-class TestRustHarvest(HarvestAcceptance):
+class TestConfiguredHarvest(HarvestAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
-        return run_rust
+        return run_case
 
 
 def test_derived_building_basis_uses_engine_rounding() -> None:
@@ -157,7 +157,7 @@ def test_derived_building_basis_uses_engine_rounding() -> None:
         rollout_count=1,
         locations={"sf": SF},
     )
-    result = run_rust(case)
+    result = run_case(case)
     assert result.property_details["building_basis_quanta"].to_list() == [8001]
 
 

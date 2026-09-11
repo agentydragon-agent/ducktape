@@ -15,6 +15,7 @@ from finance.augur.sim.prepared import (
     PreparedTlhPortfolio,
 )
 from finance.augur.sim.results import Finished
+from finance.augur.sim.scenario import InterestIncome
 from finance.augur.sim.session import ActionSession, _Session
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.sim.validation import validate
@@ -73,8 +74,23 @@ def test_distribution_requires_declared_pool_not_a_cash_account(run: CompiledRun
         to_account_id="checking",
         tax_character=(PreparedDistributionSlice(fraction_ppb=1_000_000_000, issuer_jurisdiction_id=None),),
     )
+    # Keep every unrelated distribution contract valid so only pool admission is tested.
+    valid_distribution = replace(distribution, holding_account_id=run.scenario.holding_pools[0].account_id)
+    payout = replace(
+        run.series[0], series_id="security_distribution:example-stock", values=(0,) * len(run.series[0].values)
+    )
+    valid = replace(
+        run,
+        scenario=replace(
+            run.scenario,
+            distributions=(valid_distribution,),
+            income_sources=(*run.scenario.income_sources, InterestIncome(issuer_jurisdiction_id=None)),
+        ),
+        series=(*run.series, payout),
+    )
+    validate(valid)
     with pytest.raises(ValueError, match="references no lots for example-household:missing-pool:example-stock"):
-        validate(replace(run, scenario=replace(run.scenario, distributions=(distribution,))))
+        validate(replace(valid, scenario=replace(valid.scenario, distributions=(distribution,))))
 
 
 def test_zero_price_is_allowed_only_for_exclusively_managed_assets(run: CompiledRun) -> None:

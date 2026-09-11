@@ -7,6 +7,7 @@ financial kernel another policy or population loop.
 import json
 from collections import defaultdict
 from copy import deepcopy
+from typing import Any
 
 import numpy as np
 from pydantic import JsonValue
@@ -142,7 +143,7 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
         session.close()
 
 
-def _export(run: CompiledRun, capture: Capture) -> str:
+def export_results(run: CompiledRun, capture: Capture) -> dict[str, Any]:
     completed = execute(run, capture)
     rollouts = []
     frames: dict[str, list[dict[str, JsonValue]]] = {}
@@ -160,20 +161,20 @@ def _export(run: CompiledRun, capture: Capture) -> str:
         else:
             raise RuntimeError("dense export requires financial capture")
     if capture == "summary":
-        return json.dumps({"schema_version": run._schema_version, "rollouts": rollouts})
-    return json.dumps({"schema_version": run._schema_version, "rollouts": rollouts, "event_frames": frames})
+        return {"schema_version": run._schema_version, "rollouts": rollouts}
+    return {"schema_version": run._schema_version, "rollouts": rollouts, "event_frames": frames}
 
 
 def simulate_dense_json(run: CompiledRun) -> str:
-    return _export(run, "dense")
+    return json.dumps(export_results(run, "dense"))
 
 
 def simulate_forensic_json(run: CompiledRun) -> str:
-    return _export(run, "forensic")
+    return json.dumps(export_results(run, "forensic"))
 
 
 def simulate_summaries_json(run: CompiledRun) -> str:
-    return _export(run, "summary")
+    return json.dumps(export_results(run, "summary"))
 
 
 def simulate_events(run: CompiledRun) -> EventLog:

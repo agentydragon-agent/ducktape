@@ -4,7 +4,6 @@ The tax schedule below is deliberately synthetic: 20% ordinary, 10% long-term,
 no deductions. Assertions pin accounting/timing, not statutory fidelity.
 """
 
-import json
 from dataclasses import replace
 from decimal import Decimal
 
@@ -14,11 +13,9 @@ import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityDistributionKey, SecurityKey
 from finance.augur.policy.configured_allocation import validate_prepared
-from finance.augur.rust.prepared import _decode, _encode
-from finance.augur.rust.result import RustResult, rust_result
 from finance.augur.sim import configured
+from finance.augur.sim.artifacts import decode_prepared, encode_prepared
 from finance.augur.sim.compiler.execution import compile_run
-from finance.augur.sim.configured import simulate_forensic_json
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
 from finance.augur.sim.prepared import CompiledRun, PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.scenario import (
@@ -37,6 +34,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.testing.case import Case, flat, levels, scenario
+from finance.augur.sim.testing.configured_result import ConfiguredResult, decode_result
 from finance.augur.sim.testing.fixtures import checking
 
 STOCK = SecurityKey(symbol="stock")
@@ -61,9 +59,9 @@ def _prepared(case: Case) -> CompiledRun:
     )
 
 
-def _run(case: Case) -> RustResult:
+def _run(case: Case) -> ConfiguredResult:
     # Reuse the existing configured output projection; no alternate test executor.
-    return rust_result(json.loads(simulate_forensic_json(_prepared(case))), case.scenario)
+    return decode_result(configured.export_results(_prepared(case), "forensic"), case.scenario)
 
 
 def _policy(
@@ -404,14 +402,16 @@ def test_imported_policy_is_rejected_before_any_world_is_constructed(
             series=(*run.series, PreparedSeries(series_id="inflation", snapshots=14, values=(10**9,) * 12 + (0, 0))),
         )
     policies = (policy, policy) if malformation == "duplicate_policy" else (policy,)
-    imported = _decode(_encode(replace(run, scenario=replace(run.scenario, _target_allocation_policies=policies))))
+    imported = decode_prepared(
+        encode_prepared(replace(run, scenario=replace(run.scenario, _target_allocation_policies=policies)))
+    )
 
     def unexpected_world(*args: object, **kwargs: object) -> None:
         raise AssertionError("invalid configured policy reached financial world construction")
 
     monkeypatch.setattr(configured, "_Session", unexpected_world)
     with pytest.raises(ValueError, match=error):
-        simulate_forensic_json(imported)
+        configured.export_results(imported, "forensic")
 
 
 def test_prepared_policy_keeps_exact_integer_indices_and_disabled_purchase_scope() -> None:
@@ -426,7 +426,7 @@ def test_prepared_policy_keeps_exact_integer_indices_and_disabled_purchase_scope
         scenario=replace(run.scenario, _target_allocation_policies=(policy,)),
         series=(*run.series, PreparedSeries(series_id="inflation", snapshots=14, values=(2**53 + 1,) * 14)),
     )
-    validate_prepared(_decode(_encode(run)))
+    validate_prepared(decode_prepared(encode_prepared(run)))
 
 
 if __name__ == "__main__":

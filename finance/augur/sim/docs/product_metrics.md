@@ -7,7 +7,7 @@ owes the product read model, including the observation boundary when execution s
 ## The split
 
 The configured product adapter calls the Python `sim/configured.py` loop, whose
-native steps capture base series and the per-rollout failure month. The common
+Python financial steps capture base series and the per-rollout failure month. The common
 action result instead supplies scoped numeric histories to
 `product/action_projection.py`. Both use `sim/metric_composition.py` and
 `sim/quantiles.py` for derived metrics, terminal reductions and percentile interpolation.

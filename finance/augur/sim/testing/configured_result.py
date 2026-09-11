@@ -1,18 +1,13 @@
-"""Rust's projection into the result shape every engine answers in.
+"""Project configured financial artifacts into the retained acceptance-suite channels.
 
-`sim/testing/simulation_result.py` declares that shape; this is the projection into it. It
-lives beside the engine rather than beside the shape, so `sim/` keeps its one-way dependency
-and a suite reading these channels pulls in the engine it is running and nothing else.
-
-Forensic rather than dense: a suite wants the balanced journal, which is this engine's
-double-entry invariant made checkable and is not part of the canonical shape.
+This is test-only projection, not another financial executor. The extra journal,
+property and tax views preserve the existing independent acceptance assertions.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import polars as pl
 
@@ -27,8 +22,8 @@ RATE_SCALE_PPB = 1_000_000_000
 
 
 @dataclass(frozen=True)
-class RustResult(SimulationResult):
-    """The canonical channels plus the ones only Rust keeps.
+class ConfiguredResult(SimulationResult):
+    """The canonical channels plus the ones only configured execution keeps.
 
     The journal and additional property/tax projections serve remaining configured acceptance readers.
     """
@@ -45,35 +40,35 @@ class RustResult(SimulationResult):
 
 
 def _sorted(rows: list[dict[str, Any]], schema: dict[str, Any], by: list[str]) -> pl.DataFrame:
-    """A frame only Rust produces, so its schema is declared at its one use."""
+    """A frame only configured execution produces, so its schema is declared at its one use."""
 
     return pl.DataFrame(rows, schema=schema).sort(by)
 
 
-def _rust_rows(rust: dict[str, Any], channel: str) -> list[tuple[int, int, dict[str, Any]]]:
+def _snapshot_rows(artifact: dict[str, Any], channel: str) -> list[tuple[int, int, dict[str, Any]]]:
     """Every `(rollout, month, record)` in one monthly-snapshot channel."""
 
     return [
         (rollout["rollout_id"], snapshot["month"], record)
-        for rollout in rust["rollouts"]
+        for rollout in artifact["rollouts"]
         for snapshot in rollout["months"]
         for record in snapshot[channel]
     ]
 
 
-def run_rust(case: Case) -> RustResult:
-    """Run the case on the Rust engine, in-process through the extension module."""
+def run_case(case: Case) -> ConfiguredResult:
+    """Run the case through the configured Python financial world."""
 
     # Forensic rather than dense: a suite wants the balanced journal, which is the
     # double-entry invariant made checkable and is not part of the canonical shape.
-    rust = cast(dict[str, Any], json.loads(configured.simulate_forensic_json(case.compiled_run)))
-    return rust_result(rust, case.scenario)
+    artifact = configured.export_results(case.compiled_run, "forensic")
+    return decode_result(artifact, case.scenario)
 
 
-def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
-    """Project a raw Rust output document into the canonical schemas.
+def decode_result(artifact: dict[str, Any], scenario: Scenario) -> ConfiguredResult:
+    """Project a raw configured execution output document into the canonical schemas.
 
-    The scenario is needed to know which accounts it declared: the Rust ledger also carries
+    The scenario is needed to know which accounts it declared: the configured execution ledger also carries
     the internal accounts a double-entry engine needs (opening equity, asset basis, realized
     gain, tax expense and liability, the external boundary), and none of those are cash the
     scenario declared.
@@ -89,7 +84,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "account_id": record["account"]["account_id"],
                 "balance_quanta": record["balance"],
             }
-            for rollout, month, record in _rust_rows(rust, "balances")
+            for rollout, month, record in _snapshot_rows(artifact, "balances")
             if (record["account"]["agent_id"], record["account"]["account_id"]) in declared_accounts
         ]
     )
@@ -107,7 +102,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "remaining_quantity_quanta": record["units_remaining"],
                 "quantity_scale": record["quantity_scale"],
             }
-            for rollout, month, record in _rust_rows(rust, "lots")
+            for rollout, month, record in _snapshot_rows(artifact, "lots")
         ]
     )
     lots = held_lots(lots)
@@ -120,7 +115,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "income_source": record["income_source"],
                 "income_quanta": record["income"],
             }
-            for rollout, month, record in _rust_rows(rust, "income")
+            for rollout, month, record in _snapshot_rows(artifact, "income")
         ]
     )
     capital_gains = CHANNEL["capital_gains"].build(
@@ -132,7 +127,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "classification": classification,
                 "gain_quanta": record[key],
             }
-            for rollout, month, record in _rust_rows(rust, "capital_gains")
+            for rollout, month, record in _snapshot_rows(artifact, "capital_gains")
             for classification, key in (("ltcg", "long_term_gain"), ("stcg", "short_term_gain"))
             if record[key] != 0
         ]
@@ -140,7 +135,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     # The canonical `tax_liabilities` channel is a change log: a row means the amount or the
     # active flag moved. Snapshots carry full state, so the projection takes the differences.
     liability_rows: list[dict[str, Any]] = []
-    for rollout in rust["rollouts"]:
+    for rollout in artifact["rollouts"]:
         previous: dict[tuple[str, str, int], tuple[int, bool]] = {}
         for snapshot in rollout["months"]:
             for record in snapshot["tax_liabilities"]:
@@ -169,7 +164,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "purchase_month_index": record["purchase_month"],
                 "adjusted_basis_quanta": record["adjusted_basis"],
             }
-            for rollout, month, record in _rust_rows(rust, "properties")
+            for rollout, month, record in _snapshot_rows(artifact, "properties")
             if record["active"]
         ]
     )
@@ -183,7 +178,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "contribution_used_quanta": record["contribution_used"],
                 "equity_ledger_quanta": record["equity_ledger"],
             }
-            for rollout, month, record in _rust_rows(rust, "properties")
+            for rollout, month, record in _snapshot_rows(artifact, "properties")
             if record["active"]
         ]
     )
@@ -205,7 +200,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "monthly_payment_quanta": record["monthly_payment"],
                 "interest_paid_ytd_quanta": record["interest_paid_ytd"],
             }
-            for rollout, month, record in _rust_rows(rust, "mortgages")
+            for rollout, month, record in _snapshot_rows(artifact, "mortgages")
             if record["active"]
         ]
     )
@@ -216,7 +211,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "status": "active" if rollout["failed_month"] is None else "failed_insufficient_cash",
                 "failed_month": rollout["failed_month"],
             }
-            for rollout in rust["rollouts"]
+            for rollout in artifact["rollouts"]
         ]
     )
     journal = _sorted(
@@ -227,7 +222,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "cause_id": entry["cause_id"],
                 "imbalance_quanta": sum(posting["amount"] for posting in entry["postings"]),
             }
-            for rollout in rust["rollouts"]
+            for rollout in artifact["rollouts"]
             for entry in rollout["journal"]
         ],
         {"rollout_id": pl.Int64, "month_index": pl.Int64, "cause_id": pl.String, "imbalance_quanta": pl.Int64},
@@ -235,7 +230,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
     )
 
     def detail_frame(channel: str, keys: dict[str, Any], money: tuple[str, ...], sort_by: list[str]) -> pl.DataFrame:
-        """One of Rust's own record streams, typed. `keys` maps column name to record field."""
+        """One of configured execution's own record streams, typed. `keys` maps column name to record field."""
 
         return _sorted(
             [
@@ -245,7 +240,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                     **{column: record[field] for column, field in keys.items()},
                     **{f"{name}_quanta": record[name] for name in money},
                 }
-                for rollout in rust["rollouts"]
+                for rollout in artifact["rollouts"]
                 for record in rollout[channel]
             ],
             {
@@ -302,7 +297,7 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
                 "cumulative_depreciation_quanta": record["cumulative_depreciation"],
                 "building_basis_quanta": record["building_basis"],
             }
-            for rollout, month, record in _rust_rows(rust, "properties")
+            for rollout, month, record in _snapshot_rows(artifact, "properties")
             if record["active"]
         ],
         {
@@ -316,9 +311,9 @@ def rust_result(rust: dict[str, Any], scenario: Scenario) -> RustResult:
         },
         ["rollout_id", "month_index", "property_id"],
     )
-    return RustResult(
-        backend="rust",
-        events=decode_serialized_event_log(rust),
+    return ConfiguredResult(
+        backend="artifact",
+        events=decode_serialized_event_log(artifact),
         cash=cash,
         lots=lots,
         income=income,

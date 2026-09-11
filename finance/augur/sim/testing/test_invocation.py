@@ -12,7 +12,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from finance.augur.model.series import InflationKey
-from finance.augur.rust.invocation import read_prepared_input, write_prepared_input
+from finance.augur.sim.artifacts import read_prepared_input, write_prepared_input
 from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.results import Finished

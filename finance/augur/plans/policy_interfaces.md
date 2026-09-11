@@ -43,7 +43,7 @@ policy rejects its absence. No policy receives the future sampled CPI path.
 
 `tax_records` above is still a target, not a field on the Python observation.
 CAP must expose actor-scoped recorded income, jurisdiction gain/carryforward
-facts and assessed outstanding liabilities from the existing native `ActorBooks`
+facts and assessed outstanding liabilities from the existing Python accounting records
 views when a tax-aware policy needs them. Current TLH value/basis and payment
 claims are not a substitute. Test visibility after the month's modeled losses,
 after a prior sale and across year-end/reset; exclude future assessments and
@@ -152,9 +152,8 @@ implicit decision to hold. Response coverage belongs to the same monthly batch,
 not a second callback or retry loop. This requirement is recorded for deferred PE
 work; the current action session does not implement it.
 
-The current session uses Rust financial steps. Prefer Python moves that improve
-the domain model and experiment composition; keep one canonical implementation
-and migrate callers atomically. GL and RUNTIME/GE are parked optimization work,
+The current session uses Python financial steps. Keep one canonical implementation
+and migrate callers atomically when improving domain composition. GL and RUNTIME/GE are parked optimization work,
 not gates on those moves. A rollout is stateful across time; parallel independent
 rollouts do not require a dense whole-future kernel or equally sized event lists.
 
@@ -196,8 +195,8 @@ without rebuilding Rust. A measured hot calculation may use a native kernel behi
 that same Python surface; its current Rust location alone is not justification.
 `policy/sleeves.py` already provides withdrawal/deposit/rebalance proposals with
 scoped FIFO selection, including zero targets and full exits. Cash-band and exact
-quantity calculations are also Python-callable. P12 deletes the old Rust
-calculations as their remaining configured callers migrate. Add another helper
+quantity calculations are also Python-callable. P12 retires remaining implicit
+configured-policy readers; it does not need another language port. Add another helper
 only for a concrete consumer, with exact rounding/scale tests.
 Do not grow a native-only helper API first or maintain Python/Rust twins as supported
 alternatives. Helpers use scoped observed lots, cash, prices and product terms; they
@@ -221,7 +220,7 @@ manufacture losses or trigger monthly harvesting.
 
 The Python session advances each component once before investor operations,
 including scheduled/configured redemptions, then settles its financial effects
-through private native-world financial calls. Candidate state is adopted only with accepted
+through direct Python-world financial calls. Candidate state is adopted only with accepted
 cash/tax settlement. Native code may retain immutable reporting statements, never
 a mirrored mutable position/basis book. No custom exception taxonomy, model
 callback handoff or generic managed-account API is needed.

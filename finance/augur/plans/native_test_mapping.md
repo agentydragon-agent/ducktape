@@ -1,8 +1,8 @@
 # Native financial test cutover map
 
-Inventory at `fe377a2764`. Mapped cases state their observed validation status.
-Keep this checklist until the integrated Python world and retained acceptance suites pass.
-The native counterpart remains development-only during this draft; remove it at cutover.
+Inventory of 95 declarations from baseline `fe377a2764`, all mapped below to
+Python coverage. Rust paths identify removed baseline code, not current imports.
+The Rust identifiers below refer to the removed baseline; the live counterparts are Python tests.
 
 Generated arithmetic properties use Hypothesis. Their primary rounding oracle multiplies
 the result back and checks distance and tie direction, not another division implementation.
@@ -62,8 +62,8 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - [x] `month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode` → `sim/test_world.py::test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode`
 - [x] `claim_views_keep_assembled_amount_identity_and_payer_scope` → `sim/test_observations.py::test_claim_views_keep_assembled_amount_identity_and_payer_scope`
 - [x] `rejects_invalid_fixture_metadata` → `sim/test_validation_contracts.py::test_rejects_invalid_fixture_metadata`
-- [x] `series_indexed_amounts_follow_rollout_specific_reset_boundaries` → `rust/indexed_payments_test.py::test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout`
-- [x] `series_indexed_amount_validation_rejects_invalid_paths` → `rust/indexed_payments_test.py::{test_series_indexed_amount_cannot_fire_before_base_month,test_series_indexed_amount_requires_external_series_coverage,test_series_indexed_amount_rejects_zero_base_level}`
+- [x] `series_indexed_amounts_follow_rollout_specific_reset_boundaries` → `sim/testing/indexed_payments_test.py::test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout`
+- [x] `series_indexed_amount_validation_rejects_invalid_paths` → `sim/testing/indexed_payments_test.py::{test_series_indexed_amount_cannot_fire_before_base_month,test_series_indexed_amount_requires_external_series_coverage,test_series_indexed_amount_rejects_zero_base_level}`
 - [x] `bond_principal_remains_until_redemption_event` → `sim/test_held_bonds.py::{test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon,test_stopped_bond_snapshot_uses_the_last_observed_index}`
 - [x] `nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts` → `sim/test_held_bonds.py::test_tips_deflation_changes_income_but_redemption_has_a_face_floor`
 - [x] `bond_validation_rejects_non_par_and_missing_index_paths` → `sim/test_validation_contracts.py::test_bond_validation_rejects_non_par_and_missing_index_paths`
@@ -76,7 +76,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - [x] `transfer_and_fifo_sale_remain_balanced` → `sim/test_world.py::test_transfer_and_fifo_sale_remain_balanced`
 - [x] `mid_horizon_property_mark_and_sale_share_the_purchase_anchor` → `sim/test_world_mortgages.py::test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor`
 - [x] `oversell_is_rejected_before_any_disposition` → `sim/test_holdings.py::test_oversell_is_rejected_before_any_disposition`
-- [x] `failure_stops_future_actions_and_preserves_the_observed_book` → `rust/obligations_test.py::test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_continues`
+- [x] `failure_stops_future_actions_and_preserves_the_observed_book` → `sim/testing/obligations_test.py::test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_continues`
 - [x] `same_source_recurring_obligations_settle_all_or_none` → `sim/test_payments.py::{test_grouped_funding_is_decided_before_incoming_claim_payments,test_funded_group_does_not_rescue_a_source_that_was_unfunded_at_preflight}`
 
 ## `rust/engine/trades_test.rs`
@@ -102,7 +102,7 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/execution.rs`
 
-- [x] `money_crosses_the_wire_only_as_an_integer` → `rust/test_invocation.py::{test_file_decode_rejects_invalid_prepared_facts,test_prepared_input_retains_original_path_cpi_and_selected_replay}`
+- [x] `money_crosses_the_wire_only_as_an_integer` → `sim/testing/test_invocation.py::{test_file_decode_rejects_invalid_prepared_facts,test_prepared_input_retains_original_path_cpi_and_selected_replay}`
 
 ## `rust/ledger.rs`
 
@@ -144,195 +144,23 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - `capital_gain_netting_reports_overflow` → `sim/test_tax.py::test_capital_gain_netting_reports_overflow` (passed in focused RBE run)
 - `rejects_negative_rule_amounts` → `sim/test_tax.py::test_rejects_negative_rule_amounts` (passed in focused RBE run)
 
-## Existing Python coverage
+## Retained coverage and evidence
 
-Retain and retarget every Python test in `rust/` and the existing `sim/` suites.
-No transport-only expectations have been dropped at this checkpoint.
+All 95 native declarations have Python counterparts above. Existing Python tests
+formerly under `rust/` are retained under `sim/testing/`; artifact helpers live
+in `sim/artifacts.py`. The native source, extension, stubs and private codecs are
+removed. This mapping preserves review traceability, not a second implementation.
 
-## Validation evidence
+- Money properties and ledger/mortgage/TLH controls:
+  [89156cfe](https://app.buildbuddy.io/invocation/89156cfe-8c37-456a-b927-7903cee4b966).
+- Tax assessment: [d1b76b65](https://app.buildbuddy.io/invocation/d1b76b65-08ae-436a-8930-832346db4712).
+- Actor/component/mortgage/PE ports and financial regression:
+  [c201954e](https://app.buildbuddy.io/invocation/c201954e-5805-4af4-9e46-6cf60626057e),
+  32 targets and 560 pytest cases, no failures/errors/skips.
+- Observation/admission/artifact ports:
+  [f8238d06](https://app.buildbuddy.io/invocation/f8238d06-3ba9-465d-8c5e-dbf2da4fe312).
+- Reconciled final-five tests with complete stopped-result/event immutability:
+  [a576392f](https://app.buildbuddy.io/invocation/a576392f-b4b0-4588-8281-de004dada587).
 
-- Money, ledger and existing mortgage/TLH suites: 70 pytest cases passed, with changed-library lint/typechecks, at [BuildBuddy](https://app.buildbuddy.io/invocation/89156cfe-8c37-456a-b927-7903cee4b966).
-- Tax assessment controls and generated dependency manifest passed, with tax-library lint/typechecks, at [BuildBuddy](https://app.buildbuddy.io/invocation/d1b76b65-08ae-436a-8930-832346db4712). Gazelle drift check also passed.
-
-Tax gains now have one canonical taxpayer record. The duplicate-jurisdiction overflow controls target that record and retain all cash/lot/tax/capture atomicity assertions.
-
-- Retained compiler/input contracts: 55 pytest cases passed at [BuildBuddy](https://app.buildbuddy.io/invocation/0a34f0f2-d56c-47e3-ae94-8d11f01c56bf).
-- Cash/payment/year-close controls and their libraries passed at [BuildBuddy](https://app.buildbuddy.io/invocation/57b7233a-b787-4259-8c4e-a3c64cbbd537).
-
-- Exact-lot trade and held-bond controls plus their library lint/typechecks passed at [BuildBuddy](https://app.buildbuddy.io/invocation/54d2654e-3061-471a-b1df-ff32a7e5fca1).
-
-## Integrated Python checkpoint
-
-`sim/session.py` constructs `sim/world.py` directly for action and configured execution.
-Live component effects, claims, observations and results are typed Python objects.
-Standalone Gazelle removes the session's native-extension dependency; a Bazel
-`somepath(//finance/augur/sim:session, //finance/augur/rust:simulator_ext)` query is empty.
-Native declarations above remain partially mapped; these acceptance passes do not
-complete the native-test port or authorize removing Rust yet.
-
-- Eight recovered/changed libraries (`capture`, `distributions`, `managed`,
-  `private_equity`, `property`, `world`, `session`, `configured`) pass lint/mypy:
-  [RBE build](https://app.buildbuddy.io/invocation/ed81a320-396f-47f0-a7b9-1e00906ac5aa).
-- Initial 12 test targets pass (seven freshly executed, five cached):
-  [RBE tests](https://app.buildbuddy.io/invocation/06ef28f6-30ec-4edd-82e1-b8759adcb452).
-  Targets: `rust:{action_test,obligations_test,transfers_test,public_sales_test}` and
-  `sim:{tlh_session_test,test_accounting,test_payments,test_tax_year,test_holdings,test_held_bonds,test_mortgage,tlh_test}`.
-- Configured allocation, mortgage and capture suites pass:
-  [RBE tests](https://app.buildbuddy.io/invocation/d71700aa-cd0f-42de-aebd-9ade4fee3154).
-  Targets: `sim:{configured_test,configured_allocation_test,configured_mortgage_test}`.
-  The initial run caught a stale test reference to `event_frames`; it now checks
-  the typed `events` field for the same absence in summary mode. Financial
-  assertions are unchanged.
-
-The retained financial validation checkpoint passed the remaining nine requested
-targets (including 158 backend cases), 14 prepared-input validation cases and 16
-TLH-session cases with changed-library lint/mypy at
-[BuildBuddy](https://app.buildbuddy.io/invocation/9e607de2-38c3-4e2b-ae2e-bf67dd0ff5b3).
-The explicit native ports below are separate evidence, not inferred from those
-acceptance passes. Finish the remaining 25 native declarations, remaining
-financial/product full suites and capture compatibility before deleting native
-bindings and legacy artifact codecs. The older 135-case evidence is not an
-integrated-world coverage claim.
-
-## Explicit actor/component/mortgage/PE port
-
-All **24/24 declarations** in these four native files now have named Python
-counterparts above, validated at [BuildBuddy](https://app.buildbuddy.io/invocation/8c006c23-65d1-454a-a4ff-448ff2f663a4).
-The inventory is **76/95 mapped**, with **19 pending**: 18 in `rust/engine/tests.rs`
-and one in `rust/execution.rs`. This is not completion of the full cutover.
-
-| Native section                                         | Declarations mapped | Python target                            |     Executed pytest cases |
-| ------------------------------------------------------ | ------------------: | ---------------------------------------- | ------------------------: |
-| Actors                                                 |               10/10 | `sim:test_world`                         |                        14 |
-| Components                                             |                 6/7 | `sim:test_managed`                       |                        18 |
-| Component zero/negative marks and ordinary quote scope |                 1/7 | `sim:validation_test` (named case above) | 1 reused and strengthened |
-| Mortgages                                              |                 2/2 | `sim:test_world_mortgages`               |                         4 |
-| PE recovery                                            |                 5/5 | `sim:test_private_equity`                |                         5 |
-
-The four new targets execute 41 pytest cases. The reused validation case now also
-checks the no-pool managed declaration and negative terminal component price;
-the complete 14-case validation target was run. The focused run additionally
-passes `sim:configured_mortgage_test` and explicit lint/mypy for
-`sim:{validation,property,session,world,managed,private_equity}`.
-
-Semantic adaptations to the direct Python APIs:
-
-- Component overflow targets the one canonical taxpayer record, not the retired
-  duplicate jurisdiction facts. Rejection fingerprints include cash, tax income
-  and gains, journals/counts, component marks/effects/counts, ordinary lots and
-  captured books.
-- Mortgage payoff takes no caller-supplied outstanding-principal scalar anymore.
-  The valid port pays 1,000 twice from the selected reserve and requires a 58,000
-  ledger payoff despite the servicing contract's 60,000 original principal.
-  Invalid effects test missing origination, missing/inactive/mismatched payoff
-  servicing contracts, and a 60,001 installment against 60,000 ledger debt, with
-  unchanged financial books. This preserves rejection/ledger authority without
-  reintroducing a second payoff balance or transport API.
-- Recovery tests drive the Python world's actual configured PE component, retain
-  reversed storage/FIFO order, mixed quantity scales, independent total proceeds
-  and basis expectations, and recovery of only the position left after a prior
-  forced sale. No native runner or parallel financial oracle is used.
-
-The explicit port exposed and corrected duplicate/missing holding-pool admission
-and missing/mismatched mortgage servicing admission; the failing and subsequent
-passing RBE runs are `c0082f0b-444c-4f99-ba4e-672178a47773`,
-`92c93f19-9327-4ba8-9ab8-1e73dfa2320b`, and the passing invocation above.
-
-## Broader financial regression
-
-**32/32 test targets, 560 pytest cases, zero failures/errors/skips**, with six
-explicit library lint/mypy targets, passed at
-[BuildBuddy](https://app.buildbuddy.io/invocation/c201954e-5805-4af4-9e46-6cf60626057e).
-Seventeen targets executed in that invocation; fifteen reused successful cache
-results. A [cached artifact retrieval](https://app.buildbuddy.io/invocation/ad9c7f5d-12c2-4286-a3de-726771cf88a9)
-downloaded only the pytest XML for exact counts; it is not an additional fresh test run.
-
-| Target                             | Cases |
-| ---------------------------------- | ----: |
-| `sim:configured_mortgage_test`     |     7 |
-| `sim:test_accounting`              |    18 |
-| `sim:test_held_bonds`              |     3 |
-| `sim:test_ledger`                  |     6 |
-| `sim:test_managed`                 |    18 |
-| `sim:test_money`                   |    32 |
-| `sim:test_mortgage`                |    15 |
-| `sim:test_payments`                |    19 |
-| `sim:test_private_equity`          |     5 |
-| `sim:test_tax`                     |    10 |
-| `sim:test_tax_year`                |     2 |
-| `sim:test_world`                   |    14 |
-| `sim:test_world_mortgages`         |     4 |
-| `sim:tlh_test`                     |    17 |
-| `sim:validation_test`              |    14 |
-| `rust:action_test`                 |    17 |
-| `rust:asset_sales_test`            |    12 |
-| `rust:backend_test`                |   158 |
-| `rust:bond_test`                   |    14 |
-| `rust:held_bond_test`              |    14 |
-| `rust:indexed_payments_test`       |     6 |
-| `rust:lot_basis_test`              |     4 |
-| `rust:obligations_test`            |    13 |
-| `rust:public_sales_test`           |    11 |
-| `rust:security_distributions_test` |    13 |
-| `rust:test_invocation`             |     7 |
-| `rust:transfers_test`              |     7 |
-| `sim:configured_allocation_test`   |    29 |
-| `sim:configured_test`              |    15 |
-| `sim:test_holdings`                |    37 |
-| `sim:test_results`                 |     3 |
-| `sim:tlh_session_test`             |    16 |
-
-## Reused exact behavior coverage — next bounded subset
-
-The next **6/6 native declarations** reuse direct Python tests whose assertions
-cover the native behavior without a native runner or a second financial oracle.
-The four exact targets were rerun at [BuildBuddy](https://app.buildbuddy.io/invocation/d674a60c-dba5-4e79-8a7f-bf3af45b9929);
-all four were successful cached results, so this is target-level rerun evidence,
-not a claim that those test actions freshly executed on this invocation:
-rollout-specific indexed reset boundaries and invalid path admission; bond
-principal through redemption, indexed accretion and face-floor redemption; a
-failed rollout's observed-book freeze and skipped future actions; and grouped
-same-source obligation preflight. The named tests were rerun as focused targets
-at [BuildBuddy](https://app.buildbuddy.io/invocation/d674a60c-dba5-4e79-8a7f-bf3af45b9929) before this
-mapping was checked in. Their existing names are retained because they already
-state the behavior under test.
-
-## Final native ports — admission and observations checkpoint
-
-**95/95 native declarations have named Python counterparts.** The final 14 mappings added above passed in
-[f8238d06](https://app.buildbuddy.io/invocation/f8238d06-3ba9-465d-8c5e-dbf2da4fe312):
-three freshly executed targets, `sim:{test_observations,test_validation_contracts}`
-and `rust:test_invocation`, plus explicit `sim:validation` lint/mypy.
-The new observation target also passed independently in
-[6463e472](https://app.buildbuddy.io/invocation/6463e472-05e5-4a5e-b0d0-03e08a78e0b6).
-
-Prepared-input controls exposed 13 rejection failures in
-[c9000f5b](https://app.buildbuddy.io/invocation/c9000f5b-45f0-40ce-8ede-ae615c85a228):
-currency metadata, transfer references and declared income sources, distribution
-splits/issuers, mixed lot scales, bond terms/index availability/issuers, and
-property location/funding terms. Admission now rejects these before constructing
-any world. The passing controls retain a valid anchor and immutable-input checks.
-The wire test corrupts the actual persisted prepared artifact with `100.0` and
-`100.5`; its positive control round-trips that artifact into an executed Python
-session. No raw JSON runtime entry point was introduced.
-
-The final five mappings above passed in
-[08d5dbdb](https://app.buildbuddy.io/invocation/08d5dbdb-9400-4e86-84f7-129373b83edc):
-`sim:test_world_mortgages` freshly executed and passed; `sim:test_world` and
-`sim:test_holdings` passed from their verified focused results, with the complete
-five-case behavior set also freshly exercised during the preceding focused runs.
-The new tests preserve rollout-independent opening books, tax-year boundaries and
-stopped capture for forensic/dense/summary modes; exact transfer/FIFO balances and
-journal trial balance; the purchase-month property valuation anchor through sale;
-and oversell rejection before any disposition. Native deletion and full-product
-validation remain the parent milestone.
-
-## Reconciled final-five validation
-
-The exact integrated test tree passed all four world/holdings/mortgage targets in
-[a576392f](https://app.buildbuddy.io/invocation/a576392f-b4b0-4588-8281-de004dada587).
-`test_world` freshly executed; the other three used their successful preceding
-results from [c24954e0](https://app.buildbuddy.io/invocation/c24954e0-a627-42c7-b30f-4c9adb17dea2).
-The stopped-result control compares every result field and exact event frames,
-copying the immutable frame mapping explicitly rather than relying on deepcopy
-of a mappingproxy. No financial expectation or capture mode was dropped.
+These are checkpoint-specific results. Full native-free consumer validation and
+its exact head are reported in the cutover PR rather than inferred from them.
