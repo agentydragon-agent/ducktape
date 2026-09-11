@@ -1,5 +1,5 @@
 # configMapGenerator input; not a standalone Kubernetes manifest (kubeconform-excluded).
-known_hosts_file: /etc/agentplane-ssh/known_hosts
+known_hosts_file: /etc/ssh-mcp/known_hosts
 command_timeout_seconds: 300
 connect_timeout_seconds: 10
 output_limit_bytes: 65536
@@ -9,7 +9,7 @@ max_concurrent_executions: 4
 targets:
   - host: wyrm2
     user: coder
-    identity_file: /etc/agentplane-ssh/keys/wyrm2-coder
+    identity_file: /etc/ssh-mcp/keys/wyrm2-coder
   - host: rugged
     user: coder
-    identity_file: /etc/agentplane-ssh/keys/rugged-coder
+    identity_file: /etc/ssh-mcp/keys/rugged-coder

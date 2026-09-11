@@ -1,19 +1,22 @@
-# Cluster-internal MCP backend. The Action Service is the only caller; SSH egress is
+# Cluster-internal MCP backend. Only haku-console and Agentplane staging are callers; SSH egress is
 # deliberately constrained by the target network policy once rugged/wyrm2 addresses are pinned.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-ssh-mcp
-  namespace: agentplane-testing
+  name: ssh-mcp
+  namespace: ssh-mcp
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: agentplane-ssh-mcp
+      app.kubernetes.io/name: ssh-mcp
   ingress:
     - fromEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
             app.kubernetes.io/name: agentplane-actions
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
+            app.kubernetes.io/name: haku-console
       toPorts:
         - ports:
             - port: "8080"
