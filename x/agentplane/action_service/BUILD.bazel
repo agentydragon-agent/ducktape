@@ -846,7 +846,25 @@ py_test(
 
 py_test(
     name = "test_mcp_linkage",
+    size = "medium",
     srcs = ["test_mcp_linkage.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":db",
+        ":mcp_linkage",
+        ":models",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_mcp_linkage_callback",
+    srcs = ["test_mcp_linkage_callback.py"],
     requires_docker = True,
     deps = [
         ":api",
