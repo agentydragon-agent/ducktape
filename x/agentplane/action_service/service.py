@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID, uuid4
@@ -125,10 +125,12 @@ class ActionService:
         executor_health_timeout: timedelta = DEFAULT_EXECUTOR_HEALTH_TIMEOUT,
         dispatch_poll_interval: timedelta = DEFAULT_DISPATCH_POLL_INTERVAL,
         drain_timeout: timedelta = DEFAULT_DRAIN_TIMEOUT,
+        on_drain: Callable[[], None] | None = None,
         stop_timeout: timedelta = DEFAULT_STOP_TIMEOUT,
     ) -> None:
         if lease_duration <= timedelta(0) or drain_timeout < timedelta(0) or stop_timeout <= timedelta(0):
             raise ValueError("lease/stop timeouts must be positive and drain timeout nonnegative")
+        self._on_drain = on_drain
         self._drain_timeout = drain_timeout
         self._stop_timeout = stop_timeout
         self._drain_deadline: float | None = None
@@ -172,6 +174,8 @@ class ActionService:
         # Claims already awaiting the database remain in _tasks and belong to the drain.
         if self._drain_deadline is None:
             self._drain_deadline = asyncio.get_running_loop().time() + self._drain_timeout.total_seconds()
+            if self._on_drain is not None:
+                self._on_drain()
             self._close_task = asyncio.create_task(self._close(), name="action-service-drain")
 
     async def close(self) -> None:
@@ -369,11 +373,21 @@ class ActionService:
                 logger.warning("lease sweep failed; will retry", exc_info=True)
             await asyncio.sleep(self._lease_sweep_interval.total_seconds())
 
+    def _can_dispatch(self, identity: ActionIdentity) -> bool:
+        if self.draining:
+            return False
+        group = self._catalog.groups.get(identity.group)
+        # Removed groups/actions are terminal, not an outage to park indefinitely.
+        return group is None or identity.group not in self._executors or group.available
+
     async def _dispatch_once(self, request_id: UUID) -> None:
         if self.draining:
             return
         claim = await self._store.claim_execution(
-            request_id, executor_id=self._executor_id, lease_duration=self._lease_duration
+            request_id,
+            executor_id=self._executor_id,
+            lease_duration=self._lease_duration,
+            can_dispatch=self._can_dispatch,
         )
         if claim is None:
             return

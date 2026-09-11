@@ -166,8 +166,17 @@ async def async_main(settings: Settings) -> None:
             )
             stack.push_async_callback(push_notifier.close)
             push_notifier.start()
+
+        def drain_backends() -> None:
+            for executor in executors.values():
+                executor.begin_drain()
+
         service = ActionService(
-            ActionStore(make_sessionmaker(engine), external_grants=connections), catalog, executors, providers=providers
+            ActionStore(make_sessionmaker(engine), external_grants=connections),
+            catalog,
+            executors,
+            providers=providers,
+            on_drain=drain_backends,
         )
         # Stop dispatch/lease tasks before closing the adapters, including failed service startup.
         stack.push_async_callback(service.close)

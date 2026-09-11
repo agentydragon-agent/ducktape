@@ -129,3 +129,16 @@ replica, which keeps execution and executor liveness active while waiting for it
 Completed work is persisted before adapters and database connections close. The drain has a bounded
 budget; forced cancellation records uncertainty when storage is available, otherwise lease expiry
 recovers it. Claimed work is never automatically replayed.
+
+## Optional MCP backends
+
+Backend availability is independent of Action Service readiness and HTTP/OAuth availability.
+Malformed local bindings fail startup; unavailable peers, runtime credentials, linkage, and
+invalid discovered catalogs affect only their group and recover without a service restart.
+Discovery exposes replica-local, credential-safe lifecycle diagnostics, never stale runnable tools.
+
+Approved work remains durably unclaimed during temporary backend outages. Revoked authority
+still becomes terminal; removed Actions and incompatible schemas are not treated as outages.
+Execution pins one connection generation and never automatically replays an ambiguous call.
+Normal tool errors fail only the Action. Draining stops new claims and reconnects while keeping
+in-flight execution leases and connections through bounded result persistence.

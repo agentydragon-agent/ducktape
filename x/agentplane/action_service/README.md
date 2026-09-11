@@ -264,20 +264,29 @@ executor, never a production default or factory option.
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
 path aborts startup rather than silently selecting that empty catalog. Missing bindings and unsupported kinds fail
 settings validation without echoing input values. All bindings are validated before any server is
-launched. Credentialless MCP groups must connect and complete initial `tools/list` before HTTP
-serving or pending-request recovery; a failure aborts startup. OAuth-linked groups are different:
-an unlinked or expired provider starts unavailable, and its supervisor connects only after the
-shared linkage authority reports a current link. It keeps the group unavailable across connection,
-catalog, and authorization failures and creates a fresh FastMCP client for the next connection.
-The HTTP auth hook resolves the current linkage token for every request, so ordinary token refresh
-does not require restarting the service. Operators manage linkage at `GET /v1/operator/mcp-servers`
+launched. All MCP groups start unavailable with independent supervisors; HTTP startup does not
+await a backend. Connection/initialization and discovery are bounded to 15 seconds; retries use
+exponential jitter (up to 30 seconds), reset after 30 seconds of stable availability. Mounted
+credentials and OAuth linkage recover without restarting the service. Invalid catalogs clear
+offered Actions and retry on the connected session; transport failures replace the client and
+retire that generation without cancelling concurrent calls. Connected sessions refresh periodically
+and on tools-list/linkage notifications. Group diagnostics expose replica-local lifecycle, safe
+reason, last successful discovery, consecutive failures, and next retry time.
+
+Authorized pending dispatches stay unclaimed while their group is unavailable; the existing
+recovery loop retries eligibility. Canonical grant checks precede the availability gate under
+the claim's row locks, so revocation still fails unstarted work. Removed groups/Actions and
+incompatible schemas remain terminal. New requests to known unavailable groups return an explicit
+unavailable error (HTTP 503), not unknown-action. Replica-local health is never stored in Postgres.
+
+Operators manage linkage at `GET /v1/operator/mcp-servers`
 (every configured server's status), `GET /v1/operator/mcp-servers/{server_id}/linkage`, and
 `POST .../linkage/start` and `POST .../linkage/disconnect`; the provider returns to the
 unauthenticated `GET /v1/mcp-linkage/callback?state&code`, which accepts only an unconsumed,
 unexpired flow matching `state`. Startup unwinds already-opened adapters, including a
-partially started adapter; shutdown stops service tasks before closing MCP clients/refresh tasks,
-then Kubernetes and database resources. After startup, catalog-refresh failures retain the landed
-adapter's unavailable-and-retry behavior.
+partially started adapter. Drain fences claims and reconnects but retains published connections
+through execution completion persistence. Shutdown joins supervisors and bounded connection cleanup
+after draining service tasks, then closes Kubernetes and database resources.
 
 Requests, execution payloads and durable rows use `action: {"group": "everything", "name": "echo"}`.
 The fields remain separate throughout discovery, validation and dispatch; no concatenated identity

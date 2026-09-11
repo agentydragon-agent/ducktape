@@ -19,7 +19,13 @@ from starlette.routing import Route
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
 from x.agentplane.action_service.caller_auth import CallerAuthenticator
-from x.agentplane.action_service.catalog import ActionCatalog, ActionGroupView, ActionView, UnknownActionError
+from x.agentplane.action_service.catalog import (
+    ActionCatalog,
+    ActionGroupView,
+    ActionUnavailableError,
+    ActionView,
+    UnknownActionError,
+)
 from x.agentplane.action_service.connections import (
     Connection,
     ConnectionAuthority,
@@ -177,6 +183,11 @@ def create_app(
     async def not_found(request: Request, error: ActionNotFoundError) -> JSONResponse:
         del request, error
         return _error(status.HTTP_404_NOT_FOUND, "action request not found")
+
+    @app.exception_handler(ActionUnavailableError)
+    async def unavailable_action(request: Request, error: ActionUnavailableError) -> JSONResponse:
+        del request, error
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "ActionGroup is temporarily unavailable")
 
     @app.exception_handler(UnknownActionError)
     async def unknown_action(request: Request, error: UnknownActionError) -> JSONResponse:

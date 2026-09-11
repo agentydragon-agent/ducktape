@@ -8,3 +8,12 @@ py_library(
     srcs = ["fake_mcp_server.py"],
     deps = ["@pypi//fastmcp_slim"],
 )
+
+py_library(
+    name = "lifecycle",
+    srcs = ["lifecycle.py"],
+    deps = [
+        "//x/agentplane/action_service:catalog",
+        "@pypi//tenacity",
+    ],
+)
