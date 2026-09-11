@@ -32,12 +32,14 @@ reconciliation only where the backend supports it; otherwise retain an unknown o
 heartbeat cannot prove an external effect stopped. Status reads never create another dispatch or
 blind retry.
 
-The planned SSH adapter uses OpenSSH as the transport, Kubernetes Secrets for private keys, and a
-reviewed ConfigMap for machine/user/key bindings. The binding controls which credential may reach
-which remote account; it is not a command policy. The existing decider/Decision layer authorizes the
-complete Action, including the command and target, and the SSH layer must not introduce a second
-command allowlist. The executor implementation owns the `list_targets` and `exec` Action names and
-schemas; configuration supplies only the target/key/transport data those Actions consume.
+The SSH adapter is a standalone bearer-protected MCP server using OpenSSH as the transport,
+Kubernetes Secrets for private keys, and a reviewed ConfigMap for machine/user/key bindings. The
+binding controls which credential may reach which remote account; it is not a command policy. The
+existing decider/Decision layer authorizes the complete Action, including the command and target,
+and the SSH layer must not introduce a second command allowlist. The SSH server implementation owns
+the `list_targets` and `exec` Action names and schemas; configuration supplies only the
+target/key/transport data those Actions consume. The Action Service holds only the shared bearer
+needed to call this backend.
 `exec` may also carry a shorter per-Execution timeout, bounded above by the configured SSH execution
 maximum; it cannot extend that maximum.
 

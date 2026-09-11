@@ -49,6 +49,14 @@ def settings(rendered: list[dict[str, Any]], tmp_path: Path, monkeypatch: pytest
     return Settings(database_url="postgresql://test.invalid/test", _cli_parse_args=False)
 
 
+def test_rendered_ssh_binding_uses_shared_bearer_file(settings: Settings) -> None:
+    group = settings.action_groups["ssh"]
+    config = McpHttpServerConfig.model_validate(group.executor.config)
+    assert config.auth == "static_bearer"
+    assert config.bearer_file == Path("/etc/agentplane-actions/ssh-mcp-bearer")
+    McpActionGroupExecutor.from_group("ssh", group)
+
+
 def test_rendered_remote_binding_reaches_existing_service(settings: Settings, rendered: list[dict[str, Any]]) -> None:
     assert settings.fixture_auto_allow is not None
     group = settings.action_groups[settings.fixture_auto_allow.group]

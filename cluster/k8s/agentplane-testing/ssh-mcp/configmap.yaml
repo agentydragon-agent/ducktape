@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-ssh-mcp-config
+  namespace: agentplane-testing
+  annotations:
+    description: Reviewed SSH target bindings and transport ceilings for Agentplane's SSH MCP backend.
+data:
+  settings.yaml: |
+    known_hosts_file: /etc/agentplane-ssh/known_hosts
+    command_timeout_seconds: 300
+    connect_timeout_seconds: 10
+    output_limit_bytes: 65536
+    max_concurrent_executions: 4
+    # Target identity is the (host, user) tuple. Missing key files keep the target visible
+    # through list_targets with an unavailable error.
+    targets:
+      - host: wyrm2
+        user: coder
+        identity_file: /etc/agentplane-ssh/keys/wyrm2-coder
+      - host: rugged
+        user: coder
+        identity_file: /etc/agentplane-ssh/keys/rugged-coder
+  known_hosts: |
+    # Populate and review actual host keys before enabling the backend.

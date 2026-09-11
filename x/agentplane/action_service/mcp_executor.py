@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import httpx
@@ -65,12 +67,17 @@ class McpHttpServerConfig(BaseModel):
     transport: Literal["streamable-http"]
     url: AnyHttpUrl
     server_id: Key | None = None
-    auth: Literal["none", "oauth"] = "none"
+    auth: Literal["none", "oauth", "static_bearer"] = "none"
+    bearer_file: Path | None = None
 
     @model_validator(mode="after")
     def require_linkage_server(self) -> McpHttpServerConfig:
         if self.auth == "oauth" and self.server_id is None:
             raise ValueError("OAuth MCP HTTP config requires server_id")
+        if self.auth == "static_bearer" and self.bearer_file is None:
+            raise ValueError("static bearer MCP HTTP config requires bearer_file")
+        if self.auth != "static_bearer" and self.bearer_file is not None:
+            raise ValueError("bearer_file is only valid for static bearer MCP HTTP config")
         return self
 
     @field_validator("url")
@@ -172,7 +179,16 @@ class McpActionGroupExecutor:
         else:
 
             def transport_factory() -> ClientTransport:
-                return StreamableHttpTransport(config.url, auth=None)
+                auth = None
+                if config.auth == "static_bearer":
+                    assert config.bearer_file is not None
+                    try:
+                        auth = config.bearer_file.read_text().strip()
+                    except OSError:
+                        raise ValueError("configured MCP static bearer file is unavailable") from None
+                    if not auth:
+                        raise ValueError("configured MCP static bearer file is empty")
+                return StreamableHttpTransport(config.url, auth=auth)
 
         return cls(
             group_key, group, catalog_refresh_interval=catalog_refresh_interval, transport_factory=transport_factory
@@ -481,6 +497,9 @@ class McpActionGroupExecutor:
             raise ExecutionOutcomeUnknownError(f"MCP tools/call transport failure for {name}") from error
 
         if result.is_error:
+            error_kind = _mcp_error_kind(result)
+            if error_kind == "execution_unknown":
+                raise ExecutionOutcomeUnknownError("MCP backend reported an unknown execution outcome")
             return ExecutionResult(
                 state=ExecutionState.FAILED, error={"kind": "mcp_tool_error", "message": "MCP tool reported an error"}
             )
@@ -492,3 +511,17 @@ def _safe_result(result: Any) -> JsonValue:
         return cast(JsonValue, result.structured_content)
     texts: list[JsonValue] = [block.text for block in result.content if isinstance(block, mcp.types.TextContent)]
     return {"content": texts}
+
+
+def _mcp_error_kind(result: Any) -> str | None:
+    """Read only the bounded machine-readable kind used for backend unknown outcomes."""
+    for block in result.content:
+        if not isinstance(block, mcp.types.TextContent):
+            continue
+        try:
+            payload = json.loads(block.text)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("kind"), str):
+            return payload["kind"]
+    return None
