@@ -215,16 +215,20 @@ class ActionService:
     ) -> ActionRequestView:
         if self.draining:
             raise ServiceDrainingError("Action Service is draining")
+        view, created = await self._store.submit(
+            body, principal, external_grant=external_grant, validate_new=lambda: self._validate_submission(body)
+        )
+        if not created or external_grant is not None:
+            return view
+        return await self._auto_decide(view, body, principal)
+
+    def _validate_submission(self, body: ActionRequestInput) -> None:
         self._resolve_executor(body.action)
         _, action = self._catalog.resolve(body.action.group, body.action.name)
         try:
             jsonschema.validate(body.arguments, action.input_schema)
         except jsonschema.ValidationError:
             raise InvalidActionArgumentsError("arguments do not match the advertised Action schema") from None
-        view, created = await self._store.submit(body, principal, external_grant=external_grant)
-        if not created or external_grant is not None:
-            return view
-        return await self._auto_decide(view, body, principal)
 
     def _resolve_executor(self, identity: ActionIdentity) -> Executor:
         group_key, action_key = identity.group, identity.name

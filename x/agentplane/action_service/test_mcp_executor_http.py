@@ -168,7 +168,7 @@ def oauth_settings(tmp_path: Path) -> Iterator[OAuthSettings]:
             config_url=f"{issuer}.well-known/openid-configuration",
             upstream_client_id="test-actions-client",
             upstream_client_secret_file=secret,
-            base_url="http://test-actions",
+            base_url="https://test-actions.example.test",
             integration_app_url="https://integration.example.test",
             jwt_signing_key_file=signing,
             encryption_key_file=encryption,
@@ -452,7 +452,9 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
         await wait_retry(http_group)
         assert not http_group.available
         assert fake_server.calls == []
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test-actions") as client:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="https://test-actions.example.test"
+        ) as client:
             assert (await client.get("/healthz")).status_code == 200
             assert (await client.get("/readyz")).status_code == 200
             metadata = await client.get("/.well-known/oauth-authorization-server")

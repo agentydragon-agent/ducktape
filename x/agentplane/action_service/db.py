@@ -344,15 +344,25 @@ class ActionStore:
         self._external_grants = external_grants
 
     async def submit(
-        self, body: ActionRequestInput, principal: Principal, *, external_grant: ExternalGrantProvenance | None = None
+        self,
+        body: ActionRequestInput,
+        principal: Principal,
+        *,
+        external_grant: ExternalGrantProvenance | None = None,
+        validate_new: Callable[[], None] | None = None,
     ) -> tuple[ActionRequestView, bool]:
-        """Persist an admitted request; ActionService resolves its group/action before calling here."""
+        """Authorize every attempt; validate new admissions without gating durable retries on backend health."""
         async with self._sessions.begin() as session:
             if external_grant is not None:
                 if principal != external_grant.principal() or not await self._grant_authorized(session, external_grant):
                     raise ExternalGrantNotAuthorizedError("external grant is not authorized")
             elif principal.issuer == CONFIGURED_IDENTITY_ISSUER:
                 raise ExternalGrantNotAuthorizedError("configured Identity requires an authenticated external grant")
+            existing = await self._submission(session, body, principal)
+            if existing is not None:
+                return existing, False
+            if validate_new is not None:
+                validate_new()
             now = datetime.now(UTC)
             request_id = uuid4()
             inserted_id = await session.scalar(
@@ -375,22 +385,30 @@ class ActionStore:
                 .returning(ActionRequestRow.id)
             )
             if inserted_id is None:
-                existing = await session.scalar(
-                    select(ActionRequestRow).where(
-                        ActionRequestRow.caller_principal == principal.key,
-                        ActionRequestRow.idempotency_key == body.idempotency_key,
-                    )
-                )
+                existing = await self._submission(session, body, principal)
                 if existing is None:
                     raise RuntimeError("conflicting ActionRequest disappeared")
-                if not _same_request(existing, body):
-                    raise ActionConflictError("request idempotency key was already used for another envelope")
-                return await self._view(session, existing, principal), False
+                return existing, False
             row = await session.get(ActionRequestRow, inserted_id)
             if row is None:
                 raise RuntimeError("inserted ActionRequest is unreadable")
             _record_event(session, row, now)
             return await self._view(session, row, principal), True
+
+    async def _submission(
+        self, session: AsyncSession, body: ActionRequestInput, principal: Principal
+    ) -> ActionRequestView | None:
+        existing = await session.scalar(
+            select(ActionRequestRow).where(
+                ActionRequestRow.caller_principal == principal.key,
+                ActionRequestRow.idempotency_key == body.idempotency_key,
+            )
+        )
+        if existing is None:
+            return None
+        if not _same_request(existing, body):
+            raise ActionConflictError("request idempotency key was already used for another envelope")
+        return await self._view(session, existing, principal)
 
     async def list_requests(
         self, principal: Principal, *, states: Sequence[ActionState] = ()

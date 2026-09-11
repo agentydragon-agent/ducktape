@@ -579,6 +579,23 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
             terminal = await _terminal(client, submitted["id"])
             assert terminal["state"] == "succeeded"
             assert terminal["action"] == identity
+            echo_catalog.groups[group].available = False
+            duplicate = await client.post("/v1/action-requests", json=payload, headers=_workload("workload-a"))
+            duplicate.raise_for_status()
+            assert duplicate.json()["execution"] == terminal["execution"]
+            conflict = await client.post(
+                "/v1/action-requests", json={**payload, "arguments": {}}, headers=_workload("workload-a")
+            )
+            assert conflict.status_code == 409
+            new_request = await client.post(
+                "/v1/action-requests",
+                json={**payload, "idempotency_key": f"new-{group}"},
+                headers=_workload("workload-a"),
+            )
+            assert new_request.status_code == 503
+            other_caller = await client.post("/v1/action-requests", json=payload, headers=_workload("workload-b"))
+            assert other_caller.status_code == 503
+            echo_catalog.groups[group].available = True
         assert [request.action for request in first.requests] == [ActionIdentity(group="agentplane", name="echo")]
         assert [request.action for request in second.requests] == [ActionIdentity(group="other", name="echo")]
 
