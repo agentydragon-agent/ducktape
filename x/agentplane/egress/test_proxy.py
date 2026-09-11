@@ -1082,6 +1082,10 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                 with attempt:
                     rows = await decision_log.store.recent(SANDBOX_A)
                     assert len({row.producer_id for row in rows}) == 2
+                    assert all(
+                        len({row.connection_id for row in rows if row.producer_id == producer}) == 1
+                        for producer in {row.producer_id for row in rows}
+                    )
                     assert any(row.reason is DenyReason.UNAVAILABLE for row in rows)
             assert first_api.status_patches == second_api.status_patches == []
 

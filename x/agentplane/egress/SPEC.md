@@ -154,7 +154,8 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - Retention defaults to seven days. Queries exclude expired records, and bounded indexed cleanup
   deletes them eventually. Database outages delay physical cleanup, not the visible time window.
 - Schema changes are Alembic-managed and run separately from proxy startup. Runtime never creates
-  or migrates tables. Deployment gates new releases on the dedicated migration Job.
+  or migrates tables. Deployment gates each new Pod on its migration init container; existing request admission
+  remains independent of diagnostic DB availability.
 
 ## Replica scope
 
