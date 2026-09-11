@@ -82,7 +82,9 @@ def test_missing_binding_is_rejected() -> None:
 
 @pytest.mark.parametrize("config", [{}, {"command": ""}, {"command": 42}])
 async def test_invalid_binding_fails_before_any_adapter_starts(config: dict[str, JsonValue]) -> None:
-    catalog = ActionCatalog(groups={"first": _group({"command": "unused"}), "invalid": _group(config)})
+    catalog = ActionCatalog(
+        groups={"first": _group({"transport": "stdio", "command": "unused"}), "invalid": _group(config)}
+    )
     with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
         with pytest.raises(ValueError, match="ActionGroup 'invalid'"):
             async with running_executor(catalog):
@@ -204,7 +206,7 @@ async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionL
 
 @pytest.mark.parametrize("failure", ["connect", "discovery", "cancel"])
 async def test_partial_startup_closes_current_and_previous_adapter(failure: str) -> None:
-    catalog = ActionCatalog(groups={key: _group({"command": "unused"}) for key in ("one", "two")})
+    catalog = ActionCatalog(groups={key: _group({"transport": "stdio", "command": "unused"}) for key in ("one", "two")})
     events: list[str] = []
     adapters = {key: McpActionGroupExecutor.from_group(key, group) for key, group in catalog.groups.items()}
     names = {adapter: key for key, adapter in adapters.items()}
@@ -237,6 +239,7 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
     """Only Kubernetes configuration and the HTTP server loop are replaced; composition is real."""
     group = _group(
         {
+            "transport": "stdio",
             "command": sys.executable,
             "args": [str(get_required_path("_main/x/agentplane/action_service/test_fixtures/fake_mcp_server.py"))],
             "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
