@@ -344,6 +344,7 @@ py_library(
         ":prepared",
         ":results",
         ":tlh",
+        ":validation",
         ":world",
     ],
 )
@@ -864,5 +865,33 @@ py_library(
         ":property",
         ":results",
         "//finance/augur/sim/compiler:income_sources",
+    ],
+)
+
+py_library(
+    name = "validation",
+    srcs = ["validation.py"],
+    deps = [
+        ":books",
+        ":fixed_point",
+        ":holdings",
+        ":prepared",
+    ],
+)
+
+py_test(
+    name = "validation_test",
+    srcs = ["validation_test.py"],
+    deps = [
+        ":prepared",
+        ":results",
+        ":session",
+        ":tlh",
+        ":validation",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/x/monthly_actions:run",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -30,6 +30,7 @@ from finance.augur.sim.tlh import (
     TlhOpeningPosition,
     TlhPortfolio,
 )
+from finance.augur.sim.validation import validate
 from finance.augur.sim.world import World
 
 type Capture = Literal["summary", "dense", "forensic"]
@@ -116,6 +117,7 @@ class _Session:
             if actor is None:
                 raise ValueError("action sessions require an actor")
             _validate_actor(run, actor)
+        validate(run)
         self.run = run
         self.actor = actor
         self.configured = configured

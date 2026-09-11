@@ -111,7 +111,7 @@ class Holdings:
             if not remaining:
                 break
         if remaining:
-            raise ValueError(f"insufficient lot units: requested {units}, available {units - remaining}")
+            raise ValueError(f"sale of {units} units exceeds available lots; only {units - remaining} are available")
         return tuple(selected)
 
     def scheduled_sale(self, accounting: Accounting, market: MarketPath, sale: _ScheduledSale) -> None:
