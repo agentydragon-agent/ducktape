@@ -33,6 +33,7 @@ from x.agentplane.egress.conftest import (
     GITHUB_POLICY,
     PLACEHOLDER,
     POD_A_IP,
+    POD_A_UID,
     POD_B_UID,
     SANDBOX_A,
     SANDBOX_B,
@@ -283,7 +284,6 @@ async def proxy(
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     upstream_ca_cert, _ = write_ca(upstream_ca, tmp_path, "upstream")
     index = Index()
-    ring = decision_log
     verifier = PodIdentityVerifier(
         authentication=AuthenticationV1Api(api_client),
         core_v1=CoreV1Api(api_client),
@@ -311,11 +311,11 @@ async def proxy(
             serve_rules_api(agent_api, host="127.0.0.1", port=agent_api_port),
             recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
             EgressProxyServer(
-                addon := EgressAddon(index=index, verifier=verifier, ring=ring, resolver=resolver),
+                addon := EgressAddon(index=index, verifier=verifier, decision_log=decision_log, resolver=resolver),
                 confdir=tmp_path / "confdir",
                 extra_options={"ssl_verify_upstream_trusted_ca": str(upstream_ca_cert)},
             ) as server,
-            serve_admin(create_admin_app(ring, index, resync_seconds=300), "127.0.0.1", 0) as admin_port,
+            serve_admin(create_admin_app(decision_log, index, resync_seconds=300), "127.0.0.1", 0) as admin_port,
         ):
             yield ProxyUnderTest(
                 proxy_port=server.listen_port,
@@ -896,6 +896,54 @@ async def test_rules_unbound_placeholder_is_not_forwarded(proxy: ProxyUnderTest)
 
     assert denial(response, DenyReason.PLACEHOLDER_UNRESOLVED)
     assert proxy.resolver.pin_calls == []
+
+
+@pytest.mark.parametrize("decision_queue_size", [1])
+async def test_database_outage_and_full_queue_do_not_block_authorized_egress(
+    proxy: ProxyUnderTest, decision_log: DecisionLog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def unavailable(records) -> None:
+        entered.set()
+        await release.wait()
+        raise OSError("test database outage")
+
+    monkeypatch.setattr(decision_log.store, "append", unavailable)
+    response = await proxy.get("/public/first")
+    assert response.status == 200
+    await entered.wait()
+    # A second admitted request must reach upstream before the DB gate is released.
+    response = await proxy.get("/public/second")
+    assert response.status == 200
+    assert not release.is_set()
+    await decision_log.close(flush_seconds=0.01)
+    assert decision_log.diagnostics.dropped_shutdown == 2
+    assert decision_log.diagnostics.dropped_overflow >= 2
+
+
+async def test_history_omits_secret_bearing_paths_queries_and_headers(
+    proxy: ProxyUnderTest, decision_log: DecisionLog, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("INFO", logger="x.agentplane.egress.decision_log")
+    response = await proxy.get(
+        "/public/path-secret-test?token=query-secret-test", headers={"X-Test-Private": "header-secret-test"}
+    )
+    assert response.status == 200
+    await decision_log.flush()
+    rows = await decision_log.store.recent(SANDBOX_A)
+    assert len(rows) == 2
+    assert all(row.path is None for row in rows)
+    assert rows[0].connection_id == rows[1].connection_id
+    assert rows[0].producer_id == rows[1].producer_id
+    assert all(row.source_pod_uid == POD_A_UID and row.sandbox_uid is not None for row in rows)
+    payload = " ".join(row.model_dump_json() for row in rows)
+    decision_messages = " ".join(
+        entry.getMessage() for entry in caplog.records if entry.name == "x.agentplane.egress.decision_log"
+    )
+    for private in ("path-secret-test", "query-secret-test", "header-secret-test", TOKEN_A, SECRET_VALUE, PLACEHOLDER):
+        assert private not in payload
+        assert private not in decision_messages
 
 
 if __name__ == "__main__":

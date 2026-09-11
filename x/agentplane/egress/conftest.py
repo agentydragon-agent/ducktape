@@ -149,10 +149,17 @@ def history_db_url(postgres_container: PostgresContainer) -> Iterator[str]:
 
 
 @pytest.fixture
-async def decision_log(history_db_url: str) -> AsyncIterator[DecisionLog]:
-    log = DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7)))
+async def decision_log(history_db_url: str, decision_queue_size: int) -> AsyncIterator[DecisionLog]:
+    log = DecisionLog(
+        DecisionStore(make_engine(history_db_url), retention=timedelta(days=7)), queue_size=decision_queue_size
+    )
     log.start()
     try:
         yield log
     finally:
         await log.close()
+
+
+@pytest.fixture
+def decision_queue_size() -> int:
+    return 2000

@@ -132,14 +132,14 @@ Use the first point at which the run fails to choose the next investigation:
 | No `accept-*` Sandbox is created                              | Bazel client, module/repository rules, kubeconfig, or acceptance-token setup |
 | Sandbox is created but never becomes ready                    | Scheduling, image pull, runner bootstrap, or testing capacity                |
 | App rejects the initial API request                           | Acceptance token audience, subject allowlist, or app ingress                 |
-| Model turn hangs and the decision ring is empty               | Sandbox proxy environment, proxy route, or model ingress path                |
+| Model turn hangs and the decision history is empty            | Sandbox proxy environment, proxy route, or model ingress path                |
 | Ring records a deny for an expected destination               | Egress policy/binding or destination URL mismatch                            |
 | Rules discovery succeeds but destination authentication fails | Placeholder substitution or independent destination authentication           |
 | Test assertions pass but teardown reports a failure           | Runtime cleanup/reconciliation; inspect the named Sandbox before rerunning   |
 | Process is killed and `accept-*` Sandboxes remain             | Expected teardown limitation; clean them up deliberately before the next run |
 
 Keep the complete test output and the proxy/app decision evidence together.
-The model transcript explains what the agent attempted, but the decision ring
+The model transcript explains what the agent attempted, but the decision history
 is the authority for what the proxy actually served.
 
 ### Where an agent can run it
@@ -177,7 +177,7 @@ thing to add first.
 
 The agent's own account of a tool call is prose. "I fetched the repository" is equally consistent
 with a request the proxy admitted, a request that never reached the proxy, and a model that did not
-run the command at all. The proxy's decision ring is the system's record of what it actually served,
+run the command at all. The proxy's decision history is the system's record of what it admitted,
 so that is what a scenario checks; the turn's output is carried into the failure message, where it
 explains a failure rather than deciding one.
 
@@ -188,7 +188,7 @@ verdict token instead, and the scenario fails unless one of the two tokens actua
 refusal reads as a failure rather than as an absence.
 
 This suite exists because the last gap of that shape — a runner that dropped the sandbox's proxy
-variables, so every call bypassed the proxy and hung with an empty ring — sat behind a fully green
+variables, so every call bypassed the proxy and hung with an empty history — sat behind a fully green
 unit suite until someone drove the deployed app by hand.
 
 `test_instructions` is the one scenario that cannot follow the rule: no part of the system records
