@@ -134,7 +134,6 @@ resources:
   - agentplane-staging/llm-ingress/flux-kustomization.yaml
   - agentplane-staging/app/flux-kustomization.yaml
   - agentplane-staging/egress-db/flux-kustomization.yaml
-  - agentplane-staging/egress-migrations/flux-kustomization.yaml
   - agentplane-staging/egress/flux-kustomization.yaml
   - agentplane-staging/actions/flux-kustomization.yaml
   - agentplane-testing/namespace/flux-kustomization.yaml
@@ -145,7 +144,6 @@ resources:
   - agentplane-testing/mcp-everything/flux-kustomization.yaml
   - agentplane-testing/app/flux-kustomization.yaml
   - agentplane-testing/egress-db/flux-kustomization.yaml
-  - agentplane-testing/egress-migrations/flux-kustomization.yaml
   - agentplane-testing/egress/flux-kustomization.yaml
   - agentplane-testing/actions/flux-kustomization.yaml
 
