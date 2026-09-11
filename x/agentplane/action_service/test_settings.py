@@ -35,6 +35,13 @@ def rendered() -> list[dict[str, Any]]:
     return list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(actions)])))
 
 
+@pytest.fixture(scope="module")
+def staging_rendered() -> list[dict[str, Any]]:
+    kustomize = get_required_path("multitool/tools/kustomize/kustomize")
+    actions = get_required_path("_main/cluster/k8s/agentplane-staging/actions/kustomization.yaml").parent
+    return list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(actions)])))
+
+
 @pytest.fixture
 def settings(rendered: list[dict[str, Any]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     deployment = one(r for r in rendered if r["kind"] == "Deployment" and r["metadata"]["name"] == "agentplane-actions")
@@ -53,8 +60,30 @@ def settings(rendered: list[dict[str, Any]], tmp_path: Path, monkeypatch: pytest
     return Settings(database_url="postgresql://test.invalid/test", _cli_parse_args=False)
 
 
-def test_rendered_ssh_binding_uses_shared_bearer_file(settings: Settings) -> None:
-    group = settings.action_groups["ssh"]
+@pytest.fixture
+def staging_settings(
+    staging_rendered: list[dict[str, Any]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Settings:
+    deployment = one(
+        r for r in staging_rendered if r["kind"] == "Deployment" and r["metadata"]["name"] == "agentplane-actions"
+    )
+    pod = deployment["spec"]["template"]["spec"]
+    container = one(c for c in pod["containers"] if c["name"] == "actions")
+    path = Path(one(e["value"] for e in container["env"] if e["name"] == "AGENTPLANE_ACTIONS_CONFIG_FILE"))
+    mount = one(m for m in container["volumeMounts"] if Path(m["mountPath"]) == path.parent)
+    config_map = one(
+        r
+        for r in staging_rendered
+        if r["kind"] == "ConfigMap" and r["metadata"]["name"] == mount["configMap"]["name"]
+    )
+    config_file = tmp_path / "settings.yaml"
+    config_file.write_text(config_map["data"][path.name])
+    monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(config_file))
+    return Settings(database_url="postgresql://test.invalid/test", _cli_parse_args=False)
+
+
+def test_rendered_ssh_binding_uses_shared_bearer_file(staging_settings: Settings) -> None:
+    group = staging_settings.action_groups["ssh"]
     config: McpHttpServerConfigValue = TypeAdapter(McpHttpServerConfig).validate_python(group.executor.config)
     assert config.auth == "static_bearer"
     assert config.bearer_file == Path("/etc/agentplane-actions/ssh-mcp-bearer")
