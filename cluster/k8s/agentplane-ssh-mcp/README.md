@@ -21,8 +21,6 @@ non-pruning Flux owner.
 
 ## Deployment prerequisites
 
-- Publish `agentplane-ssh-mcp` through the registered image CI target and replace the
-  initial placeholder via its Flux image policy with a verified published image.
 - Provision `agentplane-ssh-keys` **only** in the backend namespace using the approved
   machine-key workflow; consumer pods receive only the MCP bearer.
 - Populate reviewed host keys in `known_hosts`. Empty host trust and missing
