@@ -25,7 +25,17 @@ import mcp.types
 from fastmcp.client import Client, ClientTransport
 from fastmcp.client.messages import MessageHandler
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    JsonValue,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 
 from x.agentplane.action_service.catalog import ActionDefinition, ActionGroup, Key, McpExecutorBinding
 from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStatus
@@ -82,8 +92,19 @@ class McpHttpStaticBearerServerConfig(_McpHttpServerConfigBase):
 
 
 McpHttpServerConfigValue = McpHttpNoAuthServerConfig | McpHttpOAuthServerConfig | McpHttpStaticBearerServerConfig
+
+
+def _default_http_auth(value: Any) -> Any:
+    """Preserve the historical omitted-auth form before discriminator selection."""
+    if isinstance(value, dict) and value.get("transport") == "streamable-http" and "auth" not in value:
+        return {**value, "auth": "none"}
+    return value
+
+
 McpHttpServerConfig = Annotated[McpHttpServerConfigValue, Field(discriminator="auth")]
-McpServerConfig = Annotated[McpStdioServerConfig | McpHttpServerConfig, Field(discriminator="transport")]
+McpServerConfig = Annotated[
+    McpStdioServerConfig | McpHttpServerConfig, BeforeValidator(_default_http_auth), Field(discriminator="transport")
+]
 _SERVER_CONFIG_ADAPTER: TypeAdapter[McpServerConfig] = TypeAdapter(McpServerConfig)
 
 
