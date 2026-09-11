@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+from datetime import timedelta
 from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 from typing import Any, cast
@@ -17,7 +18,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.egress.addon import EgressAddon
 from x.agentplane.egress.admin import create_admin_app, serve_admin
-from x.agentplane.egress.decisions import DecisionRing
+from x.agentplane.egress.decision_log import DecisionLog
+from x.agentplane.egress.decision_store import DecisionStore, make_engine
 from x.agentplane.egress.identity import PodIdentityVerifier
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import Index
@@ -57,7 +59,12 @@ class Settings(BaseSettings):
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     resync_seconds: int = Field(default=300, description="Watch lifetime; every kind is relisted this often.")
     identity_cache_seconds: float = Field(default=60, description="Upper bound on how long a token verdict is kept.")
-    decision_ring_size: int = Field(default=200, description="Decisions kept per sandbox for /decisions.")
+    database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")
+    decision_history_size: int = Field(default=200, ge=1, le=1000)
+    decision_retention_days: int = Field(default=7, ge=1, le=365)
+    decision_queue_size: int = Field(default=2000, ge=1, le=100000)
+    decision_batch_size: int = Field(default=100, ge=1, le=1000)
+    decision_flush_seconds: float = Field(default=5, gt=0, le=20)
     exempt_networks: list[IPv4Network | IPv6Network] = Field(
         default_factory=list,
         description="Networks an admitted host may resolve into although they are not globally reachable.",
@@ -87,7 +94,16 @@ async def async_main(settings: Settings) -> None:
         loop.add_signal_handler(sig, stop.set)
     async with ApiClient(configuration=configuration) as api:
         index = Index()
-        ring = DecisionRing(settings.decision_ring_size)
+        ring = DecisionLog(
+            DecisionStore(
+                make_engine(settings.database_url),
+                retention=timedelta(days=settings.decision_retention_days),
+                capacity=settings.decision_history_size,
+            ),
+            queue_size=settings.decision_queue_size,
+            batch_size=settings.decision_batch_size,
+        )
+        ring.start()
         # Cast so `patch_namespaced_custom_object_status` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         informer = Informer(
@@ -140,6 +156,7 @@ async def async_main(settings: Settings) -> None:
         finally:
             informer_task.cancel()
             await asyncio.gather(informer_task, return_exceptions=True)
+            await ring.close(settings.decision_flush_seconds)
 
 
 if __name__ == "__main__":

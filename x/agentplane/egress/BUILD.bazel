@@ -15,6 +15,7 @@ py_library(
     name = "addon",
     srcs = ["addon.py"],
     deps = [
+        ":decision_log",
         ":decisions",
         ":identity",
         ":policy",
@@ -28,7 +29,7 @@ py_library(
     name = "admin",
     srcs = ["admin.py"],
     deps = [
-        ":decisions",
+        ":decision_log",
         ":policy",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
@@ -72,7 +73,8 @@ py_library(
     deps = [
         ":addon",
         ":admin",
-        ":decisions",
+        ":decision_log",
+        ":decision_store",
         ":identity",
         ":informer",
         ":policy",
@@ -126,13 +128,20 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":database_migrate",
+        ":decision_log",
+        ":decision_store",
         ":informer",
         ":policy",
         ":resources",
         "//util:kubernetes",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
         "//x/agentplane/egress/testing:fake_apiserver",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
     ],
 )
 
@@ -187,11 +196,12 @@ py_test(
     name = "test_proxy",
     size = "medium",
     srcs = ["test_proxy.py"],
+    requires_docker = True,
     deps = [
         ":addon",
         ":admin",
         ":conftest",
-        ":decisions",
+        ":decision_log",
         ":identity",
         ":policy",
         ":proxy",
@@ -335,7 +345,8 @@ py_test(
     deps = [
         ":admin",
         ":conftest",
-        ":decisions",
+        ":decision_log",
+        ":decision_store",
         ":policy",
         "//:conftest",
         "@pypi//aiohttp",
@@ -414,5 +425,86 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = ["//x/agentplane/egress/migrations:files"],
+    deps = [
+        ":decision_store",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_decision_store",
+    size = "medium",
+    srcs = ["test_decision_store.py"],
+    requires_docker = True,
+    deps = [
+        ":admin",
+        ":conftest",
+        ":database_migrate",
+        ":decision_log",
+        ":decision_store",
+        ":decisions",
+        ":policy",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//alembic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+aspect_py_binary(
+    name = "migration_image_bin",
+    main = "database_migrate.py",
+    deps = [":database_migrate"],
+)
+
+py_image_layer(
+    name = "migration_layers",
+    binary = ":migration_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "migration_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("migration_image_bin"),
+    env = py_image_env(binary_name = "migration_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":migration_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "decision_log",
+    srcs = ["decision_log.py"],
+    deps = [
+        ":decision_store",
+        ":decisions",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "decision_store",
+    srcs = ["decision_store.py"],
+    deps = [
+        ":decisions",
+        ":policy",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
     ],
 )

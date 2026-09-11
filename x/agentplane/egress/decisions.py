@@ -1,17 +1,14 @@
-"""The proxy's own record of what it decided: a bounded ring per subject, and the JSON log line."""
+"""Admission metadata, captured before forwarding; never upstream completion evidence."""
 
 from __future__ import annotations
 
-import logging
-from collections import defaultdict, deque
 from datetime import datetime
 from enum import StrEnum
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from x.agentplane.egress.policy import DenyReason
-
-logger = logging.getLogger(__name__)
 
 
 class Outcome(StrEnum):
@@ -19,17 +16,31 @@ class Outcome(StrEnum):
     DENY = "deny"
 
 
+class Phase(StrEnum):
+    CONNECT = "connect"
+    HTTP_REQUEST = "http_request"
+
+
 class DecisionRecord(BaseModel):
     """One admission as served on the admin port and logged; carries names, never values."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    event_id: UUID = Field(default_factory=uuid4)
+    producer_id: UUID
+    sandbox_namespace: str | None = None
+    sandbox_uid: str | None = None
+    source_pod_uid: str | None = None
+    connection_id: str
+    phase: Phase
     at: datetime
     sandbox: str | None = Field(description="The subject; absent when the token did not prove one.")
     method: str
     host: str
     port: int
-    path: str | None = Field(description="Absent for a CONNECT.")
+    path: None = Field(
+        default=None, description="Paths are deliberately omitted: arbitrary path segments can contain secrets."
+    )
     outcome: Outcome
     reason: DenyReason | None = None
     binding: str | None = None
@@ -37,18 +48,3 @@ class DecisionRecord(BaseModel):
     rule: int | None = None
     substituted: bool = Field(default=False, description="Whether a credential replaced a placeholder.")
     address: str | None = Field(default=None, description="The address the host was pinned to, when admitted.")
-
-
-class DecisionRing:
-    """The last `capacity` decisions per subject; unidentified requests share one ring under `None`."""
-
-    def __init__(self, capacity: int) -> None:
-        self._capacity = capacity
-        self._rings: defaultdict[str | None, deque[DecisionRecord]] = defaultdict(lambda: deque(maxlen=self._capacity))
-
-    def record(self, decision: DecisionRecord) -> None:
-        self._rings[decision.sandbox].append(decision)
-        logger.info("%s", decision.model_dump_json())
-
-    def recent(self, sandbox: str | None) -> list[DecisionRecord]:
-        return list(self._rings[sandbox]) if sandbox in self._rings else []

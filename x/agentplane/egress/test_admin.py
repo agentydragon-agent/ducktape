@@ -16,7 +16,8 @@ import pytest
 import pytest_bazel
 
 from x.agentplane.egress.admin import create_admin_app, serve_admin
-from x.agentplane.egress.decisions import DecisionRing
+from x.agentplane.egress.decision_log import DecisionLog
+from x.agentplane.egress.decision_store import DecisionStore, make_engine
 from x.agentplane.egress.policy import Index
 
 RESYNC_SECONDS = 300
@@ -46,9 +47,13 @@ def clock() -> Clock:
 
 @pytest.fixture
 async def session(index: Index, clock: Clock) -> AsyncIterator[aiohttp.ClientSession]:
-    app = create_admin_app(DecisionRing(capacity=1), index, resync_seconds=RESYNC_SECONDS, clock=clock)
+    log = DecisionLog(
+        DecisionStore(make_engine("postgresql://test:test@127.0.0.1:1/test"), retention=timedelta(days=7))
+    )
+    app = create_admin_app(log, index, resync_seconds=RESYNC_SECONDS, clock=clock)
     async with serve_admin(app, "127.0.0.1", 0) as port, aiohttp.ClientSession(f"http://127.0.0.1:{port}") as client:
         yield client
+    await log.close()
 
 
 async def _get(session: aiohttp.ClientSession) -> tuple[int, dict]:

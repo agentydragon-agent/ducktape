@@ -44,7 +44,7 @@ from x.agentplane.egress.conftest import (
     UPSTREAM_HOST,
     informer,
 )
-from x.agentplane.egress.decisions import DecisionRing
+from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
@@ -272,14 +272,18 @@ class ServiceMappingResolver(UpstreamResolver):
 
 @pytest.fixture
 async def proxy(
-    fake: FakeApiServer, api_client: ApiClient, tmp_path: Path, exempt_networks: frozenset[Network]
+    fake: FakeApiServer,
+    api_client: ApiClient,
+    tmp_path: Path,
+    exempt_networks: frozenset[Network],
+    decision_log: DecisionLog,
 ) -> AsyncIterator[ProxyUnderTest]:
     interception_ca = make_ca("agentplane-egress-test-interception")
     write_interception_ca(tmp_path / "confdir", *write_ca(interception_ca, tmp_path, "interception"))
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     upstream_ca_cert, _ = write_ca(upstream_ca, tmp_path, "upstream")
     index = Index()
-    ring = DecisionRing(capacity=200)
+    ring = decision_log
     verifier = PodIdentityVerifier(
         authentication=AuthenticationV1Api(api_client),
         core_v1=CoreV1Api(api_client),
@@ -777,11 +781,12 @@ async def test_rotated_secret_is_substituted_without_restart(fake: FakeApiServer
     assert one(proxy.upstream.requests)[2]["authorization"] == "Bearer real-secret-v2"
 
 
-async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest) -> None:
+async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest, decision_log: DecisionLog) -> None:
     await proxy.get("/repos/o/r", headers={"Authorization": f"Bearer {PLACEHOLDER}"})
     await proxy.get("/private/x")
     with pytest.raises(aiohttp.ClientHttpProxyError):
         await proxy.get("/repos/o/r", token="not-a-token")
+    await decision_log.flush()
     async with aiohttp.ClientSession(f"http://127.0.0.1:{proxy.admin_port}") as admin:
         async with admin.get("/healthz") as health:
             assert (health.status, (await health.json())["synced"]) == (200, True)
@@ -791,9 +796,9 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest) -> None:
             unidentified = await listing.json()
     assert [(d["method"], d["path"], d["outcome"], d["reason"], d["substituted"]) for d in decisions] == [
         ("CONNECT", None, "allow", None, False),
-        ("GET", "/repos/o/r", "allow", None, True),
+        ("GET", None, "allow", None, True),
         ("CONNECT", None, "allow", None, False),
-        ("GET", "/private/x", "deny", "no-rule", False),
+        ("GET", None, "deny", "no-rule", False),
     ]
     assert [d["address"] for d in decisions] == ["127.0.0.1", "127.0.0.1", "127.0.0.1", None]
     substituted = one(d for d in decisions if d["substituted"])

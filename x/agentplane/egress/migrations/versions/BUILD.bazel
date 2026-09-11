@@ -1,0 +1,15 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+exports_files(
+    ["0001_decisions.py"],
+    visibility = ["//x/agentplane/egress/migrations:__pkg__"],
+)
+
+py_library(
+    name = "0001_decisions",
+    srcs = ["0001_decisions.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)

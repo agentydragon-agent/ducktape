@@ -44,6 +44,14 @@ spec:
   egress:
     - toEndpoints:
         - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+            k8s:cnpg.io/cluster: agentplane-egress-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
             k8s-app: kube-dns
       toPorts:
