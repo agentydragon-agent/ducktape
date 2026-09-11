@@ -5,7 +5,7 @@ API server, presents the bindings that name a sandbox with their provenance, exp
 policies, and creates or deletes a runtime binding under its own RBAC. A binding is desired state,
 so creating one is the whole act of granting and deleting one is the whole act of taking it back;
 there is no decision to record on it afterwards. Nothing here is in the enforcement path: the
-proxy's `Active` condition is shown as written, never recomputed.
+the app shows desired state, not a global proxy acknowledgement.
 """
 
 from __future__ import annotations
@@ -22,8 +22,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.inventory import InventoryError
 from x.agentplane.egress.resources import (
-    ACTIVE_CONDITION,
-    ConditionStatus,
     EgressBinding,
     EgressCredential,
     EgressPolicy,
@@ -64,7 +62,7 @@ class UnknownPolicyError(InventoryError):
     The CRD admits any string in `spec.policies` and the proxy answers a name that resolves to
     nothing with `MissingPolicy`, so a dangling name is a state the system already handles. This
     refuses one at the moment it would be written; one the operator deletes afterwards still lands
-    there, and the proxy's condition stays the answer to it.
+    there without granting rules from the missing policy.
     """
 
     def __init__(self, names: list[str]) -> None:
@@ -141,9 +139,6 @@ class BindingView(BaseModel):
     expires_at: datetime | None = None
     policies: list[PolicyView] = Field(description="The named policies that exist, in the binding's order.")
     missing_policies: list[str] = Field(description="Names in the binding that no EgressPolicy answers to.")
-    active: bool | None = Field(description="The proxy's Active condition; absent until the proxy has written status.")
-    active_reason: str | None = None
-    active_message: str | None = None
 
 
 class EgressInventory:
@@ -323,10 +318,6 @@ def _rule_view(rule: Rule, credentials: dict[str, CredentialView]) -> RuleView:
 
 
 def _binding_view(binding: EgressBinding, policies: dict[str, PolicyView]) -> BindingView:
-    # No status at all until the proxy has written one, which is the same "not yet decided" the
-    # absent condition below means.
-    conditions = binding.status.conditions if binding.status is not None else []
-    active = next((c for c in conditions if c.type == ACTIVE_CONDITION), None)
     return BindingView(
         name=binding.metadata.name,
         from_git=FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels,
@@ -334,7 +325,4 @@ def _binding_view(binding: EgressBinding, policies: dict[str, PolicyView]) -> Bi
         expires_at=binding.spec.expires_at,
         policies=[policies[name] for name in binding.spec.policies if name in policies],
         missing_policies=[name for name in binding.spec.policies if name not in policies],
-        active=None if active is None else active.status is ConditionStatus.TRUE,
-        active_reason=active.reason if active is not None else None,
-        active_message=active.message if active is not None else None,
     )

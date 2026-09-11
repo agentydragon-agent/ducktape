@@ -63,7 +63,7 @@ async def test_bindings_for_lists_the_bindings_naming_the_sandbox(
     assert [view.name for view in await egress.bindings_for("other")] == ["other-only"]
 
 
-async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_condition(
+async def test_a_binding_view_carries_provenance_expiry_policies_without_proxy_acknowledgement(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     _seed(custom_objects)
@@ -72,7 +72,7 @@ async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_c
 
     seed = by_name["live-seeded"]
     assert seed.from_git
-    assert (seed.active, seed.active_reason, seed.active_message) == (True, "Resolved", "1 of 1 policies resolved")
+    assert "active" not in seed.model_dump()
     assert seed.subjects == ["live"]
     (policy,) = seed.policies
     (rule,) = policy.rules
@@ -93,10 +93,8 @@ async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_c
     expiring = by_name["live-expiring"]
     assert expiring.expires_at == datetime(2026, 12, 1, tzinfo=UTC)
     assert ([policy.name for policy in expiring.policies], expiring.missing_policies) == (["pypi"], ["vanished"])
-    assert expiring.active is None
 
     granted = by_name["live-granted"]
-    assert (granted.from_git, granted.active, granted.active_reason) == (False, False, "Expired")
     assert granted.subjects == ["live"]
 
 

@@ -22,7 +22,7 @@ from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import DecisionStore, make_engine
 from x.agentplane.egress.identity import PodIdentityVerifier
 from x.agentplane.egress.informer import Informer
-from x.agentplane.egress.policy import Index
+from x.agentplane.egress.policy import STALE_AFTER_CYCLES, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.rules_api import RulesProjection, create_rules_app, serve_rules_api
 from x.agentplane.egress.upstream import UpstreamResolver
@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     confdir: Path = Field(description="Writable directory mitmproxy keeps its CA and issued leaves in.")
     token_audience: str = Field(default="agentplane-egress", description="Audience of the sidecars' projected tokens.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
-    resync_seconds: int = Field(default=300, description="Watch lifetime; every kind is relisted this often.")
+    resync_seconds: int = Field(default=300, gt=0, description="Watch lifetime; every kind is relisted this often.")
     identity_cache_seconds: float = Field(default=60, description="Upper bound on how long a token verdict is kept.")
     database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")
     decision_history_size: int = Field(default=200, ge=1, le=1000)
@@ -104,7 +104,6 @@ async def async_main(settings: Settings) -> None:
             batch_size=settings.decision_batch_size,
         )
         decision_log.start()
-        # Cast so `patch_namespaced_custom_object_status` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         informer = Informer(
             index=index,
@@ -125,7 +124,13 @@ async def async_main(settings: Settings) -> None:
             cache_seconds=settings.identity_cache_seconds,
         )
         resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
-        addon = EgressAddon(index=index, verifier=verifier, decision_log=decision_log, resolver=resolver)
+        addon = EgressAddon(
+            index=index,
+            verifier=verifier,
+            decision_log=decision_log,
+            resolver=resolver,
+            stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES,
+        )
         rules_app = create_rules_app(
             SandboxPrincipalAuthenticator(
                 SandboxPrincipalResolver(

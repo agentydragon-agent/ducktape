@@ -4,20 +4,8 @@ import { useSearchParams } from "react-router";
 
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
 
-// The proxy keeps its recent decisions in memory and offers no stream, so this one view still
-// asks. Everything else on the page is pushed (live.tsx).
+// Shared diagnostic history has no stream; resource changes are pushed (live.tsx).
 const DECISIONS_REFRESH_MS = 5000;
-
-/** The proxy's Active condition as written; grey until the proxy has looked at the binding. */
-function ActiveBadge({ binding }: { binding: BindingView }): JSX.Element {
-  if (binding.active === null) return <Badge color="gray">unknown</Badge>;
-  const label = [binding.active_reason, binding.active_message].filter((part) => part).join(": ");
-  return (
-    <Tooltip label={label || (binding.active ? "Active" : "Inactive")} withArrow>
-      <Badge color={binding.active ? "green" : "orange"}>{binding.active ? "active" : "inactive"}</Badge>
-    </Tooltip>
-  );
-}
 
 function provenance(binding: BindingView): string {
   return binding.from_git ? "from git" : "runtime";
@@ -171,7 +159,9 @@ function BindingsTable({
                 </Tooltip>
                 {/* On a phone the other columns fold under the name. */}
                 <Stack gap="xs" hiddenFrom="sm" mt="xs">
-                  <ActiveBadge binding={binding} />
+                  <Tooltip label="Desired binding, not acknowledgement by every proxy replica">
+                    <Badge color="gray">configured</Badge>
+                  </Tooltip>
                   <Text size="xs" c="dimmed">
                     {provenance(binding)} · expires{" "}
                     {binding.expires_at ? new Date(binding.expires_at).toLocaleString() : "never"}
@@ -185,7 +175,9 @@ function BindingsTable({
               <Table.Td visibleFrom="sm">{expiry(binding)}</Table.Td>
               <Table.Td visibleFrom="sm">{policyNames}</Table.Td>
               <Table.Td visibleFrom="sm">
-                <ActiveBadge binding={binding} />
+                <Tooltip label="Desired binding, not acknowledgement by every proxy replica">
+                  <Badge color="gray">configured</Badge>
+                </Tooltip>
               </Table.Td>
               <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                 <BindingActions binding={binding} onRevoke={() => onRevoke(binding.name)} />

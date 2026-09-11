@@ -107,7 +107,10 @@ py_library(
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
-    deps = ["@pypi//mitmproxy"],
+    deps = [
+        ":addon",
+        "@pypi//mitmproxy",
+    ],
 )
 
 py_library(
@@ -168,7 +171,6 @@ py_test(
     deps = [
         ":conftest",
         ":policy",
-        ":resources",
         "//:conftest",
         "//x/agentplane/egress/testing:fake_apiserver",
         "@pypi//kubernetes_asyncio",
@@ -202,7 +204,9 @@ py_test(
         ":admin",
         ":conftest",
         ":decision_log",
+        ":decisions",
         ":identity",
+        ":main",
         ":policy",
         ":proxy",
         ":resources",
@@ -212,6 +216,7 @@ py_test(
         "//:conftest",
         "//util:net",
         "//x/agentplane/egress/testing:fake_apiserver",
+        "//x/agentplane/egress/testing:replica",
         "//x/agentplane/egress/testing:tls",
         "//x/agentplane/sandbox_auth:http",
         "//x/agentplane/sandbox_auth:principal",
@@ -222,6 +227,7 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 
@@ -348,7 +354,9 @@ py_test(
         ":decision_log",
         ":decision_store",
         ":policy",
+        ":resources",
         "//:conftest",
+        "//x/agentplane/egress/testing:fake_apiserver",
         "@pypi//aiohttp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

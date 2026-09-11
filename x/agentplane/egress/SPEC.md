@@ -92,7 +92,8 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   Missing or forged destination auth and unbound placeholders fail closed.
   The destination independently authenticates its Authorization bearer with TokenReview and live
   Pod/Sandbox resolution, without relying on proxy-hop identity or the Sandbox's source address.
-  `RulesProjection` checks the authenticated name and UID against the current enforcement index.
+  `RulesProjection` checks the authenticated name and UID against the answering replica’s current enforcement index. This informational snapshot
+  need not come from the replica that admitted the API request.
   Other request headers and bodies cannot select identity. Service port 80 reaches the distinct
   API listener, not proxy port 8888; there is no local proxy dispatch or recursive forwarding.
   Operator admin endpoints are not available through this route.
@@ -124,9 +125,14 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   they substitute. The proxy's picture is kept equal to the API server's, and a rotated Secret is
   substituted from the next request on without a restart. An authenticated workload source is
   request context, not a Secret or another watched object.
-- Each binding's `status` is written by the proxy: `observedGeneration`, `resolvedPolicies`, and
-  the `Active` condition — `True` with reason `Resolved` when the binding is unexpired and at
-  least one policy resolved, otherwise `False` with reason `Expired` or `MissingPolicy`. A status is written only when it differs from what the API server holds.
+- Bindings have no Kubernetes `status`. The admin binding observations describe the answering
+  replica's current resolution and freshness, never an acknowledgement by every proxy.
+- Admission and readiness fail closed until all watched kinds are initially synced and remain
+  within the configured freshness bound. Existing CONNECT/HTTP2 connections do not bypass this
+  check. API/watch changes are independently observed; this is not linearizable revocation.
+- Termination refuses new connections and requests/streams while already admitted responses drain
+  for a bounded period. Unfinished streams can be interrupted; requests are never replayed and
+  TCP connections are never migrated. Diagnostic database outages do not gate enforcement.
 
 ## Decisions
 
@@ -152,9 +158,10 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Replica scope
 
-Shared history is not full multi-replica enforcement safety. The deployment remains one replica
-with `Recreate`. Informer status writes, shared enforcement/readiness freshness, and rolling
-connection draining are independent work; only the diagnostic writer has a bounded shutdown flush.
+Replicas enforce from independent bounded-fresh watch snapshots and drain independently.
+Committed diagnostic history is shared; informational rule/binding observations are not a
+cluster-wide acknowledgement. A source change is not deployed evidence: image publication,
+GitOps gates and live rollout acceptance remain separate operational requirements.
 
 ## What the proxy does not decide
 

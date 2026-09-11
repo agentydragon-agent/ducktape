@@ -19,6 +19,8 @@ from mitmproxy import addons
 from mitmproxy.master import Master
 from mitmproxy.options import Options
 
+from x.agentplane.egress.addon import EgressAddon
+
 logger = logging.getLogger(__name__)
 
 CA_BASENAME = "mitmproxy-ca.pem"
@@ -57,14 +59,16 @@ class EgressProxyServer:
 
     def __init__(
         self,
-        addon: object,
+        addon: EgressAddon,
         *,
         confdir: Path,
         listen_host: str = "127.0.0.1",
         listen_port: int = 0,
+        drain_seconds: float = 20,
         extra_options: Mapping[str, object] | None = None,
     ) -> None:
         self._addon = addon
+        self._drain_seconds = drain_seconds
         self._confdir = confdir
         self._listen_host = listen_host
         self._listen_port = listen_port
@@ -128,7 +132,10 @@ class EgressProxyServer:
     async def _stop(self) -> None:
         assert self._master is not None
         assert self._run_task is not None
-        self._master.shutdown()
+        try:
+            await self.drain()
+        finally:
+            self._master.shutdown()
         try:
             await asyncio.wait_for(self._run_task, SHUTDOWN_TIMEOUT_SECONDS)
         except TimeoutError:
@@ -137,3 +144,16 @@ class EgressProxyServer:
             raise TimeoutError(f"mitmproxy master did not stop within {SHUTDOWN_TIMEOUT_SECONDS}s") from None
         finally:
             self._bound_port = None
+
+    async def drain(self) -> None:
+        assert self._master is not None
+        self._addon.begin_drain()
+        try:
+            async with asyncio.timeout(self._drain_seconds):
+                # Servers.update([]) uses the pinned mitmproxy ServerInstance.stop API:
+                # close listeners without cancelling existing TCP handlers.
+                await self._master.addons.get("proxyserver").servers.update([])
+                await self._addon.notify_draining()
+                await self._addon.wait_idle()
+        except TimeoutError:
+            logger.warning("egress drain deadline reached; terminating remaining connections")

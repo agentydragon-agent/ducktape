@@ -16,18 +16,18 @@ bbr test //x/agentplane/egress/...
 - `presentation.py`: one parse per declared target, shared by detection and substitution — where a
   credential's placeholder sits in a request, and how to put the real value there.
 - `policy.py`: the pure decision over an in-memory `Index` — subject bindings, the matching rule
-  the request's placeholder directs it to, substitution, binding status. No I/O.
+  the request's placeholder directs it to, substitution, binding resolution. No I/O.
 - `identity.py`: the shared `sandbox_auth` TokenReview/live-owner resolver plus the egress-only
   source-Pod address check and expiry-bounded verdict cache.
 - `upstream.py`: the admitted host resolved by the proxy, refused when it points anywhere not
   globally reachable, and pinned so the dial goes to the address checked.
-- `informer.py`: list-and-watch of the five kinds into the `Index`, and the binding status
-  writes.
+- `informer.py`: read-only list-and-watch of the five kinds into each replica’s `Index`.
 - `rules_api.py`: the agent-facing
   `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
   independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the
-  ordinary mitmproxy policy/substitution gate. `decisions.py` is the ring and
-  JSON log line; `admin.py` the `/decisions` and `/healthz` listener.
+  ordinary mitmproxy policy/substitution gate. `decisions.py` defines admission records;
+  `decision_log.py` queues them for `decision_store.py`. `admin.py` serves history, local
+  binding observations, readiness and liveness.
 - `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the
   entry point and its `Settings` (`--flags` and `AGENTPLANE_EGRESS_*`).
 - `sidecar.py`: the per-sandbox relay, image `agentplane-egress-sidecar`: reads the Pod's
@@ -145,17 +145,16 @@ The API shares the central process's current enforcement `Index` through `RulesP
 checks the authenticated Sandbox UID and returns only the redacted field allowlist. Operator
 `/decisions` and `/healthz` remain on the separate admin listener, not the rules API. Network policy
 admits the agent API from central egress only. Service target-port separation prevents recursion.
-The single-replica `Recreate` Deployment keeps Service requests on the enforcing Pod; scaling to
-multiple replicas would require revisiting the same-index guarantee.
+The Service may select a different replica from the one that admitted the request. The answer is
+an informational snapshot of the answering replica, not a global acknowledgement or admission promise.
 
 ## ServiceAccount permissions
 
 In the sandbox namespace: `get`, `list`, `watch` on `egresspolicies`, `egressbindings`,
-`egresscredentials` and `sandboxes.agents.x-k8s.io`; `get` on `pods`; `patch` on `egressbindings/status`. In the
+`egresscredentials` and `sandboxes.agents.x-k8s.io`; `get` on `pods`. In the
 credentials namespace (`--credentials-namespace`, `agentplane-egress-credentials` by default):
 `get`, `list`, `watch` on `secrets`, and nothing in the sandbox namespace. Cluster-wide: `create`
-on `tokenreviews.authentication.k8s.io`. The `EgressBinding` CRD must enable the `status`
-subresource, which the status writes go through.
+on `tokenreviews.authentication.k8s.io`. There are no Kubernetes status writes or leader election.
 
 Substituted credentials live in a namespace of their own because RBAC cannot filter Secrets by
 label: a namespace-wide read in the sandbox namespace would hand the proxy the model key and the
@@ -163,8 +162,37 @@ database credential along with the ones it is meant to substitute.
 
 ## Open questions
 
-- **Whether an agent also reads its own recent decisions.** The ring already answers "why was I
+- **Whether an agent also reads its own recent decisions.** Shared history answers "why was I
   denied", and a failure the agent can diagnose itself is the practical win; nothing serves it to
   the agent-facing surface today.
 - **Whether that surface versions separately from the operator API.** Agents are long-lived and
   roll independently of the app, so the two may not be able to move together for long.
+
+## Replica lifecycle
+
+`/healthz` and every CONNECT/HTTP admission share `Index.available`: all five kinds must be
+initially synced and have cycle timestamps no older than three configured resync periods
+(default 900 seconds). Negative clock ages also fail closed. DB health does not participate.
+`/livez` only proves the admin event loop answers; a recoverable watch outage does not cause a
+restart loop. Every request on an existing TLS/HTTP2 connection is gated again. After DNS I/O,
+a changed policy decision or Sandbox snapshot denies that admission without forwarding or replay.
+Revocation is eventually observed independently by each watch, not globally linearizable.
+
+SIGTERM/SIGINT closes admission immediately and uses mitmproxy `Proxyserver.servers.update([])`
+to stop listeners without cancelling existing TCP handlers. Admitted HTTP responses drain until
+response/error, WebSockets until close, bounded by 20 seconds; then the master shuts down.
+The process closes the rules/admin APIs with five-second server grace periods and flushes the
+lossy decision queue for at most its configured budget (five seconds by default). Deployment
+termination grace must cover those budgets plus master shutdown (20 seconds).
+There is no transparent TCP/HTTP2 migration, request replay, or promise to finish an unbounded stream.
+
+The admin-only `/bindings` endpoint reports `scope: replica-local`, observation time, readiness,
+and derived binding name/UID/generation, resolution reason, and present/missing policy names.
+It neither persists conditions nor claims other replicas observed that generation. The app shows
+Kubernetes desired bindings as “configured”, not an enforcement acknowledgement. Expiry is
+computed on every observation, with no timer-owned status or transition timestamps.
+
+CLEANUP(added 2026-09-11): Remove the CRD's legacy status schema/printer column and proxy
+status-patch RBAC only after every running proxy uses an image containing the read-only informer.
+An old informer treats a rejected status patch as a fatal task-group error. Scaling remains
+gated on the new proxy image, not just the presence of shared diagnostic history.

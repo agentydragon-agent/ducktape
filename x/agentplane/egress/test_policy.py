@@ -17,10 +17,10 @@ from x.agentplane.egress.policy import (
     DenyReason,
     EgressRequest,
     Index,
-    binding_status,
     evaluate,
     host_matches,
     path_matches,
+    resolve_binding,
 )
 from x.agentplane.egress.presentation import HeaderRewrite
 from x.agentplane.egress.resources import (
@@ -29,7 +29,6 @@ from x.agentplane.egress.resources import (
     BasicPasswordTarget,
     BasicUsernameTarget,
     BindingSpec,
-    ConditionStatus,
     CredentialRef,
     CredentialSource,
     CredentialSpec,
@@ -499,52 +498,23 @@ def test_path_matches(pattern: str, path: str, expected: bool) -> None:
 @pytest.mark.parametrize(
     ("binding_", "policies", "status", "reason", "resolved"),
     [
-        (
-            binding("b", policies=["github"]),
-            [policy("github", GITHUB_RULE)],
-            ConditionStatus.TRUE,
-            ActiveReason.RESOLVED,
-            1,
-        ),
-        (
-            binding("b", policies=["github", "absent"]),
-            [policy("github", GITHUB_RULE)],
-            ConditionStatus.TRUE,
-            ActiveReason.RESOLVED,
-            1,
-        ),
-        (binding("b", policies=["absent"]), [], ConditionStatus.FALSE, ActiveReason.MISSING_POLICY, 0),
+        (binding("b", policies=["github"]), [policy("github", GITHUB_RULE)], True, ActiveReason.RESOLVED, 1),
+        (binding("b", policies=["github", "absent"]), [policy("github", GITHUB_RULE)], True, ActiveReason.RESOLVED, 1),
+        (binding("b", policies=["absent"]), [], False, ActiveReason.MISSING_POLICY, 0),
         (
             binding("b", policies=["github"], expires_at=NOW),
             [policy("github", GITHUB_RULE)],
-            ConditionStatus.FALSE,
+            False,
             ActiveReason.EXPIRED,
             1,
         ),
     ],
 )
-def test_binding_status(
-    binding_: EgressBinding, policies: list[EgressPolicy], status: ConditionStatus, reason: ActiveReason, resolved: int
+def test_binding_resolution(
+    binding_: EgressBinding, policies: list[EgressPolicy], status: bool, reason: ActiveReason, resolved: int
 ) -> None:
-    result = binding_status(index(policies=policies, bindings=[binding_]), binding_, NOW)
-    assert (result.observed_generation, result.resolved_policies) == (3, resolved)
-    (condition,) = result.conditions
-    assert (condition.type, condition.status, condition.reason, condition.last_transition_time) == (
-        "Active",
-        status,
-        reason,
-        NOW,
-    )
-
-
-def test_binding_status_keeps_transition_time_while_status_holds() -> None:
-    """Recomputing an unchanged status yields an equal value, so nothing is written twice."""
-    first = binding_status(BASE_INDEX, BASE_INDEX.bindings["b"], NOW)
-    settled = BASE_INDEX.bindings["b"].model_copy(update={"status": first})
-    later = NOW + timedelta(minutes=5)
-    assert binding_status(BASE_INDEX, settled, later) == first
-    flipped = settled.model_copy(update={"spec": settled.spec.model_copy(update={"expires_at": NOW})})
-    assert binding_status(BASE_INDEX, flipped, later).conditions[0].last_transition_time == later
+    result = resolve_binding(index(policies=policies, bindings=[binding_]), binding_, NOW)
+    assert (result.active, result.reason, len(result.policies)) == (status, reason, resolved)
 
 
 if __name__ == "__main__":

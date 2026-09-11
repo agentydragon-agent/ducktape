@@ -355,10 +355,7 @@ def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> Non
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert [(b["name"], b["from_git"], b["active"]) for b in body] == [
-        ("live-granted", False, None),
-        ("live-seeded", True, True),
-    ]
+    assert [(b["name"], b["from_git"]) for b in body] == [("live-granted", False), ("live-seeded", True)]
     assert body[1]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
     # Nothing names `fresh`, so nothing may leave it.
     assert client.get("/sandboxes/fresh/egress").json() == []

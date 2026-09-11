@@ -13,6 +13,7 @@ import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import timedelta
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from aiohttp import web
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
 from mitmproxy import connection, http
 from more_itertools import one
+from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from util.net import pick_free_port
 from x.agentplane.egress.addon import DENIED_HEADER, EgressAddon
@@ -44,9 +46,12 @@ from x.agentplane.egress.conftest import (
     TOKEN_B,
     UPSTREAM_HOST,
     informer,
+    seed,
 )
 from x.agentplane.egress.decision_log import DecisionLog
+from x.agentplane.egress.decisions import Phase
 from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
+from x.agentplane.egress.main import Settings
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.resources import TargetMethod, placeholder_of
@@ -60,7 +65,9 @@ from x.agentplane.egress.rules_api import (
 from x.agentplane.egress.sidecar import SidecarRelay
 from x.agentplane.egress.testing.fake_apiserver import (
     BINDINGS_PLURAL,
+    CREDENTIALS_NAMESPACE,
     CREDENTIALS_PLURAL,
+    NAMESPACE,
     POLICIES_PLURAL,
     SANDBOX_NAMESPACE,
     SANDBOXES_PLURAL,
@@ -70,11 +77,13 @@ from x.agentplane.egress.testing.fake_apiserver import (
     authenticated_workload_credential,
     binding,
     credential,
+    fake_apiserver,
     pod_for,
     policy,
     sandbox,
     secret,
 )
+from x.agentplane.egress.testing.replica import kubeconfig, replica
 from x.agentplane.egress.testing.tls import (
     CertificateAuthority,
     client_tls_context,
@@ -92,11 +101,16 @@ from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 class RecordingUpstream:
     """HTTP and HTTPS listeners that record every request's method, path, and headers."""
 
+    slow_started: asyncio.Event = field(default_factory=asyncio.Event)
+    slow_release: asyncio.Event = field(default_factory=asyncio.Event)
     port: int = 0
     http_port: int = 0
     requests: list[tuple[str, str, dict[str, str]]] = field(default_factory=list)
 
     async def handle(self, request: web.Request) -> web.Response:
+        if request.path == "/public/slow":
+            self.slow_started.set()
+            await self.slow_release.wait()
         headers = {k.lower(): v for k, v in request.headers.items()}
         self.requests.append((request.method, request.path_qs, headers))
         if request.path == "/workload/requires-auth" and "authorization" not in headers:
@@ -140,6 +154,7 @@ class Response:
 
 @dataclass
 class ProxyUnderTest:
+    server: EgressProxyServer
     proxy_port: int
     admin_port: int
     interception_ca: CertificateAuthority
@@ -311,13 +326,20 @@ async def proxy(
             serve_rules_api(agent_api, host="127.0.0.1", port=agent_api_port),
             recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
             EgressProxyServer(
-                addon := EgressAddon(index=index, verifier=verifier, decision_log=decision_log, resolver=resolver),
+                addon := EgressAddon(
+                    stale_after_seconds=180,
+                    index=index,
+                    verifier=verifier,
+                    decision_log=decision_log,
+                    resolver=resolver,
+                ),
                 confdir=tmp_path / "confdir",
                 extra_options={"ssl_verify_upstream_trusted_ca": str(upstream_ca_cert)},
             ) as server,
-            serve_admin(create_admin_app(decision_log, index, resync_seconds=300), "127.0.0.1", 0) as admin_port,
+            serve_admin(create_admin_app(decision_log, index, resync_seconds=60), "127.0.0.1", 0) as admin_port,
         ):
             yield ProxyUnderTest(
+                server=server,
                 proxy_port=server.listen_port,
                 admin_port=admin_port,
                 interception_ca=interception_ca,
@@ -686,10 +708,19 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
             await stream.done_writing()
             streamed = [message async for message in stream]
             trailers = dict(await stream.trailing_metadata() or ())
+            # The HTTP/2 channel is already open. Later streams still require a fresh Index.
+            proxy.index.refreshed[CREDENTIALS_PLURAL] -= timedelta(seconds=181)
+            with pytest.raises(grpc.aio.AioRpcError):
+                await channel.unary_unary(
+                    "/build.bazel.remote.execution.v2.Capabilities/GetCapabilities",
+                    request_serializer=lambda value: value,
+                    response_deserializer=lambda value: value,
+                )(b"stale", metadata=(("x-buildbuddy-api-key", placeholder),), timeout=10)
 
     assert response == b"upstream ok"
     assert streamed == [b"upstream:one", b"upstream:two"]
     assert trailers["buildbuddy-test-trailer"] == "ok"
+    assert requests.qsize() == 2
     assert [dict(await requests.get())["x-buildbuddy-api-key"] for _ in range(2)] == [
         "buildbuddy-secret",
         "buildbuddy-secret",
@@ -944,6 +975,138 @@ async def test_history_omits_secret_bearing_paths_queries_and_headers(
     for private in ("path-secret-test", "query-secret-test", "header-secret-test", TOKEN_A, SECRET_VALUE, PLACEHOLDER):
         assert private not in payload
         assert private not in decision_messages
+
+
+@pytest.mark.parametrize("state", ["unsynced", "missing", "stale", "revoked", "draining"])
+async def test_existing_tls_connection_rechecks_every_admission(
+    proxy: ProxyUnderTest, state: str, decision_log: DecisionLog
+) -> None:
+    async with aiohttp.ClientSession() as session:
+        tls = client_tls_context(proxy.interception_ca)
+
+        async def get(path: str) -> int:
+            async with session.get(
+                proxy.url(path),
+                proxy=f"http://127.0.0.1:{proxy.proxy_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ssl=tls,
+            ) as response:
+                await response.read()
+                return response.status
+
+        assert await get("/public/before") == 200
+        match state:
+            case "unsynced":
+                proxy.index.synced = False
+            case "missing":
+                proxy.index.refreshed.pop(CREDENTIALS_PLURAL)
+            case "stale":
+                proxy.index.refreshed[CREDENTIALS_PLURAL] -= timedelta(seconds=181)
+            case "revoked":
+                proxy.index.bindings.clear()
+            case "draining":
+                proxy.addon.begin_drain()
+        assert await get("/public/after") == (403 if state == "revoked" else 502)
+        assert len(proxy.upstream.requests) == 1
+        await decision_log.flush()
+        rows = await decision_log.store.recent(SANDBOX_A)
+        assert len({row.connection_id for row in rows}) == 1
+        assert sum(row.phase is Phase.CONNECT for row in rows) == 1
+
+
+async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
+    tmp_path: Path, history_db_url: str, decision_log: DecisionLog
+) -> None:
+    ca = make_ca("test-replica-ca")
+    cert, key = write_ca(ca, tmp_path, "replica")
+    async with (
+        fake_apiserver() as first_api,
+        fake_apiserver() as second_api,
+        recording_upstream(*issue_leaf(ca, UPSTREAM_HOST, tmp_path)) as upstream,
+    ):
+        seed(first_api)
+        seed(second_api)
+        settings = [
+            Settings(
+                _cli_parse_args=False,
+                namespace=NAMESPACE,
+                sandbox_namespace=SANDBOX_NAMESPACE,
+                credentials_namespace=CREDENTIALS_NAMESPACE,
+                kubeconfig=kubeconfig(tmp_path / f"kube-{i}.yaml", fake.port),
+                ca_cert=cert,
+                ca_key=key,
+                confdir=tmp_path / f"replica-{i}",
+                listen_host="127.0.0.1",
+                listen_port=pick_free_port(),
+                admin_host="127.0.0.1",
+                admin_port=pick_free_port(),
+                agent_api_host="127.0.0.1",
+                agent_api_port=pick_free_port(),
+                token_audience=AUDIENCE,
+                resync_seconds=1,
+                database_url=history_db_url,
+                exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
+            )
+            for i, fake in enumerate([first_api, second_api])
+        ]
+        async with replica(settings[0]) as first, replica(settings[1]) as second, aiohttp.ClientSession() as client:
+
+            async def get(port: int, path: str, expected: int) -> None:
+                async with client.get(
+                    f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/{path}",
+                    proxy=f"http://127.0.0.1:{port}",
+                    headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ) as response:
+                    await response.read()
+                    assert response.status == expected, response.headers.get(DENIED_HEADER)
+
+            await get(first.proxy_port, "first", 200)
+            await get(second.proxy_port, "second", 200)
+            # Only one watch source observes revocation. No replica can acknowledge the other.
+            first_api.delete(BINDINGS_PLURAL, BINDING)
+            async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+                with attempt:
+                    await get(first.proxy_port, "revoked", 403)
+            await get(second.proxy_port, "still-current", 200)
+            second_api.watch_available = False
+            second_api.close_watches()
+            await second.health(503)
+            before = len(upstream.requests)
+            await get(second.proxy_port, "stale-existing-connection", 502)
+            assert len(upstream.requests) == before
+            second_api.watch_available = True
+            second_api.delete(BINDINGS_PLURAL, BINDING)
+            await second.health(200)
+            await get(second.proxy_port, "recovered-revocation", 403)
+            async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+                with attempt:
+                    rows = await decision_log.store.recent(SANDBOX_A)
+                    assert len({row.producer_id for row in rows}) == 2
+                    assert any(row.reason is DenyReason.UNAVAILABLE for row in rows)
+            assert first_api.status_patches == second_api.status_patches == []
+
+
+async def test_drain_closes_listener_but_completes_admitted_request(proxy: ProxyUnderTest) -> None:
+    pending = asyncio.create_task(proxy.get("/public/slow"))
+    await asyncio.wait_for(proxy.upstream.slow_started.wait(), 10)
+    draining = asyncio.create_task(proxy.server.drain())
+    await proxy.index.wait_for(lambda: proxy.index.draining)
+    try:
+        assert not draining.done()
+        async with (
+            aiohttp.ClientSession() as client,
+            client.get(f"http://127.0.0.1:{proxy.admin_port}/healthz") as response,
+        ):
+            assert response.status == 503
+        with pytest.raises(ConnectionRefusedError):
+            await asyncio.open_connection("127.0.0.1", proxy.proxy_port)
+        proxy.upstream.slow_release.set()
+        assert (await asyncio.wait_for(pending, 10)).status == 200
+        await asyncio.wait_for(draining, 10)
+        assert len(proxy.upstream.requests) == 1
+    finally:
+        proxy.upstream.slow_release.set()
+        await asyncio.gather(pending, draining, return_exceptions=True)
 
 
 if __name__ == "__main__":

@@ -152,7 +152,11 @@ class FakeApiServer:
             return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
         return web.json_response(pod)
 
+    watch_available: bool = True
+
     async def list_or_watch(self, request: web.Request) -> web.StreamResponse:
+        if not self.watch_available:
+            return web.Response(status=503)
         plural = request.match_info["plural"]
         assert request.match_info["namespace"] == _NAMESPACE_OF[plural]
         # The client spells the flag `True`, which the real server parses like `true`.

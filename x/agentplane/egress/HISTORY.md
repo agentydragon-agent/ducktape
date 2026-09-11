@@ -39,5 +39,5 @@ legacy `at` API field maps to `decided_at`; `ingested_at` is the transaction ins
 Admin reads order the limited recent window by `decided_at,event_id`, oldest first. Sandbox-name
 lookups can include earlier incarnations with that name; each row preserves its verified UID.
 
-Replica count, informer status writes and policy freshness/rolling drain behavior are unchanged.
-Shared diagnostic history does not make multi-replica enforcement safe.
+Shared history is not an enforcement authority or a global watch acknowledgement. Replica
+freshness and drain semantics are specified in <SPEC.md>.

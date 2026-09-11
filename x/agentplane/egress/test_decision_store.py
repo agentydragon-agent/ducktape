@@ -17,7 +17,7 @@ from x.agentplane.egress.database_migrate import run_migrations_for_connection
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import Base, DecisionRecordRow, DecisionStore, make_engine
 from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
-from x.agentplane.egress.policy import Index
+from x.agentplane.egress.policy import WATCHED_KINDS, Index
 
 
 def record(**values) -> DecisionRecord:
@@ -139,7 +139,9 @@ async def test_overflow_outage_nonblocking_and_explicit_read_failure(monkeypatch
     # The DB is blocked, but synchronous admission recording still completes.
     log.record(record())
     assert log.diagnostics.accepted == 2
-    app = create_admin_app(log, Index(synced=True), resync_seconds=300)
+    app = create_admin_app(
+        log, Index(synced=True, refreshed=dict.fromkeys(WATCHED_KINDS, datetime.now(UTC))), resync_seconds=300
+    )
     async with serve_admin(app, "127.0.0.1", 0) as port, aiohttp.ClientSession(f"http://127.0.0.1:{port}") as client:
         async with client.get("/decisions") as response:
             assert response.status == 503

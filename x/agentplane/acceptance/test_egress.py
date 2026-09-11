@@ -25,7 +25,7 @@ from __future__ import annotations
 import os
 import textwrap
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest_bazel
 from pydantic import BaseModel, ConfigDict, Field
@@ -62,7 +62,7 @@ BASIC_POLICY = "basic"
 LLM_INGRESS_HOST = f"agentplane-llm-ingress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local"
 
 # The proxy records a decision as it serves it; the app reads committed history over a separate hop, and a
-# binding's Active condition is written by the proxy's informer rather than by the grant itself.
+# each replica observes bindings asynchronously; acceptance checks actual read-only egress.
 DECISION_SECONDS = 30.0
 BINDING_SECONDS = 60.0
 
@@ -120,19 +120,6 @@ async def _decision_for(client: Client, sandbox: str, host: str, *, after: datet
                 f"no decision about {host} after {after}; the history contains {[d.host for d in decisions]}"
             )
     raise AssertionError("unreachable: reraise=True either returns a decision or raises")
-
-
-async def _active(client: Client, sandbox: str, binding: str) -> None:
-    """Wait for the proxy to write the binding's Active condition: until it has, the grant is not yet
-    the proxy's picture of the world, and a request would be judged against the old one."""
-    async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
-        with attempt:
-            for view in await client.bindings(sandbox):
-                if view.name == binding:
-                    if not view.active:
-                        raise AssertionError(f"{binding} is {view.active_reason}: {view.active_message}")
-                    return
-            raise AssertionError(f"{binding} is not among the bindings naming {sandbox}")
 
 
 async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
@@ -211,12 +198,14 @@ async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
     refused = await _decision_for(client, view.name, GITHUB_HOST)
     assert refused.outcome is Outcome.DENY, f"an unbound sandbox reached GitHub: {refused!r}"
 
-    binding = await client.grant_egress(view.name, [GITHUB_PUBLIC])
-    await _active(client, view.name, binding.name)
-
-    turn = await agent.run(command)
-    admitted = await _decision_for(client, view.name, GITHUB_HOST, after=refused.at)
-    assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
+    await client.grant_egress(view.name, [GITHUB_PUBLIC])
+    # Observe the read-only request, not one replica's acknowledgement of the binding.
+    async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
+        with attempt:
+            after = datetime.now(UTC)
+            turn = await agent.run(command)
+            admitted = await _decision_for(client, view.name, GITHUB_HOST, after=after)
+            assert admitted.outcome is Outcome.ALLOW, f"{admitted!r}\n{turn.transcript}"
 
 
 if __name__ == "__main__":
