@@ -4,6 +4,35 @@ The [roadmap](roadmap.md) owns dependencies and dispatch. These are bounded
 deletion criteria for gaps found in the live-reader audit, not a new framework
 or a second migration plan. Remove each section with its last reader.
 
+## Scope and expansion freeze
+
+The [roadmap's library cleanup slices](roadmap.md#committed-library-cleanups-and-open-designs)
+are committed directions; GWORLD and GMETRICS still choose the public composition,
+lifecycle and recording mechanisms. Do not turn these deletion notes into an
+implicit decision to remove World or standardize a particular collector.
+
+- **SCHEMA:** after the applicable COMPOSE constructors exist, migrate a real
+  caller off mandatory Scenario/compiler authoring and make import construct those
+  same objects. Delete vacated schemas/lowering with their readers. Keep useful
+  input validation, exact quantization and reproducible artifacts; do not replace
+  the giant input schema with another equivalent bag.
+- **P12:** no new configured implicit strategies or experiment consumers. Existing
+  supported-interface migrations can proceed without waiting for the full World
+  design; genuinely new public lifecycle/composition APIs require GWORLD.
+- **RECORD:** after GMETRICS, remove the affected product-specific capture from
+  `World.snapshot`/`World.finish` and replaced result shapes. Preserve required
+  accounting facts and existing app outputs. A new global metric tuple, mandatory
+  event bus, or an assertion that World must disappear is not the replacement.
+- **ACCEPT:** move the current `export_results` dictionary → `decode_result` →
+  `SimulationResult` frame reconstruction to direct canonical facts, where existing
+  views suffice. Do not add production users or more fields to that test adapter.
+  Retire it only with its actual last reader and retain independent expectations.
+
+Supported ACCEPT slices and unrelated no-reader deletions can land while the two
+design comparisons run. New output contracts wait only for their own scoped
+GMETRICS decision; new domain capabilities wait only for their relevant existing
+financial/timing gate. The roadmap contains the sole DAG.
+
 ## P12 reader retirement
 
 Configured TLH, scenario controls and retained acceptance consumers still use scheduled

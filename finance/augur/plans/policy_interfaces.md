@@ -1,6 +1,10 @@
 # Actor-facing policy interfaces
 
-Target design for the remaining migration and gates GP/GL/GE in [the roadmap](roadmap.md).
+Target design for the remaining migration and gates in [the roadmap](roadmap.md).
+The [GWORLD and GMETRICS decisions](library_design_gates.md) are still open:
+these sketches do not finalize a public World, component-registration/step
+protocol, or metrics collector. Preserve the settled economic action contract
+while comparing those alternatives.
 Reuse the common `ActionSession` and its single batch contract. Public requests
 already belong to `sim/actions.py`, current facts to `sim/observations.py`, and
 lifecycle to `sim/session.py`; there is no public native wrapper counterpart.
@@ -10,7 +14,10 @@ existing domain types only for a supported consumer.
 The boundary is economic agency: a policy sees information available to its actor
 and requests actions that actor could take. The environment owns contracts,
 execution and consequences. **Python owns the outer loop for every consumer**, including
-the app; only the implementation inside each financial step is a Python/Rust choice.
+the app as it migrates. Financial execution is Python-owned. A World may still
+coordinate all participating economic objects and enforce cross-object invariants;
+experiment ownership of the loop does not rule that out. GWORLD chooses the
+public ownership and lifecycle mechanism, not whether accounting duties matter.
 Rule-driven brokers, lenders and tax authorities suffice; this does not require a
 strategic many-agent economy.
 
@@ -129,8 +136,9 @@ actor/month. Terminal results retain the action and reason that stopped a path.
 The calling experiment owns the outer monthly loop in Python: start the session,
 dispatch observations to policies, submit their responses, repeat until
 finished. An optional Python `run(...)` helper uses the same session when custom
-orchestration is unnecessary; the app also uses this interface, not a Rust full-run
-entrypoint. The executor's `advance` owns financial time evolution between
+orchestration is unnecessary; the app must migrate its remaining configured
+consumers to the agreed interface. The sketch does not require retaining this
+exact Session/World class split. Under the current contract, `advance` owns financial time evolution between
 decisions: calendar/event ordering, accruals, settlement and taxes. The caller does not
 reimplement those rules or advance past unanswered decision opportunities.
 
@@ -142,7 +150,7 @@ control; this is not a promise about real products' settlement delays.
 Ordering between additional decision-making actors and expanded product/housing
 timing remain GP choices, not an accident of batch row order. The executor keeps
 ordinary books and prepared paths; the opaque Python TLH component owns its
-private holdings and supplies settled effects/statements. Native unit tests may drive the step primitives;
+private holdings and supplies settled effects/statements. Python unit tests may drive the step primitives;
 production consumers converge on the Python loop, not two supported drivers.
 
 Future PE support distinguishes mandatory issuer events from holder decisions.
@@ -221,21 +229,33 @@ manufacture losses or trigger monthly harvesting.
 The Python session advances each component once before investor operations,
 including scheduled/configured redemptions, then settles its financial effects
 through direct Python-world financial calls. Candidate state is adopted only with accepted
-cash/tax settlement. Native code may retain immutable reporting statements, never
-a mirrored mutable position/basis book. No custom exception taxonomy, model
+cash/tax settlement. Accounting/capture may retain immutable reporting statements,
+never a mirrored mutable position/basis book. Whether the experiment supplies these
+components to World or another coordinator is a GWORLD decision. No custom exception taxonomy, model
 callback handoff or generic managed-account API is needed.
 
 The [paired TLH study](managed_portfolio.md) remains future work. Tax-aware rules
 additionally need the CAP tax-observation slice above; fixed investor-flow
 controls do not.
 
+## Measurement ownership remains a design gate
+
+Experiment-authored per-step extraction, such as appending selected account
+balances to a metrics list, is a candidate rather than a finalized API. Optional
+recorders/observers and hybrids are also candidates under GMETRICS. A coordinating
+World may provide consistent observation points without owning every metric.
+Financial correctness, taxes and visible failed/unpaid outcomes cannot depend on
+whether a metrics collector was installed. RECORD implements the selected design;
+CAP can still add a concrete missing factual view without waiting for a collector
+framework. See the gate note for timing, scope, copy-safety and comparison evidence.
+
 ## Acceptance and remaining choices
 
 `x/monthly_actions` authors a Python batch policy and advances the common action
 session, including its population/profile and selected-replay entrypoints. Its CI
 controls cover immediate sale cash, lot/basis/tax reconciliation, fatal action
-prefixes and summary/trace agreement with generated financial inputs. Native tests
-exercise world operations directly; Python session tests own lifecycle, batch
+prefixes and summary/trace agreement with generated financial inputs. Python tests
+exercise world operations directly; session tests own lifecycle, batch
 routing and claim-authority controls. Retained historical receipts must not retain
 executable claim authority or permit request mutation to rewrite history.
 
