@@ -1,8 +1,7 @@
 """The decision: bindings to policies to the rule the request's placeholder picks, over an in-memory index. No I/O.
 
 `Index` is the proxy's picture of the namespace, kept equal to the API server's by the informer;
-`evaluate` answers one request for one subject against it, and `binding_status` derives the status
-the proxy writes back. Both take `now` so expiry is decided by the caller's clock.
+`evaluate` and `resolve_binding` use the caller's clock to decide expiry.
 
 Where a credential sits in a request, and what the forwarded headers become, is `presentation.py`:
 one parse per declared target, read by detection and substitution alike.
@@ -21,11 +20,11 @@ from more_itertools import one
 
 from x.agentplane.egress.presentation import HeaderRewrite, Presentation, present
 from x.agentplane.egress.resources import (
-    ACTIVE_CONDITION,
+    BINDINGS_PLURAL,
+    CREDENTIALS_PLURAL,
+    POLICIES_PLURAL,
+    SANDBOXES_PLURAL,
     ActiveReason,
-    BindingStatus,
-    Condition,
-    ConditionStatus,
     EgressBinding,
     EgressCredential,
     EgressPolicy,
@@ -35,6 +34,8 @@ from x.agentplane.egress.resources import (
 )
 
 CONNECT = "CONNECT"
+WATCHED_KINDS = frozenset({POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, SANDBOXES_PLURAL, "secrets"})
+STALE_AFTER_CYCLES = 3
 
 
 class DenyReason(StrEnum):
@@ -64,6 +65,7 @@ class Index:
     sandboxes: dict[str, Sandbox] = field(default_factory=dict)
     secrets: dict[str, Secret] = field(default_factory=dict, repr=False)
     synced: bool = field(default=False)
+    draining: bool = False
     # When each watched kind last completed a full list-and-watch cycle, keyed by plural. A cycle
     # ends when the API server closes the watch at `resync_seconds`, so under health every entry
     # advances that often. One that stops is the failure this exists to expose: a wedged list, a
@@ -71,6 +73,14 @@ class Index:
     # every answer it gives stays plausible and `synced` stays true.
     refreshed: dict[str, datetime] = field(default_factory=dict)
     changed: asyncio.Condition = field(default_factory=asyncio.Condition, repr=False)
+
+    def available(self, now: datetime, *, stale_after_seconds: float) -> bool:
+        return (
+            not self.draining
+            and self.synced
+            and self.refreshed.keys() >= WATCHED_KINDS
+            and all(0 <= (now - self.refreshed[kind]).total_seconds() <= stale_after_seconds for kind in WATCHED_KINDS)
+        )
 
     async def notify(self) -> None:
         async with self.changed:
@@ -153,42 +163,6 @@ def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> Bind
     else:
         reason = ActiveReason.RESOLVED
     return BindingResolution(binding=binding, policies=policies, missing=missing, reason=reason)
-
-
-def binding_status(index: Index, binding: EgressBinding, now: datetime) -> BindingStatus:
-    """The status the proxy writes: `observedGeneration`, the `Active` condition, `resolvedPolicies`.
-
-    The transition time carries over from the current condition when the status bit is unchanged,
-    so a status computed twice compares equal and nothing is written twice.
-    """
-    resolution = resolve_binding(index, binding, now)
-    status = ConditionStatus.TRUE if resolution.active else ConditionStatus.FALSE
-    previous = next(
-        (condition for condition in (binding.status.conditions if binding.status else []) if _is_active(condition)),
-        None,
-    )
-    transition = previous.last_transition_time if previous is not None and previous.status is status else now
-    message = f"{len(resolution.policies)} of {len(binding.spec.policies)} policies resolved"
-    if resolution.missing:
-        message += f"; missing: {', '.join(resolution.missing)}"
-    return BindingStatus(
-        observed_generation=binding.metadata.generation,
-        conditions=[
-            Condition(
-                type=ACTIVE_CONDITION,
-                status=status,
-                reason=resolution.reason,
-                message=message,
-                last_transition_time=transition,
-                observed_generation=binding.metadata.generation,
-            )
-        ],
-        resolved_policies=len(resolution.policies),
-    )
-
-
-def _is_active(condition: Condition) -> bool:
-    return condition.type == ACTIVE_CONDITION
 
 
 def subject_bindings(index: Index, sandbox: Sandbox, now: datetime) -> list[BindingResolution]:

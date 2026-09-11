@@ -10,7 +10,6 @@ else on the wire is ignored.
 from __future__ import annotations
 
 import base64
-from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -205,43 +204,17 @@ class BindingSpec(_Wire):
     expires_at: AwareDatetime | None = Field(default=None, alias="expiresAt")
 
 
-class ConditionStatus(StrEnum):
-    TRUE = "True"
-    FALSE = "False"
-
-
 class ActiveReason(StrEnum):
-    """Why the `Active` condition holds or does not; one per non-granting state."""
+    """Why a binding currently contributes rules in one replica's snapshot."""
 
     RESOLVED = "Resolved"
     EXPIRED = "Expired"
     MISSING_POLICY = "MissingPolicy"
 
 
-ACTIVE_CONDITION = "Active"
-
-
-class Condition(_Wire):
-    """The standard `metav1.Condition` shape."""
-
-    type: str
-    status: ConditionStatus
-    reason: str
-    message: str = ""
-    last_transition_time: datetime = Field(alias="lastTransitionTime")
-    observed_generation: int | None = Field(default=None, alias="observedGeneration")
-
-
-class BindingStatus(_Wire):
-    observed_generation: int | None = Field(default=None, alias="observedGeneration")
-    conditions: list[Condition] = Field(default_factory=list)
-    resolved_policies: int = Field(default=0, alias="resolvedPolicies")
-
-
 class EgressBinding(_Wire):
     metadata: ObjectMeta
     spec: BindingSpec
-    status: BindingStatus | None = None
 
 
 class Sandbox(_Wire):

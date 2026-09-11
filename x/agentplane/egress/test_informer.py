@@ -11,7 +11,6 @@ from kubernetes_asyncio.client import ApiClient
 
 from x.agentplane.egress.conftest import GITHUB_POLICY, SANDBOX_A, SANDBOX_B, SECRET_NAME, informer
 from x.agentplane.egress.policy import Index
-from x.agentplane.egress.resources import ActiveReason, ConditionStatus
 from x.agentplane.egress.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
@@ -19,7 +18,6 @@ from x.agentplane.egress.testing.fake_apiserver import (
     SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
-    binding,
     policy,
     secret,
 )
@@ -39,14 +37,6 @@ async def index(api_client: ApiClient) -> AsyncIterator[Index]:
         await asyncio.gather(task, return_exceptions=True)
 
 
-def active_condition(fake: FakeApiServer, name: str) -> dict[str, object] | None:
-    status = fake.objects[BINDINGS_PLURAL][name].get("status")
-    if status is None:
-        return None
-    conditions: list[dict[str, object]] = status["conditions"]
-    return next(condition for condition in conditions if condition["type"] == "Active")
-
-
 async def test_initial_sync_loads_every_kind(index: Index) -> None:
     assert set(index.policies) == {GITHUB_POLICY}
     assert set(index.bindings) == {BINDING}
@@ -54,52 +44,12 @@ async def test_initial_sync_loads_every_kind(index: Index) -> None:
     assert index.secrets[SECRET_NAME].data == {"token": "real-secret-v1"}
 
 
-async def test_binding_status_written_once(fake: FakeApiServer, index: Index) -> None:
-    """The Active condition lands, and the echo of that write is not written again."""
-    await index.wait_for(lambda: index.bindings[BINDING].status is not None)
-    condition = active_condition(fake, BINDING)
-    assert condition is not None
-    assert (condition["status"], condition["reason"]) == (ConditionStatus.TRUE, ActiveReason.RESOLVED)
-    assert fake.objects[BINDINGS_PLURAL][BINDING]["status"]["resolvedPolicies"] == 1
-    # A relist and a spec change both reconcile; the only write they may produce is the new status.
-    fake.close_watches()
-    fake.put(
-        BINDINGS_PLURAL,
-        binding(
-            BINDING,
-            subjects=[{"sandbox": {"name": SANDBOX_A}}],
-            policies=[GITHUB_POLICY],
-            expires_at="2020-01-01T00:00:00Z",
-        ),
-    )
-    await index.wait_for(
-        lambda: (
-            (status := index.bindings[BINDING].status) is not None
-            and status.conditions[0].reason == ActiveReason.EXPIRED
-        )
-    )
-    assert [reason for _, patch in fake.status_patches for reason in [patch["conditions"][0]["reason"]]] == [
-        ActiveReason.RESOLVED,
-        ActiveReason.EXPIRED,
-    ]
-
-
-async def test_policy_events_flow_into_the_index_and_status(fake: FakeApiServer, index: Index) -> None:
-    await index.wait_for(lambda: index.bindings[BINDING].status is not None)
+async def test_policy_events_are_read_only(fake: FakeApiServer, index: Index) -> None:
     fake.put(POLICIES_PLURAL, policy("extra", [{"hosts": ["example.com"]}]))
     await index.wait_for(lambda: "extra" in index.policies)
     fake.delete(POLICIES_PLURAL, GITHUB_POLICY)
     await index.wait_for(lambda: GITHUB_POLICY not in index.policies)
-    await index.wait_for(
-        lambda: (
-            (status := index.bindings[BINDING].status) is not None
-            and status.conditions[0].reason == ActiveReason.MISSING_POLICY
-        )
-    )
-    condition = active_condition(fake, BINDING)
-    assert condition is not None
-    assert condition["status"] == ConditionStatus.FALSE
-    assert GITHUB_POLICY in str(condition["message"])
+    assert fake.status_patches == []
 
 
 async def test_secret_rotation_reaches_the_index(fake: FakeApiServer, index: Index) -> None:

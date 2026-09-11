@@ -67,7 +67,7 @@ class _EmbeddedServer(uvicorn.Server):
 @asynccontextmanager
 async def serve_rules_api(app: FastAPI, host: str, port: int) -> AsyncIterator[None]:
     """Run the agent API alongside mitmproxy until the central process shuts down."""
-    server = _EmbeddedServer(uvicorn.Config(app, host=host, port=port, access_log=False))
+    server = _EmbeddedServer(uvicorn.Config(app, host=host, port=port, access_log=False, timeout_graceful_shutdown=5))
     task = asyncio.create_task(server.serve(), name="egress-rules-api")
     try:
         while not server.started:

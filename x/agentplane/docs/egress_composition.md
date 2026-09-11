@@ -172,7 +172,7 @@ The app writes it at `POST /sandboxes/{name}/egress`, which refuses a policy nam
 does not hold. A dangling name is not corruption — the CRD admits any string and the proxy answers
 one that resolves to nothing with `MissingPolicy` — so the refusal is a guard on the typo at the
 moment of writing, not a guarantee: a policy deleted after the grant produces the same dangling
-name, and the proxy's condition stays the answer to it.
+name. Proxy informational observations resolve it locally without writing Kubernetes status.
 
 ## Where a binding came from, and what ends it
 

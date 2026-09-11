@@ -9,6 +9,7 @@ inner requests cannot carry it, so the token is remembered per client connection
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -70,18 +71,54 @@ class EgressAddon:
         verifier: PodIdentityVerifier,
         decision_log: DecisionLog,
         resolver: UpstreamResolver,
+        stale_after_seconds: float,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._producer_id = uuid4()
         self._index = index
+        self._stale_after_seconds = stale_after_seconds
         self._verifier = verifier
         self._decision_log = decision_log
         self._resolver = resolver
         self._clock = clock
+        self._inflight: dict[str, str] = {}
+        self._idle = asyncio.Event()
+        self._idle.set()
         self._authenticated: dict[str, _AuthenticatedConnection] = {}
+
+    def begin_drain(self) -> None:
+        self._index.draining = True
+
+    async def notify_draining(self) -> None:
+        await self._index.notify()
+
+    async def wait_idle(self) -> None:
+        await self._idle.wait()
+
+    def client_connected(self, client: connection.Client) -> None:
+        if self._index.draining:
+            client.error = "proxy draining"
+
+    def _finished(self, flow: http.HTTPFlow) -> None:
+        self._inflight.pop(flow.id, None)
+        if not self._inflight:
+            self._idle.set()
+
+    def response(self, flow: http.HTTPFlow) -> None:
+        if flow.websocket is None:
+            self._finished(flow)
+
+    def error(self, flow: http.HTTPFlow) -> None:
+        self._finished(flow)
+
+    def websocket_end(self, flow: http.HTTPFlow) -> None:
+        self._finished(flow)
 
     def client_disconnected(self, client: connection.Client) -> None:
         self._authenticated.pop(client.id, None)
+        self._inflight = {key: owner for key, owner in self._inflight.items() if owner != client.id}
+        if not self._inflight:
+            self._idle.set()
 
     async def http_connect(self, flow: http.HTTPFlow) -> None:
         # A non-2xx response on the CONNECT flow makes mitmproxy refuse the tunnel.
@@ -167,11 +204,24 @@ class EgressAddon:
         try:
             sandbox, authenticated_workload = await self._authenticate(flow)
             sandbox_name = sandbox.metadata.name
+            if not self._index.available(self._clock(), stale_after_seconds=self._stale_after_seconds):
+                raise IdentityRejectedError(DenyReason.UNAVAILABLE, "enforcement index unavailable")
             decision = evaluate(
                 self._index, sandbox, egress, self._clock(), authenticated_workload=authenticated_workload
             )
             if isinstance(decision, Allowed):
+                admitted = decision
                 pin = await self._resolver.pin(egress.host, egress.port, internal=decision.cluster_internal)
+                # Authentication and DNS await I/O. Re-read policy and readiness after the last await,
+                # so revocation, expiry or staleness during admission cannot authorize a later dial.
+                if not self._index.available(self._clock(), stale_after_seconds=self._stale_after_seconds):
+                    decision = Denied(DenyReason.UNAVAILABLE)
+                else:
+                    decision = evaluate(
+                        self._index, sandbox, egress, self._clock(), authenticated_workload=authenticated_workload
+                    )
+                    if decision != admitted or self._index.sandboxes.get(sandbox.metadata.name) != sandbox:
+                        decision = Denied(DenyReason.UNAVAILABLE)
         except IdentityRejectedError as error:
             logger.info("identity rejected for %s %s:%d: %s", egress.method, egress.host, egress.port, error.reason)
             decision = Denied(error.reason)
@@ -216,6 +266,9 @@ class EgressAddon:
                 )
                 for rewrite in decision.rewrites:
                     request.headers.set_all(rewrite.header, list(rewrite.values))
+                if egress.method != CONNECT:
+                    self._inflight[flow.id] = flow.client_conn.id
+                    self._idle.clear()
                 flow.response = None  # cleared last: everything that can fail has already run
             case Denied():
                 self._decision_log.record(DecisionRecord(**common, outcome=Outcome.DENY, reason=decision.reason))

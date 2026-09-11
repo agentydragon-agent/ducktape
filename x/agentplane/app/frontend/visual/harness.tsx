@@ -148,9 +148,6 @@ const BINDINGS: BindingView[] = [
     expires_at: ago(2 * HOUR),
     policies: [POLICIES[1]],
     missing_policies: [],
-    active: false,
-    active_reason: "Expired",
-    active_message: "1 of 1 policies resolved",
   },
   {
     name: "demo-a1b2-github-public",
@@ -159,9 +156,6 @@ const BINDINGS: BindingView[] = [
     expires_at: null,
     policies: [POLICIES[0]],
     missing_policies: [],
-    active: true,
-    active_reason: "Resolved",
-    active_message: "1 of 1 policies resolved",
   },
 ];
 
