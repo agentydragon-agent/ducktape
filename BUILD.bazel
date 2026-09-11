@@ -67,6 +67,7 @@ load("@image_pins//:pins.bzl", "RBE_WORKER_DIGEST", "RBE_WORKER_IMAGE")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python/uv:lock.bzl", "lock")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/python:defs.bzl", "py_library")
 
 # Visibility is controlled per-target. Gazelle uses python_default_visibility NONE
@@ -412,4 +413,11 @@ py_wheel(
     ],
     version = "0.1.0",
     deps = [":ducktape_pkg"],
+)
+
+sh_test(
+    name = "envrc_test",
+    size = "small",
+    srcs = ["envrc_test.sh"],
+    data = [".envrc"],
 )
