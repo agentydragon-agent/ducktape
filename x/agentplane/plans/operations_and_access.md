@@ -24,17 +24,29 @@ from unbound/different accounts. If standalone operation requires new OAuth supp
 protocol machinery and implement only the separately tested missing seam. The credential owner and
 static binding model require operator design confirmation; they do not gate the credentialless path.
 
-## Concrete long-running adapters (`HOSTEXEC`)
+## SSH execution adapter (`SSHEXEC`)
 
-The initial hostexec slice is deliberately limited to one approved invocation, bounded terminal
-output, and safe terminal/unknown handling. Live progress/status/output-so-far observations are a
-separate deferred capability on the task DAG (`HOSTEXEC_PROGRESS`). When that capability is picked
-up, it must use authenticated lease-bound updates and durable bounded snapshots; a missed heartbeat
-cannot prove an external effect stopped. Status reads must never create another dispatch or blind
-retry. Preserve backend machine/user authorization and keep reusable privileged credentials outside
-the harness.
+A concrete long-running consumer must define the backend's supported, authenticated and bounded
+progress/status/output-so-far observations for the existing Execution. Use authoritative
+reconciliation only where the backend supports it; otherwise retain an unknown outcome. A missed
+heartbeat cannot prove an external effect stopped. Status reads never create another dispatch or
+blind retry.
 
-Prove exactly one invocation, authorized/redacted terminal output, safe terminal or unknown results,
+The planned SSH adapter uses OpenSSH as the transport, Kubernetes Secrets for private keys, and a
+reviewed ConfigMap for machine/user/key bindings. The binding controls which credential may reach
+which remote account; it is not a command policy. The existing decider/Decision layer authorizes the
+complete Action, including the command and target, and the SSH layer must not introduce a second
+command allowlist. The executor implementation owns the `list_targets` and `exec` Action names and
+schemas; configuration supplies only the target/key/transport data those Actions consume.
+`exec` may also carry a shorter per-Execution timeout, bounded above by the configured SSH execution
+maximum; it cannot extend that maximum.
+
+The Action Service must never receive reusable private-key material. Prefer mounted files for the
+initial implementation; evaluate an isolated SSH-agent sidecar only against a concrete rotation or
+key-isolation need. Preserve strict host-key verification, bounded output, exactly-one dispatch, and
+safe terminal/unknown results. See [the SSH executor plan](ssh_executor.md).
+
+Prove exactly one invocation, authorized/redacted observations, safe terminal or unknown results,
 and duplicate-start refusal against the concrete backend. Do not build a generic worker transport
 without a consumer requiring it. Broader delegated-versus-brokered policy is in
 [external access](external_access.md); standing grants remain separate access objects.

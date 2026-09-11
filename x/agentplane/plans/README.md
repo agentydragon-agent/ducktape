@@ -14,10 +14,11 @@ per-Identity auto-approval do not gate it. SandboxPresets remain integration-app
 ## Open plans and gates
 
 - [Task DAG](task_dag.md) — remaining-work dependency map, including `INPUT_DELIVERY`: re-read native queue research and refresh captures before changing the common protocol
-- [Operations and access](operations_and_access.md) — remaining credentialed-provider acceptance and hostexec adapter boundaries
-- [Asynchronous approvals](async_approvals.md) — NOTIFY implementation burn-down, live acceptance, and progress delivery
+- [Operations and access](operations_and_access.md) — remaining credentialed and SSH adapter boundaries
+- [SSH Executor](ssh_executor.md) — Kubernetes-backed SSH keys, target bindings, and one-shot execution
+- [Asynchronous approvals](async_approvals.md) — NOTIFY implementation burn-down, live acceptance, progress delivery, and provider-log safety
 - [Configured Action policies](action_policies.md) — open policy-binding storage/model gate, then bounded auto-approval by external Identity or concrete Sandbox binding
-- [External MCP connections](external_mcp_connections.md) — staging rollout, real Claude.ai/local Claude Code acceptance, and Haku migration
+- [External MCP connections](external_mcp_connections.md) — staging rollout, real Claude.ai/local Claude Code acceptance, remaining Connection management/reconnect, and Haku migration
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [BuildBuddy hosted remote-run authentication](buildbuddy_remote_auth.md) — unresolved hosted-run credential boundary
@@ -33,7 +34,4 @@ generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 [Executor liveness](../docs/executor_liveness.md), [operator federation](../docs/operator_federation.md),
 [workload authentication](../docs/workload_authentication.md), and
 [launch presets](../docs/launch_presets.md) own the other implemented contracts.
-Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it. The
-credentialless MCP implementation and core Action/Executor lifecycle work are removed from the
-remaining-work graph because their implementation slices are complete; only explicitly listed
-deployment or provider acceptance gates remain.
+Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it.

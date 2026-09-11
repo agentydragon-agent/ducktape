@@ -40,10 +40,10 @@ flowchart TB
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>real Claude.ai/Claude Code proof"]:::future
-    CUTOVER["Planned milestone<br/>Haku Console affordance cutover<br/>Kubernetes + hostexec + GitHub"]:::active
+    CUTOVER["Planned milestone<br/>Haku Console affordance cutover<br/>Kubernetes + SSH + GitHub"]:::active
     K8SAUTH["Planned support<br/>browser-mediated Kubernetes auth<br/>linkage, refresh, revocation"]:::future
-    HOSTEXEC["Deferred adapter<br/>hostexec-backed Action execution<br/>bounded terminal output"]:::future
-    HOSTEXEC_PROGRESS["Deferred capability<br/>live stdout/stderr progress<br/>lease-authenticated updates"]:::future
+    SSHEXEC["Planned adapter<br/>SSH-backed Action execution<br/>Kubernetes keys + bindings"]:::future
+    SSHDURABLE["Deferred support<br/>systemd-backed durable processes<br/>host daemon + signals/output"]:::future
     APPROVALUI["Needed live evidence<br/>deployed SSE/push operator federation + BFF<br/>identity and approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
@@ -76,8 +76,8 @@ flowchart TB
     APPROVALUI --> CUTOVER
     K8SAUTH --> CUTOVER
     MCPAUTH --> CUTOVER
-    HOSTEXEC --> HOSTEXEC_PROGRESS
-    HOSTEXEC --> CUTOVER
+    SSHEXEC --> CUTOVER
+    SSHEXEC --> SSHDURABLE
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     APPROVALUI -. replacement surface .-> RETIRE_TOOLS
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
@@ -116,8 +116,13 @@ adds configurable auto-approval through concrete Actions-owned Sandbox bindings.
 an integration-app-only recipe: the app resolves preset defaults and per-Sandbox additions into each
 subsystem's bindings. Actions and egress do not resolve presets or depend on one another. The
 [Action policy plan](action_policies.md) owns shared bounds and deciders; policy representation remains open.
-Hostexec is another adapter behind the existing Executor contract; its final ordering relative to the credentialed
-MCP path is deferred.
+SSH execution is another adapter behind the existing Executor contract. The planned first slice uses
+OpenSSH with Kubernetes Secret-mounted long-lived keys and reviewed ConfigMap host/user/key bindings;
+it deliberately does not duplicate command authorization in the executor. It also exposes a reviewed
+read-only target-inventory Action so callers can see which configured machine/user pairs are available
+without receiving credential configuration. The existing decider and human approval path authorize
+the complete target and command. The executor code, rather than runtime configuration, owns the
+`list_targets` and `exec` Action names and schemas. See [the SSH executor plan](ssh_executor.md).
 Haku Console migration is split: Agent/conversation management and tool-call/approval management
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
@@ -143,12 +148,11 @@ provenance, result recovery, and rollback evidence exists. The initial cutoff se
   consent or re-authentication, expiry/refresh, revocation, and wrong-cluster/wrong-user isolation.
   Do not copy a kubeconfig or reusable bearer into the MCP client, Sandbox, or transcript; Kubernetes
   RBAC remains authoritative and the browser flow returns only the reviewed linkage needed to call it.
-- **hostexec:** prefer an Action Service Executor adapter over a second hostexec MCP facade. Preserve
-  hostexec's machine/user authorization, credential exchange, bounded terminal output,
-  duplicate-start refusal, and unknown-outcome semantics. Live stdout/stderr progress is a
-  separate deferred capability (`HOSTEXEC_PROGRESS`). Repoint existing hostexec instances at an
-  Agentplane-owned route through a compatibility and reversible rollout, rather than changing all
-  daemons and the frontend in one cutover.
+- **SSH:** add an Action Service Executor adapter using OpenSSH and deployment-owned Kubernetes
+  Secret/ConfigMap configuration. Keep command authorization in the existing decider and human
+  approval path; the SSH layer performs target/key lookup and transport. Repoint the affordance at an
+  Agentplane-owned route through a reversible rollout rather than changing the frontend and every
+  credential deployment at once.
 - **GitHub:** use the credentialed-upstream account track (`MCPAUTH`) behind the generic MCP frontend.
   Prove account linkage, safe read execution, refresh/reconnect, revocation, and account isolation;
   PAT or OAuth refresh credentials stay with the broker/account authority, never in the MCP client,
@@ -161,7 +165,7 @@ surface temporarily. Preserve stable tool semantics where compatibility matters,
 parity for unused affordances.
 
 **Acceptance:** from a real external client, exercise one harmless Kubernetes read after browser
-linkage, one hostexec Action through the existing daemon path, and one GitHub read through a linked
+linkage, one SSH Action through the configured executor path, and one GitHub read through a linked
 account. For each, inspect canonical caller identity, authorization, Action/Execution provenance,
 redacted results, retry/reconnect behavior, and revocation. Run the old and new routes in parallel
 behind a rollback switch before retiring Haku Console's corresponding tool surface.
@@ -312,7 +316,7 @@ with explicit precedence and negative tests for stale, cross-Agent, or caller-su
 **Deferred design:** choose per-system whether an Action uses the Agent's delegated identity, a
 brokered operator credential, or a hybrid. Keep target-side RBAC and egress enforcement authoritative;
 use grants/revocation reconciliation where a broker mints delegated authority. This is the broader
-external-access policy behind `MCPAUTH` and `HOSTEXEC`, not a prerequisite for the completed credentialless MCP vertical.
+external-access policy behind `MCPAUTH` and `SSHEXEC`, not a prerequisite for the completed credentialless MCP vertical.
 
 **Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
 revocation/expiry semantics without putting a reusable privileged credential in the harness.
@@ -353,24 +357,42 @@ per-Action projection may never be needed and is not required for migration. Act
 evidence determines whether to explore it. The migration order remains open.
 Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` milestone.
 
-### `HOSTEXEC` — hostexec-backed Action execution
+### `SSHEXEC` — SSH-backed Action execution
 
-**Deferred support:** add hostexec as an Action Service Executor adapter, preserving hostexec's
-existing machine/user authorization, credential exchange, process-state, bounded terminal output,
-and no-retry boundaries. The first slice deliberately excludes streamed stdout/stderr progress;
-this is an adapter behind the existing execution contract, not a reason to build a generic worker
-framework first.
+**Planned support:** add an SSH Executor adapter behind the existing Action Service execution
+contract. OpenSSH performs non-interactive execution using private keys mounted from Kubernetes
+Secrets; a reviewed ConfigMap maps each key to the machine and Unix user for which it may be used.
+The executor code owns the `list_targets` and `exec` Action schemas; reviewed configuration supplies
+only target/key/transport data and the maximum execution timeout. `exec` may request a shorter
+per-Execution timeout but never a longer one. The executor performs target/key lookup and transport
+only. It does not enforce an allowed-command list: the existing decider and human approval path
+remain authoritative for the complete Action.
 
-**Acceptance evidence:** one approved host command produces one durable Execution with bounded
-terminal output and safe terminal/unknown handling; duplicate starts do not run the command twice,
-and the Action Service never receives a reusable host credential.
+Start with long-lived keys and deployment-owned rotation. Prefer mounted key files over introducing
+an SSH-agent sidecar unless an agent materially improves the measured rotation boundary; if used,
+its socket and key inventory must remain private to the executor.
 
-### `HOSTEXEC_PROGRESS` — live hostexec stdout/stderr progress
+**Acceptance evidence:** approved Actions run exactly once as the configured user on `wyrm2` and
+`rugged`, with strict `known_hosts`, bounded terminal output, redacted target/key provenance, safe
+terminal/unknown handling, and no duplicate starts. Mismatched bindings and changed host keys fail
+closed. Secret rotation is proven through deployment rollout. A later process-control slice may add
+reconnectable stdin/signals such as Ctrl+C; it is not part of this one-shot executor.
 
-**Deferred capability:** after the base hostexec adapter is proven, add lease-authenticated,
-coalesced stdout/stderr updates while a command is running. Persist only bounded, reconnectable
-progress snapshots or events; never create a second execution/progress authority. Preserve the
-same liveness, no-retry, output-limit, and credential-boundary rules as the base adapter.
+### `SSHDURABLE` — durable SSH-backed processes
+
+**Deferred support:** after the one-shot SSH adapter is proven, add a small `agentplane-execd` host
+component for `rugged` and `wyrm2`. SSH still authenticates as the configured target user; an
+unprivileged stdio client forwards structured requests over a local Unix socket to a root-owned
+daemon. The daemon derives the execution user from kernel Unix-socket peer credentials and does not
+accept a requested-user field. It delegates process lifetime, cgroups, signals, and unit status to
+the host systemd system manager, so user lingering is not required.
+
+The daemon's durable handle is a systemd transient unit derived from the Agentplane Execution ID.
+Future code-owned Actions may start, inspect, read bounded output from, signal, and terminate that
+unit. Agentplane remains authoritative for Action schemas, approval, caller control rights, durable
+Execution state, leases, and unknown-outcome reconciliation; the daemon is only a constrained
+systemd adapter. See [the SSH executor plan](ssh_executor.md) for the protocol and acceptance
+boundaries. Do not add this daemon, PTYs, or stdin streaming to the first one-shot implementation.
 
 ### `LIVE_CLEAN` — executor heartbeat retention cleanup
 
