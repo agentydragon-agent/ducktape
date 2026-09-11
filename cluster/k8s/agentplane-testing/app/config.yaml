@@ -40,9 +40,7 @@ sandbox_presets:
 # Granted to every sandbox before whatever the operator picks: without the model endpoint a
 # sandbox has no agent, so it is not a choice (cluster/k8s/agentplane-testing/egress).
 default_policies:
-  - litellm
-  - agentplane-actions
-  - egress-rules
+  - basic
 # The egress proxy's admin port (x/agentplane/egress `Settings.admin_port`), asked for each
 # sandbox's recent decisions; until the proxy Deployment lands the page shows the rules alone.
 egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081
