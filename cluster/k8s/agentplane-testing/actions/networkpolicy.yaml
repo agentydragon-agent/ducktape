@@ -44,6 +44,15 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+    # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
+    - toFQDNs:
+        - matchName: claude.ai
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - claude.ai
     - toEntities:
         - kube-apiserver
     - toEndpoints:
