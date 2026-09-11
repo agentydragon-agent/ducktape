@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: agentplane-ssh-mcp
-  namespace: agentplane-testing
+  namespace: agentplane-ssh-mcp
   labels:
     app.kubernetes.io/name: agentplane-ssh-mcp
   annotations:

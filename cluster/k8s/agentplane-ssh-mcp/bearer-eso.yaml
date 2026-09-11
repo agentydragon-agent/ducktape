@@ -2,9 +2,9 @@ apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: agentplane-ssh-mcp-bearer
-  namespace: agentplane-testing
+  namespace: agentplane-ssh-mcp
   annotations:
-    description: Shared internal bearer for the Agentplane Action Service to call the SSH MCP backend.
+    description: Shared internal bearer for haku-console and Agentplane staging to call the SSH MCP backend.
 spec:
   refreshInterval: 1h
   secretStoreRef:

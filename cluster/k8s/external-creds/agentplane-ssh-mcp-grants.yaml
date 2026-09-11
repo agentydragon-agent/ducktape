@@ -1,0 +1,52 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-ssh-mcp-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["agentplane-ssh-mcp-bearer"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-ssh-mcp-backend-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-ssh-mcp-reader
+subjects:
+  - kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-ssh-mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-ssh-mcp-haku-console-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-ssh-mcp-reader
+subjects:
+  - kind: ServiceAccount
+    name: external-creds-reader
+    namespace: haku-console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-ssh-mcp-agentplane-staging-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-ssh-mcp-reader
+subjects:
+  - kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging
