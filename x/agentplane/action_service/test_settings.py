@@ -71,8 +71,9 @@ def staging_settings(
     container = one(c for c in pod["containers"] if c["name"] == "actions")
     path = Path(one(e["value"] for e in container["env"] if e["name"] == "AGENTPLANE_ACTIONS_CONFIG_FILE"))
     mount = one(m for m in container["volumeMounts"] if Path(m["mountPath"]) == path.parent)
+    volume = one(v for v in pod["volumes"] if v["name"] == mount["name"])
     config_map = one(
-        r for r in staging_rendered if r["kind"] == "ConfigMap" and r["metadata"]["name"] == mount["configMap"]["name"]
+        r for r in staging_rendered if r["kind"] == "ConfigMap" and r["metadata"]["name"] == volume["configMap"]["name"]
     )
     config_file = tmp_path / "settings.yaml"
     config_file.write_text(config_map["data"][path.name])
