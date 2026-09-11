@@ -270,7 +270,10 @@ filegroup(
     srcs = glob([
         "agentplane-staging/actions/*.yaml",
         "agentplane-testing/actions/*.yaml",
-        "agentplane-ssh-mcp/*",
+        "agentplane-ssh-mcp/**/*",
     ]),
-    visibility = ["//x/agentplane/action_service:__pkg__"],
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//x/agentplane/action_service:__pkg__",
+    ],
 )

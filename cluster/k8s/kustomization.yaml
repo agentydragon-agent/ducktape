@@ -136,6 +136,7 @@ resources:
   - agentplane-staging/egress/flux-kustomization.yaml
   - agentplane-staging/actions/flux-kustomization.yaml
   - agentplane-ssh-mcp/namespace-flux-kustomization.yaml
+  - agentplane-ssh-mcp/secrets/flux-kustomization.yaml
   - agentplane-ssh-mcp/flux-kustomization.yaml
   - agentplane-testing/namespace/flux-kustomization.yaml
   - agentplane-testing/agent-rbac/flux-kustomization.yaml

@@ -11,8 +11,6 @@ resources:
   - networkpolicy.yaml
   - httproute.yaml
   - web-push-vapid.sops.yaml
-  - external-creds-reader.yaml
-  - ssh-mcp-bearer-eso.yaml
 configMapGenerator:
   - name: agentplane-actions-settings
     files:

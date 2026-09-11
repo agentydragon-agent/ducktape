@@ -569,8 +569,6 @@ mcp:
     # auto-approve (the readOnlyHint subset, minus ha_report_issue — see `home_assistant_reads`
     # above); every state-changing/control tool stays operator-gated. Schemas exercised 2026-07-20.
     #
-    # A static bearer rather than operator OAuth: Haku is the only consumer and ha-mcp is our own
-    # in-cluster service, so there is no consent boundary OAuth would buy.
     ssh:
       id: ssh
       backend:
@@ -578,6 +576,8 @@ mcp:
         url: http://agentplane-ssh-mcp.agentplane-ssh-mcp.svc.cluster.local:8080/mcp
         auth:
           kind: static_bearer
+    # A static bearer rather than operator OAuth: Haku is the only consumer and ha-mcp is our own
+    # in-cluster service, so there is no consent boundary OAuth would buy.
     home_assistant:
       id: home-assistant
       backend:

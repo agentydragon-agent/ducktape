@@ -23,7 +23,6 @@ resources:
   - static-service.yaml
   - web-push-vapid.sops.yaml
   - external-creds-reader.yaml
-  - ssh-mcp-bearer-eso.yaml
 
 configMapGenerator:
   - name: haku-console-config

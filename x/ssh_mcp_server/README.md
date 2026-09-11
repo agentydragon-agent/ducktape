@@ -1,6 +1,6 @@
 # Agentplane SSH MCP server
 
-This is the modular SSH backend for Agentplane's Action Service. It exposes two code-owned MCP
+This is the modular SSH backend for Agentplane's Action Service and Haku Console. It exposes two code-owned MCP
 Actions:
 
 - `list_targets` — list every configured `(host, user)` tuple and whether its mounted identity is
@@ -9,8 +9,7 @@ Actions:
   server's configured maximum.
 
 The server owns transport and key selection only. It does not implement a command allowlist or
-approval policy; Agentplane's Action decider authorizes the complete Action before its MCP executor
-calls this backend.
+approval policy; each consumer authorizes the complete call before invoking this backend.
 
 ## Configuration
 
@@ -35,9 +34,9 @@ Private keys are mounted files, not configuration values. Missing individual key
 targets in `list_targets` with `available: false`; they do not remove the target or take down the
 server. Duplicate `(host, user)` tuples are rejected as invalid configuration.
 
-The HTTP MCP endpoint requires `Authorization: Bearer <SSH_MCP_BEARER_TOKEN>`. In the staging
-composition the bearer is an ESO-managed Kubernetes Secret shared with the Agentplane Action
-Service. The endpoint is cluster-internal and has no public route.
+The HTTP MCP endpoint requires `Authorization: Bearer <SSH_MCP_BEARER_TOKEN>`. The standalone
+[deployment](../../cluster/k8s/agentplane-ssh-mcp/README.md) uses one ESO-generated bearer
+shared only with Haku Console and the staging Action Service. The endpoint is cluster-internal and has no public route.
 
 Paramiko provides the SSH transport with strict reviewed `known_hosts`, disabled agent/key
 search, disabled PTY, and bounded connect/command/output behavior. The remote command is passed
