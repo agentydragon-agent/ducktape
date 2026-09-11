@@ -540,6 +540,8 @@ py_test(
         "//haku/console:config",
         "//haku/console:mcp_config",
         "//haku/console:settings",
+        "//haku/console:tool_call_actor",
+        "//haku/console/auto_approval:registry",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
