@@ -62,10 +62,10 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - [ ] `month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode`
 - [ ] `claim_views_keep_assembled_amount_identity_and_payer_scope`
 - [ ] `rejects_invalid_fixture_metadata`
-- [ ] `series_indexed_amounts_follow_rollout_specific_reset_boundaries`
-- [ ] `series_indexed_amount_validation_rejects_invalid_paths`
-- [ ] `bond_principal_remains_until_redemption_event`
-- [ ] `nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts`
+- [x] `series_indexed_amounts_follow_rollout_specific_reset_boundaries` → `rust/indexed_payments_test.py::test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout`
+- [x] `series_indexed_amount_validation_rejects_invalid_paths` → `rust/indexed_payments_test.py::{test_series_indexed_amount_cannot_fire_before_base_month,test_series_indexed_amount_requires_external_series_coverage,test_series_indexed_amount_rejects_zero_base_level}`
+- [x] `bond_principal_remains_until_redemption_event` → `sim/test_held_bonds.py::{test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon,test_stopped_bond_snapshot_uses_the_last_observed_index}`
+- [x] `nominal_and_indexed_bonds_follow_coupon_redemption_and_accretion_contracts` → `sim/test_held_bonds.py::test_tips_deflation_changes_income_but_redemption_has_a_face_floor`
 - [ ] `bond_validation_rejects_non_par_and_missing_index_paths`
 - [ ] `rejects_invalid_references_before_rollout_execution`
 - [ ] `rejects_income_from_a_source_the_scenario_did_not_declare`
@@ -76,8 +76,8 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - [ ] `transfer_and_fifo_sale_remain_balanced`
 - [ ] `mid_horizon_property_mark_and_sale_share_the_purchase_anchor`
 - [ ] `oversell_is_rejected_before_any_disposition`
-- [ ] `failure_stops_future_actions_and_preserves_the_observed_book`
-- [ ] `same_source_recurring_obligations_settle_all_or_none`
+- [x] `failure_stops_future_actions_and_preserves_the_observed_book` → `rust/obligations_test.py::test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_continues`
+- [x] `same_source_recurring_obligations_settle_all_or_none` → `sim/test_payments.py::{test_grouped_funding_is_decided_before_incoming_claim_payments,test_funded_group_does_not_rescue_a_source_that_was_unfunded_at_preflight}`
 
 ## `rust/engine/trades_test.rs`
 
@@ -198,7 +198,7 @@ integrated-world coverage claim.
 
 All **24/24 declarations** in these four native files now have named Python
 counterparts above, validated at [BuildBuddy](https://app.buildbuddy.io/invocation/8c006c23-65d1-454a-a4ff-448ff2f663a4).
-The inventory is **70/95 mapped**, with **25 pending**: 24 in `rust/engine/tests.rs`
+The inventory is **76/95 mapped**, with **19 pending**: 18 in `rust/engine/tests.rs`
 and one in `rust/execution.rs`. This is not completion of the full cutover.
 
 | Native section                                         | Declarations mapped | Python target                            |     Executed pytest cases |
@@ -281,3 +281,18 @@ downloaded only the pytest XML for exact counts; it is not an additional fresh t
 | `sim:test_holdings`                |    37 |
 | `sim:test_results`                 |     3 |
 | `sim:tlh_session_test`             |    16 |
+
+## Reused exact behavior coverage — next bounded subset
+
+The next **6/6 native declarations** reuse direct Python tests whose assertions
+cover the native behavior without a native runner or a second financial oracle.
+The four exact targets were rerun at [BuildBuddy](https://app.buildbuddy.io/invocation/d674a60c-dba5-4e79-8a7f-bf3af45b9929);
+all four were successful cached results, so this is target-level rerun evidence,
+not a claim that those test actions freshly executed on this invocation:
+rollout-specific indexed reset boundaries and invalid path admission; bond
+principal through redemption, indexed accretion and face-floor redemption; a
+failed rollout's observed-book freeze and skipped future actions; and grouped
+same-source obligation preflight. The named tests were rerun as focused targets
+at [BuildBuddy]([BuildBuddy invocation](https://app.buildbuddy.io/invocation/d674a60c-dba5-4e79-8a7f-bf3af45b9929)) before this
+mapping was checked in. Their existing names are retained because they already
+state the behavior under test.
