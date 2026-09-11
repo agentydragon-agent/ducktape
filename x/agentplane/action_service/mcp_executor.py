@@ -113,6 +113,21 @@ class _InvalidMcpCatalogError(Exception):
     pass
 
 
+def _http_auth(config: McpHttpServerConfigValue) -> str | None:
+    """Resolve transport credentials by HTTP config variant, not optional fields."""
+    if isinstance(config, McpHttpStaticBearerServerConfig):
+        try:
+            token = config.bearer_file.read_text().strip()
+        except OSError:
+            raise ValueError("configured MCP static bearer file is unavailable") from None
+        if not token:
+            raise ValueError("configured MCP static bearer file is empty")
+        return token
+    if isinstance(config, McpHttpNoAuthServerConfig):
+        return None
+    raise ValueError("OAuth MCP config requires the linkage-aware executor")
+
+
 class McpActionGroupExecutor:
     """Implements `Executor` for exactly one `ActionGroup` backed by one MCP server connection."""
 
@@ -174,16 +189,7 @@ class McpActionGroupExecutor:
         else:
 
             def transport_factory() -> ClientTransport:
-                auth = None
-                if config.auth == "static_bearer":
-                    assert config.bearer_file is not None
-                    try:
-                        auth = config.bearer_file.read_text().strip()
-                    except OSError:
-                        raise ValueError("configured MCP static bearer file is unavailable") from None
-                    if not auth:
-                        raise ValueError("configured MCP static bearer file is empty")
-                return StreamableHttpTransport(config.url, auth=auth)
+                return StreamableHttpTransport(config.url, auth=_http_auth(config))
 
         return cls(
             group_key, group, catalog_refresh_interval=catalog_refresh_interval, transport_factory=transport_factory
