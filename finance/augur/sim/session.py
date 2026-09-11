@@ -16,12 +16,13 @@ from finance.augur.sim.actions import (
     Transfer,
     Withdraw,
 )
-from finance.augur.sim.books import AccountRef, MortgageState
+from finance.augur.sim.books import MortgageState
 from finance.augur.sim.capture import WorldResult
 from finance.augur.sim.managed import ComponentEffects
-from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
+from finance.augur.sim.mortgage import Mortgage, MortgagePayment
 from finance.augur.sim.observations import Decision, Observation, TlhPortfolioObservation
 from finance.augur.sim.prepared import CompiledRun, PreparedTlhPortfolio
+from finance.augur.sim.property import mortgage_terms
 from finance.augur.sim.tlh import (
     ModeledRealizations,
     TlhMarketUpdate,
@@ -241,18 +242,7 @@ class _Session:
             financing = purchase.mortgage
             if purchase.month != self.month or financing is None:
                 continue
-            candidates[financing.liability_id] = Mortgage(
-                MortgageTerms(
-                    liability_id=financing.liability_id,
-                    property_id=purchase.property_id,
-                    borrower=AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id),
-                    lender=AccountRef(agent_id=financing.lender_agent_id, account_id=financing.lender_account_id),
-                    origination_month=purchase.month,
-                    origination_principal=financing.principal,
-                    annual_interest_rate_ppb=financing.annual_interest_rate_ppb,
-                    term_months=financing.term_months,
-                )
-            )
+            candidates[financing.liability_id] = Mortgage(mortgage_terms(purchase))
         originated, paid_off = path.world.prepare_month(self.month, candidates, path.mortgages)
         for id_ in paid_off:
             path.mortgages[id_].payoff()

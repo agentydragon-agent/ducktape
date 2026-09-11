@@ -10,7 +10,7 @@ from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
-from finance.augur.sim.mortgage import Mortgage
+from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.prepared import PreparedScenario, _PropertyPurchase, _PropertySale
 
 
@@ -99,6 +99,22 @@ def principal(accounting: Accounting, purchase: _PropertyPurchase) -> int:
             AccountRef(agent_id=purchase.buyer_agent_id, account_id=f"liability:mortgage:{loan.liability_id}")
         ),
         "money negation",
+    )
+
+
+def mortgage_terms(purchase: _PropertyPurchase) -> MortgageTerms:
+    financing = purchase.mortgage
+    if financing is None:
+        raise ValueError("purchase has no mortgage financing")
+    return MortgageTerms(
+        liability_id=financing.liability_id,
+        property_id=purchase.property_id,
+        borrower=AccountRef(agent_id=purchase.buyer_agent_id, account_id=purchase.buyer_account_id),
+        lender=AccountRef(agent_id=financing.lender_agent_id, account_id=financing.lender_account_id),
+        origination_month=purchase.month,
+        origination_principal=financing.principal,
+        annual_interest_rate_ppb=financing.annual_interest_rate_ppb,
+        term_months=financing.term_months,
     )
 
 
@@ -237,9 +253,13 @@ class Properties:
         loan = purchase.mortgage
         payoff = 0
         paid_off = None
-        if loan is not None and loan.liability_id in mortgages and mortgages[loan.liability_id].active:
+        if loan is not None:
             payoff = principal(accounting, purchase)
-            paid_off = loan.liability_id
+            if payoff:
+                mortgage = mortgages.get(loan.liability_id)
+                if mortgage is None or not mortgage.active or mortgage.terms != mortgage_terms(purchase):
+                    raise ValueError("mortgage payoff needs the active servicing contract")
+                paid_off = loan.liability_id
         net_cash = checked_count(gross - payoff, "money subtraction")
         capex = checked_count(state.building_basis - state.building_basis_initial, "money subtraction")
         # Sale gain excludes capitalized buyer closing costs under the current contract.
@@ -351,7 +371,9 @@ class Properties:
             ]
             origination = None
             if loan is not None:
-                mortgage = originations[loan.liability_id]
+                mortgage = originations.get(loan.liability_id)
+                if mortgage is None or not mortgage.active or mortgage.terms != mortgage_terms(purchase):
+                    raise ValueError("mortgage origination needs the active financing contract")
                 postings.extend(
                     [
                         Posting(

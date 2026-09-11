@@ -110,6 +110,11 @@ def test_zero_price_is_allowed_only_for_exclusively_managed_assets(run: Compiled
         assert observed.reported_tax_basis == lot.basis
     finally:
         session.close()
+    # A exclusively managed zero mark is valid without an ordinary pool too.
+    validate(replace(worthless, scenario=replace(worthless.scenario, holding_pools=())))
+    negative = replace(worthless.series[0], values=(*worthless.series[0].values[:-1], -1))
+    with pytest.raises(ValueError, match="non-positive value -1"):
+        validate(replace(worthless, series=(negative,)))
     # An ordinary lot or even an empty ordinary purchase pool sharing the quote
     # restores the positive-price requirement. Managed ownership is pool-scoped.
     with pytest.raises(ValueError, match="non-positive value"):

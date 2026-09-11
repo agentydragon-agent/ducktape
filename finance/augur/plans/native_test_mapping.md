@@ -12,31 +12,31 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/engine/actors_test.rs`
 
-- [ ] `cash_only_actor_observes_and_purchases_an_unheld_declared_asset`
-- [ ] `declaring_an_empty_pool_does_not_invest_cash_without_an_action`
-- [ ] `an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation`
-- [ ] `declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots`
-- [ ] `cashflows_claims_sales_and_cross_year_tax_share_financial_books`
-- [ ] `ordered_actions_can_buy_before_transferring_and_buy_again`
-- [ ] `rejected_financial_request_preserves_prior_sale_and_independent_world`
-- [ ] `payment_capture_names_the_actual_selected_source`
-- [ ] `compact_capture_replays_observed_prefixes_and_canonical_payment_identity`
-- [ ] `unpaid_claims_keep_occurrence_and_source_without_hidden_sales`
+- [x] `cash_only_actor_observes_and_purchases_an_unheld_declared_asset` → `sim/test_world.py::test_cash_only_actor_observes_and_purchases_an_unheld_declared_asset`
+- [x] `declaring_an_empty_pool_does_not_invest_cash_without_an_action` → `sim/test_world.py::test_declaring_an_empty_pool_does_not_invest_cash_without_an_action`
+- [x] `an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation` → `sim/test_world.py::test_an_empty_pool_purchase_rejects_wrong_account_or_scale_without_mutation`
+- [x] `declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots` → `sim/test_world.py::test_declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots`
+- [x] `cashflows_claims_sales_and_cross_year_tax_share_financial_books` → `sim/test_world.py::test_cashflows_claims_sales_and_cross_year_tax_share_financial_books`
+- [x] `ordered_actions_can_buy_before_transferring_and_buy_again` → `sim/test_world.py::test_ordered_actions_can_buy_before_transferring_and_buy_again`
+- [x] `rejected_financial_request_preserves_prior_sale_and_independent_world` → `sim/test_world.py::test_rejected_financial_request_preserves_prior_sale_and_independent_world`
+- [x] `payment_capture_names_the_actual_selected_source` → `sim/test_world.py::test_payment_capture_names_the_actual_selected_source`
+- [x] `compact_capture_replays_observed_prefixes_and_canonical_payment_identity` → `sim/test_world.py::test_compact_capture_replays_observed_prefixes_and_canonical_payment_identity`
+- [x] `unpaid_claims_keep_occurrence_and_source_without_hidden_sales` → `sim/test_world.py::test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales`
 
 ## `rust/engine/components_test.rs`
 
-- [ ] `basis_statement_cash_and_tax_reconcile_without_ordinary_lots`
-- [ ] `invalid_effects_and_overflow_leave_every_financial_book_unchanged`
-- [ ] `distribution_cash_uses_interest_source_not_capital_gain_journal_account`
-- [ ] `withdrawal_receipt_does_not_recalculate_component_rounded_value`
-- [ ] `component_capture_keeps_explicit_stop_marks_and_independent_books`
-- [ ] `opening_component_rows_require_exact_portfolio_coverage`
-- [ ] `zero_component_marks_do_not_relax_ordinary_quote_or_negative_mark_validation`
+- [x] `basis_statement_cash_and_tax_reconcile_without_ordinary_lots` → `sim/test_managed.py::test_basis_statement_cash_and_tax_reconcile_without_ordinary_lots`
+- [x] `invalid_effects_and_overflow_leave_every_financial_book_unchanged` → `sim/test_managed.py::test_invalid_effects_and_overflow_leave_every_financial_book_unchanged`
+- [x] `distribution_cash_uses_interest_source_not_capital_gain_journal_account` → `sim/test_managed.py::test_distribution_cash_uses_interest_source_not_capital_gain_journal_account`
+- [x] `withdrawal_receipt_does_not_recalculate_component_rounded_value` → `sim/test_managed.py::test_withdrawal_receipt_does_not_recalculate_component_rounded_value`
+- [x] `component_capture_keeps_explicit_stop_marks_and_independent_books` → `sim/test_managed.py::test_component_capture_keeps_explicit_stop_marks_and_independent_books`
+- [x] `opening_component_rows_require_exact_portfolio_coverage` → `sim/test_managed.py::test_opening_component_rows_require_exact_portfolio_coverage`
+- [x] `zero_component_marks_do_not_relax_ordinary_quote_or_negative_mark_validation` → `sim/validation_test.py::test_zero_price_is_allowed_only_for_exclusively_managed_assets`
 
 ## `rust/engine/mortgages_test.rs`
 
-- [ ] `mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff`
-- [ ] `invalid_mortgage_effects_do_not_change_cash_or_principal`
+- [x] `mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff` → `sim/test_world_mortgages.py::test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff`
+- [x] `invalid_mortgage_effects_do_not_change_cash_or_principal` → `sim/test_world_mortgages.py::test_invalid_mortgage_effects_do_not_change_cash_or_principal`
 
 ## `rust/engine/payments_test.rs`
 
@@ -46,11 +46,11 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/engine/private_equity_test.rs`
 
-- [ ] `recovery_total_one_for_three_units_is_not_rounded_to_zero`
-- [ ] `recovery_total_two_for_three_units_is_not_rounded_to_three`
-- [ ] `recovery_total_is_apportioned_across_lots_and_accounts`
-- [ ] `recovery_uses_economic_units_across_different_account_scales`
-- [ ] `recovery_cashout_applies_to_the_remaining_position_after_an_earlier_sale`
+- [x] `recovery_total_one_for_three_units_is_not_rounded_to_zero` → `sim/test_private_equity.py::test_recovery_total[total_one_for_three_units]`
+- [x] `recovery_total_two_for_three_units_is_not_rounded_to_three` → `sim/test_private_equity.py::test_recovery_total[total_two_for_three_units]`
+- [x] `recovery_total_is_apportioned_across_lots_and_accounts` → `sim/test_private_equity.py::test_recovery_total[across_lots_and_accounts]`
+- [x] `recovery_uses_economic_units_across_different_account_scales` → `sim/test_private_equity.py::test_recovery_total[economic_units_across_scales]`
+- [x] `recovery_cashout_applies_to_the_remaining_position_after_an_earlier_sale` → `sim/test_private_equity.py::test_recovery_cashout_applies_to_the_remaining_position_after_an_earlier_sale`
 
 ## `rust/engine/tests.rs`
 
@@ -184,9 +184,100 @@ complete the native-test port or authorize removing Rust yet.
   the typed `events` field for the same absence in summary mode. Financial
   assertions are unchanged.
 
-Next bounded validation should cover the remaining `rust/` Python financial suites
-(assets, bonds, distributions, indexed payments and lot basis), then property/PE
-and product projection acceptance. Finish native actor/component/mortgage/PE test
-ports, exact prepared-input validation and capture compatibility before deleting
-native bindings and legacy artifact codecs. The older 135-case evidence is not
-an integrated-world coverage claim.
+The retained financial validation checkpoint passed the remaining nine requested
+targets (including 158 backend cases), 14 prepared-input validation cases and 16
+TLH-session cases with changed-library lint/mypy at
+[BuildBuddy](https://app.buildbuddy.io/invocation/9e607de2-38c3-4e2b-ae2e-bf67dd0ff5b3).
+The explicit native ports below are separate evidence, not inferred from those
+acceptance passes. Finish the remaining 25 native declarations, remaining
+financial/product full suites and capture compatibility before deleting native
+bindings and legacy artifact codecs. The older 135-case evidence is not an
+integrated-world coverage claim.
+
+## Explicit actor/component/mortgage/PE port
+
+All **24/24 declarations** in these four native files now have named Python
+counterparts above, validated at [BuildBuddy](https://app.buildbuddy.io/invocation/8c006c23-65d1-454a-a4ff-448ff2f663a4).
+The inventory is **70/95 mapped**, with **25 pending**: 24 in `rust/engine/tests.rs`
+and one in `rust/execution.rs`. This is not completion of the full cutover.
+
+| Native section                                         | Declarations mapped | Python target                            |     Executed pytest cases |
+| ------------------------------------------------------ | ------------------: | ---------------------------------------- | ------------------------: |
+| Actors                                                 |               10/10 | `sim:test_world`                         |                        14 |
+| Components                                             |                 6/7 | `sim:test_managed`                       |                        18 |
+| Component zero/negative marks and ordinary quote scope |                 1/7 | `sim:validation_test` (named case above) | 1 reused and strengthened |
+| Mortgages                                              |                 2/2 | `sim:test_world_mortgages`               |                         4 |
+| PE recovery                                            |                 5/5 | `sim:test_private_equity`                |                         5 |
+
+The four new targets execute 41 pytest cases. The reused validation case now also
+checks the no-pool managed declaration and negative terminal component price;
+the complete 14-case validation target was run. The focused run additionally
+passes `sim:configured_mortgage_test` and explicit lint/mypy for
+`sim:{validation,property,session,world,managed,private_equity}`.
+
+Semantic adaptations to the direct Python APIs:
+
+- Component overflow targets the one canonical taxpayer record, not the retired
+  duplicate jurisdiction facts. Rejection fingerprints include cash, tax income
+  and gains, journals/counts, component marks/effects/counts, ordinary lots and
+  captured books.
+- Mortgage payoff takes no caller-supplied outstanding-principal scalar anymore.
+  The valid port pays 1,000 twice from the selected reserve and requires a 58,000
+  ledger payoff despite the servicing contract's 60,000 original principal.
+  Invalid effects test missing origination, missing/inactive/mismatched payoff
+  servicing contracts, and a 60,001 installment against 60,000 ledger debt, with
+  unchanged financial books. This preserves rejection/ledger authority without
+  reintroducing a second payoff balance or transport API.
+- Recovery tests drive the Python world's actual configured PE component, retain
+  reversed storage/FIFO order, mixed quantity scales, independent total proceeds
+  and basis expectations, and recovery of only the position left after a prior
+  forced sale. No native runner or parallel financial oracle is used.
+
+The explicit port exposed and corrected duplicate/missing holding-pool admission
+and missing/mismatched mortgage servicing admission; the failing and subsequent
+passing RBE runs are `c0082f0b-444c-4f99-ba4e-672178a47773`,
+`92c93f19-9327-4ba8-9ab8-1e73dfa2320b`, and the passing invocation above.
+
+## Broader financial regression
+
+**32/32 test targets, 560 pytest cases, zero failures/errors/skips**, with six
+explicit library lint/mypy targets, passed at
+[BuildBuddy](https://app.buildbuddy.io/invocation/c201954e-5805-4af4-9e46-6cf60626057e).
+Seventeen targets executed in that invocation; fifteen reused successful cache
+results. A [cached artifact retrieval](https://app.buildbuddy.io/invocation/ad9c7f5d-12c2-4286-a3de-726771cf88a9)
+downloaded only the pytest XML for exact counts; it is not an additional fresh test run.
+
+| Target                             | Cases |
+| ---------------------------------- | ----: |
+| `sim:configured_mortgage_test`     |     7 |
+| `sim:test_accounting`              |    18 |
+| `sim:test_held_bonds`              |     3 |
+| `sim:test_ledger`                  |     6 |
+| `sim:test_managed`                 |    18 |
+| `sim:test_money`                   |    32 |
+| `sim:test_mortgage`                |    15 |
+| `sim:test_payments`                |    19 |
+| `sim:test_private_equity`          |     5 |
+| `sim:test_tax`                     |    10 |
+| `sim:test_tax_year`                |     2 |
+| `sim:test_world`                   |    14 |
+| `sim:test_world_mortgages`         |     4 |
+| `sim:tlh_test`                     |    17 |
+| `sim:validation_test`              |    14 |
+| `rust:action_test`                 |    17 |
+| `rust:asset_sales_test`            |    12 |
+| `rust:backend_test`                |   158 |
+| `rust:bond_test`                   |    14 |
+| `rust:held_bond_test`              |    14 |
+| `rust:indexed_payments_test`       |     6 |
+| `rust:lot_basis_test`              |     4 |
+| `rust:obligations_test`            |    13 |
+| `rust:public_sales_test`           |    11 |
+| `rust:security_distributions_test` |    13 |
+| `rust:test_invocation`             |     7 |
+| `rust:transfers_test`              |     7 |
+| `sim:configured_allocation_test`   |    29 |
+| `sim:configured_test`              |    15 |
+| `sim:test_holdings`                |    37 |
+| `sim:test_results`                 |     3 |
+| `sim:tlh_session_test`             |    16 |

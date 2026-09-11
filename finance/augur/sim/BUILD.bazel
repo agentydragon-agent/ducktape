@@ -342,6 +342,7 @@ py_library(
         ":mortgage",
         ":observations",
         ":prepared",
+        ":property",
         ":results",
         ":tlh",
         ":validation",
@@ -891,6 +892,78 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/x/monthly_actions:run",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_managed",
+    srcs = ["test_managed.py"],
+    deps = [
+        ":actions",
+        ":books",
+        ":holdings",
+        ":managed",
+        ":money",
+        ":observations",
+        ":prepared",
+        ":session",
+        ":tlh",
+        ":world",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_private_equity",
+    srcs = ["test_private_equity.py"],
+    deps = [
+        ":prepared",
+        ":validation",
+        ":world",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_world",
+    srcs = ["test_world.py"],
+    deps = [
+        ":actions",
+        ":prepared",
+        ":results",
+        ":session",
+        ":world",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/compiler:tax",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_world_mortgages",
+    srcs = ["test_world_mortgages.py"],
+    deps = [
+        ":actions",
+        ":mortgage",
+        ":prepared",
+        ":results",
+        ":world",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

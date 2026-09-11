@@ -50,6 +50,11 @@ def validate(run: CompiledRun) -> None:
             raise ValueError(f"{context} references unknown account {account.agent_id}:{account.account_id}")
 
     pools = {(p.agent_id, p.account_id, p.asset_id) for p in scenario.holding_pools}
+    if len(pools) != len(scenario.holding_pools):
+        raise ValueError("duplicate holding pool declaration")
+    for lot in scenario.initial_lots:
+        if (lot.agent_id, lot.account_id, lot.asset_id) not in pools:
+            raise ValueError(f"lot {lot.lot_id!r} references no declared holding pool")
     for pool in scenario.holding_pools:
         if private_issuer(pool.asset_id) is None:
             require_series(f"security:{pool.asset_id}")
