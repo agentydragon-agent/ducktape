@@ -571,3 +571,189 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "accounting",
+    srcs = ["accounting.py"],
+    deps = [
+        ":actions",
+        ":books",
+        ":ledger",
+        ":money",
+        ":mortgage",
+        ":prepared",
+        ":scenario",
+        ":tax_year",
+        "//finance/augur/sim/compiler:income_sources",
+        "//finance/augur/sim/compiler:tax",
+    ],
+)
+
+py_library(
+    name = "claims",
+    srcs = ["claims.py"],
+    deps = [
+        ":actions",
+        ":books",
+        ":fixed_point",
+        ":market_path",
+        ":money",
+        ":mortgage",
+        ":prepared",
+        "//finance/augur/sim/compiler:tax",
+    ],
+)
+
+py_library(
+    name = "market_path",
+    srcs = ["market_path.py"],
+    deps = [
+        ":money",
+        ":prepared",
+    ],
+)
+
+py_library(
+    name = "payments",
+    srcs = ["payments.py"],
+    deps = [
+        ":accounting",
+        ":actions",
+        ":books",
+        ":claims",
+        ":fixed_point",
+        ":money",
+        ":mortgage",
+        ":results",
+    ],
+)
+
+py_library(
+    name = "tax_year",
+    srcs = ["tax_year.py"],
+    deps = [
+        ":books",
+        ":fixed_point",
+        ":money",
+        ":mortgage",
+        ":prepared",
+        ":scenario",
+        ":tax",
+        "//finance/augur/sim/compiler:tax",
+    ],
+)
+
+py_test(
+    name = "test_accounting",
+    srcs = ["test_accounting.py"],
+    deps = [
+        ":accounting",
+        ":actions",
+        ":books",
+        ":money",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_payments",
+    srcs = ["test_payments.py"],
+    deps = [
+        ":accounting",
+        ":actions",
+        ":books",
+        ":claims",
+        ":payments",
+        ":results",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_tax_year",
+    srcs = ["test_tax_year.py"],
+    deps = [
+        ":accounting",
+        ":ledger",
+        ":prepared",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "holdings",
+    srcs = ["holdings.py"],
+    deps = [
+        ":accounting",
+        ":actions",
+        ":books",
+        ":market_path",
+        ":money",
+        ":prepared",
+    ],
+)
+
+py_library(
+    name = "held_bonds",
+    srcs = ["held_bonds.py"],
+    deps = [
+        ":accounting",
+        ":books",
+        ":fixed_point",
+        ":market_path",
+        ":money",
+        ":prepared",
+        ":scenario",
+    ],
+)
+
+py_test(
+    name = "test_held_bonds",
+    srcs = ["test_held_bonds.py"],
+    deps = [
+        ":accounting",
+        ":held_bonds",
+        ":market_path",
+        ":prepared",
+        ":scenario",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_holdings",
+    srcs = ["test_holdings.py"],
+    deps = [
+        ":accounting",
+        ":actions",
+        ":books",
+        ":holdings",
+        ":market_path",
+        ":money",
+        ":prepared",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

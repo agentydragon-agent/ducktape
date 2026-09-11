@@ -226,3 +226,16 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "accounting",
+    srcs = ["accounting.py"],
+    deps = [
+        ":case",
+        "//finance/augur/sim:accounting",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/compiler:tax",
+    ],
+)

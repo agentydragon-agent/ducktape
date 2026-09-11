@@ -40,9 +40,9 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/engine/payments_test.rs`
 
-- [ ] `claim_occurrences_are_not_labels_and_consumption_is_not_a_claim`
-- [ ] `rejected_payments_change_neither_books_nor_capture`
-- [ ] `moving_cash_within_the_actor_is_not_paid_consumption`
+- `claim_occurrences_are_not_labels_and_consumption_is_not_a_claim` → `sim/test_payments.py::test_claim_occurrences_are_not_labels_and_consumption_is_not_a_claim` (passed in focused RBE run)
+- `rejected_payments_change_neither_books_nor_capture` → `sim/test_payments.py::test_rejected_payments_change_neither_books_nor_capture` (passed in focused RBE run)
+- `moving_cash_within_the_actor_is_not_paid_consumption` → `sim/test_payments.py::test_moving_cash_within_the_actor_is_not_paid_consumption` (passed in focused RBE run)
 
 ## `rust/engine/private_equity_test.rs`
 
@@ -81,24 +81,24 @@ Wide and narrow symmetry examples share one parameterized Python test.
 
 ## `rust/engine/trades_test.rs`
 
-- [ ] `exact_selection_is_not_fifo_and_full_lot_basis_reconciles`
-- [ ] `total_proceeds_use_the_same_basis_and_tax_commit`
-- [ ] `rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged`
-- [ ] `fifo_scheduled_sale_matches_the_same_explicit_selection`
-- [ ] `invalid_exact_lot_requests_leave_every_book_unchanged`
-- [ ] `overflow_after_first_lot_or_jurisdiction_cannot_partially_commit`
-- [ ] `rejected_scheduled_sale_preserves_every_book`
-- [ ] `purchase_posts_cash_and_basis_then_joins_future_exact_sales`
-- [ ] `invalid_or_unfunded_purchase_does_not_create_lot_or_debit_cash`
+- `exact_selection_is_not_fifo_and_full_lot_basis_reconciles` → `sim/test_holdings.py::test_exact_selection_is_not_fifo_and_full_lot_basis_reconciles` (passed in focused RBE run)
+- `total_proceeds_use_the_same_basis_and_tax_commit` → `sim/test_holdings.py::test_total_proceeds_use_the_same_basis_and_tax_commit` (passed in focused RBE run)
+- `rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged` → `sim/test_holdings.py::test_rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged` (passed in focused RBE run)
+- `fifo_scheduled_sale_matches_the_same_explicit_selection` → `sim/test_holdings.py::test_fifo_scheduled_sale_matches_the_same_explicit_selection` (passed in focused RBE run)
+- `invalid_exact_lot_requests_leave_every_book_unchanged` → `sim/test_holdings.py::test_invalid_exact_lot_requests_leave_every_book_unchanged` (passed in focused RBE run)
+- `overflow_after_first_lot_or_jurisdiction_cannot_partially_commit` → `sim/test_holdings.py::test_overflow_after_first_lot_or_jurisdiction_cannot_partially_commit` (passed in focused RBE run)
+- `rejected_scheduled_sale_preserves_every_book` → `sim/test_holdings.py::test_rejected_scheduled_sale_preserves_every_book` (passed in focused RBE run)
+- `purchase_posts_cash_and_basis_then_joins_future_exact_sales` → `sim/test_holdings.py::test_purchase_posts_cash_and_basis_then_joins_future_exact_sales` (passed in focused RBE run)
+- `invalid_or_unfunded_purchase_does_not_create_lot_or_debit_cash` → `sim/test_holdings.py::test_invalid_or_unfunded_purchase_does_not_create_lot_or_debit_cash` (passed in focused RBE run)
 
 ## `rust/engine/transfers_test.rs`
 
-- [ ] `admitted_actor_transfer_matches_scheduled_accounting_exactly`
-- [ ] `scheduled_income_can_arrive_from_an_exogenous_negative_balance`
-- [ ] `actors_cannot_overdraw_or_impersonate_another_source_or_classify_tax`
-- [ ] `scheduled_tax_and_posting_failures_do_not_partially_apply`
-- [ ] `shared_income_row_is_updated_in_order_without_overwriting_a_prior_change`
-- [ ] `transfer_sequence_is_not_an_implicitly_atomic_batch`
+- `admitted_actor_transfer_matches_scheduled_accounting_exactly` → `sim/test_accounting.py::test_admitted_actor_transfer_matches_scheduled_accounting_exactly` (passed in focused RBE run)
+- `scheduled_income_can_arrive_from_an_exogenous_negative_balance` → `sim/test_accounting.py::test_scheduled_income_can_arrive_from_an_exogenous_negative_balance` (passed in focused RBE run)
+- `actors_cannot_overdraw_or_impersonate_another_source_or_classify_tax` → `sim/test_accounting.py::test_actors_cannot_overdraw_or_impersonate_another_source_or_classify_tax` (passed in focused RBE run)
+- `scheduled_tax_and_posting_failures_do_not_partially_apply` → `sim/test_accounting.py::test_scheduled_tax_and_posting_failures_do_not_partially_apply` (passed in focused RBE run)
+- `shared_income_row_is_updated_in_order_without_overwriting_a_prior_change` → `sim/test_accounting.py::test_shared_income_row_is_updated_in_order_without_overwriting_a_prior_change` (passed in focused RBE run)
+- `transfer_sequence_is_not_an_implicitly_atomic_batch` → `sim/test_accounting.py::test_transfer_sequence_is_not_an_implicitly_atomic_batch` (passed in focused RBE run)
 
 ## `rust/execution.rs`
 
@@ -153,3 +153,10 @@ No transport-only expectations have been dropped at this checkpoint.
 
 - Money, ledger and existing mortgage/TLH suites: 70 pytest cases passed, with changed-library lint/typechecks, at [BuildBuddy](https://app.buildbuddy.io/invocation/89156cfe-8c37-456a-b927-7903cee4b966).
 - Tax assessment controls and generated dependency manifest passed, with tax-library lint/typechecks, at [BuildBuddy](https://app.buildbuddy.io/invocation/d1b76b65-08ae-436a-8930-832346db4712). Gazelle drift check also passed.
+
+Tax gains now have one canonical taxpayer record. The duplicate-jurisdiction overflow controls target that record and retain all cash/lot/tax/capture atomicity assertions.
+
+- Retained compiler/input contracts: 55 pytest cases passed at [BuildBuddy](https://app.buildbuddy.io/invocation/0a34f0f2-d56c-47e3-ae94-8d11f01c56bf).
+- Cash/payment/year-close controls and their libraries passed at [BuildBuddy](https://app.buildbuddy.io/invocation/57b7233a-b787-4259-8c4e-a3c64cbbd537).
+
+- Exact-lot trade and held-bond controls plus their library lint/typechecks passed at [BuildBuddy](https://app.buildbuddy.io/invocation/54d2654e-3061-471a-b1df-ff32a7e5fca1).
