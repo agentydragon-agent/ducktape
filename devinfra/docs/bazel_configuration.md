@@ -111,6 +111,18 @@ definition. A controlled NixOS devbox/VM should keep the host-specific pieces
 in the NixOS module. Neither environment should leak Nix store paths into
 remote actions; see the shell-path and strict-action-environment rules below.
 
+### Host CA bundles in the development shell
+
+The root `.envrc` preserves a nonempty `SSL_CERT_FILE` supplied by the host and
+falls back to `/etc/ssl/certs/ca-certificates.crt` when unset or empty. The pinned
+`devShell` does not set this variable, so `use flake` leaves the caller's choice
+intact. Keep that property when adding shell packages or environment settings.
+
+On `public-coder-devbox`, the NixOS host definition owns the generated runtime
+PEM bundle and client environment, plus the separate JKS used by Bazel's JVM.
+The generic repository shell must not replace that bundle or hardcode its path.
+These settings govern client-local repository fetches, not remote build actions.
+
 ## Action placement
 
 “Local” always means local to the Bazel client, which differs by entry point:

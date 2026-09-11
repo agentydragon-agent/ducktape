@@ -5,31 +5,40 @@ import { displayableError, mcpLinkageService, type McpLinkageService, type McpLi
 
 export function McpServers({ service = mcpLinkageService }: { service?: McpLinkageService }): JSX.Element {
   const [rows, setRows] = useState<McpLinkageView[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
-    setRows(await service.list());
+    setLoading(true);
+    setError(null);
+    try {
+      setRows(await service.list());
+    } catch (failure) {
+      setError(displayableError(failure));
+    } finally {
+      setLoading(false);
+    }
   }, [service]);
 
   useEffect(() => {
-    void load().catch((failure: unknown) => setError(displayableError(failure)));
+    void load();
   }, [load]);
 
   async function link(row: McpLinkageView): Promise<void> {
-    setBusy(true);
+    setBusy({ serverId: row.server_id, operation: "link" });
     setError(null);
     try {
       const flow = await service.start(row.server_id, row.scopes);
       window.location.assign(flow.authorization_url);
     } catch (failure) {
       setError(displayableError(failure));
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   async function disconnect(row: McpLinkageView): Promise<void> {
-    setBusy(true);
+    setBusy({ serverId: row.server_id, operation: "disconnect" });
     setError(null);
     try {
       const updated = await service.disconnect(row.server_id);
@@ -37,7 +46,7 @@ export function McpServers({ service = mcpLinkageService }: { service?: McpLinka
     } catch (failure) {
       setError(displayableError(failure));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -45,11 +54,7 @@ export function McpServers({ service = mcpLinkageService }: { service?: McpLinka
     <Stack>
       <Group justify="space-between">
         <Title order={2}>MCP servers</Title>
-        <Button
-          variant="light"
-          loading={busy}
-          onClick={() => void load().catch((failure) => setError(displayableError(failure)))}
-        >
+        <Button variant="light" loading={loading} disabled={busy !== null} onClick={() => void load()}>
           Refresh
         </Button>
       </Group>
@@ -58,6 +63,7 @@ export function McpServers({ service = mcpLinkageService }: { service?: McpLinka
         credentials.
       </Text>
       {error && <Alert color="red">{error}</Alert>}
+      {loading && <Text role="status">Loading MCP servers…</Text>}
       {rows.map((row) => (
         <Paper key={row.server_id} withBorder p="md">
           <Group justify="space-between" align="flex-start">
@@ -83,18 +89,28 @@ export function McpServers({ service = mcpLinkageService }: { service?: McpLinka
             </Badge>
           </Group>
           <Group justify="flex-end" mt="sm">
-            <Button loading={busy} onClick={() => void link(row)}>
+            <Button
+              loading={busy?.serverId === row.server_id && busy.operation === "link"}
+              disabled={loading || busy !== null}
+              onClick={() => void link(row)}
+            >
               {row.status === "linked" ? "Reconnect" : "Link account"}
             </Button>
             {row.status === "linked" && (
-              <Button color="red" variant="light" loading={busy} onClick={() => void disconnect(row)}>
+              <Button
+                color="red"
+                variant="light"
+                loading={busy?.serverId === row.server_id && busy.operation === "disconnect"}
+                disabled={loading || busy !== null}
+                onClick={() => void disconnect(row)}
+              >
                 Disconnect
               </Button>
             )}
           </Group>
         </Paper>
       ))}
-      {rows.length === 0 && <Text c="dimmed">No OAuth-capable MCP servers are configured.</Text>}
+      {!loading && !error && rows.length === 0 && <Text c="dimmed">No OAuth-capable MCP servers are configured.</Text>}
     </Stack>
   );
 }

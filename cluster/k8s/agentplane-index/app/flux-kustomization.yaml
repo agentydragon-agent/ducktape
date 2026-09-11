@@ -1,13 +1,13 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: agentplane-staging-egress-migrations
+  name: agentplane-index-app
   namespace: ducktape-flux
 spec:
   interval: 10m
   retryInterval: 1m
   timeout: 5m
-  path: ./cluster/k8s/agentplane-staging/egress-migrations
+  path: ./cluster/k8s/agentplane-index/app
   prune: true
   wait: true
   sourceRef:
@@ -15,7 +15,11 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
-    - name: agentplane-staging-egress-db
+    - name: agentplane-index-db
       namespace: ducktape-flux
-    - name: forgejo-images
+    - name: agentplane-index-secrets
+      namespace: ducktape-flux
+    - name: agentplane-index-sources
+      namespace: ducktape-flux
+    - name: ollama
       namespace: ducktape-flux
