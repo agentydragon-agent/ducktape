@@ -88,7 +88,7 @@ function ReasoningView({ item }: { item: Item }): JSX.Element {
           </Group>
         </Accordion.Control>
         <Accordion.Panel>
-          <Text style={{ whiteSpace: "pre-wrap" }}>{item.text}</Text>
+          <Markdown source={item.text} />
         </Accordion.Panel>
       </Accordion.Item>
     </Accordion>
