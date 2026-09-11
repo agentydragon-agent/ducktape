@@ -58,8 +58,8 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - [x] `actor_books_do_not_read_future_prices_or_cpi` → `sim/test_observations.py::test_actor_books_do_not_read_future_prices_or_cpi`
 - [x] `actor_books_follow_partial_sales_and_hide_exhausted_lots` → `sim/test_observations.py::test_actor_books_follow_partial_sales_and_hide_exhausted_lots`
 - [x] `actor_books_reject_unpriced_public_positions_before_inspection` → `sim/test_observations.py::test_actor_books_reject_unpriced_public_positions_before_inspection`
-- [ ] `retained_rollouts_keep_opening_books_lots_and_tax_state_independent`
-- [ ] `month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode`
+- [x] `retained_rollouts_keep_opening_books_lots_and_tax_state_independent` → `sim/test_world.py::test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent`
+- [x] `month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode` → `sim/test_world.py::test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode`
 - [x] `claim_views_keep_assembled_amount_identity_and_payer_scope` → `sim/test_observations.py::test_claim_views_keep_assembled_amount_identity_and_payer_scope`
 - [x] `rejects_invalid_fixture_metadata` → `sim/test_validation_contracts.py::test_rejects_invalid_fixture_metadata`
 - [x] `series_indexed_amounts_follow_rollout_specific_reset_boundaries` → `rust/indexed_payments_test.py::test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout`
@@ -73,9 +73,9 @@ Wide and narrow symmetry examples share one parameterized Python test.
 - [x] `rejects_invalid_property_contracts_before_rollout_execution` → `sim/test_validation_contracts.py::test_rejects_invalid_property_contracts_before_rollout_execution`
 - [x] `rejects_mixed_quantity_scales_and_invalid_security_prices` → `sim/test_validation_contracts.py::test_rejects_mixed_quantity_scales_and_invalid_security_prices`
 - [x] `zero_distribution_is_valid_but_negative_distribution_and_zero_price_are_not` → `sim/test_validation_contracts.py::test_zero_distribution_is_valid_but_negative_distribution_and_zero_price_are_not`
-- [ ] `transfer_and_fifo_sale_remain_balanced`
-- [ ] `mid_horizon_property_mark_and_sale_share_the_purchase_anchor`
-- [ ] `oversell_is_rejected_before_any_disposition`
+- [x] `transfer_and_fifo_sale_remain_balanced` → `sim/test_world.py::test_transfer_and_fifo_sale_remain_balanced`
+- [x] `mid_horizon_property_mark_and_sale_share_the_purchase_anchor` → `sim/test_world_mortgages.py::test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor`
+- [x] `oversell_is_rejected_before_any_disposition` → `sim/test_holdings.py::test_oversell_is_rejected_before_any_disposition`
 - [x] `failure_stops_future_actions_and_preserves_the_observed_book` → `rust/obligations_test.py::test_failed_path_skips_future_transfers_and_policy_calls_while_other_path_continues`
 - [x] `same_source_recurring_obligations_settle_all_or_none` → `sim/test_payments.py::{test_grouped_funding_is_decided_before_incoming_claim_payments,test_funded_group_does_not_rescue_a_source_that_was_unfunded_at_preflight}`
 
@@ -299,7 +299,7 @@ state the behavior under test.
 
 ## Final native ports — admission and observations checkpoint
 
-**90/95 mapped; five pending.** The final 14 mappings added above passed in
+**95/95 native declarations have named Python counterparts.** The final 14 mappings added above passed in
 [f8238d06](https://app.buildbuddy.io/invocation/f8238d06-3ba9-465d-8c5e-dbf2da4fe312):
 three freshly executed targets, `sim:{test_observations,test_validation_contracts}`
 and `rust:test_invocation`, plus explicit `sim:validation` lint/mypy.
@@ -316,7 +316,13 @@ The wire test corrupts the actual persisted prepared artifact with `100.0` and
 `100.5`; its positive control round-trips that artifact into an executed Python
 session. No raw JSON runtime entry point was introduced.
 
-Still pending here: retained-rollout independence, month stepping and stopped
-capture across tax years, balanced transfer/FIFO sale, property purchase-anchor
-marks/sale, and oversell atomicity. Native deletion and full-product validation
-remain the parent milestone.
+The final five mappings above passed in
+[08d5dbdb](https://app.buildbuddy.io/invocation/08d5dbdb-9400-4e86-84f7-129373b83edc):
+`sim:test_world_mortgages` freshly executed and passed; `sim:test_world` and
+`sim:test_holdings` passed from their verified focused results, with the complete
+five-case behavior set also freshly exercised during the preceding focused runs.
+The new tests preserve rollout-independent opening books, tax-year boundaries and
+stopped capture for forensic/dense/summary modes; exact transfer/FIFO balances and
+journal trial balance; the purchase-month property valuation anchor through sale;
+and oversell rejection before any disposition. Native deletion and full-product
+validation remain the parent milestone.

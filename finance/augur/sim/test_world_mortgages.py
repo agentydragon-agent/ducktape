@@ -211,6 +211,33 @@ def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff
     assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in financial.journal)
 
 
+def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(run: CompiledRun) -> None:
+    purchase = run.scenario._scheduled_property_purchases[0]
+    purchase = replace(purchase, down_payment=100_000, mortgage=None)
+    scenario = replace(run.scenario, _scheduled_property_purchases=(purchase,))
+    run = replace(
+        run,
+        rollout_count=2,
+        scenario=scenario,
+        series=(replace(run.series[0], values=(50, 100, 200, 240, 300, 360, 800, 500, 7, 200, 240, 300, 360, 800)),),
+    )
+    for rollout in range(2):
+        world = World(run, rollout, [], capture_mode="forensic", actor=None, product_actor=None)
+        for month in range(6):
+            world.prepare_month(month, {}, {})
+            world.assemble_claims([])
+            if month in (2, 3, 4, 5):
+                state = world.properties.snapshots()[0]
+                expected_mark = (0, 0, 0, 120_000, 150_000, 180_000)[month]
+                if month >= 3:
+                    assert world.properties.market_value(purchase, world.market, month) == expected_mark
+                    assert state.adjusted_basis == 100_000
+            world.close_month(failed=False, shortfall=0, mortgages=[], snapshots=[])
+        sale = world.properties.sales[0]
+        assert (sale.gross_proceeds, sale.net_cash_to_owner, sale.realized_gain) == (180_000, 180_000, 80_000)
+        assert world.account_balance(HOUSEHOLD, "checking") == 280_000
+
+
 @pytest.mark.parametrize("bad_payoff", ["missing", "inactive", "wrong_contract"])
 def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
     run: CompiledRun, mortgage: Mortgage, bad_payoff: str

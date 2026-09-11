@@ -6,8 +6,11 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, LotSale, PayClaim, Sell, Transfer
+from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, DecisionActions, LotSale, PayClaim, Sell, Transfer
+from finance.augur.sim.capture import WorldResult
 from finance.augur.sim.compiler.tax import PreparedTaxBracket
+from finance.augur.sim.configured import execute
+from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.prepared import (
     CompiledRun,
     PreparedHoldingPool,
@@ -15,9 +18,10 @@ from finance.augur.sim.prepared import (
     PreparedObligation,
     PreparedSeries,
     PreparedTransfer,
+    _ScheduledSale,
 )
 from finance.augur.sim.results import ConsumptionTarget, Executed, Rejected
-from finance.augur.sim.session import ActionSession, Capture
+from finance.augur.sim.session import ActionSession, Capture, _Session
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, prepared_scenario
 from finance.augur.sim.world import World
 
@@ -428,6 +432,242 @@ def test_unpaid_claims_keep_occurrence_and_source_without_hidden_sales(mode: Cap
         assert not output.financial.dispositions
         assert not output.financial.transfers
         assert all(row.amount_paid == 0 for row in output.financial.obligations)
+
+
+def assert_same_result(actual: WorldResult, expected: WorldResult) -> None:
+    # Compare every result field; Polars frames need explicit value equality.
+    assert replace(actual, events=None) == replace(expected, events=None)
+    if expected.events is None:
+        assert actual.events is None
+    else:
+        assert actual.events is not None
+        assert actual.events.rollout_ids == expected.events.rollout_ids
+        for spec in EVENT_FRAME_SPECS:
+            assert actual.events.frame(spec).equals(expected.events.frame(spec))
+
+
+@pytest.fixture
+def year_run() -> CompiledRun:
+    run = actor_run(13)
+    lot = replace(run.scenario.initial_lots[0], units=50_000_000, basis=25_000)
+    profile = prepared_scenario().tax_profiles[0]
+    rules = replace(
+        profile.jurisdictions[0],
+        ordinary_brackets=(PreparedTaxBracket(None, 200_000_000),),
+        long_term_capital_gain_brackets=(PreparedTaxBracket(None, 100_000_000),),
+        max_capital_loss_ordinary_offset=0,
+    )
+    return replace(
+        run,
+        scenario=replace(
+            run.scenario,
+            initial_lots=(lot, replace(lot, lot_id="second-lot", asset_id="second")),
+            holding_pools=(*run.scenario.holding_pools, replace(run.scenario.holding_pools[0], asset_id="second")),
+            tax_profiles=(replace(profile, jurisdictions=(rules,)),),
+            obligations=(bill(50_000), replace(bill(5000), month=12)),
+            scheduled_transfers=(
+                PreparedTransfer(
+                    month=12,
+                    cause_id="test-contribution",
+                    from_account=EXOGENOUS,
+                    to_account=CASH,
+                    amount=10_000,
+                    income_category=None,
+                    deduction_category=None,
+                ),
+            ),
+        ),
+        series=(*run.series, replace(run.series[0], series_id="security:second")),
+    )
+
+
+def test_retained_rollouts_keep_opening_books_lots_and_tax_state_independent(year_run: CompiledRun) -> None:
+    run = replace(
+        year_run,
+        rollout_count=2,
+        series=tuple(replace(s, values=(*s.values, *(v * 2 for v in s.values))) for s in year_run.series),
+    )
+    before = deepcopy(run)
+    first, second = world_for(run, rollout=0), world_for(run, rollout=1)
+    untouched = deepcopy(first.book([]))
+    for world, units, tax_paid, basis in ((second, 10_000_000, 3000, 40_000), (first, 20_000_000, 2000, 30_000)):
+        for month in range(13):
+            world.prepare_month(month, {}, {})
+            world.assemble_claims([])
+            if month == 0:
+                for index, lot in enumerate(run.scenario.initial_lots):
+                    action = Sell(
+                        cause_id=f"sell-{lot.asset_id}",
+                        agent_id=HOUSEHOLD,
+                        proceeds_account_id="checking",
+                        asset_id=lot.asset_id,
+                        lots=(LotSale(account_id=lot.account_id, lot_id=lot.lot_id, units=units),),
+                    )
+                    assert isinstance(world.apply(HOUSEHOLD, action, index), Executed)
+            settlement = world.settle_claims()
+            assert not settlement.failed
+            world.close_month(failed=False, shortfall=0, mortgages=[], snapshots=[])
+        output = world.finish([]).financial
+        assert output is not None
+        assert output.failed_month is None
+        assert [(p.month, p.amount_paid) for p in output.tax_payments] == [(12, tax_paid)]
+        assert sum(e.cause_id == f"opening:{HOUSEHOLD}:checking" for e in output.journal) == 1
+        assert world.account_balance(HOUSEHOLD, "checking") == 5000 - tax_paid
+        assert sum(lot.basis_remaining for lot in output.months[-1].lots) == basis
+        assert output.months[-1].month == 13
+        if world is second:
+            assert first.book([]) == untouched
+            assert not first.accounting.tax_liabilities
+    assert run == before
+
+
+@pytest.mark.parametrize("stopped", [False, True])
+@pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
+def test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mode(
+    year_run: CompiledRun, stopped: bool, mode: Capture
+) -> None:
+    run = year_run
+    sales = tuple(
+        _ScheduledSale(
+            month=0,
+            cause_id=f"sale-{lot.asset_id}",
+            agent_id=HOUSEHOLD,
+            account_id=lot.account_id,
+            asset_id=lot.asset_id,
+            units=20_000_000,
+            proceeds_account_id="checking",
+        )
+        for lot in run.scenario.initial_lots
+    )
+    if stopped:
+        run = replace(
+            run,
+            scenario=replace(
+                run.scenario, horizon_months=15, obligations=(bill(1000), replace(bill(999_999), month=12))
+            ),
+            series=tuple(replace(s, snapshots=16, values=(*s.values, 9000, 10_000)) for s in run.series),
+        )
+        sales = (replace(sales[0], units=1_000_000),)
+    run = replace(run, scenario=replace(run.scenario, _scheduled_sales=sales))
+    [baseline] = execute(run, mode, HOUSEHOLD)
+    session = _Session(run, HOUSEHOLD, [0], capture=mode, configured=True, product_actor=HOUSEHOLD)
+    try:
+        session.start()
+        path = session.paths[0]
+        while not session.is_finished():
+            if session.month == 12:
+                assert path.world.accounting.tax_liabilities[0].amount_owed == (50 if stopped else 2000)
+            session.begin_actions([DecisionActions(0, session.month, [])])
+            for sale in sales:
+                if sale.month == session.month:
+                    path.world.holdings.scheduled_sale(path.world.accounting, path.world.market, sale)
+            settlement = path.world.settle_claims()
+            path.failed, path.shortfall = settlement.failed, settlement.product_shortfall
+            session.close_month()
+        assert path.result is not None
+        assert_same_result(path.result, baseline)
+        terminal = deepcopy(path.result)
+        stopped_book = deepcopy(path.world.book([]))
+        session.close_month()
+        assert_same_result(path.result, terminal)
+        assert path.world.book([]) == stopped_book
+        with pytest.raises(ValueError, match="finished"):
+            session.begin_actions([DecisionActions(0, session.month, [])])
+        assert_same_result(path.result, terminal)
+        assert path.world.book([]) == stopped_book
+        if mode == "summary":
+            assert baseline.configured_summary is not None
+            assert baseline.configured_summary.failed_month == (12 if stopped else None)
+        else:
+            assert baseline.financial is not None
+            assert baseline.financial.failed_month == (12 if stopped else None)
+        if baseline.financial is not None:
+            assert len(baseline.financial.months) == 14
+            assert [(p.month, p.amount_paid) for p in baseline.financial.tax_payments] == (
+                [(12, 0)] if stopped else [(12, 2000)]
+            )
+            if mode == "dense":
+                assert not baseline.financial.journal
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("mode", ["forensic", "dense", "summary"])
+def test_transfer_and_fifo_sale_remain_balanced(mode: Capture) -> None:
+    run = actor_run(2, 2)
+    run = replace(
+        run,
+        scenario=replace(
+            run.scenario,
+            accounts=tuple(
+                replace(a, opening_balance=1000 if a.account == CASH else 2000 if a.account == EXOGENOUS else 0)
+                for a in run.scenario.accounts
+            ),
+            initial_lots=(replace(run.scenario.initial_lots[0], units=2_000_000, basis=20_000),),
+            scheduled_transfers=(
+                PreparedTransfer(
+                    month=0,
+                    cause_id="gift",
+                    from_account=EXOGENOUS,
+                    to_account=CASH,
+                    amount=500,
+                    income_category=None,
+                    deduction_category=None,
+                ),
+            ),
+            _scheduled_sales=(
+                _ScheduledSale(
+                    month=1,
+                    cause_id="sell-stock",
+                    agent_id=HOUSEHOLD,
+                    account_id="checking",
+                    asset_id="test_stock",
+                    units=1_000_000,
+                    proceeds_account_id="checking",
+                ),
+            ),
+        ),
+        series=(replace(run.series[0], values=(10_000, 15_000, 15_000, 10_000, 20_000, 20_000)),),
+    )
+    baseline = execute(run, "forensic", HOUSEHOLD)
+    outputs = execute(run, mode, HOUSEHOLD)
+    assert len(baseline) == len(outputs) == 2
+    for index, output in enumerate(outputs):
+        expected = baseline[index]
+        assert output.product_metrics == expected.product_metrics
+        financial = expected.financial
+        assert financial is not None
+        [sale] = financial.dispositions
+        if mode == "summary":
+            assert output.financial is None
+            assert output.configured_summary is not None
+            assert output.configured_summary.rollout_id == index
+            assert output.configured_summary.ending_balances == financial.months[-1].balances
+            assert output.configured_summary.failed_month is None
+            assert output.configured_summary.disposition_count == len(financial.dispositions) == 1
+            assert output.configured_summary.journal_entry_count == len(financial.journal)
+        else:
+            assert output.financial is not None
+            assert output.financial.rollout_id == financial.rollout_id == index
+            assert output.financial.months == financial.months
+            assert output.financial.dispositions == financial.dispositions
+            assert output.financial.journal == ([] if mode == "dense" else financial.journal)
+        proceeds = (15_000, 20_000)[index]
+        assert (sale.proceeds, sale.basis, sale.units, sale.realized_gain) == (
+            proceeds,
+            10_000,
+            1_000_000,
+            proceeds - 10_000,
+        )
+        assert next(b.balance for b in financial.months[-1].balances if b.account == CASH) == 1500 + proceeds
+        assert all(sum(p.amount for p in entry.postings) == 0 for entry in financial.journal)
+        if mode == "summary":
+            assert output.financial is None
+        elif mode == "dense":
+            assert output.financial is not None
+            assert output.financial == replace(financial, journal=[])
+        else:
+            assert output.financial == financial
 
 
 if __name__ == "__main__":

@@ -469,6 +469,7 @@ py_test(
     srcs = ["configured_mortgage_test.py"],
     deps = [
         ":configured",
+        ":metric_composition",
         ":scenario",
         "//:conftest",
         "//finance/augur:conftest",
@@ -941,6 +942,9 @@ py_test(
     srcs = ["test_world.py"],
     deps = [
         ":actions",
+        ":capture",
+        ":configured",
+        ":events",
         ":prepared",
         ":results",
         ":session",

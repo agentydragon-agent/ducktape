@@ -188,6 +188,12 @@ def test_fifo_scheduled_sale_matches_the_same_explicit_selection(books: Books) -
     books.holdings.sell(books.accounting, 0, sale("old", 13).model_copy(update={"lots": selected}), price=10)
     other.holdings.scheduled_sale(other.accounting, other.market, scheduled(13))
     assert books.snapshot() == other.snapshot()
+    assert [(row.lot_id, row.units, row.basis) for row in books.holdings.dispositions] == [
+        ("old", 10, 17),
+        ("new", 3, 10),
+    ]
+    assert [(lot.units_remaining, lot.basis_remaining) for lot in books.holdings.lots] == [(0, 0), (7, 22)]
+    assert books.accounting.ledger.trial_balance() == 0
 
 
 @pytest.mark.parametrize("case", range(10))
@@ -279,6 +285,13 @@ def test_invalid_or_unfunded_purchase_does_not_create_lot_or_debit_cash(
     before = books.snapshot()
     with pytest.raises((ValueError, OverflowError), match=r"purchase|holding pool|unknown declared|overflow"):
         books.holdings.buy(books.scenario, books.accounting, 0, purchase().model_copy(update=changes), price=10)
+    assert books.snapshot() == before
+
+
+def test_oversell_is_rejected_before_any_disposition(books: Books) -> None:
+    before = books.snapshot()
+    with pytest.raises(ValueError, match="exceeds available"):
+        books.holdings.scheduled_sale(books.accounting, books.market, scheduled(21))
     assert books.snapshot() == before
 
 
