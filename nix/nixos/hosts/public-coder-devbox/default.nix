@@ -230,6 +230,15 @@ in
     autoResize = true;
   };
 
+  # The cache PVC is mounted during local-fs.target, before tmpfiles runs. Keep
+  # its top-level mount root owned by root, but create exactly the three Bazel
+  # working directories for coder; this avoids a world-writable cache volume.
+  systemd.tmpfiles.rules = [
+    "d ${bazelOutputUserRoot} 0700 coder users -"
+    "d ${bazelRepositoryCache} 0700 coder users -"
+    "d ${bazelDiskCache} 0700 coder users -"
+  ];
+
   environment.systemPackages = with pkgs; [
     htop
     btop
