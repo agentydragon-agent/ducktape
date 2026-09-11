@@ -15,7 +15,7 @@ The executor is a transport and credential-selection layer. It does **not** deci
 are allowed. The existing decider/Decision layer remains responsible for human or policy approval
 of the complete Action, including the command, machine, user, and any key-selection input.
 
-## Initial slice (P0 behavior)
+## Layer 1: one-shot SSH execution (P0 behavior)
 
 - Add an Agentplane `ssh` Executor binding and adapter behind the existing `Executor` contract.
 - Define and register the executor's `list_targets` and `exec` Actions, including their input
@@ -47,6 +47,10 @@ answer the inventory question: registration in the reviewed ConfigMap is the sou
 
 The first implementation should exercise the real SSH process seam with a local test SSH server or
 an equivalent deterministic fixture. A test that only mocks the entire SSH client is insufficient.
+
+This layer intentionally does not require a host daemon. Agentplane opens one SSH connection for
+the Execution, runs the command, collects the bounded terminal result, and closes the connection.
+Durable process control is a separate follow-up below.
 
 ## Kubernetes configuration
 
@@ -111,9 +115,10 @@ their schemas, or turn a configuration entry into an unreviewed execution surfac
 may have started is an `execution_unknown` outcome, never an automatic retry.
 
 The introspection result is derived from the same validated in-process configuration used for
-execution. A target is listed only when its key mapping is structurally valid and its referenced
-key file is present at executor startup; `list_targets` does not disclose why an individual target
-was omitted beyond the safe availability result.
+execution. Every structurally valid configured target remains listed. Its `available` value and
+bounded error reflect whether the referenced key file is currently present/readable; a missing key
+does not remove the target from inventory. `list_targets` does not disclose secret names, paths, or
+other credential-bearing details.
 
 ## Credential and process boundary
 
@@ -128,15 +133,43 @@ A later migration may use short-lived SSH certificates or an external signer. Th
 for the initial long-lived-key slice. Whichever mechanism is selected, the Action Service must not
 become the durable authority for issuing credentials.
 
-## Future: reconnectable remote processes
+## Layer 2: durable remote processes (future follow-up)
 
-Do not add Ctrl+C, stdin streaming, PTYs, or process-control APIs to the first slice. Design the
-execution result so a later process-control extension can bind controls to the same durable
-Execution/request identity rather than launching a second command. That future extension needs a
-remote process handle or durable session primitive (for example a managed `tmux`/systemd scope or a
-purpose-built remote helper), reconnect/authentication rules, signal authorization, and tests proving
-that Ctrl+C targets the original process and cannot target an unrelated PID. Plain one-shot SSH
-exec by itself does not provide a safe durable process identity after disconnect.
+Once Layer 1 is proven, add a small `agentplane-execd` host component to `rugged` and `wyrm2` for
+processes that must survive SSH disconnects and be inspected or controlled later. It should be a
+root-owned systemd service that delegates process lifetime to the system systemd manager, avoiding
+any dependency on user lingering.
+
+The SSH connection remains authenticated as the configured target user. The remote stdio client
+(`agentplane-execctl`, whether shipped separately or as a mode of the same binary) sends structured
+requests to the root daemon over a local Unix socket. The protocol must not contain a requested user:
+the daemon obtains the caller's UID from kernel Unix-socket peer credentials and uses that identity
+for every operation. A target user mismatch is therefore impossible to create through request data.
+
+The root daemon exposes only mechanical operations for the caller's own execution namespace:
+
+- `start(execution_id, command, timeout_seconds)` creates a system transient unit named from the
+  server-issued Execution ID and runs it with `User=`/`Group=` derived from the SSH peer;
+- `status(execution_id)` reads that derived unit's state;
+- `read_output(execution_id, cursor, max_bytes)` reads only that unit's bounded journal output;
+- `signal(execution_id, signal)` signals the unit's cgroup, never a caller-supplied PID;
+- `terminate(execution_id)` applies the reviewed termination sequence and cleanup.
+
+The daemon must reject arbitrary unit names, PIDs, UIDs, systemd properties, forwarding, PTYs, and
+unbounded journal queries. `KillMode=control-group` ensures signals reach child processes. The
+Action Service remains the authority for Action schemas, approval, caller control rights, durable
+Execution state, leases, and reconciliation; the daemon is only a systemd adapter.
+
+The durable process identity is the derived systemd unit name, not an SSH connection and not a PID.
+If `start` loses its SSH connection after the remote operation may have begun, Agentplane marks the
+Execution `execution_unknown` and later queries the same unit to reconcile it. It never repeats
+`start`. An existing unit with the same Execution ID must make a duplicate start fail safely.
+
+This follow-up adds code-owned Actions such as `start`, `status`, `read_output`, `signal`, and
+`terminate`; their names and schemas are not supplied by the host ConfigMap. The host component is
+deployed through the existing NixOS/Ansible machinery and is initially scoped to `rugged` and
+`wyrm2`. Do not add stdin streaming or PTYs until durable process identity, output cursors, signal
+authorization, and unknown-outcome reconciliation are proven.
 
 ## Acceptance evidence
 
@@ -162,3 +195,17 @@ exec by itself does not provide a safe durable process identity after disconnect
 11. `exec` accepts a shorter timeout, defaults it when omitted, rejects a timeout above the
     configured maximum, and reports a timed-out command as `execution_unknown` once it may have
     started remotely.
+
+## Durable-process acceptance (future)
+
+1. A `start` Action returns a durable Execution while the systemd unit continues after the SSH
+   connection closes.
+2. `status` finds the same unit after executor and daemon restarts without using a persisted PID.
+3. `read_output` returns bounded, resumable output from only the matching unit.
+4. `signal(SIGINT)` reaches the original unit's process group and cannot address another user's unit,
+   arbitrary systemd units, or a caller-supplied PID.
+5. A lost `start` connection yields `execution_unknown`; later status reconciliation resolves the
+   original Execution without launching a second unit.
+6. Repeating `start` with the same Execution ID does not run the command twice.
+7. The stdio protocol contains no requested-user field, and tests prove the daemon uses kernel peer
+   credentials as the execution identity.

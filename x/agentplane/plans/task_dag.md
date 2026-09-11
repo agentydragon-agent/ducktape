@@ -43,6 +43,7 @@ flowchart TB
     CUTOVER["Planned milestone<br/>Haku Console affordance cutover<br/>Kubernetes + SSH + GitHub"]:::active
     K8SAUTH["Planned support<br/>browser-mediated Kubernetes auth<br/>linkage, refresh, revocation"]:::future
     SSHEXEC["Planned adapter<br/>SSH-backed Action execution<br/>Kubernetes keys + bindings"]:::future
+    SSHDURABLE["Deferred support<br/>systemd-backed durable processes<br/>host daemon + signals/output"]:::future
     APPROVALUI["Needed live evidence<br/>deployed SSE/push operator federation + BFF<br/>identity and approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
@@ -76,6 +77,7 @@ flowchart TB
     K8SAUTH --> CUTOVER
     MCPAUTH --> CUTOVER
     SSHEXEC --> CUTOVER
+    SSHEXEC --> SSHDURABLE
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     APPROVALUI -. replacement surface .-> RETIRE_TOOLS
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
@@ -375,6 +377,22 @@ its socket and key inventory must remain private to the executor.
 terminal/unknown handling, and no duplicate starts. Mismatched bindings and changed host keys fail
 closed. Secret rotation is proven through deployment rollout. A later process-control slice may add
 reconnectable stdin/signals such as Ctrl+C; it is not part of this one-shot executor.
+
+### `SSHDURABLE` — durable SSH-backed processes
+
+**Deferred support:** after the one-shot SSH adapter is proven, add a small `agentplane-execd` host
+component for `rugged` and `wyrm2`. SSH still authenticates as the configured target user; an
+unprivileged stdio client forwards structured requests over a local Unix socket to a root-owned
+daemon. The daemon derives the execution user from kernel Unix-socket peer credentials and does not
+accept a requested-user field. It delegates process lifetime, cgroups, signals, and unit status to
+the host systemd system manager, so user lingering is not required.
+
+The daemon's durable handle is a systemd transient unit derived from the Agentplane Execution ID.
+Future code-owned Actions may start, inspect, read bounded output from, signal, and terminate that
+unit. Agentplane remains authoritative for Action schemas, approval, caller control rights, durable
+Execution state, leases, and unknown-outcome reconciliation; the daemon is only a constrained
+systemd adapter. See [the SSH executor plan](ssh_executor.md) for the protocol and acceptance
+boundaries. Do not add this daemon, PTYs, or stdin streaming to the first one-shot implementation.
 
 ### `LIVE_CLEAN` — executor heartbeat retention cleanup
 
