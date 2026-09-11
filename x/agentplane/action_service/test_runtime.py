@@ -131,6 +131,7 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
               config:
                 transport: streamable-http
                 url: http://test-peer.invalid/mcp
+                auth: none
     """)
     )
     monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
@@ -138,6 +139,7 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
     assert settings.action_groups["remote"].executor.config == {
         "transport": "streamable-http",
         "url": "http://test-peer.invalid/mcp",
+        "auth": "none",
     }
     path.write_text(
         path.read_text()
@@ -156,7 +158,9 @@ def test_invalid_group_key_rejected_by_settings() -> None:
 
 async def test_runtime_sanitizes_connect_and_cleanup_failures() -> None:
     catalog = ActionCatalog(
-        groups={"remote": _group({"transport": "streamable-http", "url": "http://test-peer.invalid/mcp"})}
+        groups={
+            "remote": _group({"transport": "streamable-http", "url": "http://test-peer.invalid/mcp", "auth": "none"})
+        }
     )
     with (
         patch.object(McpActionGroupExecutor, "start", AsyncMock(side_effect=RuntimeError("private connect material"))),
@@ -350,7 +354,7 @@ async def test_main_auto_allows_upstream_everything(db_url: str, everything_url:
     caller = Principal(issuer="kubernetes-sandbox", subject="agentplane-staging:fixture-uid", role=PrincipalRole.CALLER)
     settings = Settings(
         database_url=db_url,
-        action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url})},
+        action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url, "auth": "none"})},
         fixture_auto_allow=FixtureAutoAllow(group="fixture"),
         _cli_parse_args=False,
     )
