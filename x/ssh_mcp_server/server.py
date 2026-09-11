@@ -247,7 +247,7 @@ def create_app(settings: SshSettings, bearer: str) -> Starlette:
         return JSONResponse({"ok": True})
 
     protected: ASGIApp = StaticBearerGuard(mcp_app, token=bearer)
-    return Starlette(routes=[Route("/healthz", healthz), Mount("/", app=protected)])
+    return Starlette(routes=[Route("/healthz", healthz), Mount("/", app=protected)], lifespan=mcp_app.lifespan)
 
 
 def main() -> None:

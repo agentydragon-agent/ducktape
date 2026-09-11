@@ -32,7 +32,7 @@ async def test_list_targets_keeps_missing_identity_unavailable(tmp_path: Path) -
     settings = _settings(tmp_path, identity=False)
     async with Client(build_mcp(settings)) as client:
         result = await client.call_tool("list_targets", {})
-    assert result.data == [
+    assert [item.model_dump() for item in result.data] == [
         {
             "host": "host",
             "user": "coder",
@@ -50,7 +50,7 @@ async def test_exec_returns_bounded_result(tmp_path: Path, monkeypatch: pytest.M
     )
     async with Client(build_mcp(settings)) as client:
         result = await client.call_tool("exec", {"host": "host", "user": "coder", "command": "echo $HOME"})
-    assert result.data == {
+    assert result.data.model_dump() == {
         "host": "host",
         "user": "coder",
         "exit_code": 0,
