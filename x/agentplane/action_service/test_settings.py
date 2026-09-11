@@ -148,7 +148,11 @@ def test_staging_push_key_config_and_egress_agree(monkeypatch: pytest.MonkeyPatc
             identity.validate_endpoint(endpoint)
 
     policy = one(r for r in resources if r["kind"] == "CiliumNetworkPolicy")
-    rule = one(r for r in policy["spec"]["egress"] if "toFQDNs" in r)
+    rule = one(
+        r
+        for r in policy["spec"]["egress"]
+        if any(host.get("matchName") in settings.web_push.allowed_push_hosts for host in r.get("toFQDNs", []))
+    )
     assert {r["matchName"] for r in rule["toFQDNs"]} == settings.web_push.allowed_push_hosts
     port = one(rule["toPorts"])
     assert port["ports"] == [{"port": "443", "protocol": "TCP"}]
