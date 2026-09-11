@@ -9,10 +9,10 @@ inserted rows. Cancellation or exhausted retries can count an event as lost even
 commit persisted it; the counters describe producer knowledge, not proof of database absence.
 
 The database has its own Alembic version table and migration advisory lock. The proxy has no
-startup migration path. Staging and testing each own a CNPG database and a separate migration
-Job/Flux gate. The new migration image must be published and its ImagePolicy advance before
-first deployment; the checked-in initial tag is a bootstrap placeholder. Schema rollouts must
-remain compatible with the old proxy while its replacement waits on the migration gate.
+startup migration path. Staging and testing each own a CNPG database and a separately published migration
+image run as a Pod init container. An init failure prevents that Pod from serving; existing
+proxies keep enforcing through diagnostic DB outages. Schema changes must remain compatible
+with old proxies while their replacements wait for migration.
 
 Seven-day retention is a visibility bound, not a promise that physical rows disappear precisely
 at expiry. Indexed cleanup deletes at most 1,000 expired rows after each batch or idle-minute
