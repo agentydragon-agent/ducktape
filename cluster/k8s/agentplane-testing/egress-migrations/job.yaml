@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: git.allegedly.works/ducktape-ci/agentplane-egress-migrate:devel-20260909065742-c64767f # {"$imagepolicy": "flux-system:agentplane-egress-migrate"}
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-migrate:devel-20260911005717-ebffd47 # {"$imagepolicy": "flux-system:agentplane-egress-migrate"}
           env:
             - name: AGENTPLANE_EGRESS_DATABASE_URL
               valueFrom:
