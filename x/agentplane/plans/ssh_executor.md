@@ -18,7 +18,14 @@ of the complete Action, including the command, machine, user, and any key-select
 ## Initial slice (P0 behavior)
 
 - Add an Agentplane `ssh` Executor binding and adapter behind the existing `Executor` contract.
+- Define and register the executor's `list_targets` and `exec` Actions, including their input
+  schemas and descriptions, in executor code. Configuration selects the executor and supplies
+  deployment data; it does not define or override the Action catalog contract.
 - Execute through the OpenSSH client rather than inventing a remote command protocol.
+- Provide a read-only introspection Action such as `list_targets` so an Agent can discover which
+  machine/user pairs have registered SSH credentials before requesting execution. This is an
+  Action, not a projection of hidden executor configuration, and therefore remains auditable and
+  subject to the existing decider/human approval path.
 - Support non-interactive command execution only; no PTY, shell session, forwarding, or interactive
   stdin in the first slice.
 - Capture bounded stdout and stderr, with explicit connect, execution, and output limits.
@@ -28,6 +35,12 @@ of the complete Action, including the command, machine, user, and any key-select
   broker disappears after a command may have started, return or retain `execution_unknown`.
 - Record which configured SSH key binding, host, Unix user, and command outcome were used as
   redacted provenance. Never persist or project private-key material.
+
+`list_targets` returns only the stable target availability needed for selection, for example
+`host` and `user` (and, if needed for explicit selection, a reviewed non-secret key identifier).
+It must not return Secret names, mounted paths, private-key contents, fingerprints, filesystem
+metadata, or other credential-bearing configuration. It must not probe the remote hosts merely to
+answer the inventory question: registration in the reviewed ConfigMap is the source of availability.
 
 The first implementation should exercise the real SSH process seam with a local test SSH server or
 an equivalent deterministic fixture. A test that only mocks the entire SSH client is insufficient.
@@ -85,6 +98,16 @@ The decider must bind approval to the complete target and command. This prevents
 reusing an approval for `wyrm2/coder` against `rugged/root`, while keeping command authorization out
 of the SSH layer as requested.
 
+The SSH executor owns the stable Action names and schemas: `list_targets` is the inventory read and
+`exec` accepts the target tuple plus the command. The reviewed settings file contains only the
+executor binding and SSH target/transport configuration; it cannot add arbitrary SSH Actions, change
+their schemas, or turn a configuration entry into an unreviewed execution surface.
+
+The introspection result is derived from the same validated in-process configuration used for
+execution. A target is listed only when its key mapping is structurally valid and its referenced
+key file is present at executor startup; `list_targets` does not disclose why an individual target
+was omitted beyond the safe availability result.
+
 ## Credential and process boundary
 
 Prefer the boring first implementation: OpenSSH reads a mounted key file with restrictive
@@ -126,3 +149,6 @@ exec by itself does not provide a safe durable process identity after disconnect
    key without exposing either key in Action state or logs.
 9. A real staging run proves the existing decider/human approval path authorizes the full target and
    command, while the SSH executor itself performs no command allowlist check.
+10. A reviewed introspection Action lists the configured `wyrm2/coder` and `rugged/coder` targets
+    without exposing Secret names, key paths, fingerprints, or private-key material, and does not
+    initiate network connections to either host.

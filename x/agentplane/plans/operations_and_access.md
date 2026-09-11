@@ -36,7 +36,8 @@ The planned SSH adapter uses OpenSSH as the transport, Kubernetes Secrets for pr
 reviewed ConfigMap for machine/user/key bindings. The binding controls which credential may reach
 which remote account; it is not a command policy. The existing decider/Decision layer authorizes the
 complete Action, including the command and target, and the SSH layer must not introduce a second
-command allowlist.
+command allowlist. The executor implementation owns the `list_targets` and `exec` Action names and
+schemas; configuration supplies only the target/key/transport data those Actions consume.
 
 The Action Service must never receive reusable private-key material. Prefer mounted files for the
 initial implementation; evaluate an isolated SSH-agent sidecar only against a concrete rotation or
