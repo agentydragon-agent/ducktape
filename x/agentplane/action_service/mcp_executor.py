@@ -81,9 +81,8 @@ class McpHttpStaticBearerServerConfig(_McpHttpServerConfigBase):
     bearer_file: Path
 
 
-McpHttpServerConfig = Annotated[
-    McpHttpNoAuthServerConfig | McpHttpOAuthServerConfig | McpHttpStaticBearerServerConfig, Field(discriminator="auth")
-]
+McpHttpServerConfigValue = McpHttpNoAuthServerConfig | McpHttpOAuthServerConfig | McpHttpStaticBearerServerConfig
+McpHttpServerConfig = Annotated[McpHttpServerConfigValue, Field(discriminator="auth")]
 McpServerConfig = Annotated[McpStdioServerConfig | McpHttpServerConfig, Field(discriminator="transport")]
 _SERVER_CONFIG_ADAPTER: TypeAdapter[McpServerConfig] = TypeAdapter(McpServerConfig)
 
@@ -518,6 +517,8 @@ def _mcp_error_kind(result: Any) -> str | None:
             payload = json.loads(block.text)
         except (TypeError, ValueError):
             continue
-        if isinstance(payload, dict) and isinstance(payload.get("kind"), str):
-            return payload["kind"]
+        if isinstance(payload, dict):
+            kind = cast(object, payload.get("kind"))
+            if isinstance(kind, str):
+                return kind
     return None
