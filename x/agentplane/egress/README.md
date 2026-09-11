@@ -191,8 +191,3 @@ and derived binding name/UID/generation, resolution reason, and present/missing 
 It neither persists conditions nor claims other replicas observed that generation. The app shows
 Kubernetes desired bindings as “configured”, not an enforcement acknowledgement. Expiry is
 computed on every observation, with no timer-owned status or transition timestamps.
-
-CLEANUP(added 2026-09-11): Remove the CRD's legacy status schema/printer column and proxy
-status-patch RBAC only after every running proxy uses an image containing the read-only informer.
-An old informer treats a rejected status patch as a fatal task-group error. Scaling remains
-gated on the new proxy image, not just the presence of shared diagnostic history.
