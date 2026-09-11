@@ -405,6 +405,7 @@ py_test(
         ":artifacts",
         ":configured",
         ":jurisdictions",
+        ":money",
         ":prepared",
         ":scenario",
         "//:conftest",
@@ -998,5 +999,20 @@ py_library(
     deps = [
         ":prepared",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_market_path",
+    srcs = ["test_market_path.py"],
+    deps = [
+        ":market_path",
+        ":money",
+        ":prepared",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim/testing:accounting",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

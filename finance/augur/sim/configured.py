@@ -17,23 +17,9 @@ from finance.augur.sim.actions import Buy, DecisionActions
 from finance.augur.sim.capture import WorldResult
 from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
-from finance.augur.sim.prepared import CompiledRun, PreparedAmount, PreparedFixedAmount
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import ProductMetricArrays
 from finance.augur.sim.session import Capture, _Session
-
-
-def _amount(session: _Session, rollout_id: int, amount: PreparedAmount) -> int:
-    if isinstance(amount, int):
-        return amount
-    if isinstance(amount, PreparedFixedAmount):
-        return amount.amount
-    elapsed = session.month - amount.base_month_index
-    reset = amount.base_month_index + elapsed // amount.adjustment_period_months * amount.adjustment_period_months
-    numerator = amount.base_amount * session.price(amount.series_id, rollout_id, reset)
-    denominator = session.price(amount.series_id, rollout_id, amount.base_month_index)
-    # Match the financial amount boundary: round half away from zero, once.
-    rounded = (2 * abs(numerator) + denominator) // (2 * denominator)
-    return rounded if numerator >= 0 else -rounded
 
 
 def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None) -> tuple[WorldResult, ...]:
@@ -90,8 +76,8 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                         session.observe(rollout_id, policy.agent_id),
                         policy,
                         policy_index=index,
-                        floor=_amount(session, rollout_id, policy.cash_floor),
-                        ceiling=_amount(session, rollout_id, policy.cash_ceiling),
+                        floor=path.world.market.amount(policy.cash_floor, session.month),
+                        ceiling=path.world.market.amount(policy.cash_ceiling, session.month),
                         prices={
                             sleeve.asset_id: session.price(f"security:{sleeve.asset_id}", rollout_id, session.month)
                             for sleeve in policy.sleeves

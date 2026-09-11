@@ -4,6 +4,7 @@ The tax schedule below is deliberately synthetic: 20% ordinary, 10% long-term,
 no deductions. Assertions pin accounting/timing, not statutory fidelity.
 """
 
+from copy import deepcopy
 from dataclasses import replace
 from decimal import Decimal
 
@@ -17,6 +18,7 @@ from finance.augur.sim import configured
 from finance.augur.sim.artifacts import decode_prepared, encode_prepared
 from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, TaxBracket
+from finance.augur.sim.money import MAX_COUNT
 from finance.augur.sim.prepared import CompiledRun, PreparedIndexedAmount, PreparedSeries
 from finance.augur.sim.scenario import (
     CashflowOnly,
@@ -427,6 +429,81 @@ def test_prepared_policy_keeps_exact_integer_indices_and_disabled_purchase_scope
         series=(*run.series, PreparedSeries(series_id="inflation", snapshots=14, values=(2**53 + 1,) * 14)),
     )
     validate_prepared(decode_prepared(encode_prepared(run)))
+
+
+def _indexed_bound_run() -> CompiledRun:
+    base = _prepared(_case(purchases=True, single=True))
+    floor = PreparedIndexedAmount(base_amount=3, series_id="inflation", base_month_index=0, adjustment_period_months=2)
+    [policy] = base.scenario._target_allocation_policies
+    [lot] = base.scenario.initial_lots
+    return replace(
+        base,
+        rollout_count=2,
+        scenario=replace(
+            base.scenario,
+            horizon_months=6,
+            accounts=tuple(replace(account, opening_balance=0) for account in base.scenario.accounts),
+            initial_lots=(replace(lot, units=100 * lot.quantity_scale, basis=100),),
+            obligations=(),
+            scheduled_transfers=(),
+            tax_profiles=(),
+            _target_allocation_policies=(
+                replace(policy, cash_floor=floor, cash_ceiling=replace(floor, base_amount=4)),
+            ),
+        ),
+        series=(
+            PreparedSeries(series_id="security:stock", snapshots=7, values=(1,) * 14),
+            PreparedSeries(series_id="inflation", snapshots=7, values=(2, 3, 5, 7, 11, 13, 19, 4, 1, 2, 99, 6, 88, 40)),
+        ),
+    )
+
+
+def test_configured_indexed_bounds_keep_exact_cash_across_path_specific_resets() -> None:
+    # One-quantum shares and a three/four-quantum band make half ties hand-checkable.
+    # Between-reset index changes must not affect either path's funding decisions.
+    run = _indexed_bound_run()
+    outputs = configured.execute(run, "forensic")
+    expected_cash = ([0, 4, 4, 10, 10, 22, 22], [0, 4, 4, 2, 2, 6, 6])
+    for output, expected in zip(outputs, expected_cash, strict=True):
+        assert output.financial is not None
+        assert output.financial.failed_month is None
+        books = output.financial.months
+        cash = [
+            next(
+                row.balance
+                for row in book.balances
+                if row.account.agent_id == "alice" and row.account.account_id == "checking"
+            )
+            for book in books
+        ]
+        assert cash == expected
+        for book, balance in zip(books, cash, strict=True):
+            assert balance + sum(lot.units_remaining // lot.quantity_scale for lot in book.lots) == 100
+        assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in output.financial.journal)
+
+
+def test_configured_indexed_bound_overflow_remains_an_error_not_a_financial_stop() -> None:
+    base = _indexed_bound_run()
+    [policy] = base.scenario._target_allocation_policies
+    index = PreparedIndexedAmount(
+        base_amount=MAX_COUNT, series_id="inflation", base_month_index=0, adjustment_period_months=2
+    )
+    run = replace(
+        base,
+        scenario=replace(
+            base.scenario,
+            accounts=tuple(
+                replace(account, opening_balance=MAX_COUNT if account.account.agent_id == "alice" else 0)
+                for account in base.scenario.accounts
+            ),
+            initial_lots=(),
+            _target_allocation_policies=(replace(policy, cash_floor=index, cash_ceiling=index),),
+        ),
+    )
+    before = deepcopy(run)
+    with pytest.raises(OverflowError, match=r"overflow|signed 64"):
+        configured.execute(run, "summary")
+    assert run == before
 
 
 if __name__ == "__main__":
