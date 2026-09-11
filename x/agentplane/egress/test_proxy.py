@@ -49,6 +49,7 @@ from x.agentplane.egress.conftest import (
     seed,
 )
 from x.agentplane.egress.decision_log import DecisionLog
+from x.agentplane.egress.decisions import Phase
 from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
 from x.agentplane.egress.main import Settings
 from x.agentplane.egress.policy import DenyReason, Index
@@ -977,18 +978,23 @@ async def test_history_omits_secret_bearing_paths_queries_and_headers(
 
 
 @pytest.mark.parametrize("state", ["unsynced", "missing", "stale", "revoked", "draining"])
-async def test_existing_tls_connection_rechecks_every_admission(proxy: ProxyUnderTest, state: str) -> None:
+async def test_existing_tls_connection_rechecks_every_admission(
+    proxy: ProxyUnderTest, state: str, decision_log: DecisionLog
+) -> None:
     async with aiohttp.ClientSession() as session:
-        kwargs = {
-            "proxy": f"http://127.0.0.1:{proxy.proxy_port}",
-            "proxy_headers": {"Proxy-Authorization": f"Bearer {TOKEN_A}"},
-            "ssl": client_tls_context(proxy.interception_ca),
-        }
-        async with session.get(proxy.url("/public/before"), **kwargs) as response:
-            assert response.status == 200
-            await response.read()
-        authenticated = set(proxy.addon._authenticated)
-        assert len(authenticated) == 1
+        tls = client_tls_context(proxy.interception_ca)
+
+        async def get(path: str) -> int:
+            async with session.get(
+                proxy.url(path),
+                proxy=f"http://127.0.0.1:{proxy.proxy_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ssl=tls,
+            ) as response:
+                await response.read()
+                return response.status
+
+        assert await get("/public/before") == 200
         match state:
             case "unsynced":
                 proxy.index.synced = False
@@ -1000,11 +1006,12 @@ async def test_existing_tls_connection_rechecks_every_admission(proxy: ProxyUnde
                 proxy.index.bindings.clear()
             case "draining":
                 proxy.addon.begin_drain()
-        async with session.get(proxy.url("/public/after"), **kwargs) as response:
-            assert response.status == (403 if state == "revoked" else 502)
-            await response.read()
+        assert await get("/public/after") == (403 if state == "revoked" else 502)
         assert len(proxy.upstream.requests) == 1
-        assert set(proxy.addon._authenticated) == authenticated
+        await decision_log.flush()
+        rows = await decision_log.store.recent(SANDBOX_A)
+        assert len({row.connection_id for row in rows}) == 1
+        assert sum(row.phase is Phase.CONNECT for row in rows) == 1
 
 
 async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(

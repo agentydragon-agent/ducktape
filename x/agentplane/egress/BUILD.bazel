@@ -204,6 +204,7 @@ py_test(
         ":admin",
         ":conftest",
         ":decision_log",
+        ":decisions",
         ":identity",
         ":main",
         ":policy",

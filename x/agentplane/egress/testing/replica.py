@@ -5,6 +5,7 @@ import multiprocessing
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from multiprocessing.process import BaseProcess
 from pathlib import Path
 from textwrap import dedent
 
@@ -22,16 +23,17 @@ def _run(settings: Settings) -> None:
 class Replica:
     proxy_port: int
     admin_port: int
-    process: multiprocessing.Process
+    process: BaseProcess
 
-    async def health(self, status: int) -> dict:
+    async def health(self, status: int) -> None:
         async with aiohttp.ClientSession() as client:
             async for attempt in AsyncRetrying(stop=stop_after_delay(20), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
                     assert self.process.is_alive(), f"proxy exited with {self.process.exitcode}"
                     async with client.get(f"http://127.0.0.1:{self.admin_port}/healthz") as response:
                         assert response.status == status
-                        return await response.json()
+                        await response.read()
+                        return
         raise AssertionError("health retry exhausted")
 
 
