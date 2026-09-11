@@ -317,8 +317,8 @@ py_library(
     name = "configured",
     srcs = ["configured.py"],
     deps = [
-        ":_native",
         ":actions",
+        ":capture",
         ":events",
         ":metric_composition",
         ":prepared",
@@ -335,15 +335,16 @@ py_library(
     name = "session",
     srcs = ["session.py"],
     deps = [
-        ":_native",
         ":actions",
         ":books",
+        ":capture",
+        ":managed",
         ":mortgage",
         ":observations",
         ":prepared",
         ":results",
         ":tlh",
-        "//finance/augur/rust:simulator_ext",
+        ":world",
     ],
 )
 
@@ -755,5 +756,113 @@ py_test(
         "//finance/augur/sim/testing:accounting",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "capture",
+    srcs = ["capture.py"],
+    deps = [
+        ":accounting",
+        ":books",
+        ":events",
+        ":fixed_point",
+        ":holdings",
+        ":managed",
+        ":observations",
+        ":payments",
+        ":private_equity",
+        ":property",
+        ":results",
+        "@pypi//polars",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "distributions",
+    srcs = ["distributions.py"],
+    deps = [
+        ":accounting",
+        ":books",
+        ":fixed_point",
+        ":holdings",
+        ":market_path",
+        ":money",
+        ":prepared",
+        ":scenario",
+    ],
+)
+
+py_library(
+    name = "managed",
+    srcs = ["managed.py"],
+    deps = [
+        ":accounting",
+        ":actions",
+        ":books",
+        ":fixed_point",
+        ":holdings",
+        ":money",
+        ":observations",
+        ":prepared",
+        ":scenario",
+    ],
+)
+
+py_library(
+    name = "private_equity",
+    srcs = ["private_equity.py"],
+    deps = [
+        ":accounting",
+        ":actions",
+        ":fixed_point",
+        ":holdings",
+        ":market_path",
+        ":money",
+        ":observations",
+        ":prepared",
+        "//finance/augur/model:series",
+    ],
+)
+
+py_library(
+    name = "property",
+    srcs = ["property.py"],
+    deps = [
+        ":accounting",
+        ":books",
+        ":fixed_point",
+        ":holdings",
+        ":market_path",
+        ":money",
+        ":mortgage",
+        ":prepared",
+    ],
+)
+
+py_library(
+    name = "world",
+    srcs = ["world.py"],
+    deps = [
+        ":accounting",
+        ":actions",
+        ":books",
+        ":capture",
+        ":claims",
+        ":distributions",
+        ":held_bonds",
+        ":holdings",
+        ":managed",
+        ":market_path",
+        ":money",
+        ":mortgage",
+        ":observations",
+        ":payments",
+        ":prepared",
+        ":private_equity",
+        ":property",
+        ":results",
+        "//finance/augur/sim/compiler:income_sources",
     ],
 )

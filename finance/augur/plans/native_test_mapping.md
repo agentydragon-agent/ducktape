@@ -160,3 +160,33 @@ Tax gains now have one canonical taxpayer record. The duplicate-jurisdiction ove
 - Cash/payment/year-close controls and their libraries passed at [BuildBuddy](https://app.buildbuddy.io/invocation/57b7233a-b787-4259-8c4e-a3c64cbbd537).
 
 - Exact-lot trade and held-bond controls plus their library lint/typechecks passed at [BuildBuddy](https://app.buildbuddy.io/invocation/54d2654e-3061-471a-b1df-ff32a7e5fca1).
+
+## Integrated Python checkpoint
+
+`sim/session.py` constructs `sim/world.py` directly for action and configured execution.
+Live component effects, claims, observations and results are typed Python objects.
+Standalone Gazelle removes the session's native-extension dependency; a Bazel
+`somepath(//finance/augur/sim:session, //finance/augur/rust:simulator_ext)` query is empty.
+Native declarations above remain partially mapped; these acceptance passes do not
+complete the native-test port or authorize removing Rust yet.
+
+- Eight recovered/changed libraries (`capture`, `distributions`, `managed`,
+  `private_equity`, `property`, `world`, `session`, `configured`) pass lint/mypy:
+  [RBE build](https://app.buildbuddy.io/invocation/ed81a320-396f-47f0-a7b9-1e00906ac5aa).
+- Initial 12 test targets pass (seven freshly executed, five cached):
+  [RBE tests](https://app.buildbuddy.io/invocation/06ef28f6-30ec-4edd-82e1-b8759adcb452).
+  Targets: `rust:{action_test,obligations_test,transfers_test,public_sales_test}` and
+  `sim:{tlh_session_test,test_accounting,test_payments,test_tax_year,test_holdings,test_held_bonds,test_mortgage,tlh_test}`.
+- Configured allocation, mortgage and capture suites pass:
+  [RBE tests](https://app.buildbuddy.io/invocation/d71700aa-cd0f-42de-aebd-9ade4fee3154).
+  Targets: `sim:{configured_test,configured_allocation_test,configured_mortgage_test}`.
+  The initial run caught a stale test reference to `event_frames`; it now checks
+  the typed `events` field for the same absence in summary mode. Financial
+  assertions are unchanged.
+
+Next bounded validation should cover the remaining `rust/` Python financial suites
+(assets, bonds, distributions, indexed payments and lot basis), then property/PE
+and product projection acceptance. Finish native actor/component/mortgage/PE test
+ports, exact prepared-input validation and capture compatibility before deleting
+native bindings and legacy artifact codecs. The older 135-case evidence is not
+an integrated-world coverage claim.

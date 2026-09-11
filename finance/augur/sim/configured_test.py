@@ -311,7 +311,7 @@ def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> 
     for actual, expected in zip(arrays.base_series, compact.base_series, strict=True):
         np.testing.assert_array_equal(actual, expected)
     if capture == "summary":
-        assert all(result.financial is None and result.event_frames is None for result in completed)
+        assert all(result.financial is None and result.events is None for result in completed)
         with pytest.raises(RuntimeError, match="event projection requires"):
             project_events(completed)
     else:
