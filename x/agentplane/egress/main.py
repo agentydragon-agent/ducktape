@@ -94,7 +94,7 @@ async def async_main(settings: Settings) -> None:
         loop.add_signal_handler(sig, stop.set)
     async with ApiClient(configuration=configuration) as api:
         index = Index()
-        ring = DecisionLog(
+        decision_log = DecisionLog(
             DecisionStore(
                 make_engine(settings.database_url),
                 retention=timedelta(days=settings.decision_retention_days),
@@ -103,7 +103,7 @@ async def async_main(settings: Settings) -> None:
             queue_size=settings.decision_queue_size,
             batch_size=settings.decision_batch_size,
         )
-        ring.start()
+        decision_log.start()
         # Cast so `patch_namespaced_custom_object_status` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         informer = Informer(
@@ -125,7 +125,7 @@ async def async_main(settings: Settings) -> None:
             cache_seconds=settings.identity_cache_seconds,
         )
         resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
-        addon = EgressAddon(index=index, verifier=verifier, ring=ring, resolver=resolver)
+        addon = EgressAddon(index=index, verifier=verifier, decision_log=decision_log, resolver=resolver)
         rules_app = create_rules_app(
             SandboxPrincipalAuthenticator(
                 SandboxPrincipalResolver(
@@ -141,7 +141,7 @@ async def async_main(settings: Settings) -> None:
         try:
             async with (
                 serve_admin(
-                    create_admin_app(ring, index, resync_seconds=settings.resync_seconds),
+                    create_admin_app(decision_log, index, resync_seconds=settings.resync_seconds),
                     settings.admin_host,
                     settings.admin_port,
                 ) as admin_port,
@@ -156,7 +156,7 @@ async def async_main(settings: Settings) -> None:
         finally:
             informer_task.cancel()
             await asyncio.gather(informer_task, return_exceptions=True)
-            await ring.close(settings.decision_flush_seconds)
+            await decision_log.close(settings.decision_flush_seconds)
 
 
 if __name__ == "__main__":

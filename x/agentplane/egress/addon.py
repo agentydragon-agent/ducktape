@@ -68,14 +68,14 @@ class EgressAddon:
         *,
         index: Index,
         verifier: PodIdentityVerifier,
-        ring: DecisionLog,
+        decision_log: DecisionLog,
         resolver: UpstreamResolver,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._producer_id = uuid4()
         self._index = index
         self._verifier = verifier
-        self._ring = ring
+        self._decision_log = decision_log
         self._resolver = resolver
         self._clock = clock
         self._authenticated: dict[str, _AuthenticatedConnection] = {}
@@ -191,8 +191,8 @@ class EgressAddon:
         common = {
             "at": self._clock(),
             "sandbox": sandbox_name,
-            "method": egress.method,
-            "host": egress.host,
+            "method": egress.method[:32],
+            "host": egress.host.lower()[:253],
             "port": egress.port,
             "producer_id": self._producer_id,
             "connection_id": flow.client_conn.id,
@@ -203,7 +203,7 @@ class EgressAddon:
         }
         match decision:
             case Allowed():
-                self._ring.record(
+                self._decision_log.record(
                     DecisionRecord(
                         **common,
                         outcome=Outcome.ALLOW,
@@ -218,5 +218,5 @@ class EgressAddon:
                     request.headers.set_all(rewrite.header, list(rewrite.values))
                 flow.response = None  # cleared last: everything that can fail has already run
             case Denied():
-                self._ring.record(DecisionRecord(**common, outcome=Outcome.DENY, reason=decision.reason))
+                self._decision_log.record(DecisionRecord(**common, outcome=Outcome.DENY, reason=decision.reason))
                 flow.response = _refusal(decision.reason)

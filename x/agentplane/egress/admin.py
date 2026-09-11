@@ -15,7 +15,7 @@ from x.agentplane.egress.policy import Index
 
 logger = logging.getLogger(__name__)
 
-_RING = web.AppKey("ring", DecisionLog)
+_DECISION_LOG = web.AppKey("decision_log", DecisionLog)
 _INDEX = web.AppKey("index", Index)
 _STALE_AFTER = web.AppKey("stale_after", float)
 _CLOCK: web.AppKey[Callable[[], datetime]] = web.AppKey("clock")
@@ -27,7 +27,7 @@ STALE_AFTER_CYCLES = 3
 
 async def _decisions(request: web.Request) -> web.Response:
     try:
-        decisions = await request.app[_RING].store.recent(request.query.get("sandbox"))
+        decisions = await request.app[_DECISION_LOG].store.recent(request.query.get("sandbox"))
     except DB_ERRORS as error:
         logger.warning("decision history read failed (%s)", type(error).__name__)
         return web.json_response({"error": "decision-history-unavailable"}, status=503)
@@ -49,7 +49,7 @@ async def _healthz(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "synced": index.synced,
-            "decisionHistory": request.app[_RING].health(),
+            "decisionHistory": request.app[_DECISION_LOG].health(),
             "staleAfterSeconds": stale_after,
             "refreshedSecondsAgo": {plural: round(age, 1) for plural, age in sorted(ages.items())},
         },
@@ -58,10 +58,14 @@ async def _healthz(request: web.Request) -> web.Response:
 
 
 def create_admin_app(
-    ring: DecisionLog, index: Index, *, resync_seconds: int, clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    decision_log: DecisionLog,
+    index: Index,
+    *,
+    resync_seconds: int,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> web.Application:
     app = web.Application()
-    app[_RING] = ring
+    app[_DECISION_LOG] = decision_log
     app[_INDEX] = index
     app[_STALE_AFTER] = float(resync_seconds * STALE_AFTER_CYCLES)
     app[_CLOCK] = clock

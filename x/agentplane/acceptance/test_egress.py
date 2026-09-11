@@ -3,7 +3,7 @@
 A scenario states a goal and asks the agent to end with a JSON report, rather than dictating a
 command and grepping prose: the agent chooses how, which is the behaviour worth testing, and the
 answer stays machine-checkable. Every claim in that report is then cross-checked against the proxy's
-decision ring, which is the system's own record of what it served -- an agent saying "I fetched it"
+decision history, which is the system's own record of what it admitted -- an agent saying "I fetched it"
 is equally consistent with a request the proxy admitted, one that never reached the proxy, and a
 model that ran nothing.
 
@@ -17,7 +17,7 @@ What these encode is the deployed form of x/agentplane/egress/SPEC.md: a sandbox
 policies name and nothing else, with the credential substituted at the proxy, and the model call is
 one of those requests rather than an exception to them. They exist because the last gap of this kind
 -- a runner that dropped the proxy variables, so every call bypassed the proxy and hung, leaving an
-empty ring behind a green unit suite -- was caught by a person noticing.
+empty history behind a green unit suite -- was caught by a person noticing.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ UNLISTED_HOST = "example.com"
 LITELLM = "litellm"
 LLM_INGRESS_HOST = f"agentplane-llm-ingress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local"
 
-# The proxy records a decision as it serves it; the app reads the ring over a separate hop, and a
+# The proxy records a decision as it serves it; the app reads committed history over a separate hop, and a
 # binding's Active condition is written by the proxy's informer rather than by the grant itself.
 DECISION_SECONDS = 30.0
 BINDING_SECONDS = 60.0
@@ -117,7 +117,7 @@ async def _decision_for(client: Client, sandbox: str, host: str, *, after: datet
                 if decision.host == host and (after is None or decision.at > after):
                     return decision
             raise AssertionError(
-                f"no decision about {host} after {after}; the ring holds {[d.host for d in decisions]}"
+                f"no decision about {host} after {after}; the history contains {[d.host for d in decisions]}"
             )
     raise AssertionError("unreachable: reraise=True either returns a decision or raises")
 
