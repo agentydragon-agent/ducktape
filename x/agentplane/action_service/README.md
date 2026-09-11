@@ -327,6 +327,7 @@ integration app database.
 ```yaml
 transport: streamable-http
 url: http://127.0.0.1:8000/mcp
+auth: none
 ```
 
 HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including

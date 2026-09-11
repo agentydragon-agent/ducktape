@@ -116,8 +116,8 @@ adds configurable auto-approval through concrete Actions-owned Sandbox bindings.
 an integration-app-only recipe: the app resolves preset defaults and per-Sandbox additions into each
 subsystem's bindings. Actions and egress do not resolve presets or depend on one another. The
 [Action policy plan](action_policies.md) owns shared bounds and deciders; policy representation remains open.
-SSH execution is another adapter behind the existing Executor contract. The planned first slice uses
-OpenSSH with Kubernetes Secret-mounted long-lived keys and reviewed ConfigMap host/user/key bindings;
+SSH execution is a modular MCP backend behind the existing MCP Executor contract. The planned first
+slice uses OpenSSH with Kubernetes Secret-mounted long-lived keys and reviewed ConfigMap host/user/key bindings;
 it deliberately does not duplicate command authorization in the executor. It also exposes a reviewed
 read-only target-inventory Action so callers can see which configured machine/user pairs are available
 without receiving credential configuration. The existing decider and human approval path authorize
@@ -371,9 +371,10 @@ Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` mil
 
 ### `SSHEXEC` — SSH-backed Action execution
 
-**Planned support:** add an SSH Executor adapter behind the existing Action Service execution
-contract. OpenSSH performs non-interactive execution using private keys mounted from Kubernetes
-Secrets; a reviewed ConfigMap maps each key to the machine and Unix user for which it may be used.
+**Implementation in progress:** add a standalone bearer-protected SSH MCP server and connect it via
+the existing Action Service MCP Executor. OpenSSH performs non-interactive execution using private
+keys mounted into the SSH MCP pod; a reviewed ConfigMap maps each key to the machine and Unix user
+for which it may be used.
 The executor code owns the `list_targets` and `exec` Action schemas; reviewed configuration supplies
 only target/key/transport data and the maximum execution timeout. `exec` may request a shorter
 per-Execution timeout but never a longer one. The executor performs target/key lookup and transport
