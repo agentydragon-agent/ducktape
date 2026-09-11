@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack
@@ -21,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from util.net import pick_free_port
+from util.net import bind_free_port, pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from x.agentplane.action_service import api as service_api
@@ -119,8 +120,8 @@ async def review(
         stack.push_async_callback(service.close)
         await service.start()
         private_key, public_key = generate_rsa_keypair()
-        idp_port = pick_free_port()
-        idp_origin, app_url = f"http://127.0.0.1:{idp_port}", "http://test-app.invalid"
+        idp_sock = bind_free_port()
+        idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
         idp_url = f"{idp_origin}/application/o/login/"
         target_issuer = f"{idp_origin}/application/o/actions/"
         target = OperatorOidcSettings(issuer=target_issuer, audience="test-actions", jwks_uri=f"{idp_url}jwks/")
@@ -243,7 +244,7 @@ async def review(
             reviewer,
             operator_actions=operator_client,
         )
-        await stack.enter_async_context(serve_app(idp, port=idp_port))
+        await stack.enter_async_context(serve_app(idp, sock=idp_sock))
         browser = await stack.enter_async_context(
             httpx.AsyncClient(base_url=app_url, follow_redirects=True, mounts={app_url: httpx.ASGITransport(app=app)})
         )
@@ -492,9 +493,10 @@ async def test_unconfigured_or_rejected_service_auth_fails_closed(review: Review
     ],
 )
 async def test_provider_availability_is_not_operator_rejection(
-    review: Review, expected: int, upstream_path: str | None, error_type: str | None
+    review: Review, expected: int, upstream_path: str | None, error_type: str | None, caplog: pytest.LogCaptureFixture
 ) -> None:
     await review.browser.get("/auth/login")
+    caplog.set_level(logging.WARNING, logger="x.agentplane.app.action_federation")
     for path in ("/actions", "/mcp-servers", "/push/config"):
         response = await review.browser.get(path)
         assert response.status_code == expected, response.text
@@ -512,7 +514,12 @@ async def test_provider_availability_is_not_operator_rejection(
         assert "test-private" not in response.text
         assert "access_token" not in response.text
         assert SUBJECT_A not in response.text
-    assert review.calls == []
+    # Every failure leaves a cause in the log, and the log leaks no more than the response does.
+    federation_warnings = [r for r in caplog.records if r.name == "x.agentplane.app.action_federation"]
+    assert len(federation_warnings) == 3
+    assert "test-private" not in caplog.text
+    assert "access_token" not in caplog.text
+    assert SUBJECT_A not in caplog.text
 
 
 async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operators_distinct(review: Review) -> None:
