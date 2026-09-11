@@ -167,8 +167,51 @@ the Haku spike, sharing the same image build, keeps the default.
 It takes effect only once the image is rebuilt: the variable does not exist in a
 bundle that has not been through the patch script.
 
+Confirmed on the first pod carrying the patched image
+(`devel-20260911085124-03daf89`), at 13.5 minutes of gateway uptime — past the
+five-minute trigger. Ages are not exactly matched, but the gap is far larger
+than the age difference explains:
+
+|                                  | before, ~20 min | after, 13.5 min |
+| -------------------------------- | --------------: | --------------: |
+| `io.pressure full avg10`         |           24.58 |        **2.43** |
+| device `8:16` read since start   |         9.79 GB |         375 MiB |
+| device `8:0` written since start |         1.91 GB |         194 MiB |
+| gateway `read_bytes`             |          9.0 GB |         432 MiB |
+| gateway read syscalls/s          |          20,255 |           2,383 |
+| `~/.cache/openclaw`              |        1.49 GiB |           empty |
+| verify worker process            |         pid 290 |          absent |
+
+The process table holds only `tini` and the gateway, and the log carries
+`database integrity verifier disabled by OPENCLAW_DATABASE_VERIFY=off`. The
+workload is not controlled, so the fall in the gateway's own main-thread page
+traffic is partly the verifier no longer competing for the disk and partly
+whatever the agent happened to be doing — but an empty cache directory past the
+trigger point is unambiguous.
+
 What gating it costs: this verifier is the only thing that quarantines a
 corrupted state or agent database.
+
+## Still to watch
+
+The gate removed the verifier's I/O, not the reasons this pod is unhealthy. Four
+things to re-measure rather than assume:
+
+- **The abort cadence.** The heap leak is untouched, so exit 134 every ~2h50m
+  should continue. If it moves materially, the leak model is wrong and the
+  snapshots need redoing.
+- **Whether `io.pressure` stays down.** The 2.43 above is one sample on a
+  13-minute-old pod whose page cache was cold and small, and the gateway's own
+  ~20k `pread()`/s on the event loop thread was never addressed. Re-read
+  `io.pressure full avg300` and the `sessions.*` / `system-prompt` timings on a
+  pod past an hour.
+- **Database growth.** Nothing prunes `transcript_events` or the memory index,
+  so `PRAGMA page_count` keeps climbing past 1533 MiB whether or not the
+  verifier runs.
+- **That no integrity check runs at all now.** This is the gate's cost, live. If
+  one of these databases corrupts, nothing quarantines it and the first symptom
+  is a gateway that will not start. A full offline check is still available, and
+  is what to run before trusting a restore.
 
 ## Measuring this again
 
