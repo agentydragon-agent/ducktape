@@ -28,6 +28,9 @@ of the complete Action, including the command, machine, user, and any key-select
   subject to the existing decider/human approval path.
 - Support non-interactive command execution only; no PTY, shell session, forwarding, or interactive
   stdin in the first slice.
+- Let `exec` request a per-Execution timeout, defaulting to the configured maximum and never
+  exceeding it. The timeout is part of the approved Action arguments and is enforced by the SSH
+  executor as an execution bound, not as a command-policy decision.
 - Capture bounded stdout and stderr, with explicit connect, execution, and output limits.
 - Preserve Action Service exactly-once dispatch and lease semantics: one claimed Execution may cause
   one SSH invocation, and a lost lease or disconnected executor must not retry it.
@@ -99,9 +102,13 @@ reusing an approval for `wyrm2/coder` against `rugged/root`, while keeping comma
 of the SSH layer as requested.
 
 The SSH executor owns the stable Action names and schemas: `list_targets` is the inventory read and
-`exec` accepts the target tuple plus the command. The reviewed settings file contains only the
+`exec` accepts the target tuple, command, and optional bounded timeout. The reviewed settings file contains only the
 executor binding and SSH target/transport configuration; it cannot add arbitrary SSH Actions, change
 their schemas, or turn a configuration entry into an unreviewed execution surface.
+
+`exec.timeout_seconds`, when supplied, must be a positive number no greater than the configured
+`command_timeout_seconds`; omission uses that configured maximum. A timeout after the remote command
+may have started is an `execution_unknown` outcome, never an automatic retry.
 
 The introspection result is derived from the same validated in-process configuration used for
 execution. A target is listed only when its key mapping is structurally valid and its referenced
@@ -152,3 +159,6 @@ exec by itself does not provide a safe durable process identity after disconnect
 10. A reviewed introspection Action lists the configured `wyrm2/coder` and `rugged/coder` targets
     without exposing Secret names, key paths, fingerprints, or private-key material, and does not
     initiate network connections to either host.
+11. `exec` accepts a shorter timeout, defaults it when omitted, rejects a timeout above the
+    configured maximum, and reports a timed-out command as `execution_unknown` once it may have
+    started remotely.

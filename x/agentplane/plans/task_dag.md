@@ -361,9 +361,10 @@ Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` mil
 contract. OpenSSH performs non-interactive execution using private keys mounted from Kubernetes
 Secrets; a reviewed ConfigMap maps each key to the machine and Unix user for which it may be used.
 The executor code owns the `list_targets` and `exec` Action schemas; reviewed configuration supplies
-only target/key/transport data. The executor performs target/key lookup and transport only. It does
-not enforce an allowed-command list: the existing decider and human approval path remain authoritative
-for the complete Action.
+only target/key/transport data and the maximum execution timeout. `exec` may request a shorter
+per-Execution timeout but never a longer one. The executor performs target/key lookup and transport
+only. It does not enforce an allowed-command list: the existing decider and human approval path
+remain authoritative for the complete Action.
 
 Start with long-lived keys and deployment-owned rotation. Prefer mounted key files over introducing
 an SSH-agent sidecar unless an agent materially improves the measured rotation boundary; if used,

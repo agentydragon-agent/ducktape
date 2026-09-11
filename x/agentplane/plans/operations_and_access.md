@@ -38,6 +38,8 @@ which remote account; it is not a command policy. The existing decider/Decision 
 complete Action, including the command and target, and the SSH layer must not introduce a second
 command allowlist. The executor implementation owns the `list_targets` and `exec` Action names and
 schemas; configuration supplies only the target/key/transport data those Actions consume.
+`exec` may also carry a shorter per-Execution timeout, bounded above by the configured SSH execution
+maximum; it cannot extend that maximum.
 
 The Action Service must never receive reusable private-key material. Prefer mounted files for the
 initial implementation; evaluate an isolated SSH-agent sidecar only against a concrete rotation or
