@@ -153,10 +153,7 @@ def test_fp_occ_unspecified_and_single_line_anchors_round_trip(synced_test_sessi
     yaml_fp = _fp_issue_from_orm(existing)
     occ = FalsePositiveOccurrence(
         occurrence_id="fp-occ-mixed",
-        files={
-            Path("add.py"): None,
-            Path("subtract.py"): [LineRange(start_line=3, end_line=None, note=None)],
-        },
+        files={Path("add.py"): None, Path("subtract.py"): [LineRange(start_line=3, end_line=None, note=None)]},
         note="Mixed anchors",
         relevant_files={Path("add.py"), Path("subtract.py")},
         match_file_restriction=None,

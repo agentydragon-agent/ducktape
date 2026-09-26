@@ -30,9 +30,7 @@ def upgrade() -> None:
     op.drop_constraint("occurrence_range_end_gte_start", "occurrence_ranges", type_="check")
 
     op.create_check_constraint(
-        "occurrence_range_start_line_positive",
-        "occurrence_ranges",
-        "start_line IS NULL OR start_line >= 1",
+        "occurrence_range_start_line_positive", "occurrence_ranges", "start_line IS NULL OR start_line >= 1"
     )
     op.create_check_constraint(
         "occurrence_range_end_gte_start",
@@ -98,16 +96,8 @@ def downgrade() -> None:
     op.drop_constraint("occurrence_range_end_gte_start", "occurrence_ranges", type_="check")
     op.drop_constraint("occurrence_range_start_line_positive", "occurrence_ranges", type_="check")
 
-    op.create_check_constraint(
-        "occurrence_range_start_line_positive",
-        "occurrence_ranges",
-        "start_line >= 1",
-    )
-    op.create_check_constraint(
-        "occurrence_range_end_gte_start",
-        "occurrence_ranges",
-        "end_line >= start_line",
-    )
+    op.create_check_constraint("occurrence_range_start_line_positive", "occurrence_ranges", "start_line >= 1")
+    op.create_check_constraint("occurrence_range_end_gte_start", "occurrence_ranges", "end_line >= start_line")
 
     op.alter_column("occurrence_ranges", "end_line", existing_type=sa.Integer(), nullable=False)
     op.alter_column("occurrence_ranges", "start_line", existing_type=sa.Integer(), nullable=False)
