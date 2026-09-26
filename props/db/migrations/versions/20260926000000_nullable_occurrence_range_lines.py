@@ -37,7 +37,8 @@ def upgrade() -> None:
     op.create_check_constraint(
         "occurrence_range_end_gte_start",
         "occurrence_ranges",
-        "(start_line IS NULL AND end_line IS NULL) OR (start_line IS NOT NULL AND (end_line IS NULL OR end_line >= start_line))",
+        "(start_line IS NULL AND end_line IS NULL) "
+        "OR (start_line IS NOT NULL AND (end_line IS NULL OR end_line >= start_line))",
     )
 
     op.execute("""

@@ -535,7 +535,8 @@ class OccurrenceRangeORM(Base):
         CheckConstraint("(tp_id IS NULL) <> (fp_id IS NULL)", name="occurrence_range_exclusive_arc"),
         CheckConstraint("start_line IS NULL OR start_line >= 1", name="occurrence_range_start_line_positive"),
         CheckConstraint(
-            "(start_line IS NULL AND end_line IS NULL) OR (start_line IS NOT NULL AND (end_line IS NULL OR end_line >= start_line))",
+            "(start_line IS NULL AND end_line IS NULL) "
+            "OR (start_line IS NOT NULL AND (end_line IS NULL OR end_line >= start_line))",
             name="occurrence_range_end_gte_start",
         ),
     )
