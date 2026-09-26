@@ -305,10 +305,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # a header, so there is nothing for the PAT substitution to attach and no
             # credentialRef here -- this is the same shape as `packages` below. GET-only:
             # retrieving a log or artifact archive, never uploading one.
-            EgressPolicySpecRules(
-                hosts=["*.blob.core.windows.net"],
-                methods=[EgressPolicySpecRulesMethods.GET],
-            )
+            EgressPolicySpecRules(hosts=["*.blob.core.windows.net"], methods=[EgressPolicySpecRulesMethods.GET])
         ],
     )
     EgressPolicy(
