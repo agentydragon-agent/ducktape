@@ -59,6 +59,13 @@ py_library(
 )
 
 py_library(
+    name = "env_helpers",
+    srcs = ["env_helpers.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["@pypi//cdk8s_plus_34"],
+)
+
+py_library(
     name = "helm",
     srcs = ["helm.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -242,6 +249,7 @@ py_library(
     visibility = ["//cluster/cdk8s/litellm:__pkg__"],
     deps = [
         ":config_format",
+        ":env_helpers",
         ":external_creds",
         ":generation",
         ":manifest_roots",
@@ -273,6 +281,7 @@ py_library(
     deps = [
         ":cilium",
         ":config_format",
+        ":env_helpers",
         ":external_creds",
         ":forgejo_images",
         ":generation",
@@ -574,6 +583,7 @@ py_library(
     name = "airlock",
     srcs = ["airlock.py"],
     deps = [
+        ":env_helpers",
         ":forgejo_images",
         ":gateway",
         ":generation",
@@ -725,6 +735,7 @@ py_library(
     ],
     deps = [
         ":artifact_generators",
+        ":env_helpers",
         ":fleet_rules",
         ":flux",
         ":forgejo_images",
@@ -831,6 +842,7 @@ py_library(
     name = "tana_mcp",
     srcs = ["tana_mcp.py"],
     deps = [
+        ":env_helpers",
         ":external_creds",
         ":forgejo_images",
         ":gateway",
