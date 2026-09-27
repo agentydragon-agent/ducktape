@@ -125,8 +125,13 @@ def test_tp_occ_none_file_anchor_round_trip(synced_test_session: Session):
     _sync_critic_scopes_for_specimen(synced_test_session, SLUG, [yaml_issue], [])
     synced_test_session.flush()
 
+    # _add_tp_occurrence adds new occurrences via session.add(), not by appending to
+    # existing.occurrences, so that already-loaded relationship collection is now stale.
+    # Expire it so the re-sync below sees the occurrence we just added.
+    synced_test_session.expire(existing, ["occurrences"])
+
     # Re-sync must detect no changes
-    changed_resync = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    changed_resync = _sync_tp_issue(synced_test_session, existing, _tp_issue_from_orm(existing))
     synced_test_session.flush()
     assert not changed_resync
 
@@ -168,8 +173,13 @@ def test_tp_occ_none_end_line_round_trip(synced_test_session: Session):
     _sync_critic_scopes_for_specimen(synced_test_session, SLUG, [yaml_issue], [])
     synced_test_session.flush()
 
+    # _add_tp_occurrence adds new occurrences via session.add(), not by appending to
+    # existing.occurrences, so that already-loaded relationship collection is now stale.
+    # Expire it so the re-sync below sees the occurrence we just added.
+    synced_test_session.expire(existing, ["occurrences"])
+
     # Re-sync must detect no changes
-    changed_resync = _sync_tp_issue(synced_test_session, existing, yaml_issue)
+    changed_resync = _sync_tp_issue(synced_test_session, existing, _tp_issue_from_orm(existing))
     synced_test_session.flush()
     assert not changed_resync
 
@@ -203,8 +213,13 @@ def test_fp_occ_unspecified_and_single_line_anchors_round_trip(synced_test_sessi
         Path("subtract.py"): [LineRange(start_line=3, end_line=None, note=None)],
     }
 
+    # _add_fp_occurrence adds new occurrences via session.add(), not by appending to
+    # existing.occurrences, so that already-loaded relationship collection is now stale.
+    # Expire it so the re-sync below sees the occurrence we just added.
+    synced_test_session.expire(existing, ["occurrences"])
+
     # Re-sync must detect no changes
-    changed_resync = _sync_fp_issue(synced_test_session, existing, yaml_fp)
+    changed_resync = _sync_fp_issue(synced_test_session, existing, _fp_issue_from_orm(existing))
     synced_test_session.flush()
     assert not changed_resync
 
