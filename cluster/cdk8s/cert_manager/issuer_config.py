@@ -1,6 +1,5 @@
-"""The `cert-manager-issuer-config` ConfigMap: the Flux postBuild substitution source that
-selects the Let's Encrypt ClusterIssuer for every Kustomization reading
-`${LETSENCRYPT_ISSUER}`."""
+"""The `cert-manager-issuer-config` ConfigMap: the Flux postBuild substitution source for
+Kustomizations whose applied artifact may still read `${LETSENCRYPT_ISSUER}`."""
 
 from __future__ import annotations
 
@@ -10,6 +9,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import CERT_MANAGER_ISSUER_CONFIG, NAMESPACE, Kustomization, flux_kustomization
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -35,9 +35,8 @@ def chart(app: App) -> Chart:
                 "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": NAMESPACE,
             },
         ),
-        # Single toggle for Let's Encrypt issuer selection.
-        # Change to "letsencrypt-staging" for development (avoids rate limits).
-        data={"LETSENCRYPT_ISSUER": "letsencrypt-prod"},
+        # CLEANUP(added 2026-09-27): delete this unit once #8160 has applied on the cluster.
+        data={"LETSENCRYPT_ISSUER": LETSENCRYPT_ISSUER},
     )
     return chart
 

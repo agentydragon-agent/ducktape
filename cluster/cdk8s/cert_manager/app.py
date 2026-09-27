@@ -13,6 +13,7 @@ from cdk8s_plus_34 import k8s
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import (
     CERT_MANAGER_ISSUER_SUBSTITUTION,
     Kustomization,
@@ -55,8 +56,7 @@ def _values() -> dict[str, object]:
         "tolerations": [_CONTROL_PLANE_TOLERATION],
         "crds": {"enabled": True},
         # Default ClusterIssuer for Ingress resources without explicit annotation.
-        # Driven by cert-manager-issuer-config ConfigMap via Flux postBuild substitution.
-        "ingressShim": {"defaultIssuerName": "${LETSENCRYPT_ISSUER}", "defaultIssuerKind": "ClusterIssuer"},
+        "ingressShim": {"defaultIssuerName": LETSENCRYPT_ISSUER, "defaultIssuerKind": "ClusterIssuer"},
         # Gateway API support — enables gateway-shim controller that watches Gateway
         # resources for cert-manager.io/cluster-issuer annotations.
         # Since v1.15 the old --feature-gates=ExperimentalGatewayAPISupport flag is

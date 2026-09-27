@@ -32,6 +32,7 @@ from gateway_api_gateway_crds.io.k8s.networking.gateway import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import (
     CERT_MANAGER_ISSUER_SUBSTITUTION,
     Kustomization,
@@ -127,7 +128,7 @@ def chart(app: App) -> Chart:
     Gateway(
         chart,
         "gateway",
-        metadata=metadata(_NAME, _NAMESPACE, annotations={"cert-manager.io/cluster-issuer": "${LETSENCRYPT_ISSUER}"}),
+        metadata=metadata(_NAME, _NAMESPACE, annotations={"cert-manager.io/cluster-issuer": LETSENCRYPT_ISSUER}),
         spec=GatewaySpec(
             gateway_class_name="cilium",
             listeners=[
