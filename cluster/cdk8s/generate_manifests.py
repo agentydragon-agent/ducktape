@@ -375,9 +375,7 @@ def generate_manifests(root: Path) -> None:
     ollama_app.write_manifests(root)
     gatus_app.write_manifests(root)
     activitywatch_app.write_manifests(root)
-    cli_proxy_api.write_manifests(root)
     matrix.write_manifests(root)
-    matrix_user_provisioner.write_manifests(root)
     study_casino_app.write_manifests(root)
     github_api_proxy.write_manifests(root)
     litellm_credentials.write_agentplane_testing_manifests(root)
@@ -392,11 +390,9 @@ def generate_manifests(root: Path) -> None:
     valkey.write_manifests(root)
     goldilocks.write_manifests(root)
     headlamp.write_manifests(root)
-    proxmox_proxy.write_manifests(root, mesh)
     volsync.write_manifests(root)
     reloader.write_manifests(root)
     kube_api_proxy.write_manifests(root)
-    vector_talos_logs.write_manifests(root)
     dcgm_exporter_exporter.write_manifests(root)
 
     flux_output = root / f"{HAND_WRITTEN_ROOT}/flux"
@@ -697,7 +693,13 @@ def generate_manifests(root: Path) -> None:
     website_artifact = artifact("website", website.OUTPUT_DIR)
     website.website(flux_chart, website_artifact, kyverno_kustomization)
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
-    proxmox_proxy.proxmox_proxy(flux_chart, proxmox_proxy_artifact, kyverno_kustomization)
+    proxmox_proxy.proxmox_proxy(
+        flux_chart,
+        write_directory(
+            root, proxmox_proxy_artifact, proxmox_proxy.chart, config_map_generator=[proxmox_proxy.config_map(mesh)]
+        ),
+        kyverno_kustomization,
+    )
     kube_system_artifact = artifact("kube-system", kube_system.OUTPUT_DIR)
     kube_system.kube_system(
         flux_chart, write_directory(root, kube_system_artifact, kube_system.chart), goldilocks_kustomization
@@ -921,7 +923,17 @@ def generate_manifests(root: Path) -> None:
         flux_chart, langfuse_artifact, cnpg_kustomization, valkey_kustomization, seaweedfs_operator_kustomization
     )
     vector_talos_logs_artifact = artifact("vector-talos-logs", vector_talos_logs.OUTPUT_DIR)
-    vector_talos_logs.vector_talos_logs(flux_chart, vector_talos_logs_artifact, loki_kustomization)
+    vector_talos_logs.vector_talos_logs(
+        flux_chart,
+        write_directory(
+            root,
+            vector_talos_logs_artifact,
+            vector_talos_logs.chart,
+            namespace=vector_talos_logs.NAMESPACE,
+            config_map_generator=[vector_talos_logs.CONFIG_MAP],
+        ),
+        loki_kustomization,
+    )
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
     monitoring_flux_kustomizations.alloy(
         flux_chart, monitoring_alloy_artifact, mimir_kustomization, grafana_helmrepository_kustomization
@@ -1059,7 +1071,13 @@ def generate_manifests(root: Path) -> None:
     cli_proxy_api_artifact = artifact("cli-proxy-api", cli_proxy_api.OUTPUT_DIR)
     cli_proxy_api_kustomization = cli_proxy_api.cli_proxy_api(
         flux_chart,
-        cli_proxy_api_artifact,
+        write_directory(
+            root,
+            cli_proxy_api_artifact,
+            cli_proxy_api.chart,
+            siblings=cli_proxy_api.KEY_FILES,
+            components=["./image-pins"],
+        ),
         external_secrets_operator_kustomization,
         cert_manager_environment_kustomization,
     )
@@ -1132,7 +1150,12 @@ def generate_manifests(root: Path) -> None:
     )
     matrix_user_provisioner_artifact = artifact("matrix-user-provisioner", matrix_user_provisioner.OUTPUT_DIR)
     matrix_user_provisioner.matrix_user_provisioner(
-        flux_chart, matrix_user_provisioner_artifact, external_secrets_operator_kustomization, matrix_kustomization
+        flux_chart,
+        write_directory(
+            root, matrix_user_provisioner_artifact, matrix_user_provisioner.chart, components=["./image-pins"]
+        ),
+        external_secrets_operator_kustomization,
+        matrix_kustomization,
     )
     nix_cache_artifact = artifact("nix-cache", nix_cache_attic.OUTPUT_DIR)
     nix_cache_flux_kustomizations.nix_cache(
@@ -1183,8 +1206,14 @@ def generate_manifests(root: Path) -> None:
     aiquota_artifact = artifact("aiquota", aiquota.OUTPUT_DIR)
     aiquota.aiquota(
         flux_chart,
-        aiquota_artifact,
-        root,
+        write_directory(
+            root,
+            aiquota_artifact,
+            aiquota.chart,
+            siblings=[f"{aiquota.BEARER_SECRET_NAME}.sops.yaml"],
+            components=["./image-pins"],
+            config_map_generator=[aiquota.CONFIG_CONFIG_MAP, aiquota.SCHEMA_CONFIG_MAP],
+        ),
         cli_proxy_api_kustomization,
         external_secrets_operator_kustomization,
         clickhouse_schema_kustomization,
