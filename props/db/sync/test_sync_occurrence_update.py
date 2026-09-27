@@ -100,14 +100,18 @@ def test_tp_occ_none_file_anchor_round_trip(synced_test_session: Session):
     synced_test_session.flush()
     assert changed
 
+    # Verify ranges via ORM directly (critic_scopes are synced in a separate phase,
+    # so _tp_occ_from_orm would fail validation on the freshly re-added occurrence)
     db_occ = (
         synced_test_session.query(TruePositiveOccurrenceORM)
         .filter_by(snapshot_slug=SLUG, tp_id="tp-001", occurrence_id="occ-none-anchor")
         .one()
     )
-    pydantic_occ = _tp_occ_from_orm(db_occ)
-    assert pydantic_occ.occurrence_id == "occ-none-anchor"
-    assert pydantic_occ.files == {Path("add.py"): None}
+    assert len(db_occ.ranges) == 1
+    r = db_occ.ranges[0]
+    assert str(r.file_path) == "add.py"
+    assert r.start_line is None
+    assert r.end_line is None
 
     # Re-sync must detect no changes
     changed_resync = _sync_tp_issue(synced_test_session, existing, yaml_issue)
@@ -132,14 +136,19 @@ def test_tp_occ_none_end_line_round_trip(synced_test_session: Session):
     synced_test_session.flush()
     assert changed
 
+    # Verify ranges via ORM directly (critic_scopes are synced in a separate phase,
+    # so _tp_occ_from_orm would fail validation on the freshly re-added occurrence)
     db_occ = (
         synced_test_session.query(TruePositiveOccurrenceORM)
         .filter_by(snapshot_slug=SLUG, tp_id="tp-001", occurrence_id="occ-single-line")
         .one()
     )
-    pydantic_occ = _tp_occ_from_orm(db_occ)
-    assert pydantic_occ.occurrence_id == "occ-single-line"
-    assert pydantic_occ.files == {Path("add.py"): [LineRange(start_line=2, end_line=None, note="single line anchor")]}
+    assert len(db_occ.ranges) == 1
+    r = db_occ.ranges[0]
+    assert str(r.file_path) == "add.py"
+    assert r.start_line == 2
+    assert r.end_line is None
+    assert r.note == "single line anchor"
 
     # Re-sync must detect no changes
     changed_resync = _sync_tp_issue(synced_test_session, existing, yaml_issue)
