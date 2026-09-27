@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecAffinity,
     ClusterSpecAffinityTolerations,
+    ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecMonitoring,
@@ -16,6 +18,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecProbesLiveness,
     ClusterSpecProbesLivenessIsolationCheck,
     ClusterSpecResources,
+    ClusterSpecStorage,
 )
 from constructs import Construct
 
@@ -39,6 +42,16 @@ def _affinity(*, node_selector: dict[str, str], storage_class: str) -> ClusterSp
         tolerations=[_CONTROL_PLANE_TOLERATION] if storage_class in SSD_STORAGE_CLASSES else None,
         topology_key="kubernetes.io/hostname",
         pod_anti_affinity_type="required",
+    )
+
+
+def same_owner_initdb(
+    name: str, *, locale_c_type: str | None = None, locale_collate: str | None = None
+) -> ClusterSpecBootstrapInitdb:
+    """`ClusterSpecBootstrapInitdb` for the common case where the app's database and its
+    owning role both take the app's own name."""
+    return ClusterSpecBootstrapInitdb(
+        database=name, owner=name, locale_c_type=locale_c_type, locale_collate=locale_collate
     )
 
 
@@ -71,13 +84,11 @@ def cluster(
     return Cluster(
         scope,
         id,
-        name=name,
-        namespace=namespace,
-        storage_class=storage_class,
-        size=size,
+        metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations=annotations),
+        storage=ClusterSpecStorage(storage_class=storage_class, size=size),
         instances=instances,
         image_name=image_name,
-        initdb=initdb,
+        bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
         affinity=_affinity(node_selector=node_selector, storage_class=storage_class),
         managed=managed,
         postgresql=postgresql,
@@ -88,5 +99,4 @@ def cluster(
         ),
         # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
         monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
-        annotations=annotations,
     )

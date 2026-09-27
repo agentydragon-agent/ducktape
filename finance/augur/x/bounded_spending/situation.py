@@ -8,6 +8,7 @@ the Trinity experiment.
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AssetId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -15,7 +16,6 @@ from finance.augur.sim.prepared import (
     PreparedDistributionSlice,
     PreparedHoldingPool,
 )
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.world import World
 from finance.augur.study.trinity.replay import BONDS, BROKERAGE, CHECKING, RETIREE, WORLD, Situation, opening_lots
 
@@ -56,7 +56,9 @@ def compose(case: Situation, rollout_id: int, *, equity_share: float) -> World:
                 holding_account_id=BROKERAGE,
                 asset_id=AssetId(BONDS),
                 to_account_id=CHECKING,
-                tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=None),),
+                tax_character=(
+                    PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1), income_category=InterestIncome()),
+                ),
             )
         )
     return world

@@ -20,8 +20,8 @@ from finance.augur.sim.ids import (
     PortfolioId,
     PropertyId,
 )
+from finance.augur.sim.income import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.jurisdictions import JurisdictionLevel
-from finance.augur.sim.scenario import TransferDeductionCategory, TransferIncomeCategory
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 
 
@@ -146,7 +146,7 @@ class PreparedBond:
 @dataclass(frozen=True, kw_only=True)
 class PreparedDistributionSlice:
     fraction_ppb: int
-    issuer_jurisdiction_id: JurisdictionId | None
+    income_category: TransferIncomeCategory
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -5,12 +5,14 @@ import pytest_bazel
 
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import quantity_scale_for_asset
 from finance.augur.sim.ids import AccountId, AssetId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedObligation, PreparedSeries
 from finance.augur.sim.results import Finished, RejectedAction
-from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.x.monthly_actions.policy import decide
@@ -51,7 +53,7 @@ def opening(bill_dollars: int) -> World:
                 obligation_type=ObligationType.CASH_SPEND,
                 from_account=AccountRef(agent_id=HOUSEHOLD, account_id=AccountId("checking")),
                 to_account=AccountRef(agent_id=CREDITOR, account_id=AccountId("checking")),
-                amount_due=bill_dollars * 100,
+                amount_due=USD.quanta(bill_dollars),
                 property_id=None,
                 deduction_category=None,
                 deductible_fraction_ppb=1_000_000_000,

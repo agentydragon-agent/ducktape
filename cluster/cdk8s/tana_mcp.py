@@ -13,19 +13,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import external_creds
+from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
@@ -52,12 +53,6 @@ _METRICS_PORT = 9090
 _TANA_HEALTH = f"http://127.0.0.1:{_TANA_PORT}/health"
 
 
-def _secret_env(name: str, secret: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name=secret, key=key))
-    )
-
-
 def _tana_health_check() -> k8s.ExecAction:
     return k8s.ExecAction(command=["/usr/bin/curl", "--fail", "--silent", _TANA_HEALTH])
 
@@ -70,9 +65,7 @@ def _tana_deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "tana-deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -146,7 +139,7 @@ def _tana_deployment(chart: Chart) -> None:
                             # accepts it (POST /mcp initialize -> 200), so a renderer that
                             # drifts off the matching account drives a re-sign instead of
                             # silently leaving the facade serving zero tools.
-                            env=[_secret_env("PAT", _PAT_SECRET, "token")],
+                            env=[secret_env_var("PAT", _PAT_SECRET, "token")],
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
@@ -260,7 +253,6 @@ def _facade(chart: Chart) -> None:
                     " Access is enforced by Authentik group membership; the server injects a static downstream"
                     " PAT."
                 ),
-                "reloader.stakater.com/auto": "true",
                 # CPU: VPA manages requests only — no CPU limit so cold-start bursts aren't
                 # throttled. fastmcp takes ~6 CPU-seconds to import; at a 60m limit that's
                 # 100s wall time even on an idle node (cgroups CFS is a hard rate limiter
@@ -296,11 +288,11 @@ def _facade(chart: Chart) -> None:
                                 k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name="tana-mcp-facade-config"))
                             ],
                             env=[
-                                _secret_env("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _FACADE_OIDC_SECRET, "client_id"),
-                                _secret_env(
+                                secret_env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID", _FACADE_OIDC_SECRET, "client_id"),
+                                secret_env_var(
                                     "MCP_FACADE_AUTH__OIDC_CLIENT_SECRET", _FACADE_OIDC_SECRET, "client_secret"
                                 ),
-                                _secret_env("MCP_FACADE_UPSTREAM__BEARER_TOKEN", _PAT_SECRET, "token"),
+                                secret_env_var("MCP_FACADE_UPSTREAM__BEARER_TOKEN", _PAT_SECRET, "token"),
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -337,8 +329,8 @@ def _facade(chart: Chart) -> None:
     https_route(
         chart,
         "facade-httproute",
-        metadata=metadata(_FACADE, _NAMESPACE),
-        hostname="tana-mcp-facade.allegedly.works",
+        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
+        hostnames=["tana-mcp-facade.allegedly.works"],
         backend=_FACADE,
         port=_FACADE_PORT,
         timeout="60s",
@@ -371,14 +363,14 @@ def _facade(chart: Chart) -> None:
     ServiceMonitor(
         chart,
         "facade-servicemonitor",
-        metadata=metadata(_FACADE, _NAMESPACE),
-        selector=_FACADE_LABELS,
+        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=_FACADE_LABELS),
         endpoints=[Endpoint.plain(port="metrics", scrape_timeout="10s")],
     )
     PrometheusRule(
         chart,
         "facade-prometheusrule",
-        metadata=metadata(_FACADE, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
         groups=[
             group(
                 _FACADE,
@@ -454,14 +446,16 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "tana-pat",
-        name=_PAT_SECRET,
-        namespace=_NAMESPACE,
-        refresh="1h",
-        store=external_creds.STORE,
+        metadata=ApiObjectMetadata(
+            name=_PAT_SECRET,
+            namespace=_NAMESPACE,
+            annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
+        ),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data(_PAT_SECRET, "token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _resigner(chart)

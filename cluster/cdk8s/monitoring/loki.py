@@ -9,20 +9,16 @@ backend. Grafana reaches Loki internally via the cluster Service.
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
     CiliumNetworkPolicySpecEgress,
     CiliumNetworkPolicySpecEgressToEndpoints,
     CiliumNetworkPolicySpecEgressToEntities,
     CiliumNetworkPolicySpecEgressToPorts,
     CiliumNetworkPolicySpecEgressToPortsPorts,
     CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEndpointSelector,
     CiliumNetworkPolicySpecIngress,
     CiliumNetworkPolicySpecIngressFromEndpoints,
     CiliumNetworkPolicySpecIngressFromEntities,
@@ -32,14 +28,12 @@ from cilium_crds.io.cilium import (
 )
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.seaweedfs import namespace, s3
 
 NAME = "loki"
@@ -509,114 +503,112 @@ def _network_policy(chart: Chart) -> None:
     #   - kube-apiserver (k8s-sidecar needs to list/watch secrets for rule sync)
     #   - SeaweedFS S3 gateway (seaweedfs namespace, S3 chunk/index storage)
     #   - Loki itself (intra-cluster gossip, gRPC, HTTP, and gateway)
-    CiliumNetworkPolicy(
+    NetworkPolicy(
         chart,
         "network-policy",
-        metadata=metadata("loki-ingress", NAME),
-        spec=CiliumNetworkPolicySpec(
-            endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels={"app.kubernetes.io/name": NAME}),
-            ingress=[
-                # Promtail → Loki (log push)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({"app.kubernetes.io/name": "promtail", namespace_label: NAME}),
-                    to_ports=_ingress_tcp("3100"),
+        metadata=ApiObjectMetadata(name="loki-ingress", namespace=NAME),
+        endpoint_selector={"app.kubernetes.io/name": NAME},
+        ingress=[
+            # Promtail → Loki (log push)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({"app.kubernetes.io/name": "promtail", namespace_label: NAME}),
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Vector Talos-log receiver → Loki (Talos node logs). The receiver runs in
+            # hostNetwork so it can bind only 127.0.0.1:13333; Cilium represents it as
+            # host on the local node and remote-node after a cross-node service hop.
+            CiliumNetworkPolicySpecIngress(
+                from_entities=[
+                    CiliumNetworkPolicySpecIngressFromEntities.HOST,
+                    CiliumNetworkPolicySpecIngressFromEntities.REMOTE_HYPHEN_NODE,
+                ],
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Grafana → Loki (log queries)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({"app": "grafana", namespace_label: "monitoring"}),
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Props backend → Loki (GET /api/runs/{id}/logs reads agent container logs)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods(
+                    {
+                        "app.kubernetes.io/component": "backend",
+                        "app.kubernetes.io/instance": "props",
+                        namespace_label: "props",
+                    }
                 ),
-                # Vector Talos-log receiver → Loki (Talos node logs). The receiver runs in
-                # hostNetwork so it can bind only 127.0.0.1:13333; Cilium represents it as
-                # host on the local node and remote-node after a cross-node service hop.
-                CiliumNetworkPolicySpecIngress(
-                    from_entities=[
-                        CiliumNetworkPolicySpecIngressFromEntities.HOST,
-                        CiliumNetworkPolicySpecIngressFromEntities.REMOTE_HYPHEN_NODE,
-                    ],
-                    to_ports=_ingress_tcp("3100"),
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Alloy → Loki (OTel log forwarding)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Alloy → Loki canary metrics (ServiceMonitor scraping)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
+                to_ports=_ingress_tcp("3500"),
+            ),
+            # Gatus → Loki (health checks)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({"app.kubernetes.io/name": "gatus", namespace_label: "gatus"}),
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Authentik proxy outpost → Loki (SSO-protected external access)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods({namespace_label: "authentik"}), to_ports=_ingress_tcp("3100")
+            ),
+            # loki-read-proxy → loki-read directly, bypassing the gateway (the proxy
+            # enforces the query validator + allowlist). See ducktape#4750: the
+            # gateway's nginx resolver can get permanently pinned to a dead CoreDNS
+            # pod IP after CoreDNS reschedules, and this proxy only ever queries, so
+            # it never needed the gateway's read/write path routing.
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods(
+                    {"app.kubernetes.io/name": "loki-read-proxy", namespace_label: "loki-read-proxy"}
                 ),
-                # Grafana → Loki (log queries)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({"app": "grafana", namespace_label: "monitoring"}),
-                    to_ports=_ingress_tcp("3100"),
-                ),
-                # Props backend → Loki (GET /api/runs/{id}/logs reads agent container logs)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods(
-                        {
-                            "app.kubernetes.io/component": "backend",
-                            "app.kubernetes.io/instance": "props",
-                            namespace_label: "props",
+                to_ports=_ingress_tcp("3100"),
+            ),
+            # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
+            CiliumNetworkPolicySpecIngress(
+                from_endpoints=_from_pods(loki_pods), to_ports=_ingress_tcp("80", "8080", "3100", "9095", "7946")
+            ),
+        ],
+        egress=[
+            # Loki → kube-apiserver (sc-rules sidecar watches secrets)
+            CiliumNetworkPolicySpecEgress(
+                to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
+                to_ports=_egress_ports(("443", tcp), ("6443", tcp)),
+            ),
+            # Loki → kube-dns (DNS resolution)
+            CiliumNetworkPolicySpecEgress(
+                to_endpoints=[
+                    CiliumNetworkPolicySpecEgressToEndpoints(
+                        match_labels={namespace_label: "kube-system", "k8s-app": "kube-dns"}
+                    )
+                ],
+                to_ports=_egress_ports(("53", udp), ("53", tcp)),
+            ),
+            # Loki → SeaweedFS S3 (S3 chunk/index storage)
+            CiliumNetworkPolicySpecEgress(
+                to_endpoints=[
+                    CiliumNetworkPolicySpecEgressToEndpoints(
+                        match_labels={
+                            "app.kubernetes.io/component": "s3",
+                            "app.kubernetes.io/name": _SEAWEEDFS,
+                            namespace_label: _SEAWEEDFS,
                         }
-                    ),
-                    to_ports=_ingress_tcp("3100"),
-                ),
-                # Alloy → Loki (OTel log forwarding)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
-                    to_ports=_ingress_tcp("3100"),
-                ),
-                # Alloy → Loki canary metrics (ServiceMonitor scraping)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
-                    to_ports=_ingress_tcp("3500"),
-                ),
-                # Gatus → Loki (health checks)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({"app.kubernetes.io/name": "gatus", namespace_label: "gatus"}),
-                    to_ports=_ingress_tcp("3100"),
-                ),
-                # Authentik proxy outpost → Loki (SSO-protected external access)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods({namespace_label: "authentik"}), to_ports=_ingress_tcp("3100")
-                ),
-                # loki-read-proxy → loki-read directly, bypassing the gateway (the proxy
-                # enforces the query validator + allowlist). See ducktape#4750: the
-                # gateway's nginx resolver can get permanently pinned to a dead CoreDNS
-                # pod IP after CoreDNS reschedules, and this proxy only ever queries, so
-                # it never needed the gateway's read/write path routing.
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods(
-                        {"app.kubernetes.io/name": "loki-read-proxy", namespace_label: "loki-read-proxy"}
-                    ),
-                    to_ports=_ingress_tcp("3100"),
-                ),
-                # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=_from_pods(loki_pods), to_ports=_ingress_tcp("80", "8080", "3100", "9095", "7946")
-                ),
-            ],
-            egress=[
-                # Loki → kube-apiserver (sc-rules sidecar watches secrets)
-                CiliumNetworkPolicySpecEgress(
-                    to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER],
-                    to_ports=_egress_ports(("443", tcp), ("6443", tcp)),
-                ),
-                # Loki → kube-dns (DNS resolution)
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={namespace_label: "kube-system", "k8s-app": "kube-dns"}
-                        )
-                    ],
-                    to_ports=_egress_ports(("53", udp), ("53", tcp)),
-                ),
-                # Loki → SeaweedFS S3 (S3 chunk/index storage)
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={
-                                "app.kubernetes.io/component": "s3",
-                                "app.kubernetes.io/name": _SEAWEEDFS,
-                                namespace_label: _SEAWEEDFS,
-                            }
-                        )
-                    ],
-                    to_ports=_egress_ports(("8333", tcp)),
-                ),
-                # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[CiliumNetworkPolicySpecEgressToEndpoints(match_labels=loki_pods)],
-                    to_ports=_egress_ports(("80", tcp), ("8080", tcp), ("7946", tcp), ("9095", tcp), ("3100", tcp)),
-                ),
-            ],
-        ),
+                    )
+                ],
+                to_ports=_egress_ports(("8333", tcp)),
+            ),
+            # Loki ↔ Loki (SimpleScalable read/write/backend, gateway, and canary)
+            CiliumNetworkPolicySpecEgress(
+                to_endpoints=[CiliumNetworkPolicySpecEgressToEndpoints(match_labels=loki_pods)],
+                to_ports=_egress_ports(("80", tcp), ("8080", tcp), ("7946", tcp), ("9095", tcp), ("3100", tcp)),
+            ),
+        ],
     )
 
 
@@ -628,22 +620,14 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
 def loki(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    grafana_helmrepository: Kustomization,
-    seaweedfs_cluster: Kustomization,
+    chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization, monitoring_crds: Kustomization
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "loki",
-        artifact,
+        directory,
         wait=None,
-        decryption=SOPS_DECRYPTION,
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name="loki", namespace="loki"
@@ -656,5 +640,9 @@ def loki(
             ),
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(grafana_helmrepository, seaweedfs_cluster),
+        depends_on=flux_kustomization_depends_on_many(
+            seaweedfs_operator,
+            # the chart's monitoring.serviceMonitor
+            monitoring_crds,
+        ),
     )

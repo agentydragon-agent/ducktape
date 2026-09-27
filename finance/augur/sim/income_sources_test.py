@@ -19,17 +19,18 @@ import pytest_bazel
 
 from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.income_sources import income_source_sort_key
-from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedTransfer
 from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile, TransferIncomeCategory
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -108,8 +109,9 @@ def compose(payments: tuple[Payment, ...]) -> World:
                 compile_profile(
                     TaxProfile(agent_id=recipient, jurisdiction_ids=list(FILED_IN), tax_authority_agent_id=IRS),
                     jurisdictions,
-                    quantum=QUANTUM,
-                )
+                    currency=USD,
+                ),
+                indexation=FixedNominalLaw(),
             )
         )
     for index, payment in enumerate(payments):

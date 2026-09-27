@@ -21,8 +21,8 @@ from finance.augur.model.series import SecurityDistributionKey, SecurityKey, Sec
 from finance.augur.policy.funding import fund_claims
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Record
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.claims import ObligationType
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
@@ -30,7 +30,9 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedDistribution,
@@ -41,7 +43,6 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.results import Finished, Rollout, Stop, UnpaidClaim
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, ObligationType
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.x.bond_policies.construction import (
@@ -89,9 +90,7 @@ def situation(construction: DatedConstruction | ProxyConstruction, *, annual_spe
         horizon_months=horizon_months,
     )
     return Situation(
-        series=compile_series(
-            paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM
-        ),
+        series=compile_series(paths, rollout_count=rollout_count, horizon_months=horizon_months, currency=USD),
         rollout_count=rollout_count,
         horizon_months=horizon_months,
         annual_spending=int(currency_amount_to_quanta(annual_spending, quantum=QUANTUM)),
@@ -127,7 +126,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             asset_id=AssetId(STRATEGY),
             purchase_month=-1,
             quantity_scale=scale,
-            units=int(quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale)),
+            units=quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale),
             basis=int(currency_amount_to_quanta(INITIAL_WEALTH, quantum=QUANTUM)),
         )
     )
@@ -137,7 +136,7 @@ def compose(case: Situation, rollout_id: int) -> World:
             holding_account_id=BROKERAGE,
             asset_id=AssetId(STRATEGY),
             to_account_id=CHECKING,
-            tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=None),),
+            tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1), income_category=InterestIncome()),),
         )
     )
     if case.annual_spending > 0:
@@ -153,7 +152,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                         amount_due=case.annual_spending,
                         property_id=None,
                         deduction_category=None,
-                        deductible_fraction_ppb=rate_to_ppb(1.0),
+                        deductible_fraction_ppb=rate_to_ppb(1),
                     )
                 )
             )

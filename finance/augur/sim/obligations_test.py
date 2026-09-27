@@ -16,11 +16,12 @@ from finance.augur.policy.sleeves import withdraw
 from finance.augur.sim.actions import ClaimId, DecisionActions, PayClaim, Transfer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -41,7 +42,6 @@ from finance.augur.sim.results import (
     RejectedAction,
     Rollout,
 )
-from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 
@@ -86,7 +86,7 @@ def lot(
         asset_id=AssetId(VTI.symbol),
         purchase_month=purchase_month,
         quantity_scale=SCALE,
-        units=int(quantity_to_quanta(quantity, scale=SCALE)),
+        units=quantity_to_quanta(quantity, scale=SCALE),
         basis=money(cost_basis),
     )
 
@@ -188,9 +188,7 @@ def _run(
     paths = ExternalSeriesContext.from_level_blocks(
         [(VTI, np.asarray(prices, dtype=np.float64))], rollout_count=rollout_count, horizon_months=case.horizon_months
     )
-    series = compile_series(
-        paths, rollout_count=rollout_count, horizon_months=case.horizon_months, currency_quantum=QUANTUM
-    )
+    series = compile_series(paths, rollout_count=rollout_count, horizon_months=case.horizon_months, currency=USD)
     session = ActionSession(
         {id_: compose(case, id_, series=series, rollout_count=rollout_count) for id_ in range(rollout_count)},
         AgentId("alice"),

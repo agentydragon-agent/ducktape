@@ -70,6 +70,7 @@ cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/db/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/db/kustomization.yaml linguist-generated=true
 cluster/k8s/seaweedfs/external-credentials/kustomization.yaml linguist-generated=true
+cluster/k8s/github-secrets-sync/kustomization.yaml linguist-generated=true
 cluster/k8s/github-secrets-sync-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/forgejo-images/kustomization.yaml linguist-generated=true
 cluster/k8s/monitoring/stack/kustomization.yaml linguist-generated=true
@@ -85,6 +86,7 @@ cluster/k8s/user-agentydragon/kustomization.yaml linguist-generated=true
 cluster/schemas/**/*.json linguist-generated=true
 # cdk8s-generated ssh-mcp directory wiring.
 cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true
+cluster/k8s/google-mcp/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/agent-sandbox/workspaces/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/workspaces/app/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/alloy-otlp-bearer/kustomization.yaml linguist-generated=true
@@ -138,7 +140,6 @@ cluster/k8s/**/trixie_*.yaml cluster-manifest-ignored=true
 cluster/k8s/parked/** cluster-manifest-ignored=true
 # The retired Codex pod's manifests are kept beside their source, not active cluster config.
 x/codex_pod_image/deploy/** cluster-manifest-ignored=true
-cluster/k8s/evidence/market-roster.yaml cluster-manifest-ignored=true
 # rotate.py's rotation list, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignored=true
 # rotate.py's token list, mounted via configMapGenerator — not a K8s manifest.

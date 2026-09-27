@@ -30,11 +30,10 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from cluster.cdk8s.agentplane import container_security, node_scheduling
+from cluster.cdk8s import container_security, node_scheduling
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.haku import console
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.pod_spec_patches import runtime_default_seccomp_patch
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 
 NAME = "haku-console-migration"
 
@@ -48,12 +47,14 @@ class Migration(Construct):
         # No Kubernetes API work: separate from the API ServiceAccount, which can manage
         # narrowly scoped sandbox claims.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(NAME, namespace), automount_token=False
+            self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=False
         )
         job = Job(
             self,
             "job",
-            metadata=metadata(NAME, namespace, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}),
+            metadata=ApiObjectMetadata(
+                name=NAME, namespace=namespace, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
+            ),
             pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": NAME}),
             select=False,
             # Retries are how this waits for the database, since nothing sequences the two
@@ -83,7 +84,7 @@ class Migration(Construct):
             security_context=container_security.WRITABLE_ROOT,
         )
         node_scheduling.attract_to_zone(job)
-        ApiObject.of(job).add_json_patch(runtime_default_seccomp_patch())
+        apply_pod_spec_patches(job)
         ApiObject.of(job).add_json_patch(
             JsonPatch.add("/spec/template/spec/containers/0/terminationMessagePolicy", "FallbackToLogsOnError")
         )

@@ -17,11 +17,12 @@ import numpy as np
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -31,7 +32,6 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.world import World
 from finance.augur.x.allocation_glide.policy import decide
@@ -63,8 +63,7 @@ def situation() -> Situation:
         [(GROWTH, growth), (STEADY, steady), (InflationKey(), cpi)], rollout_count=3, horizon_months=HORIZON_MONTHS
     )
     return Situation(
-        series=compile_series(paths, rollout_count=3, horizon_months=HORIZON_MONTHS, currency_quantum=QUANTUM),
-        rollout_count=3,
+        series=compile_series(paths, rollout_count=3, horizon_months=HORIZON_MONTHS, currency=USD), rollout_count=3
     )
 
 
@@ -97,7 +96,7 @@ def compose(case: Situation, rollout_id: int) -> World:
                 asset_id=AssetId(asset.symbol),
                 purchase_month=-24,
                 quantity_scale=scale,
-                units=int(quantity_to_quanta(500, scale=scale)),
+                units=quantity_to_quanta(500, scale=scale),
                 basis=int(currency_amount_to_quanta(Decimal(50_000), quantum=QUANTUM)),
             )
         )

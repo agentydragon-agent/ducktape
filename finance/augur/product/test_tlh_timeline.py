@@ -15,16 +15,18 @@ from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.wire import HoldingSaleEvent, TlhFinancialEffectEvent
 from finance.augur.sim.actions import Contribute, DecisionActions, Liquidate, Withdraw
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import Currency
 from finance.augur.sim.prepared import PreparedAccount, PreparedJurisdiction, PreparedSeries, PreparedTlhPortfolio
 from finance.augur.sim.results import Finished
-from finance.augur.sim.scenario import ORDINARY_INCOME, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -33,7 +35,7 @@ FEDERAL_US = JurisdictionId("federal_us")
 
 ASSET = AssetId("test-managed-index")
 # Money is counted in whole dollars here, so the stipulated $1 price is one quantum.
-QUANTUM = Decimal(1)
+WHOLE_DOLLARS = Currency(code="USD", quantum=Decimal(1))
 FEDERAL = load_jurisdiction(FEDERAL_US)
 
 
@@ -58,8 +60,9 @@ def compose(price: int) -> World:
             compile_profile(
                 TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL_US], tax_authority_agent_id=AgentId("irs")),
                 {FEDERAL_US: FEDERAL},
-                quantum=QUANTUM,
-            )
+                currency=WHOLE_DOLLARS,
+            ),
+            indexation=FixedNominalLaw(),
         )
     )
     world.declare_portfolio(

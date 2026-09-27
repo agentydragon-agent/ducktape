@@ -36,12 +36,12 @@ from finance.augur.sim.books import (
     TaxPaymentOutcome,
     TlhPortfolioState,
 )
-from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.distributions import Distributions
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.held_bonds import BondStatement, HeldBonds
 from finance.augur.sim.holdings import Holdings, private_issuer
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, PortfolioId, PropertyId
+from finance.augur.sim.income import InterestIncome, TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, TlhStatement
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, is_quantity_scale, position_value
@@ -73,8 +73,8 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing, Properties, mortgage_terms
 from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
-from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
 from finance.augur.sim.tax_authority import Assessment, TaxAuthority
+from finance.augur.sim.tax_indexation import CpiIndexedLaw
 from finance.augur.sim.tlh import ModeledRealizations, TlhMarketUpdate, TlhOpening, TlhPortfolio
 
 type Capture = Literal["summary", "dense", "forensic"]
@@ -311,11 +311,14 @@ class World:
         ):
             raise ValueError("invalid distribution tax character split")
         for part in spec.tax_character:
-            if part.issuer_jurisdiction_id is not None and part.issuer_jurisdiction_id not in {
-                item.jurisdiction_id for item in self.jurisdictions
-            }:
+            source = part.income_category
+            if (
+                isinstance(source, InterestIncome)
+                and source.issuer_jurisdiction_id is not None
+                and source.issuer_jurisdiction_id not in {item.jurisdiction_id for item in self.jurisdictions}
+            ):
                 raise ValueError("distribution has unknown issuer")
-            if InterestIncome(issuer_jurisdiction_id=part.issuer_jurisdiction_id) not in self.income_sources:
+            if source not in self.income_sources:
                 raise ValueError("distribution has undeclared income source")
         if self.distributions is None:
             self.distributions = Distributions(
@@ -562,6 +565,11 @@ class World:
             return
         if isinstance(actor, TaxAuthority):
             self._composing()
+            if isinstance(actor.indexation, CpiIndexedLaw):
+                if "inflation" not in self.market.series:
+                    raise ValueError("CPI-indexed tax needs a modeled inflation path")
+                if min(self.market.path("inflation")) <= 0:
+                    raise ValueError("CPI-indexed tax needs a positive inflation path")
             self.accounting.enroll(actor.profile)
             self.tax_authorities.append(actor)
             return
@@ -1020,8 +1028,9 @@ class World:
             for property_bill in property_authority.handle(opened):
                 self.register(property_bill)
         for authority in self.tax_authorities:
-            if authority.handle(self.accounting.liability_statement(month)):
-                raise ValueError("a liability statement takes no reply")
+            for mail in (self.market.statement(month), self.accounting.liability_statement(month)):
+                if authority.handle(mail):
+                    raise ValueError("a statement takes no reply")
             for assessment in authority.handle(opened):
                 self.register(assessment)
 

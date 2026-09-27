@@ -14,11 +14,13 @@ from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.tax import compile_profile
+from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -29,9 +31,10 @@ from finance.augur.sim.prepared import (
     _TenderPolicy,
 )
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import issuer_protocol
 from finance.augur.sim.world import World
 
@@ -97,8 +100,9 @@ def frozen_world(*, horizon_months: int) -> World:
             compile_profile(
                 TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
                 jurisdictions,
-                quantum=QUANTUM,
-            )
+                currency=USD,
+            ),
+            indexation=FixedNominalLaw(),
         )
     )
     world.track(Biller(unfundable(month=FAIL_MONTH, payer=ALICE, amount=Decimal(1))))
@@ -143,7 +147,7 @@ def private_equity_world(*, freeze: bool) -> World:
             asset_id=PE_ASSET_ID,
             purchase_month=-12,
             quantity_scale=PE_SCALE,
-            units=int(quantity_to_quanta(10.0, scale=PE_SCALE)),
+            units=quantity_to_quanta(10, scale=PE_SCALE),
             basis=money(100),
         )
     )

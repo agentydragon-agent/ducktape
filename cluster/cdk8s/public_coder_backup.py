@@ -4,9 +4,7 @@ SeaweedFS bucket. The SOPS-encrypted Restic password beside the output stays han
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
@@ -26,7 +24,6 @@ from external_secrets_secretstore_crds.io.external_secrets import (
     SecretStoreSpecProviderKubernetesServerCaProvider,
     SecretStoreSpecProviderKubernetesServerCaProviderType,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSource,
     ReplicationSourceSpec,
@@ -47,16 +44,8 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.seaweedfs import s3
 
@@ -174,7 +163,7 @@ def _repository_store(scope: Construct) -> None:
     SecretStore(
         scope,
         "repository-store",
-        metadata=metadata(_SECRET_STORE_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_SECRET_STORE_NAME, namespace=_NAMESPACE),
         spec=SecretStoreSpec(
             provider=SecretStoreSpecProvider(
                 kubernetes=SecretStoreSpecProviderKubernetes(
@@ -203,10 +192,9 @@ def _repository(scope: Construct) -> None:
     ExternalSecret(
         scope,
         "repository",
-        name=_REPOSITORY_SECRET_NAME,
-        namespace=_NAMESPACE,
-        refresh="1h",
-        store=SecretStoreRef.namespaced(_SECRET_STORE_NAME),
+        metadata=ApiObjectMetadata(name=_REPOSITORY_SECRET_NAME, namespace=_NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.namespaced(_SECRET_STORE_NAME),
         data=[
             remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_ACCESS_KEY_ID"),
             remote_data(_S3_CREDENTIALS_SECRET_NAME, "AWS_SECRET_ACCESS_KEY"),
@@ -236,7 +224,7 @@ def _replication_source(scope: Construct) -> None:
     ReplicationSource(
         scope,
         "state-restic",
-        metadata=metadata(_REPOSITORY_SECRET_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_REPOSITORY_SECRET_NAME, namespace=_NAMESPACE),
         spec=ReplicationSourceSpec(
             source_pvc="public-coder-agent-state-v2",
             # 09:17 UTC is 02:17 PDT / 01:17 PST; run away from normal interactive use.
@@ -299,30 +287,19 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", "repository.sops.yaml"]),
-    )
-
-
 def public_coder_agent_backup(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    seaweedfs_public_coder_agent_backups_bucket: Kustomization,
-    external_secrets_config: Kustomization,
+    directory: RenderedDirectory,
+    seaweedfs_operator: Kustomization,
+    external_secrets_operator: Kustomization,
     volsync: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="5m",
-        decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(
-            seaweedfs_public_coder_agent_backups_bucket, external_secrets_config, volsync
-        ),
+        depends_on=flux_kustomization_depends_on_many(seaweedfs_operator, external_secrets_operator, volsync),
         description=(
             "Restic/VolSync backup of Public Coder's worker-local OpenClaw state "
             "to its dedicated private SeaweedFS S3 bucket."

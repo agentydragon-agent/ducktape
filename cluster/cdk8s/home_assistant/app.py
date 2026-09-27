@@ -13,19 +13,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecRefreshPolicy,
-    ExternalSecretSpecTargetCreationPolicy,
-)
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitorSpecEndpoints,
-    ServiceMonitorSpecEndpointsAuthorization,
-    ServiceMonitorSpecEndpointsAuthorizationCredentials,
-)
+from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecRestic,
     ReplicationSourceSpecResticCacheCapacity,
@@ -45,15 +37,14 @@ from volsync_replicationsource_crds.backube.volsync import (
 )
 
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions, kustomize_kustomization
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
@@ -519,19 +510,14 @@ def _token_provisioner(scope: Construct) -> None:
 
 
 def _metrics_token(scope: Construct) -> None:
-    generator = Password(
-        scope,
-        "metrics-token-generator",
-        metadata=metadata(_METRICS_TOKEN, _NAMESPACE),
-        spec=PasswordSpec(length=48, digits=12, symbols=0, no_upper=False, allow_repeat=True),
-    )
-    ExternalSecret(
+    # No explicit target template: ESO copies the generator's own `password` field
+    # straight into the target Secret, under that same name.
+    mint_bearer_secret(
         scope,
         "metrics-token",
         name=_METRICS_TOKEN,
         namespace=_NAMESPACE,
-        refresh=ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
-        data_from=[DataFrom.from_password_generator(generator.name)],
+        key=None,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
 
@@ -540,25 +526,18 @@ def _monitoring(scope: Construct) -> None:
     ServiceMonitor(
         scope,
         "service-monitor",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
         endpoints=[
-            ServiceMonitorSpecEndpoints(
-                port="http",
-                path="/api/prometheus",
-                authorization=ServiceMonitorSpecEndpointsAuthorization(
-                    type="Bearer",
-                    credentials=ServiceMonitorSpecEndpointsAuthorizationCredentials(
-                        name=_METRICS_TOKEN, key="password"
-                    ),
-                ),
+            Endpoint.bearer_authorization(
+                port="http", path="/api/prometheus", secret_name=_METRICS_TOKEN, key="password"
             )
         ],
     )
     PrometheusRule(
         scope,
         "prometheus-rule",
-        metadata=metadata(_NAME, _NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         groups=[
             group(
                 _NAME,
@@ -584,7 +563,7 @@ def _backup(scope: Construct) -> None:
     ReplicationSource(
         scope,
         "backup",
-        metadata=metadata(_BACKUP, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_BACKUP, namespace=_NAMESPACE),
         source_pvc=_CONFIG_CLAIM,
         trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
         mover=ReplicationSourceSpecRestic(
@@ -693,8 +672,8 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
-        hostname=_HOSTNAME,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        hostnames=[_HOSTNAME],
         backend=_NAME,
         port=8123,
         hsts=False,

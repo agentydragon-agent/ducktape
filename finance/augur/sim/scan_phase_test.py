@@ -16,9 +16,7 @@ from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
@@ -26,8 +24,10 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -43,8 +43,9 @@ from finance.augur.sim.prepared import (
     _PropertyTax,
 )
 from finance.augur.sim.property import Housing
-from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
@@ -60,7 +61,7 @@ SF = PreparedLocation(
     location_id=LocationId("sf"),
     display_name="SF",
     jurisdiction_ids=(FEDERAL, CALIFORNIA),
-    annual_property_tax_rate_ppb=rate_to_ppb(0.0118),
+    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.0118")),
     annual_special_assessment=0,
 )
 
@@ -109,8 +110,9 @@ def taxed_by(world: World, *jurisdiction_ids: JurisdictionId, prior_year_tax: De
                     prior_year_tax=prior_year_tax,
                 ),
                 {id_: load_jurisdiction(id_) for id_ in jurisdiction_ids},
-                quantum=QUANTUM,
-            )
+                currency=USD,
+            ),
+            indexation=FixedNominalLaw(),
         )
     )
 
@@ -232,14 +234,14 @@ def test_security_sale_books_proceeds_and_a_long_term_gain() -> None:
     # makes the gain reportable rather than what assesses it.
     horizon = 6
     scale = quantity_scale_for_asset(SP500)
-    units = int(quantity_to_quanta(100.0, scale=scale))
+    units = quantity_to_quanta(100, scale=scale)
     series = compile_series(
         ExternalSeriesContext.from_level_blocks(
             [(SP500, np.full((1, horizon + 1), 120.0, dtype=np.float64))], rollout_count=1, horizon_months=horizon
         ),
         rollout_count=1,
         horizon_months=horizon,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
     world = world_for(account(ALICE), account(IRS), horizon_months=horizon, jurisdiction_ids=(FEDERAL,), series=series)
     taxed_by(world, FEDERAL)
@@ -306,7 +308,7 @@ def purchase(
         down_payment=money(down_payment),
         buyer_closing_cost=money(buyer_closing_cost),
         rented_fraction_ppb=0,
-        land_value_fraction_ppb=rate_to_ppb(0.2),
+        land_value_fraction_ppb=rate_to_ppb(Decimal("0.2")),
         mortgage=mortgage,
     )
 
@@ -339,7 +341,7 @@ def test_property_tax_accrues_only_once_the_property_is_held() -> None:
                 from_account_id=CHECKING,
                 tax_authority_agent_id=AgentId("county"),
                 tax_authority_account_id=CHECKING,
-                annual_tax_rate_ppb=rate_to_ppb(0.012),
+                annual_tax_rate_ppb=rate_to_ppb(Decimal("0.012")),
                 start_month=0,
                 end_month=None,
             ),
@@ -370,7 +372,7 @@ def test_financed_purchase_originates_then_services_the_loan() -> None:
                         lender_agent_id=AgentId("lender"),
                         lender_account_id=CHECKING,
                         principal=money(400_000),
-                        annual_interest_rate_ppb=rate_to_ppb(0.06),
+                        annual_interest_rate_ppb=rate_to_ppb(Decimal("0.06")),
                         term_months=360,
                     ),
                 ),

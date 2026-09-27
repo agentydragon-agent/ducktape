@@ -8,15 +8,11 @@ kube-state-metrics `customResourceState` in `monitoring/stack.py`.
 
 from __future__ import annotations
 
-from pathlib import Path
+from cdk8s import ApiObjectMetadata, App, Chart
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
 
-from cdk8s import App, Chart
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
-
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 
 NAME = "flux-monitoring"
@@ -32,24 +28,18 @@ def chart(app: App) -> Chart:
     PodMonitor(
         chart,
         "flux-system",
-        metadata=metadata("flux-system", "flux-system", labels=_FLUX_LABELS),
-        selector=_FLUX_LABELS,
+        metadata=ApiObjectMetadata(name="flux-system", namespace="flux-system", labels=_FLUX_LABELS),
+        selector=PodMonitorSpecSelector(match_labels=_FLUX_LABELS),
         pod_metrics_endpoints=[Endpoint.plain(port="http-prom")],
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def flux_monitoring(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
-) -> Kustomization:
+def flux_monitoring(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         timeout="2m",
         depends_on=[
             # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.

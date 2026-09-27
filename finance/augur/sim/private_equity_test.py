@@ -22,7 +22,7 @@ from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, Pri
 from finance.augur.sim.actions import DecisionActions, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.compiler.tax import compile_profile
+from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import (
     currency_amount_to_quanta,
     quantity_scale_for_asset,
@@ -30,8 +30,10 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedHoldingPool,
@@ -42,9 +44,10 @@ from finance.augur.sim.prepared import (
     _TenderPolicy,
 )
 from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.issuer_protocol import Code, Money, Rate, at_month, issuer_protocol
 from finance.augur.sim.world import World
 
@@ -78,9 +81,9 @@ def protocol(
     tender_month: int | None = None,
     tender_mark: Decimal | None = None,
     regime: Code = PrivateEquityRegimeCode.PRIVATE_OPERATING,
-    sale_capacity: Rate = 1.0,
-    eligible: Rate = 1.0,
-    forced_sale: Rate = 0.0,
+    sale_capacity: Rate = 1,
+    eligible: Rate = 1,
+    forced_sale: Rate = 0,
     liquidity_blocked: Code = 0,
     forced_recovery_usd: Money = Decimal(0),
 ) -> tuple[PreparedSeries, ...]:
@@ -131,7 +134,7 @@ def holder(
     *,
     initial_cash: Decimal | int,
     monthly_spend: Decimal | int,
-    pe_units: float,
+    pe_units: Decimal | int,
     pe_cost_basis_per_unit: Decimal | int,
     pe_holding_period_months: int,
     horizon_months: int,
@@ -148,8 +151,8 @@ def holder(
             asset_id=ASSET_ID,
             purchase_month=-pe_holding_period_months,
             quantity_scale=SCALE,
-            units=int(quantity_to_quanta(pe_units, scale=SCALE)),
-            basis=money(Decimal(str(pe_units)) * pe_cost_basis_per_unit),
+            units=quantity_to_quanta(pe_units, scale=SCALE),
+            basis=money(Decimal(pe_units) * pe_cost_basis_per_unit),
         ),
         monthly_spend=money(monthly_spend),
         floor=None if lnw_floor is None else money(lnw_floor),
@@ -176,8 +179,9 @@ def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
                 compile_profile(
                     TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
                     jurisdictions,
-                    quantum=QUANTUM,
-                )
+                    currency=USD,
+                ),
+                indexation=FixedNominalLaw(),
             )
         )
     world.declare_pool(
@@ -200,7 +204,7 @@ def compose(case: Holder, channels: Sequence[PreparedSeries]) -> World:
                 amount_due=case.monthly_spend,
                 property_id=None,
                 deduction_category=None,
-                deductible_fraction_ppb=rate_to_ppb(1.0),
+                deductible_fraction_ppb=rate_to_ppb(1),
             )
         )
     )
@@ -287,7 +291,7 @@ def test_a_position_with_no_opportunity_carries_through_untouched() -> None:
     case = holder(
         initial_cash=100_000,
         monthly_spend=0,
-        pe_units=100.0,
+        pe_units=100,
         pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
@@ -312,7 +316,7 @@ def test_a_tender_below_the_floor_sells_toward_it() -> None:
     case = holder(
         initial_cash=Decimal(30_000),
         monthly_spend=Decimal(1_000),
-        pe_units=100.0,
+        pe_units=100,
         pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
@@ -347,7 +351,7 @@ def test_a_tender_above_the_floor_passes_without_a_sale() -> None:
     case = holder(
         initial_cash=200_000,
         monthly_spend=0,
-        pe_units=100.0,
+        pe_units=100,
         pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
@@ -371,7 +375,7 @@ def test_a_zero_floor_never_sells() -> None:
     case = holder(
         initial_cash=1_000,
         monthly_spend=0,
-        pe_units=100.0,
+        pe_units=100,
         pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
@@ -391,7 +395,7 @@ def test_a_tender_with_no_policy_is_not_taken() -> None:
     case = holder(
         initial_cash=30_000,
         monthly_spend=1_000,
-        pe_units=100.0,
+        pe_units=100,
         pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
@@ -411,7 +415,7 @@ def unreachable_floor(*, horizon_months: int) -> Holder:
     return holder(
         initial_cash=0,
         monthly_spend=0,
-        pe_units=100.0,
+        pe_units=100,
         pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon_months,
@@ -431,7 +435,7 @@ def test_the_issuers_capacity_caps_what_a_tender_can_sell() -> None:
             initial_mark=Decimal(100),
             tender_month=5,
             tender_mark=Decimal(100),
-            sale_capacity=0.25,
+            sale_capacity=Decimal("0.25"),
         ),
     )
 
@@ -451,11 +455,7 @@ def test_zero_capacity_is_traced_as_its_own_outcome() -> None:
     rollout = run(
         unreachable_floor(horizon_months=horizon),
         protocol(
-            horizon_months=horizon,
-            initial_mark=Decimal(100),
-            tender_month=5,
-            tender_mark=Decimal(100),
-            sale_capacity=0.0,
+            horizon_months=horizon, initial_mark=Decimal(100), tender_month=5, tender_mark=Decimal(100), sale_capacity=0
         ),
     )
 
@@ -474,7 +474,11 @@ def test_the_eligible_fraction_caps_what_a_tender_can_sell() -> None:
     rollout = run(
         case,
         protocol(
-            horizon_months=horizon, initial_mark=Decimal(100), tender_month=5, tender_mark=Decimal(100), eligible=0.4
+            horizon_months=horizon,
+            initial_mark=Decimal(100),
+            tender_month=5,
+            tender_mark=Decimal(100),
+            eligible=Decimal("0.4"),
         ),
     )
 
@@ -517,7 +521,7 @@ def test_a_public_market_regime_lets_the_floor_sell_with_no_tender() -> None:
     case = holder(
         initial_cash=0,
         monthly_spend=0,
-        pe_units=100.0,
+        pe_units=100,
         pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
@@ -543,8 +547,8 @@ def test_a_public_market_regime_lets_the_floor_sell_with_no_tender() -> None:
     assert row["cause_id"] == "pe_public_market_m5_acme"
 
 
-def forced_sale_in_month(*, horizon_months: int, month: int, fraction: float) -> Rate:
-    return at_month(fraction, month=month, default=0.0, snapshots=horizon_months + 1)
+def forced_sale_in_month(*, horizon_months: int, month: int, fraction: Decimal | int) -> Rate:
+    return at_month(fraction, month=month, default=0, snapshots=horizon_months + 1)
 
 
 def test_a_forced_sale_happens_with_no_window_and_no_shortfall() -> None:
@@ -554,7 +558,7 @@ def test_a_forced_sale_happens_with_no_window_and_no_shortfall() -> None:
     case = holder(
         initial_cash=10_000,
         monthly_spend=0,
-        pe_units=100.0,
+        pe_units=100,
         pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
@@ -565,7 +569,7 @@ def test_a_forced_sale_happens_with_no_window_and_no_shortfall() -> None:
         protocol(
             horizon_months=horizon,
             initial_mark=Decimal(100),
-            forced_sale=forced_sale_in_month(horizon_months=horizon, month=5, fraction=0.3),
+            forced_sale=forced_sale_in_month(horizon_months=horizon, month=5, fraction=Decimal("0.3")),
         ),
     )
 
@@ -587,7 +591,7 @@ def test_a_forced_sale_still_books_its_capital_gain() -> None:
     case = holder(
         initial_cash=0,
         monthly_spend=0,
-        pe_units=100.0,
+        pe_units=100,
         pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
@@ -599,7 +603,7 @@ def test_a_forced_sale_still_books_its_capital_gain() -> None:
         protocol(
             horizon_months=horizon,
             initial_mark=Decimal(100),
-            forced_sale=forced_sale_in_month(horizon_months=horizon, month=5, fraction=0.3),
+            forced_sale=forced_sale_in_month(horizon_months=horizon, month=5, fraction=Decimal("0.3")),
         ),
     )
 
@@ -615,7 +619,7 @@ def test_proceeds_land_in_the_account_the_policy_names() -> None:
         holder(
             initial_cash=0,
             monthly_spend=0,
-            pe_units=100.0,
+            pe_units=100,
             pe_cost_basis_per_unit=10,
             pe_holding_period_months=36,
             horizon_months=horizon,
@@ -628,7 +632,7 @@ def test_proceeds_land_in_the_account_the_policy_names() -> None:
         protocol(
             horizon_months=horizon,
             initial_mark=Decimal(100),
-            forced_sale=forced_sale_in_month(horizon_months=horizon, month=5, fraction=0.3),
+            forced_sale=forced_sale_in_month(horizon_months=horizon, month=5, fraction=Decimal("0.3")),
         ),
     )
 
@@ -652,7 +656,7 @@ def test_a_recovery_cashout_takes_the_rest_of_the_position_for_a_stated_amount()
     case = holder(
         initial_cash=0,
         monthly_spend=0,
-        pe_units=100.0,
+        pe_units=100,
         pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
@@ -680,7 +684,7 @@ def test_tiny_total_recovery_is_not_rounded_through_a_unit_price(cashout_quanta:
     case = holder(
         initial_cash=0,
         monthly_spend=0,
-        pe_units=3.0,
+        pe_units=3,
         pe_cost_basis_per_unit=1,
         pe_holding_period_months=36,
         horizon_months=1,
@@ -711,7 +715,7 @@ def test_a_disposition_carries_the_lot_it_consumed() -> None:
     case = holder(
         initial_cash=10_000,
         monthly_spend=0,
-        pe_units=200.0,
+        pe_units=200,
         pe_cost_basis_per_unit=20,
         pe_holding_period_months=24,
         horizon_months=horizon,

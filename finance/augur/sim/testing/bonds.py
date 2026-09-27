@@ -11,14 +11,13 @@ import numpy as np
 from finance.augur.model.series import InflationKey
 from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.execution import compile_series
-from finance.augur.sim.compiler.income_sources import income_source_sort_key
-from finance.augur.sim.compiler.tax import compile_profile
-from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedBond,
@@ -27,8 +26,9 @@ from finance.augur.sim.prepared import (
     PreparedJurisdiction,
     PreparedSeries,
 )
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -39,7 +39,7 @@ HORIZON = 14
 NEVER_MATURES = 120
 
 FACE = Decimal(1_000_000)
-NOMINAL_RATE = 0.04
+NOMINAL_RATE = Decimal("0.04")
 # Semiannual on a $1M face at 4%, before any indexation.
 NOMINAL_COUPON = Decimal(20_000)
 
@@ -58,7 +58,7 @@ def dated(
     agent_id: AgentId,
     account_id: AccountId = CHECKING,
     face: Decimal,
-    annual_rate: float,
+    annual_rate: Decimal | int,
     period: int,
     purchase: int = 0,
     maturity: int,
@@ -98,7 +98,7 @@ def cpi_series(paths: Sequence[Sequence[float]]) -> tuple[PreparedSeries, ...]:
         ),
         rollout_count=rollouts,
         horizon_months=snapshots - 1,
-        currency_quantum=QUANTUM,
+        currency=USD,
     )
 
 
@@ -146,7 +146,7 @@ def compose(case: Situation, rollout_id: int = 0) -> World:
         world.declare_account(account)
     for agent_id in case.taxpayers:
         profile = TaxProfile(agent_id=agent_id, jurisdiction_ids=list(filed_in), tax_authority_agent_id=AgentId("irs"))
-        world.track(TaxAuthority(compile_profile(profile, rules, quantum=QUANTUM)))
+        world.track(TaxAuthority(compile_profile(profile, rules, currency=USD), indexation=FixedNominalLaw()))
     for bond in case.bonds:
         world.hold(bond)
     return world

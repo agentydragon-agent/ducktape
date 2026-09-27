@@ -6,9 +6,7 @@ Hand-written beside the generated output: `grafana-admin-password.sops.yaml`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart, JsonPatch
+from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -20,19 +18,10 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-    kustomize_kustomization,
-)
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "monitoring-stack"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring/stack"
@@ -490,7 +479,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "helm-repository",
-        metadata=metadata(_HELM_REPOSITORY, "flux-system"),
+        metadata=ApiObjectMetadata(name=_HELM_REPOSITORY, namespace="flux-system"),
         spec=HelmRepositorySpec(interval="12h", url="https://prometheus-community.github.io/helm-charts"),
     )
     release = helm_release(
@@ -552,28 +541,18 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{NAME}.k8s.yaml", "grafana-admin-password.sops.yaml"]),
-    )
-
-
 def monitoring_stack(
     chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
+    directory: RenderedDirectory,
     monitoring_namespace: Kustomization,
     monitoring_crds: Kustomization,
-    ntfy: Kustomization,
-    external_secrets_config: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "monitoring-stack",
-        artifact,
+        directory,
         wait=None,
-        decryption=SOPS_DECRYPTION,
         health_checks=[
             KustomizationSpecHealthChecks(
                 api_version="v1", kind="Secret", name="alloy-control-plane-token", namespace="monitoring"
@@ -598,7 +577,7 @@ def monitoring_stack(
             # The chart's Prometheus/Alertmanager CRs are rejected at admission until
             # the CRDs exist, and the chart no longer installs them itself.
             monitoring_crds,
-            ntfy,
-            external_secrets_config,
+            # Kyverno's failurePolicy: Fail webhooks admit the chart's Deployments and DaemonSet.
+            kyverno,
         ),
     )

@@ -4,10 +4,9 @@ credentialless MCP fixtures in place of the real action groups.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import DeploymentStrategy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
@@ -35,9 +34,8 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.flux import flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 
 _NAMESPACE = "agentplane-testing"
@@ -151,8 +149,8 @@ def chart(app: App) -> Chart:
     NetworkPolicy(
         chart,
         "networkpolicy-app-from-staging-egress",
-        metadata=metadata(f"{app_component.NAME}-from-staging-egress", ENV.namespace),
-        selector={"app.kubernetes.io/name": app_component.NAME},
+        metadata=ApiObjectMetadata(name=f"{app_component.NAME}-from-staging-egress", namespace=ENV.namespace),
+        endpoint_selector={"app.kubernetes.io/name": app_component.NAME},
         ingress=[
             IngressRule.from_endpoints(
                 cilium.endpoint_labels("agentplane-staging", egress.NAME), ports=[app_component.CONTAINER_PORT]
@@ -174,11 +172,10 @@ def agentplane_testing(
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
     agent_sandbox_controller: Kustomization,
-    cert_manager_environment: Kustomization,
     cert_manager_trust: Kustomization,
     claude_rbac: Kustomization,
     cnpg: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -198,12 +195,6 @@ def agentplane_testing(
         ],
         decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds,
-            agent_sandbox_controller,
-            cert_manager_environment,
-            cert_manager_trust,
-            claude_rbac,
-            cnpg,
-            external_secrets_config,
+            agentplane_crds, agent_sandbox_controller, cert_manager_trust, claude_rbac, cnpg, external_secrets_operator
         ),
     )

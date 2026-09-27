@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngress,
@@ -21,19 +21,12 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 from constructs import Construct
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-)
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/activitywatch"
@@ -162,9 +155,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=_NAME, namespace=_NAMESPACE, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -230,15 +221,15 @@ def _service(scope: Construct, id: str, *, name: str, target_port: int, descript
 def _route(scope: Construct, id: str, *, name: str, hostname: str) -> None:
     """A public route on the cluster-gateway wildcard for *.allegedly.works, straight to the
     same-named bearer-gated Service."""
-    HttpRoute(
+    https_route(
         scope,
         id,
-        metadata=metadata(name, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref()],
-            hostnames=[hostname],
-            rules=[HttpRouteSpecRules(backend_refs=[HttpRouteSpecRulesBackendRefs(name=name, port=_SERVICE_PORT)])],
-        ),
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
+        hostnames=[hostname],
+        backend=name,
+        port=_SERVICE_PORT,
+        hsts=False,
+        listener=None,
     )
 
 
@@ -249,8 +240,8 @@ def _network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "network-policy",
-        metadata=metadata(_NAME, _NAMESPACE),
-        selector=_LABELS,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        endpoint_selector=_LABELS,
         ingress=[
             CiliumNetworkPolicySpecIngress(
                 from_entities=[CiliumNetworkPolicySpecIngressFromEntities.KUBE_HYPHEN_APISERVER],

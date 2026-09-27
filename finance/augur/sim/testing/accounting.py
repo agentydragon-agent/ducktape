@@ -4,12 +4,13 @@ from collections.abc import Mapping, Sequence
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.prepared import PreparedAccount, PreparedSeries
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome
+from finance.augur.sim.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.world import World
 
 HOUSEHOLD = AgentId("test_household")
@@ -23,7 +24,18 @@ INCOME_SOURCES = (ORDINARY_INCOME, InterestIncome())
 
 
 def flat_rules(jurisdiction: JurisdictionId, rate: int) -> PreparedTaxRules:
-    return PreparedTaxRules(jurisdiction, (), False, (PreparedTaxBracket(None, rate),), (), 0, 300_000, 0)
+    return PreparedTaxRules(
+        jurisdiction,
+        (),
+        False,
+        (PreparedTaxBracket(None, rate),),
+        (),
+        0,
+        300_000,
+        0,
+        law_year=2024,
+        indexed=frozenset(),
+    )
 
 
 def taxpayer(agent_id: AgentId) -> PreparedTaxProfile:
@@ -81,5 +93,5 @@ def world_on(
     for account in accounts:
         world.declare_account(account)
     for profile in taxpayers:
-        world.track(TaxAuthority(profile))
+        world.track(TaxAuthority(profile, indexation=FixedNominalLaw()))
     return world

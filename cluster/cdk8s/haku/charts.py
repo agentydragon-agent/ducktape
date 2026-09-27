@@ -15,7 +15,6 @@ from pathlib import Path
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
 )
@@ -24,6 +23,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
+    Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
@@ -112,13 +112,7 @@ def haku_console(
     flux_chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
     cnpg: Kustomization,
-    local_path_provisioner: Kustomization,
-    forgejo_images: Kustomization,
-    gateway: Kustomization,
-    agent_machine_access_tf: Kustomization,
-    reflector: Kustomization,
-    external_creds: Kustomization,
-    external_secrets_config: Kustomization,
+    external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
     """Build the Flux graph node from its predecessor nodes."""
@@ -142,19 +136,9 @@ def haku_console(
         # haku-workspaces -> haku-egress-proxy -> haku-state) blocks namespace
         # creation. Pods can wait for credentials after this layer is admitted.
         depends_on=flux_kustomization_depends_on_many(
-            # The Cluster operator and the storage class its PVCs bind.
+            # The Cluster CRD and CNPG's failurePolicy: Fail webhook.
             cnpg,
-            local_path_provisioner,
-            forgejo_images,
-            gateway,
-            # TF creates the Authentik clients and haku-console-oidc Secret;
-            # the console does OIDC discovery synchronously at startup.
-            agent_machine_access_tf,
-            # Copies aiquota's bearer, the ActivityWatch read token and the egress proxy's CA
-            # into this namespace.
-            reflector,
-            external_creds,
-            external_secrets_config,
+            external_secrets_operator,
             # The ServiceMonitor CRD.
             monitoring_crds,
         ),

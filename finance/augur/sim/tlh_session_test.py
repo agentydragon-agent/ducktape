@@ -5,17 +5,17 @@ from decimal import Decimal
 
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
 from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
-from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
+from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import Currency
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
     PreparedAccount,
@@ -26,9 +26,10 @@ from finance.augur.sim.prepared import (
     PreparedTlhPortfolio,
 )
 from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
-from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, TaxProfile, TlhCohort, TlhPortfolioSpec
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhOpeningCohort, TlhPortfolio
 from finance.augur.sim.world import Capture, World
 
@@ -36,7 +37,7 @@ MANAGED = PortfolioId("managed")
 
 ASSET = SecurityKey(symbol=SecuritySymbol("managed-index"))
 # Whole-dollar money, so a portfolio mark is the number the assertions name.
-QUANTUM = Decimal(1)
+WHOLE_DOLLARS = Currency(code="USD", quantum=Decimal(1))
 OWNER = AgentId("owner")
 OTHER = AgentId("other")
 IRS = AgentId("irs")
@@ -117,8 +118,9 @@ def compose(case: Situation, rollout_id: int) -> World:
                 compile_profile(
                     TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
                     {FEDERAL: load_jurisdiction(FEDERAL)},
-                    quantum=QUANTUM,
-                )
+                    currency=WHOLE_DOLLARS,
+                ),
+                indexation=FixedNominalLaw(),
             )
         )
     world.declare_portfolio(
@@ -366,8 +368,10 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
                 asset_id=AssetId(ASSET.symbol),
                 to_account_id=CHECKING,
                 tax_character=(
-                    PreparedDistributionSlice(fraction_ppb=500_000_000, issuer_jurisdiction_id=FEDERAL),
-                    PreparedDistributionSlice(fraction_ppb=500_000_000, issuer_jurisdiction_id=None),
+                    PreparedDistributionSlice(
+                        fraction_ppb=500_000_000, income_category=InterestIncome(issuer_jurisdiction_id=FEDERAL)
+                    ),
+                    PreparedDistributionSlice(fraction_ppb=500_000_000, income_category=InterestIncome()),
                 ),
             ),
         ),
@@ -385,9 +389,9 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
     [rollout] = result.rollouts
     assert rollout.trace is not None
     assert rollout.trace.distributions is not None
-    assert [(row.issuer_jurisdiction_id, row.units, row.amount) for row in rollout.trace.distributions] == [
-        (FEDERAL, None, 1),
-        (None, None, 1),
+    assert [(row.income_source, row.units, row.amount) for row in rollout.trace.distributions] == [
+        ("interest:federal_us", None, 1),
+        ("interest:corporate", None, 1),
     ]
     assert portfolios(rollout.summary.ending_book)[0].value == 100
     assert {(row.income_source, row.income) for row in rollout.summary.ending_book.income} == {
@@ -460,19 +464,6 @@ def test_a_contribution_into_a_worthless_index_is_rejected_not_parked() -> None:
         reason=InvalidRequest(detail="a worthless index takes no TLH contribution")
     )
     assert rollout.summary.cash[0].values[-1] == 10
-
-
-def test_removed_or_misplaced_fields_cannot_silently_disable_the_model() -> None:
-    portfolio = TlhPortfolioSpec(
-        portfolio_id=MANAGED,
-        owner_agent_id=OWNER,
-        account_id=CHECKING,
-        asset=ASSET,
-        initial_cohorts=[TlhCohort(value=Decimal(100), cost_basis=Decimal(100), purchase_month_index=-24)],
-        assumptions=assumptions(harvest=True),
-    )
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        TlhPortfolioSpec.model_validate({**portfolio.model_dump(), "cumulative_harvest": 1})
 
 
 if __name__ == "__main__":

@@ -69,17 +69,12 @@ def _ca(chart: Chart) -> None:
         secret_name=_CA_SECRET,
         bundle_name="haku-egress-proxy-ca-cert",
         description="Trust bundle for haku-egress-proxy-inspected sandbox HTTPS traffic",
-        # haku-console: the colocated egress proxy sidecar (#4942) intercepts with this same
-        # shared CA, so fenced sandboxes -- which already trust it via haku-egress-proxy-ca-cert
-        # -- trust the colocated listener too. When the iron/mitmproxy fence retires (#4670 end
-        # state) this CA's ownership moves out of this directory with it.
-        reflection_namespaces=("cert-manager", "haku-console"),
+        reflection_namespaces=("cert-manager",),
         # Written into Haku trust domains. The CLIProxyAPI-backed aiquota path connects
         # directly to the in-cluster management service and does not trust or use this
-        # inspected egress listener. public-coder-agent receives it for the #4943 spike: its
-        # OpenClaw pod mounts this bundle to verify TLS through the colocated Console egress
-        # fence (haku-console:8888).
-        target_namespaces=("haku-sandbox", "haku-openclaw-spike", "haku-ci", "public-coder-agent"),
+        # inspected egress listener. public-coder-agent has its own separate interception CA
+        # (public_coder_proxy.py) and does not consume this bundle.
+        target_namespaces=("haku-sandbox", "haku-openclaw-spike", "haku-ci"),
     )
 
 
@@ -93,9 +88,7 @@ def _mitmproxy(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAME, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAME, labels=_LABELS),
         spec=k8s.DeploymentSpec(
             # Two, so one container's restart never empties the Service. mitmproxy OOM-kills
             # under haku-ci traffic (#5846), and with one replica every kill was a CI outage:
@@ -268,7 +261,7 @@ def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port
     """An iron-proxy Deployment holding real credentials and substituting them for a sandbox's
     placeholders, its config, and its Service."""
     labels = {"app.kubernetes.io/name": name}
-    # No content-hash name suffix: `reloader.stakater.com/auto` rolls the proxy when this changes.
+    # No content-hash name suffix: Reloader's `autoReloadAll` rolls the proxy when this changes.
     config_map = k8s.KubeConfigMap(
         chart,
         f"{name}-config",
@@ -278,12 +271,7 @@ def _iron_proxy(chart: Chart, name: str, *, description: str, config: dict, port
     k8s.KubeDeployment(
         chart,
         f"{name}-deployment",
-        metadata=k8s.ObjectMeta(
-            name=name,
-            namespace=NAME,
-            labels=labels,
-            annotations={"description": description, "reloader.stakater.com/auto": "true"},
-        ),
+        metadata=k8s.ObjectMeta(name=name, namespace=NAME, labels=labels, annotations={"description": description}),
         spec=k8s.DeploymentSpec(
             replicas=1,
             selector=k8s.LabelSelector(match_labels=labels),
@@ -350,10 +338,9 @@ def _github_token(chart: Chart, name: str) -> None:
     ExternalSecret(
         chart,
         name,
-        name=name,
-        namespace=NAME,
-        refresh="1h",
-        store=external_creds.STORE,
+        metadata=ApiObjectMetadata(name=name, namespace=NAME),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
         data=[remote_data("github-agentydragon-agent", "token", secret_key="GITHUB_TOKEN")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
@@ -440,7 +427,7 @@ def _openclaw_spike_proxy(chart: Chart) -> None:
             # shared claude-sandbox store that carries GITHUB_TOKEN above. That store is
             # conditioned to four namespaces including public-coder-agent, the one deliberately
             # unconfined fence in the cluster; a cluster-API bearer has exactly one consumer and
-            # should be readable by exactly one namespace. reloader.stakater.com/auto restarts
+            # should be readable by exactly one namespace. Reloader's `autoReloadAll` restarts
             # this pod when Flux applies a rotation -- without it, kubectl would start 401ing
             # ~44 days after it last worked with nothing visibly changed.
             # Optional: this proxy is the ONLY egress path for the spike, so a missing kube
@@ -545,17 +532,8 @@ def _namespace_selector(namespace: str) -> CiliumClusterwideNetworkPolicySpecEnd
 
 def _sandbox_fence(chart: Chart) -> None:
     """Force all external egress from the haku-sandbox namespace through the dedicated
-    haku-egress-proxy. Allows: DNS, cluster-internal traffic, kube-apiserver, haku-egress-proxy
-    port 8080, and the colocated egress proxy in the Console pod (haku-console, port 8888,
-    #4942). Blocks: direct external internet access.
-
-    The colocated-proxy rule is explicit even though the `toEntities: cluster` rule already admits
-    it at L4: it keeps the enforcement model legible (#4670 § Enforcement topology -- "DNS,
-    cluster, apiserver, and the proxy's listener") and survives the eventual tightening of that
-    broad cluster rule into a ceiling. It makes the colocated listener *reachable*; the
-    Kyverno-injected HTTP_PROXY still points sandbox clients at the port-8080 fence, so this opens
-    the path without cutting traffic over (the repoint is the adoption step). The oracle at
-    haku-console:8079 is loopback-bound, so nothing answers on the pod IP there.
+    haku-egress-proxy. Allows: DNS, cluster-internal traffic, kube-apiserver, and haku-egress-proxy
+    port 8080. Blocks: direct external internet access.
     """
     CiliumClusterwideNetworkPolicy(
         chart,
@@ -579,12 +557,6 @@ def _sandbox_fence(chart: Chart) -> None:
                 ),
                 # Shared proxy for existing sandbox traffic.
                 _to_endpoint(NAME, {"k8s:app.kubernetes.io/name": NAME}, 8080),
-                # Colocated egress proxy in the Console pod (#4942). The sidecar shares the Console
-                # pod's network namespace, so its listener is selected by the Console pod label on
-                # port 8888. Once the Kyverno HTTP_PROXY repoint lands, this becomes the sandbox's
-                # egress path; until then it is a reachable-but-unused route the adoption cutover
-                # switches to.
-                _to_endpoint("haku-console", {"k8s:app.kubernetes.io/name": "haku-console"}, 8888),
             ],
         ),
     )

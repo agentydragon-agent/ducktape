@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from textwrap import dedent
 
-from cdk8s import App, Chart
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
+from cdk8s import ApiObjectMetadata, App, Chart
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 
 NAME = "monitoring-rules"
@@ -336,65 +332,6 @@ _GROCY_MCP = [
     )
 ]
 
-_HAKU_CONSOLE_CONNECTIONS = [
-    # A linked provider connection (Google Mail/Calendar/Drive today) whose OAuth refresh has
-    # been failing continuously. Distinct from McpUpstreamTokenRefreshFailed, which watches
-    # OIDCProxy-fronted MCP servers refreshing against *Authentik* — this is haku-console
-    # refreshing the operator's *Google* grant, a different credential against a different
-    # issuer on a different code path. That rule existing is why this gap went unnoticed.
-    #
-    # Why it needs alerting at all: the failure is silent by construction. The console keeps
-    # serving, the connector still appears in Settings, and scheduled Haku runs record the
-    # affected watches as "skipped" and complete normally. Three outages (Jun, Jul, Aug 2026)
-    # were each found by an agent happening to call get_mcp_server_status mid-run; the
-    # 2026-08-04 one ran ~40h and 160 failed refreshes before anyone looked.
-    #
-    # 2h, not minutes: refreshes run on a schedule and transient Google 5xx are routine, so the
-    # signal is persistence rather than any single failure. Every real instance ran 24h+.
-    #
-    # The `max by (...)` drops the per-pod labels deliberately. Every console replica exports
-    # the gauge for every connection, all reading the same Postgres row, so the raw series fan
-    # out one-per-replica and an unaggregated expr pages once per pod for a single broken
-    # connection. `max` rather than `avg`/`min` so that if replicas ever do disagree, the alert
-    # takes the pessimistic reading. `namespace` stays in the `by` list because the inhibit
-    # rule below matches on it — aggregating it away silently breaks that suppression.
-    #
-    # Both tiers share the alertname on purpose, and severity alone separates them: the
-    # cluster's stock inhibit rule is `source severity=critical, target severity=~warning|info,
-    # equal: [namespace, alertname]`. Distinct names (…Stale/…StaleCritical) never match that
-    # `equal`, so critical could not suppress warning and both fired together. Keep these two
-    # `alert:` values identical or the suppression silently stops working.
-    Rule.alert(
-        "HakuConsoleConnectionRefreshStale",
-        "max by (namespace, connection, provider) (haku_console_connection_refresh_failure_age_seconds) > 7200",
-        for_="15m",
-        labels={"severity": "warning"},
-        summary=(
-            "haku-console connection {{ $labels.connection }} has been failing to refresh for "
-            "{{ $value | humanizeDuration }}"
-        ),
-        description=(
-            "The OAuth refresh for provider connection {{ $labels.connection }} ({{ $labels.provider }}) has been "
-            "failing continuously for {{ $value | humanizeDuration }}. Agents reading this connection are blind and "
-            "scheduled runs will report their watches as skipped rather than failing. Fix: re-authorize the "
-            "connection in the console's Settings → Connections. If it re-breaks immediately, the grant was revoked "
-            "upstream rather than expired.\n"
-        ),
-    ),
-    # By this point at least one scheduled run has certainly gone blind on it.
-    Rule.alert(
-        "HakuConsoleConnectionRefreshStale",
-        "max by (namespace, connection, provider) (haku_console_connection_refresh_failure_age_seconds) > 86400",
-        for_="15m",
-        labels={"severity": "critical"},
-        summary="haku-console connection {{ $labels.connection }} dead for over a day",
-        description=(
-            "{{ $labels.connection }} has not refreshed successfully in over 24 hours "
-            "({{ $value | humanizeDuration }}). Re-authorize it in the console's Settings → Connections.\n"
-        ),
-    ),
-]
-
 _MCP_AUTH = [
     # An OIDCProxy-fronted MCP server (oauth facades, grocy-mcp) failed to
     # refresh a client's token against Authentik or persist refreshed OAuth
@@ -611,49 +548,43 @@ def chart(app: App) -> Chart:
     PrometheusRule(
         chart,
         "control-plane-io-alerts",
-        metadata=metadata("control-plane-io-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="control-plane-io-alerts", namespace=NAMESPACE),
         groups=[group("control-plane-io", _CONTROL_PLANE_IO)],
     )
     PrometheusRule(
         chart,
         "external-secrets-alerts",
-        metadata=metadata("external-secrets-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="external-secrets-alerts", namespace=NAMESPACE),
         groups=[group("external-secrets", _EXTERNAL_SECRETS)],
     )
     PrometheusRule(
         chart,
         "flux-alerts",
-        metadata=metadata("flux-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="flux-alerts", namespace=NAMESPACE),
         groups=[group("flux", _FLUX)],
     )
     PrometheusRule(
         chart,
         "github-quota-alerts",
-        metadata=metadata("github-quota-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="github-quota-alerts", namespace=NAMESPACE),
         groups=[group("github-quota", _GITHUB_QUOTA)],
     )
     PrometheusRule(
         chart,
         "grocy-mcp-alerts",
-        metadata=metadata("grocy-mcp-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="grocy-mcp-alerts", namespace=NAMESPACE),
         groups=[group("grocy-mcp", _GROCY_MCP)],
     )
     PrometheusRule(
         chart,
-        "haku-console-connection-alerts",
-        metadata=metadata("haku-console-connection-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
-        groups=[group("haku-console-connections", _HAKU_CONSOLE_CONNECTIONS)],
-    )
-    PrometheusRule(
-        chart,
         "mcp-auth-alerts",
-        metadata=metadata("mcp-auth-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="mcp-auth-alerts", namespace=NAMESPACE),
         groups=[group("mcp-auth", _MCP_AUTH)],
     )
     PrometheusRule(
         chart,
         "roaming-node-alerts",
-        metadata=metadata("roaming-node-alerts", NAMESPACE, labels={"release": "kube-prometheus-stack"}),
+        metadata=ApiObjectMetadata(name="roaming-node-alerts", namespace=NAMESPACE),
         groups=[
             group("roaming-node-alerts", _ROAMING_NODE),
             group("roaming-node-workload-alerts", _ROAMING_NODE_WORKLOAD),
@@ -662,17 +593,11 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def monitoring_rules(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, monitoring_crds: Kustomization
-) -> Kustomization:
+def monitoring_rules(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         retry_interval=None,
         wait=None,
         depends_on=[

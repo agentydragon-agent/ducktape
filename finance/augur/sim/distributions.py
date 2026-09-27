@@ -1,6 +1,6 @@
 """Ordinary holding distributions, rounded once per pool and then per tax slice."""
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from copy import deepcopy
 
 from finance.augur.sim.accounting import Accounting
@@ -8,10 +8,10 @@ from finance.augur.sim.books import EXTERNAL_BOUNDARY, AccountRef, DistributionO
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import Holdings
 from finance.augur.sim.ids import AccountId, AgentId, AssetId
+from finance.augur.sim.income import TransferIncomeCategory, income_source_wire_id
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, distribution_value, mul_div
 from finance.augur.sim.prepared import PreparedDistribution
-from finance.augur.sim.scenario import InterestIncome
 
 
 class Distributions:
@@ -58,9 +58,7 @@ class Distributions:
                         ],
                     )
                 )
-                tax.income.accrue(
-                    spec.agent_id, InterestIncome(issuer_jurisdiction_id=slice_.issuer_jurisdiction_id), amount
-                )
+                tax.income.accrue(spec.agent_id, slice_.income_category, amount)
                 outcomes.append(
                     DistributionOutcome(
                         month=month,
@@ -69,7 +67,7 @@ class Distributions:
                         asset_id=spec.asset_id,
                         slice_index=index,
                         fraction_ppb=slice_.fraction_ppb,
-                        issuer_jurisdiction_id=slice_.issuer_jurisdiction_id,
+                        income_source=income_source_wire_id(slice_.income_category),
                         units=units,
                         amount=amount,
                     )
@@ -77,3 +75,9 @@ class Distributions:
             accounting.apply_entries(entries)
             accounting.tax = tax
             self.outcomes.extend(outcomes)
+
+
+def distribution_income_categories(distributions: Iterable[PreparedDistribution]) -> set[TransferIncomeCategory]:
+    """Income sources needed by tax compilation for every distribution slice."""
+
+    return {tax_slice.income_category for distribution in distributions for tax_slice in distribution.tax_character}

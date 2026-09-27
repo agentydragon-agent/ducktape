@@ -25,11 +25,12 @@ from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.compiler.tax import compile_profile
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import USD
 from finance.augur.sim.prepared import (
     PreparedAccount,
     PreparedJurisdiction,
@@ -44,9 +45,10 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import ORDINARY_INCOME, FilingStatus, TaxProfile
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import TaxAuthority
+from finance.augur.sim.tax_indexation import FixedNominalLaw
+from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
@@ -91,7 +93,7 @@ SAN_FRANCISCO = PreparedLocation(
     location_id=LOCATION_ID,
     display_name="San Francisco, CA",
     jurisdiction_ids=(FEDERAL, CALIFORNIA),
-    annual_property_tax_rate_ppb=rate_to_ppb(0.01180),
+    annual_property_tax_rate_ppb=rate_to_ppb(Decimal("0.01180")),
     annual_special_assessment=0,
 )
 
@@ -127,7 +129,7 @@ def financed_purchase(
     price: int,
     down: int,
     liability_id: LiabilityId,
-    annual_rate: float,
+    annual_rate: Decimal | int,
     term_months: int,
 ) -> _PropertyPurchase:
     return _PropertyPurchase(
@@ -143,7 +145,7 @@ def financed_purchase(
         down_payment=money(down),
         buyer_closing_cost=0,
         rented_fraction_ppb=0,
-        land_value_fraction_ppb=rate_to_ppb(0.20),
+        land_value_fraction_ppb=rate_to_ppb(Decimal("0.20")),
         mortgage=_MortgageFinancing(
             liability_id=liability_id,
             lender_agent_id=BANK,
@@ -166,7 +168,7 @@ class Situation:
 
     purchase_price: int
     down_payment: int
-    annual_rate: float
+    annual_rate: Decimal | int
     term_months: int = 360
     annual_w2_income: int = 200_000
     horizon_months: int = 13
@@ -187,7 +189,7 @@ def standard_home(
     return Situation(
         purchase_price=900_000,
         down_payment=180_000,
-        annual_rate=0.07,
+        annual_rate=Decimal("0.07"),
         annual_w2_income=annual_w2_income,
         horizon_months=horizon_months,
         mortgage_interest_policies=mortgage_interest_policies,
@@ -200,7 +202,7 @@ def small_home(*, mortgage_interest_policies: tuple[_MortgageInterestDeduction, 
     return Situation(
         purchase_price=200_000,
         down_payment=120_000,
-        annual_rate=0.05,
+        annual_rate=Decimal("0.05"),
         mortgage_interest_policies=mortgage_interest_policies,
     )
 
@@ -234,8 +236,9 @@ def compose(case: Situation) -> World:
                     tax_authority_agent_id=IRS,
                 ),
                 jurisdictions,
-                quantum=QUANTUM,
-            )
+                currency=USD,
+            ),
+            indexation=FixedNominalLaw(),
         )
     )
     for salt in case.salt_policies:
@@ -264,7 +267,7 @@ def compose(case: Situation) -> World:
                 from_account_id=CHECKING,
                 tax_authority_agent_id=COLLECTOR,
                 tax_authority_account_id=CHECKING,
-                annual_tax_rate_ppb=rate_to_ppb(0.012),
+                annual_tax_rate_ppb=rate_to_ppb(Decimal("0.012")),
                 start_month=0,
                 end_month=None,
             ),
@@ -394,7 +397,7 @@ def test_acquisition_and_home_equity_debt_are_classified_per_liability() -> None
         Situation(
             purchase_price=900_000,
             down_payment=180_000,
-            annual_rate=0.07,
+            annual_rate=Decimal("0.07"),
             mortgage_interest_policies=(
                 deducts(MORTGAGE_ID, debt_class="acquisition"),
                 deducts(HELOC_ID, debt_class="home_equity"),
@@ -406,7 +409,7 @@ def test_acquisition_and_home_equity_debt_are_classified_per_liability() -> None
                     price=60_000,
                     down=0,
                     liability_id=HELOC_ID,
-                    annual_rate=0.08,
+                    annual_rate=Decimal("0.08"),
                     term_months=360,
                 ),
             ),
@@ -424,7 +427,7 @@ def test_acquisition_and_home_equity_debt_are_classified_per_liability() -> None
 
 def test_without_a_policy_no_interest_is_deducted() -> None:
     """A mortgage alone does not itemize a return; the standard deduction stands."""
-    rollout = run(Situation(purchase_price=900_000, down_payment=180_000, annual_rate=0.07))
+    rollout = run(Situation(purchase_price=900_000, down_payment=180_000, annual_rate=Decimal("0.07")))
 
     federal = breakdown(rollout, jurisdiction_id=FEDERAL)
     california = breakdown(rollout, jurisdiction_id=CALIFORNIA)
@@ -446,7 +449,7 @@ def test_the_federal_principal_cap_prorates_interest_and_california_does_not() -
         Situation(
             purchase_price=1_050_000,
             down_payment=200_000,
-            annual_rate=0.07,
+            annual_rate=Decimal("0.07"),
             mortgage_interest_policies=(deducts(MORTGAGE_ID),),
         )
     )
@@ -494,7 +497,7 @@ def test_each_year_deducts_only_its_own_interest() -> None:
         Situation(
             purchase_price=600_000,
             down_payment=200_000,
-            annual_rate=0.07,
+            annual_rate=Decimal("0.07"),
             horizon_months=25,
             mortgage_interest_policies=(deducts(MORTGAGE_ID),),
         )
@@ -541,7 +544,7 @@ def test_state_and_property_tax_over_the_cap_clip_to_it() -> None:
         Situation(
             purchase_price=1_500_000,
             down_payment=400_000,
-            annual_rate=0.07,
+            annual_rate=Decimal("0.07"),
             annual_w2_income=1_000_000,
             mortgage_interest_policies=(deducts(MORTGAGE_ID),),
             salt_policies=(salt(),),
@@ -596,7 +599,7 @@ def test_an_empty_schedule_is_no_cap_at_all() -> None:
         Situation(
             purchase_price=1_500_000,
             down_payment=400_000,
-            annual_rate=0.07,
+            annual_rate=Decimal("0.07"),
             annual_w2_income=1_000_000,
             mortgage_interest_policies=(deducts(MORTGAGE_ID),),
             salt_policies=(salt(cap_schedule=()),),

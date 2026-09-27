@@ -40,13 +40,13 @@ from finance.augur.api.portfolio_source_config import (
     PortfolioSourcesConfig,
 )
 from finance.augur.api.wire import ActorRole
-from finance.augur.model.independent import IndependentProviderConfig
-from finance.augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
-from finance.augur.model.provider_config import CompositeProviderConfig
 from finance.augur.model.series import IssuerId, LocationId, SecuritySymbol
-from finance.augur.model.state_space import StateSpaceProviderConfig
-from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LotId, PropertyId
+from finance.augur.x.models.independent import IndependentProviderConfig
+from finance.augur.x.models.private_equity_risk import PrivateEquityRiskProviderConfig
+from finance.augur.x.models.provider_config import CompositeProviderConfig
+from finance.augur.x.models.state_space import StateSpaceProviderConfig
+from finance.augur.x.models.trained_private_equity import TrainedPrivateEquityProviderConfig
 
 LOCATION_A_PROPERTY = PropertyId("location_a_property")
 
@@ -140,7 +140,6 @@ def test_config_carries_tax_lot_accurate_portfolio_schema(minimal_config: Minima
 
     fixed = reloaded.portfolio_sources.fixed
     assert fixed.portfolio.holdings[0].lots[0].holding_period_months_at_start == 24
-    assert fixed.portfolio.to_initial_lots()[0].purchase_month_index == -24
 
 
 def test_config_carries_optional_plaid_portfolio_source(minimal_config: MinimalConfig) -> None:

@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from tofu_controller.io.fluxcd.contrib.infra import TerraformV1Alpha2SpecStoreReadablePlan
 
 from cluster.cdk8s import terraform
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "sso-providers"
@@ -21,26 +17,16 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/authentik/sso-providers-tf"
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     terraform.gitops_terraform(
-        chart, "terraform", name=NAME, variables={}, store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN
+        chart, "terraform", name=NAME, variables=None, store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN
     )
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def sso_providers_tf(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    tofu_controller: Kustomization,
-    tofu_state_db: Kustomization,
-    authentik: Kustomization,
-) -> Kustomization:
+def sso_providers_tf(chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         "sso-providers-tf",
-        artifact,
+        directory,
         wait=None,
         health_checks=[
             KustomizationSpecHealthChecks(
@@ -51,5 +37,5 @@ def sso_providers_tf(
             )
         ],
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(tofu_controller, tofu_state_db, authentik),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

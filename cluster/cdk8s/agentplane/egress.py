@@ -53,10 +53,11 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, container_security, database, llm_ingress, node_scheduling
+from cluster.cdk8s import cilium, container_security, node_scheduling
+from cluster.cdk8s.agentplane import actions, database, llm_ingress
 from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
+    GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
     KUBERNETES_POLICY,
@@ -70,7 +71,6 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
@@ -126,7 +126,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "Agentplane destinations. It conveys no LiteLLM credential or operator, Agent, or "
             "Thread authority."
         ),
-        source=Source.authenticated_workload_token().to_spec(),
+        source=Source.authenticated_workload_token(),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -143,7 +143,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "not narrow what the token itself may do — the rule's hosts and methods are the only "
             "limit it adds, so treat anything the token can reach on those hosts as reachable."
         ),
-        source=Source.secret_ref(name=GITHUB_PAT_SECRET, key="token").to_spec(),
+        source=Source.secret_ref(name=GITHUB_PAT_SECRET, key="token"),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -164,7 +164,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "as that account and by nothing here: what the sandbox may do is the RBAC bound to "
             "it, and this proxy adds only the rule's hosts, methods and paths on top."
         ),
-        source=Source.projected_workload_token(audience=KUBERNETES_AUDIENCE).to_spec(),
+        source=Source.projected_workload_token(audience=KUBERNETES_AUDIENCE),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -293,6 +293,22 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
     )
     EgressPolicy(
         scope,
+        "egresspolicy-github-actions-logs",
+        metadata=ApiObjectMetadata(name=GITHUB_ACTIONS_LOGS_POLICY, namespace=namespace),
+        rules=[
+            # A workflow run's job logs (`GET .../actions/jobs/{id}/logs`) and artifacts
+            # (`GET .../actions/artifacts/{id}/zip`) answer from api.github.com with a 302 to
+            # a presigned Azure Blob Storage URL rather than the log bytes themselves; without
+            # this, following that redirect fails and a sandbox reviewing its own PR's CI
+            # cannot read why a check failed. The URL's SAS token is in the query string, not
+            # a header, so there is nothing for the PAT substitution to attach and no
+            # credentialRef here -- this is the same shape as `packages` below. GET-only:
+            # retrieving a log or artifact archive, never uploading one.
+            EgressPolicySpecRules(hosts=["*.blob.core.windows.net"], methods=[EgressPolicySpecRulesMethods.GET])
+        ],
+    )
+    EgressPolicy(
+        scope,
         "egresspolicy-github-clone",
         metadata=ApiObjectMetadata(name=GITHUB_CLONE_POLICY, namespace=namespace),
         rules=[
@@ -326,7 +342,7 @@ class Egress(Construct):
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the proxy
         # calls TokenReview as itself, so it needs its own mounted token.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(NAME, env.namespace), automount_token=True
+            self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
         )
         self._add_rbac(service_account)
         self._add_certificate_and_bundle()
@@ -358,7 +374,7 @@ class Egress(Construct):
         Role(
             self,
             "role",
-            metadata=metadata(NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             rules=[
                 RolePolicyRule(
                     resources=[
@@ -372,7 +388,7 @@ class Egress(Construct):
         RoleBinding(
             self,
             "rolebinding",
-            metadata=metadata(NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             role=Role.from_role_name(self, "role-ref", NAME),
         ).add_subjects(service_account)
 
@@ -444,7 +460,7 @@ class Egress(Construct):
         return ConfigMap(
             self,
             "settings",
-            metadata=metadata(f"{NAME}-settings", self.env.namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=self.env.namespace),
             data={
                 "settings.yaml": yaml_config(
                     settings_file(
@@ -480,9 +496,7 @@ class Egress(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME, self.env.namespace, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
-            ),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.env.replicas.count,
             strategy=self.env.replicas.strategy,
@@ -549,7 +563,7 @@ class Egress(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             selector=deployment,
             ports=[
                 ServicePort(name="http", port=80, target_port=_AGENT_API_PORT, protocol=Protocol.TCP),
@@ -559,7 +573,7 @@ class Egress(Construct):
         Service(
             self,
             "service-admin",
-            metadata=metadata(f"{NAME}-admin", self.env.namespace),
+            metadata=ApiObjectMetadata(name=f"{NAME}-admin", namespace=self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="admin", port=ADMIN_PORT, target_port=ADMIN_PORT, protocol=Protocol.TCP)],
         )
@@ -574,8 +588,8 @@ class Egress(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=metadata(NAME, namespace),
-            selector=_LABELS,
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            endpoint_selector=_LABELS,
             ingress=[
                 # Runner Pods, and the sandbox Actions' command boxes (command_sandbox.py, which
                 # imports this module).

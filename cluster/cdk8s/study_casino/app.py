@@ -12,10 +12,9 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import (
-    ClusterSpecBootstrapInitdb,
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesEnsure,
@@ -27,13 +26,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpec,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-    HttpRouteSpecRulesMatches,
-    HttpRouteSpecRulesMatchesPath,
-    HttpRouteSpecRulesMatchesPathType,
 )
 
 from cluster.cdk8s import cnpg
@@ -41,7 +34,7 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_exter
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter, RouteMatch
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/study-casino"
 _NAME = "study-casino"
@@ -116,7 +109,7 @@ def _database(scope: Construct) -> None:
             ]
         ),
         # CNPG auto-generates credentials in secret study-casino-db-app
-        initdb=ClusterSpecBootstrapInitdb(database=_DATABASE, owner=_DATABASE),
+        initdb=cnpg.same_owner_initdb(_DATABASE),
     )
 
 
@@ -315,17 +308,10 @@ def _deployment(scope: Construct) -> None:
 
 def _cache_rule(prefix: str, cache_control: str) -> HttpRouteSpecRules:
     return HttpRouteSpecRules(
-        matches=[
-            HttpRouteSpecRulesMatches(
-                path=HttpRouteSpecRulesMatchesPath(type=HttpRouteSpecRulesMatchesPathType.PATH_PREFIX, value=prefix)
-            )
-        ],
+        matches=[RouteMatch.path_prefix(prefix)],
         filters=[
-            HttpRouteSpecRulesFilters(
-                type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                    set=[HttpRouteSpecRulesFiltersResponseHeaderModifierSet(name="Cache-Control", value=cache_control)]
-                ),
+            RouteFilter.response_header_modifier(
+                set=[HttpRouteSpecRulesFiltersResponseHeaderModifierSet(name="Cache-Control", value=cache_control)]
             )
         ],
         backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_PORT)],
@@ -333,10 +319,13 @@ def _cache_rule(prefix: str, cache_control: str) -> HttpRouteSpecRules:
 
 
 def _route(scope: Construct) -> None:
+    # Three independent rules, not one https_route() call: each prefix needs its own
+    # Cache-Control value, and https_route()'s one-rule-per-route shape has a single
+    # shared filter list.
     HttpRoute(
         scope,
         "route",
-        metadata=metadata(_NAME, _NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         spec=HttpRouteSpec(
             parent_refs=[cluster_gateway_parent_ref()],
             hostnames=["casino.allegedly.works"],

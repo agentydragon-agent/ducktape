@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Sequence
 
-from cdk8s import App, Chart, Size
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
@@ -21,14 +21,12 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreferenceMatchExpressions,
     RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    RedisReplicationSpecTolerations,
 )
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.redis_operator.replication import RedisReplication
 
 NAME = "valkey"
@@ -50,7 +48,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata("ot-helm", "flux-system"),
+        metadata=ApiObjectMetadata(name="ot-helm", namespace="flux-system"),
         spec=HelmRepositorySpec(interval="24h", url="https://ot-container-kit.github.io/helm-charts"),
     )
     helm_release(
@@ -85,15 +83,17 @@ def valkey_instance(
     max_memory_percent_of_limit: int | None,
     storage_class: str,
     storage_size: Size,
+    tolerations: Sequence[RedisReplicationSpecTolerations] | None = None,
 ) -> RedisReplication:
     """A two-replica Valkey `RedisReplication` in `hil-ovh`, one replica per node.
 
-    `max_memory_percent_of_limit=None` leaves `maxmemory` unset.
+    `max_memory_percent_of_limit=None` leaves `maxmemory` unset. `tolerations=None`
+    leaves the pod untolerant of any taint.
     """
     return RedisReplication(
         scope,
         name,
-        metadata=metadata(name, namespace, annotations={"description": description}),
+        metadata=ApiObjectMetadata(name=name, namespace=namespace, annotations={"description": description}),
         image="valkey/valkey:9-alpine",
         cluster_size=2,
         cpu_request=Cpu.millis(50),
@@ -103,6 +103,7 @@ def valkey_instance(
         max_memory_percent_of_limit=max_memory_percent_of_limit,
         storage_class=storage_class,
         storage_size=storage_size,
+        tolerations=tolerations,
         node_affinity_match=[
             RedisReplicationSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
                 key="topology.kubernetes.io/zone", operator="In", values=["hil-ovh"]
@@ -124,15 +125,11 @@ def valkey_instance(
     )
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def valkey(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
+def valkey(chart: Chart, directory: RenderedDirectory) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
-        artifact,
+        directory,
         wait=None,
         health_checks=[
             KustomizationSpecHealthChecks(

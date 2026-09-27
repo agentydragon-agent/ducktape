@@ -3,19 +3,14 @@ the operator's OIDC identity it logs in as."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmReleaseSpecUpgradeRemediation
 from flux_source.io.fluxcd.toolkit.source import HelmRepository, HelmRepositorySpec
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 
 NAME = "headlamp"
 NAMESPACE = "headlamp"
@@ -56,7 +51,7 @@ def chart(app: App) -> Chart:
     repository = HelmRepository(
         chart,
         "repository",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         spec=HelmRepositorySpec(interval="24h", url="https://kubernetes-sigs.github.io/headlamp/"),
     )
     helm_release(
@@ -72,7 +67,6 @@ def chart(app: App) -> Chart:
         upgrade=HelmReleaseSpecUpgrade(remediation=HelmReleaseSpecUpgradeRemediation(retries=3)),
         values={
             "replicaCount": 1,
-            "podAnnotations": {"reloader.stakater.com/auto": "true"},
             "config": {
                 # OIDC mode: Headlamp redirects to Authentik, JWT forwarded to K8s API server
                 # which validates it via oidc-issuer-url (in Talos machine config).
@@ -107,13 +101,5 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
-
-
-def headlamp(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, gateway: Kustomization, sso_providers_tf: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart, NAME, artifact, timeout="10m", depends_on=flux_kustomization_depends_on_many(gateway, sso_providers_tf)
-    )
+def headlamp(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(chart, NAME, directory, timeout="10m")
