@@ -65,7 +65,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 
 NAME = "agent-workspaces"
@@ -226,7 +225,7 @@ def chart(app: App) -> Chart:
     SandboxWarmPool(
         chart,
         "codex-warm-pool",
-        metadata=metadata("codex", NAMESPACE),
+        metadata=ApiObjectMetadata(name="codex", namespace=NAMESPACE),
         spec=SandboxWarmPoolSpec(
             replicas=1,
             update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
@@ -242,7 +241,7 @@ def chart(app: App) -> Chart:
     CleanupPolicy(
         chart,
         "janitor",
-        metadata=metadata("workspace-janitor", NAMESPACE),
+        metadata=ApiObjectMetadata(name="workspace-janitor", namespace=NAMESPACE),
         spec=CleanupPolicySpec(
             schedule="40 * * * *",
             match=CleanupPolicySpecMatch(

@@ -43,7 +43,6 @@ from cluster.cdk8s.forgejo_images import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
@@ -246,7 +245,7 @@ def _routes(scope: Construct) -> None:
     https_route(
         scope,
         "route",
-        metadata=metadata(NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         hostnames=["cli-proxy-api.allegedly.works"],
         backend=NAME,
         port=PORT,
@@ -258,7 +257,7 @@ def _routes(scope: Construct) -> None:
     https_route(
         scope,
         "admin-route",
-        metadata=metadata("cli-proxy-api-admin", NAMESPACE),
+        metadata=ApiObjectMetadata(name="cli-proxy-api-admin", namespace=NAMESPACE),
         hostnames=["cli-proxy-api-admin.allegedly.works"],
         backend=NAME,
         port=PORT,
@@ -272,7 +271,7 @@ def _network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "network-policy",
-        metadata=metadata("cli-proxy-api-ingress", NAMESPACE),
+        metadata=ApiObjectMetadata(name="cli-proxy-api-ingress", namespace=NAMESPACE),
         selector=_LABELS,
         ingress=[
             # cilium-envoy hostNetwork traffic carries reserved:ingress identity. Preserves the

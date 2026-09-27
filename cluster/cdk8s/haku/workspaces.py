@@ -69,7 +69,6 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     DataFrom,
@@ -340,7 +339,7 @@ def chart(app: App) -> Chart:
     SandboxWarmPool(
         chart,
         "warm-pool",
-        metadata=metadata("haku", NAMESPACE),
+        metadata=ApiObjectMetadata(name="haku", namespace=NAMESPACE),
         spec=SandboxWarmPoolSpec(
             replicas=1,
             update_strategy=SandboxWarmPoolSpecUpdateStrategy(type=SandboxWarmPoolSpecUpdateStrategyType.RECREATE),
@@ -355,7 +354,7 @@ def chart(app: App) -> Chart:
     CleanupPolicy(
         chart,
         "janitor",
-        metadata=metadata("haku-workspace-janitor", NAMESPACE),
+        metadata=ApiObjectMetadata(name="haku-workspace-janitor", namespace=NAMESPACE),
         spec=CleanupPolicySpec(
             schedule="45 * * * *",
             match=CleanupPolicySpecMatch(

@@ -18,7 +18,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateMetadata,
 )
 
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
 
 
@@ -29,7 +28,7 @@ def _password_generator(scope: Construct, id: str, *, name: str, namespace: str,
     Password(
         scope,
         id,
-        metadata=metadata(name, namespace),
+        metadata=ApiObjectMetadata(name=name, namespace=namespace),
         spec=PasswordSpec(length=length, digits=digits, symbols=0, no_upper=False, allow_repeat=True),
     )
     return name

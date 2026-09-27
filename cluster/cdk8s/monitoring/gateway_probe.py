@@ -16,7 +16,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import yaml
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecPodMetricsEndpoints,
@@ -35,7 +35,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import PodMonitor
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.scripts.nebula_mesh import Mesh
@@ -236,7 +235,7 @@ def chart(app: App, mesh: Mesh) -> Chart:
     PodMonitor(
         chart,
         "pod-monitor",
-        metadata=metadata(_NAME, NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         selector=_LABELS,
         pod_metrics_endpoints=[
             _own_node_endpoint(
@@ -248,7 +247,12 @@ def chart(app: App, mesh: Mesh) -> Chart:
             _endpoint(Dial.GATEWAY_SERVICE, [], {"target": [f"{_GATEWAY_SERVICE}:{_GATEWAY_PORT}"]}),
         ],
     )
-    PrometheusRule(chart, "prometheus-rule", metadata=metadata(_NAME, NAMESPACE), groups=[group(_NAME, _rules(nodes))])
+    PrometheusRule(
+        chart,
+        "prometheus-rule",
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
+        groups=[group(_NAME, _rules(nodes))],
+    )
     add_fleet_rules(chart)
     return chart
 

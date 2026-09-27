@@ -25,7 +25,6 @@ from cluster.cdk8s.env_helpers import secret_env_var
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.seaweedfs import s3
 
@@ -165,7 +164,7 @@ def _server(scope: Construct) -> None:
     https_route(
         scope,
         "route",
-        metadata=metadata(NAMESPACE, NAMESPACE),
+        metadata=ApiObjectMetadata(name=NAMESPACE, namespace=NAMESPACE),
         hostnames=["cache.allegedly.works"],
         backend=NAME,
         port=_PORT,

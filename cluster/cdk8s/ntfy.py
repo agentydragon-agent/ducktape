@@ -64,7 +64,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import sops_decryption, write_yaml
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
@@ -221,7 +220,12 @@ class Ntfy(Construct):
         deployment = self._add_deployment()
         self._add_service(deployment)
         https_route(
-            self, "httproute", metadata=metadata("ntfy", NAMESPACE), hostnames=[HOSTNAME], backend=NAME, port=PORT
+            self,
+            "httproute",
+            metadata=ApiObjectMetadata(name="ntfy", namespace=NAMESPACE),
+            hostnames=[HOSTNAME],
+            backend=NAME,
+            port=PORT,
         )
         self._add_service_monitor()
 
@@ -229,9 +233,9 @@ class Ntfy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=metadata(
-                NAME,
-                NAMESPACE,
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=NAMESPACE,
                 labels=_LABELS,
                 annotations={"description": "Single ntfy server backed by the two-instance ntfy PostgreSQL cluster."},
             ),
@@ -282,7 +286,7 @@ class Ntfy(Construct):
         Service(
             self,
             "service",
-            metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
             selector=deployment,
             ports=[ServicePort(name="http", port=PORT, target_port=PORT, protocol=Protocol.TCP)],
         )
@@ -291,7 +295,7 @@ class Ntfy(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=metadata(NAME, NAMESPACE, labels=_LABELS),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_LABELS),
             selector=_LABELS,
             endpoints=[Endpoint.plain(port="http")],
         )
