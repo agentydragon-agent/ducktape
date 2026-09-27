@@ -73,6 +73,7 @@ def settings(
                     GITHUB_AGENTYDRAGON_AGENT_POLICY,
                     GITHUB_CLONE_POLICY,
                     GITHUB_ACTIONS_LOGS_POLICY,
+                    BUILDBUDDY_POLICY,
                 ],
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 "thread_preset": _THREAD_PRESET_PUBLIC_CODER_CODEX,
