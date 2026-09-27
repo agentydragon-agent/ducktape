@@ -15,7 +15,7 @@ def home_assistant(
     seaweedfs_cluster: Kustomization,
     volsync: Kustomization,
     external_secrets_config: Kustomization,
-    forgejo_images: Kustomization,
+    seaweedfs_operator: Kustomization,
     monitoring_crds: Kustomization,
     sso_providers_tf: Kustomization,
 ) -> Kustomization:
@@ -31,7 +31,8 @@ def home_assistant(
             seaweedfs_cluster,
             volsync,
             external_secrets_config,
-            forgejo_images,
+            # Bucket, S3Identity and S3Credentials CRDs
+            seaweedfs_operator,
             # ServiceMonitor + PrometheusRule
             monitoring_crds,
             sso_providers_tf,
