@@ -16,7 +16,13 @@ from sqlalchemy.orm import Session
 from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from props.db.models import FalsePositive, FalsePositiveOccurrenceORM, TruePositive, TruePositiveOccurrenceORM
-from props.db.sync.sync import _fp_occ_from_orm, _sync_fp_issue, _sync_tp_issue, _tp_occ_from_orm
+from props.db.sync.sync import (
+    _fp_occ_from_orm,
+    _sync_critic_scopes_for_specimen,
+    _sync_fp_issue,
+    _sync_tp_issue,
+    _tp_occ_from_orm,
+)
 from props.db.sync.yaml_loader import SyncFalsePositive, SyncTruePositive
 
 SLUG = SnapshotSlug("test-fixtures/train1")
@@ -113,6 +119,12 @@ def test_tp_occ_none_file_anchor_round_trip(synced_test_session: Session):
     assert r.start_line is None
     assert r.end_line is None
 
+    # Populate critic_scopes_expected_to_recall for the freshly re-added occurrence (normally
+    # done by sync_specimen as a separate phase after _sync_tp_issue), so that the re-sync's
+    # internal _tp_occ_from_orm comparison doesn't hit an empty-scopes validation error.
+    _sync_critic_scopes_for_specimen(synced_test_session, SLUG, [yaml_issue], [])
+    synced_test_session.flush()
+
     # Re-sync must detect no changes
     changed_resync = _sync_tp_issue(synced_test_session, existing, yaml_issue)
     synced_test_session.flush()
@@ -149,6 +161,12 @@ def test_tp_occ_none_end_line_round_trip(synced_test_session: Session):
     assert r.start_line == 2
     assert r.end_line is None
     assert r.note == "single line anchor"
+
+    # Populate critic_scopes_expected_to_recall for the freshly re-added occurrence (normally
+    # done by sync_specimen as a separate phase after _sync_tp_issue), so that the re-sync's
+    # internal _tp_occ_from_orm comparison doesn't hit an empty-scopes validation error.
+    _sync_critic_scopes_for_specimen(synced_test_session, SLUG, [yaml_issue], [])
+    synced_test_session.flush()
 
     # Re-sync must detect no changes
     changed_resync = _sync_tp_issue(synced_test_session, existing, yaml_issue)
