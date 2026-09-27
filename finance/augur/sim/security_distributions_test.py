@@ -21,7 +21,7 @@ from finance.augur.sim.fixed_point import (
     rate_to_ppb,
 )
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
-from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, TransferIncomeCategory, income_source_sort_key
+from finance.augur.sim.income import ORDINARY_INCOME, TransferIncomeCategory, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
@@ -35,7 +35,6 @@ from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.security_distributions import (
     AGGREGATE,
     CALIFORNIA_MUNI,
-    CORPORATE,
     CORPORATE_SHARE,
     FUND,
     HORIZON,
@@ -47,6 +46,7 @@ from finance.augur.sim.testing.security_distributions import (
     QUALIFIED_DIVIDENDS,
     SUB_QUANTUM_PER_UNIT,
     SYMBOL,
+    TAXABLE,
     TREASURY,
     TREASURY_SHARE,
     UNITS,
@@ -115,20 +115,12 @@ def compose(
     cashflow cases want: with a tax authority the year-end settlement lands in the same months.
     """
 
+    # The vocabulary a taxpayer shares: what the fund's slices name.
     categories = tuple(tax_character) if distributes else ()
-    # The vocabulary a taxpayer shares: what the fund's slices name, plus where alice files.
-    issuers = {
-        category.issuer_jurisdiction_id
-        for category in categories
-        if isinstance(category, InterestIncome) and category.issuer_jurisdiction_id is not None
-    }
     world = World(
         MarketPath(_paths(payout), 0, rollout_count=1),
         horizon_months=HORIZON,
         income_sources=tuple(sorted({ORDINARY_INCOME, *categories}, key=income_source_sort_key)),
-        jurisdictions={
-            id_: load_jurisdiction(id_).level for id_ in sorted(issuers | (set(FILED_IN) if is_taxed else set()))
-        },
     )
     _account(world, ALICE, opening_cash)
     _account(world, IRS, Decimal(0))
@@ -306,18 +298,18 @@ def test_an_in_state_muni_funds_distribution_is_exempt_everywhere() -> None:
 def test_a_mixed_fund_is_exempt_only_on_its_treasury_slice() -> None:
     """The reason the tax character is a vector. California taxes the corporate 60% and
     not the Treasury 40%, so a mixed fund owes strictly between the all-Treasury and
-    all-corporate cases — a number neither single tag can produce."""
+    all-taxable cases — a number neither single tag can produce."""
 
     mixed = _tax_by_jurisdiction(_run(compose(tax_character=AGGREGATE)))
     treasury = _tax_by_jurisdiction(_run(compose(tax_character=TREASURY)))
-    corporate = _tax_by_jurisdiction(_run(compose(tax_character=CORPORATE)))
+    taxable = _tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))
 
-    assert treasury["california"] < mixed["california"] < corporate["california"]
+    assert treasury["california"] < mixed["california"] < taxable["california"]
     # Federal taxes both slices, so the split changes nothing there.
-    assert mixed["federal_us"] == treasury["federal_us"] == corporate["federal_us"]
+    assert mixed["federal_us"] == treasury["federal_us"] == taxable["federal_us"]
 
 
-def test_the_payout_accrues_as_interest_per_issuer_and_not_as_one_lump() -> None:
+def test_the_payout_accrues_as_interest_per_character_and_not_as_one_lump() -> None:
     """The slices land in their own income rows rather than summing into one, which is
     what makes the per-jurisdiction exemption computable at all."""
 
@@ -335,7 +327,7 @@ def test_the_payout_accrues_as_interest_per_issuer_and_not_as_one_lump() -> None
     )
     paid = PAYOUTS_BY_YEAR_END * MONTHLY_PAYOUT_QUANTA
 
-    assert [row.income_source for row in december] == ["interest:corporate", "interest:federal_us"]
+    assert [row.income_source for row in december] == ["interest:taxable", "interest:treasury"]
     assert [row.income for row in december] == [int(CORPORATE_SHARE * paid), int(TREASURY_SHARE * paid)]
 
 
@@ -348,7 +340,7 @@ def test_qualified_dividends_take_federal_preferential_rates_and_california_ordi
         "federal_us": 0,
         "california": 26_862,
     }
-    assert _tax_by_jurisdiction(_run(compose(tax_character=CORPORATE)))["federal_us"] == 94_000
+    assert _tax_by_jurisdiction(_run(compose(tax_character=TAXABLE)))["federal_us"] == 94_000
 
 
 def test_qualified_dividends_are_their_own_row_in_the_holders_tax_records() -> None:
@@ -382,7 +374,7 @@ def test_current_payout_funds_an_explicit_same_month_claim() -> None:
     assert result.trace is not None
     assert result.trace.distributions is not None
     [payout] = [row for row in result.trace.distributions if row.month == 0]
-    assert (payout.asset_id, payout.amount, payout.income_source) == ("bnd", 200_000, "interest:federal_us")
+    assert (payout.asset_id, payout.amount, payout.income_source) == ("bnd", 200_000, "interest:treasury")
 
 
 if __name__ == "__main__":
