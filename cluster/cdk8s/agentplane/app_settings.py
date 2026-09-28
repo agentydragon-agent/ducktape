@@ -101,6 +101,11 @@ def settings(
                     GITHUB_AGENTYDRAGON_AGENT_POLICY,
                     GITHUB_CLONE_POLICY,
                     GITHUB_ACTIONS_LOGS_POLICY,
+                    # `buildbuddy`'s EgressCredential/EgressPolicy only exist in
+                    # agentplane-staging (egress_staging_credentials.py); agentplane-testing has
+                    # no BuildBuddy API key wired in at all, so this preset only grants it where
+                    # `haku_preset_model` also signals "this is the staging namespace".
+                    *([BUILDBUDDY_POLICY] if haku_preset_model is not None else []),
                 ],
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 "thread_preset": _THREAD_PRESET_PUBLIC_CODER_CODEX,
