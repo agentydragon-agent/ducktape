@@ -453,6 +453,7 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        ":namespaces",
         ":terraform",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -470,6 +471,7 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        ":namespaces",
         ":service_ref",
         "//cluster/cdk8s/cert_manager:config",
         "//cluster/cdk8s/providers/gateway_api:gateway",
@@ -478,7 +480,6 @@ py_library(
         "//cluster/cdk8s/providers/gateway_api:httproute",
         "//cluster/cdk8s/providers/gateway_api:listener",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
@@ -524,6 +525,7 @@ py_library(
         ":flux",
         ":generation",
         ":manifest_roots",
+        ":namespaces",
         "//cluster/cdk8s/haku:console_config",
         "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
@@ -1146,6 +1148,7 @@ py_library(
         ":flux",
         ":gateway",
         ":manifest_roots",
+        ":namespaces",
         ":node_scheduling",
         ":pod_policy",
         ":probes",
@@ -1181,8 +1184,8 @@ py_library(
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
+        ":namespaces",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -1233,8 +1236,8 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -1246,10 +1249,10 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         "//cluster/cdk8s/haku_ci:runner",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -1262,6 +1265,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -1281,6 +1285,7 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         ":node_scheduling",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1383,9 +1388,9 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -1397,8 +1402,8 @@ py_library(
         ":flux",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
