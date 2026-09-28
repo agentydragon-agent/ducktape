@@ -1208,14 +1208,6 @@ spec:
       clusterInternal: true
       credentialRef:
         name: agentplane-workload
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: kubernetes
-  namespace: agentplane-staging
-spec:
-  rules:
     - hosts:
         - kubernetes.default.svc.cluster.local
       clusterInternal: true
@@ -1649,7 +1641,6 @@ data:
         template: agentplane-runner
         policies:
           - basic
-          - kubernetes
           - forgejo-haku
           - packages
           - google-readonly
@@ -4131,7 +4122,6 @@ spec:
       name: claude-ai
   policies:
     - basic
-    - kubernetes
     - forgejo-haku
     - packages
     - google-readonly
@@ -4161,7 +4151,6 @@ spec:
       name: haku-agent
   policies:
     - basic
-    - kubernetes
     - forgejo-haku
     - packages
     - google-readonly
