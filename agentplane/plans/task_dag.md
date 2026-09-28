@@ -292,10 +292,11 @@ identity of a shell somebody can run arbitrary commands in.
 
 What exists today (<../../cluster/cdk8s/agentplane/actions_staging_policies.py>, which lists each
 policy and set with why it is there): the labelled ServiceAccount with
-`automountServiceAccountToken: false`, an `EgressBinding` to the basic and Kubernetes policies plus
-read-only and credentialed ones, and an `ActionPolicyBinding` auto-approving reviewed reads plus the
-whole `sandbox-self` set. Its Kubernetes authority is the cluster-wide
-`cluster-diagnostics-reader` ClusterRoleBinding (`cluster/generated/agents/shared-rbac/`), reads of
+`automountServiceAccountToken: false`, an `EgressBinding` to the basic policy -- which carries the
+API server rule every sandbox is granted (egress.py) -- plus read-only and credentialed ones, and
+an `ActionPolicyBinding` auto-approving reviewed reads plus the whole `sandbox-self` set. Its
+Kubernetes authority is the cluster-wide `cluster-diagnostics-reader`
+ClusterRoleBinding (`cluster/generated/agents/shared-rbac/`), reads of
 non-sensitive cluster state, plus the metadata and pod-log readers Kyverno generates in namespaces
 labelled `agent-readable-*`, plus `get` on one Secret: the view-only Coinbase key its sandboxes
 sign with, since the proxy cannot. The verified Kubernetes evidence from a sandbox is still a
