@@ -115,9 +115,7 @@ def budget_ledger(
     )
 
 
-def cpap_data(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization, cpap_sync: Kustomization
-) -> Kustomization:
+def cpap_data(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, tofu_controller: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         CPAP_DATA,
@@ -125,11 +123,7 @@ def cpap_data(
         # cpap-data-git-{write,read} Secrets) so the sync CronJob can depend on it.
         artifact,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(
-            tofu_controller,
-            # the git-creds Secrets land in the cpap-sync namespace
-            cpap_sync,
-        ),
+        depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )
 
 
