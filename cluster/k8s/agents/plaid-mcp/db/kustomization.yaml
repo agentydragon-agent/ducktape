@@ -7,3 +7,4 @@ configMapGenerator:
     namespace: plaid-mcp
     files:
       - readonly-role.sql
+      - api-grants.sql

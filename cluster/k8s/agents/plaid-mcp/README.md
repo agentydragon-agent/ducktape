@@ -36,6 +36,16 @@ There are no bespoke Plaid MCP tools. Agents read `links`, `accounts`,
 - `plaid-client-credentials` is a SOPS-managed Secret in this namespace.
 - Plaid access tokens are stored one Secret per linked Item and are not written to Postgres.
 - `plaid_api_events` is append-only and stores redacted Plaid request/response metadata.
+- The `api` schema (migration `0006`) holds views over the read model, meant to be served by PostgREST:
+  everything but `plaid_api_events`, and `links` without `access_token_secret` and
+  `transactions_cursor`. A view runs with its owner's rights, so a role granted SELECT on `api` needs
+  nothing on `public`.
+- Three kinds of role read it, all declared in `Cluster.spec.managed.roles`. `plaid_api_reader` holds
+  the SELECT (`db/api-grants.sql` grants it: CNPG manages roles, not object privileges). One NOLOGIN
+  role per caller, named for the `sub` of the caller's ServiceAccount token
+  (`system:serviceaccount:<namespace>:<name>`), is a member of it. `plaid_postgrest` is the NOINHERIT
+  login PostgREST connects as, a member of every caller role and with no privileges of its own; its
+  password is `plaid-postgrest-authenticator`.
 
 ## Link And Sync
 

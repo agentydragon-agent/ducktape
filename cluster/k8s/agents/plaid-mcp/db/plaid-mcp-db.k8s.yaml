@@ -34,6 +34,42 @@ spec:
         port: "5432"
         username: plaid_ro
 ---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: plaid-postgrest-authenticator-generator
+  namespace: plaid-mcp
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: plaid-postgrest-authenticator
+  namespace: plaid-mcp
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: plaid-postgrest-authenticator-generator
+  refreshInterval: 8760h
+  target:
+    name: plaid-postgrest-authenticator
+    template:
+      data:
+        DATABASE_URL: postgresql://plaid_postgrest:{{ .password }}@plaid-mcp-db-rw.plaid-mcp.svc:5432/plaidmcp
+        dbname: plaidmcp
+        host: plaid-mcp-db-rw.plaid-mcp.svc
+        password: "{{ .password }}"
+        port: "5432"
+        username: plaid_postgrest
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -137,6 +173,35 @@ spec:
         name: plaid_ro
         passwordSecret:
           name: plaid-mcp-db-readonly
+      - comment: Holds SELECT on the api schema. Each caller role is a member of it.
+        disablePassword: true
+        ensure: present
+        login: false
+        name: plaid_api_reader
+      - comment: What PostgREST switches into for requests carrying the token of the ServiceAccount this role is named for.
+        disablePassword: true
+        ensure: present
+        inRoles:
+          - plaid_api_reader
+        login: false
+        name: system:serviceaccount:agentplane-staging:claude-ai
+      - comment: What PostgREST switches into for requests carrying the token of the ServiceAccount this role is named for.
+        disablePassword: true
+        ensure: present
+        inRoles:
+          - plaid_api_reader
+        login: false
+        name: system:serviceaccount:agentplane-staging:haku-agent
+      - comment: The role PostgREST connects as. It has no privileges of its own and is a member of each caller role.
+        ensure: present
+        inRoles:
+          - system:serviceaccount:agentplane-staging:claude-ai
+          - system:serviceaccount:agentplane-staging:haku-agent
+        inherit: false
+        login: true
+        name: plaid_postgrest
+        passwordSecret:
+          name: plaid-postgrest-authenticator
   monitoring:
     enablePodMonitor: true
   probes:
@@ -181,11 +246,12 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   annotations:
-    description: Applies read-only object GRANTs for plaid_ro after the CNPG cluster creates the role.
+    description: Applies the object GRANTs for plaid_ro and the api schema once the CNPG cluster has created the roles.
     kustomize.toolkit.fluxcd.io/force: enabled
   name: plaid-mcp-db-readonly-provisioner
   namespace: plaid-mcp
 spec:
+  activeDeadlineSeconds: 600
   backoffLimit: 0
   template:
     metadata:
@@ -196,9 +262,13 @@ spec:
         - args:
             - |
               set -x
+              for role in plaid_ro plaid_api_reader plaid_postgrest; do
+                until psql -Atqc "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -qx 1; do sleep 2; done
+              done
               exec psql \
                 --set=ON_ERROR_STOP=1 \
-                -f /sql/readonly-role.sql
+                -f /sql/readonly-role.sql \
+                -f /sql/api-grants.sql
           command:
             - /bin/bash
             - -c

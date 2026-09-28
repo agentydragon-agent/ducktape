@@ -48,7 +48,22 @@ _READONLY_READER = "plaid-mcp-db-readonly-reader"
 _PROVISIONER = "plaid-mcp-db-readonly-provisioner"
 _PROVISIONER_LABELS = {"app": _PROVISIONER}
 _SQL_CONFIG_MAP = "plaid-mcp-db-readonly-sql"
-_SQL_FILE = "readonly-role.sql"
+_SQL_FILES = ("readonly-role.sql", "api-grants.sql")
+# PostgREST's connection: it holds no privileges of its own and only switches into the role a
+# request's token names.
+_AUTHENTICATOR_ROLE = "plaid_postgrest"
+AUTHENTICATOR = SecretRef(namespace=NAMESPACE, name="plaid-postgrest-authenticator")
+# Holds SELECT on the `api` schema (api-grants.sql); every caller's role is a member of it, so a new
+# caller is one more role here and no SQL.
+_API_READER_ROLE = "plaid_api_reader"
+# One role per ServiceAccount whose requests PostgREST serves, named for the `sub` claim of the token
+# the cluster issues it. The accounts are declared in cluster/cdk8s/agentplane/actions_staging_policies.py.
+_API_CALLER_ROLES = tuple(
+    f"system:serviceaccount:agentplane-staging:{account}" for account in ("claude-ai", "haku-agent")
+)
+# The roles the grants are for. CNPG creates them a little after the Cluster changes, so the Job waits
+# for each instead of failing on a GRANT that ran too early.
+_GRANTED_ROLES = (_READONLY_ROLE, _API_READER_ROLE, _AUTHENTICATOR_ROLE)
 _PRIMARY_HOST = f"{_CLUSTER}-rw.{NAMESPACE}.svc"
 
 
@@ -78,7 +93,40 @@ def _cluster(chart: Chart) -> None:
                         "Read-only SQL access for the Plaid Postgres MCP facade; ESO copies the secret into the"
                         " haku-sandbox namespace."
                     ),
-                )
+                ),
+                ClusterSpecManagedRoles(
+                    name=_API_READER_ROLE,
+                    ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                    login=False,
+                    disable_password=True,
+                    comment="Holds SELECT on the api schema. Each caller role is a member of it.",
+                ),
+                *(
+                    ClusterSpecManagedRoles(
+                        name=role,
+                        ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                        login=False,
+                        disable_password=True,
+                        in_roles=[_API_READER_ROLE],
+                        comment=(
+                            "What PostgREST switches into for requests carrying the token of the ServiceAccount"
+                            " this role is named for."
+                        ),
+                    )
+                    for role in _API_CALLER_ROLES
+                ),
+                ClusterSpecManagedRoles(
+                    name=_AUTHENTICATOR_ROLE,
+                    ensure=ClusterSpecManagedRolesEnsure.PRESENT,
+                    login=True,
+                    inherit=False,
+                    password_secret=ClusterSpecManagedRolesPasswordSecret(name=AUTHENTICATOR.name),
+                    in_roles=list(_API_CALLER_ROLES),
+                    comment=(
+                        "The role PostgREST connects as. It has no privileges of its own and is a member of each"
+                        " caller role."
+                    ),
+                ),
             ]
         ),
         # CNPG auto-generates credentials in secret plaid-mcp-db-app.
@@ -95,6 +143,21 @@ def _readonly_credentials(chart: Chart) -> None:
         name=READONLY.name,
         namespace=NAMESPACE,
         role=_READONLY_ROLE,
+        host=_PRIMARY_HOST,
+        port=5432,
+        database=_DATABASE,
+        secret_type=None,
+    )
+
+
+def _authenticator_credentials(chart: Chart) -> None:
+    """The password PostgREST connects with, minted like the read-only one; CNPG sets it on the role."""
+    mint_db_role_secret(
+        chart,
+        "authenticator-external-secret",
+        name=AUTHENTICATOR.name,
+        namespace=NAMESPACE,
+        role=_AUTHENTICATOR_ROLE,
         host=_PRIMARY_HOST,
         port=5432,
         database=_DATABASE,
@@ -132,6 +195,18 @@ def _readonly_copy(chart: Chart) -> None:
     )
 
 
+# Waits for the roles, then applies every script in one psql. The deadline turns a role that never
+# appears into a failed Job rather than a hung one.
+_PROVISIONER_SCRIPT = (
+    "set -x\n"
+    f"for role in {' '.join(_GRANTED_ROLES)}; do\n"
+    "  until psql -Atqc \"SELECT 1 FROM pg_roles WHERE rolname = '$role'\" | grep -qx 1; do sleep 2; done\n"
+    "done\n"
+    "exec psql \\\n"
+    "  --set=ON_ERROR_STOP=1 \\\n" + " \\\n".join(f"  -f /sql/{file}" for file in _SQL_FILES) + "\n"
+)
+
+
 def _readonly_provisioner(chart: Chart) -> None:
     NetworkPolicy(
         chart,
@@ -156,7 +231,10 @@ def _readonly_provisioner(chart: Chart) -> None:
             name=_PROVISIONER,
             namespace=NAMESPACE,
             annotations={
-                "description": "Applies read-only object GRANTs for plaid_ro after the CNPG cluster creates the role.",
+                "description": (
+                    "Applies the object GRANTs for plaid_ro and the api schema once the CNPG cluster has created"
+                    " the roles."
+                ),
                 "kustomize.toolkit.fluxcd.io/force": "enabled",
             },
         ),
@@ -165,8 +243,9 @@ def _readonly_provisioner(chart: Chart) -> None:
             # a TTL would turn this change-driven GRANT script into an on-schedule one.
             # The cost is that a failed run holds this Kustomization unready until someone
             # deletes the Job -- see cluster/docs/troubleshooting.md, "A failed Job wedges
-            # its Flux Kustomization". Re-run by editing readonly-role.sql, which re-hashes
+            # its Flux Kustomization". Re-run by editing either SQL file, which re-hashes
             # the ConfigMap and lets the `force` annotation recreate the Job.
+            active_deadline_seconds=600,
             backoff_limit=0,
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_PROVISIONER_LABELS),
@@ -178,7 +257,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                             name="psql",
                             image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
                             command=["/bin/bash", "-c"],
-                            args=[f"set -x\nexec psql \\\n  --set=ON_ERROR_STOP=1 \\\n  -f /sql/{_SQL_FILE}\n"],
+                            args=[_PROVISIONER_SCRIPT],
                             termination_message_policy="FallbackToLogsOnError",
                             env=[
                                 _APP.key("username").env_var("PGUSER"),
@@ -199,6 +278,7 @@ def _readonly_provisioner(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _CLUSTER, disable_resource_name_hashes=True)
     _readonly_credentials(chart)
+    _authenticator_credentials(chart)
     _readonly_copy(chart)
     _cluster(chart)
     _readonly_provisioner(chart)
@@ -211,6 +291,6 @@ def write_manifests(root: Path) -> None:
         root / OUTPUT_DIR / "kustomization.yaml",
         kustomize_kustomization(
             resources=[f"{_CLUSTER}.k8s.yaml"],
-            config_map_generator=[ConfigMapArgs(name=_SQL_CONFIG_MAP, namespace=NAMESPACE, files=[_SQL_FILE])],
+            config_map_generator=[ConfigMapArgs(name=_SQL_CONFIG_MAP, namespace=NAMESPACE, files=list(_SQL_FILES))],
         ),
     )

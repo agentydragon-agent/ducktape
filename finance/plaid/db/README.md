@@ -65,6 +65,15 @@ All Plaid Link flows use a single Plaid OAuth redirect URI:
 `https://plaid-mcp.allegedly.works/link/callback`. That URI must be allowlisted
 in the Plaid developer dashboard for production Link to work.
 
+## The `api` schema
+
+Migration 0006 serves the read model as views in `api`, which is what PostgREST exposes: every table
+and view of `public` except `plaid_api_events`, and `links` without the name of its token Secret and
+its sync cursor. A view runs with its owner's rights, so readers of `api` need no access to `public`.
+The migration grants nothing: the roles that read `api` are declared by CloudNativePG in the cluster
+config, and their grants sit beside them (`cluster/k8s/agents/plaid-mcp/db/api-grants.sql`). A new table
+is not readable through `api` until a migration adds a view for it.
+
 ## Rate limits
 
 See <rate_limits.md>.

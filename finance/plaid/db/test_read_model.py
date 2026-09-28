@@ -184,5 +184,50 @@ async def test_read_current_holdings_returns_latest_selected_usd_holdings(
     assert holdings[0].cost_basis == 900.0
 
 
+async def test_api_views_leave_out_what_readers_do_not_need(
+    storage: PlaidLinkStorage, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _add_link(storage)
+
+    async with session_factory() as session:
+        exposed = set(
+            (
+                await session.execute(
+                    text("SELECT column_name FROM information_schema.columns WHERE table_schema = 'api'")
+                )
+            ).scalars()
+        )
+        api_objects = set(
+            (
+                await session.execute(text("SELECT relname FROM pg_class WHERE relnamespace = 'api'::regnamespace"))
+            ).scalars()
+        )
+        links = (await session.execute(text("SELECT item_id, institution_name FROM api.links"))).all()
+
+    assert not exposed & {"access_token_secret", "transactions_cursor"}
+    assert "plaid_api_events" not in api_objects
+    assert [tuple(link) for link in links] == [("item-investments", "Investment Test")]
+
+
+@pytest.mark.usefixtures("storage")
+async def test_api_views_carry_the_descriptions_of_their_sources(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as session:
+        description = (
+            await session.execute(
+                text(
+                    """
+                    SELECT col_description('api.current_transactions'::regclass, attnum)
+                    FROM pg_attribute
+                    WHERE attrelid = 'api.current_transactions'::regclass AND attname = 'amount'
+                    """
+                )
+            )
+        ).scalar_one()
+
+    assert description, "PostgREST serves these as the descriptions in its OpenAPI document"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
