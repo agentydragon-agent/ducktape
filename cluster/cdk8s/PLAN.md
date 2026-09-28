@@ -19,18 +19,6 @@ live in [the design](../docs/cdk8s.md) and [AGENTS.md](AGENTS.md).
 These are recommendations for subsequent implementation PRs. Updating this plan does
 not approve a new abstraction, resource owner, authorization grant, or deployment.
 
-### A. Split generic cdk8s builders from ducktape's cluster-specific wiring
-
-Each CRD family's `cdk8s_import` bindings and generic constructors live in
-`cluster/cdk8s/providers/<name>/`, in the shape
-[the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
-built raw at more than one call site, counted on devel 9904055a45:
-
-- Terraform (2).
-
-Done: no ducktape-specific module builds a CRD's generated dataclasses raw at more than
-one call site, with no rendered-output diff from `//cluster/cdk8s:test_generate_manifests`.
-
 ### B. Restore dependency-update ownership
 
 `renovate.json5` scans both `cluster/k8s` and `cluster/generated` for Flux and
