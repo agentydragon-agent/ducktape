@@ -576,6 +576,7 @@ py_library(
         ":namespaces",
         ":pod_policy",
         ":probes",
+        ":service_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/home_assistant:app",
