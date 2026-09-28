@@ -151,7 +151,7 @@ binding revision they used.
   is worse than an absent one, so the fields are gone; `v1alpha1` makes each cheap to add back when
   an evaluator exists to make it true. What a re-add has to settle first is in the `DENY_LISTS`
   entry of [`plans/task_dag.md`](../plans/task_dag.md): whether a deny belongs on the set at all,
-  since a set is the *shared* unit and a deny is per-subject, and the two cases that look like a
+  since a set is the _shared_ unit and a deny is per-subject, and the two cases that look like a
   deny -- hiding a tool the operator will never approve, and refusing what the caller's own
   identity already covers -- are a catalog question and a caller-side one rather than policy kinds.
 - **Re-evaluating policy at dispatch.** An approval a later object edit could withdraw is a

@@ -72,7 +72,5 @@ class ActionPolicySet(_ActionPolicySet):
             scope,
             id,
             metadata=metadata,
-            spec=ActionPolicySetSpec(
-                auto_approve_if=list(auto_approve_if) if auto_approve_if is not None else None,
-            ),
+            spec=ActionPolicySetSpec(auto_approve_if=list(auto_approve_if) if auto_approve_if is not None else None),
         )

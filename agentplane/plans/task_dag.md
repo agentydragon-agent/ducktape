@@ -1272,7 +1272,7 @@ without one:
   denylist over catalog discovery and admission -- already noted in
   [`action_service/TODO.md`](../action_service/TODO.md) with the same example -- and the catalog
   already carries `available` and per-group health to hang it on.
-- **A broad set minus one carve-out.** Because a policy set is the *shared* unit and a carve-out is
+- **A broad set minus one carve-out.** Because a policy set is the _shared_ unit and a carve-out is
   about one subject, this belongs on the `ActionPolicyBinding`, not the set; and evaluation unions
   across every set of every binding, so it cannot be expressed against the set today. If a real
   case ever needs it, the deny field goes on the binding.
@@ -1285,7 +1285,7 @@ operator-authored authorization rule.
 **Open question a re-add has to settle first:** whether a deny that wins over approve is even
 compatible with evaluate-once. `autoDenyIf` was specced to dominate `autoApproveIf`, so a set edit
 could deny what an earlier revision approved; that is fine, since each request decides from one
-snapshot. But a deny on a *binding* joined to a subject that also holds an approved, unclaimed
+snapshot. But a deny on a _binding_ joined to a subject that also holds an approved, unclaimed
 Execution is a different object's decision than the one that allowed it, and dispatch re-checks
 caller authority only. Say which of the two the deny is allowed to reach.
 

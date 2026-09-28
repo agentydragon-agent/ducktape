@@ -530,8 +530,7 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
         ),
         pytest.param(
             lambda: _index(
-                sets={"no-policies": {}},
-                bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["no-policies"]}},
+                sets={"no-policies": {}}, bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["no-policies"]}}
             ),
             id="set-with-no-policies",
         ),

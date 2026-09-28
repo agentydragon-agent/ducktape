@@ -47,7 +47,7 @@ def binding(spec: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def test_policy_set_parses_each_kind_and_keeps_deny_lists() -> None:
+def test_policy_set_parses_each_kind() -> None:
     parsed = parse_policy_set(
         policy_set(
             {
@@ -65,7 +65,7 @@ def test_policy_set_parses_each_kind_and_keeps_deny_lists() -> None:
                         "repository": "test-repo",
                     },
                     {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
-                ],
+                ]
             }
         )
     )
