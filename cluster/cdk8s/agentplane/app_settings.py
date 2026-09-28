@@ -36,10 +36,10 @@ def settings(
     thread_preset_codex_model: str,
     action_policy_sets: list[str] | None = None,
     haku_preset_model: str | None = None,
-    # `buildbuddy`'s EgressCredential/EgressPolicy only exist in agentplane-staging
-    # (egress_staging_credentials.py); agentplane-testing has no BuildBuddy API key wired
-    # in at all, so callers there must leave this False.
-    public_coder_buildbuddy: bool = False,
+    # Lets a deployment's own config module grant its public-coder preset policies that
+    # only that deployment's egress wiring backs (e.g. agentplane-staging's `buildbuddy`,
+    # absent from agentplane-testing) without this shared function knowing their names.
+    public_coder_extra_policies: tuple[str, ...] = (),
 ) -> dict:
     # A model both harnesses accept (e.g. a local Ollama route) names its display name once,
     # regardless of how many harness lists reference it. dict.fromkeys dedupes while keeping
@@ -105,7 +105,7 @@ def settings(
                     GITHUB_AGENTYDRAGON_AGENT_POLICY,
                     GITHUB_CLONE_POLICY,
                     GITHUB_ACTIONS_LOGS_POLICY,
-                    *([BUILDBUDDY_POLICY] if public_coder_buildbuddy else []),
+                    *public_coder_extra_policies,
                 ],
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 "thread_preset": _THREAD_PRESET_PUBLIC_CODER_CODEX,

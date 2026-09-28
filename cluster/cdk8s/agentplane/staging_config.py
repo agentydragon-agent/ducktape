@@ -5,7 +5,7 @@ model_rosters.py for the model-name scheme.
 
 from __future__ import annotations
 
-from cluster.cdk8s.agentplane.app_settings import settings
+from cluster.cdk8s.agentplane.app_settings import BUILDBUDDY_POLICY, settings
 from cluster.cdk8s.litellm.keys import (
     ANTIGRAVITY_CLIENT_MODELS,
     CLAUDE_CLIENT_MODELS,
@@ -39,7 +39,7 @@ def config() -> dict:
         harness_codex=[*OAI_LANE_MODELS, *OLLAMA_CHAT_CLIENT_MODELS],
         thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
         action_policy_sets=list(PUBLIC_CODER_ACTION_POLICY_SETS),
-        public_coder_buildbuddy=True,
+        public_coder_extra_policies=(BUILDBUDDY_POLICY,),
         # The "haku" sandbox preset (app_settings.py) exists only here, not in
         # agentplane-testing. claude-sonnet-5 to match what Haku's own managed agents run
         # today (haku/runtime/managed_agent/self_hosted/haku.agent.yaml).
