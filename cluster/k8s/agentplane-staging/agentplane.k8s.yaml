@@ -4548,7 +4548,13 @@ spec:
   rules:
     - hosts:
         - forgejo-http.forgejo.svc.cluster.local
+        - forgejo-http.forgejo.svc
+        - forgejo-http.forgejo
       clusterInternal: true
+      credentialRef:
+        name: forgejo-haku
+    - hosts:
+        - git.allegedly.works
       credentialRef:
         name: forgejo-haku
 ---

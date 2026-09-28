@@ -99,10 +99,16 @@ KUBERNETES_AUDIENCE = "https://localhost:7445"
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The credential substituted there, whose placeholder a sandbox's kubeconfig carries (sandbox_pod.py).
 KUBERNETES_CREDENTIAL = "kubernetes-workload"
-# The in-cluster Forgejo, not `git.allegedly.works`: the public name would hairpin out through
-# the Gateway and back for a Service one hop away. Plain HTTP on 3000, so the proxy reads the
-# request without bumping TLS.
+# The in-cluster Forgejo, plain HTTP on 3000, so the proxy reads the request without bumping TLS.
+# It is the name to prefer: the public name below would hairpin out through the Gateway and back
+# for a Service one hop away.
 FORGEJO_HOST = "forgejo-http.forgejo.svc.cluster.local"
+# The same Service under the shorter names its search path resolves (haku-egress-proxy's clients
+# still spell it `forgejo-http.forgejo`). The proxy matches a request's host on the exact string,
+# so a spelling left out is refused `no-rule` although it dials the same address.
+FORGEJO_HOST_ALIASES = ("forgejo-http.forgejo.svc", "forgejo-http.forgejo")
+# Forgejo by its public name: HTTPS through the Gateway, resolving to public addresses.
+FORGEJO_PUBLIC_HOST = "git.allegedly.works"
 FORGEJO_PORT = 3000
 # Home Assistant's in-cluster Service, plain HTTP. The proxy matches requests on this exact string.
 HOME_ASSISTANT_HOST = home_assistant.SERVICE.fqdn
