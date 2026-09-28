@@ -3319,6 +3319,7 @@ metadata:
   name: grocy-mcp-sf
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux
@@ -3365,6 +3366,7 @@ metadata:
   name: grocy-mcp-vallejo
   namespace: ducktape-flux
 spec:
+  deletionPolicy: Orphan
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux
