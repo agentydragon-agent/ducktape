@@ -94,6 +94,10 @@ _AGENT_API_PORT = 8082
 # this string and the proxy reviews against it, so a value that does not match the cluster yields a
 # 401 inside the box rather than a proxy denial. Changing it means changing the cluster.
 KUBERNETES_AUDIENCE = "https://localhost:7445"
+# The audience of a Pod's own identity minted for a service that verifies the token itself, against
+# the cluster's issuer keys, rather than asking TokenReview: PostgREST over the Plaid mirror. It is
+# not the API server's, so a token minted for it is useless there, and at this proxy.
+PLAID_POSTGREST_AUDIENCE = "plaid-postgrest"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 # The credential substituted there, whose placeholder a sandbox's kubeconfig carries (sandbox_pod.py).
@@ -357,7 +361,7 @@ class Egress(Construct):
             model=Settings,
             content={
                 "allowed_service_account_namespaces": [env.namespace],
-                "projected_token_audiences": [KUBERNETES_AUDIENCE],
+                "projected_token_audiences": [KUBERNETES_AUDIENCE, PLAID_POSTGREST_AUDIENCE],
             },
             # A directory of its own: the CA volumes mount under /etc/agentplane-egress, and nothing
             # can mount inside a read-only ConfigMap volume.

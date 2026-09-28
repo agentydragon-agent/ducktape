@@ -55,7 +55,10 @@ _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 # to under `_EGRESS_TOKEN_DIR`. The volume and the sidecar's mapping are both rendered from this, so
 # neither can name a file the other does not project. The hop token is deliberately absent: it
 # carries the proxy's own audience, so it is not substitutable anywhere.
-_SUBSTITUTABLE_AUDIENCE_FILES = {egress.KUBERNETES_AUDIENCE: "kubernetes-token"}
+_SUBSTITUTABLE_AUDIENCE_FILES = {
+    egress.KUBERNETES_AUDIENCE: "kubernetes-token",
+    egress.PLAID_POSTGREST_AUDIENCE: "plaid-postgrest-token",
+}
 _SIDECAR_LISTEN_PORT = 3128
 # Shared by a workload's egress-ca volumeMount and the pod-level volume -- Kubernetes matches the
 # two by this name.

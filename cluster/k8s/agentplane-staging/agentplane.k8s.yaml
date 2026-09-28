@@ -800,6 +800,7 @@ data:
       - agentplane-staging
     projected_token_audiences:
       - https://localhost:7445
+      - plaid-postgrest
 immutable: false
 ---
 apiVersion: apps/v1
@@ -2221,7 +2222,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "plaid-postgrest": "/var/run/agentplane-egress/plaid-postgrest-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -2277,6 +2278,10 @@ spec:
                   audience: https://localhost:7445
                   expirationSeconds: 600
                   path: kubernetes-token
+              - serviceAccountToken:
+                  audience: plaid-postgrest
+                  expirationSeconds: 600
+                  path: plaid-postgrest-token
   volumeClaimTemplates:
     - metadata:
         name: state
@@ -3161,7 +3166,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "plaid-postgrest": "/var/run/agentplane-egress/plaid-postgrest-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -3216,6 +3221,10 @@ spec:
                   audience: https://localhost:7445
                   expirationSeconds: 600
                   path: kubernetes-token
+              - serviceAccountToken:
+                  audience: plaid-postgrest
+                  expirationSeconds: 600
+                  path: plaid-postgrest-token
 ---
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
@@ -3309,7 +3318,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "plaid-postgrest": "/var/run/agentplane-egress/plaid-postgrest-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -3364,6 +3373,10 @@ spec:
                   audience: https://localhost:7445
                   expirationSeconds: 600
                   path: kubernetes-token
+              - serviceAccountToken:
+                  audience: plaid-postgrest
+                  expirationSeconds: 600
+                  path: plaid-postgrest-token
         - emptyDir:
             sizeLimit: 20Gi
           name: home
