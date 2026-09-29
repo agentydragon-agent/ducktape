@@ -151,11 +151,10 @@ export function ActionHistory({
     const stop =
       service === actionService
         ? followStream("/actions/stream?state=decision_pending", {
-            events: { snapshot: () => {}, changed: () => void refresh() },
-            onConnection: (next) => {
-              setConnection(next);
-              if (next.phase === "live") void refresh();
-            },
+            // The small pending snapshot also marks a successful resync after a renewed
+            // upstream token or browser reconnect; changed hints alone are not replayable.
+            events: { snapshot: () => void refresh() },
+            onConnection: setConnection,
           })
         : undefined;
     void refresh();
