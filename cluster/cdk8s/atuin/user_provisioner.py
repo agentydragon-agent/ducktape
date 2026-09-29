@@ -11,9 +11,12 @@ from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.atuin.server import DATABASE, NAMESPACE
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "atuin-user-provisioner"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
+# Reflector's copy of user-agentydragon's SOPS-managed Secret.
+_USER_PASSWORD = SecretRef(namespace=NAMESPACE, name="atuin-user-password").key("user_password")
 _SCRIPT_CONFIG_MAP = f"{NAME}-script"
 _SCRIPT_DIR = "/scripts"
 _SCRIPT = textwrap.dedent(
@@ -124,14 +127,7 @@ def chart(app: App) -> Chart:
                                 f"pip install --quiet psycopg2-binary argon2-cffi && python {_SCRIPT_DIR}/provision.py",
                             ],
                             env=[
-                                k8s.EnvVar(
-                                    name="ATUIN_USER_PASSWORD",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(
-                                            name="atuin-user-password", key="user_password"
-                                        )
-                                    ),
-                                ),
+                                _USER_PASSWORD.env_var("ATUIN_USER_PASSWORD"),
                                 DATABASE.app_secret.key("password").env_var("POSTGRES_PASSWORD"),
                                 k8s.EnvVar(name="PGHOST", value=DATABASE.rw.host),
                                 k8s.EnvVar(name="PGPORT", value=str(DATABASE.rw.port.number)),

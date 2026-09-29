@@ -34,18 +34,24 @@ from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
 from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/study-casino"
 _NAME = "study-casino"
 _NAMESPACE = "study-casino"
-_PORT = 8080
+_SERVICE = ServiceRef(
+    name=_NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+)
 POSTGRES = cnpg.PostgresRef.generated(name="study-casino-db", namespace=_NAMESPACE)
+_OIDC = SecretRef(namespace=_NAMESPACE, name="study-casino-oidc")
 _DATABASE = "studycasino"
 _REGION = "hil"
 _IMMUTABLE = "public, max-age=31536000, immutable"
 # image-pins/ overrides the tag and copies it into STUDY_CASINO_IMAGE_TAG.
 _PLACEHOLDER_TAG = "unset"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 
 _PROVISIONER_SCRIPT = textwrap.dedent(
     """\
@@ -171,15 +177,9 @@ def _readonly_provisioner(scope: Construct) -> None:
     )
 
 
-def _oidc_env(name: str, key: str) -> k8s.EnvVar:
-    return k8s.EnvVar(
-        name=name, value_from=k8s.EnvVarSource(secret_key_ref=k8s.SecretKeySelector(name="study-casino-oidc", key=key))
-    )
-
-
 def _probe(initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
     return k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_PORT)),
+        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_SERVICE.pod_port)),
         initial_delay_seconds=initial_delay_seconds,
         period_seconds=period_seconds,
     )
@@ -192,7 +192,7 @@ def _deployment(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(
             name=_NAME,
             namespace=_NAMESPACE,
-            labels=_LABELS,
+            labels=_SERVICE.pods.selector,
             annotations={
                 "description": (
                     "Habit-tracking casino app. Serves PWA + /sync endpoint with OIDC auth (Authorization Code "
@@ -203,9 +203,9 @@ def _deployment(scope: Construct) -> None:
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="RollingUpdate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     node_selector={"topology.kubernetes.io/region": _REGION},
@@ -219,7 +219,7 @@ def _deployment(scope: Construct) -> None:
                             name="app",
                             image=f"git.allegedly.works/ducktape-ci/study-casino:{_PLACEHOLDER_TAG}",
                             image_pull_policy="Always",
-                            ports=[k8s.ContainerPort(name="http", container_port=_PORT, protocol="TCP")],
+                            ports=[_SERVICE.port.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="STUDY_CASINO_IMAGE_TAG", value=_PLACEHOLDER_TAG),
                                 # Compose the SQLAlchemy URL from the CNPG-generated secret. The
@@ -243,9 +243,9 @@ def _deployment(scope: Construct) -> None:
                                     value="https://auth.allegedly.works/application/o/study-casino/",
                                 ),
                                 k8s.EnvVar(name="STUDY_CASINO_OIDC_CLIENT_ID", value="study-casino"),
-                                _oidc_env("STUDY_CASINO_OIDC_CLIENT_SECRET", "oidc_client_secret"),
-                                _oidc_env("STUDY_CASINO_SESSION_SECRET", "session_secret"),
-                                _oidc_env("STUDY_CASINO_RNG_SECRET", "rng_secret"),
+                                _OIDC.key("oidc_client_secret").env_var("STUDY_CASINO_OIDC_CLIENT_SECRET"),
+                                _OIDC.key("session_secret").env_var("STUDY_CASINO_SESSION_SECRET"),
+                                _OIDC.key("rng_secret").env_var("STUDY_CASINO_RNG_SECRET"),
                                 k8s.EnvVar(name="STUDY_CASINO_RNG_KEY_ID", value="study-casino-rng-v1"),
                             ],
                             resources=k8s.ResourceRequirements(
@@ -273,7 +273,7 @@ def _cache_rule(prefix: str, cache_control: str) -> HttpRouteSpecRules:
                 set=[HttpRouteSpecRulesFiltersResponseHeaderModifierSet(name="Cache-Control", value=cache_control)]
             )
         ],
-        backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_PORT)],
+        backend_refs=[HttpRouteSpecRulesBackendRefs(name=_SERVICE.name, port=_SERVICE.port.number)],
     )
 
 
@@ -313,13 +313,8 @@ def chart(app: App) -> Chart:
     k8s.KubeService(
         chart,
         "service",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(name="http", port=_PORT, target_port=k8s.IntOrString.from_number(_PORT), protocol="TCP")
-            ],
-        ),
+        metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=_NAMESPACE),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
     )
     _route(chart)
     k8s.KubeRoleBinding(
