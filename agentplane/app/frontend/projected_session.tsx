@@ -1582,7 +1582,7 @@ function ProjectedSessionBody({
           disabled={!running}
           onKeyDown={composerKey}
         />
-        <Group justify="space-between" wrap="nowrap">
+        <Group justify="space-between" wrap="nowrap" pb="xs">
           <Group gap="xs" wrap="nowrap">
             <StatusDot
               {...threadStatus({
