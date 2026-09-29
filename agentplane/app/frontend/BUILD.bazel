@@ -916,8 +916,8 @@ ts_library(
 ts_library(
     name = "chronological_debug",
     srcs = [
-        "threads/chronological_debug.tsx",
         "tabler_icons.d.ts",
+        "threads/chronological_debug.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
