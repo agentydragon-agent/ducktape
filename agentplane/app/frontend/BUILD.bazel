@@ -9,14 +9,6 @@ load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
-exports_files(
-    [
-        "css.d.ts",
-        "tabler_icons.d.ts",
-    ],
-    visibility = ["//agentplane:__subpackages__"],
-)
-
 TSCONFIG = ":tsconfig"
 
 ts_config(
