@@ -496,7 +496,7 @@ ts_library(
 
 ts_library(
     name = "local_commands",
-    srcs = ["local_commands.ts"],
+    srcs = ["threads/local_commands.ts"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
@@ -508,7 +508,7 @@ ts_library(
 ts_library(
     name = "local_commands_test",
     testonly = True,
-    srcs = ["local_commands.test.ts"],
+    srcs = ["threads/local_commands.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
         ":local_commands",
@@ -846,7 +846,7 @@ ts_library(
 
 ts_library(
     name = "thread_sync",
-    srcs = ["thread_sync.ts"],
+    srcs = ["threads/thread_sync.ts"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -858,7 +858,7 @@ ts_library(
 
 ts_library(
     name = "thread_store",
-    srcs = ["thread_store.tsx"],
+    srcs = ["threads/thread_store.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -874,7 +874,7 @@ ts_library(
 ts_library(
     name = "thread_store_test",
     testonly = True,
-    srcs = ["thread_store.test.tsx"],
+    srcs = ["threads/thread_store.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":thread_store",
@@ -890,7 +890,7 @@ ts_library(
 
 ts_library(
     name = "retained_disclosures",
-    srcs = ["retained_disclosures.tsx"],
+    srcs = ["threads/retained_disclosures.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@types/react",
@@ -901,7 +901,7 @@ ts_library(
 ts_library(
     name = "retained_disclosures_test",
     testonly = True,
-    srcs = ["retained_disclosures.test.tsx"],
+    srcs = ["threads/retained_disclosures.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":retained_disclosures",
@@ -916,7 +916,7 @@ ts_library(
 ts_library(
     name = "chronological_debug",
     srcs = [
-        "chronological_debug.tsx",
+        "threads/chronological_debug.tsx",
         "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
@@ -933,12 +933,12 @@ ts_library(
 # projected_session.tsx imports this stylesheet for the bundler.
 js_library(
     name = "projected_session_css",
-    srcs = ["projected_session.css"],
+    srcs = ["threads/projected_session.css"],
 )
 
 ts_library(
     name = "history_rows",
-    srcs = ["history_rows.ts"],
+    srcs = ["threads/history_rows.ts"],
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
@@ -950,7 +950,7 @@ ts_library(
 ts_library(
     name = "history_rows_test",
     testonly = True,
-    srcs = ["history_rows.test.ts"],
+    srcs = ["threads/history_rows.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
         ":history_rows",
@@ -965,7 +965,7 @@ ts_library(
 ts_library(
     name = "thread_entity_fixture",
     testonly = True,
-    srcs = ["thread_entity_fixture.ts"],
+    srcs = ["threads/thread_entity_fixture.ts"],
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
@@ -976,7 +976,7 @@ ts_library(
 ts_library(
     name = "projected_session",
     srcs = [
-        "projected_session.tsx",
+        "threads/projected_session.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
         "tabler_icons.d.ts",
@@ -1022,13 +1022,13 @@ ts_library(
 # thread_title.tsx imports this stylesheet for the bundler.
 js_library(
     name = "thread_title_css",
-    srcs = ["thread_title.css"],
+    srcs = ["threads/thread_title.css"],
 )
 
 ts_library(
     name = "thread_title",
     srcs = [
-        "thread_title.tsx",
+        "threads/thread_title.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
     ],
@@ -1045,7 +1045,7 @@ ts_library(
 ts_library(
     name = "thread_title_test",
     testonly = True,
-    srcs = ["thread_title.test.tsx"],
+    srcs = ["threads/thread_title.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -1062,7 +1062,7 @@ ts_library(
 ts_library(
     name = "projected_session_test",
     testonly = True,
-    srcs = ["projected_session.test.tsx"],
+    srcs = ["threads/projected_session.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",

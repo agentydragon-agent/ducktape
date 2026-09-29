@@ -1,6 +1,6 @@
 # Thread history scrolling
 
-`VirtualizedHistory` (`projected_session.tsx`) renders one thread's transcript: an unbounded,
+`VirtualizedHistory` (`threads/projected_session.tsx`) renders one thread's transcript: an unbounded,
 variable-height list of runs, lifecycle events, and streaming content, paginated from the
 electric-backed store. This page states what it guarantees to the reader, independent of how the
 guarantee is met — today, a hand-rolled scroll-anchor layer over `@tanstack/react-virtual`.
@@ -77,7 +77,7 @@ profiler (a Playwright trace or Chrome's performance timeline) — not ad hoc ti
 a placeholder past any thread length observed so far; revisit against real staging data if it
 turns out to matter.
 
-Report, for any candidate: lines changed in `projected_session.tsx`, ref/state count before and
+Report, for any candidate: lines changed in `threads/projected_session.tsx`, ref/state count before and
 after, and the bundled JS size delta — the same shape agentydragon/ducktape#7841 reported for
 `react-virtuoso`. These inform the decision but don't override it.
 
