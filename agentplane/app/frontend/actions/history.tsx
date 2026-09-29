@@ -204,7 +204,7 @@ export function ActionHistory({
         <HistoryCard key={request.id} request={request} mcp={executors.kinds?.get(request.action.group) === "mcp"} />
       ))}
       {cursor && (
-        <Button loading={loadingMore} onClick={() => void loadMore()}>
+        <Button data-testid="action-history-load-more" loading={loadingMore} onClick={() => void loadMore()}>
           Load more
         </Button>
       )}

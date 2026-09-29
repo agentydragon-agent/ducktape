@@ -366,7 +366,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: "/actions/history",
     viewport: { width: 1200, height: 1100 },
     historyPaged: true,
-    readySelectors: ["details", 'button:has-text("Load more")'],
+    readySelectors: ["details", '[data-testid="action-history-load-more"]'],
   },
   actions_history_phone: {
     element: "#app",
