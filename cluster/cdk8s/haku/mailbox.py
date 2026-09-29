@@ -32,13 +32,13 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterSecretStoreRef,
     cluster_remote_data,
 )
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "haku-mailbox"
 NAMESPACE = "haku-mailbox"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/haku/mailbox"
 
-_LABELS = {"app.kubernetes.io/name": NAME}
 _INGRESS_NAME = "haku-mailbox-smtp-ingress"
 _INGRESS_LABELS = {"app.kubernetes.io/name": _INGRESS_NAME}
 _TLS_SECRET = "mx-allegedly-works-tls"
@@ -50,13 +50,16 @@ _PUBLIC_URL = "https://haku-mailbox.allegedly.works"
 # unusable from the pod. Published by the push-images workflow; image-pins/ sets the tag Flux
 # image automation tracks.
 _IMAGE = "git.allegedly.works/ducktape-ci/stalwart:unset"
+# Stalwart's SMTP listener, and the one the ingress's nginx.conf listens on too.
 _SMTP_PORT = 2525
-_HTTP_PORT = 8080
-_IMAP_PORT = 1143
 # Stalwart's HTTP listener: JMAP and the management API.
 _HTTP = ServiceRef(
-    name=NAME, port=Port(name="http", number=_HTTP_PORT), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+    name=NAME,
+    port=Port(name="http", number=8080),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
+_IMAP = ServiceRef(name=_HTTP.name, port=Port(name="imap", number=1143), pods=_HTTP.pods)
+_SMTP = ServiceRef(name="haku-mailbox-smtp", port=Port(name="smtp", number=_SMTP_PORT), pods=_HTTP.pods)
 _CONFIG_DIR = "/etc/stalwart"  # where CONFIG_MAP is mounted
 _INITIALIZE = "initialize.sh"
 _SERVER_CONFIG = "config.json"
@@ -94,7 +97,7 @@ def _stalwart_mounts() -> list[k8s.VolumeMount]:
 
 def _curl_probe(path: str, *, period_seconds: int, failure_threshold: int | None = None) -> k8s.Probe:
     return k8s.Probe(
-        exec=k8s.ExecAction(command=["curl", "--fail", "--silent", f"http://127.0.0.1:{_HTTP_PORT}{path}"]),
+        exec=k8s.ExecAction(command=["curl", "--fail", "--silent", f"http://127.0.0.1:{_HTTP.pod_port}{path}"]),
         period_seconds=period_seconds,
         failure_threshold=failure_threshold,
     )
@@ -128,13 +131,13 @@ def _add_deployment(chart: Chart) -> None:
     k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_LABELS),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_HTTP.pods.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
-            selector=k8s.LabelSelector(match_labels=_LABELS),
+            selector=k8s.LabelSelector(match_labels=_HTTP.pods.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(labels=_LABELS),
+                metadata=k8s.ObjectMeta(labels=_HTTP.pods.selector),
                 spec=k8s.PodSpec(
                     image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
                     automount_service_account_token=False,
@@ -153,12 +156,9 @@ def _add_deployment(chart: Chart) -> None:
                             termination_message_policy="FallbackToLogsOnError",
                             env=[
                                 _DB_PASSWORD.env_var("STALWART_DB_PASSWORD"),
-                                k8s.EnvVar(
-                                    name="STALWART_ADMIN_PASSWORD",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(name="haku-mailbox-admin", key="password")
-                                    ),
-                                ),
+                                SecretRef(namespace=NAMESPACE, name="haku-mailbox-admin")
+                                .key("password")
+                                .env_var("STALWART_ADMIN_PASSWORD"),
                                 public_url,
                             ],
                             volume_mounts=_stalwart_mounts(),
@@ -180,9 +180,9 @@ def _add_deployment(chart: Chart) -> None:
                             # failure is a black box to agent sessions.
                             termination_message_policy="FallbackToLogsOnError",
                             ports=[
-                                k8s.ContainerPort(name="smtp", container_port=_SMTP_PORT),
-                                k8s.ContainerPort(name="http", container_port=_HTTP_PORT),
-                                k8s.ContainerPort(name="imap", container_port=_IMAP_PORT),
+                                _SMTP.port.k8s_container_port(),
+                                _HTTP.port.k8s_container_port(),
+                                _IMAP.port.k8s_container_port(),
                             ],
                             env=[_DB_PASSWORD.env_var("STALWART_DB_PASSWORD"), public_url],
                             volume_mounts=_stalwart_mounts(),
@@ -220,7 +220,7 @@ def _add_services(chart: Chart) -> None:
         chart,
         "smtp-service",
         metadata=k8s.ObjectMeta(
-            name="haku-mailbox-smtp",
+            name=_SMTP.name,
             namespace=NAMESPACE,
             annotations={
                 "description": (
@@ -230,16 +230,13 @@ def _add_services(chart: Chart) -> None:
                 )
             },
         ),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[k8s.ServicePort(name="smtp", port=_SMTP_PORT, target_port=k8s.IntOrString.from_string("smtp"))],
-        ),
+        spec=k8s.ServiceSpec(selector=_SMTP.pods.selector, ports=[_SMTP.port.k8s_service_port()]),
     )
     k8s.KubeService(
         chart,
         "service",
         metadata=k8s.ObjectMeta(
-            name=NAME,
+            name=_HTTP.name,
             namespace=NAMESPACE,
             annotations={
                 "description": (
@@ -251,11 +248,7 @@ def _add_services(chart: Chart) -> None:
             },
         ),
         spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(name="http", port=_HTTP_PORT, target_port=k8s.IntOrString.from_string("http")),
-                k8s.ServicePort(name="imap", port=_IMAP_PORT, target_port=k8s.IntOrString.from_string("imap")),
-            ],
+            selector=_HTTP.pods.selector, ports=[_HTTP.port.k8s_service_port(), _IMAP.port.k8s_service_port()]
         ),
     )
 
@@ -374,17 +367,19 @@ def _add_smtp_ingress(chart: Chart) -> None:
                 ],
             )
         ],
-        egress=[cilium.dns_egress(), EgressRule.to_endpoints(_LABELS, _SMTP_PORT)],
+        egress=[cilium.dns_egress(), EgressRule.to_endpoints(_SMTP.pods.selector, _SMTP.pod_port)],
     )
     NetworkPolicy(
         chart,
         "policy",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        endpoint_selector=_LABELS,
+        endpoint_selector=_HTTP.pods.selector,
         ingress=[
-            IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP_PORT]),
-            IngressRule.from_gateway(_HTTP_PORT),
-            IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": namespace.NAMESPACE}, ports=[_IMAP_PORT]),
+            IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP.pod_port]),
+            IngressRule.from_gateway(_HTTP.pod_port),
+            IngressRule.from_endpoints(
+                {"k8s:io.kubernetes.pod.namespace": namespace.NAMESPACE}, ports=[_IMAP.pod_port]
+            ),
         ],
     )
 
