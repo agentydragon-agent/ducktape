@@ -9,7 +9,13 @@ load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
-exports_files(["css.d.ts", "tabler_icons.d.ts"], visibility = ["//agentplane:__subpackages__"])
+exports_files(
+    [
+        "css.d.ts",
+        "tabler_icons.d.ts",
+    ],
+    visibility = ["//agentplane:__subpackages__"],
+)
 
 TSCONFIG = ":tsconfig"
 
@@ -865,20 +871,20 @@ ts_library(
         ":actions_history",
         ":actions_requests",
         ":consent",
-        "//agentplane/app/frontend/threads:projected_session",
         ":sandbox_page",
         ":sandboxes",
         ":settings",
         ":shell_css",
         ":sidebar",
-        "//agentplane/app/frontend/threads:thread_store",
-        "//agentplane/app/frontend/threads:thread_sync",
         ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend/threads:projected_session",
+        "//agentplane/app/frontend/threads:thread_store",
+        "//agentplane/app/frontend/threads:thread_sync",
     ],
 )
 
@@ -1003,7 +1009,6 @@ ts_library(
         ":client",
         ":connections_fixture",
         ":live",
-        "//agentplane/app/frontend/threads:local_commands",
         ":stream_status",
         ":theme",
         ":visual_scenarios",
@@ -1013,6 +1018,7 @@ ts_library(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/runner:protocol_pb",
     ],
 )
