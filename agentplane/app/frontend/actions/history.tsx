@@ -148,17 +148,21 @@ export function ActionHistory({
         if (active && current === generation) setLoading(false);
       }
     }
-    const stop = service === actionService
-      ? followStream("/actions/stream?state=decision_pending", {
-          events: { snapshot: () => {}, changed: () => void refresh() },
-          onConnection: (next) => {
-            setConnection(next);
-            if (next.phase === "live") void refresh();
-          },
-        })
-      : undefined;
+    const stop =
+      service === actionService
+        ? followStream("/actions/stream?state=decision_pending", {
+            events: { snapshot: () => {}, changed: () => void refresh() },
+            onConnection: (next) => {
+              setConnection(next);
+              if (next.phase === "live") void refresh();
+            },
+          })
+        : undefined;
     void refresh();
-    return () => { active = false; stop?.(); };
+    return () => {
+      active = false;
+      stop?.();
+    };
   }, [service]);
   async function loadMore(): Promise<void> {
     if (!cursor || !service.history || loadingMore) return;
@@ -166,7 +170,10 @@ export function ActionHistory({
     try {
       const page = await service.history(cursor);
       loadedMore.current = true;
-      setRequests((previous) => [...previous, ...page.items.filter((item) => !previous.some((old) => old.id === item.id))]);
+      setRequests((previous) => [
+        ...previous,
+        ...page.items.filter((item) => !previous.some((old) => old.id === item.id)),
+      ]);
       setCursor(page.next_cursor);
     } catch (failure) {
       setError(displayableError(failure));
@@ -197,7 +204,11 @@ export function ActionHistory({
       {decided.map((request) => (
         <HistoryCard key={request.id} request={request} mcp={executors.kinds?.get(request.action.group) === "mcp"} />
       ))}
-      {cursor && <Button loading={loadingMore} onClick={() => void loadMore()}>Load more</Button>}
+      {cursor && (
+        <Button loading={loadingMore} onClick={() => void loadMore()}>
+          Load more
+        </Button>
+      )}
     </Stack>
   );
 }

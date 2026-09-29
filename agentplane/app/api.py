@@ -23,7 +23,13 @@ from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
-from agentplane.action_service.models import ActionEventView, ActionHistoryPage, ActionRequestView, ActionState, DecisionInput
+from agentplane.action_service.models import (
+    ActionEventView,
+    ActionHistoryPage,
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+)
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
@@ -451,9 +457,7 @@ async def unbind_connection(connection_id: UUID, body: ConnectionVersion, client
 
 @actions_router.get("/history")
 async def action_history(
-    client: OperatorActions,
-    limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    cursor: str | None = None,
+    client: OperatorActions, limit: Annotated[int, Query(ge=1, le=100)] = 50, cursor: str | None = None
 ) -> ActionHistoryPage:
     return await client.history(limit=limit, cursor=cursor)
 

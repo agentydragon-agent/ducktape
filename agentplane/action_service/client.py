@@ -175,7 +175,8 @@ class OperatorActionServiceClient(_BearerClient):
 
     async def history(self, *, limit: int = 50, cursor: str | None = None) -> ActionHistoryPage:
         response = await self._request(
-            "GET", "/v1/operator/action-requests/history",
+            "GET",
+            "/v1/operator/action-requests/history",
             params={"limit": limit, **({"cursor": cursor} if cursor is not None else {})},
         )
         return ActionHistoryPage.model_validate(response.json())
@@ -185,7 +186,10 @@ class OperatorActionServiceClient(_BearerClient):
         """Open and check the upstream before handing its body to a streaming response."""
         token = await self._tokens.token()
         request = self._http.build_request(
-            "GET", "/v1/operator/action-requests/stream", params={"state": state} if state else None, headers={"Authorization": f"Bearer {token}"}
+            "GET",
+            "/v1/operator/action-requests/stream",
+            params={"state": state} if state else None,
+            headers={"Authorization": f"Bearer {token}"},
         )
         response = await self._http.send(request, stream=True)
         try:

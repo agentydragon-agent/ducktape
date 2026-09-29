@@ -166,7 +166,8 @@ describe("ActionHistory", () => {
     }
     vi.stubGlobal("EventSource", Stream);
     const list = vi.spyOn(actionService, "list").mockResolvedValue([]);
-    const history = vi.spyOn(actionService, "history")
+    const history = vi
+      .spyOn(actionService, "history")
       .mockResolvedValueOnce({ items: [request("denied", 1)], next_cursor: "page2" })
       .mockResolvedValueOnce({ items: [request("denied", 1)], next_cursor: "page2" })
       .mockResolvedValueOnce({ items: [request("succeeded", 2)], next_cursor: null });

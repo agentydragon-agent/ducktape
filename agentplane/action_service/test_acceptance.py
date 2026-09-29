@@ -885,6 +885,7 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
 if __name__ == "__main__":
     pytest_bazel.main()
 
+
 async def test_operator_history_pages_exclude_pending_and_require_operator(
     engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
@@ -899,9 +900,12 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
                 "/v1/action-requests",
                 headers=_workload("workload-a"),
                 json={
-                    "idempotency_key": f"history-{index}", "title": f"history {index}",
+                    "idempotency_key": f"history-{index}",
+                    "title": f"history {index}",
                     "action": {"group": "agentplane", "name": "echo"},
-                    "arguments": {"text": "test"}, "origin": {}, "correlation": {},
+                    "arguments": {"text": "test"},
+                    "origin": {},
+                    "correlation": {},
                 },
             )
             assert submitted.status_code == 202
@@ -910,8 +914,11 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
             response = await client.post(
                 _operator_path(requests[index]["id"], "/decision"),
                 headers=_operator(),
-                json={"verdict": "deny", "expected_version": requests[index]["version"],
-                      "idempotency_key": f"history-decision-{index}"},
+                json={
+                    "verdict": "deny",
+                    "expected_version": requests[index]["version"],
+                    "idempotency_key": f"history-decision-{index}",
+                },
             )
             assert response.status_code == 200
         cancelled = await client.post(
@@ -924,14 +931,18 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
         seen: list[str] = []
         cursor = None
         for _ in range(3):
-            page = await client.get(path, params={"limit": 1, **({"cursor": cursor} if cursor else {})}, headers=_operator())
+            page = await client.get(
+                path, params={"limit": 1, **({"cursor": cursor} if cursor else {})}, headers=_operator()
+            )
             assert page.status_code == 200
             assert len(page.json()["items"]) == 1
             seen.append(page.json()["items"][0]["id"])
             cursor = page.json()["next_cursor"]
         assert set(seen) == {request["id"] for request in requests[:3]}
         assert cursor is None
-        assert (await client.get("/v1/operator/action-requests", params={"state": "decision_pending"}, headers=_operator())).json()[0]["id"] == requests[3]["id"]
+        assert (
+            await client.get("/v1/operator/action-requests", params={"state": "decision_pending"}, headers=_operator())
+        ).json()[0]["id"] == requests[3]["id"]
     finally:
         await client.aclose()
         await service.close()

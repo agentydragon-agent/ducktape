@@ -15,8 +15,18 @@ def upgrade() -> None:
         SELECT MIN(e.at) FROM action_event AS e
         WHERE e.request_id = r.id AND e.state <> 'decision_pending'
     ) WHERE r.state <> 'decision_pending'""")
-    op.create_index("action_request_history_page", "action_request", [sa.text("history_at DESC"), sa.text("id DESC")], postgresql_where=sa.text("history_at IS NOT NULL"))
-    op.create_index("action_request_pending_page", "action_request", [sa.text("created_at DESC"), sa.text("id DESC")], postgresql_where=sa.text("state = 'decision_pending'"))
+    op.create_index(
+        "action_request_history_page",
+        "action_request",
+        [sa.text("history_at DESC"), sa.text("id DESC")],
+        postgresql_where=sa.text("history_at IS NOT NULL"),
+    )
+    op.create_index(
+        "action_request_pending_page",
+        "action_request",
+        [sa.text("created_at DESC"), sa.text("id DESC")],
+        postgresql_where=sa.text("state = 'decision_pending'"),
+    )
 
 
 def downgrade() -> None:
