@@ -490,7 +490,10 @@ async def _action_chunks(
                 chunks = await stack.enter_async_context(upstream)
         except TimeoutError as error:
             raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "Action stream startup timed out") from error
-        yield _without_repeated_snapshots(_renewed(client, chunks, state=state))
+        renewed = _renewed(client, chunks, state=state)
+        # A filtered snapshot is small and also the resync signal on reconnect. Do not suppress
+        # it when it happens to be identical: history may have changed while we were offline.
+        yield renewed if state else _without_repeated_snapshots(renewed)
 
 
 async def _renewed(
