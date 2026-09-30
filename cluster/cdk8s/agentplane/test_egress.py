@@ -153,6 +153,5 @@ def test_runner_context_configuration_matches_the_verified_qwen_roster(
             assert json.loads(environment["AGENTPLANE_MODEL_CONTEXT_WINDOWS"]) == expected
 
 
-
 if __name__ == "__main__":
     pytest_bazel.main()
