@@ -77,11 +77,7 @@ async def test_threads_list_reflects_attached_harness_and_active_turn_state(
         session_id="s-1", spec=SPEC, harness_state=protocol_pb2.HARNESS_STATE_RUNNING
     )
     await ingestion.set_attached(thread, running_attached, lease=lease)
-    await ingestion.record(
-        thread,
-        [event_entry(1, turn_started=event_pb2.TurnStarted(turn_id="turn-1"))],
-        lease=lease,
-    )
+    await ingestion.record(thread, [event_entry(1, turn_started=event_pb2.TurnStarted(turn_id="turn-1"))], lease=lease)
 
     (running,) = await store.list_threads()
     assert running.harness_state == "HARNESS_STATE_RUNNING"
@@ -95,10 +91,7 @@ async def test_threads_list_reflects_attached_harness_and_active_turn_state(
         thread,
         [
             event_entry(
-                2,
-                turn_completed=event_pb2.TurnCompleted(
-                    turn_id="turn-1", status=event_pb2.TURN_STATUS_COMPLETED
-                ),
+                2, turn_completed=event_pb2.TurnCompleted(turn_id="turn-1", status=event_pb2.TURN_STATUS_COMPLETED)
             )
         ],
         lease=lease,
@@ -120,10 +113,7 @@ async def test_threads_list_reflects_attached_harness_and_active_turn_state(
     assert lost.active_turn_id is None
 
     stopped_attached = protocol_pb2.Attached(
-        session_id="s-1",
-        spec=SPEC,
-        last_cursor=4,
-        harness_state=protocol_pb2.HARNESS_STATE_STOPPED,
+        session_id="s-1", spec=SPEC, last_cursor=4, harness_state=protocol_pb2.HARNESS_STATE_STOPPED
     )
     await ingestion.set_attached(thread, stopped_attached, lease=lease)
     (stopped,) = await store.list_threads()
