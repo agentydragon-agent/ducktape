@@ -691,6 +691,9 @@ pub struct FixtureOpts<'a> {
     /// (post-run runtime siblings), these are debundled artifact chunks the
     /// transform analyzes — e.g. an import target for cross-chunk tests.
     pub extra_chunks: &'a [(&'a str, &'a str)],
+    /// Extra chunks to process, as `(chunk_id, logical modules)`. They must
+    /// also appear in `extra_chunks`; used for cross-chunk emission tests.
+    pub extra_chunk_logical_modules: &'a [(&'a str, Vec<LogicalModuleEntry>)],
     /// `chunk_export_purity` entries as `(defining chunk_id, assertion)`,
     /// built via [`ChunkExportPurityBuilder`]. Default empty.
     pub chunk_export_purity: &'a [(&'a str, spec::ChunkExportPurity)],
@@ -716,6 +719,7 @@ impl<'a> FixtureOpts<'a> {
             local_property_effects: false,
             extra_files: &[],
             extra_chunks: &[],
+            extra_chunk_logical_modules: &[],
             chunk_export_purity: &[],
         }
     }
@@ -1145,6 +1149,40 @@ pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
     assert_node_output(&fixture.entry_path, expected_stdout, "");
 }
 
+/// Run `node --check` against every emitted JavaScript file in a fixture.
+pub fn assert_all_emitted_js_checks(fixture: &Fixture) {
+    fn visit(dir: &Path, files: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap_or_else(|err| panic!("read {}: {err}", dir.display()))
+        {
+            let entry = entry.expect("read directory entry");
+            let path = entry.path();
+            if path.is_dir() {
+                visit(&path, files);
+            } else if path.extension().is_some_and(|extension| extension == "js") {
+                files.push(path);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    visit(&fixture.out_root, &mut files);
+    files.sort();
+    let node = node_path();
+    for file in files {
+        let output = Command::new(&node)
+            .arg("--check")
+            .arg(&file)
+            .output()
+            .unwrap_or_else(|err| panic!("spawn node --check {}: {err}", file.display()));
+        assert!(
+            output.status.success(),
+            "node --check failed for {}\nstdout:\n{}\nstderr:\n{}",
+            file.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+}
+
 pub fn list_module_exports(out_root: &Path, module_path: &str) -> Vec<String> {
     let counter = MODULE_EXPORT_PROBE_COUNTER.fetch_add(1, Ordering::Relaxed);
     let probe_path = out_root.join(format!("__probe_module_exports_{counter}.mjs"));
@@ -1457,6 +1495,20 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> TransformSpec {
             .collect();
         logical_modules.insert(chunk_id.to_string(), for_chunk);
     }
+    for (extra_chunk, modules) in opts.extra_chunk_logical_modules {
+        let for_chunk = modules
+            .iter()
+            .map(|(path, body)| {
+                (
+                    path.clone(),
+                    serde_json::from_value(body.clone()).expect(
+                        "extra chunk logical module fixture body deserializes into spec::LogicalModule",
+                    ),
+                )
+            })
+            .collect();
+        logical_modules.insert((*extra_chunk).to_string(), for_chunk);
+    }
 
     let mut chunk_renames = BTreeMap::new();
     if let Some(renames) = &opts.chunk_renames {
@@ -1473,6 +1525,13 @@ fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> TransformSpec {
         serde_json::from_value(opts.unassigned_mode.clone())
             .expect("unassigned_mode fixture deserializes into spec::UnassignedMode"),
     );
+    for (extra_chunk, _) in opts.extra_chunk_logical_modules {
+        unassigned_mode.insert(
+            (*extra_chunk).to_string(),
+            serde_json::from_value(unassigned_mode_catchall_file(None))
+                .expect("unassigned_mode fixture deserializes into spec::UnassignedMode"),
+        );
+    }
 
     let chunk_analysis_options = if opts.dataflow_aware_s_chain
         || opts.trusted_dataflow_summaries
@@ -2209,15 +2268,14 @@ fn collect_declared_bindings_from_pat(pat: &Pat, names: &mut Vec<String>) {
     }
 }
 
-/// Parse `source` and assert exactly one `export { ... }` specifier has
-/// `orig.sym == expected_orig`, with its `exported` either absent (when
-/// `expected_exported_as` is `None`) or `Ident { sym: expected_exported_as }`.
-/// Walks the parsed specifier tree so a corrupted `export { aH$1 as aH$1 }`
-/// fails — a substring check on `aH$1 as aH` would accept both shapes.
-pub fn assert_export_named_specifier(
+/// Parse `source` and assert the named export specifiers for `expected_orig` match
+/// the supplied set of exported names. `None` means the `as` clause is absent.
+/// Walking the parsed specifier tree rejects near-matches such as
+/// `export { aH$1 as aH$1 }` that substring assertions can accept.
+pub fn assert_export_named_specifiers(
     source: &str,
     expected_orig: &str,
-    expected_exported_as: Option<&str>,
+    expected_exported_as: &[Option<&str>],
 ) {
     let module = parse_module(source);
     let matched: Vec<_> = module
@@ -2241,18 +2299,36 @@ pub fn assert_export_named_specifier(
         .collect();
     assert_eq!(
         matched.len(),
-        1,
-        "expected exactly one `export {{ {expected_orig} ... }}` specifier; got {} in:\n{source}",
+        expected_exported_as.len(),
+        "expected {} `export {{ {expected_orig} ... }}` specifiers; got {} in:\n{source}",
+        expected_exported_as.len(),
         matched.len(),
     );
-    let actual = match &matched[0].exported {
-        Some(ModuleExportName::Ident(ident)) => Some(ident.sym.to_string()),
-        Some(ModuleExportName::Str(_)) => panic!("unexpected string export in:\n{source}"),
-        None => None,
-    };
+    let mut actual: Vec<Option<String>> = matched
+        .iter()
+        .map(|spec| match &spec.exported {
+            Some(ModuleExportName::Ident(ident)) => Some(ident.sym.to_string()),
+            Some(ModuleExportName::Str(_)) => panic!("unexpected string export in:\n{source}"),
+            None => None,
+        })
+        .collect();
+    let mut expected: Vec<Option<String>> = expected_exported_as
+        .iter()
+        .map(|name| name.map(str::to_owned))
+        .collect();
+    actual.sort();
+    expected.sort();
     assert_eq!(
-        actual.as_deref(),
-        expected_exported_as,
-        "export {{ {expected_orig} ... }} `as` clause mismatch in:\n{source}",
+        actual, expected,
+        "export {{ {expected_orig} ... }} `as` clauses mismatch in:\n{source}",
     );
+}
+
+/// Assert exactly one `export { ... }` specifier has the requested shape.
+pub fn assert_export_named_specifier(
+    source: &str,
+    expected_orig: &str,
+    expected_exported_as: Option<&str>,
+) {
+    assert_export_named_specifiers(source, expected_orig, &[expected_exported_as]);
 }
