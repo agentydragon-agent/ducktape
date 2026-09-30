@@ -1,25 +1,28 @@
 """The page's boundary as a browser meets it: a real login round trip against a mock IdP, then the API."""
 
-import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
 import pytest_bazel
-import uvicorn
 
-from devinfra.claude.session_export.conftest import PAIRED_RESPONSE, FakeTokenEndpoint
+from devinfra.claude.session_export.conftest import (
+    PAIRED_RESPONSE,
+    TEST_ORG_UUID,
+    FakeTokenEndpoint,
+    authorization_state,
+    redirect_url,
+)
 from devinfra.claude.session_export.oauth import CredentialStore
 from devinfra.claude.session_export.settings import ServeSettings
 from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.supervisor import SyncSupervisor
 from devinfra.claude.session_export.web import create_app
 from util.net import bind_free_port
-from util.testing.asgi import serve_app
+from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 OWNER = "test-owner-subject"
@@ -62,21 +65,12 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
             live_streams=0,
             live_window=timedelta(hours=1),
         )
-        server = uvicorn.Server(
-            uvicorn.Config(create_app(supervisor=supervisor, settings=settings), log_level="warning")
-        )
-        async with serve_app(idp, sock=idp_sock):
-            serving = asyncio.create_task(server.serve(sockets=[app_sock]))
-            try:
-                while not server.started:  # a pre-bound socket accepts before uvicorn does
-                    if serving.done():
-                        serving.result()
-                        raise RuntimeError("uvicorn exited before starting")
-                    await asyncio.sleep(0.02)
-                yield app_url
-            finally:
-                server.should_exit = True
-                await serving
+        # The app runs in this loop, not in `serve_app`'s thread: its `store` holds this loop's asyncpg connections.
+        async with (
+            serve_app(idp, sock=idp_sock),
+            serve_app_in_loop(create_app(supervisor=supervisor, settings=settings), sock=app_sock),
+        ):
+            yield app_url
 
     return serving
 
@@ -115,23 +109,20 @@ async def test_someone_who_passes_login_but_is_not_the_owner_is_refused(serve: S
 
 async def test_the_owner_pairs_by_pasting_the_redirect_url(owner: httpx.AsyncClient) -> None:
     started = await owner.post("/api/pairing")
-    state = parse_qs(urlsplit(started.json()["authorization_url"]).query)["state"][0]
 
     paired = await owner.post(
-        "/api/pairing/complete", json={"redirect_url": f"http://localhost:54545/callback?code=test-code&state={state}"}
+        "/api/pairing/complete",
+        json={"redirect_url": redirect_url(authorization_state(started.json()["authorization_url"]))},
     )
 
     assert paired.status_code == 200
-    assert paired.json()["credential"]["organization_uuid"] == "test-org-uuid"
+    assert paired.json()["credential"]["organization_uuid"] == TEST_ORG_UUID
     assert (await owner.get("/api/status")).json()["pairing_started"] is False
 
 
 async def test_a_pasted_url_from_another_attempt_is_a_client_error(owner: httpx.AsyncClient) -> None:
     await owner.post("/api/pairing")
-    refused = await owner.post(
-        "/api/pairing/complete",
-        json={"redirect_url": "http://localhost:54545/callback?code=test-code&state=another-attempt"},
-    )
+    refused = await owner.post("/api/pairing/complete", json={"redirect_url": redirect_url("another-attempt")})
     assert refused.status_code == 400
     assert "state differs" in refused.json()["detail"]
 
@@ -142,10 +133,10 @@ async def test_a_code_anthropic_refuses_is_reported_without_its_body(serve: Serv
         httpx.AsyncClient(base_url=app_url, headers={"Origin": app_url}) as owner,
     ):
         await owner.get("/auth/login", follow_redirects=True)
-        state = parse_qs(urlsplit((await owner.post("/api/pairing")).json()["authorization_url"]).query)["state"][0]
+        started = await owner.post("/api/pairing")
         refused = await owner.post(
             "/api/pairing/complete",
-            json={"redirect_url": f"http://localhost:54545/callback?code=test-code&state={state}"},
+            json={"redirect_url": redirect_url(authorization_state(started.json()["authorization_url"]))},
         )
     assert refused.status_code == 502
     assert refused.json()["detail"] == "Anthropic refused the authorization code (400); start pairing again."
