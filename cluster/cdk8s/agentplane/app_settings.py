@@ -107,6 +107,7 @@ def settings(
                 "template": "agentplane-runner",
                 "policies": [
                     BASIC_POLICY,
+                    PACKAGES_POLICY,
                     GITHUB_AGENTYDRAGON_AGENT_POLICY,
                     GITHUB_CLONE_POLICY,
                     GITHUB_ACTIONS_LOGS_POLICY,
