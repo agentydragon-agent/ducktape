@@ -19,7 +19,6 @@ from sqlalchemy import select, update
 from starlette.types import Message, Scope
 
 from agentplane.action_service.client import OperatorActionServiceClient
-from agentplane.app.conftest import TEST_REASONING_EFFORTS
 
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
@@ -28,6 +27,7 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
+from agentplane.app.conftest import TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
@@ -118,9 +118,7 @@ async def app(
         ModelCatalog(
             models=[
                 ModelOption(
-                    model="test-model",
-                    display_name="Test Model",
-                    reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                    model="test-model", display_name="Test Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
                 )
             ],
             harnesses={harness: ["test-model"] for harness in Harness},

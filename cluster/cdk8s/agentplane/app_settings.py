@@ -42,13 +42,12 @@ PLAID_PGWEB_POLICY = "plaid-pgweb"
 
 
 def reasoning_efforts(model: str) -> list[str]:
-    """Provider-supported values exposed by the configured Anthropic/OpenAI model routes."""
-    normalized = model.lower()
-    if "claude" in normalized or "anthropic" in normalized:
+    """Documented reasoning effort values for the configured direct Anthropic/OpenAI routes."""
+    if model.startswith(("anthropic-max20/ant-messages/", "antigravity/ant-messages/claude-")):
         return ["low", "medium", "high", "max"]
-    if "gpt-" in normalized or "openai" in normalized:
+    if model.startswith("chatgpt/oai-responses/gpt-"):
         return ["minimal", "low", "medium", "high", "xhigh"]
-    # Other providers/routes do not expose the Anthropic/OpenAI effort parameter.
+    # Other providers/routes in this roster do not expose these reasoning effort parameters.
     return []
 
 
