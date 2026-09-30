@@ -19,7 +19,6 @@ from sqlalchemy import select, update
 from starlette.types import Message, Scope
 
 from agentplane.action_service.client import OperatorActionServiceClient
-
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
