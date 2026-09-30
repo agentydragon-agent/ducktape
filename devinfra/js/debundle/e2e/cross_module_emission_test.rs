@@ -983,6 +983,7 @@ fn residual_public_export_name_does_not_capture_unrelated_chunk_renamed_import()
         trusted_dataflow_summaries: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
+        extra_chunk_logical_modules: &[],
         source: r#"import { o as B } from "./vendor.js";
 const St = value => "row:" + value;
 function Ite() {

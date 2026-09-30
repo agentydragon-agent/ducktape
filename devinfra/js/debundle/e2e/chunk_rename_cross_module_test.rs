@@ -32,6 +32,7 @@ fn chunk_rename_propagates_into_peeled_module_body() {
         trusted_dataflow_summaries: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
+        extra_chunk_logical_modules: &[],
         source: r#"import { f as cx } from "./vendor.js";
 const a = (() => 1)();
 const b = cx();

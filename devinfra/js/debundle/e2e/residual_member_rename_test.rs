@@ -20,6 +20,7 @@ fn logical_module_at_catchall_target_renames_and_absorbs_overflow() {
         trusted_dataflow_summaries: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
+        extra_chunk_logical_modules: &[],
         source: r#"function a() { return 1; }
 function b() { return 2; }
 console.log(a(), b());

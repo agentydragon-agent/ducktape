@@ -878,6 +878,7 @@ fn chunk_rename_with_purity_pure_propagates_to_call_classifier() {
         trusted_dataflow_summaries: false,
         chunk_export_purity: &[],
         extra_chunks: &[],
+        extra_chunk_logical_modules: &[],
         source: r#"import { f as cx } from "./vendor.js";
 const a = (() => 1)();
 const b = cx();
