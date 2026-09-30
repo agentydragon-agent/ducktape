@@ -53,7 +53,7 @@ import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./l
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "../live";
 import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
-import { Body, CollapsibleCard, EntityCard, ItemStatus } from "./thread_cards";
+import { Body, CollapsibleCard, EntityCard, ItemStatus, VerbatimText, pendingSentMessage } from "./thread_cards";
 import { EvidencePanel, EvidenceToggle } from "./thread_evidence";
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";

@@ -71,7 +71,7 @@ function FormattedBody({
   }
 }
 
-function VerbatimText({ text }: { text: string }): JSX.Element {
+export function VerbatimText({ text }: { text: string }): JSX.Element {
   return (
     <Text className="agentplane-verbatim" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
       {text}
@@ -96,7 +96,7 @@ function LazyBody({ label, ...body }: { label: string; reference: PayloadRef; fo
  * own confirmed_input entity lands -- the moment the message is fully ordered in history (it has a
  * cursor) and no longer needs the composer's Retry/Dismiss affordances, so it can read as the
  * eventual bubble rather than as a command awaiting an outcome. */
-function pendingSentMessage(entity: ThreadEntity): boolean {
+export function pendingSentMessage(entity: ThreadEntity): boolean {
   return (
     entity.entityKind === "command" &&
     "outcome" in entity.state &&
