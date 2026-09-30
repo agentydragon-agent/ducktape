@@ -2971,7 +2971,7 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/sf/app
+  path: ./cluster/generated/grocy/sf/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -2999,7 +2999,7 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/vallejo/app
+  path: ./cluster/generated/grocy/vallejo/app
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3291,7 +3291,7 @@ spec:
     - name: grocy-sf
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/sf/user-perms
+  path: ./cluster/generated/grocy/sf/user-perms
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -3311,7 +3311,7 @@ spec:
     - name: grocy-vallejo
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/grocy/vallejo/user-perms
+  path: ./cluster/generated/grocy/vallejo/user-perms
   prune: true
   retryInterval: 1m
   sourceRef:
