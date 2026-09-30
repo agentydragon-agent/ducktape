@@ -3,11 +3,7 @@
 import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting
 
-from cluster.cdk8s.agentplane.egress_credentials import (
-    BUILDBUDDY_API_KEY_SECRET,
-    GITHUB_PAT_SECRET,
-    TESTING_NAMESPACE,
-)
+from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET, TESTING_NAMESPACE
 from cluster.cdk8s.agentplane.egress_testing_credentials import add_testing_egress_credentials
 
 
