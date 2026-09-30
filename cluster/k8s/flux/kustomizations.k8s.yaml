@@ -2260,7 +2260,7 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/gatus
+  path: ./cluster/generated/gatus
   prune: true
   retryInterval: 1m
   sourceRef:

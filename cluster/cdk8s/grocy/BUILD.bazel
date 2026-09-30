@@ -20,6 +20,7 @@ py_library(
     visibility = [
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/authentik:__pkg__",
+        "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
         "//cluster/cdk8s:cilium",
