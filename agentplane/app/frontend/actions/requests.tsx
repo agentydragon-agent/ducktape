@@ -144,12 +144,14 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
 
   return (
     <Stack>
-      {!embedded && <div>
-        <Title order={2}>Actions</Title>
-        <Text c="dimmed" size="sm">
-          Review pending ActionRequests. Allow dispatches the single permitted Execution automatically.
-        </Text>
-      </div>}
+      {!embedded && (
+        <div>
+          <Title order={2}>Actions</Title>
+          <Text c="dimmed" size="sm">
+            Review pending ActionRequests. Allow dispatches the single permitted Execution automatically.
+          </Text>
+        </div>
+      )}
       <StaleNotice streams={[stream]} />
       {error && <Text c="red">{error}</Text>}
       {loading && <Text role="status">Loading actions…</Text>}

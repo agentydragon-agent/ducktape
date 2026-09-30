@@ -186,10 +186,16 @@ export function ActionHistory({
 
   return (
     <Stack>
-      {embedded && <Text fw={700} size="lg">History</Text>}
-      {!embedded && <Text c="dimmed" size="sm">
-        Denied and terminal ActionRequests, kept as durable receipts.
-      </Text>}
+      {embedded && (
+        <Text fw={700} size="lg">
+          History
+        </Text>
+      )}
+      {!embedded && (
+        <Text c="dimmed" size="sm">
+          Denied and terminal ActionRequests, kept as durable receipts.
+        </Text>
+      )}
       <StaleNotice streams={[stream]} />
       {error && <Text c="red">{error}</Text>}
       {executors.error && (

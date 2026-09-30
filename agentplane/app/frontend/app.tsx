@@ -69,8 +69,12 @@ function ActionsPage(): JSX.Element {
   return (
     <Stack>
       <div>
-        <Text fw={700} size="lg">Actions</Text>
-        <Text c="dimmed" size="sm">Review requests awaiting a decision, then browse completed actions.</Text>
+        <Text fw={700} size="lg">
+          Actions
+        </Text>
+        <Text c="dimmed" size="sm">
+          Review requests awaiting a decision, then browse completed actions.
+        </Text>
       </div>
       <ActionRequests embedded />
       <ActionHistory embedded />
