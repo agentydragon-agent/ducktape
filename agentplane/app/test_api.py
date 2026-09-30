@@ -55,8 +55,12 @@ from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 
 TEST_MODELS = ModelCatalog(
     models=[
-        ModelOption(model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)),
-        ModelOption(model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)),
+        ModelOption(
+            model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
+        ModelOption(
+            model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
+        ),
     ],
     harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
 )
@@ -774,8 +778,16 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
     """The catalog the session form offers; a thread carries its model, a sandbox does not."""
     assert client.get("/models").json() == {
         "models": [
-            {"model": "test-claude-model", "display_name": "Test Claude Model", "reasoning_efforts": list(TEST_REASONING_EFFORTS)},
-            {"model": "test-codex-model", "display_name": "Test Codex Model", "reasoning_efforts": list(TEST_REASONING_EFFORTS)},
+            {
+                "model": "test-claude-model",
+                "display_name": "Test Claude Model",
+                "reasoning_efforts": list(TEST_REASONING_EFFORTS),
+            },
+            {
+                "model": "test-codex-model",
+                "display_name": "Test Codex Model",
+                "reasoning_efforts": list(TEST_REASONING_EFFORTS),
+            },
         ],
         "harnesses": {"HARNESS_CLAUDE": ["test-claude-model"], "HARNESS_CODEX": ["test-codex-model"]},
     }

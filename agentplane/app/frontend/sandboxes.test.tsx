@@ -65,7 +65,10 @@ async function render(
     const data =
       path === "/models"
         ? {
-            models: [{ model: "test-claude", display_name: "Test Claude", reasoning_efforts: TEST_REASONING_EFFORTS }, ...codexModels],
+            models: [
+              { model: "test-claude", display_name: "Test Claude", reasoning_efforts: TEST_REASONING_EFFORTS },
+              ...codexModels,
+            ],
             harnesses: {
               HARNESS_CLAUDE: ["test-claude"],
               HARNESS_CODEX: codexModels.map((option) => option.model),

@@ -312,7 +312,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             value={thread.model ?? null}
             onChange={(model) => {
               const efforts = modelOptions.find((option) => option.model === model)?.reasoning_efforts ?? [];
-              setThread({ ...thread, model, reasoning_effort: efforts.includes(thread.reasoning_effort ?? "") ? thread.reasoning_effort : undefined });
+              setThread({
+                ...thread,
+                model,
+                reasoning_effort: efforts.includes(thread.reasoning_effort ?? "") ? thread.reasoning_effort : undefined,
+              });
             }}
             disabled={modelOptions.length === 0}
             placeholder={modelCatalog ? "No models available" : "Loading models…"}

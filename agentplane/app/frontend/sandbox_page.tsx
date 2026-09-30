@@ -238,7 +238,7 @@ export function SandboxPage({
         current && offered.some((option) => option.model === current) ? current : (offered[0]?.model ?? null)
       );
       const options = offered[0]?.reasoning_efforts ?? [];
-      setEffort((current) => options.includes(current) ? current : (options[0] ?? ""));
+      setEffort((current) => (options.includes(current) ? current : (options[0] ?? "")));
     })();
   }, [harness]);
 
