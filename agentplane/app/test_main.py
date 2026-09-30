@@ -48,8 +48,8 @@ APP_ENVIRONMENT = {
     "AGENTPLANE_RUNNER_PORT": "7000",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
     "AGENTPLANE_MODELS": (
-        '{"models": [{"model": "test-claude-model", "display_name": "Test Claude Model"}, '
-        '{"model": "test-codex-model", "display_name": "Test Codex Model"}], '
+        '{"models": [{"model": "test-claude-model", "display_name": "Test Claude Model", "reasoning_efforts": ["low", "medium", "high"]}, '
+        '{"model": "test-codex-model", "display_name": "Test Codex Model", "reasoning_efforts": ["low", "medium", "high"]}], '
         '"harnesses": {"HARNESS_CLAUDE": ["test-claude-model"], "HARNESS_CODEX": ["test-codex-model"]}}'
     ),
     "AGENTPLANE_EGRESS_ADMIN_URL": "http://egress.test.invalid:8081",
@@ -129,8 +129,8 @@ def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) ->
 SANDBOX = "shutdown-test-sandbox"
 MODELS = ModelCatalog(
     models=[
-        ModelOption(model="test-claude-model", display_name="Test Claude Model"),
-        ModelOption(model="test-codex-model", display_name="Test Codex Model"),
+        ModelOption(model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=["low", "medium", "high"]),
+        ModelOption(model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=["low", "medium", "high"]),
     ],
     harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
 )

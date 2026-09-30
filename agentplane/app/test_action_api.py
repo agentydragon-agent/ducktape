@@ -323,7 +323,7 @@ async def review(
             bridge,
             store,
             ModelCatalog(
-                models=[ModelOption(model="test-model", display_name="Test Model")],
+                models=[ModelOption(model="test-model", display_name="Test Model", reasoning_efforts=["low", "medium", "high"])],
                 harnesses={harness: ["test-model"] for harness in Harness},
             ),
             egress,
@@ -351,7 +351,7 @@ async def review(
             bridge,
             ThreadStore(replica_engine),
             ModelCatalog(
-                models=[ModelOption(model="test-model", display_name="Test Model")],
+                models=[ModelOption(model="test-model", display_name="Test Model", reasoning_efforts=["low", "medium", "high"])],
                 harnesses={harness: ["test-model"] for harness in Harness},
             ),
             egress,

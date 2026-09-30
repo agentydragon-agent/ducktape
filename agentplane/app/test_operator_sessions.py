@@ -114,7 +114,7 @@ async def app(
         bridge,
         store,
         ModelCatalog(
-            models=[ModelOption(model="test-model", display_name="Test Model")],
+            models=[ModelOption(model="test-model", display_name="Test Model", reasoning_efforts=["low", "medium", "high"])],
             harnesses={harness: ["test-model"] for harness in Harness},
         ),
         egress,

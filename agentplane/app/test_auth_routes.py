@@ -50,8 +50,8 @@ SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
 ACTIVITY_STEP = timedelta(minutes=5)
 MODELS = ModelCatalog(
     models=[
-        ModelOption(model="test-claude-model", display_name="Test Claude Model"),
-        ModelOption(model="test-codex-model", display_name="Test Codex Model"),
+        ModelOption(model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=["low", "medium", "high"]),
+        ModelOption(model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=["low", "medium", "high"]),
     ],
     harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
 )

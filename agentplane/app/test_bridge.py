@@ -184,7 +184,7 @@ async def app_url(
                 bridge,
                 store,
                 ModelCatalog(
-                    models=[ModelOption(model="bridge-model", display_name="Bridge Model")],
+                    models=[ModelOption(model="bridge-model", display_name="Bridge Model", reasoning_efforts=["low", "medium", "high"])],
                     harnesses={harness: ["bridge-model"] for harness in Harness},
                 ),
                 egress,

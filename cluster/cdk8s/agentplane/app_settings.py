@@ -41,6 +41,17 @@ BUILDBUDDY_POLICY = "buildbuddy"
 PLAID_PGWEB_POLICY = "plaid-pgweb"
 
 
+def reasoning_efforts(model: str) -> list[str]:
+    """Provider-supported values exposed by the configured Anthropic/OpenAI model routes."""
+    normalized = model.lower()
+    if "claude" in normalized or "anthropic" in normalized:
+        return ["low", "medium", "high", "max"]
+    if "gpt-" in normalized or "openai" in normalized:
+        return ["minimal", "low", "medium", "high", "xhigh"]
+    # Other providers/routes do not expose the Anthropic/OpenAI effort parameter.
+    return []
+
+
 def settings(
     *,
     namespace: str,
@@ -57,7 +68,12 @@ def settings(
     all_models = dict.fromkeys((*harness_claude, *harness_codex))
     return AppSettingsConfig(
         models=ModelCatalog(
-            models=[ModelOption(model=model, display_name=display_name(model)) for model in all_models],
+            models=[
+                ModelOption(
+                    model=model, display_name=display_name(model), reasoning_efforts=reasoning_efforts(model)
+                )
+                for model in all_models
+            ],
             harnesses={Harness.CLAUDE: harness_claude, Harness.CODEX: harness_codex},
         ),
         # Rendered into the image-owned agent-instruction template; deployments may use

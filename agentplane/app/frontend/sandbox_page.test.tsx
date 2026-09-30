@@ -77,7 +77,7 @@ async function render(
     if (path === "/models") {
       return Promise.resolve(
         Response.json({
-          models: [{ model: "test-model", display_name: "Test Model" }],
+          models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: ["low", "medium", "high"] }],
           harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
         })
       );
