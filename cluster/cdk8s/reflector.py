@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
+from collections.abc import Sequence
 
+from cdk8s import App, Chart
+
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import Vpa
 
 NAME = "reflector"
 NAMESPACE = "reflector-system"
@@ -15,9 +18,20 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/reflector"
 _VERSION = "10.0.65"
 
 
+def mirror_annotations(namespaces: Sequence[str]) -> dict[str, str]:
+    """Annotations on a source Secret or ConfigMap that make Reflector keep a copy in each of `namespaces`."""
+    value = ",".join(namespaces)
+    return {
+        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": value,
+        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": value,
+    }
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    k8s.KubeNamespace(chart, "namespace", metadata=k8s.ObjectMeta(name=NAMESPACE))
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, agent_readable=None)
     helm_release(
         chart,
         NAME,

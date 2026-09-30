@@ -1,12 +1,5 @@
 # cdk8s adoption: remaining work
 
-Review baseline: `origin/devel` at `f84301e72c` (2026-09-28). This is a source
-audit, not a fresh synthesis, CI result, or live-cluster health report.
-
-The central chart contains 171 Flux Kustomizations. The broad resource conversion,
-ArtifactGenerator wiring, two output roots, and removal of redundant single-file
-Kustomize wrappers are implemented. They are no longer migration waves.
-
 Adoption is not complete: mixed directories still contain hand-written overlays and
 configuration, project-owned deployment packages remain outside that conversion, and
 some Python constructs still encode relationships as independent strings or patches.
@@ -18,27 +11,6 @@ live in [the design](../docs/cdk8s.md) and [AGENTS.md](AGENTS.md).
 
 These are recommendations for subsequent implementation PRs. Updating this plan does
 not approve a new abstraction, resource owner, authorization grant, or deployment.
-
-### A. Split generic cdk8s builders from ducktape's cluster-specific wiring
-
-Each CRD family's `cdk8s_import` bindings and generic constructors live in
-`cluster/cdk8s/providers/<name>/`, in the shape
-[the builder-authoring skill](../skills/cdk8s_builders/SKILL.md) states. Kinds still
-built raw at more than one call site, counted on devel 9904055a45:
-
-- Flux `Receiver` (2), and `Alert` and `Provider` (2 each, both in `flux_webhook/chart.py`).
-- Flux `HelmRelease`: `seaweedfs_csi/driver.py` builds one raw beside `helm.helm_release`.
-- External Secrets `ClusterSecretStore` (4), `SecretStore` (3) and the `Password`
-  generator (2).
-- Gateway API `HTTPRoute` (4) and `Gateway` (2).
-- CNPG `Database` (3).
-- trust-manager `Bundle` (3).
-- Terraform (2).
-- Agentplane `EgressBinding` (2, one module).
-- SeaweedFS `ResourceReferenceGrant` (2, both in `seaweedfs/s3.py`).
-
-Done: no ducktape-specific module builds a CRD's generated dataclasses raw at more than
-one call site, with no rendered-output diff from `//cluster/cdk8s:test_generate_manifests`.
 
 ### B. Restore dependency-update ownership
 
@@ -58,9 +30,9 @@ passes the generation gate, and leaves no independently editable duplicate pin.
 
 ### C. Convert useful YAML seams
 
-Start with Grocy's household overlays, then Airlock's typed configuration and the
-rotator rosters. The remainder backlog names the existing models, semantic hazards, and acceptance
-conditions. Authentik blueprints need a separate ownership decision consistent with
+Start with Airlock's typed configuration, then the rotator rosters. The remainder
+backlog names the existing models, semantic hazards, and acceptance conditions.
+Authentik blueprints need a separate ownership decision consistent with
 `cluster/docs/sso.md`; embedding their text in Python is not completion.
 
 Generate non-secret configuration through the application's existing model where one

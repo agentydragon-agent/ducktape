@@ -5,9 +5,12 @@ Python cdk8s (`cluster/cdk8s/`) generates resources under two roots
 directory every file of which is generated lives under `cluster/generated`, a closed
 world: the parity test fails on any file there the generator does not write. A directory
 holding any hand-written file lives under `cluster/k8s`, its generated files beside the
-hand-written ones. A directory is never split across the roots, and never nested inside
-another Kustomization's path or artifact copy in the other root. The Flux
-Kustomization graph is one generated chart at `cluster/k8s/flux/kustomizations.k8s.yaml`;
+hand-written ones; the exception is an `image-pins` Component, which may be a
+`cluster/k8s` directory of its own that a generated directory includes across the roots
+([the mixed-directory rule](cdk8s_remainder.md#mixed-directory-layout)). A directory is
+never split across the roots, and never nested inside another Kustomization's path or
+artifact copy in the other root. The Flux Kustomization graph is one generated chart at
+`cluster/k8s/flux/kustomizations.k8s.yaml`;
 the neighboring `flux/kustomization.yaml` keeps bootstrap and source objects hand-written.
 Flux reads `devel` as it always has. Regenerate with `bb run //cluster/cdk8s:generate_manifests`
 (the binary writes into the checkout, so `bb run`, not `bbr run`);
@@ -33,14 +36,18 @@ before postBuild substitution (<../cdk8s/AGENTS.md> § Testing a generator).
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
    `cdk8s import` to ingest), listing one `<name>.k8s.yaml` per chart and the
    hand-written siblings below. `generation.write_directory` writes it for every
-   directory it synthesizes, and a new component is written that way.
+   directory it synthesizes, and a new component is written that way. A pinned upstream
+   release manifest is a remote resource the kustomization names by URL, with patches built
+   in Python (`kubevirt/operators.py`); its objects are never transcribed into constructs.
 3. **Hand-written `kustomization.yaml` over generated resources**, where the directory
    keeps something the generator does not own (a `configMapGenerator` with
-   `configurations:` or `generatorOptions`, a remote-release patch, an object from
-   § What stays hand-written). It lists each `<name>.k8s.yaml` as a resource with a
-   comment naming the generator module.
-4. **Hand-written outright**: `flux/flux-system` (`flux bootstrap` output) and
-   `parked/`.
+   `configurations:` or `generatorOptions`, an object from § What stays hand-written).
+   It lists each `<name>.k8s.yaml` as a resource with a comment naming the generator
+   module.
+4. **Hand-written outright**: `flux/flux-system` (`flux bootstrap` output).
+
+The parked tree, `cluster/parked` (`PARKED_ROOT`), is outside both roots and applied by
+nothing; it is hand-written apart from augur-evidence's generated file.
 
 Every directory's Flux Kustomization object is created in topo order by
 `generate_manifests.py` and emitted in the central Flux chart. `artifact-generators`
@@ -48,17 +55,16 @@ imports the deployed source-watcher CRD; `generate_manifests.py` builds each con
 artifact before its Kustomization node, writes the directory with
 `generation.write_directory` as the node's `RenderedDirectory` argument, and hands every
 artifact to `artifact_generators.write_artifact_generators` last. A tofu-controller
-`Terraform` CR is built through `terraform.gitops_terraform`, and a Namespace written into
-the directory of the Kustomization that owns it through `generation.write_namespace`.
+`Terraform` CR is built through `terraform.tofu_state_terraform` (a `tf/gitops` module's
+through `terraform.gitops_terraform`), and a Namespace written into the directory of the
+Kustomization that owns it through `generation.write_namespace`.
 
 ### What stays hand-written
 
 - `.sops.yaml` Secrets (cdk8s has no key material; below).
-- Vendored and externally generated manifests: `flux/flux-system`, the agentplane CRDs
-  (`bb run //agentplane/crds:generate_bin`), and the kustomizations that patch a remote
-  release (`kubevirt/{operator,cdi-operator}`, `agents/agent-sandbox/controller`).
-- `configMapGenerator` inputs (Iron and app configs, SQL, blueprints, dashboard JSON),
-  and the `kustomization.yaml` that carries the generator where it is hand-written.
+- Vendored and externally generated manifests: `flux/flux-system`.
+- `configMapGenerator` inputs (Iron and app configs, SQL, blueprints), and the
+  `kustomization.yaml` that carries the generator where it is hand-written.
 - `image-pins/` Components and the ConfigMaps whose data carries a `$imagepolicy` marker
   (§ Live image automation).
 
@@ -99,8 +105,13 @@ A `configMapGenerator` input (`clickhouse/schema/schema.sql`)
 stays hand-written the same way: the generated `kustomization.yaml` carries the
 generator entry (`flux.ConfigMapArgs`), keeping kustomize's content-hash
 name suffix and reference rewriting, and the construct mounting it references the
-entry's `name`. Content rendered in Python goes into the same entry as `literals`
-(aiquota's `config.toml`).
+entry's `name`. The input may instead sit beside its generator module, which copies it
+into the output directory (`generation.copy_source_file`), so the directory can live
+under `cluster/generated` (the Grafana dashboards, `grafana_dashboards.py`). Content
+rendered in Python goes into the same entry as `literals` (aiquota's `config.toml`).
+Kustomize rewrites a generated name only into fields it knows; a custom resource's
+reference (`GrafanaDashboard.spec.configMapRef.name`) needs a `nameReference` transformer
+configuration listed under `configurations:`.
 
 ### `dependsOn` rationale
 
@@ -156,7 +167,8 @@ CRD's generic wrapper modules; keep upstream CRD source pins in `MODULE.bazel`. 
 providers are
 `//cluster/cdk8s/providers/{agent_sandbox,cert_manager,cilium,clickhouse,cnpg,external_secrets,external_snapshotter,flux,gateway_api,grafana_operator,keda,kubevirt,kyverno,prometheus_operator,redis_operator,seaweedfs,source_watcher,tofu_controller,volsync}`.
 `//agentplane/crds` declares the imports of Agentplane's first-party CRDs beside their
-YAML; `providers/agentplane` holds only their wrappers.
+YAML; `providers/agentplane` holds only their wrappers, and `agentplane_crds.py` copies the
+YAML into `cluster/generated/agentplane-crds` for Flux.
 
 The `source_watcher` import extracts `ArtifactGenerator` from the CRD bundle in
 `cluster/k8s/flux/flux-system/gotk-components.yaml`, keeping the binding aligned with the

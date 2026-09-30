@@ -7,10 +7,14 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 
 - **The vocabulary is Kubernetes, cdk8s, Flux and Kustomize objects, plus plain Python
   values.** Nothing here introduces a concept those do not have: no marker annotation,
-  no "provides" declaration, no record type standing in for an object, no registry, no
-  convention a reader must learn on top of the objects' own fields. When a change seems
-  to need one, stop and ask; the operator approves the design before it is built. The
-  same applies to a rule or check that would only work with such a marker.
+  no "provides" declaration, no registry, no convention a reader must learn on top of the
+  objects' own fields. When a change seems to need one, stop and ask; the operator
+  approves the design before it is built. The same applies to a rule or check that would
+  only work with such a marker. An identity-only reference is allowed: a frozen dataclass
+  of names, keys, ports and labels plus the addresses derived from them, declared once by
+  the producing module and projected into each dialect by methods. A record describing
+  what to build is not. A map that checks hand-written wiring (`crd_layering.OPERATOR_CRDS`)
+  is allowed; a map that chooses wiring is a registry.
 - **Construction runs forward** (§ The Flux graph): inputs are values or constructs
   built earlier, and every fact a node depends on is in its signature.
 - **Stateful data is never destroyed by a change here.** Databases, PersistentVolumes
@@ -157,8 +161,9 @@ its parameters. `generate_manifests.py` is the topological order, written out by
 - **Output routing is by `spec.path`**, with the handful of Kustomizations whose `path`
   is not their own directory listed explicitly in the writer. Keep those explicit.
 - **A directory's root is written once**: its module's `OUTPUT_DIR` (or a named constant
-  like `BASE_DIR`) is `f"{GENERATED_ROOT}/..."` or `f"{HAND_WRITTEN_ROOT}/..."`
-  (`manifest_roots.py`), and the artifact in `generate_manifests.py` takes that constant,
+  like `BASE_DIR`) is `f"{GENERATED_ROOT}/..."` or `f"{HAND_WRITTEN_ROOT}/..."`, or
+  `f"{PARKED_ROOT}/..."` for a parked one (`manifest_roots.py`), and the artifact in
+  `generate_manifests.py` takes that constant,
   never the path spelled again. Moving a directory between roots is that one edit, plus
   the committed files; `GENERATED_ROOT` is right exactly when the generator writes every
   file the directory holds.
@@ -437,11 +442,6 @@ update markers". Don't repeat this explanation per directory; point back here in
 A bare-tag field (an `*_IMAGE_TAG` env value) takes the placeholder too, and the Component
 copies the pinned tag into it with a block-style `replacements` rule that splits the
 container `image` on `:` (`images:` runs first); see `agents/airlock/image-pins`.
-
-Agentplane testing keeps its image pins inline in the hand-maintained root
-`kustomization.yaml`, since the Kustomization itself is part of the flat resource
-directory. Flux updates those `newTag:` markers in place; cdk8s generates only the
-separate `agentplane.k8s.yaml` resource file.
 
 The `images:` transformer matches by image `name:` across **every resource in the
 Kustomization's rendered output**, not just one Deployment — relevant when a directory's

@@ -2,22 +2,28 @@
 
 from __future__ import annotations
 
+import posixpath
 from collections.abc import Callable, Mapping, Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from cdk8s import ApiObjectMetadata, App, Chart, Names, Yaml
-from cdk8s_plus_34 import ConfigMap, k8s
+from cdk8s_plus_34 import ConfigMap
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDecryption
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
+from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     ConfigMapArgs,
+    Json6902Patch,
+    PatchFile,
     RenderedDirectory,
-    artifact_directory,
+    artifact_directories,
     kustomize_kustomization,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 CNPG_DATABASE_READY = (
     "has(status.applied) && status.applied && "
@@ -45,6 +51,16 @@ def write_yaml(path: Path, manifest: dict[str, object]) -> None:
     path.write_text(Yaml.format_objects([manifest]))
 
 
+def copy_source_file(root: Path, directory: str, source: str) -> str:
+    """Copy `source`, a repo-relative native file shipped as this generator's runfiles data,
+    into `directory` under its own name; return that name for the `kustomization.yaml`."""
+    name = PurePosixPath(source).name
+    out_dir = root / directory
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / name).write_bytes(get_required_path(own_repo_rlocation(source)).read_bytes())
+    return name
+
+
 def config_map_chart(app: App, *, chart_name: str, configmap_name: str, namespace: str, data: dict[str, str]) -> Chart:
     chart = Chart(app, chart_name, disable_resource_name_hashes=True)
     ConfigMap(chart, "config", metadata=ApiObjectMetadata(name=configmap_name, namespace=namespace), data=data)
@@ -68,28 +84,45 @@ def write_directory(
     artifact: ArtifactGeneratorSpecArtifacts,
     *chart_builders: Callable[[App], Chart],
     siblings: Sequence[str] = (),
+    remote_resources: Sequence[str] = (),
     namespace: str | None = None,
     components: Sequence[str] = (),
     config_map_generator: Sequence[ConfigMapArgs] = (),
+    configurations: Sequence[str] = (),
+    patch_charts: Sequence[Callable[[App], Chart]] = (),
+    json6902_patches: Sequence[Json6902Patch] = (),
 ) -> RenderedDirectory:
     """Synthesize a component's charts into the directory `artifact` packages, and write its
-    `kustomization.yaml` listing them, then `siblings`: the hand-written files beside them.
-    `namespace`, `components` and `config_map_generator` are `kustomize_kustomization`'s.
+    `kustomization.yaml` listing them, then `siblings`: the hand-written files beside them,
+    then `remote_resources`: URLs kustomize fetches at build time, such as an upstream release
+    manifest. `patch_charts` are synthesized beside them and listed as strategic-merge patches,
+    before `json6902_patches`. `namespace`, `components`, `config_map_generator` and
+    `configurations` are `kustomize_kustomization`'s.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
     an `image-pins` Component, a generated ConfigMap's source file).
     One keeping a hand-written `kustomization.yaml` uses `write_charts`. The returned
-    directory's `decryption` is set exactly when a sibling is SOPS ciphertext.
+    directory's `decryption` is set exactly when a sibling is SOPS ciphertext. Every copy of
+    `artifact` after the first must be a Component `components` names: the `image-pins`
+    directory a `GENERATED_ROOT` directory includes across the roots
+    (cluster/docs/cdk8s_remainder.md § Mixed-directory layout).
     """
-    directory = artifact_directory(artifact)
-    if len(artifact.copy) != 1:
-        raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies shared bases")
-    resources = [*write_charts(root, directory, *chart_builders), *siblings]
+    directory, *copied = artifact_directories(artifact)
+    included = {posixpath.normpath(posixpath.join(directory, component)) for component in components}
+    if shared := [base for base in copied if base not in included]:
+        raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies {shared=}")
+    # One app, so a patch chart reusing a resource chart's name fails instead of overwriting its file.
+    files = write_charts(root, directory, *chart_builders, *patch_charts)
     write_yaml(
         root / directory / "kustomization.yaml",
         kustomize_kustomization(
-            resources=resources, namespace=namespace, components=components, config_map_generator=config_map_generator
+            resources=[*files[: len(chart_builders)], *siblings, *remote_resources],
+            namespace=namespace,
+            components=components,
+            config_map_generator=config_map_generator,
+            configurations=configurations,
+            patches=[*(PatchFile(path=name) for name in files[len(chart_builders) :]), *json6902_patches],
         ),
     )
     return RenderedDirectory(artifact=artifact, decryption=sops_decryption(siblings))
@@ -103,16 +136,28 @@ def sops_decryption(resources: Sequence[str]) -> KustomizationSpecDecryption | N
 
 
 def write_namespace(
-    root: Path, directory: str, *, name: str, labels: Mapping[str, str], annotations: Mapping[str, str] | None = None
+    root: Path,
+    directory: str,
+    *,
+    name: str,
+    vpa: Vpa,
+    agent_readable: AgentReadable | None,
+    labels: Mapping[str, str] | None = None,
+    annotations: Mapping[str, str] | None = None,
 ) -> None:
-    """Write only `namespace.k8s.yaml` into `directory`; its `kustomization.yaml`, hand-written or
-    generated elsewhere, lists it, so the Namespace stays owned by that directory's Kustomization."""
+    """Write only `namespace.k8s.yaml`, `namespaces.namespace`'s Namespace, into `directory`; its
+    `kustomization.yaml`, hand-written or generated elsewhere, lists it, so the Namespace stays
+    owned by that directory's Kustomization."""
     out_dir = root / directory
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    k8s.KubeNamespace(
+    namespaces.namespace(
         Chart(app, "namespace", disable_resource_name_hashes=True),
         "namespace",
-        metadata=k8s.ObjectMeta(name=name, labels=dict(labels), annotations=dict(annotations) if annotations else None),
+        name=name,
+        vpa=vpa,
+        agent_readable=agent_readable,
+        labels=labels,
+        annotations=annotations,
     )
     app.synth()
