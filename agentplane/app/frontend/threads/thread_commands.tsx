@@ -15,7 +15,16 @@ export function pruneCommandErrors(errors: Map<string, string>, commandIds: Read
   return new Map(Array.from(errors).filter(([id]) => commandIds.has(id)));
 }
 
-export function useProjectedCommands(threadId: string, entities: ThreadEntity[]) {
+interface ProjectedCommands {
+  local: LocalCommandSnapshot;
+  errors: ReadonlyMap<string, string>;
+  submissionError: string | null;
+  submit: (value: Command) => boolean;
+  deliver: (value: LocalCommand) => Promise<void>;
+  store: LocalCommands;
+}
+
+export function useProjectedCommands(threadId: string, entities: ThreadEntity[]): ProjectedCommands {
   const store = useMemo(() => new LocalCommands(threadId), [threadId]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, string>());
@@ -199,13 +208,7 @@ export function ProjectedCommandRows({
   return (
     <Stack role="region" aria-label="Pending commands" gap="xs">
       {projectedCommands.map((row) => (
-        <Paper
-          key={row.entityId}
-          data-command-id={row.entityId}
-          p="xs"
-          withBorder
-          style={{ position: "relative" }}
-        >
+        <Paper key={row.entityId} data-command-id={row.entityId} p="xs" withBorder style={{ position: "relative" }}>
           <EvidenceToggle entity={row} style={{ position: "absolute", top: 4, right: 4 }} />
           <Text size="xs" c={row.pending ? "dimmed" : row.state.outcome === "failed" ? "red" : undefined}>
             {row.state.outcome === "pending"
