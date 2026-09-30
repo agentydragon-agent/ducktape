@@ -40,7 +40,7 @@ from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadOperationalState
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.changes import Changes
-from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
+from agentplane.app.conftest import TEST_REASONING_EFFORTS, _CALL_REPORT, AGENT_AUTH
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -184,7 +184,7 @@ async def app_url(
                 bridge,
                 store,
                 ModelCatalog(
-                    models=[ModelOption(model="bridge-model", display_name="Bridge Model", reasoning_efforts=["low", "medium", "high"])],
+                    models=[ModelOption(model="bridge-model", display_name="Bridge Model", reasoning_efforts=list(TEST_REASONING_EFFORTS))],
                     harnesses={harness: ["bridge-model"] for harness in Harness},
                 ),
                 egress,

@@ -118,6 +118,7 @@ ts_library(
     srcs = ["projected_session.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        "//agentplane/app/frontend:test_model_catalog",
         ":history_rows",
         ":local_commands",
         ":projected_session",

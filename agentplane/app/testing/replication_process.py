@@ -29,6 +29,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, AsyncSessionTransaction, async_sessionmaker
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from agentplane.app.conftest import TEST_REASONING_EFFORTS
+
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
@@ -285,8 +287,8 @@ async def _serve(
             store,
             ModelCatalog(
                 models=[
-                    ModelOption(model="test-model-before", display_name="Test Model Before", reasoning_efforts=["low", "medium", "high"]),
-                    ModelOption(model="test-model-after", display_name="Test Model After", reasoning_efforts=["low", "medium", "high"]),
+                    ModelOption(model="test-model-before", display_name="Test Model Before", reasoning_efforts=list(TEST_REASONING_EFFORTS)),
+                    ModelOption(model="test-model-after", display_name="Test Model After", reasoning_efforts=list(TEST_REASONING_EFFORTS)),
                 ],
                 harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
             ),

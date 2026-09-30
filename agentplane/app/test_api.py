@@ -21,7 +21,7 @@ from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
 from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_http_error
-from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.conftest import TEST_REASONING_EFFORTS, AGENT_AUTH
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
@@ -55,8 +55,8 @@ from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 
 TEST_MODELS = ModelCatalog(
     models=[
-        ModelOption(model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=["low", "medium", "high"]),
-        ModelOption(model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=["low", "medium", "high"]),
+        ModelOption(model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)),
+        ModelOption(model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)),
     ],
     harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
 )
@@ -774,8 +774,8 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
     """The catalog the session form offers; a thread carries its model, a sandbox does not."""
     assert client.get("/models").json() == {
         "models": [
-            {"model": "test-claude-model", "display_name": "Test Claude Model", "reasoning_efforts": ["low", "medium", "high"]},
-            {"model": "test-codex-model", "display_name": "Test Codex Model", "reasoning_efforts": ["low", "medium", "high"]},
+            {"model": "test-claude-model", "display_name": "Test Claude Model", "reasoning_efforts": list(TEST_REASONING_EFFORTS)},
+            {"model": "test-codex-model", "display_name": "Test Codex Model", "reasoning_efforts": list(TEST_REASONING_EFFORTS)},
         ],
         "harnesses": {"HARNESS_CLAUDE": ["test-claude-model"], "HARNESS_CODEX": ["test-codex-model"]},
     }

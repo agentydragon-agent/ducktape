@@ -24,6 +24,13 @@ js_openapi_schema(
 )
 
 ts_library(
+    name = "test_model_catalog",
+    testonly = True,
+    srcs = ["test_model_catalog.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "client",
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
@@ -717,6 +724,7 @@ ts_library(
     srcs = ["sandbox_page.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":test_model_catalog",
         ":client",
         ":live",
         ":sandbox_page",
@@ -942,6 +950,7 @@ ts_library(
     srcs = ["sandboxes.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":test_model_catalog",
         ":actions_client",
         ":client",
         ":sandboxes",
@@ -1017,6 +1026,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":test_model_catalog",
         ":actions_client",
         ":app",
         ":client",

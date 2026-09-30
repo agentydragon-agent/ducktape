@@ -19,6 +19,8 @@ from sqlalchemy import select, update
 from starlette.types import Message, Scope
 
 from agentplane.action_service.client import OperatorActionServiceClient
+from agentplane.app.conftest import TEST_REASONING_EFFORTS
+
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
@@ -114,7 +116,7 @@ async def app(
         bridge,
         store,
         ModelCatalog(
-            models=[ModelOption(model="test-model", display_name="Test Model", reasoning_efforts=["low", "medium", "high"])],
+            models=[ModelOption(model="test-model", display_name="Test Model", reasoning_efforts=list(TEST_REASONING_EFFORTS))],
             harnesses={harness: ["test-model"] for harness in Harness},
         ),
         egress,
