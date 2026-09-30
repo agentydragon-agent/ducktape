@@ -47,13 +47,7 @@ import {
   type SandboxView,
   type ThreadView,
 } from "../client";
-import {
-  decimalBigInt,
-  useThreadSync,
-  type ThreadEntity,
-  type ThreadState,
-  type ThreadWindow,
-} from "./thread_sync";
+import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadState, type ThreadWindow } from "./thread_sync";
 import {
   historyRows,
   rowKey,
