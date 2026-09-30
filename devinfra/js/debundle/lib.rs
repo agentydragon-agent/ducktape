@@ -58,5 +58,5 @@ pub use reports::schema::{
     AtomicGraphReport, AtomicUnitConflictReport, AtomicUnitEdgeReport, AtomicUnitReport,
     BindingReport, ConflictingClaimReport, EdgeRoleReport, LineRange, ModuleEntry, ModuleKey,
     OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
-    QuotientEdgeReport, QuotientSccReport, SourceLocation,
+    QuotientEdgeReport, QuotientSccReport, SequencedOwnerCause, SourceLocation,
 };
