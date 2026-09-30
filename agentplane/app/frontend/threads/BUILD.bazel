@@ -84,11 +84,11 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":history_rows",
-        ":thread_cards",
-        ":thread_evidence",
         ":local_commands",
         ":projected_session_css",
         ":retained_disclosures",
+        ":thread_cards",
+        ":thread_evidence",
         ":thread_sync",
         ":thread_title",
         "//:node_modules/@bufbuild/protobuf",
@@ -187,8 +187,8 @@ ts_library(
 ts_library(
     name = "thread_evidence",
     srcs = [
-        "thread_evidence.tsx",
         "tabler_icons.d.ts",
+        "thread_evidence.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
