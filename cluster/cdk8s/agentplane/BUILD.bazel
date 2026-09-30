@@ -529,6 +529,7 @@ py_test(
         ":app_settings",
         ":conftest",
         ":egress",
+        ":staging",
         ":testing",
         "//:conftest",
         "@pypi//more_itertools",
