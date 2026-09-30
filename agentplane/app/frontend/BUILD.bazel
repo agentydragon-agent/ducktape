@@ -724,7 +724,6 @@ ts_library(
     srcs = ["sandbox_page.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":test_model_catalog",
         ":client",
         ":live",
         ":sandbox_page",
