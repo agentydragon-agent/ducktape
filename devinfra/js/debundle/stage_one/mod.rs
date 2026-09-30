@@ -103,7 +103,7 @@ pub fn compute_chunk_analysis<F>(
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<ChunkAnalysis>
 where
-    F: FnMut(Span) -> Option<(usize, usize)>,
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let structural = analyze_chunk_structural(module, source_path, &mut line_range_for_span);
     compute_chunk_analysis_from_structural(
@@ -134,7 +134,7 @@ pub fn compute_chunk_analysis_from_structural<F>(
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<ChunkAnalysis>
 where
-    F: FnMut(Span) -> Option<(usize, usize)>,
+    F: FnMut(Span) -> Option<(usize, usize, usize)>,
 {
     let fact_analysis =
         analyze_chunk_with_policy(structural, hints, source_path, line_range_for_span);

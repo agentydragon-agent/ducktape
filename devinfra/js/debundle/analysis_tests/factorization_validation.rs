@@ -874,13 +874,13 @@ fn split_comma_list_assigns_per_declarator_source_ranges() {
     );
     let module = Parser::new_from(lexer).parse_module().unwrap();
     let cm_clone = cm.clone();
-    let line_range_for_span = move |span: swc_common::Span| -> Option<(usize, usize)> {
+    let line_range_for_span = move |span: swc_common::Span| -> Option<(usize, usize, usize)> {
         if span == swc_common::DUMMY_SP {
             return None;
         }
         let lo = cm_clone.lookup_char_pos(span.lo()).line;
         let hi = cm_clone.lookup_char_pos(span.hi()).line;
-        Some((lo, hi))
+        Some((lo, hi, 1))
     };
     let analysis = analyze_chunk(
         &module,
@@ -926,13 +926,13 @@ fn split_export_comma_list_assigns_per_declarator_source_ranges() {
     );
     let module = Parser::new_from(lexer).parse_module().unwrap();
     let cm_clone = cm.clone();
-    let line_range_for_span = move |span: swc_common::Span| -> Option<(usize, usize)> {
+    let line_range_for_span = move |span: swc_common::Span| -> Option<(usize, usize, usize)> {
         if span == swc_common::DUMMY_SP {
             return None;
         }
         let lo = cm_clone.lookup_char_pos(span.lo()).line;
         let hi = cm_clone.lookup_char_pos(span.hi()).line;
-        Some((lo, hi))
+        Some((lo, hi, 1))
     };
     let analysis = analyze_chunk(
         &module,

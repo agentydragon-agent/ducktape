@@ -866,6 +866,7 @@ fn greedy_never_merges_into_residual() {
             source_path: "x.js".to_string(),
             start_line: 200,
             end_line: 204,
+            start_column: None,
         }),
         declared_bindings: vec![],
         statement_kind: StatementKind::VarDecl,

@@ -1734,6 +1734,7 @@ mod tests {
                 source_path: "static/index.js".to_string(),
                 start_line: ordinal + 1,
                 end_line: ordinal + 1,
+                start_column: None,
             }),
             module_ref("residual"),
         )
