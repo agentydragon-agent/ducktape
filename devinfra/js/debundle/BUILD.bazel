@@ -1212,7 +1212,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":js_ast",
-        "@crates//:serde",
+        "@crates//:strum",
         "@crates//:swc_ecma_ast",
     ],
 )
@@ -1221,7 +1221,6 @@ rust_test(
     name = "chunk_facts_test",
     crate = ":chunk_facts",
     edition = "2024",
-    deps = ["@crates//:serde_json"],
 )
 
 # The shape matcher's kernel: a structural homomorphism from a selector needle's
@@ -1251,7 +1250,6 @@ rust_test(
         ":js_ast",
         ":selector_match",
         ":source_match",
-        "@crates//:swc_ecma_ast",
     ],
 )
 
