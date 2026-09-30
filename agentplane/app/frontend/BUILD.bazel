@@ -560,8 +560,8 @@ ts_library(
 ts_library(
     name = "thread_status_dot",
     srcs = [
-        "thread_status_dot.tsx",
         "css.d.ts",
+        "thread_status_dot.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [

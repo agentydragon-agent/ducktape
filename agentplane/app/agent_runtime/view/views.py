@@ -173,6 +173,5 @@ class ThreadView(BaseModel):
         "HARNESS_STATE_STOPPED, or HARNESS_STATE_UNSPECIFIED while no feed has ever attached to this thread."
     )
     active_turn_id: str | None = Field(
-        default=None,
-        description="The runner's currently active turn, or None when it is idle.",
+        default=None, description="The runner's currently active turn, or None when it is idle."
     )
