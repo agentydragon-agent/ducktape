@@ -1622,6 +1622,7 @@ data:
         template: agentplane-runner
         policies:
           - basic
+          - packages
           - github-agentydragon-agent
           - github-clone
           - github-actions-logs
