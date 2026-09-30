@@ -108,9 +108,8 @@ concrete authoring seam.
 
 ## Kubernetes manifests and deliberate external owners
 
-- **Other generators:** `flux/flux-system` belongs to Flux bootstrap;
-  `agentplane-crds/crd-*.yaml` belongs to `//agentplane/crds:generate_bin`. Their
-  YAML is not missing hand-written-to-cdk8s work.
+- **Other generators:** `flux/flux-system` belongs to Flux bootstrap. Its YAML is not
+  missing hand-written-to-cdk8s work.
 - **SOPS and image automation:** ciphertext stays with SOPS/key holders or its rotator;
   `image-pins` and Haku's `{image,static}-metadata.yaml` stay bot-owned. cdk8s owns
   references/composition. Zero hand-written YAML is not an appropriate target for them.
