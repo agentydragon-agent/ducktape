@@ -31,21 +31,6 @@ def airlock(
     )
 
 
-def forgejo_token_rotation(
-    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
-) -> Kustomization:
-    name = "forgejo-token-rotation"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        retry_interval=None,
-        wait=None,
-        timeout="2m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
-    )
-
-
 def haku_egress_proxy(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,

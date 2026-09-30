@@ -306,8 +306,6 @@ repos:
             cluster/(k8s|generated)/.*/ccm-values\.yaml|
             # Authelia configuration files consumed via configMapGenerator, not K8s manifests
             cluster/parked/authelia/(configuration|users)\.yml|
-            # rotate.py rotation list, mounted via configMapGenerator, not a K8s manifest
-            cluster/k8s/agents/forgejo-token-rotation/tokens\.yaml|
             # rotate.py token list, mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/nix-cache/rotators\.yaml|
             # APT manifests for Bazel rules_distroless, not K8s manifests

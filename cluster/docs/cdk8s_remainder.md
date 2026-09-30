@@ -42,11 +42,10 @@ no secret material in generated output, unchanged OAuth scopes and registered ca
 
 ### Authentik, Forgejo and Attic rotator rosters
 
-Inputs: `agents/forgejo-token-rotation/tokens.yaml`, `nix-cache/rotators.yaml`.
-Each consumer under `cluster/rotators/{forgejo_token_rotation,attic_jwt_rotation}/rotate.py`
-already defines its own Config and entry model. Authentik's roster is the converted
-instance: `cluster/cdk8s/authentik_jwt_rotation.py` builds `ROTATIONS` from
-`cluster/rotators/authentik_jwt_rotation/config.py`.
+Inputs: `nix-cache/rotators.yaml`. `cluster/rotators/attic_jwt_rotation/rotate.py` already
+defines its own Config and entry model. Authentik's and Forgejo's rosters are the converted
+instances: `cluster/cdk8s/{authentik_jwt_rotation,forgejo_token_rotation}.py` build `ROTATIONS`
+from their rotator's `config.py`.
 
 Proposed: move these schemas out of runtime modules and build each roster as typed
 application configuration. Derive credential mounts and output Secret names from those
