@@ -48,13 +48,7 @@ import {
   type ThreadView,
 } from "../client";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadState, type ThreadWindow } from "./thread_sync";
-import {
-  historyRows,
-  rowKey,
-  summarizeLifecycleGroup,
-  summarizeRun,
-  type HistoryRow,
-} from "./history_rows";
+import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun, type HistoryRow } from "./history_rows";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot } from "./local_commands";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "../live";
 import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
