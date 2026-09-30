@@ -15,8 +15,15 @@
   animation: agentplane-breathe 1.2s ease-in-out infinite;
 }
 
+/* A confirmed active turn is distinct from transient sync activity, while remaining a green
+   healthy state. Keep its motion subdued; the label provides the non-visual distinction. */
+.agentplane-active-turn-dot {
+  animation: agentplane-breathe 1.2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .agentplane-breathing-dot {
+  .agentplane-breathing-dot,
+  .agentplane-active-turn-dot {
     animation: none;
   }
 }

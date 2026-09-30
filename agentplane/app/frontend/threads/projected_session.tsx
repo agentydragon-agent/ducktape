@@ -609,12 +609,20 @@ interface ThreadStatus {
   color: string;
   label: string;
   breathing?: boolean;
+  activeTurn?: boolean;
 }
 
 /** A state shown as a small colored dot rather than a labeled badge: the label is still there for a
  * screen reader, and for anyone hovering or (on a touch/keyboard device) focusing it. `breathing`
  * pulses the dot, for a state that is still settling rather than settled. */
-function StatusDot({ color, label, breathing }: ThreadStatus): JSX.Element {
+function StatusDot({ color, label, breathing, activeTurn }: ThreadStatus): JSX.Element {
+  const className = [
+    "agentplane-status-dot",
+    breathing && "agentplane-breathing-dot",
+    activeTurn && "agentplane-active-turn-dot",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
     <Tooltip label={label} events={{ hover: true, focus: true, touch: true }}>
       <Box
@@ -623,7 +631,7 @@ function StatusDot({ color, label, breathing }: ThreadStatus): JSX.Element {
         aria-label={label}
         title={label}
         tabIndex={0}
-        className={breathing ? "agentplane-status-dot agentplane-breathing-dot" : "agentplane-status-dot"}
+        className={className}
         style={{ backgroundColor: `var(--mantine-color-${color}-6)` }}
       />
     </Tooltip>
@@ -643,6 +651,7 @@ function threadStatus({
   available,
   operational,
   harness,
+  activeTurn,
 }: {
   sync: ThreadState;
   /** The thread's reads have been failing for longer than a blip. */
@@ -651,6 +660,7 @@ function threadStatus({
   available: boolean;
   operational: Operational | null;
   harness: string | null;
+  activeTurn: boolean;
 }): ThreadStatus {
   if (sync.window?.error) return { color: "red", label: `Thread sync stopped: ${sync.window.error}` };
   if (!sync.window) return { color: "yellow", breathing: true, label: "Connecting…" };
@@ -665,7 +675,13 @@ function threadStatus({
   }
   if (harness === null) return { color: "yellow", label: "No harness observed" };
   if (harness === "stopped") return { color: "gray", label: "Runner feed active · harness stopped" };
-  return { color: "green", label: `Runner feed active · harness ${harness}` };
+  return {
+    color: "green",
+    label: activeTurn
+      ? `Turn running · Runner feed active · harness ${harness}`
+      : `Runner feed active · harness ${harness}`,
+    activeTurn,
+  };
 }
 
 function ProjectedSessionBody({
@@ -840,6 +856,7 @@ function ProjectedSessionBody({
                 available,
                 operational,
                 harness: controls?.harness_state ?? null,
+                activeTurn: Boolean(running && activeTurn),
               })}
             />
             {canResume && (

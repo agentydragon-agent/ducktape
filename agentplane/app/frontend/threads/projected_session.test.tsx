@@ -121,10 +121,12 @@ function viewState({
   harness = "running",
   status = "active",
   model = "test-model",
+  activeTurn = null,
 }: {
   harness?: string | null;
   status?: "active" | "ended" | "failed";
   model?: string | null;
+  activeTurn?: string | null;
 } = {}): ThreadEntity {
   return {
     threadId: THREAD.id,
@@ -137,7 +139,7 @@ function viewState({
     pending: false,
     turnId: null,
     state: {
-      controls: { applied_model: model, active_turn_id: null, harness_state: harness },
+      controls: { applied_model: model, active_turn_id: activeTurn, harness_state: harness },
       operational: { status, last_verified_cursor: "1", feed_error: null },
     },
     textRef: null,
@@ -398,6 +400,23 @@ it.each([
   expect(dot?.getAttribute("aria-label")).toBe(label);
   expect(dot?.getAttribute("style")).toContain(`--mantine-color-${color}-6`);
   expect(dot?.classList.contains("agentplane-breathing-dot")).toBe(breathing);
+});
+
+it("pulses and labels the healthy status dot while a turn is active", async () => {
+  const dot = (await render(threadState({ rows: [viewState({ activeTurn: "turn-1" })] }))).querySelector(
+    ".agentplane-status-dot"
+  );
+  expect(dot?.getAttribute("aria-label")).toBe("Turn running · Runner feed active · harness running");
+  expect(dot?.getAttribute("style")).toContain("--mantine-color-green-6");
+  expect(dot?.classList.contains("agentplane-active-turn-dot")).toBe(true);
+});
+
+it("does not show active-turn status when the runner is not active", async () => {
+  const dot = (
+    await render(threadState({ rows: [viewState({ status: "ended", activeTurn: "turn-1" })] }))
+  ).querySelector(".agentplane-status-dot");
+  expect(dot?.getAttribute("aria-label")).toBe("Runner feed ended · harness running");
+  expect(dot?.classList.contains("agentplane-active-turn-dot")).toBe(false);
 });
 
 // Retained history still says the harness runs and the feed failed; neither is live any more.
