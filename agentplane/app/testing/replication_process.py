@@ -287,8 +287,16 @@ async def _serve(
             store,
             ModelCatalog(
                 models=[
-                    ModelOption(model="test-model-before", display_name="Test Model Before", reasoning_efforts=list(TEST_REASONING_EFFORTS)),
-                    ModelOption(model="test-model-after", display_name="Test Model After", reasoning_efforts=list(TEST_REASONING_EFFORTS)),
+                    ModelOption(
+                        model="test-model-before",
+                        display_name="Test Model Before",
+                        reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                    ),
+                    ModelOption(
+                        model="test-model-after",
+                        display_name="Test Model After",
+                        reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                    ),
                 ],
                 harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
             ),

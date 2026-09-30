@@ -69,9 +69,7 @@ def settings(
     return AppSettingsConfig(
         models=ModelCatalog(
             models=[
-                ModelOption(
-                    model=model, display_name=display_name(model), reasoning_efforts=reasoning_efforts(model)
-                )
+                ModelOption(model=model, display_name=display_name(model), reasoning_efforts=reasoning_efforts(model))
                 for model in all_models
             ],
             harnesses={Harness.CLAUDE: harness_claude, Harness.CODEX: harness_codex},
