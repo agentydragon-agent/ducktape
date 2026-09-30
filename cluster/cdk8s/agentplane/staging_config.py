@@ -37,8 +37,6 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
         action_federation=action_federation,
         action_policy_sets=list(PUBLIC_CODER_ACTION_POLICY_SETS),
-        # BuildBuddy's API key is provisioned only in staging; expose it only to this preset.
-        include_buildbuddy=True,
         # The "haku" sandbox preset (app_settings.py) exists only here, not in
         # agentplane-testing. claude-sonnet-5 to match what Haku's own managed agents run
         # today (haku/runtime/managed_agent/self_hosted/haku.agent.yaml).

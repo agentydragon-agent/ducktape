@@ -12,12 +12,11 @@ import yaml
 from more_itertools import one
 
 from agentplane.egress import sidecar
-from cluster.cdk8s.agentplane import staging, testing
+from cluster.cdk8s.agentplane import testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
-    BUILDBUDDY_POLICY,
     FORGEJO_HAKU_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GOOGLE_READONLY_POLICY,
@@ -125,37 +124,6 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             PLAID_PGWEB_POLICY,
         }
         for doc in manifests
-    )
-
-
-def test_public_coder_preset_grants_buildbuddy_only_in_staging(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    staging_docs = agentplane_manifests[staging.ENV.namespace]
-    staging_config = yaml.safe_load(_by_name(staging_docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    preset = staging_config["sandbox_presets"]["public-coder"]
-    assert BUILDBUDDY_POLICY in preset["policies"]
-
-    buildbuddy_policy = _by_name(staging_docs, "EgressPolicy", BUILDBUDDY_POLICY)
-    buildbuddy_rule = one(buildbuddy_policy["spec"]["rules"])
-    assert set(buildbuddy_rule["hosts"]) == {"app.buildbuddy.io", "remote.buildbuddy.io"}
-    credential_name = buildbuddy_rule["credentialRef"]["name"]
-    credential = _by_name(staging_docs, "EgressCredential", credential_name)
-    assert credential["spec"]["source"]["secretRef"] == {"name": "buildbuddy-api-key", "key": "api-key"}
-    assert credential["spec"]["targets"] == [{"header": "x-buildbuddy-api-key", "method": "wholeValue"}]
-
-    instructions = staging_config["thread_presets"]["public-coder-codex"]["instructions"]
-    assert "Agentplane egress rules" in instructions
-    assert "x-buildbuddy-api-key" in instructions
-    assert "never read, print, or persist the real key" in instructions
-
-    testing_docs = agentplane_manifests[testing.ENV.namespace]
-    testing_config = yaml.safe_load(_by_name(testing_docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    testing_preset = testing_config["sandbox_presets"]["public-coder"]
-    assert BUILDBUDDY_POLICY not in testing_preset["policies"]
-    assert not any(
-        doc["kind"] == "EgressCredential" and doc["metadata"]["name"] == BUILDBUDDY_POLICY
-        for doc in testing_docs
     )
 
 
