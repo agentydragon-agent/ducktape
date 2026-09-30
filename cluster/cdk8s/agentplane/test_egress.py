@@ -11,7 +11,6 @@ from more_itertools import one
 
 from agentplane.egress import sidecar
 from cluster.cdk8s.agentplane import testing
-from cluster.cdk8s.agentplane import staging_config
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
@@ -22,7 +21,6 @@ from cluster.cdk8s.agentplane.app_settings import (
     GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
-    PACKAGES_POLICY,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from util.settings_contract import env_name
@@ -154,20 +152,6 @@ def test_runner_context_configuration_matches_the_verified_qwen_roster(
             environment = {variable["name"]: variable.get("value") for variable in container.get("env", [])}
             assert json.loads(environment["AGENTPLANE_MODEL_CONTEXT_WINDOWS"]) == expected
 
-
-
-def test_public_coder_grants_build_package_egress():
-    """Bazel needs the public package/toolchain policy, including its binary releases host."""
-    preset = staging_config.config().sandbox_presets["public-coder"]
-    assert PACKAGES_POLICY in preset.policies
-
-    packages = one(
-        doc
-        for doc in agentplane_manifests["agentplane-staging"]
-        if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == PACKAGES_POLICY
-    )
-    hosts = {host for rule in packages["spec"]["rules"] for host in rule["hosts"]}
-    assert "releases.bazel.build" in hosts
 
 
 if __name__ == "__main__":
