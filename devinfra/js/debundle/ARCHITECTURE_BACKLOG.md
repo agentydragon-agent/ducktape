@@ -94,11 +94,14 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
    (`DeferredImport` / `IdentRewriteTarget` / `PartialSwapIdentRewriter` and
    the `make_*` constructors), and the post-strip consumer scan are each
    liftable.
-2. Two parallel top-level fact extractors:
-   `program_analysis.rs::analyze_program_shallow` keeps its own traversal and
-   `classify_top_level_decl` alongside the `facts/` walk; the two rule sets
-   can drift independently. Fold the shallow extractor into the facts
-   traversal or derive its records from `StatementFacts`.
+2. Two top-level fact traversals remain: `program_analysis.rs::analyze_program_shallow`
+   scans every chunk during prepare to build the manifest and determine AST
+   retention; `facts/` performs the more expensive owner/graph analysis only
+   for chunks that need it. Declaration shape classification is shared via
+   `binding_targets::decl_shape`, but the traversals still have separate
+   responsibilities. Before folding shallow extraction into facts, preserve
+   the cheap prepare path for pass-through chunks and the manifest's
+   source-order/unsplit-var-declaration semantics.
 3. `lowering/lower.rs` — extract the remaining inline phases of `lower_chunk`
    (naturalization, disambiguation, import planning, the per-module loop);
    each needs substantial captured state from `LowerChunkInputs` (15–20

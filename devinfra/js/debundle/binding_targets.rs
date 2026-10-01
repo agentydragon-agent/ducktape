@@ -68,6 +68,24 @@ impl Visit for HoistedVarCollector {
     fn visit_class(&mut self, _node: &Class) {}
 }
 
+/// The declaration shapes the chunk fact extractor and the shallow manifest
+/// extractor both recognize. Other SWC declarations are not owner anchors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclShape {
+    Function,
+    Class,
+    Variable,
+}
+
+pub fn decl_shape(decl: &Decl) -> Option<DeclShape> {
+    match decl {
+        Decl::Fn(_) => Some(DeclShape::Function),
+        Decl::Class(_) => Some(DeclShape::Class),
+        Decl::Var(_) => Some(DeclShape::Variable),
+        _ => None,
+    }
+}
+
 /// Collect all `Id`s bound by a declaration. Covers `Fn`, `Class`,
 /// and `Var` (including destructuring patterns); other `Decl`
 /// variants produce an empty vec.
