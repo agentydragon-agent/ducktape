@@ -1296,7 +1296,8 @@ fn is_valid_identifier(name: &str) -> bool {
 mod tests {
     use super::*;
     use artifact::{
-        ChunkAnalysisReport, ChunkArtifact, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
+        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
+        JsChunk, JsFile,
     };
     use spec::{VendorLevel, VendorMark, VendorRole};
 
