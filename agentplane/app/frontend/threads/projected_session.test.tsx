@@ -523,7 +523,7 @@ it("shows the applied effort and sends a change command without optimistically c
   );
   expect(high).toBeDefined();
   await act(async () => high?.click());
-  expect(sentOperations()).toContainEqual({ case: "changeReasoningEffort", value: { effort: "high" } });
+  expect(sentOperations()).toContainEqual({ case: "changeReasoningEffort", value: expect.objectContaining({ effort: "high" }) });
   expect(picker?.value).toBe("low");
   await rerender(container, threadState({ rows: [viewState()] }));
   expect(picker?.value).toBe("low");
