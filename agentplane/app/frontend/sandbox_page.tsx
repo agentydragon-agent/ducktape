@@ -237,14 +237,14 @@ export function SandboxPage({
       setModel((current) =>
         current && offered.some((option) => option.model === current) ? current : (offered[0]?.model ?? null)
       );
-      const options = offered[0]?.reasoning_efforts ?? [];
-      setEffort((current) => (options.includes(current) ? current : (options[0] ?? "")));
     })();
   }, [harness]);
 
   useEffect(() => {
-    const efforts = models.find((option) => option.model === model)?.reasoning_efforts ?? [];
-    if (!efforts.includes(effort)) setEffort(efforts[0] ?? "");
+    const option = models.find((entry) => entry.model === model);
+    // A Sandbox binding can arrive before the model catalog; do not erase its default
+    // while the selected model is not yet known to this catalog.
+    if (option && !option.reasoning_efforts.includes(effort)) setEffort(option.reasoning_efforts[0] ?? "");
   }, [effort, model, models]);
 
   useEffect(() => {

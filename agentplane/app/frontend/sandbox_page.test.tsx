@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 
-import type { ThreadView } from "./client";
+import type { SandboxView, ThreadView } from "./client";
 import type { Live, SandboxSnapshot } from "./live";
 import { SandboxPage } from "./sandbox_page";
 
@@ -51,6 +51,7 @@ afterEach(async () => {
   container.remove();
   vi.useRealTimers();
   live.snapshot.threads = [];
+  (live.snapshot.sandbox as SandboxView).binding = null;
 });
 afterAll(() => vi.unstubAllGlobals());
 
@@ -120,6 +121,49 @@ function labeledInput(label: string): HTMLInputElement {
   if (!(control instanceof HTMLInputElement)) throw new Error(`Missing ${label} input`);
   return control;
 }
+
+async function choose(label: string, value: string): Promise<void> {
+  const field = labeledInput(label);
+  await act(async () => field.click());
+  const list = document.getElementById(field.getAttribute("aria-controls") ?? "");
+  const option = [...(list?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])].find(
+    (node) => node.textContent === value
+  );
+  if (!option) throw new Error(`Missing ${value} option`);
+  await act(async () => option.click());
+}
+
+it("preserves a Sandbox reasoning default through model loading and submits it on later Thread launch", async () => {
+  (live.snapshot.sandbox as SandboxView).binding = {
+    bootstrap: "",
+    thread_defaults: { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" },
+  };
+  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
+    Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
+  );
+  await render(sessions);
+  expect(labeledInput("Reasoning effort").value).toBe("high");
+  await act(async () => newSession().click());
+  const sent = sessions.mock.calls.find(([request]) => request.method === "POST")?.[0];
+  expect(sent).toBeDefined();
+  expect((await sent?.json()).spec.reasoningEffort).toBe("high");
+});
+
+it("lets a later Thread override the Sandbox reasoning default locally", async () => {
+  (live.snapshot.sandbox as SandboxView).binding = {
+    bootstrap: "",
+    thread_defaults: { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" },
+  };
+  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
+    Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
+  );
+  await render(sessions);
+  await choose("Reasoning effort", "medium");
+  await act(async () => newSession().click());
+  const sent = sessions.mock.calls.find(([request]) => request.method === "POST")?.[0];
+  expect((await sent?.json()).spec.reasoningEffort).toBe("medium");
+  expect((live.snapshot.sandbox as SandboxView).binding?.thread_defaults?.reasoning_effort).toBe("high");
+});
 
 /** Mantine portals a Menu's dropdown onto `document.body`, so its items live outside `container`. */
 function menuItem(text: string): HTMLElement {
