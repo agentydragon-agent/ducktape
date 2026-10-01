@@ -59,30 +59,13 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
         # self-service operation, so click-free, while `create_grant` (widening) stays manual.
         _exact_tools("grants_own_revoke", "grants", ["revoke_grants"]),
         _any_of("public_coder_v1", "kubernetes_reads", "grants_self_introspection", "grants_own_revoke"),
-        _exact_tools(
-            "haku_sandbox_control",
-            "sandbox",
-            ["provision_sandbox", "exec_sandbox", "get_sandbox_info", "list_sandboxes", "dispose_sandbox"],
-        ),
-        _any_of(
-            "haku_v1", "haku_sandbox_control", "kubernetes_reads", "grants_self_introspection", "grants_own_revoke"
-        ),
+        _any_of("haku_v1", "kubernetes_reads", "grants_self_introspection", "grants_own_revoke"),
         {"id": "manual_review", "type": "never"},
     ]
 
 
 def _mcp_servers() -> dict[str, Any]:
     return {
-        # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the
-        # `agent_sandbox` pool, bootstrap it, run bounded bash via pods/exec, dispose it.
-        # Credential-free -- Console's own ServiceAccount holds the claim/exec RBAC
-        # (haku/workspaces.py). By operator
-        # directive the whole surface in `haku_sandbox_control` auto-approves so Haku drives
-        # its own box tap-free: exec_sandbox is arbitrary bash, but no more than the direct
-        # `kubectl exec` Haku's SA can already run in haku-sandbox, and dispose_sandbox only
-        # releases the ephemeral claim Haku itself created. `in_process_server_ids` on the
-        # profile is what grants access to the server at all.
-        "sandbox": {"id": "sandbox", "backend": {"kind": "in_process", "credential": {"kind": "none"}}},
         # One server fronting every temporary-grant domain (#4918): create/list/get/release/
         # revoke over the shared envelope, each payload tagged with its `domain` (kubernetes |
         # http), plus the side-effect-free SAR check `kubernetes_can_i`. Both ledgers are
@@ -90,7 +73,7 @@ def _mcp_servers() -> dict[str, Any]:
         # ruling on #4986): any Agent may ask. `create_grant` is deliberately in NO
         # auto-approval policy: grant creation requires a manually approved source ToolCall
         # (an auto-approved call cannot mint a grant).
-        "grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}},
+        "grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}
     }
 
 
@@ -103,7 +86,7 @@ def config() -> dict[str, Any]:
         # every `grants` call queues for the operator, and create_grant is never
         # auto-approvable (operator ruling on #4986).
         "access_profiles": [
-            {"id": "haku", "auto_approval_policy": "haku_v1", "in_process_server_ids": ["grants", "sandbox"]},
+            {"id": "haku", "auto_approval_policy": "haku_v1", "in_process_server_ids": ["grants"]},
             {"id": "public-coder", "auto_approval_policy": "public_coder_v1", "in_process_server_ids": ["grants"]},
             {"id": "manual-review", "auto_approval_policy": "manual_review", "in_process_server_ids": ["grants"]},
         ],
@@ -131,36 +114,6 @@ def config() -> dict[str, Any]:
         # authoritative even if a client constructs a wider duration than the tool schema
         # recommends.
         "kubernetes_grant_max_lifetime_seconds": 3600,
-        # The one Agent Sandbox environment the `sandbox` server hands out: the Haku pool
-        # (haku/workspaces.py) and the reviewed bootstrap each claim runs. Each claim
-        # records the pod-describing fields it was created for, so editing one leaves live
-        # claims usable and flags them in `warnings`; the budgets are read live and never
-        # recorded (haku/sandbox/README.md).
-        "agent_sandbox": {
-            "sandbox": {
-                "namespace": "haku-sandbox",
-                "warm_pool": "haku",
-                "container": "workspace",
-                "default_cwd": "/workspace/haku-state",
-                # initial_ttl must exceed provisioning_timeout + bootstrap.timeout; exec
-                # extension must be >= max_exec_timeout (validated at startup).
-                "initial_ttl_seconds": 28800,
-                "exec_ttl_extension_seconds": 7200,
-                "provisioning_timeout_seconds": 600,
-                "max_exec_timeout_seconds": 300,
-                "max_output_bytes": 100000,
-            },
-            "bootstrap": {
-                "cwd": "/workspace",
-                "timeout_seconds": 300,
-                # The reviewed per-claim bootstrap is one baked script -- egress CA trust, git
-                # identity, git credentials, and the haku-state checkout -- kept in its native
-                # file (haku/sandbox/image/haku-sandbox-setup.sh) so shfmt/
-                # shellcheck lint it. Changing bootstrap behavior therefore means an image
-                # rebuild + rollout, not a ConfigMap edit.
-                "script": "set -euo pipefail\n/usr/local/bin/haku-sandbox-setup.sh\n",
-            },
-        },
         # Static machine Agents: each has a fixed durable Agent UUID, globally reserved display
         # name, and bearer bound to one Operator. The bearer and controller-fed Authentik user
         # id are secret leaves, overlaid through `HAKU_CONSOLE__STATIC_AGENTS__<slot>__{TOKEN,
