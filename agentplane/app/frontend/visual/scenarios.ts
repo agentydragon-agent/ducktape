@@ -24,6 +24,8 @@ export interface Scenario extends ScenarioOptions {
   openSettings?: boolean;
   /** Flip every Raw switch as it mounts: no URL param toggles one. */
   openRaw?: boolean;
+  /** Show live pending Actions over a non-Actions page. */
+  actionsPopup?: boolean;
   /** Render a bounded first history page with a Load more control. */
   historyPaged?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
@@ -338,6 +340,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     openActionPolicySets: true,
   },
 
+  actions_popup_desktop: {
+    element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 1000 },
+    actionsPopup: true, captureViewport: true, readySelectors: ['.mantine-Drawer-content', '.mantine-Drawer-content details'],
+  },
+  actions_popup_phone: {
+    element: "#app", route: "/sandboxes", viewport: { width: 390, height: 915 },
+    actionsPopup: true, captureViewport: true, readySelectors: ['.mantine-Drawer-content', '.mantine-Drawer-content details'],
+  },
   actions: { element: "#app", route: "/actions", viewport: { width: 1200, height: 1100 }, readySelectors: ["details"] },
   actions_phone: {
     element: "#app",

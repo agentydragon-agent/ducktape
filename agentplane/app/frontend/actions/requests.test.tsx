@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 
 import { act } from "react";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import { STALE_AFTER_MS } from "../stream_status";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
 import { ActionRequests, stateLabel } from "./requests";
-import { button, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./testing";
+import { ActionAffordance } from "./affordance";
+import { button, mount, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./testing";
 
 describe("ActionRequests", () => {
   it("shows structured list errors without an empty-state claim", async () => {
@@ -229,6 +231,57 @@ describe("ActionRequests", () => {
       expect(container.textContent).toContain("Pending (1)");
     } finally {
       vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+
+describe("global Action affordance", () => {
+  it("opens on new SSE requests, shares cards with the page, respects dismissal, and closes on the last decision", async () => {
+    let stream: EventTarget | undefined;
+    const close = vi.fn();
+    class Stream extends EventTarget {
+      close = close;
+      constructor(url: string) {
+        super();
+        expect(url).toBe("/actions/stream?state=decision_pending");
+        stream = this;
+      }
+    }
+    vi.stubGlobal("EventSource", Stream);
+    const decide = vi.spyOn(actionService, "decide").mockImplementation(async (row, verdict) => ({
+      ...row, state: verdict === "allow" ? "allowed" : "denied", version: row.version + 1,
+    }));
+    const send = async (rows: ActionRequestView[]): Promise<void> => {
+      await act(async () => stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) })));
+    };
+    try {
+      const container = await mount(<MemoryRouter><ActionAffordance><ActionRequests embedded /></ActionAffordance></MemoryRouter>);
+      const first = request("decision_pending", 1);
+      const second = request("decision_pending", 2);
+      await send([first]);
+      expect(document.querySelector('.mantine-Drawer-content')?.textContent).toContain(first.title);
+      expect(document.querySelector('.mantine-Drawer-content')?.textContent).toContain("Exact arguments (unredacted)");
+      expect(container.textContent).toContain("Pending (1)");
+      expect(close).not.toHaveBeenCalled(); // the page uses the shell's single stream
+      const dismiss = document.querySelector<HTMLButtonElement>('.mantine-Drawer-close');
+      await act(async () => dismiss?.click());
+      expect(document.querySelector('.mantine-Drawer-content')).toBeNull();
+      await send([first]); // identical reconnect does not reopen
+      expect(document.querySelector('.mantine-Drawer-content')).toBeNull();
+      await send([first, second]);
+      expect(document.querySelector('.mantine-Drawer-content')?.textContent).toContain(second.title);
+      await act(async () => button(document.querySelector('.mantine-Drawer-content')!, "Deny").click());
+      expect(decide).toHaveBeenCalledWith(first, "deny");
+      await send([second]);
+      expect(document.querySelector('.mantine-Drawer-content')?.textContent).toContain(second.title);
+      await act(async () => button(document.querySelector('.mantine-Drawer-content')!, "Allow").click());
+      expect(document.querySelector('.mantine-Drawer-content')).toBeNull();
+      await unmountLast();
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      decide.mockRestore();
       vi.unstubAllGlobals();
     }
   });

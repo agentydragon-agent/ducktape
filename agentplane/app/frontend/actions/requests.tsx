@@ -1,5 +1,5 @@
 import { Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { type JSX, useCallback, useEffect, useState } from "react";
+import { createContext, type JSX, useCallback, useContext, useEffect, useState } from "react";
 
 import { displayableError } from "../client";
 import { followStream, type StreamConnection } from "../live_stream";
@@ -26,7 +26,7 @@ export function stateLabel(state: ActionState): string {
 /** Shared fetch/decide plumbing for the pending and history views: one live snapshot (the real
  * service pushes over `/actions/stream`) or one polled `list()` (any other service, e.g. tests),
  * which has no `stream`. */
-export function useActionRequests(service: ActionService): {
+export function useActionRequests(service: ActionService, enabled = true): {
   requests: ActionRequestView[];
   error: string | null;
   loading: boolean;
@@ -55,6 +55,7 @@ export function useActionRequests(service: ActionService): {
   }, [service]);
 
   useEffect(() => {
+    if (!enabled) return;
     if (service !== actionService) {
       void refresh();
       return;
@@ -74,7 +75,7 @@ export function useActionRequests(service: ActionService): {
       },
       onConnection: setConnection,
     });
-  }, [refresh, service]);
+  }, [enabled, refresh, service]);
 
   async function decideRequest(request: ActionRequestView, verdict: Verdict): Promise<void> {
     setDeciding(request.id);
@@ -102,7 +103,9 @@ export function useActionRequests(service: ActionService): {
   };
 }
 
-function PendingActionCard({
+export const ActionRequestsContext = createContext<ReturnType<typeof useActionRequests> | null>(null);
+
+export function PendingActionCard({
   request,
   deciding,
   onDecide,
@@ -144,7 +147,10 @@ export function ActionRequests({
   service?: ActionService;
   embedded?: boolean;
 }): JSX.Element {
-  const { requests, error, loading, stream, deciding, decide } = useActionRequests(service);
+  const shared = useContext(ActionRequestsContext);
+  const local = useActionRequests(service, !(shared !== null && service === actionService));
+  const { requests, error, loading, stream, deciding, decide } =
+    shared !== null && service === actionService ? shared : local;
   const pending = requests.filter((request) => request.state === "decision_pending");
 
   return (
