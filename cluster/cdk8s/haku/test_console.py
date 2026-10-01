@@ -36,12 +36,11 @@ def test_recall_stays_unwired(haku_console_manifests: list[dict[str, Any]]) -> N
 
 def test_sandbox_stays_unwired(haku_console_manifests: list[dict[str, Any]]) -> None:
     """Retired Sandbox MCP tools have no deployed server, profile grant, or approval path."""
+    objects = haku_console_manifests
     config = yaml.safe_load(
-        one(
-            o
-            for o in haku_console_manifests
-            if o["kind"] == "ConfigMap" and o["metadata"]["name"] == "haku-console-config"
-        )["data"]["config.yaml"]
+        one(o for o in objects if o["kind"] == "ConfigMap" and o["metadata"]["name"] == "haku-console-config")["data"][
+            "config.yaml"
+        ]
     )
     assert "agent_sandbox" not in config
     assert "sandbox" not in config["mcp"]["servers"]
