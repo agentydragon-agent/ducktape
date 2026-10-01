@@ -147,6 +147,11 @@ remain available for a future re-enable, but the deployed catalog registers no `
 access profiles grant no Recall indexes, and no index-maintenance workers run. Connected MCP clients
 therefore do not discover or read the retained indexes.
 
+The `sandbox` in-process MCP server is absent from the deployed catalog, along with its
+access-profile grant, `agent_sandbox` configuration, and auto-approval policy. The tool implementation
+is retained in the codebase, but is not exposed by this deployment. This does not revoke Console's
+Kubernetes sandbox RBAC; that authority has a separate retirement decision.
+
 The trusted frontend resolves opaque IDs by composing ordinary read tools. There are no parallel
 preview-only MCP tools or HTTP routes.
 
