@@ -285,16 +285,6 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // Cross-chunk import naturalization runs after lowering has exposed
     // target aliases but before source-specifier canonicalization changes the
     // original chunk-relative import paths used by ArtifactSourceImportResolver.
-    (indexed, ()) = indexed.update_file_bodies(|artifact, indexes| {
-        naturalize_cross_chunk_imports(
-            artifact,
-            indexes,
-            &selected_lowerings,
-            &processed_chunk_names,
-        )?;
-        Ok(())
-    })?;
-
     // Emission rewrites, one artifact pass over two disjoint file sets:
     //
     // * the unified pass-through directive rewrite over files emitted
@@ -315,6 +305,12 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     let mut vendor_rewrite_counts = vendor_lowering_rewrites;
     let emission_references;
     (indexed, emission_references) = indexed.update_file_bodies(|artifact, indexes| {
+        naturalize_cross_chunk_imports(
+            artifact,
+            indexes,
+            &selected_lowerings,
+            &processed_chunk_names,
+        )?;
         apply_emission_rewrites_in_place(artifact, &vendor_plan, indexes)
     })?;
     merge_rewrite_counts(&mut vendor_rewrite_counts, emission_references);
