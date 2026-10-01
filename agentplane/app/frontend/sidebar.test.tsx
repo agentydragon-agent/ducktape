@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SandboxView, ThreadView } from "./client";
 import type { ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
+import { ThreadsLiveProvider } from "./live";
 import { threadStatusFromSnapshot } from "./thread_status";
 import { DEGRADED_AFTER_MS } from "./stream_status";
 
@@ -116,17 +117,19 @@ async function render(
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
-          <Sidebar
-            settingsOpen={options.settingsOpen ?? false}
-            onOpenSettings={onOpenSettings}
-            open={options.open ?? false}
-            onClose={onClose}
-          />
-          <Routes>
-            <Route path="*" element={<LocationProbe />} />
-          </Routes>
-        </MemoryRouter>
+        <ThreadsLiveProvider>
+          <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
+            <Sidebar
+              settingsOpen={options.settingsOpen ?? false}
+              onOpenSettings={onOpenSettings}
+              open={options.open ?? false}
+              onClose={onClose}
+            />
+            <Routes>
+              <Route path="*" element={<LocationProbe />} />
+            </Routes>
+          </MemoryRouter>
+        </ThreadsLiveProvider>
       </MantineProvider>
     )
   );
@@ -183,7 +186,10 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
 
 it("does not show a running dot for an archived thread or an ended/failed runner feed", () => {
   const running = thread({
-    id: "t-1", sandbox: "test-sandbox", session_id: "s-1", harness_state: "HARNESS_STATE_RUNNING",
+    id: "t-1",
+    sandbox: "test-sandbox",
+    session_id: "s-1",
+    harness_state: "HARNESS_STATE_RUNNING",
     active_turn_id: "turn-1",
   });
   const box = sandbox("test-sandbox");

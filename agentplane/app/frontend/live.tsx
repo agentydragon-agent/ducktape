@@ -79,8 +79,10 @@ export function ThreadsLiveProvider({ children }: { children: ReactNode }): JSX.
   return <ThreadsLiveContext.Provider value={live}>{children}</ThreadsLiveContext.Provider>;
 }
 
-export function useThreadsLive(): Live<ThreadsSnapshot> | null {
-  return useContext(ThreadsLiveContext);
+export function useRequiredThreadsLive(): Live<ThreadsSnapshot> {
+  const live = useContext(ThreadsLiveContext);
+  if (!live) throw new Error("Thread status requires ThreadsLiveProvider");
+  return live;
 }
 
 const AGE = new Intl.RelativeTimeFormat("en", { numeric: "auto" });

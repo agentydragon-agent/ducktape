@@ -19,7 +19,7 @@ import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react"
 import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
-import { LiveStatus, liveThreadsUrl, useLive, useThreadsLive, type Live, type ThreadsSnapshot } from "./live";
+import { LiveStatus, useRequiredThreadsLive, type Live, type ThreadsSnapshot } from "./live";
 import { stateDetail } from "./sandboxes";
 import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
@@ -219,12 +219,7 @@ function ThreadRow({
         }
       }}
     >
-      <ThreadStatusDot
-        color={status.color}
-        label={status.label}
-        pulse={status.pulse}
-        size="small"
-      />
+      <ThreadStatusDot color={status.color} label={status.label} pulse={status.pulse} size="small" />
       <span className="agentplane-sidebar-row-name">{label}</span>
       <Tooltip
         label={thread.archived ? "Unarchive" : harnessRunning ? "Stop the harness before archiving" : "Archive"}
@@ -319,14 +314,7 @@ type SidebarProps = {
 };
 
 export function Sidebar(props: SidebarProps): JSX.Element {
-  const shared = useThreadsLive();
-  return shared ? <SidebarView {...props} live={shared} /> : <StandaloneSidebar {...props} />;
-}
-
-/** Isolated mounts (including component tests) still own a stream; the shell never does. */
-function StandaloneSidebar(props: SidebarProps): JSX.Element {
-  const live = useLive<ThreadsSnapshot>(liveThreadsUrl(), "Threads");
-  return <SidebarView {...props} live={live} />;
+  return <SidebarView {...props} live={useRequiredThreadsLive()} />;
 }
 
 function SidebarView({

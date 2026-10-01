@@ -99,7 +99,12 @@ async def _last(
         select(Event.at).where(Event.thread_id == thread_id).order_by(Event.at.desc()).limit(1)
     )
     state = await session.get(FeedState, thread_id)
-    return last_cursor, last_at, (state.attached if state is not None else None), (state.end if state is not None else None)
+    return (
+        last_cursor,
+        last_at,
+        (state.attached if state is not None else None),
+        (state.end if state is not None else None),
+    )
 
 
 async def _set_thread(session: AsyncSession, thread_id: UUID, **values: object) -> ThreadView:
