@@ -53,5 +53,15 @@ def test_sandbox_stays_unwired(haku_console_manifests: list[dict[str, Any]]) -> 
         assert "haku_sandbox_control" not in policy.get("policies", [])
 
 
+def test_deployment_disables_console_mcp_endpoint(haku_console_manifests: list[dict[str, Any]]) -> None:
+    objects = haku_console_manifests
+    config = yaml.safe_load(
+        one(o for o in objects if o["kind"] == "ConfigMap" and o["metadata"]["name"] == "haku-console-config")["data"][
+            "config.yaml"
+        ]
+    )
+    assert config["mcp_server_enabled"] is False
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

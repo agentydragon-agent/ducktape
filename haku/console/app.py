@@ -339,22 +339,19 @@ def create_app(
         kubernetes_authorization=kubernetes_authorization,
     )
 
-    # The console's own Agent-and-Operator MCP server, mounted at /mcp — its reason to run.
-    # Its tools re-expose the connected servers through the same application service. Always built;
-    # `build_auth` fails loud if nothing can authenticate to it (no static agent, no OAuth).
+    # The agent-facing MCP endpoint is separately switchable from the approval ledger and
+    # in-process catalog, which the browser still uses even when /mcp is disabled.
     console_mcp_context = server.ConsoleMcpContext(
         settings=settings, tool_calls=tool_calls, dispatcher=dispatcher, catalogs=catalogs
     )
 
-    console_mcp = server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver)
-    # The console runs multiple interchangeable replicas. FastMCP's default stateful HTTP
-    # transport keeps its session map in-process, so a subsequent request routed to another pod
-    # receives "Session not found". Haku's tools keep durable state in Postgres and do not need
-    # transport-local sessions; give every MCP request a fresh transport instead.
-    mcp_asgi = console_mcp.http_app(path=MCP_PATH, stateless_http=True)
-    install_operator_session_route_guard(mcp_asgi, path=MCP_PATH)
-    # See `mount.McpSessionManagerHealth` for why `/healthz` needs to watch this.
+    mcp_asgi = None
     mcp_session_manager_health = mount.McpSessionManagerHealth()
+    if settings.mcp_server_enabled:
+        console_mcp = server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver)
+        # Stateless HTTP keeps requests interchangeable across Console replicas.
+        mcp_asgi = console_mcp.http_app(path=MCP_PATH, stateless_http=True)
+        install_operator_session_route_guard(mcp_asgi, path=MCP_PATH)
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -372,7 +369,10 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with mcp_asgi.lifespan(app):
+                if mcp_asgi is not None:
+                    async with mcp_asgi.lifespan(app):
+                        yield
+                else:
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
@@ -390,7 +390,8 @@ def create_app(
     # outer ASGI mount, so explicitly expose only its well-known routes here; the static-bearer-only
     # provider returns no routes.
     app = FastAPI(title="Haku console", lifespan=_lifespan)
-    app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path=MCP_PATH))
+    if settings.mcp_server_enabled:
+        app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path=MCP_PATH))
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
     # Expose the shared database resources to internal dependencies and diagnostics; every store
@@ -493,7 +494,14 @@ def create_app(
     )
 
     # MCP server (streamable HTTP), mounted after the API routers and before the SPA.
-    mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi, health=mcp_session_manager_health)
+    if mcp_asgi is not None:
+        mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi, health=mcp_session_manager_health)
+    else:
+        # Do not let the dev SPA fallback serve HTML for a retired protocol endpoint.
+        @app.api_route(MCP_PATH, methods=["GET", "POST", "DELETE"])
+        @app.api_route(f"{MCP_PATH}/{{path:path}}", methods=["GET", "POST", "DELETE"])
+        async def _disabled_mcp() -> Response:
+            return Response(status_code=404)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

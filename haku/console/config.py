@@ -312,6 +312,11 @@ class ConsoleProcessConfig(BaseModel):
     # deployment wiring: it must leave margin below the deployment's own request timeout.
     max_wait_for_result_ms: int = Field(ge=5_000)
 
+    # Controls exposure of Console's own agent-facing /mcp HTTP endpoint (and its OAuth
+    # discovery routes), not the underlying tool-call/approval service used by the UI.
+    # Default on for existing deployments and tests; production can deliberately opt out.
+    mcp_server_enabled: bool = True
+
     # The background reconciler refreshes every Operator's configured MCP catalogs this often.
     # `tools/list` itself reads only the already-published in-memory generation, so reflection
     # can never extend the client startup path. This is also the dispatcher's successful-reflection

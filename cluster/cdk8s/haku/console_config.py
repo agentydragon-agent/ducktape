@@ -134,5 +134,6 @@ def config() -> dict[str, Any]:
                 "access_profile_id": "public-coder",
             },
         },
+        "mcp_server_enabled": False,
         "mcp": {"servers": _mcp_servers()},
     }
