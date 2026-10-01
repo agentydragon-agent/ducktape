@@ -189,6 +189,28 @@ async def test_plain_interrupt_preserves_queued_inputs_for_the_next_native_reque
     assert started[-2:] == [first.uuid, second.uuid]
 
 
+async def test_runtime_effort_control_changes_next_anthropic_request(
+    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+) -> None:
+    async with claude.start(anthropic_messages) as run:
+        answer = await run.set_effort("low")
+        assert answer.response.subtype == "success", answer
+        prompt = await run.send("Reply with exactly: LOW_EFFORT_OK")
+        async with await anthropic_messages.await_next_request() as exchange:
+            assert exchange.request.output_config == {"effort": "low"}
+            await exchange.send(*sse.message_stream([sse.Text("LOW_EFFORT_OK")], model=MODEL).events)
+        assert (await prompt.result()).result == "LOW_EFFORT_OK"
+
+        answer = await run.set_effort("high")
+        assert answer.response.subtype == "success", answer
+        prompt = await run.send("Reply with exactly: HIGH_EFFORT_OK")
+        async with await anthropic_messages.await_next_request() as exchange:
+            assert exchange.request.output_config == {"effort": "high"}
+            await exchange.send(*sse.message_stream([sse.Text("HIGH_EFFORT_OK")], model=MODEL).events)
+        assert (await prompt.result()).result == "HIGH_EFFORT_OK"
+    assert len([frame for frame in run.native_frames() if frame.get("type") == "control_response"]) >= 2
+
+
 async def test_set_model_during_an_active_turn_controls_the_next_model_request(
     claude: ClaudeHarness, anthropic_messages: AnthropicMessages
 ) -> None:
