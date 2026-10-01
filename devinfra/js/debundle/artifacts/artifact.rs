@@ -684,14 +684,14 @@ pub struct ChunkFileRecord {
     pub role: FileRole,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ImportRecord {
     pub line: Option<usize>,
     pub source: String,
     pub specifiers: Vec<ImportSpecifierRecord>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ImportSpecifierRecord {
     pub kind: ImportSpecifierKind,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1023,17 +1023,7 @@ impl ArtifactIndexes {
                     caller_file: caller_file.clone(),
                     source: import.source.clone(),
                     target,
-                    named_imports: import
-                        .specifiers
-                        .iter()
-                        .filter(|specifier| specifier.kind == ImportSpecifierKind::Named)
-                        .map(|specifier| {
-                            specifier
-                                .imported
-                                .clone()
-                                .unwrap_or_else(|| specifier.local.clone())
-                        })
-                        .collect(),
+                    named_imports: named_manifest_imports(import),
                 };
                 self.manifest_imports_by_target_chunk
                     .entry(record.target.target_chunk_id)
@@ -1042,6 +1032,22 @@ impl ArtifactIndexes {
             }
         }
     }
+}
+
+/// The manifest index records only named imported bindings, not source lines
+/// or default/namespace import locals.
+fn named_manifest_imports(import: &ImportRecord) -> Vec<String> {
+    import
+        .specifiers
+        .iter()
+        .filter(|specifier| specifier.kind == ImportSpecifierKind::Named)
+        .map(|specifier| {
+            specifier
+                .imported
+                .clone()
+                .unwrap_or_else(|| specifier.local.clone())
+        })
+        .collect()
 }
 
 pub fn load_js_chunks(input_root: &Path, js_list_path: &Path) -> Result<LoadedJsChunks> {

@@ -23,8 +23,7 @@ use artifact::{
 };
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
 pub use emission::{
-    EmissionRewriteResult, apply_emission_rewrites, apply_emission_rewrites_in_place,
-    write_planned_vendor_outputs,
+    apply_emission_rewrites_in_place, write_planned_vendor_outputs,
 };
 use js_ast::str_value;
 #[cfg(test)]
@@ -1365,10 +1364,10 @@ export { b as beta };
                 },
             )
             .unwrap();
-            let result = apply_emission_rewrites(artifact, &plan, &references).unwrap();
-            let artifact = result.artifact;
+            let references_by_symbol =
+                apply_emission_rewrites_in_place(&mut artifact, &plan, &references).unwrap();
             assert!(
-                result.references_by_symbol.is_empty(),
+                references_by_symbol.is_empty(),
                 "boundary renames are not partial-swap reference rewrites"
             );
 

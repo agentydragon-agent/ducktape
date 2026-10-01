@@ -2,7 +2,7 @@
 
 use anyhow::{Result, bail};
 
-use super::{ArtifactIndexes, ChunkBundle, ChunkId, ImportRecord};
+use super::{ArtifactIndexes, ChunkBundle, ChunkId, named_manifest_imports};
 
 /// Paths and manifest inputs whose changes invalidate `ArtifactIndexes`.
 #[derive(PartialEq, Eq)]
@@ -16,7 +16,7 @@ type IndexedChunkLayout = (
     String,
     String,
     String,
-    Vec<ImportRecord>,
+    Vec<(String, Vec<String>)>,
     Vec<(String, String)>,
 );
 
@@ -42,7 +42,15 @@ impl ChunkBundle {
                         chunk.js.entry_file.clone(),
                         chunk.analysis.source_path.clone(),
                         chunk.analysis.entry_file.clone(),
-                        chunk.analysis.imports.clone(),
+                        // Only the import source and named imported bindings feed
+                        // `index_manifest_imports`; line numbers and local
+                        // aliases on default/namespace imports do not.
+                        chunk
+                            .analysis
+                            .imports
+                            .iter()
+                            .map(|import| (import.source.clone(), named_manifest_imports(import)))
+                            .collect(),
                         files,
                     )
                 })
@@ -55,10 +63,9 @@ impl ChunkBundle {
 /// that bundle.
 ///
 /// The indexes are only reachable together with the artifact they were built
-/// from. Mutations either go through [`IndexedArtifact::update`] (rebuilding
-/// indexes) or [`IndexedArtifact::update_file_bodies`] (checking that their
-/// indexed layout is unchanged). This makes it a type error
-/// to hold indexes that are older than the artifact — the pipeline-level
+/// from. Body-only mutations go through [`IndexedArtifact::update_file_bodies`],
+/// which checks that their indexed layout is unchanged. This makes it a type
+/// error to hold indexes that are older than the artifact — the pipeline-level
 /// stale-index bug class (consumers resolving imports against indexes built
 /// before materialize created module files or vendor swaps removed chunks).
 pub struct IndexedArtifact {
@@ -77,7 +84,7 @@ impl IndexedArtifact {
     }
 
     /// Indexes matching the current artifact. Borrowing them keeps `self`
-    /// borrowed, so they cannot outlive the next [`Self::update`].
+    /// borrowed, so they cannot outlive the next body-only mutation.
     pub fn indexes(&self) -> &ArtifactIndexes {
         &self.indexes
     }
@@ -99,16 +106,6 @@ impl IndexedArtifact {
             bail!("body-only emission pass changed the indexed chunk/file layout");
         }
         Ok((self, value))
-    }
-
-    /// Run an artifact mutation against the matching indexes, then rebuild
-    /// the indexes from the mutated bundle.
-    pub fn update<T>(
-        self,
-        mutate: impl FnOnce(ChunkBundle, &ArtifactIndexes) -> Result<(ChunkBundle, T)>,
-    ) -> Result<(Self, T)> {
-        let (artifact, value) = mutate(self.artifact, &self.indexes)?;
-        Ok((Self::new(artifact)?, value))
     }
 }
 
