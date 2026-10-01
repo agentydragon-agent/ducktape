@@ -173,7 +173,10 @@ rust_library(
 
 rust_library(
     name = "artifact",
-    srcs = ["artifacts/artifact.rs"],
+    srcs = [
+        "artifacts/artifact.rs",
+        "artifacts/emission_files.rs",
+    ],
     crate_root = "artifacts/artifact.rs",
     edition = "2024",
     deps = [

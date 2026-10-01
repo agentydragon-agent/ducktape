@@ -1,7 +1,7 @@
 //! Per-chunk materialization: take an `OwnerGraphAndUnits` + spec plan, run the
 //! chunk through `lower_chunk`, and emit a `MaterializedLogicalChunk` whose
 //! files/applied/report stay separate from the source bundle until the
-//! pipeline assembles the legacy post-lowering bundle.
+//! finalized emit-stage file set is constructed.
 
 mod apply;
 mod outcome_sink;
