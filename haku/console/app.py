@@ -348,7 +348,9 @@ def create_app(
     mcp_asgi = None
     mcp_session_manager_health = mount.McpSessionManagerHealth()
     if settings.mcp_server_enabled:
-        console_mcp = server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver)
+        console_mcp = server.build_console_mcp(
+            console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver
+        )
         # Stateless HTTP keeps requests interchangeable across Console replicas.
         mcp_asgi = console_mcp.http_app(path=MCP_PATH, stateless_http=True)
         install_operator_session_route_guard(mcp_asgi, path=MCP_PATH)

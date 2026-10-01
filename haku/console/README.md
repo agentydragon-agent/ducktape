@@ -73,7 +73,6 @@ MCP OAuth discovery routes are not mounted. Local/test setups still default to e
 switch does not remove Console's underlying approval ledger, browser APIs, or Kubernetes RBAC;
 those have separate users and retirement decisions.
 
-
 `mcp/server.py` mounts one native MCP server for Agents and the trusted Operator frontend. Agents
 submit through `ToolCallApplicationService.submit_and_wait`. A DB-revalidated Operator session uses
 `execute_direct`, resolving downstream credentials in that Operator's context without creating an
