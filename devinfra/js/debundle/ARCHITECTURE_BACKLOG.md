@@ -40,8 +40,8 @@ review line references.
 
 ### Materialize-into-emit (high impact, high risk)
 
-`materialize_logical_modules` now returns lowered files separately as
-`LoweredChunkOutputs`, but `pipeline.rs` immediately assembles them back into
+`materialize_logical_modules` now returns lowered and pass-through chunk files
+as a typed `LoweredChunkOutputs` set, but `pipeline.rs` assembles them into
 a chunk bundle and `IndexedArtifact::update` rebuilds indexes. The pipeline
 then mutates that bundle again (cross-chunk import naturalization, vendor
 emission rewrites, dead-import/export pruning), checks the final emit shape,
@@ -51,8 +51,9 @@ mutations. `docs/design.md` "Pipeline trajectory" describes the intended
 end state; its "one artifact mutation wave" shorthand does not include all
 post-lowering transformations.
 
-**Migration order:** the first seam separates lowered files from the input
-bundle (`LoweredChunkOutputs`), but it is not yet an emit-ready model.
+**Migration order:** the first seam produces a typed set of lowered and
+pass-through chunks (`LoweredChunkOutputs`), but the post-lowering passes do
+not yet consume it as an emit-ready model.
 (1) Make an explicit typed final-file/emission-set boundary, preserving file
 metadata and full-swap exclusions; (2) move each
 post-lowering pass to that boundary, including the partial-swap consumer gate

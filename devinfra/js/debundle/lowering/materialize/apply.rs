@@ -1,11 +1,25 @@
 use super::*;
 
-/// Files produced by lowering, separate from their source bundle until the
-/// pipeline assembles the bundle consumed by post-lowering passes.
+/// Finalized chunk files, retaining whether each came from lowering or
+/// passes through unchanged. The legacy bundle is assembled only for passes
+/// that have not yet migrated to consume this file set.
 pub struct LoweredChunkOutputs {
-    source: ChunkBundle,
-    target_dir: String,
-    replacements: BTreeMap<ChunkId, MaterializedLogicalChunk>,
+    chunks: Vec<EmissionChunk>,
+    chunk_table: ChunkTable,
+    decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
+}
+
+enum EmissionChunk {
+    PassThrough(ChunkArtifact),
+    Lowered(ChunkArtifact),
+}
+
+impl EmissionChunk {
+    fn into_artifact(self) -> ChunkArtifact {
+        match self {
+            Self::PassThrough(chunk) | Self::Lowered(chunk) => chunk,
+        }
+    }
 }
 
 pub struct AssembledChunkOutputs {
@@ -14,31 +28,20 @@ pub struct AssembledChunkOutputs {
 }
 
 impl LoweredChunkOutputs {
-    /// Temporary adapter for post-lowering passes that still consume the
-    /// bundle. Migrate those passes before removing this assembly step.
-    pub fn into_bundle(mut self) -> AssembledChunkOutputs {
-        let mut decomposition_by_chunk = HashMap::new();
-        let chunks = self
-            .source
-            .chunks
-            .into_iter()
-            .map(|chunk| {
-                if let Some(replacement) = self.replacements.remove(&chunk.chunk_id) {
-                    let (output, decomposition) =
-                        materialized_chunk_artifact(&self.target_dir, chunk.analysis, replacement);
-                    decomposition_by_chunk.insert(chunk.chunk_id, decomposition);
-                    output
-                } else {
-                    chunk
-                }
-            })
-            .collect();
+    /// Temporary adapter for post-lowering passes that still consume a
+    /// bundle. No file conversion happens here: lowering already produced
+    /// the final file records and decomposition for each selected chunk.
+    pub fn into_bundle(self) -> AssembledChunkOutputs {
         AssembledChunkOutputs {
             artifact: ChunkBundle {
-                chunks,
-                chunk_table: self.source.chunk_table,
+                chunks: self
+                    .chunks
+                    .into_iter()
+                    .map(EmissionChunk::into_artifact)
+                    .collect(),
+                chunk_table: self.chunk_table,
             },
-            decomposition_by_chunk,
+            decomposition_by_chunk: self.decomposition_by_chunk,
         }
     }
 }
@@ -48,17 +51,17 @@ pub(crate) fn collect_materialized_logical_chunks(
     target_dir: &str,
     chunks: Vec<MaterializedLogicalChunk>,
 ) -> Result<LoweredChunkOutputs> {
+    let mut replacements = BTreeMap::<ChunkId, MaterializedLogicalChunk>::new();
     let known_chunks: BTreeSet<ChunkId> =
         artifact.chunks.iter().map(|chunk| chunk.chunk_id).collect();
-    let mut replacements = BTreeMap::<ChunkId, MaterializedLogicalChunk>::new();
     for chunk in chunks {
-        if !known_chunks.contains(&chunk.chunk_id) {
+        let chunk_id = chunk.chunk_id;
+        if !known_chunks.contains(&chunk_id) {
             bail!(
                 "materialize_logical_modules produced unknown chunk index: {}",
-                chunk.chunk_id.0
+                chunk_id.0
             );
         }
-        let chunk_id = chunk.chunk_id;
         if replacements.insert(chunk_id, chunk).is_some() {
             bail!(
                 "materialize_logical_modules produced duplicate chunk_id: {}",
@@ -66,10 +69,25 @@ pub(crate) fn collect_materialized_logical_chunks(
             );
         }
     }
+    let mut decomposition_by_chunk = HashMap::new();
+    let chunks = artifact
+        .chunks
+        .into_iter()
+        .map(|chunk| {
+            if let Some(replacement) = replacements.remove(&chunk.chunk_id) {
+                let (output, decomposition) =
+                    materialized_chunk_artifact(target_dir, chunk.analysis, replacement);
+                decomposition_by_chunk.insert(chunk.chunk_id, decomposition);
+                EmissionChunk::Lowered(output)
+            } else {
+                EmissionChunk::PassThrough(chunk)
+            }
+        })
+        .collect();
     Ok(LoweredChunkOutputs {
-        source: artifact,
-        target_dir: target_dir.to_string(),
-        replacements,
+        chunks,
+        chunk_table: artifact.chunk_table,
+        decomposition_by_chunk,
     })
 }
 

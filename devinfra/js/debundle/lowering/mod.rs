@@ -105,8 +105,8 @@ use visitors::{
 };
 
 pub struct MaterializeLogicalModulesResult {
-    /// Lowered files plus unchanged source chunks. Assemble only when the
-    /// remaining post-lowering bundle passes need their input.
+    /// Finalized lowered and pass-through files, kept outside a bundle until
+    /// the remaining post-lowering passes need their legacy input.
     pub output: LoweredChunkOutputs,
     pub selected_lowerings: Vec<SelectedModuleLowering>,
     pub module_count: usize,
