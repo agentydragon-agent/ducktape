@@ -163,7 +163,7 @@ function viewState({
     pending: false,
     turnId: null,
     state: {
-      controls: { applied_model: model, active_turn_id: activeTurn, harness_state: harness },
+      controls: { applied_model: model, applied_reasoning_effort: null, active_turn_id: activeTurn, harness_state: harness },
       operational: { status, last_verified_cursor: "1", feed_error: null },
     },
     textRef: null,
