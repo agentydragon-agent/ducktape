@@ -106,7 +106,9 @@ beforeEach(() => {
                 sandboxes,
                 ...(url === "/live/threads"
                   ? {
-                      threads: [{ ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed, ...sharedThread }],
+                      threads: [
+                        { ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed, ...sharedThread },
+                      ],
                       updates_connected: true,
                     }
                   : {}),
