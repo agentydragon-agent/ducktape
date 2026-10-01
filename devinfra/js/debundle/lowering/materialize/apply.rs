@@ -48,8 +48,15 @@ pub(crate) fn collect_materialized_logical_chunks(
     target_dir: &str,
     chunks: Vec<MaterializedLogicalChunk>,
 ) -> Result<LoweredChunkOutputs> {
+    let known_chunks: BTreeSet<ChunkId> = artifact.chunks.iter().map(|chunk| chunk.chunk_id).collect();
     let mut replacements = BTreeMap::<ChunkId, MaterializedLogicalChunk>::new();
     for chunk in chunks {
+        if !known_chunks.contains(&chunk.chunk_id) {
+            bail!(
+                "materialize_logical_modules produced unknown chunk index: {}",
+                chunk.chunk_id.0
+            );
+        }
         let chunk_id = chunk.chunk_id;
         if replacements.insert(chunk_id, chunk).is_some() {
             bail!(
@@ -126,4 +133,59 @@ pub(super) fn materialized_chunk_artifact(
         },
         decomposition,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source_chunk(chunk_id: ChunkId, name: &str) -> ChunkArtifact {
+        let entry_file = "entry.js".to_string();
+        let source_path = format!("{name}.js");
+        ChunkArtifact {
+            chunk_id,
+            js: JsChunk {
+                entry_file: entry_file.clone(),
+                files: Vec::new(),
+                metadata: ChunkMetadata {
+                    source_path: source_path.clone(),
+                },
+            },
+            analysis: ChunkAnalysisReport {
+                chunk_id: name.to_string(),
+                source_path,
+                entry_file,
+                counts: Default::default(),
+                files: Vec::new(),
+                imports: Vec::new(),
+                export_aliases: Vec::new(),
+                unresolved_exports: Vec::new(),
+                kept_top_level_declarations: Vec::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn unlowered_chunks_keep_their_source_order_and_metadata() {
+        let mut chunk_table = ChunkTable::default();
+        let first = chunk_table.intern("first".to_string());
+        let second = chunk_table.intern("second".to_string());
+        let source = ChunkBundle {
+            chunks: vec![source_chunk(second, "second"), source_chunk(first, "first")],
+            chunk_table,
+        };
+        let output = collect_materialized_logical_chunks(source, "", Vec::new())
+            .unwrap()
+            .into_bundle();
+        assert!(output.decomposition_by_chunk.is_empty());
+        assert_eq!(
+            output
+                .artifact
+                .chunks
+                .iter()
+                .map(|chunk| (chunk.chunk_id, chunk.analysis.source_path.as_str()))
+                .collect::<Vec<_>>(),
+            [(second, "second.js"), (first, "first.js")]
+        );
+    }
 }
