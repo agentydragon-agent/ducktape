@@ -93,7 +93,9 @@ pub fn write_common_emission_reports(
     )?;
     write_json(
         layout.app_root().join("package.json"),
-        &PackageManifest { module_type: "module" },
+        &PackageManifest {
+            module_type: "module",
+        },
     )?;
     Ok(())
 }
