@@ -1,15 +1,53 @@
 use super::*;
 
-pub(crate) struct ApplyChunksResult {
-    pub(crate) artifact: ChunkBundle,
-    pub(crate) decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
+/// Files produced by lowering, separate from their source bundle until the
+/// pipeline assembles the bundle consumed by post-lowering passes.
+pub struct LoweredChunkOutputs {
+    source: ChunkBundle,
+    target_dir: String,
+    replacements: BTreeMap<ChunkId, MaterializedLogicalChunk>,
 }
 
-pub(crate) fn apply_materialized_logical_chunks(
+pub struct AssembledChunkOutputs {
+    pub artifact: ChunkBundle,
+    pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
+}
+
+impl LoweredChunkOutputs {
+    /// Temporary adapter for post-lowering passes that still consume the
+    /// bundle. Migrate those passes before removing this assembly step.
+    pub fn into_bundle(mut self) -> AssembledChunkOutputs {
+        let mut decomposition_by_chunk = HashMap::new();
+        let chunks = self
+            .source
+            .chunks
+            .into_iter()
+            .map(|chunk| {
+                if let Some(replacement) = self.replacements.remove(&chunk.chunk_id) {
+                    let (output, decomposition) =
+                        materialized_chunk_artifact(&self.target_dir, chunk.analysis, replacement);
+                    decomposition_by_chunk.insert(chunk.chunk_id, decomposition);
+                    output
+                } else {
+                    chunk
+                }
+            })
+            .collect();
+        AssembledChunkOutputs {
+            artifact: ChunkBundle {
+                chunks,
+                chunk_table: self.source.chunk_table,
+            },
+            decomposition_by_chunk,
+        }
+    }
+}
+
+pub(crate) fn collect_materialized_logical_chunks(
     artifact: ChunkBundle,
     target_dir: &str,
     chunks: Vec<MaterializedLogicalChunk>,
-) -> Result<ApplyChunksResult> {
+) -> Result<LoweredChunkOutputs> {
     let mut replacements = BTreeMap::<ChunkId, MaterializedLogicalChunk>::new();
     for chunk in chunks {
         let chunk_id = chunk.chunk_id;
@@ -20,26 +58,10 @@ pub(crate) fn apply_materialized_logical_chunks(
             );
         }
     }
-
-    let source_chunks = artifact.chunks;
-    let mut output_chunks = Vec::with_capacity(source_chunks.len());
-    let mut decomposition_by_chunk = HashMap::new();
-    for chunk_artifact in source_chunks {
-        if let Some(replacement) = replacements.remove(&chunk_artifact.chunk_id) {
-            let (new_artifact, decomposition) =
-                materialized_chunk_artifact(target_dir, chunk_artifact.analysis, replacement);
-            decomposition_by_chunk.insert(new_artifact.chunk_id, decomposition);
-            output_chunks.push(new_artifact);
-        } else {
-            output_chunks.push(chunk_artifact);
-        }
-    }
-    Ok(ApplyChunksResult {
-        artifact: ChunkBundle {
-            chunks: output_chunks,
-            chunk_table: artifact.chunk_table,
-        },
-        decomposition_by_chunk,
+    Ok(LoweredChunkOutputs {
+        source: artifact,
+        target_dir: target_dir.to_string(),
+        replacements,
     })
 }
 

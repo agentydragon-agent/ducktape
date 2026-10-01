@@ -84,8 +84,9 @@ use lower::{
     LoweredChunk, lower_chunk,
 };
 use materialize::{
-    ChunkContext, ChunkSpec, MaterializeLogicalChunkInputs, apply_materialized_logical_chunks,
-    finish_logical_chunk, prepare_logical_chunk, resolve_prepared_chunks,
+    ChunkContext, ChunkSpec, LoweredChunkOutputs, MaterializeLogicalChunkInputs,
+    collect_materialized_logical_chunks, finish_logical_chunk, prepare_logical_chunk,
+    resolve_prepared_chunks,
 };
 use naturalize::{NaturalizedRenames, collect_plan_export_rename_intents, naturalize_module_body};
 use plans::{
@@ -104,10 +105,11 @@ use visitors::{
 };
 
 pub struct MaterializeLogicalModulesResult {
-    pub artifact: ChunkBundle,
+    /// Lowered files plus unchanged source chunks. Assemble only when the
+    /// remaining post-lowering bundle passes need their input.
+    pub output: LoweredChunkOutputs,
     pub selected_lowerings: Vec<SelectedModuleLowering>,
     pub module_count: usize,
-    pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
     /// Per-symbol counts of vendor-swap rewrites applied at
     /// construction time in materialized module bodies, keyed by
     /// (swapped chunk, chunk export). Folded into the vendor waves'
@@ -385,16 +387,13 @@ pub fn materialize_logical_modules(
             *vendor_reference_rewrites.entry(key.clone()).or_insert(0) += count;
         }
     }
-    let apply_result = apply_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
-    artifact = apply_result.artifact;
-    let decomposition_by_chunk = apply_result.decomposition_by_chunk;
+    let output = collect_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
 
     let module_count: usize = reports.iter().map(|r| r.final_module_contents.len()).sum();
     Ok(MaterializeLogicalModulesResult {
-        artifact,
+        output,
         selected_lowerings: applied,
         module_count,
-        decomposition_by_chunk,
         vendor_reference_rewrites,
         unmatched_spec_claims,
     })

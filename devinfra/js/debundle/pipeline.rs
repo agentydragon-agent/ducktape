@@ -272,10 +272,13 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
             )?;
             module_count = materialize_result.module_count;
             selected_lowerings = materialize_result.selected_lowerings;
-            decomposition_by_chunk = materialize_result.decomposition_by_chunk;
             unmatched_spec_claims = materialize_result.unmatched_spec_claims;
             vendor_lowering_rewrites = materialize_result.vendor_reference_rewrites;
-            Ok((materialize_result.artifact, ()))
+            // Until the post-lowering passes consume emit-ready files directly,
+            // adapt the separate lowered outputs back to their bundle input.
+            let assembled = materialize_result.output.into_bundle();
+            decomposition_by_chunk = assembled.decomposition_by_chunk;
+            Ok((assembled.artifact, ()))
         })?;
     }
 

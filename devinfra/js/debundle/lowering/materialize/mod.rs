@@ -1,7 +1,7 @@
 //! Per-chunk materialization: take an `OwnerGraphAndUnits` + spec plan, run the
 //! chunk through `lower_chunk`, and emit a `MaterializedLogicalChunk` whose
-//! files/applied/report are spliced into the artifact by
-//! `apply_materialized_logical_chunks`.
+//! files/applied/report stay separate from the source bundle until the
+//! pipeline assembles the legacy post-lowering bundle.
 
 mod apply;
 mod outcome_sink;
@@ -9,7 +9,7 @@ mod plan_builder;
 
 use std::io::Write;
 
-pub(super) use apply::apply_materialized_logical_chunks;
+pub(super) use apply::{LoweredChunkOutputs, collect_materialized_logical_chunks};
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext, SelectorModules};
 use selector_resolve::Resolution;
 

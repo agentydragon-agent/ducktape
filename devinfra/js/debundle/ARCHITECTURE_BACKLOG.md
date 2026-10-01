@@ -5,8 +5,8 @@ file is an active backlog: resolved items are deleted, not struck through.
 
 ## What hurts most (priority order)
 
-1. **The pipeline has no single emit-ready output model.** `pipeline.rs` feeds
-   lowered files back into `ChunkBundle`, rebuilds `ArtifactIndexes`, then
+1. **The pipeline has no single emit-ready output model.** `pipeline.rs`
+   assembles lowered files back into `ChunkBundle`, rebuilds `ArtifactIndexes`, then
    runs cross-chunk import naturalization, vendor emission rewrites, a
    post-strip consumer check, dead-import/export pruning, duplicate-export
    validation, and finally tree/harness writers. `write_js_tree` and
@@ -40,8 +40,9 @@ review line references.
 
 ### Materialize-into-emit (high impact, high risk)
 
-`materialize_logical_modules` currently writes lowered module files into the
-chunk bundle, and `IndexedArtifact::update` rebuilds indexes. The pipeline
+`materialize_logical_modules` now returns lowered files separately as
+`LoweredChunkOutputs`, but `pipeline.rs` immediately assembles them back into
+a chunk bundle and `IndexedArtifact::update` rebuilds indexes. The pipeline
 then mutates that bundle again (cross-chunk import naturalization, vendor
 emission rewrites, dead-import/export pruning), checks the final emit shape,
 and only then writes the tree and browser harness. The 2026-06 vendor
@@ -50,8 +51,10 @@ mutations. `docs/design.md` "Pipeline trajectory" describes the intended
 end state; its "one artifact mutation wave" shorthand does not include all
 post-lowering transformations.
 
-**Migration order:** (1) make an explicit typed final-file/emission-set
-boundary, preserving file metadata and full-swap exclusions; (2) move each
+**Migration order:** the first seam separates lowered files from the input
+bundle (`LoweredChunkOutputs`), but it is not yet an emit-ready model.
+(1) Make an explicit typed final-file/emission-set boundary, preserving file
+metadata and full-swap exclusions; (2) move each
 post-lowering pass to that boundary, including the partial-swap consumer gate
 and final export validation; (3) have both writers consume it; (4) only then
 remove the `ChunkBundle` round-trip and the post-materialize index rebuild
