@@ -35,7 +35,7 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     layout.prepare()?;
 
     let materialized = materialize_artifact_scripts(
-        input.files.files(),
+        input.files,
         &layout.app_root(),
         &layout.tree_root(),
         input.decomposition_by_chunk,
@@ -52,7 +52,7 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     };
 
     let queue = compute_identifier_rename_queue(
-        input.files.files(),
+        input.files,
         input.decomposition_by_chunk,
         input.excluded_chunk_ids,
     )?;

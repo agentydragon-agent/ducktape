@@ -1235,12 +1235,13 @@ pub struct MaterializedScripts {
 }
 
 pub fn materialize_artifact_scripts(
-    artifact: &ChunkBundle,
+    files: &EmissionFiles,
     app_root: &Path,
     report_tree_root: &Path,
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<MaterializedScripts> {
+    let artifact = files.files();
     let selected_module_by_chunk_file = selected_module_by_chunk_file(decomposition_by_chunk);
     // Per-chunk materialization is pure data-parallel: each call reads
     // `artifact`/`decomposition_by_chunk`/`selected_module_by_chunk_file`

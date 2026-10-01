@@ -314,11 +314,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         // surface. Load-bearing behind the plan-time gate — it covers
         // directives lowering synthesized inside materialized module
         // bodies (see `validate_partial_swap_consumers`).
-        validate_partial_swap_consumers(
-            emission_files.files(),
-            &vendor_plan,
-            emission_files.indexes(),
-        )?;
+        validate_partial_swap_consumers(&emission_files, &vendor_plan)?;
     }
     (vendor_report.partial, vendor_report.bundled_partial) =
         build_partial_swap_resolutions(&vendor_plan, &vendor_rewrite_counts)?;
@@ -363,7 +359,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // pageerror) into an immediate build-time error pointing at the
     // exact file, name, and source lines. Runs unconditionally so
     // pipelines without vendor swaps still benefit.
-    validate_emitted_exports(emission_files.files(), &excluded_chunk_ids)?;
+    validate_emitted_exports(&emission_files, &excluded_chunk_ids)?;
 
     // Chunk records of the emission set: records of excluded
     // (fully-swapped) chunks are dropped from the emitted reports.

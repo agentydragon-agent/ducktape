@@ -1125,10 +1125,11 @@ fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
 /// non-swapped members would work at runtime, but is rejected anyway
 /// because per-member usage is not analyzed here.
 pub fn validate_partial_swap_consumers(
-    artifact: &ChunkBundle,
+    files: &artifact::EmissionFiles,
     plan: &VendorResolutionPlan,
-    references: &ArtifactIndexes,
 ) -> Result<()> {
+    let artifact = files.files();
+    let references = files.indexes();
     let chunk_table = &artifact.chunk_table;
     let swapped_by_chunk: BTreeMap<ChunkId, BTreeSet<String>> = plan
         .partial_swaps

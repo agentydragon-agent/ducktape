@@ -122,7 +122,7 @@ pub fn emit_browser_harness(
     let app_root = layout.app_root();
     layout.prepare()?;
     let materialized = materialize_artifact_scripts(
-        artifact,
+        files,
         &app_root,
         &layout.tree_root(),
         decomposition_by_chunk,
@@ -141,7 +141,7 @@ pub fn emit_browser_harness(
         },
     )?;
     let queue =
-        compute_identifier_rename_queue(artifact, decomposition_by_chunk, excluded_chunk_ids)?;
+        compute_identifier_rename_queue(files, decomposition_by_chunk, excluded_chunk_ids)?;
     write_json(layout.rename_queue_report(), &queue)?;
     let runtime = HarnessRuntimeReport {
         app_root: format!("../{}", output_layout::APP_DIR),

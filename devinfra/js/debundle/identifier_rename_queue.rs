@@ -50,7 +50,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{ChunkBundle, ChunkDecompositionOutput, ChunkId};
+use artifact::{ChunkBundle, ChunkDecompositionOutput, ChunkId, EmissionFiles};
 use js_ast::ParsedJsModule;
 
 /// One entry in the priority queue: a still-unrenamed top-level symbol
@@ -87,13 +87,14 @@ pub struct IdentifierRenameQueue {
 /// post-materialize. Pure function over the artifact; does not touch
 /// the filesystem.
 pub fn compute_identifier_rename_queue(
-    artifact: &ChunkBundle,
+    files: &EmissionFiles,
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<IdentifierRenameQueue> {
     // Per-chunk, per-file: walk the final AST to identify top-level
     // declarations whose names still match input-bundle names, then
     // tally references across the whole bundle.
+    let artifact = files.files();
     let input_names_by_chunk = input_bundle_names_by_chunk(artifact, decomposition_by_chunk);
 
     // Map each current name -> list of declaration sites that bind it.
