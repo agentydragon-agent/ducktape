@@ -65,6 +65,10 @@ async def test_one_turn_streams_reasoning_and_text(
 async def test_effort_change_is_confirmed_and_used_by_next_model_request(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
+    if spec.harness == protocol_pb2.HARNESS_CLAUDE:
+        # Haiku rejects the native effort setting before a model request; use an effort-capable model.
+        spec.model = "agentplane-test/claude-opus-4-6"
+        model.model = spec.model
     async with await client.attach("effort-change-1", spec=spec) as session:
         assert session.attached.spec.reasoning_effort == "low"
         for index, effort in enumerate(("high", "low"), start=1):
