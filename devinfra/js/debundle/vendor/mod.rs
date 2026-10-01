@@ -18,7 +18,7 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::local_namespace_iife_target;
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, join_module_path, list_chunk_file_paths,
+    ArtifactIndexes, ChunkId, ChunkTable, join_module_path, list_chunk_file_paths,
     module_path_dirname, normalize_module_path, relative_module_specifier,
 };
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
