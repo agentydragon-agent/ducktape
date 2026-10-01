@@ -10,23 +10,23 @@ export interface ThreadFaviconPulseEpoch {
 }
 
 const FALLBACK_COLORS = {
-  green: "#40c057",
-  yellow: "#fab005",
-  red: "#fa5252",
-  gray: "#868e96",
+  green: "#2f9e44",
+  yellow: "#f59f00",
+  red: "#e03131",
+  gray: "#495057",
 } as const;
 
-function faviconUrl(status: ThreadTabStatus, level: number): string {
+function faviconUrl(status: ThreadTabStatus, showDot: boolean): string {
   const color =
-    getComputedStyle(document.documentElement).getPropertyValue(`--mantine-color-${status.color}-6`).trim() ||
+    getComputedStyle(document.documentElement).getPropertyValue(`--mantine-color-${status.color}-7`).trim() ||
     FALLBACK_COLORS[status.color];
-  const radius = 2.8 + 1.2 * level;
-  const opacity = 0.35 + 0.65 * level;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect x="1" y="1" width="30" height="30" rx="8" fill="#1c7ed6"/><path d="M5 14.5 27 5 18 27l-3.7-9.1L5 14.5Z" fill="#fff"/><path d="m14.3 17.9 6.3-6.1" fill="none" stroke="#1c7ed6" stroke-linecap="round" stroke-width="1.5"/><circle cx="25" cy="24.5" r="${radius.toFixed(2)}" fill="${color}" fill-opacity="${opacity.toFixed(2)}" stroke="#fff" stroke-width="1.5"/></svg>`;
+  // Keep the paper-plane mark legible on both light and dark tab bars without a solid tile.
+  const dot = showDot ? `<circle cx="25" cy="24.5" r="5.1" fill="${color}" stroke="#fff" stroke-width="1.5"/>` : "";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path d="M5 14.5 27 5 18 27l-3.7-9.1L5 14.5Z" fill="none" stroke="#1c7ed6" stroke-linejoin="round" stroke-width="2.5"/><path d="m14.3 17.9 6.3-6.1" fill="none" stroke="#1c7ed6" stroke-linecap="round" stroke-width="2"/>${dot}</svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-/** Set the thread's status in the favicon. A pulsing status follows the in-page dot's 1.2s breath. */
+/** Set the thread's status in the favicon. An active turn blinks on and off every 600 ms. */
 export function installThreadFavicon(status: ThreadTabStatus, pulseEpoch: ThreadFaviconPulseEpoch): () => void {
   const icon = document.getElementById(FAVICON_ID);
   if (!(icon instanceof HTMLLinkElement)) return () => {};
@@ -36,11 +36,9 @@ export function installThreadFavicon(status: ThreadTabStatus, pulseEpoch: Thread
 
   const update = (): void => {
     const startedAt = pulseEpoch.current ?? Date.now();
-    const level =
-      status.pulse && !motionPreference.matches
-        ? (1 - Math.cos((2 * Math.PI * ((Date.now() - startedAt) % PULSE_PERIOD_MS)) / PULSE_PERIOD_MS)) / 2
-        : 1;
-    icon.href = faviconUrl(status, level);
+    const showDot =
+      !status.pulse || motionPreference.matches || (Date.now() - startedAt) % PULSE_PERIOD_MS < PULSE_PERIOD_MS / 2;
+    icon.href = faviconUrl(status, showDot);
   };
 
   const syncAnimation = (event?: MediaQueryListEvent): void => {
