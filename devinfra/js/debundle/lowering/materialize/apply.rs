@@ -166,6 +166,68 @@ mod tests {
         }
     }
 
+    fn lowered_chunk(chunk_id: ChunkId) -> MaterializedLogicalChunk {
+        MaterializedLogicalChunk {
+            chunk_id,
+            target_file: "lowered.js".to_string(),
+            source_path: "first.js".to_string(),
+            files: Vec::new(),
+            file_records: Vec::new(),
+            applied: Vec::new(),
+            directory_dependency_facts: Vec::new(),
+            validation: ChunkValidationSummary {
+                linker_order: Vec::new(),
+            },
+            report: ChunkModulesReport {
+                chunk_id: "first".to_string(),
+                counts: ChunkModulesCounts {
+                    applied: 0,
+                    selected_owners: 0,
+                },
+                final_module_contents: Vec::new(),
+                requested_logical_modules: Vec::new(),
+                redundant_purity_hints: Vec::new(),
+            },
+            vendor_reference_rewrites: BTreeMap::new(),
+            unmatched_spec_claims: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn lowered_chunk_replaces_only_its_source_at_the_original_position() {
+        let mut chunk_table = ChunkTable::default();
+        let first = chunk_table.intern("first".to_string());
+        let second = chunk_table.intern("second".to_string());
+        let source = ChunkBundle {
+            chunks: vec![source_chunk(second, "second"), source_chunk(first, "first")],
+            chunk_table,
+        };
+        let output =
+            collect_materialized_logical_chunks(source, "modules", vec![lowered_chunk(first)])
+                .unwrap()
+                .into_bundle();
+        assert_eq!(output.artifact.chunks[0].chunk_id, second);
+        assert_eq!(output.artifact.chunks[0].analysis.entry_file, "entry.js");
+        assert_eq!(output.artifact.chunks[1].chunk_id, first);
+        assert_eq!(output.artifact.chunks[1].analysis.entry_file, "lowered.js");
+        assert_eq!(output.artifact.chunks[1].analysis.source_path, "first.js");
+        assert_eq!(output.decomposition_by_chunk.len(), 1);
+        assert!(output.decomposition_by_chunk.contains_key(&first));
+    }
+
+    #[test]
+    fn unknown_lowered_chunk_is_rejected_instead_of_silently_dropped() {
+        let mut chunk_table = ChunkTable::default();
+        let first = chunk_table.intern("first".to_string());
+        let source = ChunkBundle {
+            chunks: vec![source_chunk(first, "first")],
+            chunk_table,
+        };
+        let result =
+            collect_materialized_logical_chunks(source, "", vec![lowered_chunk(ChunkId(5))]);
+        assert!(result.is_err());
+    }
+
     #[test]
     fn unlowered_chunks_keep_their_source_order_and_metadata() {
         let mut chunk_table = ChunkTable::default();
