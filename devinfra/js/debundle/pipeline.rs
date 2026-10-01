@@ -23,7 +23,7 @@ use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
     ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, VendorPlanOptions,
-    VendorResolution, apply_emission_rewrites, build_partial_swap_resolutions,
+    VendorResolution, apply_emission_rewrites_in_place, build_partial_swap_resolutions,
     build_vendor_resolution_plan, validate_partial_swap_consumers, write_planned_vendor_outputs,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
@@ -285,14 +285,14 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // Cross-chunk import naturalization runs after lowering has exposed
     // target aliases but before source-specifier canonicalization changes the
     // original chunk-relative import paths used by ArtifactSourceImportResolver.
-    (indexed, ()) = indexed.update(|mut artifact, indexes| {
+    (indexed, ()) = indexed.update_file_bodies(|artifact, indexes| {
         naturalize_cross_chunk_imports(
-            &mut artifact,
+            artifact,
             indexes,
             &selected_lowerings,
             &processed_chunk_names,
         )?;
-        Ok((artifact, ()))
+        Ok(())
     })?;
 
     // Emission rewrites, one artifact pass over two disjoint file sets:
@@ -314,12 +314,8 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // erase binding names spec selectors matched on.
     let mut vendor_rewrite_counts = vendor_lowering_rewrites;
     let emission_references;
-    (indexed, emission_references) = indexed.update(|artifact, indexes| {
-        let emission_result = apply_emission_rewrites(artifact, &vendor_plan, indexes)?;
-        Ok((
-            emission_result.artifact,
-            emission_result.references_by_symbol,
-        ))
+    (indexed, emission_references) = indexed.update_file_bodies(|artifact, indexes| {
+        apply_emission_rewrites_in_place(artifact, &vendor_plan, indexes)
     })?;
     merge_rewrite_counts(&mut vendor_rewrite_counts, emission_references);
 

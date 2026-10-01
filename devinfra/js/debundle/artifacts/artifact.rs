@@ -681,14 +681,14 @@ pub struct ChunkFileRecord {
     pub role: FileRole,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImportRecord {
     pub line: Option<usize>,
     pub source: String,
     pub specifiers: Vec<ImportSpecifierRecord>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImportSpecifierRecord {
     pub kind: ImportSpecifierKind,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1041,12 +1041,55 @@ impl ArtifactIndexes {
     }
 }
 
+/// Paths and manifest inputs whose changes invalidate `ArtifactIndexes`.
+#[derive(PartialEq, Eq)]
+struct IndexedLayout {
+    chunk_names: Vec<String>,
+    chunks: Vec<IndexedChunkLayout>,
+}
+
+type IndexedChunkLayout = (
+    ChunkId, String, String, String, Vec<ImportRecord>, Vec<(String, String)>,
+);
+
+impl ChunkBundle {
+    fn indexed_layout(&self) -> IndexedLayout {
+        IndexedLayout {
+            chunk_names: (0..self.chunk_table.len())
+                .map(|index| self.chunk_table.name(ChunkId(index)).to_string())
+                .collect(),
+            chunks: self
+                .chunks
+                .iter()
+                .map(|chunk| {
+                    let mut files = chunk
+                        .js
+                        .files
+                        .iter()
+                        .map(|file| (file.path.clone(), file.metadata.source_path.clone()))
+                        .collect::<Vec<_>>();
+                    files.sort();
+                    (
+                        chunk.chunk_id,
+                        chunk.js.entry_file.clone(),
+                        chunk.analysis.source_path.clone(),
+                        chunk.analysis.entry_file.clone(),
+                        chunk.analysis.imports.clone(),
+                        files,
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
 /// A [`ChunkBundle`] paired with the [`ArtifactIndexes`] built from exactly
 /// that bundle.
 ///
 /// The indexes are only reachable together with the artifact they were built
-/// from, and every mutation goes through [`IndexedArtifact::update`], which
-/// rebuilds the indexes from the mutated bundle. This makes it a type error
+/// from. Mutations either go through [`IndexedArtifact::update`] (rebuilding
+/// indexes) or [`IndexedArtifact::update_file_bodies`] (checking that their
+/// indexed layout is unchanged). This makes it a type error
 /// to hold indexes that are older than the artifact — the pipeline-level
 /// stale-index bug class (consumers resolving imports against indexes built
 /// before materialize created module files or vendor swaps removed chunks).
@@ -1073,6 +1116,21 @@ impl IndexedArtifact {
 
     pub fn into_artifact(self) -> ChunkBundle {
         self.artifact
+    }
+
+    /// Mutate AST bodies without changing the indexed file layout. The
+    /// source/output path index remains valid; reject any accidental change
+    /// to the file set, entry paths, or source paths before returning it.
+    pub fn update_file_bodies<T>(
+        mut self,
+        mutate: impl FnOnce(&mut ChunkBundle, &ArtifactIndexes) -> Result<T>,
+    ) -> Result<(Self, T)> {
+        let layout = self.artifact.indexed_layout();
+        let value = mutate(&mut self.artifact, &self.indexes)?;
+        if self.artifact.indexed_layout() != layout {
+            bail!("body-only emission pass changed the indexed chunk/file layout");
+        }
+        Ok((self, value))
     }
 
     /// Run an artifact mutation against the matching indexes, then rebuild

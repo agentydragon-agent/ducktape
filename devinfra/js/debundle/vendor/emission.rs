@@ -58,6 +58,20 @@ pub fn apply_emission_rewrites(
     plan: &VendorResolutionPlan,
     references: &ArtifactIndexes,
 ) -> Result<EmissionRewriteResult> {
+    let references_by_symbol = apply_emission_rewrites_in_place(&mut artifact, plan, references)?;
+    Ok(EmissionRewriteResult {
+        artifact,
+        references_by_symbol,
+    })
+}
+
+/// Body-only emit pass: ASTs are taken out for parallel rewrites and put back
+/// at the same file paths. The caller may retain its output-path indexes.
+pub fn apply_emission_rewrites_in_place(
+    artifact: &mut ChunkBundle,
+    plan: &VendorResolutionPlan,
+    references: &ArtifactIndexes,
+) -> Result<BTreeMap<(ChunkId, String), usize>> {
     let chunk_table = artifact.chunk_table.clone();
     let materialized_index = MaterializedOutputChunkIndex::build(&chunk_table);
     let context = PassthroughContext {
@@ -158,7 +172,7 @@ pub fn apply_emission_rewrites(
     let mut residual_jobs = Vec::new();
     for (&chunk_id, partial) in &plan.partial_swaps {
         residual_jobs.push(extract_residual_job(
-            &mut artifact,
+            artifact,
             &chunk_table,
             chunk_id,
             &partial.chunk_path,
@@ -169,7 +183,7 @@ pub fn apply_emission_rewrites(
     }
     for (&chunk_id, bundled) in &plan.bundled_partial_swaps {
         residual_jobs.push(extract_residual_job(
-            &mut artifact,
+            artifact,
             &chunk_table,
             chunk_id,
             &bundled.chunk_path,
@@ -196,10 +210,7 @@ pub fn apply_emission_rewrites(
         }
     }
 
-    Ok(EmissionRewriteResult {
-        artifact,
-        references_by_symbol,
-    })
+    Ok(references_by_symbol)
 }
 
 struct PassthroughFileJob {
