@@ -18,8 +18,8 @@ use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle
 
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle, ChunkId, ChunkTable,
-    ChunkValidationSummary, DirectoryDependencyFact, FileMetadata, FileRole, JsFile,
-    JsFileBody, SelectedModuleLowering, get_chunk_entry_path, join_module_path, module_path_dirname,
+    ChunkValidationSummary, DirectoryDependencyFact, FileMetadata, FileRole, JsFile, JsFileBody,
+    SelectedModuleLowering, get_chunk_entry_path, join_module_path, module_path_dirname,
     normalize_module_path, normalize_relative_module_specifier, relative_module_path,
 };
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
