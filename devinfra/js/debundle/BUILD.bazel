@@ -341,9 +341,9 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
-        ":identifier_rename_queue",
         ":output_layout",
         ":spec",
+        ":write_tree",
         "@crates//:anyhow",
         "@crates//:lol_html",
         "@crates//:serde",
