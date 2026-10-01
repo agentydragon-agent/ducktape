@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import {
   Accordion,
   Alert,
@@ -239,6 +239,8 @@ export function SessionViewer(): JSX.Element {
   const [watchStatus, setWatchStatus] = useState<WatchStatus>("connecting");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [events, setEvents] = useState<SessionEvent[]>([]);
+  // A watch refresh must never remove the transcript DOM or reset its scroll/disclosures.
+  const loadedSession = useRef<string | null>(null);
   const [nextEventCursor, setNextEventCursor] = useState<string | null>(null);
   const [hasMoreEvents, setHasMoreEvents] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -252,7 +254,7 @@ export function SessionViewer(): JSX.Element {
   useEffect(() => {
     let current = true;
     const statuses = filter === "all" ? ALL_STATUSES : [filter];
-    setLoadingSessions(true);
+    // Only the first fetch needs a loading placeholder; watch refreshes retain the list.
     setSessionError(null);
     void listSessions(statuses)
       .then((page) => {
@@ -290,6 +292,8 @@ export function SessionViewer(): JSX.Element {
   useEffect(() => {
     let current = true;
     if (selectedId === null) {
+      loadedSession.current = null;
+      setLoadingEvents(false);
       setEvents([]);
       setNextEventCursor(null);
       setHasMoreEvents(false);
@@ -297,11 +301,14 @@ export function SessionViewer(): JSX.Element {
         current = false;
       };
     }
-    setLoadingEvents(true);
+    if (loadedSession.current !== selectedId) {
+      loadedSession.current = selectedId;
+      setLoadingEvents(true);
+      setEvents([]);
+      setNextEventCursor(null);
+      setHasMoreEvents(false);
+    }
     setEventError(null);
-    setEvents([]);
-    setNextEventCursor(null);
-    setHasMoreEvents(false);
     void listSessionEvents(selectedId)
       .then((page) => {
         if (!current) return;
