@@ -106,7 +106,8 @@ export function useActionRequests(
   };
 }
 
-export const ActionRequestsContext = createContext<ReturnType<typeof useActionRequests> | null>(null);
+export const ActionRequestsContext: ReturnType<typeof createContext<ReturnType<typeof useActionRequests> | null>> =
+  createContext<ReturnType<typeof useActionRequests> | null>(null);
 
 export function PendingActionCard({
   request,
