@@ -70,9 +70,7 @@ def _group(config: dict[str, JsonValue]) -> ActionGroup:
 
 
 def _request(action: ActionIdentity) -> ExecutionRequest:
-    return ExecutionRequest(
-        request_id=uuid4(), action=action, arguments={}, origin={}, correlation={}, caller=CALLER.account
-    )
+    return ExecutionRequest(request_id=uuid4(), action=action, arguments={}, caller=CALLER.account)
 
 
 async def test_empty_catalog_has_no_echo_fallback(engine: AsyncEngine) -> None:
@@ -453,7 +451,6 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
                     title=f"test title for {key}",
                     action=body.action,
                     arguments={"message": message},
-                    origin={"caller": bound_caller.account.name, "binding": "fixture-echo"},
                 ),
                 CallerPrincipal(account=caller),
             )

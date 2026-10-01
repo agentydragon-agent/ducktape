@@ -298,12 +298,7 @@ async def test_decision_context_carries_only_the_authenticated_caller(
     service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider])
     try:
         forged = ActionRequestInput(
-            idempotency_key="identity-context",
-            title="test title for identity-context",
-            action=ECHO,
-            arguments={"n": 1},
-            origin={"agent_id": "forged-agent", "owner": "forged-owner", "sandbox_uid": "forged-uid"},
-            correlation={"turn_ref": "forged-turn", "binding": "forged-binding"},
+            idempotency_key="identity-context", title="test title for identity-context", action=ECHO, arguments={"n": 1}
         )
         await service.submit(forged, CALLER)
         (context,) = provider.contexts
@@ -547,11 +542,7 @@ async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
     try:
         pending = await service.submit(
             ActionRequestInput(
-                idempotency_key="unbound",
-                title="test title for unbound",
-                action=ECHO,
-                arguments={"n": 1},
-                origin={"binding": "coder", "caller": SUBJECT.name, "policy_set": "bounded-echo"},
+                idempotency_key="unbound", title="test title for unbound", action=ECHO, arguments={"n": 1}
             ),
             CALLER,
         )
