@@ -39,7 +39,16 @@ pub(crate) struct ModuleReferenceNeeds<'a> {
 }
 
 pub(crate) type SourceImportResolutionKey = (String, String, String);
-pub(crate) type SourceImportResolution = Option<(String, String, String)>;
+/// A resolved source-chunk import. Keep the artifact resolver's tuple at this
+/// boundary; downstream import planning should name the fields it uses.
+#[derive(Clone)]
+pub(crate) struct SourceImportTarget {
+    pub(crate) chunk_id: String,
+    pub(crate) entry_file: String,
+    pub(crate) path: String,
+}
+
+pub(crate) type SourceImportResolution = Option<SourceImportTarget>;
 
 pub(crate) struct ArtifactSourceImportResolutionCache<'a> {
     artifact: &'a ChunkBundle,
@@ -87,7 +96,12 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
             .resolver
             .as_ref()
             .expect("resolver initialized")
-            .resolve(source, caller_chunk_id_interned, caller_file);
+            .resolve(source, caller_chunk_id_interned, caller_file)
+            .map(|(chunk_id, entry_file, path)| SourceImportTarget {
+                chunk_id,
+                entry_file,
+                path,
+            });
         self.resolutions.insert(key, resolved.clone());
         Ok(resolved)
     }
