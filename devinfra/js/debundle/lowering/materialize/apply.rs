@@ -48,7 +48,8 @@ pub(crate) fn collect_materialized_logical_chunks(
     target_dir: &str,
     chunks: Vec<MaterializedLogicalChunk>,
 ) -> Result<LoweredChunkOutputs> {
-    let known_chunks: BTreeSet<ChunkId> = artifact.chunks.iter().map(|chunk| chunk.chunk_id).collect();
+    let known_chunks: BTreeSet<ChunkId> =
+        artifact.chunks.iter().map(|chunk| chunk.chunk_id).collect();
     let mut replacements = BTreeMap::<ChunkId, MaterializedLogicalChunk>::new();
     for chunk in chunks {
         if !known_chunks.contains(&chunk.chunk_id) {
