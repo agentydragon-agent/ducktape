@@ -26,6 +26,12 @@ Proposed execution order for the Thread correctness/UI track:
 - **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`). Compact activity
   mocks (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
   resume/recovery remain on the board but are excluded from this dispatch batch.
+- **Reported UI bug, unranked:** Sandbox-level default reasoning effort appears not to carry into
+  the frontend’s later Thread launch (`SANDBOX_REASONING_DEFAULT`).
+- **Workspace design, unranked:** reconcile once-per-Sandbox bootstrap and per-Thread working
+  directories, especially for the finance-agent repo (`THREAD_WORKSPACE_BOOTSTRAP`).
+- **Reported UI status drift, unranked:** reconcile Thread status dots in the composer and
+  left sidebar (`THREAD_STATUS_PARITY`).
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Low priority / deferred:** bounded browser cache state (`THREAD_LAZY_HISTORY`, desire D6),
@@ -61,7 +67,7 @@ flowchart TB
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
-    MCP_CONSOLE_INTERNAL["Deferred migration<br/>Console's in-process sandbox and grants servers<br/>sandbox needs Haku's identity; grants a surface"]:::future
+    MCP_CONSOLE_INTERNAL["Deferred migration<br/>Console's in-process grants server<br/>temporary-grant Action surface"]:::future
     MCPAGG["Capstone<br/>every Console MCP server has an ActionGroup<br/>the aggregator can be retired"]:::milestone
     RETIRE_MCP_CATALOG["Deferred migration<br/>retire Haku Console's connected-MCP catalog<br/>once the Action catalog answers for it"]:::future
     RETIRE_APPROVAL_QUEUE["Deferred migration<br/>retire Haku Console's tool-call approval queue<br/>once Decisions and the approval UI cover it"]:::future
@@ -115,6 +121,9 @@ flowchart TB
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
     THREAD_ACTIVITY_MOCKS["P1 UI design<br/>mock compact tool/reasoning activity<br/>one-line calls with individual expansion"]:::future
     THREAD_ACTIVITY_DENSITY["Planned UI after mock review<br/>compact activity with per-item disclosure<br/>preserve status, ordering, and Raw evidence"]:::future
+    SANDBOX_REASONING_DEFAULT["Reported UI bug<br/>Sandbox default reasoning effort<br/>not reflected in later Thread launch"]:::future
+    THREAD_WORKSPACE_BOOTSTRAP["Unranked workspace design<br/>one Sandbox bootstrap vs Thread cwd<br/>finance-agent repo as natural cwd"]:::future
+    THREAD_STATUS_PARITY["Reported UI drift<br/>composer and sidebar Thread dots<br/>reconcile evidence and status semantics"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Unranked candidate<br/>enable and adopt native subagents<br/>as linked Agentplane Threads"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
@@ -417,9 +426,6 @@ ownership: an account's bindings must not fight a reconciler for the same object
 replaces. What remains, each with what it needs; an entry leaves when its set is written or
 another route replaces it.
 
-- **`haku_sandbox_control`** (`sandbox`): `sandbox-self` already auto-approves every Action of the
-  Action Service's `sandbox` group. What this entry waits on is a box that acts as Haku, the
-  `sandbox` half of `MCP_CONSOLE_INTERNAL`.
 - **`exact_tools` over `grants`** (`kubernetes_reads`, `grants_whoami`, `grants_own_revoke`):
   `grants` has no Action Service counterpart, so no set can name these until one exists, the
   `grants` half of `MCP_CONSOLE_INTERNAL`.
@@ -548,6 +554,67 @@ coverage of the reviewed cases, including reload and reconnect.
 Reasoning and tool arguments and output already load on demand (`LazyBody` in
 `projected_session.tsx`); compact rows keep that loading and explicitly distinguish unloaded,
 streaming, empty, and unavailable details.
+
+### `SANDBOX_REASONING_DEFAULT` — honor Sandbox reasoning effort on later Thread launch
+
+**Operator report, not yet reproduced:** setting a default reasoning effort at the Sandbox level
+appears not to take effect in the frontend when launching subsequent Threads from that Sandbox.
+Check the effective `binding.thread_defaults` returned for the Sandbox, the Thread launch form's
+initial selection after model options load, and the submitted session-open request. Distinguish a
+frontend prefill/reset bug from incorrect preset resolution or a backend launch bug; do not assume
+which layer is at fault. In particular, inspect the model-catalog and Sandbox-default effects in
+`app/frontend/sandbox_page.tsx` for ordering or validation interactions.
+
+**Acceptance:** with a Sandbox default reasoning effort different from the model's first offered
+effort, open its page and launch a later Thread without changing the effort. The form must show
+the effective Sandbox default, and the created Thread must use it. Explicit per-Thread changes
+must override that default without changing future launches. Cover initial load, reload, and a
+model/harness change (where a now-invalid effort must be handled intentionally) in frontend tests.
+
+### `THREAD_WORKSPACE_BOOTSTRAP` — make Thread cwd and bootstrap ownership coherent
+
+**Operator question / current code, not a deployed verification:** Threads have an explicit
+`SessionSpec.cwd`. The current `finance-agent` Thread preset specifies
+`/state/workspaces/{session_id}`; the Sandbox page's later-Thread launch also sends
+`/state/workspaces/${sessionId}` explicitly, which overrides any bound preset cwd in the app's
+session-open merge. The runner creates that directory and launches the harness there. Threads in
+one Sandbox therefore default to separate working directories, not to the shared
+`/state/workspaces/finance-agent` repo. The finance-agent Sandbox bootstrap clones that repo once
+at `/state/workspaces/finance-agent`, and runner initialization executes once per Sandbox from its
+state directory, not from each Thread's cwd. The instructions currently describe the cloned repo
+as the agent's workspace, but that does not make it the launched Codex process's cwd.
+
+**Design decision:** decide whether an agent such as finance-agent should start in one shared
+Sandbox repo, a per-Thread clone/worktree of it, or a configurable mix. Define ownership and
+lifetime of initialization for both Sandbox-shared state and Thread-local cwd; account for
+concurrent Threads modifying the same checkout, credential handling in cloned Git remotes,
+existing Sandboxes whose bootstrap hash cannot change, and safe migration of preset defaults.
+Keep cwd and bootstrap visible/overridable at the appropriate scope rather than silently ignoring
+configured cwd. Avoid treating a once-per-Sandbox script as a per-Thread setup mechanism.
+
+**Acceptance:** a newly launched finance-agent Codex Thread reports a cwd that is the intended
+Git checkout (and can work there without a manual `cd`); a second Thread has the explicitly
+chosen sharing/isolation behavior. Test both the create-and-launch and later-Thread paths with
+preset and explicit cwd overrides, plus reload and bootstrap replay/failure. Record the chosen
+workspace contract in [launch presets](../docs/launch_presets.md) before changing runtime behavior.
+
+### `THREAD_STATUS_PARITY` — reconcile composer and sidebar Thread status dots
+
+**Operator report:** the dot by the composer sometimes disagrees with the same Thread's dot in
+the left sidebar. Current code does use different projections: `threads/projected_session.tsx`
+computes a multi-axis status from that Thread's sync window, feed/harness view state, Sandbox
+availability, and freshness; `sidebar.tsx` reduces the `/threads` live snapshot to a green/gray
+dot using Sandbox state, snapshot freshness, and the Thread's `harness_state` and `active_turn_id`.
+The shared `ThreadStatusDot` component is presentation, not a shared status derivation. These
+projections can legitimately have different freshness; determine whether observed disagreement is
+stale data, inconsistent status mapping, or both, rather than asserting a backend bug.
+
+**Acceptance:** define one documented meaning for each dot/tooltip (including catching up,
+reconnecting, failed feed, stopped/lost harness, archived/deleted Sandbox, and active turn), and
+make divergent freshness explicit rather than showing contradictory live claims. Test the same
+Thread in both surfaces across running/idle, turn start/end, disconnect/reconnect, and reload,
+including snapshots that arrive in a different order. Do not promote retained history to a live
+running claim without evidence.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 
@@ -828,22 +895,15 @@ front of Haku's sandbox and CI.
 
 ### `MCP_CONSOLE_INTERNAL` — counterparts for the console-internal servers
 
-**Deferred migration:** Console's remaining MCP servers are its `in_process` `sandbox` and `grants`
-(`cluster/cdk8s/haku/console_config.py`), and they are on separate clocks.
+**Deferred migration:** the deployed Console catalog now offers only its in-process `grants`
+server. [#8620](https://github.com/agentydragon/ducktape/pull/8620) removed the `sandbox` server,
+its profile grant, and its auto-approval policy without an Action Service migration. The separate
+[#8621](https://github.com/agentydragon/ducktape/pull/8621) proposes disabling Console's own
+agent-facing `/mcp` endpoint; disabling an ingress does not itself replace Console's grant model,
+browser APIs, or approval ledger. If the older Haku-identity Sandbox workflow is needed later,
+assess that as a new product requirement, not an automatic prerequisite for this migration.
 
-- **`sandbox` has a counterpart surface; what it lacks is Haku's identity.** The Action Service's
-  `sandbox` group stamps a box and runs bounded commands in it, and staging also offers it to
-  external Connections as direct tools ([sandbox Actions](../action_service/sandbox/README.md),
-  `cluster/cdk8s/agentplane/staging.py`). A box there runs as its caller, which has to live in the
-  group's namespace (`action_service/sandbox/executor.py`), and Haku reaches staging as `claude-ai`
-  (<../../haku/TODO.md> § Wiring / hardening), so its box runs as `claude-ai` in
-  `agentplane-staging`. Console's box runs as Haku's own `haku` ServiceAccount in `haku-sandbox`
-  and bootstraps a git-synced haku-state checkout (<../../haku/docs/security.md> § `sandbox`
-  in-process server); it is where haku-state validation and anything needing the `haku` identity
-  runs (<../../haku/runtime/claude_web_env/run.md>). Do not carry over Haku's warm-pool feature;
-  dropping it is an explicit product decision, not a parity gap. Retiring Console's server needs a
-  box that runs as that identity, with that bootstrap.
-- **`grants` has no Action Service counterpart**, so this half is not configuration: the surface
+- **`grants` has no Action Service counterpart**, so this is not configuration: the surface
   has to exist first. It also waits on `ELEVATE`: its tools are about access that expires, and
   temporary grants are what the Action Service is missing, not the tool definitions.
 
