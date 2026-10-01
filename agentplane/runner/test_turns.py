@@ -74,12 +74,8 @@ async def test_effort_change_is_confirmed_and_used_by_next_model_request(
         for index, effort in enumerate(("high", "low"), start=1):
             command_id = f"effort-{index}"
             await session.switch_reasoning_effort(command_id, effort)
-            admitted = await session.until(
-                lambda entry, command_id=command_id: (
-                    events.kind(entry) == "command_admitted"
-                    and entry.event.command_admitted.command.command_id == command_id
-                )
-            )
+            admitted = await session.until(events.is_kind("command_admitted"))
+            assert admitted.event.command_admitted.command.command_id == command_id
             assert admitted.event.command_admitted.command.change_reasoning_effort.effort == effort
             if spec.harness == protocol_pb2.HARNESS_CLAUDE:
                 # Claude's settings control response is the proof. Merely sending it is not.
