@@ -6,9 +6,9 @@ use std::fmt;
 
 use analysis::{OwnerId, StatementOrdinal};
 use selector_constraint_backend::{
-    AllowedTupleRowsId, BackendValueId, CompiledSelectorProblem, CompiledSelectorProblemBuilder,
-    CompiledSelectorProblemError, ConstraintValue, ConstraintVariableId, SharedVariableDomainId,
-    TargetBindingProjection,
+    AllowedTupleRowsId, BackendValueId, BindingProjection, CompiledSelectorProblem,
+    CompiledSelectorProblemBuilder, CompiledSelectorProblemError, ConstraintValue,
+    ConstraintVariableId, SharedVariableDomainId, TargetBindingProjection,
 };
 use selector_ir::{
     OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
@@ -44,9 +44,9 @@ pub fn compile_selector_problem(
             Some(SourceBindingProjection::Const(binding)) => {
                 Some(TargetBindingProjection::Const(binding.clone()))
             }
-            Some(SourceBindingProjection::Var(binding)) => Some(TargetBindingProjection::Variable(
-                model_variable(&variables, *binding)?,
-            )),
+            Some(SourceBindingProjection::Variable(binding)) => Some(
+                TargetBindingProjection::Variable(model_variable(&variables, *binding)?),
+            ),
             None => None,
         };
         model.add_target_projection(target.id, owner_variable, binding_projection)?;
@@ -768,11 +768,8 @@ fn required_string_term_const(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SourceBindingProjection {
-    Const(String),
-    Var(SelectorVariableId),
-}
+/// Binding projection before selector variables are lowered to solver variables.
+pub type SourceBindingProjection = BindingProjection<SelectorVariableId>;
 
 #[derive(Debug, Default)]
 struct TargetBindingProjections {
@@ -791,7 +788,7 @@ impl TargetBindingProjections {
                 SelectorAtom::OwnerDeclaresBinding {
                     owner: OwnerTerm::Var { id: owner },
                     binding: StringTerm::Var { id: binding },
-                } => projections.insert(*owner, SourceBindingProjection::Var(*binding))?,
+                } => projections.insert(*owner, SourceBindingProjection::Variable(*binding))?,
                 _ => {}
             }
         }
