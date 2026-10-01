@@ -5,7 +5,7 @@
   },
   "buildbuddy_remote_runner": {
     "image": "ghcr.io/agentydragon/buildbuddy-remote-runner",
-    "digest": "sha256:ef5168cf84bca70d5f4194367ac45f4e2a8c89558814f8303138a3b6c8a91a23"
+    "digest": "sha256:d5e118f228b2b5f105aa73e4567377e5323bafbaf86ac38f14bccbb4946e6cfe"
   },
   "freecad_test": {
     "image": "ghcr.io/agentydragon/freecad-test",
