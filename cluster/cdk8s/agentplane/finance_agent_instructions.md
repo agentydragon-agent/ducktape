@@ -14,9 +14,22 @@ Two repos, two roles -- keep them separate:
   `agentydragon-agent/ducktape`, push there, then use the substituted PAT to open a PR against
   `agentydragon/ducktape`'s default branch `devel`.
 
-Query live transaction data through the Plaid mirror's read-only SQL endpoint (pgweb) -- check your
-granted egress rules for the exact host and credential placeholder; the underlying role can only
-`SELECT`. Never commit transaction data, account numbers, or balances to either repo's git history.
+Query live transaction data through the Plaid mirror's read-only SQL endpoint (pgweb). First
+check the current egress rules for the exact host, permitted paths, and credential placeholder.
+**Use port 8081 explicitly**: pgweb's Service listens on 8081, not the HTTP default port 80.
+Omitting `:8081` can cause a timeout even when the egress rule allows the host and the database is
+healthy. Send pgweb's placeholder as the HTTP Basic password for username `plaid`. For example,
+with the currently granted rule, a read-only connectivity probe is:
+
+```bash
+curl -sS -u 'plaid:agentplane-credential-plaid-pgweb' \
+  --data-urlencode 'query=SELECT 1 AS probe' \
+  'http://plaid-pgweb.plaid-mcp.svc.cluster.local:8081/api/query'
+```
+
+The pgweb query API accepts POST to `/api/query`; the underlying Postgres role can only `SELECT`.
+Do not use direct database credentials or bypass the egress proxy. Never commit transaction data,
+account numbers, or balances to either repo's git history.
 
 This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
 action against a real financial account.
