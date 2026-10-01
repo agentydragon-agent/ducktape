@@ -821,7 +821,11 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     sessionReplay: "reconnecting",
     outageAge: 10_000,
-    readySelectors: ['[aria-label="Runner feed active · harness running"]', '[data-connection="degraded"]', '[data-thread-anchor="34"]'],
+    readySelectors: [
+      '[aria-label="Runner feed active · harness running"]',
+      '[data-connection="degraded"]',
+      '[data-thread-anchor="34"]',
+    ],
     captureViewport: true,
   },
   session_sync_reconnecting_phone: {
@@ -830,7 +834,11 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     sessionReplay: "reconnecting",
     outageAge: 90_000,
-    readySelectors: ['[aria-label="Runner feed active · harness running"]', "::-p-text(may be out of date)", '[data-thread-anchor="34"]'],
+    readySelectors: [
+      '[aria-label="Runner feed active · harness running"]',
+      "::-p-text(may be out of date)",
+      '[data-thread-anchor="34"]',
+    ],
     captureViewport: true,
   },
   // The existing nav/header chrome (its own decluttering is separately tracked) leaves little
