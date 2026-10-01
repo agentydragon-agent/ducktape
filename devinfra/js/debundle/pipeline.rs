@@ -267,7 +267,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         selected_lowerings = materialize_result.selected_lowerings;
         unmatched_spec_claims = materialize_result.unmatched_spec_claims;
         vendor_lowering_rewrites = materialize_result.vendor_reference_rewrites;
-        let outputs = materialize_result.output.into_emission_files()?;
+        let outputs = materialize_result.output;
         decomposition_by_chunk = outputs.decomposition_by_chunk;
         outputs.files
     } else {

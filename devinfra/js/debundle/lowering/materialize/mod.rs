@@ -9,7 +9,7 @@ mod plan_builder;
 
 use std::io::Write;
 
-pub(super) use apply::{LoweredChunkOutputs, collect_materialized_logical_chunks};
+pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext, SelectorModules};
 use selector_resolve::Resolution;
 

@@ -84,7 +84,7 @@ use lower::{
     LoweredChunk, lower_chunk,
 };
 use materialize::{
-    ChunkContext, ChunkSpec, LoweredChunkOutputs, MaterializeLogicalChunkInputs,
+    ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs,
     collect_materialized_logical_chunks, finish_logical_chunk, prepare_logical_chunk,
     resolve_prepared_chunks,
 };
@@ -107,7 +107,7 @@ use visitors::{
 pub struct MaterializeLogicalModulesResult {
     /// Finalized lowered and pass-through files, kept outside a bundle until
     /// the remaining post-lowering passes need their legacy input.
-    pub output: LoweredChunkOutputs,
+    pub output: EmissionChunkOutputs,
     pub selected_lowerings: Vec<SelectedModuleLowering>,
     pub module_count: usize,
     /// Per-symbol counts of vendor-swap rewrites applied at

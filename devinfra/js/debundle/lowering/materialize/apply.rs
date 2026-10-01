@@ -1,54 +1,17 @@
 use super::*;
 
-/// Finalized chunk files, retaining whether each came from lowering or
-/// passes through unchanged until the emit-stage file set is constructed.
-pub struct LoweredChunkOutputs {
-    chunks: Vec<EmissionChunk>,
-    chunk_table: ChunkTable,
-    decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
-}
-
-enum EmissionChunk {
-    PassThrough(ChunkArtifact),
-    Lowered(ChunkArtifact),
-}
-
-impl EmissionChunk {
-    fn into_artifact(self) -> ChunkArtifact {
-        match self {
-            Self::PassThrough(chunk) | Self::Lowered(chunk) => chunk,
-        }
-    }
-}
-
+/// Files finalized by lowering, together with decomposition metadata for
+/// lowered chunks. Pass-through chunks retain their original position.
 pub struct EmissionChunkOutputs {
     pub files: artifact::EmissionFiles,
     pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
-}
-
-impl LoweredChunkOutputs {
-    /// Transfer finalized output files into the emit-stage file set. No JS
-    /// is re-parsed or lowered a second time.
-    pub fn into_emission_files(self) -> Result<EmissionChunkOutputs> {
-        Ok(EmissionChunkOutputs {
-            files: artifact::EmissionFiles::new(ChunkBundle {
-                chunks: self
-                    .chunks
-                    .into_iter()
-                    .map(EmissionChunk::into_artifact)
-                    .collect(),
-                chunk_table: self.chunk_table,
-            })?,
-            decomposition_by_chunk: self.decomposition_by_chunk,
-        })
-    }
 }
 
 pub(crate) fn collect_materialized_logical_chunks(
     artifact: ChunkBundle,
     target_dir: &str,
     chunks: Vec<MaterializedLogicalChunk>,
-) -> Result<LoweredChunkOutputs> {
+) -> Result<EmissionChunkOutputs> {
     let mut replacements = BTreeMap::<ChunkId, MaterializedLogicalChunk>::new();
     let known_chunks: BTreeSet<ChunkId> =
         artifact.chunks.iter().map(|chunk| chunk.chunk_id).collect();
@@ -76,15 +39,17 @@ pub(crate) fn collect_materialized_logical_chunks(
                 let (output, decomposition) =
                     materialized_chunk_artifact(target_dir, chunk.analysis, replacement);
                 decomposition_by_chunk.insert(chunk.chunk_id, decomposition);
-                EmissionChunk::Lowered(output)
+                output
             } else {
-                EmissionChunk::PassThrough(chunk)
+                chunk
             }
         })
         .collect();
-    Ok(LoweredChunkOutputs {
-        chunks,
-        chunk_table: artifact.chunk_table,
+    Ok(EmissionChunkOutputs {
+        files: artifact::EmissionFiles::new(ChunkBundle {
+            chunks,
+            chunk_table: artifact.chunk_table,
+        })?,
         decomposition_by_chunk,
     })
 }
@@ -220,8 +185,6 @@ mod tests {
         };
         let output =
             collect_materialized_logical_chunks(source, "modules", vec![lowered_chunk(first)])
-                .unwrap()
-                .into_emission_files()
                 .unwrap();
         assert_eq!(output.files.files().chunks[0].chunk_id, second);
         assert_eq!(
@@ -263,10 +226,7 @@ mod tests {
             chunks: vec![source_chunk(second, "second"), source_chunk(first, "first")],
             chunk_table,
         };
-        let output = collect_materialized_logical_chunks(source, "", Vec::new())
-            .unwrap()
-            .into_emission_files()
-            .unwrap();
+        let output = collect_materialized_logical_chunks(source, "", Vec::new()).unwrap();
         assert!(output.decomposition_by_chunk.is_empty());
         assert_eq!(
             output
