@@ -18,7 +18,7 @@ Query live transaction data through the Plaid mirror's read-only SQL endpoint (p
 check the current egress rules for the exact host, permitted paths, and credential placeholder.
 The pgweb Kubernetes Service listens on the default HTTP port 80 and forwards to the container's
 unprivileged port 8081. Use the Service hostname and default port after this change is deployed;
-if a request times out, verify the *live* Service port (older deployments expose 8081) before
+if a request times out, verify the _live_ Service port (older deployments expose 8081) before
 assuming the database is down or debugging Cilium. Send pgweb's placeholder as the HTTP Basic
 password for username `plaid`. For example, with the currently granted rule, a read-only
 connectivity probe is:
