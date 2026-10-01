@@ -11,7 +11,7 @@
  * `LiveStatus` shows the server's verdict on whether its watch is still cycling.
  */
 import { Alert } from "@mantine/core";
-import { type JSX, useEffect, useState } from "react";
+import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 
 import type { components } from "./api/schema";
 import { followStream, type StreamConnection } from "./live_stream";
@@ -69,6 +69,18 @@ export function useLive<T extends { watch: WatchHealth }>(url: string, name: str
   );
   const stream = useStreamStatus(name, connection);
   return { ...state, stream };
+}
+
+const ThreadsLiveContext = createContext<Live<ThreadsSnapshot> | null>(null);
+
+/** One /live/threads connection for the shell, shared by navigation and the open composer. */
+export function ThreadsLiveProvider({ children }: { children: ReactNode }): JSX.Element {
+  const live = useLive<ThreadsSnapshot>(liveThreadsUrl(), "Threads");
+  return <ThreadsLiveContext.Provider value={live}>{children}</ThreadsLiveContext.Provider>;
+}
+
+export function useThreadsLive(): Live<ThreadsSnapshot> | null {
+  return useContext(ThreadsLiveContext);
 }
 
 const AGE = new Intl.RelativeTimeFormat("en", { numeric: "auto" });

@@ -36,7 +36,7 @@ import {
 } from "../client";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadState, type ThreadWindow } from "./thread_sync";
 import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun, type HistoryRow } from "./history_rows";
-import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "../live";
+import { liveSandboxesUrl, LiveStatus, useLive, useThreadsLive, type SandboxesSnapshot } from "../live";
 import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./thread_cards";
@@ -44,6 +44,7 @@ import { ProjectedCommandRows, SelectedCommandOutcomes, useProjectedCommands } f
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusDot } from "../thread_status_dot";
+import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { installThreadFavicon, type ThreadFaviconPulseEpoch } from "../thread_favicon";
 import { appDocumentTitle, threadDocumentTitle, type ThreadTabStatus } from "../tab_metadata";
@@ -695,7 +696,17 @@ function ProjectedSessionBody({
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const activeTurn = controls?.active_turn_id ?? null;
-  const status = threadStatus({
+  const threadsLive = useThreadsLive();
+  // The shell's composer and sidebar use the same pushed Thread row and freshness.
+  // Isolated component mounts without the shell retain their existing projection diagnostics.
+  const sharedStatus = threadsLive
+    ? threadStatusFromSnapshot(
+        threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
+        threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox),
+        snapshotFresh(threadsLive)
+      )
+    : null;
+  const status = sharedStatus ?? threadStatus({
     sync,
     degraded,
     archived: thread.archived,

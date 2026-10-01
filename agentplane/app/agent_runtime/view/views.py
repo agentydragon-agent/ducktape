@@ -175,3 +175,6 @@ class ThreadView(BaseModel):
     active_turn_id: str | None = Field(
         default=None, description="The runner's currently active turn, or None when it is idle."
     )
+    feed_status: Literal["active", "ended", "failed"] | None = Field(
+        default=None, description="Runner feed lifecycle; None before the first attachment."
+    )

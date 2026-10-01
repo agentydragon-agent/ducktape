@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SandboxView, ThreadView } from "./client";
 import type { ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
+import { threadStatusFromSnapshot } from "./thread_status";
 import { DEGRADED_AFTER_MS } from "./stream_status";
 
 const fetchMock = vi.hoisted(() => {
@@ -52,6 +53,7 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbo
     archived: false,
     last_cursor: 0,
     harness_state: "HARNESS_STATE_UNSPECIFIED",
+    feed_status: "active",
     ...overrides,
   };
 }
@@ -177,6 +179,19 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   expect(container.querySelector('a[href="/sandboxes/test-sandbox"]')).toBeNull();
   await act(async () => row(renamed.name).click());
   expect(location()).toBe("/threads/t-1");
+});
+
+it("does not show a running dot for an archived thread or an ended/failed runner feed", () => {
+  const running = thread({
+    id: "t-1", sandbox: "test-sandbox", session_id: "s-1", harness_state: "HARNESS_STATE_RUNNING",
+    active_turn_id: "turn-1",
+  });
+  const box = sandbox("test-sandbox");
+  expect(threadStatusFromSnapshot(running, box, true)).toMatchObject({ color: "green", pulse: true });
+  expect(threadStatusFromSnapshot({ ...running, feed_status: "ended" }, box, true).color).toBe("gray");
+  expect(threadStatusFromSnapshot({ ...running, feed_status: "failed" }, box, true).color).toBe("red");
+  expect(threadStatusFromSnapshot({ ...running, archived: true }, box, true).color).toBe("gray");
+  expect(threadStatusFromSnapshot(running, box, false).color).toBe("gray");
 });
 
 it("uses the shared pulsing status dot when a fresh sidebar thread has an active turn", async () => {

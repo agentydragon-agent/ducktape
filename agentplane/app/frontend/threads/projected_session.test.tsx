@@ -12,6 +12,7 @@ import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_p
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
 import { command, getThread, models, resumeThread, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
+import { ThreadsLiveProvider } from "../live";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../markdown";
 import { HistoryRowView, ProjectedSession } from "./projected_session";
@@ -67,6 +68,7 @@ type Inventory = Array<{ name: string; state: string }> | null;
 let sandboxes: Inventory = [];
 let inventoryFresh = true;
 let inventoryDrops = false;
+let sharedFeed: "active" | "ended" | "failed" = "active";
 
 beforeEach(() => {
   document.title = "Agentplane";
@@ -79,6 +81,7 @@ beforeEach(() => {
   sandboxes = [{ name: THREAD.sandbox, state: "running" }];
   inventoryFresh = true;
   inventoryDrops = false;
+  sharedFeed = "active";
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
@@ -91,7 +94,7 @@ beforeEach(() => {
     class extends EventTarget {
       // A drop is the network's, which the browser retries: the source stays CONNECTING.
       readyState = 0;
-      constructor() {
+      constructor(url: string) {
         super();
         queueMicrotask(() => {
           if (sandboxes === null) return;
@@ -99,6 +102,9 @@ beforeEach(() => {
             new MessageEvent("snapshot", {
               data: JSON.stringify({
                 sandboxes,
+                ...(url === "/live/threads"
+                  ? { threads: [{ ...THREAD, feed_status: sharedFeed, active_turn_id: "turn-1" }], updates_connected: true }
+                  : {}),
                 watch: {
                   fresh: inventoryFresh,
                   stale_after_seconds: 90,
@@ -191,7 +197,7 @@ function threadState({
   };
 }
 
-async function render(state: ThreadState = threadState()): Promise<HTMLDivElement> {
+async function render(state: ThreadState = threadState(), shared = false): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   // The real shell topbar (app.tsx) isn't mounted here, so ProjectedSession's title/menu need
@@ -202,7 +208,8 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
   const root = createRoot(container);
   mounted.push({ root, container, topbarTitle, topbarActions });
   await act(async () => {
-    root.render(page(state, topbarTitle, topbarActions));
+    const content = page(state, topbarTitle, topbarActions);
+    root.render(shared ? <ThreadsLiveProvider>{content}</ThreadsLiveProvider> : content);
   });
   container.append(topbarTitle, topbarActions);
   return container;
@@ -410,6 +417,12 @@ it.each([
   expect(dot?.getAttribute("aria-label")).toBe(label);
   expect(dot?.getAttribute("style")).toContain(`--mantine-color-${color}-6`);
   expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(breathing);
+});
+
+it("uses the shared list feed instead of a healthy conversation projection for the composer dot", async () => {
+  sharedFeed = "failed";
+  const failed = await render(threadState({ rows: [viewState()] }), true);
+  expect(failed.querySelector('.agentplane-thread-status-dot[aria-label="Runner feed failed"]')).not.toBeNull();
 });
 
 it("pulses and labels the healthy status dot while a turn is active", async () => {

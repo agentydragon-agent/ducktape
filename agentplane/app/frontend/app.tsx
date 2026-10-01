@@ -9,6 +9,7 @@ import { ActionAffordance } from "./actions/affordance";
 import { ActionHistory } from "./actions/history";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
+import { ThreadsLiveProvider } from "./live";
 import { SandboxList } from "./sandboxes";
 import { ProjectedSession } from "./threads/projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
@@ -176,7 +177,9 @@ export default function App(): JSX.Element {
     <ThreadSyncContext.Provider value={electricThreadSync}>
       <HashRouter>
         <ActionAffordance>
-          <AppRoutes />
+          <ThreadsLiveProvider>
+            <AppRoutes />
+          </ThreadsLiveProvider>
         </ActionAffordance>
       </HashRouter>
     </ThreadSyncContext.Provider>
