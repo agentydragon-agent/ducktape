@@ -18,11 +18,14 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::local_namespace_iife_target;
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, join_module_path, list_chunk_file_paths,
+    ArtifactIndexes, ChunkId, ChunkTable, join_module_path, list_chunk_file_paths,
     module_path_dirname, normalize_module_path, relative_module_specifier,
 };
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
-pub use emission::{EmissionRewriteResult, apply_emission_rewrites, write_planned_vendor_outputs};
+pub use emission::{
+    EmissionRewriteResult, apply_emission_rewrites, apply_emission_rewrites_in_place,
+    write_planned_vendor_outputs,
+};
 use js_ast::str_value;
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
@@ -1122,10 +1125,11 @@ fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
 /// non-swapped members would work at runtime, but is rejected anyway
 /// because per-member usage is not analyzed here.
 pub fn validate_partial_swap_consumers(
-    artifact: &ChunkBundle,
+    files: &artifact::EmissionFiles,
     plan: &VendorResolutionPlan,
-    references: &ArtifactIndexes,
 ) -> Result<()> {
+    let artifact = files.files();
+    let references = files.indexes();
     let chunk_table = &artifact.chunk_table;
     let swapped_by_chunk: BTreeMap<ChunkId, BTreeSet<String>> = plan
         .partial_swaps
@@ -1292,7 +1296,8 @@ fn is_valid_identifier(name: &str) -> bool {
 mod tests {
     use super::*;
     use artifact::{
-        ChunkAnalysisReport, ChunkArtifact, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
+        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
+        JsChunk, JsFile,
     };
     use spec::{VendorLevel, VendorMark, VendorRole};
 

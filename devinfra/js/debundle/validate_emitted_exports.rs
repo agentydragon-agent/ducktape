@@ -41,13 +41,20 @@ use binding_targets::{declaration_name_strings, module_export_name};
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use artifact::{ChunkBundle, ChunkId};
+use artifact::{ChunkBundle, ChunkId, EmissionFiles};
 use js_ast::SourceLineIndex;
 
 /// `excluded_chunk_ids`: chunks excluded from the emission set (fully
 /// vendor-swapped) — never emitted, so their export surfaces are not
 /// this check's business.
 pub fn validate_emitted_exports(
+    files: &EmissionFiles,
+    excluded_chunk_ids: &BTreeSet<ChunkId>,
+) -> Result<()> {
+    validate_bundle_exports(files.files(), excluded_chunk_ids)
+}
+
+fn validate_bundle_exports(
     artifact: &ChunkBundle,
     excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<()> {
@@ -308,7 +315,8 @@ mod tests {
                 "entry.js",
                 "const a = 1;\nconst b = 2;\nexport { a, b };\n",
             );
-            validate_emitted_exports(&bundle, &BTreeSet::new()).expect("clean module passes");
+            validate_emitted_exports(&EmissionFiles::new(bundle).unwrap(), &BTreeSet::new())
+                .expect("clean module passes");
         });
     }
 
@@ -324,7 +332,7 @@ function av() {}\n\
 export { BackgroundPattern as av };\n\
 export { av };\n";
             let bundle = bundle_with_file("chunk", "entry.js", source);
-            let err = validate_emitted_exports(&bundle, &BTreeSet::new())
+            let err = validate_bundle_exports(&bundle, &BTreeSet::new())
                 .expect_err("duplicate av should be rejected");
             let msg = format!("{err}");
             assert!(msg.contains("`av` exported 2×"), "missing count: {msg}");
@@ -341,7 +349,7 @@ export const x = 1;\n\
 const y = 2;\n\
 export { y as x };\n";
             let bundle = bundle_with_file("c", "f.js", source);
-            let err = validate_emitted_exports(&bundle, &BTreeSet::new()).expect_err("duplicate x");
+            let err = validate_bundle_exports(&bundle, &BTreeSet::new()).expect_err("duplicate x");
             let msg = format!("{err}");
             assert!(msg.contains("`x` exported 2×"), "{msg}");
             assert!(msg.contains("(decl)"), "decl shape missing: {msg}");
@@ -358,7 +366,7 @@ const fallback = 2;\n\
 export { fallback as default };\n";
             let bundle = bundle_with_file("c", "f.js", source);
             let err =
-                validate_emitted_exports(&bundle, &BTreeSet::new()).expect_err("duplicate default");
+                validate_bundle_exports(&bundle, &BTreeSet::new()).expect_err("duplicate default");
             let msg = format!("{err}");
             assert!(msg.contains("`default` exported 2×"), "{msg}");
         });
@@ -376,7 +384,7 @@ const foo = 1;\n\
 export { foo };\n\
 export * from \"./sibling.js\";\n";
             let bundle = bundle_with_file("c", "f.js", source);
-            validate_emitted_exports(&bundle, &BTreeSet::new())
+            validate_bundle_exports(&bundle, &BTreeSet::new())
                 .expect("star re-export does not duplicate");
         });
     }
@@ -394,7 +402,7 @@ export * from \"./sibling.js\";\n";
                 FileRole::Module,
             );
             let err =
-                validate_emitted_exports(&bundle, &BTreeSet::new()).expect_err("bad file flagged");
+                validate_bundle_exports(&bundle, &BTreeSet::new()).expect_err("bad file flagged");
             let msg = format!("{err}");
             assert!(msg.contains("bad.js"), "{msg}");
             assert!(!msg.contains("good.js"), "good.js should not appear: {msg}");
@@ -424,7 +432,7 @@ export * from \"./sibling.js\";\n";
                     source_path: "c.js".to_string(),
                 },
             });
-            validate_emitted_exports(&bundle, &BTreeSet::new()).expect("source-only file skipped");
+            validate_bundle_exports(&bundle, &BTreeSet::new()).expect("source-only file skipped");
         });
     }
 }

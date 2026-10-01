@@ -5,16 +5,7 @@ file is an active backlog: resolved items are deleted, not struck through.
 
 ## What hurts most (priority order)
 
-1. **The pipeline has no single emit-ready output model.** `pipeline.rs` feeds
-   lowered files back into `ChunkBundle`, rebuilds `ArtifactIndexes`, then
-   runs cross-chunk import naturalization, vendor emission rewrites, a
-   post-strip consumer check, dead-import/export pruning, duplicate-export
-   validation, and finally tree/harness writers. `write_js_tree` and
-   `emit_browser_harness` cannot just consume the lowerer's return value.
-   The bundle round-trip is real, but replacing it is **not** merely changing
-   the last two calls: the intervening passes must see the same final files
-   and names. See the migration order below.
-2. **Finding the right owner of a behavior is laborious.** `BUILD.bazel` has
+1. **Finding the right owner of a behavior is laborious.** `BUILD.bazel` has
    over 1,200 lines of fine-grained Rust targets; `pipeline.rs`, `cli/mod.rs`,
    `artifacts/artifact.rs`, `spec/spec.rs`, `selectors/resolution/selector_resolve.rs`,
    `selectors/matching/chunk_facts.rs`, and `peel/quotient.rs` are each
@@ -22,10 +13,10 @@ file is an active backlog: resolved items are deleted, not struck through.
    interfaces where there is already a stable phase boundary, keep the
    public API and Bazel targets navigable, and avoid creating a maze of
    one-function modules.
-3. **The same words name different layers.** See [Vocabulary / naming debt](#vocabulary--naming-debt)
+2. **The same words name different layers.** See [Vocabulary / naming debt](#vocabulary--naming-debt)
    below. Fix the highest-friction local ambiguity first; avoid a project-wide
    rename that changes spec, report, or CLI wire formats.
-4. **Graph and lowering boundaries are permissive.** The owner graph,
+3. **Graph and lowering boundaries are permissive.** The owner graph,
    incremental quotient, realizability index, and emitted schedule have
    related but separately maintained state. Broad `pub(crate)` and
    `lowering/`'s sibling `use super::*` make cross-phase dependencies hard
@@ -38,26 +29,18 @@ Re-check file paths and line numbers against current `HEAD` before
 acting; this file intentionally describes shapes rather than frozen
 review line references.
 
-### Materialize-into-emit (high impact, high risk)
+### Emission internals (intentional low-level boundary)
 
-`materialize_logical_modules` currently writes lowered module files into the
-chunk bundle, and `IndexedArtifact::update` rebuilds indexes. The pipeline
-then mutates that bundle again (cross-chunk import naturalization, vendor
-emission rewrites, dead-import/export pruning), checks the final emit shape,
-and only then writes the tree and browser harness. The 2026-06 vendor
-collapse removed separate vendor mutation _waves_, not all later artifact
-mutations. `docs/design.md` "Pipeline trajectory" describes the intended
-end state; its "one artifact mutation wave" shorthand does not include all
-post-lowering transformations.
-
-**Migration order:** (1) make an explicit typed final-file/emission-set
-boundary, preserving file metadata and full-swap exclusions; (2) move each
-post-lowering pass to that boundary, including the partial-swap consumer gate
-and final export validation; (3) have both writers consume it; (4) only then
-remove the `ChunkBundle` round-trip and the post-materialize index rebuild
-_if_ no remaining resolver needs it. Pin mixed lowered/pass-through/vendor
-cases with e2e fixtures at each step. Do not drop the vendor consumer scan
-just because file ownership changes.
+`EmissionFiles` owns finalized lowered/pass-through files and the matching
+output indexes. Post-strip validation, final export validation, the rename
+queue, and tree/harness script writing now require `&EmissionFiles`, so their
+callers cannot accidentally pass prepared or stale files/indexes. Body-only
+transforms still use `rewrite_bodies`'s checked `(ChunkBundle,
+ArtifactIndexes)` closure: those algorithms also operate on prepared/source
+chunks in their tests and the closure enforces unchanged indexed layout.
+Do not rebuild output indexes after body-only rewrites; lowering changes
+entry paths and creates modules, so its one post-lowering index build is
+necessary. Full-swap exclusions and the post-strip gate remain mandatory.
 
 ### Post-strip consumer scan retirement condition
 
