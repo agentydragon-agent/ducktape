@@ -73,7 +73,7 @@ def _mcp_servers() -> dict[str, Any]:
         # ruling on #4986): any Agent may ask. `create_grant` is deliberately in NO
         # auto-approval policy: grant creation requires a manually approved source ToolCall
         # (an auto-approved call cannot mint a grant).
-        "grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}},
+        "grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}
     }
 
 
