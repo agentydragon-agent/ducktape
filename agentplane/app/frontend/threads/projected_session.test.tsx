@@ -163,7 +163,12 @@ function viewState({
     pending: false,
     turnId: null,
     state: {
-      controls: { applied_model: model, applied_reasoning_effort: null, active_turn_id: activeTurn, harness_state: harness },
+      controls: {
+        applied_model: model,
+        applied_reasoning_effort: null,
+        active_turn_id: activeTurn,
+        harness_state: harness,
+      },
       operational: { status, last_verified_cursor: "1", feed_error: null },
     },
     textRef: null,
@@ -523,7 +528,10 @@ it("shows the applied effort and sends a change command without optimistically c
   );
   expect(high).toBeDefined();
   await act(async () => high?.click());
-  expect(sentOperations()).toContainEqual({ case: "changeReasoningEffort", value: expect.objectContaining({ effort: "high" }) });
+  expect(sentOperations()).toContainEqual({
+    case: "changeReasoningEffort",
+    value: expect.objectContaining({ effort: "high" }),
+  });
   expect(picker?.value).toBe("low");
   await rerender(container, threadState({ rows: [viewState()] }));
   expect(picker?.value).toBe("low");
