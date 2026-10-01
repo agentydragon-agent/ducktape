@@ -296,15 +296,16 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // erase binding names spec selectors matched on.
     let mut vendor_rewrite_counts = vendor_lowering_rewrites;
     let emission_references;
-    (emission_files, emission_references) = emission_files.rewrite_bodies(|artifact, indexes| {
-        naturalize_cross_chunk_imports(
-            artifact,
-            indexes,
-            &selected_lowerings,
-            &processed_chunk_names,
-        )?;
-        apply_emission_rewrites_in_place(artifact, &vendor_plan, indexes)
-    })?;
+    (emission_files, emission_references) =
+        emission_files.rewrite_bodies(|artifact, indexes| {
+            naturalize_cross_chunk_imports(
+                artifact,
+                indexes,
+                &selected_lowerings,
+                &processed_chunk_names,
+            )?;
+            apply_emission_rewrites_in_place(artifact, &vendor_plan, indexes)
+        })?;
     merge_rewrite_counts(&mut vendor_rewrite_counts, emission_references);
 
     if vendor_plan.has_partial_swaps() || vendor_plan.has_bundled_partial_swaps() {
@@ -354,7 +355,6 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         prune_unimported_module_exports(files);
         Ok(())
     })?;
-
 
     // Final emit-shape check: every JS file that came out of the
     // materialize / strip pipeline must have unique public export

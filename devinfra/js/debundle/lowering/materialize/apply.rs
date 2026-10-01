@@ -221,12 +221,22 @@ mod tests {
         let output =
             collect_materialized_logical_chunks(source, "modules", vec![lowered_chunk(first)])
                 .unwrap()
-                .into_emission_files().unwrap();
+                .into_emission_files()
+                .unwrap();
         assert_eq!(output.files.files().chunks[0].chunk_id, second);
-        assert_eq!(output.files.files().chunks[0].analysis.entry_file, "entry.js");
+        assert_eq!(
+            output.files.files().chunks[0].analysis.entry_file,
+            "entry.js"
+        );
         assert_eq!(output.files.files().chunks[1].chunk_id, first);
-        assert_eq!(output.files.files().chunks[1].analysis.entry_file, "lowered.js");
-        assert_eq!(output.files.files().chunks[1].analysis.source_path, "first.js");
+        assert_eq!(
+            output.files.files().chunks[1].analysis.entry_file,
+            "lowered.js"
+        );
+        assert_eq!(
+            output.files.files().chunks[1].analysis.source_path,
+            "first.js"
+        );
         assert_eq!(output.decomposition_by_chunk.len(), 1);
         assert!(output.decomposition_by_chunk.contains_key(&first));
     }
@@ -255,7 +265,8 @@ mod tests {
         };
         let output = collect_materialized_logical_chunks(source, "", Vec::new())
             .unwrap()
-            .into_emission_files().unwrap();
+            .into_emission_files()
+            .unwrap();
         assert!(output.decomposition_by_chunk.is_empty());
         assert_eq!(
             output

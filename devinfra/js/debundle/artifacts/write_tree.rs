@@ -4,8 +4,8 @@ use std::path::Path;
 use anyhow::{Result, bail};
 
 use artifact::{
-    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, EmissionFiles,
-    ChunkId, ChunksReport, DecompositionMetrics, PackageManifest, RootLogicalModulesSummary,
+    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, ChunkId,
+    ChunksReport, DecompositionMetrics, EmissionFiles, PackageManifest, RootLogicalModulesSummary,
     SelectedModuleLowering, materialize_artifact_scripts, write_json,
 };
 use identifier_rename_queue::compute_identifier_rename_queue;
