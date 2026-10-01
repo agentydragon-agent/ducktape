@@ -130,19 +130,21 @@ pub(crate) fn class_of_item(item: &ModuleItem) -> Option<&Class> {
 }
 
 pub(crate) fn classify_item(item: &ModuleItem) -> StatementKind {
-    match item {
-        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => StatementKind::Import,
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
-            Decl::Var(_) => StatementKind::VarDecl,
-            Decl::Fn(_) => StatementKind::FnDecl,
-            Decl::Class(_) => StatementKind::ClassDecl,
-            _ => StatementKind::Export,
-        },
-        ModuleItem::ModuleDecl(_) => StatementKind::Export,
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))) => StatementKind::VarDecl,
-        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => StatementKind::FnDecl,
-        ModuleItem::Stmt(Stmt::Decl(Decl::Class(_))) => StatementKind::ClassDecl,
-        _ => StatementKind::SideEffect,
+    let decl = match item {
+        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => return StatementKind::Import,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => &decl.decl,
+        ModuleItem::ModuleDecl(_) => return StatementKind::Export,
+        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
+        _ => return StatementKind::SideEffect,
+    };
+    match binding_targets::decl_shape(decl) {
+        Some(binding_targets::DeclShape::Variable) => StatementKind::VarDecl,
+        Some(binding_targets::DeclShape::Function) => StatementKind::FnDecl,
+        Some(binding_targets::DeclShape::Class) => StatementKind::ClassDecl,
+        // An unsupported exported declaration is still an export, whereas
+        // an unsupported bare declaration is a side effect to the analyzer.
+        None if matches!(item, ModuleItem::ModuleDecl(_)) => StatementKind::Export,
+        None => StatementKind::SideEffect,
     }
 }
 

@@ -9,7 +9,9 @@ use artifact::{
     ImportSpecifierKind, ImportSpecifierRecord, KeptTopLevelDeclarationRecord,
     TopLevelDeclarationKind,
 };
-use binding_targets::{binding_names, member_root_sym, module_export_name};
+use binding_targets::{
+    DeclShape, decl_shape, declaration_name_strings, member_root_sym, module_export_name,
+};
 use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
 
 /// True when a specifier string is a relative module path that the
@@ -91,25 +93,12 @@ fn classify_top_level_decl(item: &ModuleItem) -> Option<(TopLevelDeclarationKind
     let ModuleItem::Stmt(Stmt::Decl(decl)) = item else {
         return None;
     };
-    match decl {
-        Decl::Fn(function) => Some((
-            TopLevelDeclarationKind::Function,
-            vec![function.ident.sym.to_string()],
-        )),
-        Decl::Class(class) => Some((
-            TopLevelDeclarationKind::Class,
-            vec![class.ident.sym.to_string()],
-        )),
-        Decl::Var(var) => Some((
-            TopLevelDeclarationKind::Variable,
-            var.decls
-                .iter()
-                .flat_map(|decl| binding_names(&decl.name))
-                .map(|id| id.0.to_string())
-                .collect(),
-        )),
-        _ => None,
-    }
+    let kind = match decl_shape(decl)? {
+        DeclShape::Function => TopLevelDeclarationKind::Function,
+        DeclShape::Class => TopLevelDeclarationKind::Class,
+        DeclShape::Variable => TopLevelDeclarationKind::Variable,
+    };
+    Some((kind, declaration_name_strings(decl)))
 }
 
 pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
