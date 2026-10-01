@@ -19,12 +19,13 @@ import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react"
 import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
-import { LiveStatus, liveThreadsUrl, useLive, type ThreadsSnapshot } from "./live";
+import { LiveStatus, useRequiredThreadsLive, type Live, type ThreadsSnapshot } from "./live";
 import { stateDetail } from "./sandboxes";
 import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
 import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
 import { ThreadStatusDot } from "./thread_status_dot";
+import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "agentplane-sidebar-width";
 const SIDEBAR_DEFAULT_WIDTH = 240;
@@ -194,8 +195,8 @@ function ThreadRow({
 }): JSX.Element {
   const label = thread.name ?? thread.session_id;
   const readonly = sandbox === null;
-  const harnessRunning = fresh && sandbox?.state === "running" && thread.harness_state === "HARNESS_STATE_RUNNING";
-  const activeTurn = harnessRunning && Boolean(thread.active_turn_id);
+  const status = threadStatusFromSnapshot(thread, sandbox ?? undefined, fresh);
+  const harnessRunning = status.color === "green";
   const className = [
     "agentplane-sidebar-row",
     current ? "current" : "",
@@ -218,18 +219,7 @@ function ThreadRow({
         }
       }}
     >
-      <ThreadStatusDot
-        color={harnessRunning ? "green" : "gray"}
-        label={
-          activeTurn
-            ? "Turn running · Runner feed active · harness running"
-            : harnessRunning
-              ? "Last observed harness running"
-              : "No live harness confirmed"
-        }
-        pulse={activeTurn}
-        size="small"
-      />
+      <ThreadStatusDot color={status.color} label={status.label} pulse={status.pulse} size="small" />
       <span className="agentplane-sidebar-row-name">{label}</span>
       <Tooltip
         label={thread.archived ? "Unarchive" : harnessRunning ? "Stop the harness before archiving" : "Archive"}
@@ -315,27 +305,32 @@ function ThreadGroupSection({
   );
 }
 
-export function Sidebar({
+type SidebarProps = {
+  settingsOpen: boolean;
+  onOpenSettings: () => void;
+  /** A phone-width overlay, or a docked column on desktop. */
+  open: boolean;
+  onClose: () => void;
+};
+
+export function Sidebar(props: SidebarProps): JSX.Element {
+  return <SidebarView {...props} live={useRequiredThreadsLive()} />;
+}
+
+function SidebarView({
   settingsOpen,
   onOpenSettings,
   open,
   onClose,
-}: {
-  settingsOpen: boolean;
-  onOpenSettings: () => void;
-  /** Whether the sidebar is showing at all. sidebar.css's phone-width media query decides what
-   * "showing" renders as: a docked column at desktop width, a full-screen overlay at phone width. */
-  open: boolean;
-  onClose: () => void;
-}): JSX.Element {
+  live,
+}: SidebarProps & { live: Live<ThreadsSnapshot> }): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const threadRoute = useMatch("/threads/:threadId");
   const [includeArchived, setIncludeArchived] = useState(false);
   const { width, setWidth, resizeBy } = useSidebarWidth();
-  const live = useLive<ThreadsSnapshot>(liveThreadsUrl(), "Threads");
   const data = live.snapshot;
-  const fresh = live.stream.standing === "current" && live.health?.fresh === true && data?.updates_connected === true;
+  const fresh = snapshotFresh(live);
   const [error, setError] = useState<string | null>(null);
   const phone = usePhoneWidth();
 

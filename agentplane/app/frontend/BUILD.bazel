@@ -610,6 +610,17 @@ ts_library(
 )
 
 ts_library(
+    name = "thread_status",
+    srcs = ["thread_status.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":live",
+        ":tab_metadata",
+    ],
+)
+
+ts_library(
     name = "thread_status_dot",
     srcs = [
         "css.d.ts",
@@ -660,6 +671,7 @@ ts_library(
         ":sidebar_css",
         ":stream_status",
         ":thread_groups",
+        ":thread_status",
         ":thread_status_dot",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -680,6 +692,7 @@ ts_library(
         ":sidebar",
         ":stream_status",
         ":thread_groups",
+        ":thread_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -938,6 +951,7 @@ ts_library(
         ":actions_history",
         ":actions_requests",
         ":consent",
+        ":live",
         ":sandbox_page",
         ":sandboxes",
         ":settings",

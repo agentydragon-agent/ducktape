@@ -36,7 +36,7 @@ import {
 } from "../client";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadState, type ThreadWindow } from "./thread_sync";
 import { historyRows, rowKey, summarizeLifecycleGroup, summarizeRun, type HistoryRow } from "./history_rows";
-import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "../live";
+import { liveSandboxesUrl, LiveStatus, useLive, useRequiredThreadsLive, type SandboxesSnapshot } from "../live";
 import { StaleNotice, useStreamStatus, type StreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { CollapsibleCard, EntityCard, ItemStatus, pendingSentMessage } from "./thread_cards";
@@ -44,9 +44,10 @@ import { ProjectedCommandRows, SelectedCommandOutcomes, useProjectedCommands } f
 import { ChronologicalDebugProvider, useOpenChronologicalDebug } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusDot } from "../thread_status_dot";
+import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { installThreadFavicon, type ThreadFaviconPulseEpoch } from "../thread_favicon";
-import { appDocumentTitle, threadDocumentTitle, type ThreadTabStatus } from "../tab_metadata";
+import { appDocumentTitle, threadDocumentTitle } from "../tab_metadata";
 import "./projected_session.css";
 
 /** A run of tool calls and reasoning steps, folded behind its summary until opened. */
@@ -609,65 +610,12 @@ function VirtualizedHistory({
 
 type Operational = Extract<ThreadEntity["state"], { operational: unknown }>["operational"];
 
-/** The browser's sync of the thread, the runner feed into the server (`operational`) and the
- * harness process are independent state machines; this collapses them into one status by severity,
- * worst axis first, for the composer dot and browser tab. While the sync is not current, the rest is
- * not either; and an archived thread or an unavailable sandbox makes the retained feed and harness
- * state history, not a live claim. */
-function threadStatus({
-  sync,
-  degraded,
-  archived,
-  available,
-  operational,
-  harness,
-  activeTurn,
-}: {
-  sync: ThreadState;
-  /** The thread's reads have been failing for longer than a blip. */
-  degraded: boolean;
-  archived: boolean;
-  available: boolean;
-  operational: Operational | null;
-  harness: string | null;
-  activeTurn: boolean;
-}): ThreadTabStatus {
-  if (sync.window?.error)
-    return { color: "red", label: `Thread sync stopped: ${sync.window.error}`, tabLabel: "Sync error" };
-  if (!sync.window) return { color: "yellow", pulse: true, label: "Connecting…", tabLabel: "Connecting" };
-  if (sync.error || degraded) return { color: "yellow", pulse: true, label: "Reconnecting…", tabLabel: "Reconnecting" };
-  if (!sync.window.caughtUp) return { color: "yellow", pulse: true, label: "Catching up…", tabLabel: "Catching up" };
-  if (archived) return { color: "gray", label: "Thread archived", tabLabel: "Archived" };
-  if (!available) return { color: "gray", label: "Sandbox unavailable", tabLabel: "Unavailable" };
-  if (operational?.status === "failed") return { color: "red", label: "Runner feed failed", tabLabel: "Runner failed" };
-  if (harness === "lost") return { color: "red", label: "Harness lost", tabLabel: "Harness lost" };
-  if (operational?.status === "ended") {
-    return {
-      color: "gray",
-      label: `Runner feed ended · harness ${harness ?? "unknown"}`,
-      tabLabel: "Ended",
-    };
-  }
-  if (harness === null) return { color: "yellow", label: "No harness observed", tabLabel: "Starting" };
-  if (harness === "stopped")
-    return { color: "gray", label: "Runner feed active · harness stopped", tabLabel: "Stopped" };
-  return {
-    color: "green",
-    label: activeTurn
-      ? `Turn running · Runner feed active · harness ${harness}`
-      : `Runner feed active · harness ${harness}`,
-    tabLabel: activeTurn ? "Running" : "Ready",
-    pulse: activeTurn,
-  };
-}
-
 function ProjectedSessionBody({
   threadId,
   entities,
   thread,
   history,
   available,
-  degraded,
   onStatusLabelChange,
 }: {
   threadId: string;
@@ -675,7 +623,6 @@ function ProjectedSessionBody({
   thread: ThreadView;
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
   available: boolean;
-  degraded: boolean;
   onStatusLabelChange: (label: string) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
@@ -695,15 +642,12 @@ function ProjectedSessionBody({
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const activeTurn = controls?.active_turn_id ?? null;
-  const status = threadStatus({
-    sync,
-    degraded,
-    archived: thread.archived,
-    available,
-    operational,
-    harness: controls?.harness_state ?? null,
-    activeTurn: Boolean(running && activeTurn),
-  });
+  const threadsLive = useRequiredThreadsLive();
+  const status = threadStatusFromSnapshot(
+    threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
+    threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread.sandbox),
+    snapshotFresh(threadsLive)
+  );
   const pulseEpoch = useRef<ThreadFaviconPulseEpoch>({ current: null });
   if (status.pulse) pulseEpoch.current.current ??= Date.now();
   else pulseEpoch.current.current = null;
@@ -973,7 +917,6 @@ function SyncedThread({
         thread={thread}
         history={shown}
         available={available}
-        degraded={stream !== null && stream.standing !== "current"}
         onStatusLabelChange={onStatusLabelChange}
       />
     </>

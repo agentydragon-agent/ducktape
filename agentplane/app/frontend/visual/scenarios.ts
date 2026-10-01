@@ -745,7 +745,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 900 },
     endedAttachment: true,
-    readySelectors: ['[aria-label="Runner feed ended · harness stopped"]', '[aria-label="Resume harness"]'],
+    readySelectors: ['[aria-label="Runner feed ended"]', '[aria-label="Resume harness"]'],
     captureViewport: true,
   },
   session_pending: {
@@ -813,15 +813,19 @@ export const SCENARIOS: Record<string, Scenario> = {
     sessionReplay: "unavailable",
     readySelectors: ['[role="alert"]'],
   },
-  // The rows stay on screen while the client retries. Past the grace the composer's dot and the
-  // sidebar's spinner say so; a minute in, the page's notice says the rows may be behind.
+  // The rows stay on screen while the client retries. The thread connection indicator
+  // reports the Electric outage; status dots remain based on the shared Threads snapshot.
   session_sync_reconnecting: {
     element: "#app",
     route: SESSION_ROUTE,
     viewport: { width: 1200, height: 900 },
     sessionReplay: "reconnecting",
     outageAge: 10_000,
-    readySelectors: ['[aria-label="Reconnecting…"]', '[data-connection="degraded"]', '[data-thread-anchor="34"]'],
+    readySelectors: [
+      '[aria-label="Runner feed active · harness running"]',
+      '[data-connection="degraded"]',
+      '[data-thread-anchor="34"]',
+    ],
     captureViewport: true,
   },
   session_sync_reconnecting_phone: {
@@ -830,7 +834,11 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     sessionReplay: "reconnecting",
     outageAge: 90_000,
-    readySelectors: ['[aria-label="Reconnecting…"]', "::-p-text(may be out of date)", '[data-thread-anchor="34"]'],
+    readySelectors: [
+      '[aria-label="Runner feed active · harness running"]',
+      "::-p-text(may be out of date)",
+      '[data-thread-anchor="34"]',
+    ],
     captureViewport: true,
   },
   // The existing nav/header chrome (its own decluttering is separately tracked) leaves little

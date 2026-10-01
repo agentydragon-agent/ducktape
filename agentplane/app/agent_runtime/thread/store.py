@@ -44,7 +44,7 @@ class ThreadStore:
             select(Event.at).where(Event.thread_id == EventLog.id).order_by(Event.at.desc()).limit(1).scalar_subquery()
         )
         query = (
-            select(EventLog, Thread, last_cursor, last_at, FeedState.attached)
+            select(EventLog, Thread, last_cursor, last_at, FeedState.attached, FeedState.end)
             .outerjoin(Thread, Thread.id == EventLog.id)
             .outerjoin(FeedState, FeedState.thread_id == EventLog.id)
             .order_by(EventLog.created_at.desc())
@@ -57,8 +57,8 @@ class ThreadStore:
             query = query.where(Thread.archived.is_not(True))
         async with self._sessions() as session:
             return [
-                _view(log, thread, last_cursor, last_at, attached)
-                for log, thread, last_cursor, last_at, attached in await session.execute(query)
+                _view(log, thread, last_cursor, last_at, attached, end)
+                for log, thread, last_cursor, last_at, attached, end in await session.execute(query)
             ]
 
     async def get_thread(self, thread_id: UUID) -> ThreadView | None:
@@ -89,7 +89,9 @@ class ThreadStore:
         return view
 
 
-async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, datetime | None, dict[str, object] | None]:
+async def _last(
+    session: AsyncSession, thread_id: UUID
+) -> tuple[int | None, datetime | None, dict[str, object] | None, dict[str, str] | None]:
     last_cursor = await session.scalar(
         select(Event.cursor).where(Event.thread_id == thread_id).order_by(Event.cursor.desc()).limit(1)
     )
@@ -97,7 +99,12 @@ async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, dat
         select(Event.at).where(Event.thread_id == thread_id).order_by(Event.at.desc()).limit(1)
     )
     state = await session.get(FeedState, thread_id)
-    return last_cursor, last_at, (state.attached if state is not None else None)
+    return (
+        last_cursor,
+        last_at,
+        (state.attached if state is not None else None),
+        (state.end if state is not None else None),
+    )
 
 
 async def _set_thread(session: AsyncSession, thread_id: UUID, **values: object) -> ThreadView:
@@ -120,6 +127,7 @@ def _view(
     last_cursor: int | None,
     last_at: datetime | None,
     attached: dict[str, object] | None,
+    end: dict[str, str] | None,
 ) -> ThreadView:
     attachment = ParseDict(attached, protocol_pb2.Attached()) if attached is not None else None
     harness_state = attachment.harness_state if attachment is not None else protocol_pb2.HARNESS_STATE_UNSPECIFIED
@@ -137,4 +145,5 @@ def _view(
         last_event_at=last_at,
         harness_state=protocol_pb2.HarnessState.Name(harness_state),
         active_turn_id=(attachment.active_turn_id or None) if attachment is not None else None,
+        feed_status=(None if attachment is None else "active" if end is None else "failed" if end else "ended"),
     )

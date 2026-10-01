@@ -49,6 +49,8 @@ async def test_threads_list_with_their_progress(
     assert views[thread].last_event_at == datetime(2026, 9, 2, 12, 0, 1, tzinfo=UTC)
     assert (views[empty].harness, views[empty].last_cursor, views[empty].last_event_at) == ("HARNESS_CODEX", 0, None)
     assert views[empty].harness is Harness.CODEX
+    assert views[thread].feed_status is None
+    assert views[empty].feed_status is None
     # No feed has ever attached to either thread (only their event log was replayed), so the
     # exposed harness state stays unspecified rather than inferring it from history.
     assert views[thread].harness_state == views[empty].harness_state == "HARNESS_STATE_UNSPECIFIED"
@@ -81,6 +83,7 @@ async def test_threads_list_reflects_attached_harness_and_active_turn_state(
 
     (running,) = await store.list_threads()
     assert running.harness_state == "HARNESS_STATE_RUNNING"
+    assert running.feed_status == "active"
     assert running.active_turn_id == "turn-1"
     got_thread = await store.get_thread(thread)
     assert got_thread is not None
@@ -119,6 +122,15 @@ async def test_threads_list_reflects_attached_harness_and_active_turn_state(
     (stopped,) = await store.list_threads()
     assert stopped.harness_state == "HARNESS_STATE_STOPPED"
     assert stopped.active_turn_id is None
+
+    await ingestion.end_feed(thread, lease=lease, error=None)
+    (ended,) = await store.list_threads()
+    assert ended.feed_status == "ended"
+    await ingestion.set_attached(thread, stopped_attached, lease=lease)
+    await ingestion.end_feed(thread, lease=lease, error="runner feed failed")
+    failed = await store.get_thread(thread)
+    assert failed is not None
+    assert failed.feed_status == "failed"
 
 
 async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(

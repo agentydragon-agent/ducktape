@@ -12,6 +12,7 @@ import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_p
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
 import { command, getThread, models, resumeThread, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
+import { ThreadsLiveProvider } from "../live";
 import { LocalCommands } from "./local_commands";
 import { STREAMING_CURSOR } from "../markdown";
 import { HistoryRowView, ProjectedSession } from "./projected_session";
@@ -67,6 +68,8 @@ type Inventory = Array<{ name: string; state: string }> | null;
 let sandboxes: Inventory = [];
 let inventoryFresh = true;
 let inventoryDrops = false;
+let sharedFeed: "active" | "ended" | "failed" = "active";
+let sharedThread: Partial<ThreadView> = {};
 
 beforeEach(() => {
   document.title = "Agentplane";
@@ -79,6 +82,8 @@ beforeEach(() => {
   sandboxes = [{ name: THREAD.sandbox, state: "running" }];
   inventoryFresh = true;
   inventoryDrops = false;
+  sharedFeed = "active";
+  sharedThread = {};
   vi.mocked(getThread).mockResolvedValue(THREAD);
   vi.mocked(models).mockResolvedValue({
     models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
@@ -91,7 +96,7 @@ beforeEach(() => {
     class extends EventTarget {
       // A drop is the network's, which the browser retries: the source stays CONNECTING.
       readyState = 0;
-      constructor() {
+      constructor(url: string) {
         super();
         queueMicrotask(() => {
           if (sandboxes === null) return;
@@ -99,6 +104,14 @@ beforeEach(() => {
             new MessageEvent("snapshot", {
               data: JSON.stringify({
                 sandboxes,
+                ...(url === "/live/threads"
+                  ? {
+                      threads: [
+                        { ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed, ...sharedThread },
+                      ],
+                      updates_connected: true,
+                    }
+                  : {}),
                 watch: {
                   fresh: inventoryFresh,
                   stale_after_seconds: 90,
@@ -202,7 +215,8 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
   const root = createRoot(container);
   mounted.push({ root, container, topbarTitle, topbarActions });
   await act(async () => {
-    root.render(page(state, topbarTitle, topbarActions));
+    const content = page(state, topbarTitle, topbarActions);
+    root.render(<ThreadsLiveProvider>{content}</ThreadsLiveProvider>);
   });
   container.append(topbarTitle, topbarActions);
   return container;
@@ -231,7 +245,9 @@ async function rerender(container: HTMLDivElement, state: ThreadState): Promise<
   const topbarTitle = current?.topbarTitle;
   const topbarActions = current?.topbarActions;
   if (!current || !topbarTitle || !topbarActions) throw new Error("Missing mounted thread page");
-  await act(async () => current.root.render(page(state, topbarTitle, topbarActions)));
+  await act(async () =>
+    current.root.render(<ThreadsLiveProvider>{page(state, topbarTitle, topbarActions)}</ThreadsLiveProvider>)
+  );
   container.append(topbarTitle, topbarActions);
 }
 
@@ -380,40 +396,29 @@ it("disables shutdown while the harness is not running", async () => {
   expect((await openMenuItem(container, "Shut down harness")).disabled).toBe(true);
 });
 
-// Each row's lower-severity axes disagree with the one that decides the dot. Only a sync that is
-// still settling breathes.
 it.each([
-  [
-    { windowError: "test shape gone", error: "test fetch failed", reconnectingFor: DEGRADED_AFTER_MS },
-    "red",
-    false,
-    "Thread sync stopped: test shape gone",
-  ],
-  [{ error: "test fetch failed", rows: [viewState({ harness: "lost" })] }, "yellow", true, "Reconnecting…"],
-  [
-    { reconnectingFor: DEGRADED_AFTER_MS, caughtUp: false, rows: [viewState({ harness: "lost" })] },
-    "yellow",
-    true,
-    "Reconnecting…",
-  ],
-  // Reads failing for less than the grace are a blip, not a state.
-  [{ reconnectingFor: 1_000, rows: [viewState()] }, "green", false, "Runner feed active · harness running"],
-  [{ caughtUp: false, rows: [viewState({ status: "failed" })] }, "yellow", true, "Catching up…"],
-  [{ rows: [viewState({ status: "failed", harness: "lost" })] }, "red", false, "Runner feed failed"],
-  [{ rows: [viewState({ status: "ended", harness: "lost" })] }, "red", false, "Harness lost"],
-  [{ rows: [viewState({ status: "ended" })] }, "gray", false, "Runner feed ended · harness running"],
-  [{ rows: [viewState({ harness: null })] }, "yellow", false, "No harness observed"],
-  [{ rows: [viewState({ harness: "stopped" })] }, "gray", false, "Runner feed active · harness stopped"],
-  [{ rows: [viewState()] }, "green", false, "Runner feed active · harness running"],
-])("collapses %o into a %s dot (breathing: %s): %s", async (state, color, breathing, label) => {
-  const dot = (await render(threadState(state))).querySelector(".agentplane-thread-status-dot");
+  [{ feed_status: "failed" }, "Runner feed failed", "red", false],
+  [{ feed_status: "ended" }, "Runner feed ended", "gray", false],
+  [{ harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "gray", false],
+  [{ active_turn_id: "turn-1" }, "Turn running · Runner feed active · harness running", "green", true],
+  [{}, "Runner feed active · harness running", "green", false],
+] as const)("uses shared thread row %o for composer status", async (row, label, color, pulse) => {
+  sharedThread = row;
+  const dot = (await render()).querySelector(".agentplane-thread-status-dot");
   expect(dot?.getAttribute("aria-label")).toBe(label);
   expect(dot?.getAttribute("style")).toContain(`--mantine-color-${color}-6`);
-  expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(breathing);
+  expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(pulse);
+});
+
+it("uses the shared list feed instead of a healthy conversation projection for the composer dot", async () => {
+  sharedFeed = "failed";
+  const failed = await render(threadState({ rows: [viewState()] }));
+  expect(failed.querySelector('.agentplane-thread-status-dot[aria-label="Runner feed failed"]')).not.toBeNull();
 });
 
 it("pulses and labels the healthy status dot while a turn is active", async () => {
   vi.useFakeTimers();
+  sharedThread = { active_turn_id: "turn-1" };
   const dot = (await render(threadState({ rows: [viewState({ activeTurn: "turn-1" })] }))).querySelector(
     ".agentplane-thread-status-dot"
   );
@@ -430,10 +435,10 @@ it("pulses and labels the healthy status dot while a turn is active", async () =
 });
 
 it("does not show active-turn status when the runner is not active", async () => {
-  const dot = (
-    await render(threadState({ rows: [viewState({ status: "ended", activeTurn: "turn-1" })] }))
-  ).querySelector(".agentplane-thread-status-dot");
-  expect(dot?.getAttribute("aria-label")).toBe("Runner feed ended · harness running");
+  sharedFeed = "ended";
+  sharedThread = { active_turn_id: "turn-1" };
+  const dot = (await render()).querySelector(".agentplane-thread-status-dot");
+  expect(dot?.getAttribute("aria-label")).toBe("Runner feed ended");
   expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(false);
 });
 
@@ -444,6 +449,7 @@ it.each([
   [{ archived: false }, [{ name: THREAD.sandbox, state: "suspended" }], "Sandbox unavailable"],
 ])("shows a gray dot for thread %o with sandboxes %o: %s", async (overrides, inventory, label) => {
   vi.mocked(getThread).mockResolvedValue({ ...THREAD, ...overrides });
+  sharedThread = overrides;
   sandboxes = inventory;
   const dot = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
     ".agentplane-thread-status-dot"
