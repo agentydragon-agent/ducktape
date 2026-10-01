@@ -3,23 +3,61 @@
 Current architecture-level follow-ups for `devinfra/js/debundle/`. This
 file is an active backlog: resolved items are deleted, not struck through.
 
+## What hurts most (priority order)
+
+1. **The pipeline has no single emit-ready output model.** `pipeline.rs` feeds
+   lowered files back into `ChunkBundle`, rebuilds `ArtifactIndexes`, then
+   runs cross-chunk import naturalization, vendor emission rewrites, a
+   post-strip consumer check, dead-import/export pruning, duplicate-export
+   validation, and finally tree/harness writers. `write_js_tree` and
+   `emit_browser_harness` cannot just consume the lowerer's return value.
+   The bundle round-trip is real, but replacing it is **not** merely changing
+   the last two calls: the intervening passes must see the same final files
+   and names. See the migration order below.
+2. **Finding the right owner of a behavior is laborious.** `BUILD.bazel` has
+   over 1,200 lines of fine-grained Rust targets; `pipeline.rs`, `cli/mod.rs`,
+   `artifacts/artifact.rs`, `spec/spec.rs`, `selectors/resolution/selector_resolve.rs`,
+   `selectors/matching/chunk_facts.rs`, and `peel/quotient.rs` are each
+   over 1,000 lines. This is not a blanket request for smaller files: split
+   interfaces where there is already a stable phase boundary, keep the
+   public API and Bazel targets navigable, and avoid creating a maze of
+   one-function modules.
+3. **The same words name different layers.** See [Vocabulary / naming debt](#vocabulary--naming-debt)
+   below. Fix the highest-friction local ambiguity first; avoid a project-wide
+   rename that changes spec, report, or CLI wire formats.
+4. **Graph and lowering boundaries are permissive.** The owner graph,
+   incremental quotient, realizability index, and emitted schedule have
+   related but separately maintained state. Broad `pub(crate)` and
+   `lowering/`'s sibling `use super::*` make cross-phase dependencies hard
+   to audit. Prefer explicit phase inputs and checked constructors over a
+   bulk visibility or collection-type rewrite.
+
 ## Open backlog
 
 Re-check file paths and line numbers against current `HEAD` before
 acting; this file intentionally describes shapes rather than frozen
 review line references.
 
-### Materialize-into-emit (next pipeline-trajectory step)
+### Materialize-into-emit (high impact, high risk)
 
-The 2026-06 vendor collapse removed every vendor mutation wave; the
-one remaining artifact mutation is `materialize_logical_modules`,
-which writes lowered module files back into the chunk bundle for
-`write_js_tree` / `emit_browser_harness` to re-read. The recorded next
-step, also reflected in docs/design.md "Pipeline trajectory": lowered
-outputs feed tree / harness emission directly, dropping the bundle
-round-trip and the post-materialize index rebuild. The emission
-rewrites (`apply_emission_rewrites`) would become per-file emit steps
-in the same pass. No timetable; the e2e suite is the safety net.
+`materialize_logical_modules` currently writes lowered module files into the
+chunk bundle, and `IndexedArtifact::update` rebuilds indexes. The pipeline
+then mutates that bundle again (cross-chunk import naturalization, vendor
+emission rewrites, dead-import/export pruning), checks the final emit shape,
+and only then writes the tree and browser harness. The 2026-06 vendor
+collapse removed separate vendor mutation _waves_, not all later artifact
+mutations. `docs/design.md` "Pipeline trajectory" describes the intended
+end state; its "one artifact mutation wave" shorthand does not include all
+post-lowering transformations.
+
+**Migration order:** (1) make an explicit typed final-file/emission-set
+boundary, preserving file metadata and full-swap exclusions; (2) move each
+post-lowering pass to that boundary, including the partial-swap consumer gate
+and final export validation; (3) have both writers consume it; (4) only then
+remove the `ChunkBundle` round-trip and the post-materialize index rebuild
+_if_ no remaining resolver needs it. Pin mixed lowered/pass-through/vendor
+cases with e2e fixtures at each step. Do not drop the vendor consumer scan
+just because file ownership changes.
 
 ### Post-strip consumer scan retirement condition
 
@@ -43,6 +81,33 @@ term (~1100+ uses) and an owner genuinely _is_ a graph node, so a
 half-rename worsens consistency while a full rename breaks the wire
 format and diverges the frozen `props/specimens` snapshot. Revisit only
 as a deliberate wholesale rename.
+
+## Vocabulary / naming debt
+
+- **`LogicalModule` means two different things.** `spec::LogicalModule` is
+  authored YAML; `ids.rs::LogicalModule` is the planned output module with
+  a target file, rename map and anonymous-statement ordinals. Name the latter
+  for its phase (e.g. `PlannedModule`) rather than renaming the spec and wire
+  schema. `ModuleId(pub LogicalModuleIndex)` also adds a wrapper around a
+  wrapper: clarify which indices are stable within a chunk before changing it.
+- **`chunk` and `artifact` do not tell you which phase owns a value.**
+  `ChunkBundle` / `ChunkArtifact` / `JsChunk` describe stored files;
+  `ChunkAnalysisReport` is a manifest/report; `ChunkFactorization` is a
+  validated graph-and-assignment product; `MaterializedLogicalChunk` is a
+  lowerer result. Use phase-qualified names for _new_ boundary types
+  (`PreparedChunk`, `PlannedChunk`, `EmitFileSet` as appropriate), not a
+  mass rename of existing report fields or published artifacts.
+- **`materialise` / `materialize` coexist.** `pipeline.rs` calls its local
+  selection `materialise_chunk_ids` while the API and spec use
+  `materialize_logical_modules`. Standardize the local spelling when editing
+  the pipeline. `peel`, `factor`, `atom`, `owner`, and `quotient` are distinct
+  domain concepts in `docs/design.md`, not synonyms to normalize away.
+- **Anonymous ownership is implicit.** `OwnerNode` with empty `declared`
+  becomes an anonymous statement in some callers, while materialization
+  carries `anonymous_statement_ordinals` and a sentinel `ModuleId`. Consider
+  an explicit kind or destination type after first pinning its invariants;
+  see the discussion below. Do **not** casually rename `OwnerId` to `NodeId`:
+  that breaks wire IDs (see deferred item).
 
 ## Duplicated calculations
 
@@ -87,7 +152,7 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
 
 **Structural findings (full-package review):**
 
-1. `vendor/mod.rs` further split (~1.3k lines + tests remain after the
+1. `vendor/mod.rs` further split (~1.6k lines including tests after the
    emission/manifests/passthrough/plan/strip/validate/wrappers extraction):
    package/subpath resolution helpers, export-surface collection,
    `MaterializedOutputChunkIndex`, the shared import factories
@@ -107,8 +172,9 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
    each needs substantial captured state from `LowerChunkInputs` (15–20
    fields). Related: `lowering/mod.rs` carries a ~95-line import block from
    wildcard `use super::*` in every sub-module.
-4. `artifacts/output_layout.rs` — replace the 10 identical `self.root.join(CONSTANT)`
-   accessors with a data-driven `report_path(name)` plus constants.
+4. `artifacts/output_layout.rs` has repetitive `self.root.join(CONSTANT)`
+   accessors; a data-driven path helper is possible but low priority. Keep
+   named accessors if they make call sites and output contracts clearer.
 5. Encapsulation/type design: BTree collections in hot-path graph structures
    (`counted_digraph.rs`, `artifacts/artifact.rs`, `realizability/`) where hash-based
    would be measurably faster — document determinism where it is required;
@@ -142,9 +208,13 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
    specs). Points: <e2e/vendor_swap_test.rs> (~lines 1680, 1821 and the
    `report_out_dir` literals), builder surface in `vendor/mod.rs`.
 
-**Organization only (≈0 LOC removed, navigability win):** split the giant
-files by responsibility — <selectors/authoring/selector_codemod.rs>, <peel/quotient.rs>,
-<lowering/rename_ledger.rs>.
+**Organization only (≈0 LOC removed, navigability win):** split giant
+files at existing responsibility seams — <selectors/authoring/selector_codemod.rs>,
+<selectors/resolution/selector_resolve.rs>, <selectors/matching/chunk_facts.rs>,
+<peel/quotient.rs>, <lowering/rename_ledger.rs>, <cli/mod.rs>,
+<artifacts/artifact.rs>. Before moving code, document the exported API of
+that seam; Bazel already treats many files as separate crates, so file moves
+can otherwise multiply dependency plumbing.
 
 ## Quick wins (≤30 min each)
 
@@ -177,7 +247,3 @@ docs/design.md documents A11 (the chunk runs with unmodified built-in prototypes
 ### Do anonymous statements deserve a first-class `OwnerKind`?
 
 Today an "anonymous statement" is just an `OwnerNode` with empty `declared`. The materializer (`lowering/materialize/mod.rs`) special-cases them via `anonymous_statement_ordinals` + an explicit `anon_residual_sentinel` ModuleId. The realizability gate doesn't distinguish them. Several diagnostics use the placeholder `<anon stmt #ord>` in `validation.rs`. This is a coherent piece of vocabulary that should perhaps be an `OwnerNode::kind` variant rather than a sentinel "empty declared bindings". Worth thinking about at the next refactor — not blocking.
-
-### Two distinct `LogicalModule` types share a name
-
-`spec::LogicalModule` (the authoring-spec module: `members` / `source_matches` / `annotations` / `anonymous_statements` / `comment`) and `ids.rs::LogicalModule` (the IR materialization record: `id` / `target_file` / `residual` / `rename_map` / `anonymous_statement_ordinals`) are unrelated structs with the same name, forcing qualified-path imports wherever both are visible. "Find a LogicalModule literal" is therefore ambiguous, and it bit an atomic field addition to the spec-side type. Rename the IR one (e.g. `LogicalModuleIr`, `PlannedModule` or `OutputModule`); the rename is mechanical but ripples through `lowering/`, `pipeline.rs` and the e2e fixtures. Not blocking.
