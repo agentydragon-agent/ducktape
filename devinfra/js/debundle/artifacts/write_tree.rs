@@ -85,7 +85,12 @@ pub fn write_common_emission_reports(
 ) -> Result<()> {
     let queue = compute_identifier_rename_queue(files, decomposition_by_chunk, excluded_chunk_ids)?;
     write_json(layout.rename_queue_report(), &queue)?;
-    write_json(layout.chunks_report(), &ChunksReport { chunks: chunk_records })?;
+    write_json(
+        layout.chunks_report(),
+        &ChunksReport {
+            chunks: chunk_records,
+        },
+    )?;
     write_json(
         layout.app_root().join("package.json"),
         &PackageManifest { module_type: "module" },

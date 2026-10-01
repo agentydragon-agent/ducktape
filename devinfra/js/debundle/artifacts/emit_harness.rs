@@ -10,9 +10,8 @@ use url::Url;
 
 use artifact::{
     ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, EmissionFiles,
-    OutputMetrics, chunk_id_for_js_path, get_chunk_entry_path,
-    materialize_artifact_scripts, module_path_from_path, normalize_module_path,
-    path_from_module_path, write_json,
+    OutputMetrics, chunk_id_for_js_path, get_chunk_entry_path, materialize_artifact_scripts,
+    module_path_from_path, normalize_module_path, path_from_module_path, write_json,
 };
 use output_layout::DebundleOutputLayout;
 use spec::EmitBrowserHarnessConfig;
