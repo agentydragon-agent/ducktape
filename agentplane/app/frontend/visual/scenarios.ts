@@ -341,12 +341,20 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
 
   actions_popup_desktop: {
-    element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 1000 },
-    actionsPopup: true, captureViewport: true, readySelectors: ['.mantine-Drawer-content', '.mantine-Drawer-content details'],
+    element: "#app",
+    route: "/sandboxes",
+    viewport: { width: 1200, height: 1000 },
+    actionsPopup: true,
+    captureViewport: true,
+    readySelectors: [".mantine-Drawer-content", ".mantine-Drawer-content details"],
   },
   actions_popup_phone: {
-    element: "#app", route: "/sandboxes", viewport: { width: 390, height: 915 },
-    actionsPopup: true, captureViewport: true, readySelectors: ['.mantine-Drawer-content', '.mantine-Drawer-content details'],
+    element: "#app",
+    route: "/sandboxes",
+    viewport: { width: 390, height: 915 },
+    actionsPopup: true,
+    captureViewport: true,
+    readySelectors: [".mantine-Drawer-content", ".mantine-Drawer-content details"],
   },
   actions: { element: "#app", route: "/actions", viewport: { width: 1200, height: 1100 }, readySelectors: ["details"] },
   actions_phone: {

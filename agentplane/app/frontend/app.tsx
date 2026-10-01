@@ -175,7 +175,9 @@ export default function App(): JSX.Element {
   return (
     <ThreadSyncContext.Provider value={electricThreadSync}>
       <HashRouter>
-        <ActionAffordance><AppRoutes /></ActionAffordance>
+        <ActionAffordance>
+          <AppRoutes />
+        </ActionAffordance>
       </HashRouter>
     </ThreadSyncContext.Provider>
   );

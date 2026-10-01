@@ -174,7 +174,10 @@ ts_library(
 
 ts_library(
     name = "actions_affordance",
-    srcs = ["actions/affordance.tsx", "tabler_icons.d.ts"],
+    srcs = [
+        "actions/affordance.tsx",
+        "tabler_icons.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":actions_client",
@@ -194,9 +197,9 @@ ts_library(
     srcs = ["actions/requests.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_affordance",
         ":actions_client",
         ":actions_requests",
-        ":actions_affordance",
         ":actions_testing",
         ":stream_status",
         "//:node_modules/@types/react",
@@ -931,9 +934,9 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_affordance",
         ":actions_history",
         ":actions_requests",
-        ":actions_affordance",
         ":consent",
         ":sandbox_page",
         ":sandboxes",

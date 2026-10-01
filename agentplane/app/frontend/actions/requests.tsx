@@ -26,7 +26,10 @@ export function stateLabel(state: ActionState): string {
 /** Shared fetch/decide plumbing for the pending and history views: one live snapshot (the real
  * service pushes over `/actions/stream`) or one polled `list()` (any other service, e.g. tests),
  * which has no `stream`. */
-export function useActionRequests(service: ActionService, enabled = true): {
+export function useActionRequests(
+  service: ActionService,
+  enabled = true
+): {
   requests: ActionRequestView[];
   error: string | null;
   loading: boolean;

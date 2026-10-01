@@ -34,20 +34,31 @@ export function ActionAffordance({ children }: { children: ReactNode }): JSX.Ele
             onClick={() => setOpened(true)}
             aria-label={`Review ${pending.length} pending actions`}
           >
-            Actions <Badge color="yellow" circle>{pending.length}</Badge>
+            Actions{" "}
+            <Badge color="yellow" circle>
+              {pending.length}
+            </Badge>
           </Button>
           <Drawer
             opened={opened}
             onClose={() => setOpened(false)}
             position="right"
             size="min(100%, 540px)"
-            title={<Title order={2} size="h4">Pending actions ({pending.length})</Title>}
+            title={
+              <Title order={2} size="h4">
+                Pending actions ({pending.length})
+              </Title>
+            }
             aria-label="Pending actions"
           >
             <ScrollArea h="calc(100dvh - 110px)">
               <Stack gap="md" pr="sm">
                 <StaleNotice streams={[actions.stream]} />
-                {actions.error && <Text c="red" role="alert">{actions.error}</Text>}
+                {actions.error && (
+                  <Text c="red" role="alert">
+                    {actions.error}
+                  </Text>
+                )}
                 {pending.map((request) => (
                   <PendingActionCard
                     key={request.id}

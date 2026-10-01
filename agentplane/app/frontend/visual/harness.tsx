@@ -1916,8 +1916,10 @@ class HarnessEventSource extends EventTarget {
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
     if (url.pathname === "/actions/stream") {
-      const pending = scenario.actionsPopup || scenario.route.startsWith("/actions")
-        ? ACTIONS.filter((request) => request.state === "decision_pending") : [];
+      const pending =
+        scenario.actionsPopup || scenario.route.startsWith("/actions")
+          ? ACTIONS.filter((request) => request.state === "decision_pending")
+          : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
       return;
     }
