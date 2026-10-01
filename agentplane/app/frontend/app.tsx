@@ -5,6 +5,7 @@ import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
 import { ActionRequests } from "./actions/requests";
+import { ActionAffordance } from "./actions/affordance";
 import { ActionHistory } from "./actions/history";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
@@ -174,7 +175,9 @@ export default function App(): JSX.Element {
   return (
     <ThreadSyncContext.Provider value={electricThreadSync}>
       <HashRouter>
-        <AppRoutes />
+        <ActionAffordance>
+          <AppRoutes />
+        </ActionAffordance>
       </HashRouter>
     </ThreadSyncContext.Provider>
   );
