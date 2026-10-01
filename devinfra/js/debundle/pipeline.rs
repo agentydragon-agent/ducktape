@@ -185,7 +185,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     let chunk_records = prepare_result.chunk_records;
     let mut vendor_report = VendorSwapsReport::default();
 
-    let mut indexed = IndexedArtifact::new(prepare_result.artifact)?;
+    let indexed = IndexedArtifact::new(prepare_result.artifact)?;
 
     // Single post-prepare vendor resolution pass: validates every mark,
     // resolves boundary mappings, swap targets, and partial-swap symbol
@@ -232,59 +232,51 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // `references_rewritten` keeps counting emitted references across
     // both application sites.
     let mut vendor_lowering_rewrites: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
-    if !materialise_chunk_ids.is_empty() {
+    let mut emission_files = if !materialise_chunk_ids.is_empty() {
         let report_out_dir = spec.materialize_logical_modules.report_out_dir.clone();
-        // `spec validate` forces reports to its own capture dir even
-        // when the spec leaves `report_out_dir` unset; otherwise honor the spec.
         let report_out_dir = options.report_dir_override.clone().or(report_out_dir);
-        // `materialize_logical_modules` derives its own per-run indexes
-        // internally (it prunes chunks first); the pipeline indexes are
-        // not consumed here, but the artifact mutates, so the update
-        // rebuilds them for the emission rewrites below.
-        (indexed, _) = indexed.update(|artifact, _indexes| {
-            let materialize_result = materialize_logical_modules(
-                artifact,
-                MaterializeSpecInputs {
-                    logical_modules: &spec.logical_modules,
-                    chunk_renames: &spec.chunk_renames,
-                    unassigned_mode: &spec.unassigned_mode,
-                    chunk_analysis_options: &spec.chunk_analysis_options,
-                    chunk_export_purity: &spec.chunk_export_purity,
+        let materialize_result = materialize_logical_modules(
+            indexed.into_artifact(),
+            MaterializeSpecInputs {
+                logical_modules: &spec.logical_modules,
+                chunk_renames: &spec.chunk_renames,
+                unassigned_mode: &spec.unassigned_mode,
+                chunk_analysis_options: &spec.chunk_analysis_options,
+                chunk_export_purity: &spec.chunk_export_purity,
+            },
+            &vendor_plan,
+            MaterializeLogicalModulesOptions {
+                config: spec.materialize_logical_modules.clone(),
+                chunk_ids: materialise_chunk_ids,
+                keep_going: options.keep_going,
+                list_template_identifiers: options.list_template_identifiers,
+                // Dry-run keeps the no-output contract on the
+                // accept path but still materializes rejection
+                // evidence (owner graph + cycles/conflicts) at the
+                // same reports/tree/<chunk>/ location a real run
+                // uses, so `debundle gate list/describe` works on
+                // the rejection that was just reported.
+                report_emission: match report_out_dir {
+                    Some(dir) if options.dry_run => ReportEmission::OnRejection(dir),
+                    Some(dir) => ReportEmission::Full(dir),
+                    None => ReportEmission::None,
                 },
-                &vendor_plan,
-                MaterializeLogicalModulesOptions {
-                    config: spec.materialize_logical_modules.clone(),
-                    chunk_ids: materialise_chunk_ids,
-                    keep_going: options.keep_going,
-                    list_template_identifiers: options.list_template_identifiers,
-                    // Dry-run keeps the no-output contract on the
-                    // accept path but still materializes rejection
-                    // evidence (owner graph + cycles/conflicts) at the
-                    // same reports/tree/<chunk>/ location a real run
-                    // uses, so `debundle gate list/describe` works on
-                    // the rejection that was just reported.
-                    report_emission: match report_out_dir {
-                        Some(dir) if options.dry_run => ReportEmission::OnRejection(dir),
-                        Some(dir) => ReportEmission::Full(dir),
-                        None => ReportEmission::None,
-                    },
-                },
-            )?;
-            module_count = materialize_result.module_count;
-            selected_lowerings = materialize_result.selected_lowerings;
-            unmatched_spec_claims = materialize_result.unmatched_spec_claims;
-            vendor_lowering_rewrites = materialize_result.vendor_reference_rewrites;
-            // Until the post-lowering passes consume emit-ready files directly,
-            // adapt the separate lowered outputs back to their bundle input.
-            let assembled = materialize_result.output.into_bundle();
-            decomposition_by_chunk = assembled.decomposition_by_chunk;
-            Ok((assembled.artifact, ()))
-        })?;
-    }
+            },
+        )?;
+        module_count = materialize_result.module_count;
+        selected_lowerings = materialize_result.selected_lowerings;
+        unmatched_spec_claims = materialize_result.unmatched_spec_claims;
+        vendor_lowering_rewrites = materialize_result.vendor_reference_rewrites;
+        let outputs = materialize_result.output.into_emission_files()?;
+        decomposition_by_chunk = outputs.decomposition_by_chunk;
+        outputs.files
+    } else {
+        artifact::EmissionFiles::from_prepared(indexed)
+    };
 
-    // Cross-chunk import naturalization runs after lowering has exposed
-    // target aliases but before source-specifier canonicalization changes the
-    // original chunk-relative import paths used by ArtifactSourceImportResolver.
+    // Cross-chunk import naturalization runs first, before the following
+    // emission rewrites canonicalize source specifiers. The two operations
+    // change AST bodies without changing the indexed output file set.
     // Emission rewrites, one artifact pass over two disjoint file sets:
     //
     // * the unified pass-through directive rewrite over files emitted
@@ -304,7 +296,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // erase binding names spec selectors matched on.
     let mut vendor_rewrite_counts = vendor_lowering_rewrites;
     let emission_references;
-    (indexed, emission_references) = indexed.update_file_bodies(|artifact, indexes| {
+    (emission_files, emission_references) = emission_files.rewrite_bodies(|artifact, indexes| {
         naturalize_cross_chunk_imports(
             artifact,
             indexes,
@@ -321,11 +313,14 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         // surface. Load-bearing behind the plan-time gate — it covers
         // directives lowering synthesized inside materialized module
         // bodies (see `validate_partial_swap_consumers`).
-        validate_partial_swap_consumers(indexed.artifact(), &vendor_plan, indexed.indexes())?;
+        validate_partial_swap_consumers(
+            emission_files.files(),
+            &vendor_plan,
+            emission_files.indexes(),
+        )?;
     }
     (vendor_report.partial, vendor_report.bundled_partial) =
         build_partial_swap_resolutions(&vendor_plan, &vendor_rewrite_counts)?;
-    let mut artifact = indexed.into_artifact();
 
     // Vendor emission outputs: full-swap wrappers and bundled bundle
     // copies / facades, plus the combined manifest — all write-gated
@@ -346,8 +341,6 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // name-based export prune would otherwise treat as a live consumer —
     // cascades into dropping the now-unimported module exports. See
     // prune_dead_imports.rs for the soundness argument.
-    prune_dead_import_specifiers(&mut artifact);
-
     // Drop dead named exports from emitted logical-module files: a
     // module-owned binding referenced nowhere outside its own module
     // (the esbuild decorator scaffolding is the dominant case) is
@@ -356,7 +349,12 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // import/re-export; entry files (the chunk public surface) are
     // never touched. See prune_module_exports.rs for the soundness
     // argument.
-    prune_unimported_module_exports(&mut artifact);
+    (emission_files, ()) = emission_files.rewrite_bodies(|files, _| {
+        prune_dead_import_specifiers(files);
+        prune_unimported_module_exports(files);
+        Ok(())
+    })?;
+
 
     // Final emit-shape check: every JS file that came out of the
     // materialize / strip pipeline must have unique public export
@@ -365,13 +363,13 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
     // pageerror) into an immediate build-time error pointing at the
     // exact file, name, and source lines. Runs unconditionally so
     // pipelines without vendor swaps still benefit.
-    validate_emitted_exports(&artifact, &excluded_chunk_ids)?;
+    validate_emitted_exports(emission_files.files(), &excluded_chunk_ids)?;
 
     // Chunk records of the emission set: records of excluded
     // (fully-swapped) chunks are dropped from the emitted reports.
     let excluded_chunk_names: BTreeSet<&str> = excluded_chunk_ids
         .iter()
-        .map(|chunk_id| artifact.chunk_table.name(*chunk_id))
+        .map(|chunk_id| emission_files.files().chunk_table.name(*chunk_id))
         .collect();
     let emitted_chunk_records: Vec<_> = chunk_records
         .into_iter()
@@ -382,7 +380,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         && let Some(cfg) = &spec.write_js_tree
     {
         write_js_tree(&WriteTreeInput {
-            artifact: &artifact,
+            files: &emission_files,
             out_dir: &cfg.out_dir,
             lowerings: &selected_lowerings,
             counts: &counts,
@@ -397,7 +395,7 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
         && let Some(cfg) = &spec.emit_browser_harness
     {
         emit_browser_harness(
-            &artifact,
+            &emission_files,
             cfg,
             &emitted_chunk_records,
             &decomposition_by_chunk,

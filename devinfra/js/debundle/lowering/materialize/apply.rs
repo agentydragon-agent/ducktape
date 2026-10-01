@@ -1,8 +1,7 @@
 use super::*;
 
 /// Finalized chunk files, retaining whether each came from lowering or
-/// passes through unchanged. The legacy bundle is assembled only for passes
-/// that have not yet migrated to consume this file set.
+/// passes through unchanged until the emit-stage file set is constructed.
 pub struct LoweredChunkOutputs {
     chunks: Vec<EmissionChunk>,
     chunk_table: ChunkTable,
@@ -22,27 +21,26 @@ impl EmissionChunk {
     }
 }
 
-pub struct AssembledChunkOutputs {
-    pub artifact: ChunkBundle,
+pub struct EmissionChunkOutputs {
+    pub files: artifact::EmissionFiles,
     pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
 }
 
 impl LoweredChunkOutputs {
-    /// Temporary adapter for post-lowering passes that still consume a
-    /// bundle. No file conversion happens here: lowering already produced
-    /// the final file records and decomposition for each selected chunk.
-    pub fn into_bundle(self) -> AssembledChunkOutputs {
-        AssembledChunkOutputs {
-            artifact: ChunkBundle {
+    /// Transfer finalized output files into the emit-stage file set. No JS
+    /// is re-parsed or lowered a second time.
+    pub fn into_emission_files(self) -> Result<EmissionChunkOutputs> {
+        Ok(EmissionChunkOutputs {
+            files: artifact::EmissionFiles::new(ChunkBundle {
                 chunks: self
                     .chunks
                     .into_iter()
                     .map(EmissionChunk::into_artifact)
                     .collect(),
                 chunk_table: self.chunk_table,
-            },
+            })?,
             decomposition_by_chunk: self.decomposition_by_chunk,
-        }
+        })
     }
 }
 
@@ -223,12 +221,12 @@ mod tests {
         let output =
             collect_materialized_logical_chunks(source, "modules", vec![lowered_chunk(first)])
                 .unwrap()
-                .into_bundle();
-        assert_eq!(output.artifact.chunks[0].chunk_id, second);
-        assert_eq!(output.artifact.chunks[0].analysis.entry_file, "entry.js");
-        assert_eq!(output.artifact.chunks[1].chunk_id, first);
-        assert_eq!(output.artifact.chunks[1].analysis.entry_file, "lowered.js");
-        assert_eq!(output.artifact.chunks[1].analysis.source_path, "first.js");
+                .into_emission_files().unwrap();
+        assert_eq!(output.files.files().chunks[0].chunk_id, second);
+        assert_eq!(output.files.files().chunks[0].analysis.entry_file, "entry.js");
+        assert_eq!(output.files.files().chunks[1].chunk_id, first);
+        assert_eq!(output.files.files().chunks[1].analysis.entry_file, "lowered.js");
+        assert_eq!(output.files.files().chunks[1].analysis.source_path, "first.js");
         assert_eq!(output.decomposition_by_chunk.len(), 1);
         assert!(output.decomposition_by_chunk.contains_key(&first));
     }
@@ -257,7 +255,7 @@ mod tests {
         };
         let output = collect_materialized_logical_chunks(source, "", Vec::new())
             .unwrap()
-            .into_bundle();
+            .into_emission_files().unwrap();
         assert!(output.decomposition_by_chunk.is_empty());
         assert_eq!(
             output

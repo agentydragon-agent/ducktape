@@ -4,7 +4,7 @@ use std::path::Path;
 use anyhow::{Result, bail};
 
 use artifact::{
-    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkBundle, ChunkDecompositionOutput,
+    ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, EmissionFiles,
     ChunkId, ChunksReport, DecompositionMetrics, PackageManifest, RootLogicalModulesSummary,
     SelectedModuleLowering, materialize_artifact_scripts, write_json,
 };
@@ -12,7 +12,7 @@ use identifier_rename_queue::compute_identifier_rename_queue;
 use output_layout::DebundleOutputLayout;
 
 pub struct WriteTreeInput<'a> {
-    pub artifact: &'a ChunkBundle,
+    pub files: &'a EmissionFiles,
     pub out_dir: &'a Path,
     pub lowerings: &'a [SelectedModuleLowering],
     pub counts: &'a ArtifactCounts,
@@ -35,7 +35,7 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     layout.prepare()?;
 
     let materialized = materialize_artifact_scripts(
-        input.artifact,
+        input.files.files(),
         &layout.app_root(),
         &layout.tree_root(),
         input.decomposition_by_chunk,
@@ -52,7 +52,7 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     };
 
     let queue = compute_identifier_rename_queue(
-        input.artifact,
+        input.files.files(),
         input.decomposition_by_chunk,
         input.excluded_chunk_ids,
     )?;

@@ -10,7 +10,7 @@ use url::Url;
 
 use artifact::{
     ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, ChunksReport,
-    OutputMetrics, PackageManifest, chunk_id_for_js_path, get_chunk_entry_path,
+    EmissionFiles, OutputMetrics, PackageManifest, chunk_id_for_js_path, get_chunk_entry_path,
     materialize_artifact_scripts, module_path_from_path, normalize_module_path,
     path_from_module_path, write_json,
 };
@@ -65,12 +65,13 @@ struct HtmlEntries {
 /// entry/preload referencing one is rejected the same as a chunk the
 /// snapshot manifest never contained.
 pub fn emit_browser_harness(
-    artifact: &ChunkBundle,
+    files: &EmissionFiles,
     options: &EmitBrowserHarnessConfig,
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<()> {
+    let artifact = files.files();
     let asset_summary_raw = fs::read_to_string(&options.asset_summary_path)
         .with_context(|| format!("reading {}", options.asset_summary_path.display()))?;
     let asset_summary_value: serde_json::Value = serde_json::from_str(&asset_summary_raw)?;

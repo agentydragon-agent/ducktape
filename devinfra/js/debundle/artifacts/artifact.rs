@@ -1149,6 +1149,41 @@ impl IndexedArtifact {
     }
 }
 
+/// Emit-stage ownership: finalized lowered/pass-through files and the
+/// indexes matching their final paths. Transformations may rewrite bodies
+/// but cannot silently change the emission set's indexed file layout.
+pub struct EmissionFiles {
+    indexed: IndexedArtifact,
+}
+
+impl EmissionFiles {
+    pub fn new(files: ChunkBundle) -> Result<Self> {
+        Ok(Self {
+            indexed: IndexedArtifact::new(files)?,
+        })
+    }
+
+    pub fn from_prepared(indexed: IndexedArtifact) -> Self {
+        Self { indexed }
+    }
+
+    pub fn files(&self) -> &ChunkBundle {
+        self.indexed.artifact()
+    }
+
+    pub fn indexes(&self) -> &ArtifactIndexes {
+        self.indexed.indexes()
+    }
+
+    pub fn rewrite_bodies<T>(
+        self,
+        rewrite: impl FnOnce(&mut ChunkBundle, &ArtifactIndexes) -> Result<T>,
+    ) -> Result<(Self, T)> {
+        let (indexed, value) = self.indexed.update_file_bodies(rewrite)?;
+        Ok((Self { indexed }, value))
+    }
+}
+
 pub fn load_js_chunks(input_root: &Path, js_list_path: &Path) -> Result<LoadedJsChunks> {
     let js_files = parse_js_list(
         &fs::read_to_string(js_list_path)

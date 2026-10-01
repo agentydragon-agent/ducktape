@@ -5,15 +5,13 @@ file is an active backlog: resolved items are deleted, not struck through.
 
 ## What hurts most (priority order)
 
-1. **The pipeline has no single emit-ready output model.** `pipeline.rs`
-   assembles lowered files back into `ChunkBundle`, rebuilds `ArtifactIndexes`, then
-   runs cross-chunk import naturalization, vendor emission rewrites, a
-   post-strip consumer check, dead-import/export pruning, duplicate-export
-   validation, and finally tree/harness writers. `write_js_tree` and
-   `emit_browser_harness` cannot just consume the lowerer's return value.
-   The bundle round-trip is real, but replacing it is **not** merely changing
-   the last two calls: the intervening passes must see the same final files
-   and names. See the migration order below.
+1. **The emit-stage file set still shares `ChunkBundle` internals.**
+   `EmissionFiles` now owns finalized lowered and pass-through files, carries
+   matching output-path indexes, and feeds the rewrites, checks and both
+   writers without a pipeline bundle re-assembly. Existing lower-level
+   transforms still take `&ChunkBundle` through `EmissionFiles::files()`;
+   prefer phase-specific APIs at their next substantive change rather than
+   another cosmetic blanket type rename.
 2. **Finding the right owner of a behavior is laborious.** `BUILD.bazel` has
    over 1,200 lines of fine-grained Rust targets; `pipeline.rs`, `cli/mod.rs`,
    `artifacts/artifact.rs`, `spec/spec.rs`, `selectors/resolution/selector_resolve.rs`,
@@ -38,30 +36,19 @@ Re-check file paths and line numbers against current `HEAD` before
 acting; this file intentionally describes shapes rather than frozen
 review line references.
 
-### Materialize-into-emit (high impact, high risk)
+### Emission index and validation boundary
 
-`materialize_logical_modules` now returns lowered and pass-through chunk files
-as a typed `LoweredChunkOutputs` set, but `pipeline.rs` assembles them into
-a chunk bundle and `IndexedArtifact::update` rebuilds indexes. The pipeline
-then mutates that bundle again (cross-chunk import naturalization, vendor
-emission rewrites, dead-import/export pruning), checks the final emit shape,
-and only then writes the tree and browser harness. The 2026-06 vendor
-collapse removed separate vendor mutation _waves_, not all later artifact
-mutations. `docs/design.md` "Pipeline trajectory" describes the intended
-end state; its "one artifact mutation wave" shorthand does not include all
-post-lowering transformations.
+The pipeline now hands lowering's finalized files directly to `EmissionFiles`;
+body-only naturalization, vendor rewrites and pruning retain its indexes behind
+an indexed-layout check. The one output-path index build when constructing
+`EmissionFiles` is still needed because lowering changes entry filenames and
+introduces module files. Do not substitute the prepare-time source indexes:
+they cannot resolve newly emitted file paths. Full-swap exclusions and the
+post-strip consumer scan remain explicit gates before tree/harness writing.
 
-**Migration order:** the first seam produces a typed set of lowered and
-pass-through chunks (`LoweredChunkOutputs`), but the post-lowering passes do
-not yet consume it as an emit-ready model.
-(1) Make an explicit typed final-file/emission-set boundary, preserving file
-metadata and full-swap exclusions; (2) move each
-post-lowering pass to that boundary, including the partial-swap consumer gate
-and final export validation; (3) have both writers consume it; (4) only then
-remove the `ChunkBundle` round-trip and the post-materialize index rebuild
-_if_ no remaining resolver needs it. Pin mixed lowered/pass-through/vendor
-cases with e2e fixtures at each step. Do not drop the vendor consumer scan
-just because file ownership changes.
+Possible later cleanup: have transform helpers accept `EmissionFiles` directly
+rather than borrowing its underlying `ChunkBundle`. This is interface debt,
+not a missing emission wave; preserve the source-order/file-role contracts.
 
 ### Post-strip consumer scan retirement condition
 

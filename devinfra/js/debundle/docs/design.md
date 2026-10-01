@@ -1979,12 +1979,16 @@ The pipeline (`pipeline.rs`) is a fixed composition over three layers:
   exclusion, not an artifact removal; wrappers / facades / manifests
   are emission outputs.
 
-One bundle round-trip remains: `materialize_logical_modules` writes
-lowered module files back into the chunk bundle for the emission
-stages to re-read (collapsing that is tracked in
-ARCHITECTURE_BACKLOG.md). The e2e tests in `devinfra/js/debundle/e2e/`
-pin observable chunk → emitted-JS behavior and are the safety net for
-any such pipeline reshaping.
+The emission boundary is `EmissionFiles`: lowering finalizes lowered and
+pass-through chunk files into this owned output set; cross-chunk import
+naturalization, vendor emission rewrites, dead-import/export pruning and
+final export validation run against that set, then tree/harness writers read
+it. Its output-path indexes are built once after lowering changes entry and
+module paths and retained across body-only passes behind an indexed-layout
+check. No disk reparse or pipeline splice into the prepared input artifact
+occurs. `EmissionFiles` currently uses `ChunkBundle` internally as the file
+container for existing transformation helpers; that does not change which
+phase owns the files.
 
 ## Anonymous-statement selectors
 
