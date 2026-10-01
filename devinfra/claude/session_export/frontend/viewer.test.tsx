@@ -16,16 +16,32 @@ vi.mock("./api", () => ({
 }));
 
 const session = {
-  id: "session-1", title: "Live session", status: "active", created_at: "2026-01-01T00:00:00Z",
-  updated_at: "2026-01-01T00:00:00Z", last_event_at: "2026-01-01T00:00:00Z",
+  id: "session-1",
+  title: "Live session",
+  status: "active",
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+  last_event_at: "2026-01-01T00:00:00Z",
 };
 const first = {
-  event_id: "event-1", sequence_num: "1", event_type: "user", source: "client",
-  created_at: "2026-01-01T00:00:00Z", received_at: null, processing_at: null, processed_at: null,
-  device_attestation_status: "DEVICE_ATTESTATION_STATUS_UNSPECIFIED", sent_by_account_id: null,
+  event_id: "event-1",
+  sequence_num: "1",
+  event_type: "user",
+  source: "client",
+  created_at: "2026-01-01T00:00:00Z",
+  received_at: null,
+  processing_at: null,
+  processed_at: null,
+  device_attestation_status: "DEVICE_ATTESTATION_STATUS_UNSPECIFIED",
+  sent_by_account_id: null,
   payload: { type: "user", message: { role: "user", content: [{ type: "text", text: "First message" }] } },
 };
-const second = { ...first, event_id: "event-2", sequence_num: "2", payload: { type: "user", message: { role: "user", content: [{ type: "text", text: "Second message" }] } } };
+const second = {
+  ...first,
+  event_id: "event-2",
+  sequence_num: "2",
+  payload: { type: "user", message: { role: "user", content: [{ type: "text", text: "Second message" }] } },
+};
 
 let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLDivElement | null = null;
@@ -38,7 +54,11 @@ afterEach(async () => {
 });
 
 it("retains session and transcript DOM, scroll and disclosure across watch refreshes", async () => {
-  const stream = new EventTarget() as EventTarget & { close: () => void; onopen: (() => void) | null; onerror: (() => void) | null };
+  const stream = new EventTarget() as EventTarget & {
+    close: () => void;
+    onopen: (() => void) | null;
+    onerror: (() => void) | null;
+  };
   stream.close = vi.fn();
   stream.onopen = null;
   stream.onerror = null;
@@ -47,18 +67,31 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   let finishRefresh: ((value: Awaited<ReturnType<typeof listSessionEvents>>) => void) | undefined;
   vi.mocked(listSessionEvents)
     .mockResolvedValueOnce({ data: [first], has_more: false, first_id: "event-1", last_id: "event-1" })
-    .mockImplementationOnce(() => new Promise((resolve) => { finishRefresh = resolve; }));
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRefresh = resolve;
+        })
+    );
 
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root?.render(<MantineProvider env="test"><SessionViewer /></MantineProvider>));
+  await act(async () =>
+    root?.render(
+      <MantineProvider env="test">
+        <SessionViewer />
+      </MantineProvider>
+    )
+  );
   await vi.waitFor(() => expect(container?.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(1));
   const article = container.querySelector('[data-fold-kind="message"]')!;
   const list = container.querySelector('[aria-label="Session list"] button')!;
-  const viewport = container.querySelector('[aria-label="Session transcript"] .mantine-ScrollArea-viewport') as HTMLElement;
+  const viewport = container.querySelector(
+    '[aria-label="Session transcript"] .mantine-ScrollArea-viewport'
+  ) as HTMLElement;
   viewport.scrollTop = 100;
-  const control = article.querySelector<HTMLButtonElement>('.mantine-Accordion-control')!;
+  const control = article.querySelector<HTMLButtonElement>(".mantine-Accordion-control")!;
   await act(async () => control.click());
   expect(control.getAttribute("aria-expanded")).toBe("true");
 
@@ -69,7 +102,9 @@ it("retains session and transcript DOM, scroll and disclosure across watch refre
   expect(container.querySelector('[aria-label="Session transcript"] .mantine-ScrollArea-viewport')).toBe(viewport);
   expect(viewport.scrollTop).toBe(100);
   expect(control.getAttribute("aria-expanded")).toBe("true");
-  await act(async () => finishRefresh?.({ data: [first, second], has_more: false, first_id: "event-1", last_id: "event-2" }));
+  await act(async () =>
+    finishRefresh?.({ data: [first, second], has_more: false, first_id: "event-1", last_id: "event-2" })
+  );
   expect(container.querySelector('[data-fold-kind="message"]')).toBe(article);
   expect(container.querySelectorAll('[data-fold-kind="message"]')).toHaveLength(2);
   expect(viewport.scrollTop).toBe(100);
