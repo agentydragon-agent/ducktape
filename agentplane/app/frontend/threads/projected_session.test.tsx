@@ -428,10 +428,19 @@ it("pulses and labels the healthy status dot while a turn is active", async () =
   expect(document.title).toBe("Test thread · Running — Agentplane");
   const firstFrame = favicon.getAttribute("href");
   expect(firstFrame).toMatch(/^data:image\/svg\+xml,/);
+  const svg = (href: string | null): string => decodeURIComponent(href?.split(",")[1] ?? "");
+  expect(svg(firstFrame)).toContain('<path d="M5 14.5 27 5 18 27');
+  expect(svg(firstFrame)).toContain('fill="none"');
+  expect(svg(firstFrame)).not.toContain("<rect");
+  expect(svg(firstFrame)).toContain('<circle cx="25"');
   await act(async () => {
-    vi.advanceTimersByTime(100);
+    vi.advanceTimersByTime(700);
   });
-  expect(favicon.getAttribute("href")).not.toBe(firstFrame);
+  expect(svg(favicon.getAttribute("href"))).not.toContain("<circle");
+  await act(async () => {
+    vi.advanceTimersByTime(600);
+  });
+  expect(svg(favicon.getAttribute("href"))).toContain('<circle cx="25"');
 });
 
 it("does not show active-turn status when the runner is not active", async () => {
