@@ -19,36 +19,6 @@ Exclude parked packages only when prioritizing active work, not when describing 
 adoption. `*.k8s.yaml` is generated output; its presence does not make neighboring
 configuration typed.
 
-## Convert: configuration with an existing application contract
-
-### Authentik rotator wiring
-
-Attic's typed roster now lives in `cluster/cdk8s/nix_cache/attic.py` and uses the schema
-shared with its runtime rotator at `cluster/rotators/attic_jwt_rotation/config.py`. cdk8s
-serializes it under the runtime ConfigMap key `rotators.yaml`; the hand-written source file
-is removed. SOPS outputs, native `server.toml`, and the image-pins Component keep their
-existing owners.
-
-Authentik keeps its Pydantic schema in the rotator's `config.py`; cdk8s builds
-`ROTATIONS` from that model. Forgejo's cdk8s module already builds its `ROTATIONS`
-from the runtime model, and its CronJob now derives mounted credential volumes and
-their Secret names from those entries. The two credentials sourced in the `forgejo`
-namespace are still identified explicitly because source namespace is deployment wiring,
-not part of the rotator's runtime configuration.
-
-Remaining: derive Authentik's credential mounts and output Secret names from its entries
-wherever the generator currently repeats them. Keep audiences, scopes and consumer grants
-explicit. Treat each remaining improvement as a separate reviewable change; do not add a
-generic rotator framework.
-
-The rotators write SOPS ciphertext and sometimes publish more than one output. cdk8s
-must not become a second writer of those bytes. Consolidating those outputs, or
-replacing token-minting API calls with a provider, changes lifecycle ownership and needs
-its own investigation.
-
-Done per remaining slice: config and mounts share inputs, runtime rotation semantics and
-output owners are unchanged, and generated ConfigMaps contain no credentials.
-
 ## Model selectively: third-party configuration
 
 ### Authentik blueprints: ownership first
