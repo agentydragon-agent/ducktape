@@ -1049,7 +1049,12 @@ struct IndexedLayout {
 }
 
 type IndexedChunkLayout = (
-    ChunkId, String, String, String, Vec<ImportRecord>, Vec<(String, String)>,
+    ChunkId,
+    String,
+    String,
+    String,
+    Vec<ImportRecord>,
+    Vec<(String, String)>,
 );
 
 impl ChunkBundle {
@@ -2019,6 +2024,27 @@ fn resolve_chunk_source_path_reference(source: &str, caller_source_path: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn body_only_update_rejects_indexed_layout_changes() {
+        let empty = || ChunkBundle {
+            chunks: Vec::new(),
+            chunk_table: ChunkTable::default(),
+        };
+        let (indexed, ()) = IndexedArtifact::new(empty())
+            .unwrap()
+            .update_file_bodies(|_, _| Ok(()))
+            .unwrap();
+        assert!(indexed.artifact().chunks.is_empty());
+
+        let err = IndexedArtifact::new(empty())
+            .unwrap()
+            .update_file_bodies(|artifact, _| {
+                artifact.chunk_table.intern("unexpected".to_string());
+                Ok(())
+            });
+        assert!(err.is_err());
+    }
 
     #[test]
     fn module_path_dirname_normalizes_backslashes() {
