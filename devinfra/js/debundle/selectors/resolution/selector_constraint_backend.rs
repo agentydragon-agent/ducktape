@@ -70,12 +70,15 @@ pub struct TargetProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TargetBindingProjection {
-    Variable(ConstraintVariableId),
+pub enum BindingProjection<V> {
+    Variable(V),
     Const(String),
 }
 
-impl TargetBindingProjection {
+/// Binding projection after selector variables have been lowered to solver variables.
+pub type TargetBindingProjection = BindingProjection<ConstraintVariableId>;
+
+impl BindingProjection<ConstraintVariableId> {
     pub fn variable(&self) -> Option<ConstraintVariableId> {
         match self {
             Self::Variable(variable) => Some(*variable),

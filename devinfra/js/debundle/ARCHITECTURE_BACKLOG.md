@@ -138,14 +138,6 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
    (e.g. a renamed vendor-mark field stays green in tests while breaking real
    specs). Points: <e2e/vendor_swap_test.rs> (~lines 1680, 1821 and the
    `report_out_dir` literals), builder surface in `vendor/mod.rs`.
-3. Consolidate the two `*BindingProjection` enums
-   (`TargetBindingProjection` in `selectors/resolution/selector_constraint_backend.rs`,
-   `SourceBindingProjection` in `selectors/resolution/selector_constraint_model_builder.rs`) into one
-   shared projection type.
-   They are structurally identical views of the same binding-namespace
-   partition, duplicated per solver stage; the copies drift silently when a
-   new binding kind is added. Unify behind one enum (plus any stage-specific
-   extension) and re-point the three stages at it.
 
 **Organization only (≈0 LOC removed, navigability win):** split the giant
 files by responsibility — <selectors/authoring/selector_codemod.rs>, <peel/quotient.rs>,
