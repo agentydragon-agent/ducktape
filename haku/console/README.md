@@ -68,6 +68,11 @@ WebSocket is only a lossy invalidation channel: REST remains authoritative.
 
 ### MCP server (`/mcp`)
 
+The deployed Console sets `mcp_server_enabled: false`: its agent-facing `/mcp` endpoint and
+MCP OAuth discovery routes are not mounted. Local/test setups still default to enabled. This
+switch does not remove Console's underlying approval ledger, browser APIs, or Kubernetes RBAC;
+those have separate users and retirement decisions.
+
 `mcp/server.py` mounts one native MCP server for Agents and the trusted Operator frontend. Agents
 submit through `ToolCallApplicationService.submit_and_wait`. A DB-revalidated Operator session uses
 `execute_direct`, resolving downstream credentials in that Operator's context without creating an

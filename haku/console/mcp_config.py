@@ -221,6 +221,11 @@ class LoadedStaticAgent(BaseModel):
 
 
 class ConsoleConfigFile(BaseModel):
+    # Controls exposure of Console's own agent-facing /mcp HTTP endpoint (and its OAuth
+    # discovery routes), not the underlying tool-call/approval service used by the UI.
+    # Default on for existing deployments and tests; production can deliberately opt out.
+    mcp_server_enabled: bool = True
+
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
     # libgit2 does not inherit Python/OpenSSL environment variables. Configure its process-wide
     # trust store explicitly before any HTTPS recall source is cloned or fetched.
