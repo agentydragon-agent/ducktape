@@ -9,10 +9,11 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
+from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.egress import sidecar
-from cluster.cdk8s.agentplane import staging, testing
+from cluster.cdk8s.agentplane import binding_delegation, staging, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
@@ -130,8 +131,10 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
     )
 
 
-def test_coinbase_access_is_limited_to_the_oauth_caller(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
-    """Keep Coinbase access on claude-ai while managed Haku identity is unresolved."""
+def test_coinbase_static_grant_is_preserved_and_managed_haku_picks_scoped_grant(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    """The static OAuth account keeps its grant; managed Haku picks a separate SA binding."""
     docs = agentplane_manifests[staging.ENV.namespace]
 
     role_binding = _by_name(docs, "RoleBinding", "claude-ai-coinbase-reader")
@@ -143,9 +146,189 @@ def test_coinbase_access_is_limited_to_the_oauth_caller(agentplane_manifests: di
     assert COINBASE_POLICY in egress_bindings["claude-ai"]["spec"]["policies"]
     assert COINBASE_POLICY not in egress_bindings["haku-agent"]["spec"]["policies"]
 
+    role = _by_name(docs, "Role", "claude-ai-coinbase-reader")
+    assert role["rules"] == [
+        {"apiGroups": [""], "resourceNames": ["coinbase-api-credentials"], "resources": ["secrets"], "verbs": ["get"]}
+    ]
+
     app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
-    haku_preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]
-    assert COINBASE_POLICY not in haku_preset["policies"], haku_preset
+    config = yaml.safe_load(app_config["data"]["config.yaml"])
+    haku_preset = config["sandbox_presets"]["haku"]
+    assert COINBASE_POLICY in haku_preset["policies"], haku_preset
+    assert "coinbase-credentials" in haku_preset["kubernetes_grants"]
+    assert config["kubernetes_grants"]["coinbase-credentials"] == {
+        "kind": "RoleBinding",
+        "namespace": staging.ENV.namespace,
+        "role_ref": {"kind": "Role", "name": "claude-ai-coinbase-reader"},
+    }
+
+
+def test_haku_grant_catalog_generates_scoped_app_delegation(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    haku = config["sandbox_presets"]["haku"]
+    assert haku["kubernetes_grants"] == [
+        "cluster-diagnostics",
+        "haku-sandbox-write",
+        "agentplane-testing-operator",
+        "agentplane-staging-metadata",
+        "agentplane-staging-logs",
+        "coinbase-credentials",
+        "haku-console-metadata",
+        "clickhouse-diagnostics",
+        "ducktape-flux-read",
+        "public-coder-volsync-status",
+        "public-coder-agent-reader",
+        "public-coder-agent-devbox-vmi-restart",
+    ]
+    assert config["kubernetes_grants"]["cluster-diagnostics"] == {
+        "kind": "ClusterRoleBinding",
+        "role_ref": {"kind": "ClusterRole", "name": "cluster-diagnostics-reader"},
+    }
+    assert config["kubernetes_grants"]["haku-sandbox-write"] == {
+        "kind": "RoleBinding",
+        "namespace": "haku-sandbox",
+        "role_ref": {"kind": "Role", "name": "haku-sandbox-admin"},
+    }
+    assert config["kubernetes_grants"]["haku-console-metadata"] == {
+        "kind": "RoleBinding",
+        "namespace": "haku-console",
+        "role_ref": {"kind": "Role", "name": "agent-haku-console-metadata-reader"},
+    }
+    assert config["kubernetes_grants"]["clickhouse-diagnostics"] == {
+        "kind": "RoleBinding",
+        "namespace": "clickhouse",
+        "role_ref": {"kind": "Role", "name": "agent-clickhouse-diagnostics-reader"},
+    }
+    assert config["kubernetes_grants"]["ducktape-flux-read"] == {
+        "kind": "RoleBinding",
+        "namespace": "ducktape-flux",
+        "role_ref": {"kind": "Role", "name": "ducktape-flux-reader"},
+    }
+    assert config["kubernetes_grants"]["public-coder-volsync-status"] == {
+        "kind": "RoleBinding",
+        "namespace": "public-coder-agent",
+        "role_ref": {"kind": "Role", "name": "agent-public-coder-extended-diagnostics-reader"},
+    }
+    assert not any(
+        doc["kind"] in {"Role", "RoleBinding"}
+        and doc["metadata"].get("namespace") == "haku-sandbox"
+        and doc["metadata"]["name"] == "agentplane-staging-managed-bindings"
+        for doc in docs
+    ), "the app Kustomization must not own managed-binding delegation in external namespaces"
+    app_cluster_role = _by_name(docs, "ClusterRole", "agentplane-staging-managed-cluster-bindings")
+    assert {
+        tuple(rule.get("resourceNames", [])) for rule in app_cluster_role["rules"] if rule["verbs"] == ["bind"]
+    } == {("agent-readable-namespace-logs",), ("agent-readable-namespace-metadata",), ("cluster-diagnostics-reader",)}
+    assert any(
+        rule["resources"] == ["clusterroles"] and rule["verbs"] == ["get"] and not rule.get("resourceNames")
+        for rule in app_cluster_role["rules"]
+    )
+    assert config["kubernetes_binding_cleanup_namespaces"] == [
+        "agentplane-testing",
+        "clickhouse",
+        "ducktape-flux",
+        "haku-console",
+        "haku-sandbox",
+        "public-coder-agent",
+    ]
+    assert config["kubernetes_cluster_binding_cleanup"] is True
+
+
+def test_managed_haku_public_coder_reader_and_restart_have_named_bind_delegation(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    for name in ("public-coder-agent-reader", "public-coder-agent-devbox-vmi-restart"):
+        assert config["kubernetes_grants"][name] == {
+            "kind": "RoleBinding",
+            "namespace": "public-coder-agent",
+            "role_ref": {"kind": "Role", "name": name},
+        }
+        assert name in config["sandbox_presets"]["haku"]["kubernetes_grants"]
+    assert "public-coder-agent" in config["kubernetes_binding_cleanup_namespaces"]
+
+    delegated = Cdk8sTesting.synth(binding_delegation.chart(Cdk8sTesting.app(), staging.ENV, "public-coder-agent"))
+    role = _by_name(delegated, "Role", "agentplane-staging-external-bindings")
+    assert role["metadata"]["namespace"] == "public-coder-agent"
+    assert role["rules"][0] == {
+        "apiGroups": ["rbac.authorization.k8s.io"],
+        "resources": ["rolebindings"],
+        "verbs": ["create", "get", "list", "delete"],
+    }
+    assert {tuple(rule.get("resourceNames", [])) for rule in role["rules"] if rule["verbs"] == ["bind"]} == {
+        ("agent-public-coder-extended-diagnostics-reader",),
+        ("public-coder-agent-reader",),
+        ("public-coder-agent-devbox-vmi-restart",),
+    }
+    binding = _by_name(delegated, "RoleBinding", "agentplane-staging-external-bindings")
+    assert binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+    ]
+    assert not any(
+        doc["kind"] in {"Role", "RoleBinding"}
+        and doc["metadata"].get("namespace") == "public-coder-agent"
+        and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
+        for doc in docs
+    )
+
+
+def test_managed_haku_testing_operator_reuses_static_role_with_external_delegation(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    staging_docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(staging_docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    assert config["kubernetes_grants"]["agentplane-testing-operator"] == {
+        "kind": "RoleBinding",
+        "namespace": "agentplane-testing",
+        "role_ref": {"kind": "Role", "name": "agentplane-testing-operator"},
+    }
+    assert "agentplane-testing-operator" in config["sandbox_presets"]["haku"]["kubernetes_grants"]
+    assert "agentplane-testing" in config["kubernetes_binding_cleanup_namespaces"]
+    assert "agentplane-testing" in binding_delegation.external_scopes(staging.ENV)
+
+    testing_docs = agentplane_manifests[testing.ENV.namespace]
+    assert (
+        _by_name(testing_docs, "Role", "agentplane-testing-operator")["metadata"]["namespace"] == "agentplane-testing"
+    )
+    static_binding = _by_name(testing_docs, "RoleBinding", "agent-agentplane-testing-operator")
+    assert static_binding["roleRef"]["name"] == "agentplane-testing-operator"
+    assert {subject["name"] for subject in static_binding["subjects"]} >= {
+        "oidc-ksbx-groups:haku",
+        "haku:access-profile:haku",
+        "haku",
+    }
+
+    external_docs = Cdk8sTesting.synth(binding_delegation.chart(Cdk8sTesting.app(), staging.ENV, "agentplane-testing"))
+    role = _by_name(external_docs, "Role", "agentplane-staging-external-bindings")
+    assert role["metadata"]["namespace"] == "agentplane-testing"
+    assert role["rules"] == [
+        {
+            "apiGroups": ["rbac.authorization.k8s.io"],
+            "resources": ["rolebindings"],
+            "verbs": ["create", "get", "list", "delete"],
+        },
+        {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]},
+        {
+            "apiGroups": ["rbac.authorization.k8s.io"],
+            "resourceNames": ["agentplane-testing-operator"],
+            "resources": ["roles"],
+            "verbs": ["bind"],
+        },
+    ]
+    delegated_binding = _by_name(external_docs, "RoleBinding", "agentplane-staging-external-bindings")
+    assert delegated_binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+    ]
+    assert not any(
+        doc["kind"] in {"Role", "RoleBinding"}
+        and doc["metadata"].get("namespace") == "agentplane-testing"
+        and doc["metadata"]["name"] == "agentplane-staging-external-bindings"
+        for doc in staging_docs
+    )
 
 
 def test_upstream_bundles_have_independent_environment_ownership(

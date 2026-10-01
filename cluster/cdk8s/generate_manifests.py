@@ -78,7 +78,7 @@ from cluster.cdk8s.activitywatch import (
     app as activitywatch_app,
     flux_kustomizations as activitywatch_flux_kustomizations,
 )
-from cluster.cdk8s.agentplane import generation as agentplane_generation, staging, testing
+from cluster.cdk8s.agentplane import binding_delegation, generation as agentplane_generation, staging, testing
 from cluster.cdk8s.agentplane_index import workers as agentplane_index_workers
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
@@ -251,6 +251,7 @@ def generate_manifests(root: Path) -> None:
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
         root, staging.ENV, staging.chart
     )
+    binding_delegation.write_manifests(root, staging.ENV)
     agentplane_testing_resource_chart = agentplane_generation.write_environment_manifests(
         root, testing.ENV, testing.chart, litellm_credentials.agentplane_testing_chart
     )
@@ -1451,7 +1452,7 @@ def generate_manifests(root: Path) -> None:
         haku_egress_proxy_kustomization,
     )
     agentplane_testing_artifact = artifact("agentplane-testing", testing.ENV.output_dir, testing.ENV.image_pins)
-    testing.agentplane_testing(
+    agentplane_testing_kustomization = testing.agentplane_testing(
         flux_chart,
         agentplane_testing_artifact,
         agentplane_testing_health_checks,
@@ -1478,7 +1479,7 @@ def generate_manifests(root: Path) -> None:
     )
     parked_flux_kustomizations.haku_dispatch(flux_chart, cnpg_kustomization, external_secrets_operator_kustomization)
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
-    haku_charts.haku_console(
+    haku_console_kustomization = haku_charts.haku_console(
         flux_chart,
         write_directory(
             root,
@@ -1498,7 +1499,7 @@ def generate_manifests(root: Path) -> None:
         public_coder_proxy.OUTPUT_DIR,
         public_coder_sshpiper.OUTPUT_DIR,
     )
-    agents_flux_kustomizations.public_coder_agent_app(
+    public_coder_agent_app_kustomization = agents_flux_kustomizations.public_coder_agent_app(
         flux_chart,
         public_coder_agent_app_artifact,
         cert_manager_kustomization,
@@ -1520,6 +1521,19 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
+    )
+    binding_delegation.add_flux_kustomizations(
+        flux_chart,
+        staging.ENV,
+        {
+            "agentplane-testing": agentplane_testing_kustomization,
+            "haku-sandbox": haku_rbac_kustomization,
+            "haku-console": haku_console_kustomization,
+            "clickhouse": clickhouse_kustomization,
+            # This namespace and its reader Role are in the bootstrap ducktape Flux source.
+            "ducktape-flux": None,
+            "public-coder-agent": public_coder_agent_app_kustomization,
+        },
     )
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.
     write_artifact_generators(

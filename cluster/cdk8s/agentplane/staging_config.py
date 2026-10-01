@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agentplane.app.action_federation import ActionFederationSettings
-from agentplane.app.kubernetes_grants import RoleBindingGrant, RoleRef
+from agentplane.app.kubernetes_grants import ClusterRoleBindingGrant, ClusterRoleRef, RoleBindingGrant, RoleRef
 from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import Harness, SandboxPreset, ThreadPreset
 from cluster.cdk8s.agentplane.app_settings import (
@@ -71,8 +71,82 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 kind="RoleBinding",
                 namespace=_NAMESPACE,
                 role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME),
-            )
+            ),
+            "cluster-diagnostics": ClusterRoleBindingGrant(
+                kind="ClusterRoleBinding",
+                role_ref=ClusterRoleRef(kind="ClusterRole", name="cluster-diagnostics-reader"),
+            ),
+            "haku-sandbox-write": RoleBindingGrant(
+                kind="RoleBinding", namespace="haku-sandbox", role_ref=RoleRef(kind="Role", name="haku-sandbox-admin")
+            ),
+            "agentplane-testing-operator": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="agentplane-testing",
+                role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
+            ),
+            "agentplane-staging-metadata": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace=_NAMESPACE,
+                role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-metadata"),
+            ),
+            "agentplane-staging-logs": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace=_NAMESPACE,
+                role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
+            ),
+            "haku-console-metadata": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="haku-console",
+                role_ref=RoleRef(kind="Role", name="agent-haku-console-metadata-reader"),
+            ),
+            "clickhouse-diagnostics": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="clickhouse",
+                role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader"),
+            ),
+            "ducktape-flux-read": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="ducktape-flux",
+                role_ref=RoleRef(kind="Role", name="ducktape-flux-reader"),
+            ),
+            "public-coder-volsync-status": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="agent-public-coder-extended-diagnostics-reader"),
+            ),
+            "public-coder-agent-reader": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="public-coder-agent-reader"),
+            ),
+            "public-coder-agent-devbox-vmi-restart": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace="public-coder-agent",
+                role_ref=RoleRef(kind="Role", name="public-coder-agent-devbox-vmi-restart"),
+            ),
+            "coinbase-credentials": RoleBindingGrant(
+                kind="RoleBinding",
+                namespace=_NAMESPACE,
+                role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
+            ),
         },
+        # Retain cleanup authority when a catalog choice is disabled while its
+        # existing Sandboxes still hold a binding in that scope.
+        kubernetes_binding_cleanup_namespaces=[
+            "agentplane-testing",
+            "clickhouse",
+            "ducktape-flux",
+            "haku-console",
+            "haku-sandbox",
+            "public-coder-agent",
+        ],
+        kubernetes_cluster_binding_cleanup=True,
+    )
+    cfg.sandbox_presets["haku"].kubernetes_grants.extend(
+        ["haku-console-metadata", "clickhouse-diagnostics", "ducktape-flux-read", "public-coder-volsync-status"]
+    )
+    cfg.sandbox_presets["haku"].kubernetes_grants.extend(
+        ["public-coder-agent-reader", "public-coder-agent-devbox-vmi-restart"]
     )
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that
