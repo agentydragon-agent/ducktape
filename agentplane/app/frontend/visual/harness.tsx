@@ -374,6 +374,7 @@ const THREADS: ThreadView[] = [
     last_cursor: 14,
     last_event_at: ago(60_000),
     harness_state: "HARNESS_STATE_RUNNING",
+    feed_status: "active",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000000",
@@ -402,6 +403,7 @@ const THREADS: ThreadView[] = [
     last_cursor: 23,
     last_event_at: ago(10_000),
     harness_state: "HARNESS_STATE_RUNNING",
+    feed_status: "active",
     active_turn_id: "t2",
   },
 ];
@@ -1900,7 +1902,13 @@ class HarnessEventSource extends EventTarget {
     if (url.pathname === "/live/threads") {
       const snapshot: ThreadsSnapshot = {
         sandboxes: SANDBOXES,
-        threads: THREADS_WITH_SANDBOXES,
+        threads: scenario.endedAttachment
+          ? THREADS_WITH_SANDBOXES.map((thread) =>
+              thread.session_id === "s-2"
+                ? { ...thread, feed_status: "ended", harness_state: "HARNESS_STATE_STOPPED", active_turn_id: null }
+                : thread
+            )
+          : THREADS_WITH_SANDBOXES,
         updates_connected: scenario.sidebarSource !== "database-disconnected",
         watch: watch(),
       };
