@@ -30,9 +30,12 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp/pgweb"
 _NAME = "plaid-pgweb"
 _LABELS = {"app.kubernetes.io/name": _NAME}
-# The image's own entrypoint binds 0.0.0.0:8081.
+# Clients use the default HTTP port; pgweb's unprivileged container still listens on 8081.
 SERVICE = ServiceRef(
-    name=_NAME, port=Port(name="http", number=8081), pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items()))
+    name=_NAME,
+    port=Port(name="http", number=80),
+    pods=Pods(namespace=NAMESPACE, labels=tuple(_LABELS.items())),
+    target_port=8081,
 )
 # What pgweb asks its callers for, as HTTP Basic. The user is not secret; the password is minted
 # below and read by the egress proxy, which is the only holder besides pgweb.
@@ -133,7 +136,18 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
-        spec=k8s.ServiceSpec(selector=_LABELS, ports=[SERVICE.port.k8s_service_port()], type="ClusterIP"),
+        spec=k8s.ServiceSpec(
+            selector=_LABELS,
+            ports=[
+                k8s.ServicePort(
+                    name=SERVICE.port.name,
+                    port=SERVICE.port.number,
+                    target_port=k8s.IntOrString.from_number(SERVICE.pod_port),
+                    protocol="TCP",
+                )
+            ],
+            type="ClusterIP",
+        ),
     )
     NetworkPolicy(
         chart,

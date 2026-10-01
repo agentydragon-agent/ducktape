@@ -16,15 +16,17 @@ Two repos, two roles -- keep them separate:
 
 Query live transaction data through the Plaid mirror's read-only SQL endpoint (pgweb). First
 check the current egress rules for the exact host, permitted paths, and credential placeholder.
-**Use port 8081 explicitly**: pgweb's Service listens on 8081, not the HTTP default port 80.
-Omitting `:8081` can cause a timeout even when the egress rule allows the host and the database is
-healthy. Send pgweb's placeholder as the HTTP Basic password for username `plaid`. For example,
-with the currently granted rule, a read-only connectivity probe is:
+The pgweb Kubernetes Service listens on the default HTTP port 80 and forwards to the container's
+unprivileged port 8081. Use the Service hostname and default port after this change is deployed;
+if a request times out, verify the *live* Service port (older deployments expose 8081) before
+assuming the database is down or debugging Cilium. Send pgweb's placeholder as the HTTP Basic
+password for username `plaid`. For example, with the currently granted rule, a read-only
+connectivity probe is:
 
 ```bash
 curl -sS -u 'plaid:agentplane-credential-plaid-pgweb' \
   --data-urlencode 'query=SELECT 1 AS probe' \
-  'http://plaid-pgweb.plaid-mcp.svc.cluster.local:8081/api/query'
+  'http://plaid-pgweb.plaid-mcp.svc.cluster.local/api/query'
 ```
 
 The pgweb query API accepts POST to `/api/query`; the underlying Postgres role can only `SELECT`.
