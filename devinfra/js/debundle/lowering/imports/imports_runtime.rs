@@ -24,10 +24,10 @@ pub(crate) fn resolve_imported_binding(
     let imported_from = if let Some(imported_from) = imported_from_by_src.get(&info.src) {
         imported_from.clone()
     } else {
-        let imported_from = if let Some((_, _, path)) =
+        let imported_from = if let Some(target) =
             source_import_cache.resolve(&info.src, source_chunk_id, source_runtime_file)?
         {
-            path
+            target.path
         } else {
             // Source path doesn't reference a known chunk (e.g. a
             // synthetic e2e snapshot file with no entry in the artifact).
@@ -96,10 +96,10 @@ pub(crate) fn source_chunk_import_for_target(
 ) -> Result<String> {
     let dest_dir = join_module_path(&[source_chunk_id, &module_path_dirname(dest_target_file)]);
     Ok(
-        if let Some((target_chunk_id, target_entry_file, _path)) =
+        if let Some(target) =
             source_import_cache.resolve(source, source_chunk_id, source_runtime_file)?
         {
-            let target_path = join_module_path(&[&target_chunk_id, &target_entry_file]);
+            let target_path = join_module_path(&[&target.chunk_id, &target.entry_file]);
             let mut rel = relative_module_path(&dest_dir, &target_path);
             if !rel.starts_with('.') {
                 rel = format!("./{rel}");

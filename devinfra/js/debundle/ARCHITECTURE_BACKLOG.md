@@ -113,8 +113,7 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
    (`constrains_init_order()`) a first-class type distinction; the three-layer
    edge representation (domain graph → counted graph → realizability index)
    has fragile bridging; `pub(super)` blankets `lowering/` field and function
-   visibility; `SourceImportResolution = Option<(String, String, String)>`
-   (`lowering/imports/plan_references.rs`) needs a named struct.
+   visibility.
 6. Tests: `e2e/comma_list_owner_split_test.rs` asserts emitted shapes via
    whitespace OR-chains — parse or normalize instead.
 7. `ChunkBundle` ownership ping-pong through every stage
