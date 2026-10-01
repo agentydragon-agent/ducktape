@@ -518,7 +518,9 @@ it("shows the applied effort and sends a change command without optimistically c
   const picker = container.querySelector<HTMLInputElement>('input[aria-label="Reasoning effort"]');
   expect(picker?.value).toBe("low");
   await act(async () => picker?.click());
-  const high = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) => option.textContent === "high");
+  const high = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (option) => option.textContent === "high"
+  );
   expect(high).toBeDefined();
   await act(async () => high?.click());
   expect(sentOperations()).toContainEqual({ case: "changeReasoningEffort", value: { effort: "high" } });

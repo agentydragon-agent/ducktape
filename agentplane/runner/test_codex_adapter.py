@@ -123,7 +123,11 @@ async def test_effort_waits_for_matching_turn_start_answer() -> None:
     request = cast(wire.TurnStartRequest, recorded.native[-1])
     assert request.params.effort == "high"
     assert recorded.recorded == []
-    answer = _frame(wire.Response(id=request.id, result=_frame(wire.TurnResult(turn=wire.Turn(id="t", status=wire.TurnStatus.IN_PROGRESS)))))
+    answer = _frame(
+        wire.Response(
+            id=request.id, result=_frame(wire.TurnResult(turn=wire.Turn(id="t", status=wire.TurnStatus.IN_PROGRESS)))
+        )
+    )
     await adapter.on_frame(answer, 8)
     assert recorded.recorded[0] == ("effort_changed", "effort-1", "high", [8])
     assert recorded.reply is not None

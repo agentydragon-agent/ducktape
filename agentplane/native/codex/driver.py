@@ -85,7 +85,8 @@ def turn_start(
     request_id: str, *, thread_id: str, text: str, model: str | None = None, effort: str | None = None
 ) -> wire.TurnStartRequest:
     return wire.TurnStartRequest(
-        id=request_id, params=wire.TurnStartParams(thread_id=thread_id, input=[wire.TextInput(text=text)], model=model, effort=effort)
+        id=request_id,
+        params=wire.TurnStartParams(thread_id=thread_id, input=[wire.TextInput(text=text)], model=model, effort=effort),
     )
 
 

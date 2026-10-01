@@ -47,7 +47,9 @@ def entry(
 
 
 def admitted(
-    cursor: int, command_id: str, operation: command_pb2.SubmitInput | command_pb2.ChangeModel | command_pb2.ChangeReasoningEffort
+    cursor: int,
+    command_id: str,
+    operation: command_pb2.SubmitInput | command_pb2.ChangeModel | command_pb2.ChangeReasoningEffort,
 ) -> event_log_pb2.EventEntry:
     command = command_pb2.Command(command_id=command_id)
     if isinstance(operation, command_pb2.SubmitInput):

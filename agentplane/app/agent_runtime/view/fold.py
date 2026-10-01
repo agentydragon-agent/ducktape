@@ -218,7 +218,15 @@ class ProjectionBatch:
 
 _SILENT = frozenset({"native", "harness_stderr", "debug_checkpoint"})
 _LIFECYCLE = frozenset(
-    {"turn_started", "turn_completed", "model_changed", "reasoning_effort_changed", "harness_started", "harness_exited", "harness_lost"}
+    {
+        "turn_started",
+        "turn_completed",
+        "model_changed",
+        "reasoning_effort_changed",
+        "harness_started",
+        "harness_exited",
+        "harness_lost",
+    }
 )
 
 

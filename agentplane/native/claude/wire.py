@@ -394,4 +394,6 @@ class ControlResponse(BaseModel):
     response: ControlResponseBody
 
 
-Outbound = InitializeRequest | InterruptRequest | SetModelRequest | ApplyFlagSettingsRequest | UserInput | ControlResponse
+Outbound = (
+    InitializeRequest | InterruptRequest | SetModelRequest | ApplyFlagSettingsRequest | UserInput | ControlResponse
+)

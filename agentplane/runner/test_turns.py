@@ -75,8 +75,10 @@ async def test_effort_change_is_confirmed_and_used_by_next_model_request(
             command_id = f"effort-{index}"
             await session.switch_reasoning_effort(command_id, effort)
             admitted = await session.until(
-                lambda entry: events.kind(entry) == "command_admitted"
-                and entry.event.command_admitted.command.command_id == command_id
+                lambda entry, command_id=command_id: (
+                    events.kind(entry) == "command_admitted"
+                    and entry.event.command_admitted.command.command_id == command_id
+                )
             )
             assert admitted.event.command_admitted.command.change_reasoning_effort.effort == effort
             if spec.harness == protocol_pb2.HARNESS_CLAUDE:
