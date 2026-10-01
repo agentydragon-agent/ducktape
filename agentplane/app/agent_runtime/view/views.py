@@ -40,6 +40,7 @@ class ThreadControlsState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     applied_model: str | None
+    applied_reasoning_effort: str | None = None
     active_turn_id: str | None
     harness_state: str | None
 
