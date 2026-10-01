@@ -4,6 +4,13 @@
 # fork-ci-review GitHub Environment. pull_request_target intentionally loads
 # this workflow and the called reusable workflows from the base branch before
 # executing PR code.
+#
+# Draft pull requests get this CI like any other revision. A draft is an ordinary head
+# commit: the same trust decision and the same mergeability gate apply before any of it
+# runs, and a draft that conflicts with devel is stopped by mergeability rather than by
+# its draft status. Same-repo drafts already get bazel-ci from ci.yml, which never
+# filtered on draft status, so a draft from a fork was the one case whose base checks
+# came from here.
 name: Trusted fork PR CI
 run-name: >-
   ${{ github.event_name == 'pull_request_target' &&
@@ -30,7 +37,6 @@ permissions:
 jobs:
   mergeability:
     name: Refresh PR mergeability check
-    if: github.event_name == 'push' || github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -62,7 +68,6 @@ jobs:
       always() &&
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name != github.repository &&
-      !github.event.pull_request.draft &&
       needs.mergeability.outputs.mergeable == 'true'
     uses: ./.github/workflows/bazel-ci.yml
     permissions:
@@ -96,7 +101,6 @@ jobs:
       always() &&
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name != github.repository &&
-      !github.event.pull_request.draft &&
       needs.mergeability.outputs.mergeable == 'true'
     uses: ./.github/workflows/nix-wheel-check.yml
     permissions:
@@ -121,15 +125,13 @@ jobs:
     # context is prefixed with its caller job ID, so bridge its result here.
     name: >-
       ${{ github.event.pull_request.head.repo.full_name != github.repository &&
-          !github.event.pull_request.draft &&
           'Build artifacts + imports check' ||
           'Fork Nix check not applicable' }}
     needs: [nix-wheel-check]
     if: >-
       always() &&
       github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.full_name != github.repository &&
-      !github.event.pull_request.draft
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Require the trusted fork Nix result
