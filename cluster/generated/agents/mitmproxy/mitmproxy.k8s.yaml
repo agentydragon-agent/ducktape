@@ -74,6 +74,7 @@ spec:
       labels:
         app.kubernetes.io/name: mitmproxy
     spec:
+      automountServiceAccountToken: false
       containers:
         - command:
             - mitmweb
