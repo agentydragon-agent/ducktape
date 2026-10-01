@@ -270,7 +270,8 @@ mod tests {
         assert!(output.decomposition_by_chunk.is_empty());
         assert_eq!(
             output
-                .artifact
+                .files
+                .files()
                 .chunks
                 .iter()
                 .map(|chunk| (chunk.chunk_id, chunk.analysis.source_path.as_str()))
