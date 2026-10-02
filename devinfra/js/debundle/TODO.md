@@ -33,8 +33,7 @@ an end-to-end reproduction; performance candidates require fresh opt profiles.
 The sections below hold details, not competing priority queues.
 
 1. **Strict spec automation.** Keep next-version porting the product target.
-   Prioritize unknown-field/default consistency, correct edits and explicit
-   skipped-candidate reasons. Whole-document YAML reserialization, unrelated
+   Prioritize correct edits and explicit skipped-candidate reasons. Whole-document YAML reserialization, unrelated
    formatting changes and dropping comments are acceptable: text preservation
    is not a requirement. Keep gate-before-write, atomic writes and dry-run
    reporting, not the input's textual layout.
@@ -227,25 +226,10 @@ how to confirm. An entry is deleted when it is reproduced and fixed with a test,
 or disproved. Status says how far it was checked; "reported" means nobody has
 confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
 
-- **`UnassignedMode` ignores unknown fields.** Status: confirmed by reading.
-  `spec/spec.rs` `UnassignedMode` (`tag = "kind"`) has no `deny_unknown_fields`, so a
-  misspelled `catchall_file` key such as `target_path` is ignored and the target
-  falls back to its default; a `spec/spec_tree.rs` test carried exactly that typo and
-  still passed. Adding `deny_unknown_fields` is a behaviour change: a spec with a
-  typo then fails to load.
 - **One SCC reads differently by path in the peel kernel.** Status: reported,
   likely benign. The post-seed reporting in `peel/quotient.rs` keeps an SCC
   whose owners collapse into one class, while the `translate_*` helpers drop it
   and `would_be_cycles_after_contract` fabricates a two-class evidence.
-- **`SwapVendorChunksConfig` has two defaults.** Status: reported. The derived
-  `Default` gives `write = false`; the serde field default is `true`. Omitting
-  `swap_vendor_chunks` therefore differs from writing `{}`, though the field doc
-  says they match. Small impact: both output paths are `None` when omitted.
-- **`chunk_renames_map` silently drops non-`binding` members.** Status: reported.
-  `spec/spec_tree.rs` `chunk_renames_map` maps `binding_patches.yaml` members with
-  `m.selector.binding?`, so a member selecting by `cross_ref` or another kind is
-  accepted by the parser and then skipped without a diagnostic (STYLE.md § General,
-  strict data mapping).
 - **`needs_ast_for_chunk` tests the opposite direction to its comment.** Status:
   reported. In `prepare_chunks.rs` the block commented "Chunk that imports a
   vendor target needs AST" checks whether a vendor target imports this chunk;
