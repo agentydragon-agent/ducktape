@@ -72,13 +72,22 @@ fn assign_rejects_readable_name_claimed_by_source_match_before_writing() {
 fn bulk_edits_resolve_both_spellings_against_the_pre_edit_spec() {
     let fixture = GraphFixture::new(
         "const alpha = 1; const beta = 2; console.log(alpha + beta);",
-        &[("home.yaml", "members: [{name: Alpha, selector: {binding: {name: alpha}}}, {name: Beta, selector: {binding: {name: beta}}}]")],
+        &[(
+            "home.yaml",
+            "members: [{name: Alpha, selector: {binding: {name: alpha}}}, {name: Beta, selector: {binding: {name: beta}}}]",
+        )],
     );
     fixture.assert_rejected_unchanged(
         &["bindings", "assign", "Alpha:first", "alpha:second"],
         &["contradictory destinations"],
     );
-    let report = fixture.json(&["bindings", "assign", "Alpha:dest:First", "alpha:dest:First", "Beta:dest:Second"]);
+    let report = fixture.json(&[
+        "bindings",
+        "assign",
+        "Alpha:dest:First",
+        "alpha:dest:First",
+        "Beta:dest:Second",
+    ]);
     assert_eq!(report["moves_applied"], 2);
     assert!(!fixture.modules.join("home.yaml").exists());
     let report = fixture.json(&["bindings", "unassign", "First", "alpha", "Second"]);
