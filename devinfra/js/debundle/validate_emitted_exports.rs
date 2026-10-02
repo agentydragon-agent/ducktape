@@ -58,12 +58,20 @@ fn validate_bundle_exports(
     artifact: &ChunkBundle,
     excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<()> {
-    validate_modules(artifact.chunks.iter()
-        .filter(|chunk| !excluded_chunk_ids.contains(&chunk.chunk_id))
-        .flat_map(|chunk| {
-            let name = artifact.chunk_table.name(chunk.chunk_id);
-            chunk.js.files.iter().map(move |file| (name, file.path.as_str(), file.ast()))
-        }))
+    validate_modules(
+        artifact
+            .chunks
+            .iter()
+            .filter(|chunk| !excluded_chunk_ids.contains(&chunk.chunk_id))
+            .flat_map(|chunk| {
+                let name = artifact.chunk_table.name(chunk.chunk_id);
+                chunk
+                    .js
+                    .files
+                    .iter()
+                    .map(move |file| (name, file.path.as_str(), file.ast()))
+            }),
+    )
 }
 
 /// Validate parsed output files without depending on chunk analysis reports.
@@ -76,7 +84,9 @@ fn validate_modules<'a>(
         let duplicates = duplicates_in_module(&ast.module, &ast.line_index());
         if !duplicates.is_empty() {
             findings.push(FileFinding {
-                chunk: chunk.to_string(), file: file.to_string(), duplicates,
+                chunk: chunk.to_string(),
+                file: file.to_string(),
+                duplicates,
             });
         }
     }
@@ -247,17 +257,32 @@ mod tests {
     use super::*;
 
     fn validate_sources(files: &[(&str, &str, Option<&str>)]) -> Result<()> {
-        let parsed: Vec<_> = files.iter().map(|(chunk, path, source)| {
-            (*chunk, *path, source.map(|source| parse_js_module(path, source).unwrap()))
-        }).collect();
-        validate_modules(parsed.iter().map(|(chunk, path, ast)| (*chunk, *path, ast.as_ref())))
+        let parsed: Vec<_> = files
+            .iter()
+            .map(|(chunk, path, source)| {
+                (
+                    *chunk,
+                    *path,
+                    source.map(|source| parse_js_module(path, source).unwrap()),
+                )
+            })
+            .collect();
+        validate_modules(
+            parsed
+                .iter()
+                .map(|(chunk, path, ast)| (*chunk, *path, ast.as_ref())),
+        )
     }
 
     #[test]
     fn passes_on_clean_module() {
         js_ast::with_swc_globals(|| {
-            validate_sources(&[("ok", "entry.js", Some("const a = 1;\nconst b = 2;\nexport { a, b };\n"))])
-                .expect("clean module passes");
+            validate_sources(&[(
+                "ok",
+                "entry.js",
+                Some("const a = 1;\nconst b = 2;\nexport { a, b };\n"),
+            )])
+            .expect("clean module passes");
         });
     }
 
@@ -332,8 +357,13 @@ export * from \"./sibling.js\";\n";
             // Two files in the same chunk; only one has duplicates.
             let err = validate_sources(&[
                 ("c", "good.js", Some("export const a = 1;\n")),
-                ("c", "bad.js", Some("export const z = 1;\nconst zz = 2;\nexport { zz as z };\n")),
-            ]).expect_err("bad file flagged");
+                (
+                    "c",
+                    "bad.js",
+                    Some("export const z = 1;\nconst zz = 2;\nexport { zz as z };\n"),
+                ),
+            ])
+            .expect_err("bad file flagged");
             let msg = format!("{err}");
             assert!(msg.contains("bad.js"), "{msg}");
             assert!(!msg.contains("good.js"), "good.js should not appear: {msg}");
@@ -350,7 +380,8 @@ export * from \"./sibling.js\";\n";
             validate_sources(&[
                 ("c", "ok.js", Some("export const a = 1;\n")),
                 ("c", "raw.js", None),
-            ]).expect("source-only file skipped");
+            ])
+            .expect("source-only file skipped");
         });
     }
 }

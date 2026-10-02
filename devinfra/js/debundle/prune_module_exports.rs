@@ -38,7 +38,9 @@ use artifact::{ChunkBundle, FileRole, JsFile, join_module_path, module_path_dirn
 use swc_ecma_ast::*;
 
 pub fn prune_unimported_module_exports(bundle: &mut ChunkBundle) {
-    let mut modules: Vec<_> = bundle.chunks.iter_mut()
+    let mut modules: Vec<_> = bundle
+        .chunks
+        .iter_mut()
         .flat_map(|chunk| &mut chunk.js.files)
         .filter_map(|file| {
             let path = file_abs_path(file);
@@ -224,17 +226,29 @@ mod tests {
     }
 
     fn pruned_modules(files: &[(&str, &str, FileRole)]) -> Vec<(String, Module)> {
-        let mut modules: Vec<_> = files.iter().map(|(path, source, _)| {
-            ((*path).to_string(), parse_js_module(path, source).unwrap().module)
-        }).collect();
-        let mut views: Vec<_> = modules.iter_mut().zip(files)
-            .map(|((path, module), (_, _, role))| (format!("c/{path}"), *role, module)).collect();
+        let mut modules: Vec<_> = files
+            .iter()
+            .map(|(path, source, _)| {
+                (
+                    (*path).to_string(),
+                    parse_js_module(path, source).unwrap().module,
+                )
+            })
+            .collect();
+        let mut views: Vec<_> = modules
+            .iter_mut()
+            .zip(files)
+            .map(|((path, module), (_, _, role))| (format!("c/{path}"), *role, module))
+            .collect();
         prune_exports(&mut views);
         modules
     }
 
     fn emitted_exports(modules: &[(String, Module)], file_path: &str) -> Vec<String> {
-        let (_, module) = modules.iter().find(|(path, _)| path == file_path).expect("file");
+        let (_, module) = modules
+            .iter()
+            .find(|(path, _)| path == file_path)
+            .expect("file");
         let mut names = Vec::new();
         for item in &module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item
@@ -271,7 +285,10 @@ mod tests {
                     FileRole::Module,
                 ),
             ]);
-            assert_eq!(emitted_exports(&modules, "mod.js"), vec!["used".to_string()]);
+            assert_eq!(
+                emitted_exports(&modules, "mod.js"),
+                vec!["used".to_string()]
+            );
         });
     }
 
@@ -291,7 +308,10 @@ mod tests {
                     FileRole::Module,
                 ),
             ]);
-            assert_eq!(emitted_exports(&modules, "mod.js"), vec!["used".to_string()]);
+            assert_eq!(
+                emitted_exports(&modules, "mod.js"),
+                vec!["used".to_string()]
+            );
         });
     }
 
@@ -305,7 +325,8 @@ mod tests {
             )]);
             assert!(emitted_exports(&modules, "mod.js").is_empty());
             // The whole `export { ... }` ModuleItem is gone, not left empty.
-            let has_export = modules[0].1
+            let has_export = modules[0]
+                .1
                 .body
                 .iter()
                 .any(|i| matches!(i, ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(_))));
@@ -395,7 +416,10 @@ mod tests {
                     FileRole::Module,
                 ),
             ]);
-            assert_eq!(emitted_exports(&modules, "b.js"), vec!["shared".to_string()]);
+            assert_eq!(
+                emitted_exports(&modules, "b.js"),
+                vec!["shared".to_string()]
+            );
         });
     }
 

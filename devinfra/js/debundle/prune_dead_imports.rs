@@ -43,7 +43,9 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 pub fn prune_dead_import_specifiers(bundle: &mut ChunkBundle) {
-    let mut modules: Vec<_> = bundle.chunks.iter_mut()
+    let mut modules: Vec<_> = bundle
+        .chunks
+        .iter_mut()
         .flat_map(|chunk| &mut chunk.js.files)
         .filter_map(|file| {
             let path = file_abs_path(file);
@@ -62,39 +64,39 @@ fn prune_imports(modules: &mut [(String, &mut Module)]) {
     // 1 only edits specifier vectors, never the ModuleItem list.
     let mut emptied: Vec<EmptiedImport> = Vec::new();
     for (file_index, (importer_abs, module)) in modules.iter_mut().enumerate() {
-            let referenced = collect_referenced_syms(module);
-            let reexported = collect_local_reexport_origs(module);
-            for (item_index, item) in module.body.iter_mut().enumerate() {
-                let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-                    continue;
-                };
-                // Originally-bare imports exist solely to evaluate the target;
-                // never touch them.
-                let had_named = import
-                    .specifiers
-                    .iter()
-                    .any(|spec| matches!(spec, ImportSpecifier::Named(_)));
-                if !had_named {
-                    continue;
+        let referenced = collect_referenced_syms(module);
+        let reexported = collect_local_reexport_origs(module);
+        for (item_index, item) in module.body.iter_mut().enumerate() {
+            let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+                continue;
+            };
+            // Originally-bare imports exist solely to evaluate the target;
+            // never touch them.
+            let had_named = import
+                .specifiers
+                .iter()
+                .any(|spec| matches!(spec, ImportSpecifier::Named(_)));
+            if !had_named {
+                continue;
+            }
+            import.specifiers.retain(|spec| match spec {
+                ImportSpecifier::Default(_) | ImportSpecifier::Namespace(_) => true,
+                ImportSpecifier::Named(named) => {
+                    let local = &named.local.sym;
+                    referenced.contains(local) || reexported.contains(local)
                 }
-                import.specifiers.retain(|spec| match spec {
-                    ImportSpecifier::Default(_) | ImportSpecifier::Namespace(_) => true,
-                    ImportSpecifier::Named(named) => {
-                        let local = &named.local.sym;
-                        referenced.contains(local) || reexported.contains(local)
-                    }
+            });
+            if import.specifiers.is_empty()
+                && let Some(src) = import.src.value.as_str()
+            {
+                emptied.push(EmptiedImport {
+                    file_index,
+                    item_index,
+                    target_abs: resolve_specifier(src, importer_abs),
                 });
-                if import.specifiers.is_empty()
-                    && let Some(src) = import.src.value.as_str()
-                {
-                    emptied.push(EmptiedImport {
-                        file_index,
-                        item_index,
-                        target_abs: resolve_specifier(src, importer_abs),
-                    });
-                }
             }
         }
+    }
 
     if emptied.is_empty() {
         return;
@@ -128,21 +130,21 @@ fn prune_imports(modules: &mut [(String, &mut Module)]) {
     // PASS 3: rebuild each touched body, dropping the marked import ModuleItems
     // and clearing specifiers on the kept-bare ones.
     for (file_index, (_, module)) in modules.iter_mut().enumerate() {
-            let mut item_index = 0;
-            module.body.retain_mut(|item| {
-                let key = (file_index, item_index);
-                item_index += 1;
-                if drop_items.contains(&key) {
-                    return false;
-                }
-                if bare_items.contains(&key)
-                    && let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item
-                {
-                    import.specifiers.clear();
-                }
-                true
-            });
-        }
+        let mut item_index = 0;
+        module.body.retain_mut(|item| {
+            let key = (file_index, item_index);
+            item_index += 1;
+            if drop_items.contains(&key) {
+                return false;
+            }
+            if bare_items.contains(&key)
+                && let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item
+            {
+                import.specifiers.clear();
+            }
+            true
+        });
+    }
 }
 
 /// One import that originally had named specifiers and was left empty by
@@ -160,20 +162,20 @@ struct EmptiedImport {
 fn collect_targets_with_surviving_load(modules: &[(String, &mut Module)]) -> HashSet<String> {
     let mut targets = HashSet::new();
     for (importer_abs, module) in modules {
-            for item in &module.body {
-                let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-                    continue;
-                };
-                // After PASS 1 a non-empty specifier list is a real load; an
-                // empty one is either an originally-bare import (a real load
-                // too) or an import PASS 1 just emptied (not yet a guaranteed
-                // load — its fate is decided against this very set).
-                let loads = !import.specifiers.is_empty();
-                if loads && let Some(src) = import.src.value.as_str() {
-                    targets.insert(resolve_specifier(src, importer_abs));
-                }
+        for item in &module.body {
+            let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+                continue;
+            };
+            // After PASS 1 a non-empty specifier list is a real load; an
+            // empty one is either an originally-bare import (a real load
+            // too) or an import PASS 1 just emptied (not yet a guaranteed
+            // load — its fate is decided against this very set).
+            let loads = !import.specifiers.is_empty();
+            if loads && let Some(src) = import.src.value.as_str() {
+                targets.insert(resolve_specifier(src, importer_abs));
             }
         }
+    }
     targets
 }
 
@@ -336,11 +338,19 @@ mod tests {
     use super::*;
 
     fn pruned_modules(files: &[(&str, &str)]) -> Vec<(String, Module)> {
-        let mut modules: Vec<_> = files.iter().map(|(path, source)| {
-            ((*path).to_string(), parse_js_module(path, source).unwrap().module)
-        }).collect();
-        let mut views: Vec<_> = modules.iter_mut()
-            .map(|(path, module)| (format!("c/{path}"), module)).collect();
+        let mut modules: Vec<_> = files
+            .iter()
+            .map(|(path, source)| {
+                (
+                    (*path).to_string(),
+                    parse_js_module(path, source).unwrap().module,
+                )
+            })
+            .collect();
+        let mut views: Vec<_> = modules
+            .iter_mut()
+            .map(|(path, module)| (format!("c/{path}"), module))
+            .collect();
         prune_imports(&mut views);
         modules
     }
@@ -348,7 +358,10 @@ mod tests {
     /// One `(source, local)` pair per surviving named import specifier in
     /// `file_path`, sorted. `source` is the raw import specifier string.
     fn named_imports(modules: &[(String, Module)], file_path: &str) -> Vec<(String, String)> {
-        let (_, module) = modules.iter().find(|(path, _)| path == file_path).expect("file");
+        let (_, module) = modules
+            .iter()
+            .find(|(path, _)| path == file_path)
+            .expect("file");
         let mut pairs = Vec::new();
         for item in &module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
@@ -367,7 +380,10 @@ mod tests {
     /// Import statements in `file_path` as `(source, specifier_count)`, sorted —
     /// lets a test assert a statement survives with zero specifiers (bare).
     fn import_statements(modules: &[(String, Module)], file_path: &str) -> Vec<(String, usize)> {
-        let (_, module) = modules.iter().find(|(path, _)| path == file_path).expect("file");
+        let (_, module) = modules
+            .iter()
+            .find(|(path, _)| path == file_path)
+            .expect("file");
         let mut stmts = Vec::new();
         for item in &module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
@@ -421,10 +437,7 @@ mod tests {
                     "sib.js",
                     "import { live } from \"./mod.js\";\nexport const useLive = () => live;\n",
                 ),
-                (
-                    "mod.js",
-                    "export const dead = 1;\nexport const live = 2;\n",
-                ),
+                ("mod.js", "export const dead = 1;\nexport const live = 2;\n"),
             ]);
             assert!(
                 import_statements(&modules, "entry.js").is_empty(),
@@ -483,10 +496,7 @@ mod tests {
         js_ast::with_swc_globals(|| {
             // A side-effect-only import the lowerer emitted intentionally is
             // never touched, even though it loads a target nothing else loads.
-            let modules = pruned_modules(&[(
-                "entry.js",
-                "import \"./x.js\";\nconsole.log(1);\n",
-            )]);
+            let modules = pruned_modules(&[("entry.js", "import \"./x.js\";\nconsole.log(1);\n")]);
             assert_eq!(
                 import_statements(&modules, "entry.js"),
                 vec![("./x.js".to_string(), 0)]
@@ -506,10 +516,10 @@ mod tests {
                     "entry.js",
                     "import def from \"./d.js\";\nimport * as ns from \"./n.js\";\nconsole.log(1);\n",
                 ),
-                ("d.js", "export default 1;\n", FileRole::Module),
-                ("n.js", "export const k = 1;\n", FileRole::Module),
+                ("d.js", "export default 1;\n"),
+                ("n.js", "export const k = 1;\n"),
             ]);
-            let file = &modules.chunks[0].js.files[0];
+            let module = &modules[0].1;
             let mut defaults = Vec::new();
             let mut namespaces = Vec::new();
             for item in &module.body {
@@ -558,7 +568,7 @@ mod tests {
                     "mod.js",
                     "import { f } from \"./m.js\";\nexport const g = (f) => f();\n",
                 ),
-                ("m.js", "export const f = () => 1;\n", FileRole::Module),
+                ("m.js", "export const f = () => 1;\n"),
             ]);
             assert!(
                 named_imports(&modules, "mod.js").is_empty(),
@@ -583,7 +593,7 @@ mod tests {
                     "mod.js",
                     "import { f } from \"./m.js\";\nconst h = (f) => f();\nexport const top = f;\n",
                 ),
-                ("m.js", "export const f = 1;\n", FileRole::Module),
+                ("m.js", "export const f = 1;\n"),
             ]);
             assert_eq!(
                 named_imports(&modules, "mod.js"),
