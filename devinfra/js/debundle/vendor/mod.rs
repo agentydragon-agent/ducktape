@@ -29,7 +29,9 @@ pub use import_rewrites::{
 };
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
-use js_ast::{module_export_name_node, named_export_module_item, named_export_specifier, str_value};
+use js_ast::{
+    module_export_name_node, named_export_module_item, named_export_specifier, str_value,
+};
 pub use manifests::*;
 pub use output_imports::{
     MaterializedOutputChunkIndex, bundled_facade_import_source, resolve_partial_swap_import_target,
