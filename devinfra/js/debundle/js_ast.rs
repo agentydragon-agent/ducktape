@@ -9,8 +9,9 @@ use swc_common::{
     BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
 };
 use swc_ecma_ast::{
-    Decl, Expr, Ident, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Module,
-    ModuleDecl, ModuleExportName, ModuleItem, Stmt, Str, VarDecl, VarDeclKind,
+    ComputedPropName, Decl, EsReserved, Expr, Ident, IdentName, ImportDecl, ImportNamedSpecifier,
+    ImportPhase, ImportSpecifier, Lit, MemberProp, Module, ModuleDecl, ModuleExportName,
+    ModuleItem, Stmt, Str, VarDecl, VarDeclKind,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -689,10 +690,51 @@ pub fn import_decl_module_item(specifiers: Vec<ImportSpecifier>, src: &str) -> M
     }))
 }
 
+/// Conservative ASCII spelling policy for generated bindings. External export
+/// and property names are not bindings and must not use this reserved-word ban.
+pub fn is_binding_identifier(name: &str) -> bool {
+    is_identifier_name(name) && !name.is_reserved_in_any()
+}
+
+fn is_identifier_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+/// A ModuleExportName accepts reserved words and string names, unlike a binding.
+pub fn module_export_name_node(name: &str) -> ModuleExportName {
+    if is_identifier_name(name) {
+        ModuleExportName::Ident(Ident::new_no_ctxt(name.into(), DUMMY_SP))
+    } else {
+        ModuleExportName::Str(Str {
+            span: DUMMY_SP,
+            value: name.into(),
+            raw: None,
+        })
+    }
+}
+
+pub fn member_property(name: &str) -> MemberProp {
+    if is_identifier_name(name) {
+        MemberProp::Ident(IdentName::new(name.into(), DUMMY_SP))
+    } else {
+        MemberProp::Computed(ComputedPropName {
+            span: DUMMY_SP,
+            expr: Box::new(Expr::Lit(Lit::Str(Str {
+                span: DUMMY_SP,
+                value: name.into(),
+                raw: None,
+            }))),
+        })
+    }
+}
+
 /// Preserve the local binding's hygiene; the imported name is an external export name.
 pub fn named_import_specifier(local: Ident, imported: &str) -> ImportSpecifier {
-    let imported = (imported != local.sym.as_ref())
-        .then(|| ModuleExportName::Ident(Ident::new_no_ctxt(imported.into(), DUMMY_SP)));
+    let imported = (imported != local.sym.as_ref()).then(|| module_export_name_node(imported));
     ImportSpecifier::Named(ImportNamedSpecifier {
         span: DUMMY_SP,
         local,

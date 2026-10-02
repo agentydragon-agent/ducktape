@@ -184,9 +184,8 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
    medium risk (over-abstraction hazard; the per-form holing strategies differ
    for good reasons).
 2. The bundled/partial vendor fixtures in `e2e/vendor_swap_test.rs` now use
-   typed builders and shared transform construction. Audit remaining valid
-   package-root partial-swap setup (`run_partial_swap_fixture`)
-   before extending that pattern. Keep deliberately malformed raw JSON in
+   typed builders and shared transform construction, including package-root
+   partial-swap setup. Keep deliberately malformed raw JSON in
    validation tests: making invalid inputs impossible to construct would remove
    their coverage, not improve it.
 

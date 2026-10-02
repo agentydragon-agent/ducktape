@@ -4,7 +4,6 @@
 //! that alias only in importers that are part of the materialization set.
 
 use super::super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
-use super::super::util::is_valid_js_identifier;
 use crate::rename_ledger::{
     RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
 };
@@ -12,6 +11,7 @@ use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::top_level_id;
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ChunkBundle, SelectedModuleLowering};
+use js_ast::is_binding_identifier;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
@@ -178,7 +178,7 @@ pub fn naturalize_cross_chunk_imports(
             if candidate.already_readable {
                 continue;
             }
-            if !is_valid_js_identifier(&candidate.readable) {
+            if !is_binding_identifier(&candidate.readable) {
                 continue;
             }
             // The desired spelling comes from an explicit spec name, but

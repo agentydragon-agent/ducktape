@@ -42,8 +42,8 @@ use spec::PartialSwapKind;
 use crate::plan::VendorResolutionPlan;
 use crate::{
     DeferredImport, MaterializedOutputChunkIndex, PartialSwapIdentRewriter, VendorImportRewrites,
-    bundled_facade_import_source, is_valid_identifier, make_named_reexport,
-    make_namespace_reexport, new_url_expr, resolve_partial_swap_import_target,
+    bundled_facade_import_source, make_named_reexport, make_namespace_reexport, new_url_expr,
+    resolve_partial_swap_import_target,
 };
 
 pub(crate) struct PassthroughContext<'a> {
@@ -356,10 +356,6 @@ fn rewrite_export_from_decl(
             retained.push(specifier);
             continue;
         };
-        if !is_valid_identifier(&exported_name) {
-            retained.push(specifier);
-            continue;
-        }
         let replacement = match target.kind {
             PartialSwapKind::Named => target
                 .upstream_export
