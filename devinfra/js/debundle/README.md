@@ -25,6 +25,20 @@ inspection}_commands.rs` own each family's arguments, adapters, and renderers;
 `cli/binding.rs`, `cli/module.rs`, and `cli/edit_gate.rs` own spec editing and
 validation independently of presentation.
 
+### Analysis and planning vocabulary
+
+- `chunk_analysis::ChunkAnalysisOutput` contains semantic statement facts, the
+  owner graph, and structural atomic units, independent of module assignment.
+- `gate::FactorizationInputs` holds the owner graph, authored module/binding
+  catalogue, and lookup indexes shared by candidate `ChunkFactorization`s.
+- `peel::propose` produces advisory module-move proposals; it does not assign
+  owners authoritatively. `factor_assembly` constructs the actual partition.
+- `selectors/matching/chunk_facts` projects AST syntax for matching;
+  `facts/` computes semantic effects and dependencies. `program_analysis`
+  performs the shallow manifest scan, including pass-through chunks.
+
+These are different data products, not alternate names for one analysis.
+
 Cheat sheet of the most-used commands:
 
 - `debundle run` — execute the transform pipeline (parse + facts +
@@ -34,7 +48,7 @@ Cheat sheet of the most-used commands:
   binding (single, multi-positional, or `--batch <file.json>`).
 - `debundle bindings rename <original> <readable>` — rename without
   moving.
-- `debundle modules propose` — factorizer-derived move proposals;
+- `debundle modules propose` — proposer-derived move proposals;
   `--source-root` annotates anonymous-statement addressability.
 - `debundle modules merge --target <T> <sources...>` — splice module
   YAMLs.

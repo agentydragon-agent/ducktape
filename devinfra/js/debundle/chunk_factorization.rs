@@ -8,7 +8,7 @@ use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::partition::Partition;
 use analysis::{LogicalModuleIndex, ModuleId, ModuleQuotient, OwnerGraphReport, PlannedModule};
 
-use crate::ChunkAnalysis;
+use crate::FactorizationInputs;
 use crate::esm_import_order::EsmImportOrder;
 use crate::validation::{FactorizationReport, validate_factorization};
 
@@ -17,13 +17,13 @@ use crate::validation::{FactorizationReport, validate_factorization};
 /// (`dep_graph`, `linker_order`, `assembly_conflicts`) and small
 /// caches downstream consumers consult on the hot path.
 ///
-/// Holds a reference to the [`ChunkAnalysis`] it was factorized
+/// Holds a reference to the [`FactorizationInputs`] it was factorized
 /// from (`analysis`); report emission and downstream emit code reach
 /// inputs (`bindings`, `logical_modules`, etc.) through
 /// `factorization.analysis.X`.
 #[derive(Debug, Clone)]
 pub struct ChunkFactorization {
-    pub analysis: Arc<ChunkAnalysis>,
+    pub analysis: Arc<FactorizationInputs>,
     /// Module assignment per owner — the spec's partition of the
     /// owner graph. Stored separately from the IR so the IR stays
     /// immutable across validation/report construction.
@@ -103,7 +103,7 @@ impl ChunkFactorization {
             &canonical_edges.i_successors,
             &extra_nodes,
         );
-        let analysis = Arc::new(ChunkAnalysis::build(
+        let analysis = Arc::new(FactorizationInputs::build(
             chunk_id,
             owner_graph,
             bindings,

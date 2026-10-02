@@ -2,7 +2,7 @@
 use crate::emit_report;
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
-use peel::factorize::DEFAULT_SIZE_CAP_LINES;
+use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
     SelectionKind, SourceSliceArgs, UnitsArgs, run_explain_report, run_graph_summary_report,
@@ -33,7 +33,7 @@ pub(super) struct DescribeArgs {
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
 
-    /// Also run the proposal factorizer to annotate matching proposals and
+    /// Also run the module proposer to annotate matching proposals and
     /// diagnostics. This is intentionally opt-in because it is expensive on
     /// large graphs.
     #[arg(long = "include-proposals")]
