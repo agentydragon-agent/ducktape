@@ -612,10 +612,7 @@ def test_cluster_diagnostics_kustomizations_are_read_only(agent_permissions: tup
         RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name="cluster-diagnostics-reader"),
         None,
     )
-    reads = {
-        Permission(None, "kustomize.toolkit.fluxcd.io", "kustomizations", verb)
-        for verb in ("get", "list", "watch")
-    }
+    reads = {Permission(None, "kustomize.toolkit.fluxcd.io", "kustomizations", verb) for verb in ("get", "list", "watch")}
     writes = {
         Permission("flux-system", "kustomize.toolkit.fluxcd.io", "kustomizations", verb)
         for verb in ("create", "update", "patch", "delete", "deletecollection")

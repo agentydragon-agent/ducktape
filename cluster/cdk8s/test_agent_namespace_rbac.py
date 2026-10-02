@@ -117,9 +117,7 @@ def test_namespace_labels_do_not_create_bindings() -> None:
 
 
 def test_claude_ai_narrow_profile_selection() -> None:
-    assert {
-        grant for grant in access.catalog() if access.CLAUDE_AI in access.profile_subjects(grant)
-    } == {
+    assert {grant for grant in access.catalog() if access.CLAUDE_AI in access.profile_subjects(grant)} == {
         "agentplane-testing-operator",
         "agentplane-testing-login",
         "haku-console-metadata",

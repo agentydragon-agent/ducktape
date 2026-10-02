@@ -393,6 +393,10 @@ subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: haku:access-profile:public-coder
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: claude-ai
+    namespace: agentplane-staging
 ---
 apiVersion: v1
 kind: ServiceAccount
