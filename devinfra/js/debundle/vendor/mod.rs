@@ -497,8 +497,9 @@ fn check_partial_swap_consumer_decl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use artifact::ArtifactIndexes;
     use artifact::{
-        ArtifactIndexes, ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
+        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
         JsChunk, JsFile,
     };
     use spec::{VendorLevel, VendorMark, VendorRole};

@@ -157,90 +157,6 @@ impl VendorImportRewrites {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use swc_common::SyntaxContext;
-
-    fn local(name: &str) -> Id {
-        (name.into(), SyntaxContext::empty())
-    }
-
-    #[test]
-    fn shared_imports_are_deduplicated_per_file_and_source_family() {
-        let package = || VendorImportAction::PackageMember {
-            package: "pkg".into(),
-            namespace: "pkg_ns".into(),
-            upstream_export: "value".into(),
-        };
-        let facade = || VendorImportAction::FacadeMember {
-            package: "pkg".into(),
-            namespace: "facade_ns".into(),
-            upstream_export: "value".into(),
-            facade_app_path: "facades/pkg.js".into(),
-        };
-        let mut rewrites = VendorImportRewrites::default();
-        let resolve = |path: &str| format!("../{path}");
-        assert_eq!(
-            rewrites
-                .materialize(package(), local("a"), ChunkId(0), "a".into(), resolve)
-                .len(),
-            1
-        );
-        assert!(
-            rewrites
-                .materialize(package(), local("b"), ChunkId(0), "b".into(), resolve)
-                .is_empty()
-        );
-        let imports = rewrites.materialize(facade(), local("c"), ChunkId(1), "c".into(), resolve);
-        assert!(
-            matches!(&imports[..], [DeferredImport::Default { source, local }] if source == "../facades/pkg.js" && local == "facade_ns")
-        );
-        assert!(
-            rewrites
-                .materialize(facade(), local("d"), ChunkId(1), "d".into(), resolve)
-                .is_empty()
-        );
-        assert_eq!(rewrites.body_rewrites.len(), 4);
-        assert!(rewrites.references_rewritten.is_empty());
-        assert_eq!(
-            VendorImportRewrites::default()
-                .materialize(package(), local("a"), ChunkId(0), "a".into(), resolve)
-                .len(),
-            1
-        );
-    }
-
-    #[test]
-    fn named_imports_count_direct_replacements_but_defer_renamed_references() {
-        let action = || VendorImportAction::PackageNamed {
-            package: "pkg".into(),
-            upstream_export: "value".into(),
-        };
-        let mut rewrites = VendorImportRewrites::default();
-        for name in ["value", "alias"] {
-            let imports = rewrites.materialize(
-                action(),
-                local(name),
-                ChunkId(0),
-                "original".into(),
-                |_| unreachable!(),
-            );
-            assert!(
-                matches!(&imports[..], [DeferredImport::Named { source, local, upstream_export }] if source == "pkg" && local == "value" && upstream_export == "value")
-            );
-        }
-        assert_eq!(
-            rewrites.references_rewritten[&(ChunkId(0), "original".into())],
-            1
-        );
-        assert_eq!(rewrites.body_rewrites.len(), 1);
-        assert!(
-            matches!(&rewrites.body_rewrites[&local("alias")], IdentRewriteTarget::Rename { upstream_export, .. } if upstream_export == "value")
-        );
-    }
-}
-
 /// Replacement import decl shapes shared by the wave dispatchers and
 /// lowering's construction-time vendor imports; one single-specifier
 /// `ImportDecl` per value so both application sites emit identical AST.
@@ -389,5 +305,89 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
             .references_by_symbol
             .entry((chunk_id, chunk_export.clone()))
             .or_insert(0) += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swc_common::SyntaxContext;
+
+    fn local(name: &str) -> Id {
+        (name.into(), SyntaxContext::empty())
+    }
+
+    #[test]
+    fn shared_imports_are_deduplicated_per_file_and_source_family() {
+        let package = || VendorImportAction::PackageMember {
+            package: "pkg".into(),
+            namespace: "pkg_ns".into(),
+            upstream_export: "value".into(),
+        };
+        let facade = || VendorImportAction::FacadeMember {
+            package: "pkg".into(),
+            namespace: "facade_ns".into(),
+            upstream_export: "value".into(),
+            facade_app_path: "facades/pkg.js".into(),
+        };
+        let mut rewrites = VendorImportRewrites::default();
+        let resolve = |path: &str| format!("../{path}");
+        assert_eq!(
+            rewrites
+                .materialize(package(), local("a"), ChunkId(0), "a".into(), resolve)
+                .len(),
+            1
+        );
+        assert!(
+            rewrites
+                .materialize(package(), local("b"), ChunkId(0), "b".into(), resolve)
+                .is_empty()
+        );
+        let imports = rewrites.materialize(facade(), local("c"), ChunkId(1), "c".into(), resolve);
+        assert!(
+            matches!(&imports[..], [DeferredImport::Default { source, local }] if source == "../facades/pkg.js" && local == "facade_ns")
+        );
+        assert!(
+            rewrites
+                .materialize(facade(), local("d"), ChunkId(1), "d".into(), resolve)
+                .is_empty()
+        );
+        assert_eq!(rewrites.body_rewrites.len(), 4);
+        assert!(rewrites.references_rewritten.is_empty());
+        assert_eq!(
+            VendorImportRewrites::default()
+                .materialize(package(), local("a"), ChunkId(0), "a".into(), resolve)
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn named_imports_count_direct_replacements_but_defer_renamed_references() {
+        let action = || VendorImportAction::PackageNamed {
+            package: "pkg".into(),
+            upstream_export: "value".into(),
+        };
+        let mut rewrites = VendorImportRewrites::default();
+        for name in ["value", "alias"] {
+            let imports = rewrites.materialize(
+                action(),
+                local(name),
+                ChunkId(0),
+                "original".into(),
+                |_| unreachable!(),
+            );
+            assert!(
+                matches!(&imports[..], [DeferredImport::Named { source, local, upstream_export }] if source == "pkg" && local == "value" && upstream_export == "value")
+            );
+        }
+        assert_eq!(
+            rewrites.references_rewritten[&(ChunkId(0), "original".into())],
+            1
+        );
+        assert_eq!(rewrites.body_rewrites.len(), 1);
+        assert!(
+            matches!(&rewrites.body_rewrites[&local("alias")], IdentRewriteTarget::Rename { upstream_export, .. } if upstream_export == "value")
+        );
     }
 }
