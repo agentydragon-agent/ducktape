@@ -36,7 +36,11 @@ def generated(tmp_path_factory: pytest.TempPathFactory, checkout: Path) -> Path:
         committed = checkout / relative
         before = committed.read_text().splitlines(keepends=True) if committed.is_file() else []
         after = (root / relative).read_text().splitlines(keepends=True)
-        patch.extend(unified_diff(before, after, fromfile=f"a/{relative}" if committed.is_file() else "/dev/null", tofile=f"b/{relative}"))
+        patch.extend(
+            unified_diff(
+                before, after, fromfile=f"a/{relative}" if committed.is_file() else "/dev/null", tofile=f"b/{relative}"
+            )
+        )
     if patch:
         (undeclared_outputs_dir() / "generated-manifests.patch").write_text("".join(patch))
     return root

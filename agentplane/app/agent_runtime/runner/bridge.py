@@ -228,6 +228,7 @@ async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def open_session(bridge: Bridge, name: str, body: NewSession, request: Request) -> dict[str, object]:
+    _parse(protocol_pb2.SessionSpec(), body.spec)  # Validate without losing explicit empty overrides.
     await ready_sandbox_for_session(request.app.state.inventory, name)
     attached = await bridge.open_session(name, body.session_id, body.spec, body.setup_script)
     return MessageToDict(attached)

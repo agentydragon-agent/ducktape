@@ -224,8 +224,9 @@ async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServi
     assert missing.value.code is grpc.StatusCode.NOT_FOUND
     stale = view.model_copy(update={"uid": uuid4()})
     before = dict(case.custom.objects)
-    with pytest.raises(RunnerError):
+    with pytest.raises(ServiceError) as replaced:
         await api.grant_egress(stale, ["test-basic"])
+    assert replaced.value.code is grpc.StatusCode.NOT_FOUND
     assert case.custom.objects == before
 
 

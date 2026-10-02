@@ -105,6 +105,8 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
             # Let the service follow lease expire while the native harness stays alive.
             # A service EOF/deadline must reconnect, never mark the app's feed natively ended.
             await asyncio.sleep(2)
+            snapshot = await event_logs.feed_state(thread)
+            assert snapshot is not None and snapshot.end is None
             second = command_pb2.Command(
                 command_id="remote-second", submit_input=command_pb2.SubmitInput(text="second")
             )
