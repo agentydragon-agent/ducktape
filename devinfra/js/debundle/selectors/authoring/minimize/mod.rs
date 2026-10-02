@@ -12,7 +12,7 @@
 //!
 //! Single targets (function, class, object, and non-object var) read their
 //! minimal anchor set off the chunk-wide shape index (`read_off_candidates` /
-//! `try_object_read_off` / `try_var_read_off`): the index ranks each candidate
+//! the object/var candidate menus): the index ranks each candidate
 //! feature by selective × stable, so the chosen anchors are sparse and
 //! rebuild-robust, and the production matcher proves the rendered selector
 //! resolves uniquely (gate 1). A target the read-off cannot single out returns
@@ -22,13 +22,9 @@
 //! each target declarator slot reads its minimal anchor off the shape index
 //! (restricted to the slot) plus a slot-aware greedy (`slot_minimal_anchors`),
 //! the per-slot kept spans union, and the binding-group matcher proves the tuple.
-//! A keep-shallow path (`minimize_var_group_selector`) remains as the fallback for
-//! groups whose per-slot single-binding view cannot single a slot out (a value
-//! shared across sibling statements that resolves only as a tuple): it keeps each
-//! slot's direct shallow literals, escalating to structural/deeper anchors only
-//! until the group resolves, proven through the binding-group matcher as a
-//! resolves-uniquely oracle; it may over-pin rather than run an exact-minimum
-//! cover (near-minimal is the accepted target).
+//! Slots need not resolve independently: partial slot covers feed the tuple
+//! proof, which adds ranked anchors if needed. All var paths share padded
+//! initializer holing; there is no second keep-shallow renderer or AST collector.
 
 mod class;
 mod function;
@@ -170,7 +166,7 @@ fn read_off_candidates(
     // Bare structural scaffold, used only when it resolves uniquely (a purely
     // structural discriminator — arity/shape — with no value anchor to keep). The
     // scaffold is degenerate for `var`, so the var path skips this entirely and
-    // returns `None` for the keep-shallow path to handle. When the scaffold
+    // returns `None` for tuple/context read-off to handle. When the scaffold
     // uniquely matches the read-off is done — it never falls through to neighbor
     // context (mirroring the original early return), so stop here regardless of
     // `limit`.
@@ -291,10 +287,8 @@ fn render_context_neighbor(
     Ok(Some(emit_selector(ModuleItem::Stmt(holed))?))
 }
 
-/// Per-slot initializer holing for the read-off var paths: an object init holes
-/// to its key-set form ([`hole_object_padded`], interleaved `ANYTHING`),
-/// every other init via [`hole_expr`]. The keep-shallow group path passes plain
-/// [`hole_expr`] instead (objects hole via [`hole_object`], not padded).
+/// Shared initializer holing: padded object keys, sparse class members, and
+/// expression holing for other forms.
 fn hole_var_init_padded(init: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
     match init {
         Expr::Object(object) => Expr::Object(hole_object_padded(object, kept)),
@@ -307,24 +301,18 @@ fn hole_var_init_padded(init: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
 }
 
 /// Render a `var` binding-group selector: keep the target declarator slots (each
-/// renamed to its export via `export_for`, init holed by `hole_init` then the
+/// renamed to its export via `export_for`, init holed by `hole_var_init_padded` then the
 /// optional `regex_anchors` `STR_LITERAL_MATCHING_RE` post-pass), with
 /// `DECLARATORS_*` holes absorbing the runs of non-target slots. The single-target
 /// var and object read-offs are the N=1 case (one target slot, no `DECLARATORS_*`
 /// gaps).
 ///
-/// The per-slot initializer holing is the one axis the call sites differ on, so
-/// it is a parameter: the read-off paths pass [`hole_var_init_padded`] (object →
-/// padded key-set holing); the keep-shallow group path passes [`hole_expr`].
-/// Factored from the near-identical `render_with` closures the object, var, and
-/// var-group minimizers each used to build inline.
 fn render_var_slots(
     var: &VarDecl,
     target_slots: &BTreeSet<usize>,
     export_for: &impl Fn(&str) -> Option<String>,
     kept: &BTreeSet<AnchorSpan>,
     regex_anchors: &BTreeMap<AnchorSpan, String>,
-    hole_init: &impl Fn(&Expr, &BTreeSet<AnchorSpan>) -> Expr,
 ) -> Result<String> {
     let mut decls: Vec<VarDeclarator> = Vec::new();
     let mut skipped_run = false;
@@ -342,7 +330,7 @@ fn render_var_slots(
         let mut holed = declarator.clone();
         holed.name = named_pat(&export_for(name).expect("target declarator has an export"));
         holed.init = declarator.init.as_ref().map(|init| {
-            let mut holed_init = hole_init(init, kept);
+            let mut holed_init = hole_var_init_padded(init, kept);
             if !regex_anchors.is_empty() {
                 holed_init.visit_mut_with(&mut RegexAnchorSubstitution {
                     patterns: regex_anchors,

@@ -1,6 +1,5 @@
 //! Golden minimizer outputs: each fixture's `expected_match.js` is the selector
-//! `synthesize-selectors --apply` emits for its `source.js`. Two cases are `#[ignore]`d
-//! until the gaps tracked in TODO.md § Read-off minimizer polish close.
+//! `synthesize-selectors --apply` emits for its `source.js`.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -649,5 +648,14 @@ minimizer_expectation_case!(
     name = "class anchor inside a constructor sequence expression is holed in place, not pinned via a neighbor",
     module = "app/errors",
     bindings = [("SelectedError", "selectedError")],
+    expected = "expected_match.js",
+);
+
+minimizer_expectation_case!(
+    minimizes_jointly_unique_binding_group,
+    fixture = "jointly_unique_binding_group",
+    name = "ambiguous individual slots resolve as a unique tuple",
+    module = "app/pair",
+    bindings = [("SelectedLeft", "left"), ("SelectedRight", "right")],
     expected = "expected_match.js",
 );
