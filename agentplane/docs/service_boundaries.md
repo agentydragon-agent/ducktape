@@ -116,12 +116,12 @@ Public protobuf/client models and read-only Kubernetes projections can be shared
 modules carry no create/delete/grant/session authority. Consumer acceptance tests use the real gRPC
 boundary through service-owned test fixtures; tests of backend mutations live with the service.
 
-
 Bazel defaults keep app implementation visible only to the app and its explicit acceptance/deployment
 consumers, and Sandbox Service implementation visible only inside that service. Public DTOs,
 client/protobufs, and read-only projections are opt-in exports. The direct runner transport and its
-generated gRPC stub are visible only to runner code, Sandbox Service, and the app's transport-fault
-test. Shared runner error types live separately so importing an error does not grant a transport
+generated gRPC stub are visible only to runner code and Sandbox Service. Archive fault tests get
+an explicit test-only transport dependency, which production app targets cannot use. Shared runner
+error types live separately so importing an error does not grant a transport
 dependency. Use concrete service clients, not protocols introduced solely to allow alternate
 in-process implementations in consumer tests.
 

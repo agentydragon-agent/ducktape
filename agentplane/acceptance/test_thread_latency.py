@@ -45,10 +45,10 @@ from more_itertools import one
 from pydantic import BaseModel, Field
 
 from agentplane.acceptance.agent import Agent
-from agentplane.app.threads.view.fold import PayloadField
-from agentplane.app.threads.view.views import EntityKind, ThreadItemState, ThreadPayloadReference
 from agentplane.app.client import REQUEST_SECONDS, Client
 from agentplane.app.electric import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScopeResponse
+from agentplane.app.threads.view.fold import PayloadField
+from agentplane.app.threads.view.views import EntityKind, ThreadItemState, ThreadPayloadReference
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire
 from agentplane.protocol import event_pb2

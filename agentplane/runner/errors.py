@@ -1,5 +1,6 @@
 """Runner observation errors shared by the direct transport and Sandbox Service client."""
 
+
 class RunnerError(Exception):
     """The runner ended the stream with an error."""
 

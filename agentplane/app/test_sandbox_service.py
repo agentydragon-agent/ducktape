@@ -9,13 +9,13 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.ingestion import Ingester, Ingestion
-from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
-from agentplane.app.threads.sessions import SandboxSessions
-from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.live import LiveIndex
+from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.conftest import RunnerHandle

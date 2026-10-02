@@ -17,13 +17,13 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from agentplane.app.conftest import SPEC, Replica, event_entry
+from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedEnd, FeedError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.threads.ingestion import Ingestion, event_batches
 from agentplane.app.threads.models import SandboxIngestion
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.conftest import SPEC, Replica, event_entry
-from agentplane.app.database_updates import Channel, notify
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import StreamClosedError

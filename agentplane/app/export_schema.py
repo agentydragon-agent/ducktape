@@ -15,13 +15,6 @@ import httpx
 from pydantic import TypeAdapter
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.ingestion import Ingester, Ingestion
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.sessions import SandboxSessions
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.threads.view.views import ThreadEntityView
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -30,6 +23,13 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ThreadScopeResponse
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.threads.view.views import ThreadEntityView
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.session_config import Harness

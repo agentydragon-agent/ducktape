@@ -22,10 +22,6 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
@@ -35,6 +31,10 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api

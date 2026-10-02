@@ -13,18 +13,18 @@ import grpc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events import event_log, ingestion_lease
 from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
-from agentplane.app.threads.sessions import SandboxSessions, SandboxNotReachableError
+from agentplane.app.threads.sessions import SandboxNotReachableError, SandboxSessions
 from agentplane.app.threads.view import fold
 from agentplane.app.threads.view.recording import ThreadFoldError, record_thread_fold, set_operational
-from agentplane.app.database_updates import Channel, notify
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
-from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.client import Attachment, Runner
+from agentplane.sandbox_service.models import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -139,13 +139,7 @@ class Feed:
     """One lease owner's ingestion connection. Browsers never subscribe to this object."""
 
     def __init__(
-        self,
-        *,
-        session_id: str,
-        client: Runner,
-        event_logs: EventLogStore,
-        ingestion: Ingestion,
-        lease: IngestionLease,
+        self, *, session_id: str, client: Runner, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
     ):
         self.session_id = session_id
         self.client = client

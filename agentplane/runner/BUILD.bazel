@@ -33,13 +33,12 @@ py_proto_library_with_mypy_stubs(
 
 py_grpc_service_library(
     name = "protocol_pb2_grpc",
+    proto = ":protocol_proto",
+    py_proto = ":protocol_pb2",
     visibility = [
-        "//agentplane/app:test_bridge",
         "//agentplane/runner:__subpackages__",
         "//agentplane/sandbox_service:__subpackages__",
     ],
-    proto = ":protocol_proto",
-    py_proto = ":protocol_pb2",
 )
 
 ts_proto_library(
@@ -91,14 +90,13 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     visibility = [
-        "//agentplane/app:test_bridge",
         "//agentplane/runner:__subpackages__",
         "//agentplane/sandbox_service:__subpackages__",
     ],
     deps = [
-        "//agentplane/runner:errors",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner:protocol_pb2_grpc",
         "@pypi//grpcio",
@@ -237,11 +235,11 @@ py_test(
     name = "test_client",
     srcs = ["test_client.py"],
     deps = [
-        "//agentplane/runner:errors",
         ":client",
         ":conftest",
         "//:conftest",
         "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner/testing:unanswering_runner",
         "@pypi//grpcio",
@@ -303,11 +301,11 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
-        "//agentplane/runner:errors",
         ":client",
         ":conftest",
         "//:conftest",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:scripted_model",
@@ -599,7 +597,6 @@ py_test(
     name = "test_service",
     srcs = ["test_service.py"],
     deps = [
-        "//agentplane/runner:errors",
         ":client",
         ":config",
         ":conftest",
@@ -607,6 +604,7 @@ py_test(
         ":store",
         "//:conftest",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -716,4 +714,14 @@ py_test(
 py_library(
     name = "errors",
     srcs = ["errors.py"],
+)
+
+# An explicit test-only dependency grants archive fault tests access to the native peer.
+# Production app targets cannot depend on this, even though they share the test's Bazel package.
+py_library(
+    name = "client_for_testing",
+    testonly = True,
+    srcs = [],
+    visibility = ["//agentplane/app:__pkg__"],
+    deps = [":client"],
 )

@@ -39,22 +39,6 @@ from agentplane.app.action_federation import (
     upstream_failure_detail,
 )
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.threads.events import stream
-from agentplane.app.threads.events.debug import (
-    ArchivedObservationEntry,
-    EvidencePage,
-    NativeFramePage,
-    ObservationPage,
-    ThreadEvidenceNotFoundError,
-    ThreadScopeChangedError,
-)
-from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
-from agentplane.app.threads.runner import bridge as runner_bridge
-from agentplane.app.threads.sessions import SandboxNotReachableError
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
-from agentplane.app.threads.view.fold import CommandOutcome
-from agentplane.app.threads.view.views import ThreadView
 from agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -72,6 +56,22 @@ from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
+from agentplane.app.threads.events import stream
+from agentplane.app.threads.events.debug import (
+    ArchivedObservationEntry,
+    EvidencePage,
+    NativeFramePage,
+    ObservationPage,
+    ThreadEvidenceNotFoundError,
+    ThreadScopeChangedError,
+)
+from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
+from agentplane.app.threads import bridge as runner_bridge
+from agentplane.app.threads.sessions import SandboxNotReachableError
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
+from agentplane.app.threads.view.fold import CommandOutcome
+from agentplane.app.threads.view.views import ThreadView
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError

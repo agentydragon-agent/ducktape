@@ -7,11 +7,11 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 
+from agentplane.app.conftest import SPEC, event_entry
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
-from agentplane.app.conftest import SPEC, event_entry
 from agentplane.protocol import command_pb2, event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

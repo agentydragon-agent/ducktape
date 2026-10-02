@@ -14,6 +14,8 @@ from agentplane.sandbox_service.wire import sandbox_proto, sandbox_view
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOXES_PLURAL
 
+# gazelle:include_dep @pypi//protobuf
+
 
 async def test_read_retained_sandbox_without_mutation(cluster: Cluster) -> None:
     before = deepcopy(cluster.fake.objects)

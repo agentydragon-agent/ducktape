@@ -39,23 +39,16 @@ bbr test //agentplane/app/...
   fields.
 - Sandbox provisioning, grants, and runner control are owned by `../sandbox_service/` and reached
   through its authenticated gRPC client. The app retains read-only Kubernetes projections for UI updates.
-- `egress.py`: the app namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
-  edits them. A binding is desired state, so creating one is the whole grant and deleting it the
-  whole revocation; there is no decision recorded on the rule afterwards. A sandbox may be granted
-  after it is running, and each grant is a binding of its own so its expiry and revocation are its
-  own ([the composition doc](../docs/egress_composition.md)). A binding Flux applied is the
-  repository's to remove, so revoking one is refused with 409 rather than deleting an object the
-  next reconcile re-creates. `decisions.py` reads the proxy's recent decisions off its admin port,
-  and an unreachable proxy leaves the rules readable.
-- `action_policy.py`: the sandbox namespace's `ActionPolicyBinding`s as the app writes them, and
-  the Action Service's answer for a Sandbox as the app shows it. A preset's `action_policy_sets`
-  become one binding per Sandbox the app launches, owner-referenced to it and labelled
-  `app.agentplane.allegedly.works/managed-by: integration-app`; the Action Service evaluates
-  bindings and reads `spec` only, so no preset name reaches it. The read side asks the service
-  (below). Nothing edits a binding at runtime; kubectl does.
+- `egress.py`: read-only policy/binding projections for the UI, with mutations delegated to Sandbox
+  Service. Bindings remain desired-state grants, with expiry/revocation per binding and Flux-owned
+  bindings protected from app revocation ([composition](../docs/egress_composition.md)).
+  `decisions.py` reads the proxy's recent decisions; an unreachable proxy leaves policy views readable.
+- `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
+  Launch grants and binding mutations belong to Sandbox Service, not this app or its preset catalog.
 - `threads/`: the app-owned PostgreSQL archive and presentation state for
   threads, events, feed state, leases, materialized thread entities and immutable content
-  chunks/manifests built from its events. Layered bottom-up on the tables in `models.py`: `events/`, `view/`, and `store.py` (`ThreadStore`: a thread over its event log, with the
+  chunks/manifests built from its events. Layered bottom-up on the tables in `models.py`: `events/`,
+  `view/`, and `store.py` (`ThreadStore`: a thread over its event log, with the
   name and archive state an operator sets). `ingestion.py` copies the running sandboxes' runner
   sessions into the event log: the `Ingester` holds one lease per sandbox across replicas and runs a
   `Feed` per session, which batches the runner's events for `Ingestion` to record, the event log's

@@ -28,12 +28,6 @@ from agentplane.app.action_federation import (
     FederatedOperatorActions,
 )
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.ingestion import Ingester, Ingestion
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.sessions import SandboxSessions
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -46,6 +40,12 @@ from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader

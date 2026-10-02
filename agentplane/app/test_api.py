@@ -17,13 +17,6 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.ingestion import Ingester, Ingestion
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.sessions import SandboxSessions
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
 from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -35,6 +28,13 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.unanswering_runner import UnansweringRunner

@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy import select
 
+from agentplane.app.conftest import SPEC, Replica, event_entry
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.ingestion import Ingestion
@@ -26,7 +27,6 @@ from agentplane.app.threads.models import (
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.recording import ThreadFoldError
 from agentplane.app.threads.view.views import EntityKind, ThreadOperationalState
-from agentplane.app.conftest import SPEC, Replica, event_entry
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.codex import CodexAdapter

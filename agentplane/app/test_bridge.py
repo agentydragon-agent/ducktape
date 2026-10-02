@@ -27,15 +27,6 @@ from sqlalchemy import select
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.threads.events.event_log import EventLogStore, FeedError
-from agentplane.app.threads.events.stream import follow
-from agentplane.app.threads.ingestion import Feed, Ingester, Ingestion
-from agentplane.app.threads.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
-from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
-from agentplane.app.threads.sessions import SandboxSessions
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.threads.view.views import ThreadOperationalState
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.changes import Changes
 from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH, TEST_REASONING_EFFORTS
@@ -46,15 +37,23 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore, FeedError
+from agentplane.app.threads.events.stream import follow
+from agentplane.app.threads.ingestion import Feed, Ingester, Ingestion
+from agentplane.app.threads.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.threads.view.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
-from agentplane.runner.client import Attachment, RunnerClient
-from agentplane.runner.errors import RunnerError, StreamClosedError
+from agentplane.runner.client import RunnerClient
 from agentplane.runner.conftest import RunnerHandle
+from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
-from agentplane.sandbox_service.client import Attachment as ServiceAttachment
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.client import Attachment as ServiceAttachment, SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
@@ -1136,7 +1135,11 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
 
 
 async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
-    runner: RunnerHandle, local_runners: SandboxSessions, event_logs: EventLogStore, ingestion: Ingestion, spec: protocol_pb2.SessionSpec
+    runner: RunnerHandle,
+    local_runners: SandboxSessions,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    spec: protocol_pb2.SessionSpec,
 ) -> None:
     client = RunnerClient(runner.target, capture_history=True)
     try:
@@ -1154,7 +1157,11 @@ async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
             await ingestion.record(thread, attachment.seen, lease=lease)
             async with asyncio.timeout(10):
                 await Feed(
-                    session_id=SESSION, client=local_runners.client(SANDBOX), event_logs=event_logs, ingestion=ingestion, lease=lease
+                    session_id=SESSION,
+                    client=local_runners.client(SANDBOX),
+                    event_logs=event_logs,
+                    ingestion=ingestion,
+                    lease=lease,
                 ).run()
             snapshot = await event_logs.feed_state(thread)
             assert snapshot is not None
@@ -1192,7 +1199,13 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
             lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
             assert lease is not None
             await ingestion.record(thread, attachment.seen, lease=lease)
-            await Feed(session_id=SESSION, client=local_runners.client(SANDBOX), event_logs=event_logs, ingestion=ingestion, lease=lease).run()
+            await Feed(
+                session_id=SESSION,
+                client=local_runners.client(SANDBOX),
+                event_logs=event_logs,
+                ingestion=ingestion,
+                lease=lease,
+            ).run()
             failed = await replica_event_logs.feed_state(thread)
             assert failed is not None
             assert failed.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
@@ -1288,7 +1301,13 @@ async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
 
         monkeypatch.setattr(ServiceAttachment, "next_entry", truncated_stream)
         async with asyncio.timeout(10):
-            await Feed(session_id=SESSION, client=local_runners.client(SANDBOX), event_logs=event_logs, ingestion=ingestion, lease=lease).run()
+            await Feed(
+                session_id=SESSION,
+                client=local_runners.client(SANDBOX),
+                event_logs=event_logs,
+                ingestion=ingestion,
+                lease=lease,
+            ).run()
         snapshot = await event_logs.feed_state(thread)
         assert snapshot is not None
         assert snapshot.end == FeedError(

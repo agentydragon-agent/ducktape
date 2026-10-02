@@ -19,13 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
-from agentplane.app.threads.ingestion import Ingester, Ingestion
-from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.sessions import SandboxSessions
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -35,6 +28,13 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -226,7 +226,9 @@ async def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> Asy
 
 
 @pytest.fixture
-async def ingester(runners: SandboxSessions, event_logs: EventLogStore, ingestion: Ingestion) -> AsyncIterator[Ingester]:
+async def ingester(
+    runners: SandboxSessions, event_logs: EventLogStore, ingestion: Ingestion
+) -> AsyncIterator[Ingester]:
     ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
     yield ingester
     await ingester.close()

@@ -12,13 +12,13 @@ import pytest_bazel
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.app.conftest import SPEC, event_entry
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.models import ThreadEntity
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.conftest import SPEC, event_entry
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

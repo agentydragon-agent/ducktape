@@ -1,7 +1,7 @@
 # Runner discovery and control-plane access implementation notes
 
-Status: **implementation notes for the planned [Sandbox Service](sandbox_service.md), not a shipped
-extraction or policy change.** Kubernetes already describes hosted sandboxes and their runner Pod
+Status: **implementation notes for [Sandbox Service](sandbox_service.md); source extraction is
+implemented, live authority handoff remains gated.** Kubernetes already describes hosted sandboxes and their runner Pod
 incarnations. Discovery belongs inside that backend; neither a separate directory service nor an
 integration-app lookup API is required. The [dependency rule](../docs/service_boundaries.md) applies
 from v1: notifications and other backends must operate without the integration app.
@@ -16,10 +16,10 @@ Keep three concepts separate:
 - **Delivery binding:** an existing provisioned sandbox reference identifies where the session lives.
   Lookup resolves its current endpoint; it does not grant permission to control it.
 
-Extract the narrow projection/lookup code from [`SandboxInventory`](../sandbox_service/inventory.py),
-[`LiveIndex`](../app/live.py), and [`Runners`](../app/threads/sessions.py) into the Sandbox
-Service, using existing neutral Kubernetes helpers. Do not import app implementation modules from the
-new service. The app may still observe provisioning for presentation, but it is not the authoritative
+[`SandboxInventory`](../sandbox_service/inventory.py) and endpoint resolution live inside Sandbox
+Service, using neutral Kubernetes helpers. The app retains [`LiveIndex`](../app/live.py) and
+[`SandboxSessions`](../app/threads/sessions.py) only to select explicit service destinations from
+its UI projections. Do not import those app modules into the service. The app may still observe provisioning for presentation, but it is not the authoritative
 endpoint/command path for other services. Product Thread annotations and UI projections stay app-owned.
 
 ## Internal lookup
