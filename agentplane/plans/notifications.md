@@ -14,6 +14,8 @@ Endpoint/tool names below illustrate the intended operations, not an existing wi
   trusted, as with their existing Action/egress access. No per-Thread credentials are required.
 - **Explicit Thread IDs everywhere in v1.** Supply the ID in the agent's context; do not infer
   "current Thread", even when a sandbox has only one. A Thread ID selects a resource, not authority.
+- **Include service instructions in the agent prompt.** Explain how to subscribe/listen, retrieve,
+  and explicitly acknowledge notifications, with concrete examples and the destination Thread ID.
 - **Provider-owned semantics.** Each notification provider defines its payloads, filter schema,
   upstream authentication/verification, and source integration. Prefer upstream event names and
   fields rather than an Agentplane-specific vocabulary for the same facts.
@@ -166,6 +168,39 @@ Read and acknowledge are separate operations:
 - Acknowledgement is the agent's declaration that entries are handled, not evidence of successful
   external work. It need not immediately delete the retained entries.
 
+### Agent prompt instructions
+
+Ship prompt guidance with the first usable service, not only operator documentation or tool schemas.
+Provide the agent's explicit Thread ID, the actual service endpoint/tool names and authentication usage,
+how to discover accessible providers and their filters, and how to create/inspect/update/cancel its
+subscriptions. Describe inbox notices as automated wakeups to retrieve content, not the payload itself.
+Instructions must explain that reads are non-destructive, acknowledgement advances a prefix HWM,
+there are no repeated reminders, and v1 does not wake stopped destinations.
+
+Include at least these two worked examples using the implemented API rather than leaving the agent to
+invent call shapes:
+
+1. **Listen for an Action:** submit an Action and obtain its real request ID, then create an idempotent
+   subscription with the supplied `thread_id`, that request ID, and replay from sequence zero. Explain
+   that approval/completion before subscription creation is recovered from history, but creation must
+   actually succeed. Continue other work and retrieve the inbox when its automated notice arrives.
+2. **Read and explicitly acknowledge:** read a page after the current acknowledged cursor, inspect/handle
+   its entries, and only then acknowledge through that page's last handled contiguous cursor. For
+   example, starting from HWM 180, a read returning entries 181–184 does not change HWM 180;
+   `acknowledge(thread_id, through_cursor=184)` advances it after all four are handled. If only 181–182
+   are handled, acknowledge through 182, not 184. Repeat pagination for any remaining entries.
+
+Example IDs/cursors must be clearly distinguished from the real Thread ID and tool results. Do not
+include real service credentials or imply that prompt text grants source/destination access. Explain
+how to inspect a failed subscription or delivery rather than assuming silence means nothing happened.
+
+Integrate guidance with the existing prompt/context composition; do not assume session standing
+instructions can be changed in place. The [runner session contract](../runner/SPEC.md#sessions) fixes
+`SessionSpec.instructions` for a session's lifetime. Supply guidance when creating enabled sessions;
+if existing sessions are supported, choose an explicit supported context/input path rather than
+silently changing the stored spec. Future runner-hosted MCP context can hide repetitive Thread IDs
+in tool calls, but does not replace the need to teach the agent the subscription and HWM semantics.
+
 ### Race-free explicit Action following
 
 The planned default is to replay an Action from its beginning; `after_sequence` selects an already
@@ -265,6 +300,7 @@ already-recorded receipt or reinterpret it as an acknowledgement.
 2. **Build the standalone service:** owned persistence/migrations, provider discovery, explicit
    Thread-scoped subscription CRUD, inbox cursor/read/HWM operations, and observable health/errors.
    Pick concrete limits, retention, idempotency/update contracts, and cancellation race semantics.
+   Wire agent prompt instructions with the actual Thread ID, service usage, and subscribe/read/ack examples.
 3. **Implement only the Action provider:** canonical replay and follow, source authorization,
    individual ordered Decisions/outcomes, and atomic cursor/matching bookkeeping.
 4. **Deliver notices through the runner:** independent attachment, persisted command identity and
@@ -296,6 +332,9 @@ as a shipped API. Operator UI and generic webhook setup are not prerequisites fo
 
 - Sibling Threads in a sandbox can access each other's Thread-owned resources; a caller in another
   sandbox cannot. Forged IDs, stale mappings, and unauthorized Action sources fail closed.
+- Enabled agent sessions receive service instructions and the correct explicit Thread ID in their
+  prompt/context, with working subscribe and read/ack examples using the shipped API. Verify the agent
+  can follow them without relying on undocumented tools or implicit Thread detection.
 - Retried subscription creation produces one subscription. A decision and completion before creation
   are replayed, including for terminal Actions. Catch-up/live races and source replay lose no events
   and create no duplicate entries. Approval never stands in for execution success.
