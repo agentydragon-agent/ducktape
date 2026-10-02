@@ -2816,3 +2816,31 @@ fn bundled_facades_preserve_default_reserved_and_string_export_names() {
         assert_node_output(&ws.out_root.join("app/static/app/entry.js"), "7\n", "");
     }
 }
+
+#[test]
+fn partial_swap_preserves_residual_dependency_without_its_ast() {
+    let ws = VendorTestWorkspace::new("vendor-residual-dependency-");
+    ws.write_chunk("helper.js", "export const helper = () => 'helper';\n");
+    ws.write_chunk("vendor.js", "import { helper } from './helper.js';\nexport const old = () => 'bundled';\nexport const residual = () => helper();\n");
+    ws.write_chunk(
+        "app.js",
+        "import { old, residual } from './vendor.js';\nconsole.log(old() + ':' + residual());\n",
+    );
+    ws.write_js_list("helper.js\nvendor.js\napp.js\n");
+    let upstream = "export const replacement = () => 'upstream';\n";
+    let package = ws.write_upstream_package("upstream/lib", "lib", "1.0.0", "index.js", upstream);
+    let vendor = partial_swap_vendor(
+        "residual dependency",
+        &[("lib", partial_package("1.0.0", "index.js", None))],
+        &[(
+            "old",
+            swap_symbol("lib", PartialSwapKind::Named, Some("replacement"), None),
+        )],
+    );
+    let spec = ws.root.path().join("transform.yaml");
+    write_yaml_file(&spec, &ws.transform_spec(json!({"vendor.js": vendor})));
+    assert_success(&run_debundler(&spec, &[("lib", &package)]));
+    let app = ws.out_root.join("app");
+    install_node_module(&app, "lib", "1.0.0", upstream);
+    assert_node_output(&app.join("app/entry.js"), "upstream:helper\n", "");
+}

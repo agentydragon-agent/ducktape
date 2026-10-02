@@ -852,6 +852,16 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "prepare_chunks_test",
+    crate = ":prepare_chunks",
+    edition = "2024",
+    deps = [
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
 rust_library(
     name = "identifier_rename_queue",
     srcs = ["identifier_rename_queue.rs"],

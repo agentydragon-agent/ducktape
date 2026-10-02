@@ -59,7 +59,7 @@ pub fn prepare_js_chunks(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // First pass: parse all chunks and collect imports for vendor caller detection.
+    // First pass: parse all chunks and collect shallow manifest/rewrite facts.
     // Source text moves into the SourceMap; no extra copy.
     // Rayon workers don't inherit the caller's `swc_common::GLOBALS` scope
     // (it's `scoped_tls`, per-thread), so we re-set it inside each worker
@@ -76,9 +76,6 @@ pub fn prepare_js_chunks(
             })
             .collect::<Result<Vec<_>>>()
     })?;
-
-    // Build import index to detect vendor callers
-    let import_index = build_import_index(&parsed_chunks);
 
     // Build set of vendor target chunk ids
     let vendor_target_chunk_ids: BTreeSet<String> = spec
@@ -104,9 +101,8 @@ pub fn prepare_js_chunks(
     let prepared_chunks = parsed_chunks
         .into_iter()
         .map(|(chunk_id, chunk_name, mut prepared)| {
-            let needs_ast =
-                needs_ast_for_chunk(&chunk_name, spec, &import_index, &vendor_target_chunk_ids)
-                    || prepared.has_rewritable_specifier;
+            let needs_ast = needs_ast_for_chunk(&chunk_name, spec, &vendor_target_chunk_ids)
+                || prepared.has_rewritable_specifier;
 
             if !needs_ast
                 && let Some(pos) = prepared
@@ -246,79 +242,71 @@ fn build_prepare_output(
     (counts, chunk_records)
 }
 
-/// Build an index of imports by target chunk for vendor caller detection.
-fn build_import_index(
-    chunks: &[(ChunkId, String, PreparedChunk)],
-) -> BTreeMap<String, Vec<String>> {
-    chunks
-        .iter()
-        .flat_map(|(_chunk_id, chunk_name, prepared)| {
-            prepared.analysis.imports.iter().filter_map(move |import| {
-                let target_chunk_id = import
-                    .source
-                    .strip_prefix("./")
-                    .and_then(|s| s.strip_suffix(".js").or(Some(s)))?;
-                Some((target_chunk_id.to_string(), chunk_name.clone()))
-            })
-        })
-        .fold(
-            BTreeMap::new(),
-            |mut acc, (target_chunk_id, caller_chunk_id)| {
-                acc.entry(target_chunk_id)
-                    .or_default()
-                    .push(caller_chunk_id);
-                acc
-            },
-        )
-}
-
-/// Determine if a chunk needs to keep its AST based on the spec and import index.
+/// Spec-driven AST consumers. Neighboring a vendor chunk is not itself work:
+/// callers with relative directives retain their AST through the shallow rewrite
+/// fact, while a vendor's dependency can pass through as source if it has no work.
 fn needs_ast_for_chunk(
     chunk_id: &str,
     spec: &TransformSpec,
-    import_index: &BTreeMap<String, Vec<String>>,
     vendor_target_chunk_ids: &BTreeSet<String>,
 ) -> bool {
-    // Chunk with logical modules needs AST
-    if spec.logical_modules.contains_key(chunk_id) {
-        return true;
-    }
+    spec.logical_modules.contains_key(chunk_id)
+        // Both residual policies materialize modules from the chunk body.
+        || spec.unassigned_mode.contains_key(chunk_id)
+        || spec.chunk_renames.contains_key(chunk_id)
+        || vendor_target_chunk_ids.contains(chunk_id)
+}
 
-    // Chunk with a non-default unassigned-mode policy needs AST
-    // (CatchallFile emits a residual logical module; MiniFactors
-    // synthesizes mini-factor modules — both require the chunk
-    // body parsed for materialisation).
-    if spec.unassigned_mode.contains_key(chunk_id) {
-        return true;
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
 
-    // Chunk with renames needs AST
-    if spec.chunk_renames.contains_key(chunk_id) {
-        return true;
-    }
-
-    // Vendor target needs AST
-    if vendor_target_chunk_ids.contains(chunk_id) {
-        return true;
-    }
-
-    // Chunk that imports a vendor target needs AST
-    if let Some(callers) = import_index.get(chunk_id) {
-        for caller in callers {
-            if vendor_target_chunk_ids.contains(caller) {
-                return true;
+    // Retention is an internal storage invariant, not observable in emitted JS.
+    // Load real source files through the normal loader and fused preparation.
+    #[test]
+    fn vendor_neighbors_retain_ast_only_for_their_own_work() {
+        js_ast::with_swc_globals(|| {
+            let root = tempfile::TempDir::new().unwrap();
+            for (name, source) in [
+                (
+                    "vendor.js",
+                    "import { helper } from './helper.js'; export const value = helper();",
+                ),
+                ("helper.js", "export const helper = () => 7;"),
+                (
+                    "caller.js",
+                    "import { value } from './vendor.js'; console.log(value);",
+                ),
+                ("forward.js", "export { value } from './vendor.js';"),
+                (
+                    "dynamic.js",
+                    "export const load = () => import('./vendor.js');",
+                ),
+            ] {
+                fs::write(root.path().join(name), source).unwrap();
             }
-        }
+            let list = root.path().join("js-files.txt");
+            fs::write(
+                &list,
+                "vendor.js\nhelper.js\ncaller.js\nforward.js\ndynamic.js\n",
+            )
+            .unwrap();
+            let spec: TransformSpec = serde_yaml::from_str(
+                "inputs: {input_root: '.', js_list_path: js-files.txt}\nvendor:\n  vendor.js: {identity: fixture, level: suppress}\n",
+            ).unwrap();
+            let loaded = artifact::load_js_chunks(root.path(), &list).unwrap();
+            let prepared = prepare_js_chunks(&spec, loaded).unwrap();
+            for chunk in &prepared.artifact.chunks {
+                let name = prepared.artifact.chunk_table.name(chunk.chunk_id);
+                let has_ast = chunk
+                    .js
+                    .get_file(CANONICAL_CHUNK_ENTRY_FILE)
+                    .unwrap()
+                    .ast()
+                    .is_some();
+                assert_eq!(has_ast, name != "helper", "{name}");
+            }
+        });
     }
-
-    // Check if this chunk imports a vendor target
-    for vendor_target in vendor_target_chunk_ids {
-        if let Some(callers) = import_index.get(vendor_target)
-            && callers.iter().any(|caller| caller == chunk_id)
-        {
-            return true;
-        }
-    }
-
-    false
 }
