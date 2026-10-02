@@ -201,21 +201,11 @@ fn seed_co_locates_constraining_cycle_atomic_unit() {
     assert_eq!(q.class_of(b_idx), q.class_of(c_idx));
 }
 
-/// A merge that closes an asymmetric I-SCC (eager forward, lazy
-/// back) where the `EsmEvaluationSimulator` proves TDZ must be
-/// rejected AT THE MERGE, with `EsmEvaluationTdz`-backed evidence;
-/// `build_seed_quotient`'s post-seed `PostSeedUnrealizableScc` report
-/// is only a backstop and does not undo the merge.
-///
-/// Shape: pre-existing module `ui/x` = {x}; residual-pile owners `r`
-/// (stays) and `h` (the merge candidate). `x` eager-reads `r`'s
-/// binding (constraining `M → R`); `r` lazily reads `h`'s binding
-/// (intra-residual pre-merge, becomes the lazy back-edge `R → M` once
-/// `h` is promoted into `ui/x`). The post-merge I-SCC `{M, R}`
-/// carries a constraining pair targeting residual — the DFS root
-/// evaluates last, so `M`'s eager read of `r`'s binding TDZs.
+/// Entry's implicit imports already close the runtime cycle for x -> r.
+/// Merging an unrelated helper into x does not repair that dependency and
+/// must remain rejected, with evidence naming the eager reader.
 #[test]
-fn merge_closing_asymmetric_i_cycle_is_rejected_at_the_merge() {
+fn merge_cannot_hide_an_existing_entry_dependency() {
     let x = active_owner("owner:x", 1, &["BindingX"], 10, "ui/x");
     let r = residual_owner("owner:r", 2, &["BindingR"], 5);
     let h = residual_owner("owner:h", 3, &["BindingH"], 5);
@@ -230,9 +220,9 @@ fn merge_closing_asymmetric_i_cycle_is_rejected_at_the_merge() {
     let cx = group_ids[0];
     let ch = q.class_of(q.owner_idx_of("owner:h").unwrap());
 
-    // The pre-merge state is realizable; the merge alone closes the
-    // TDZ cycle, so the gate must reject it.
-    assert!(q.realizability_verdict().is_realizable());
+    // The source graph is acyclic, but entry's implicit import closes the
+    // runtime cycle before the merge. The merge still leaves x -> r in place.
+    assert!(!q.realizability_verdict().is_realizable());
     assert!(
         !q.merge_preserves_invariants(cx, ch),
         "merging owner:h into ui/x closes the asymmetric I-cycle \
@@ -745,12 +735,14 @@ fn greedy_terminates_at_convergence() {
     let h1 = residual_owner("owner:h1", 2, &["BindingH1"], 5);
     let h2 = residual_owner("owner:h2", 3, &["BindingH2"], 5);
     let h3 = residual_owner("owner:h3", 4, &["BindingH3"], 5);
+    // Start realizable: residual helpers depend on the emitted module,
+    // not vice versa. Each contraction preserves that entry-last invariant.
     let report = singleton_graph(
         vec![a.clone(), h1.clone(), h2.clone(), h3.clone()],
         vec![
-            owner_edge("edge:0", "owner:a", "owner:h1", DepKind::EagerUse, true),
-            owner_edge("edge:1", "owner:a", "owner:h2", DepKind::EagerUse, true),
-            owner_edge("edge:2", "owner:a", "owner:h3", DepKind::EagerUse, true),
+            owner_edge("edge:0", "owner:h1", "owner:a", DepKind::EagerUse, true),
+            owner_edge("edge:1", "owner:h2", "owner:a", DepKind::EagerUse, true),
+            owner_edge("edge:2", "owner:h3", "owner:a", DepKind::EagerUse, true),
         ],
     );
 
