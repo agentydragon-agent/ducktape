@@ -26,7 +26,7 @@ from agentplane.app.agent_runtime.models import SandboxIngestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import ModelCatalog, ModelOption
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -36,10 +36,10 @@ from agentplane.app.main import AppServer, Settings, SpaFiles, serve_then_close
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.shutdown import drain_of
-from agentplane.app.testing.app_factory import create_app
 from agentplane.app.testing.native_runners import Runners
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import pod, sandbox
 from util.net import pick_free_port
@@ -215,6 +215,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
         live_index,
         action_policy,
         reviewer=reviewer,
+        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

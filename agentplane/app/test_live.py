@@ -25,7 +25,7 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import ModelCatalog, ModelOption
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import TEST_REASONING_EFFORTS, Replica, stored_login
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -51,11 +51,11 @@ from agentplane.app.operator_sessions import (
     SessionRow,
 )
 from agentplane.app.shutdown import Drain
-from agentplane.app.testing.app_factory import create_app
 from agentplane.app.testing.native_runners import Runners
 from agentplane.runner import protocol_pb2
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory
+from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -324,6 +324,7 @@ def app(
         live_index,
         action_policy,
         reviewer=reviewer,
+        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

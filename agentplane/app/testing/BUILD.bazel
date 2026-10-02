@@ -15,7 +15,6 @@ py_library(
     name = "replication_process",
     srcs = ["replication_process.py"],
     deps = [
-        ":app_factory",
         ":native_runners",
         ":replication_source",
         "//agentplane/app:action_policy",
@@ -37,6 +36,7 @@ py_library(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/sandbox_service:egress",
         "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:provisioning",
         "//agentplane/sandbox_service:session_config",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "@pypi//asyncpg",
@@ -89,16 +89,6 @@ py_library(
         "@pypi//cryptography",
         "@pypi//h2",
         "@pypi//httpx",
-    ],
-)
-
-py_library(
-    name = "app_factory",
-    srcs = ["app_factory.py"],
-    deps = [
-        "//agentplane/app:api",
-        "//agentplane/sandbox_service:provisioning",
-        "@pypi//fastapi",
     ],
 )
 

@@ -60,34 +60,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_command_relay_native",
-    size = "large",
-    srcs = ["test_command_relay_native.py"],
-    data = [
-        "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
-        "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
-    ],
-    target_compatible_with = [
-        # keep: the pinned native harnesses are Linux/x86_64 only.
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    deps = [
-        ":command_relay",
-        ":conftest",
-        "//:conftest",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/runner:client",
-        "//agentplane/runner:protocol_pb2",
-        "//agentplane/runner/testing:events",
-        "//agentplane/runner/testing:scripted_model",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "inventory",
     srcs = ["inventory.py"],
@@ -154,32 +126,6 @@ py_library(
 )
 
 py_library(
-    name = "api",
-    srcs = ["api.py"],
-    deps = [
-        ":action_policy",
-        ":command_relay",
-        ":destinations",
-        ":egress",
-        ":inventory",
-        ":kubernetes_grants",
-        ":provisioning",
-        ":provisioning_api",
-        ":session_lifecycle",
-        "//agentplane:subjects",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/runner:client",
-        "//agentplane/workload_auth:http",
-        "@pypi//fastapi",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-        "@pypi//starlette",
-    ],
-)
-
-py_library(
     name = "main",
     srcs = ["main.py"],
     visibility = [
@@ -228,47 +174,6 @@ py_test(
         "//agentplane/workload_auth:principal",
         "//util:agent_sandbox",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_api_native",
-    size = "large",
-    srcs = ["test_api_native.py"],
-    data = [
-        "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
-        "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
-    ],
-    target_compatible_with = [
-        # keep: the pinned native harnesses are Linux/x86_64 only.
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    deps = [
-        ":api",
-        ":conftest",
-        ":destinations",
-        ":inventory",
-        ":session_config",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/runner:client",
-        "//agentplane/runner:conftest",
-        "//agentplane/runner:protocol_pb2",
-        "//agentplane/runner/testing:events",
-        "//agentplane/runner/testing:scripted_model",
-        "//agentplane/sandbox_service/testing:kubernetes",
-        "//agentplane/testing:fake_apiserver",
-        "//agentplane/workload_auth:http",
-        "//agentplane/workload_auth:principal",
-        "//util:agent_sandbox",
-        "@pypi//httpx",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -372,21 +277,6 @@ py_library(
         ":kubernetes_bindings",
         ":kubernetes_grants",
         ":session_config",
-    ],
-)
-
-py_library(
-    name = "provisioning_api",
-    srcs = ["provisioning_api.py"],
-    deps = [
-        ":destinations",
-        ":inventory",
-        ":kubernetes_grants",
-        ":provisioning",
-        "//agentplane:subjects",
-        "//agentplane/workload_auth:http",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
     ],
 )
 
@@ -587,6 +477,10 @@ py_test(
         ":conftest",
         ":destinations",
         ":grpc_api",
+        ":inventory",
+        ":protocol_pb2",
+        ":session_config",
+        ":wire",
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/protocol:command_pb2",
@@ -600,6 +494,8 @@ py_test(
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",

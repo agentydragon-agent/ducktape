@@ -1,9 +1,13 @@
 """Production gRPC client → workload auth/discovery → both real harnesses, without the app."""
 
 import asyncio
+import shlex
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 
+import grpc
 import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
@@ -15,43 +19,58 @@ from agentplane.runner.client import RunnerError, StreamClosedError
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service import protocol_pb2, wire
+from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver, SandboxDestination
 from agentplane.sandbox_service.grpc_api import Resources
+from agentplane.sandbox_service.inventory import SANDBOX_BINDING_ANNOTATION
+from agentplane.sandbox_service.session_config import Harness, SandboxBinding, ThreadDefaults
 from agentplane.sandbox_service.testing.grpc_service import service
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//grpcio
 
+TOKEN = "test-native-grpc-token"
+AUDIENCE = "test-native-grpc"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
 DESTINATION = SandboxDestination(owner=OWNER, sandbox=SANDBOX, sandbox_uid=SANDBOX_UID)
+SESSION = "grpc-session"
 
 
 @pytest.fixture
-async def remote(cluster: Cluster, runner: RunnerHandle, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
-    token = "test-native-grpc-token"
-    audience = "test-native-grpc"
-    cluster.fake.tokens[token] = TokenVerdict(
+def resources(cluster: Cluster, runner: RunnerHandle) -> Resources:
+    cluster.fake.tokens[TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-native-caller",
         pod_uid="test-native-caller-uid",
-        audiences=(audience,),
+        audiences=(AUDIENCE,),
     )
-    token_file = tmp_path / "service-token"
-    token_file.write_text(token)
-    resources = Resources(
+    return Resources(
         principals=WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(cluster.api),
-            audience=audience,
+            audience=AUDIENCE,
             allowed_service_account_namespaces={SANDBOX_NAMESPACE},
         ),
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
         manager_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
     )
+
+
+@pytest.fixture
+def token_file(tmp_path: Path) -> Path:
+    path = tmp_path / "service-token"
+    path.write_text(TOKEN)
+    return path
+
+
+@asynccontextmanager
+async def connected(resources: Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
     async with service(resources) as target:
         client = SandboxServiceClient(target, namespace=SANDBOX_NAMESPACE, token_file=token_file)
         try:
@@ -60,22 +79,39 @@ async def remote(cluster: Cluster, runner: RunnerHandle, tmp_path: Path) -> Asyn
             await client.close()
 
 
-async def test_open_admit_replay_follow_stop_and_resume(
-    remote: SandboxServiceClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
-) -> None:
-    runner = remote.runner(DESTINATION)
-    opened = await runner.open("grpc-session", MessageToDict(spec))
-    assert opened.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-    assert "Test backend-owned guidance." in opened.spec.instructions
-    assert str(SANDBOX_UID) in opened.spec.instructions
-    assert (await runner.list_sessions())[0].spec == opened.spec
-    command = command_pb2.Command(command_id="grpc-notice", submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
-    receipt = await runner.command("grpc-session", command, after_cursor=0)
+@pytest.fixture
+async def remote(resources: Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
+    async with connected(resources, token_file) as client:
+        yield client
+
+
+def set_binding(cluster: Cluster, binding: SandboxBinding) -> None:
+    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})[
+        SANDBOX_BINDING_ANNOTATION
+    ] = binding.model_dump_json()
+
+
+async def inspect(remote: SandboxServiceClient) -> runner_pb2.Attached:
+    return await remote.unary(
+        remote.stub.InspectSession, protocol_pb2.SessionRequest(destination=wire.session_proto(DESTINATION, SESSION))
+    )
+
+
+async def complete_turn(runner: Runner, model: ScriptedModel, command_id: str) -> list[event_log_pb2.EventEntry]:
+    command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
+    receipt = await runner.command(SESSION, command, after_cursor=0)
     assert receipt.event.command_admitted.command == command
+    assert receipt.origin.source_id
+    assert receipt.origin.sequence > 0
     # Neither admission nor exact receipt replay waits for model completion.
-    assert await runner.command("grpc-session", command, after_cursor=0) == receipt
-    await model.reply(await model.request(), Text("GRPC_OK"))
-    attachment = await runner.attach("grpc-session")
+    assert await runner.command(SESSION, command, after_cursor=0) == receipt
+    request = await model.request()
+    assert "Test backend-owned guidance." in request.system_text
+    assert "Test task guidance." in request.system_text
+    assert "New platform guidance." not in request.system_text
+    assert str(SANDBOX_UID) in request.system_text
+    await model.reply(request, Text("GRPC_OK"))
+    attachment = await runner.attach(SESSION, after_cursor=receipt.cursor - 1)
     entries: list[event_log_pb2.EventEntry] = []
     try:
         async with asyncio.timeout(20):
@@ -91,41 +127,138 @@ async def test_open_admit_replay_follow_stop_and_resume(
         command.command_id in e.event.harness_user_message_confirmed.origin_command_ids
         for e in events.of_kind(entries, "harness_user_message_confirmed")
     )
-    stop = command_pb2.Command(command_id="grpc-stop", stop_runner_session=command_pb2.StopRunnerSession())
-    await runner.command("grpc-session", stop, after_cursor=entries[-1].cursor)
-    tail = await runner.attach("grpc-session", after_cursor=entries[-1].cursor)
-    try:
-        async with asyncio.timeout(20):
-            while True:
-                try:
-                    entry = await tail.next_entry()
-                except StreamClosedError:
-                    break
-                assert entry.cursor > entries[-1].cursor
-    finally:
-        tail.cancel()
-    with pytest.raises(RunnerError):
-        await runner.command(
-            "grpc-session",
-            command_pb2.Command(command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake")),
-            after_cursor=0,
-        )
-    assert (await runner.list_sessions())[0].harness_state == runner_pb2.HARNESS_STATE_STOPPED
-    resumed = await runner.resume("grpc-session")
-    assert resumed.spec == opened.spec
-    assert resumed.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+    return entries
 
 
-async def test_observe_and_command_do_not_create_unknown_session(remote: SandboxServiceClient) -> None:
+async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
+    resources: Resources,
+    token_file: Path,
+    model: ScriptedModel,
+    spec: runner_pb2.SessionSpec,
+    cluster: Cluster,
+    workspace: Path,
+) -> None:
+    bootstrap_marker = workspace / "bootstrap-runs"
+    setup_marker = workspace / "setup-runs"
+    set_binding(cluster, SandboxBinding(
+        bootstrap=f"printf B >> {shlex.quote(str(bootstrap_marker))}",
+        thread_defaults=ThreadDefaults(
+            harness=Harness(runner_pb2.Harness.Name(spec.harness)),
+            model=spec.model,
+            reasoning_effort=spec.reasoning_effort,
+            cwd=spec.cwd,
+            instructions="Test task guidance.",
+            setup_script=f"printf S >> {shlex.quote(str(setup_marker))}",
+        ),
+    ))
+    sandbox_request = protocol_pb2.SandboxRequest(destination=wire.destination_proto(DESTINATION))
+    async with connected(resources, token_file) as remote:
+        runner = remote.runner(DESTINATION)
+        for _ in range(2):
+            initialized = await remote.unary(remote.stub.InitializeSandbox, sandbox_request)
+            assert initialized.exit_code == 0
+        opened = await runner.open(SESSION, {})
+        async with asyncio.timeout(15):
+            while opened.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
+                assert opened.setup_state not in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED)
+                await asyncio.sleep(0.05)
+                opened = await inspect(remote)
+        assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
+        assert SESSION in opened.spec.instructions
+        assert (await runner.open(SESSION, {})).spec == opened.spec
+        assert (await runner.list_sessions())[0].spec == opened.spec
+        with pytest.raises(RunnerError):
+            await runner.open(SESSION, {"instructions": "Different task"})
+        assert bootstrap_marker.read_text() == "B"
+        assert setup_marker.read_text() == "S"
+        entries = await complete_turn(runner, model, "grpc-notice")
+        stop = command_pb2.Command(command_id="grpc-stop", stop_runner_session=command_pb2.StopRunnerSession())
+        await runner.command(SESSION, stop, after_cursor=entries[-1].cursor)
+        tail = await runner.attach(SESSION, after_cursor=entries[-1].cursor)
+        try:
+            async with asyncio.timeout(20):
+                while True:
+                    try:
+                        entry = await tail.next_entry()
+                    except StreamClosedError:
+                        break
+                    assert entry.cursor > entries[-1].cursor
+        finally:
+            tail.cancel()
+        with pytest.raises(RunnerError):
+            await runner.command(
+                SESSION,
+                command_pb2.Command(command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake")),
+                after_cursor=0,
+            )
+        assert (await inspect(remote)).harness_state == runner_pb2.HARNESS_STATE_STOPPED
+        # Observe the stopped journal too: rejected delivery added no admission and did not wake it.
+        stopped = await runner.attach(SESSION)
+        try:
+            async with asyncio.timeout(20):
+                while True:
+                    try:
+                        entry = await stopped.next_entry()
+                    except StreamClosedError:
+                        break
+                    assert entry.event.command_admitted.command.command_id != "no-wake"
+        finally:
+            stopped.cancel()
+    # Stop the service, change its configuration and stored defaults, and recover solely from the runner.
+    set_binding(cluster, SandboxBinding(bootstrap="exit 42", thread_defaults=ThreadDefaults(model="changed")))
+    async with connected(replace(resources, platform_instructions="New platform guidance."), token_file) as restarted:
+        runner = restarted.runner(DESTINATION)
+        resumed = await runner.resume(SESSION)
+        assert resumed.spec == opened.spec
+        assert resumed.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+        await complete_turn(runner, model, "grpc-resumed")
+        assert (await runner.list_sessions())[0].spec == opened.spec
+        with pytest.raises(RunnerError):
+            await restarted.unary(restarted.stub.InitializeSandbox, sandbox_request)
+    assert bootstrap_marker.read_text() == "B"
+    assert setup_marker.read_text() == "S"
+
+
+async def test_observe_command_and_resume_do_not_create_unknown_session(remote: SandboxServiceClient) -> None:
     runner = remote.runner(DESTINATION)
     with pytest.raises(RunnerError):
-        await runner.attach("unknown")
+        await inspect(remote)
+    with pytest.raises(RunnerError):
+        await runner.attach(SESSION)
     with pytest.raises(RunnerError):
         await runner.command(
-            "unknown",
+            SESSION,
             command_pb2.Command(command_id="unknown-notice", submit_input=command_pb2.SubmitInput(text="no creation")),
             after_cursor=0,
         )
+    with pytest.raises(RunnerError):
+        await runner.resume(SESSION)
+    assert not await runner.list_sessions()
+
+
+async def test_failed_setup_cannot_be_resumed(remote: SandboxServiceClient, spec: runner_pb2.SessionSpec) -> None:
+    runner = remote.runner(DESTINATION)
+    opened = await runner.open(SESSION, MessageToDict(spec), setup_script="exit 42")
+    async with asyncio.timeout(15):
+        while opened.setup_state == runner_pb2.SETUP_STATE_RUNNING:
+            await asyncio.sleep(0.05)
+            opened = await inspect(remote)
+    assert opened.setup_state == runner_pb2.SETUP_STATE_FAILED
+    with pytest.raises(RunnerError):
+        await runner.resume(SESSION)
+
+
+async def test_invalid_launch_and_failed_bootstrap_never_create(
+    remote: SandboxServiceClient, cluster: Cluster, spec: runner_pb2.SessionSpec
+) -> None:
+    runner = remote.runner(DESTINATION)
+    for invalid in ({}, {"harness": "HARNESS_CODEX", "model": "m"}):
+        with pytest.raises(ServiceError) as rejected:
+            await runner.open(SESSION, invalid)
+        assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    set_binding(cluster, SandboxBinding(bootstrap="exit 42"))
+    with pytest.raises(RunnerError):
+        await runner.open(SESSION, MessageToDict(spec))
     assert not await runner.list_sessions()
 
 

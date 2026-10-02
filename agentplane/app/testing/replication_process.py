@@ -36,7 +36,7 @@ from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import ModelCatalog, ModelOption
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import TEST_REASONING_EFFORTS
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -45,12 +45,12 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.app_factory import create_app
 from agentplane.app.testing.native_runners import Runners
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.protocol import event_log_pb2
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory
+from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -287,8 +287,11 @@ async def _serve(
         httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
         httpx.AsyncClient(base_url=electric_url or "http://test-unused-electric.invalid", timeout=65) as electric_http,
     ):
+        inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core)
+        egress = EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=[])
+        action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
         app = create_app(
-            SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
+            inventory,
             bridge,
             store,
             ModelCatalog(
@@ -306,10 +309,10 @@ async def _serve(
                 ],
                 harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
             ),
-            EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=[]),
+            egress,
             DecisionsClient(decisions_http),
             index,
-            ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
+            action_policy,
             electric=(
                 ElectricProxy(
                     electric_http,
@@ -320,6 +323,7 @@ async def _serve(
                 if electric_url is not None
                 else None
             ),
+            provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,

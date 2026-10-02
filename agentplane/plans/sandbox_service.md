@@ -84,8 +84,8 @@ entries and cursors. Bound each follow lease, reauthenticate on reconnect, and d
 expiry, backend failure, and native stream closure. Do not enable automatic mutation retries merely
 because a generated client supports them.
 
-Production entrypoints and app callers use gRPC. The legacy HTTP adapter remains isolated test
-coverage, not a second deployable service API.
+Production entrypoints, app callers, and service acceptance tests use the same gRPC API.
+HTTP is limited to service health probes; there is no parallel HTTP service implementation.
 Transport acceptance must cover authenticated gRPC calls, cancellation/resource cleanup, replay
 across lease expiry, native closure versus transport failure, and uncertain command admission,
 including a real remote-client app ingestion test rather than only in-process/native test doubles.

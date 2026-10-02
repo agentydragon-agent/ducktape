@@ -35,7 +35,7 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerAdmissionTimeoutErr
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadOperationalState
-from agentplane.app.api import ModelCatalog, ModelOption
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.changes import Changes
 from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database import connect
@@ -44,7 +44,6 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.app_factory import create_app
 from agentplane.app.testing.native_runners import Runners
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
@@ -54,6 +53,7 @@ from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import pod, sandbox
 from util.net import bind_free_port
@@ -192,6 +192,7 @@ async def app_url(
         live_index,
         action_policy,
         reviewer=reviewer,
+        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

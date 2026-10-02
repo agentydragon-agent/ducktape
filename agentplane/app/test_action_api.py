@@ -59,7 +59,7 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import ModelCatalog, ModelOption
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
@@ -69,10 +69,10 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
-from agentplane.app.testing.app_factory import create_app
 from agentplane.sandbox_service.action_policy import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, sandbox
 from agentplane.subjects import ServiceAccountRef
@@ -336,6 +336,7 @@ async def review(
             oidc,
             reviewer,
             operator_actions=operator_client,
+            provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,
@@ -370,6 +371,7 @@ async def review(
             operator_actions=None
             if operator_connection == "disabled"
             else FederatedOperatorActions(federation, oidc, downstream_http),
+            provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
             event_logs=EventLogStore(replica_engine),
             content=ContentStore(replica_engine),
             # Never started: nothing served here listens; the replica shares only the operator sessions.

@@ -11,18 +11,18 @@ from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import ModelCatalog, ModelOption
+from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.app_factory import create_app
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_config import Harness
 
 # gazelle:include_dep @pypi//protobuf
@@ -90,6 +90,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         live_index,
         action_policy,
         reviewer=reviewer,
+        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

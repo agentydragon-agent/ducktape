@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -108,14 +108,14 @@ async def peer() -> AsyncIterator[Peer]:
 
 
 @pytest.fixture
-async def remote(cluster: Cluster, peer: Peer, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
+def resources(cluster: Cluster, peer: Peer) -> Resources:
     cluster.fake.tokens[TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-caller",
         pod_uid="test-caller-uid",
         audiences=(AUDIENCE,),
     )
-    resources = Resources(
+    return Resources(
         principals=WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(cluster.api),
             audience=AUDIENCE,
@@ -125,6 +125,10 @@ async def remote(cluster: Cluster, peer: Peer, tmp_path: Path) -> AsyncIterator[
         follow_lease_s=0.5,
         admission_timeout_s=1,
     )
+
+
+@pytest.fixture
+async def remote(resources: Resources, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)
     async with service(resources) as target:
@@ -161,7 +165,9 @@ async def test_admission_is_exact_native_evidence(remote: SandboxServiceClient, 
         await connection.closed.wait()
 
 
-async def test_follow_reconnect_rechecks_token_and_preserves_cursor(remote: SandboxServiceClient, peer: Peer) -> None:
+async def test_follow_reconnect_rechecks_token_and_preserves_cursor(
+    remote: SandboxServiceClient, peer: Peer, cluster: Cluster
+) -> None:
     async with asyncio.timeout(8):
         runner = remote.runner(DESTINATION)
         attachment = await runner.attach("session", after_cursor=11)
@@ -184,6 +190,12 @@ async def test_follow_reconnect_rechecks_token_and_preserves_cursor(remote: Sand
         with pytest.raises(ServiceError) as rejected:
             await runner.attach("session", after_cursor=12)
         assert rejected.value.code == grpc.StatusCode.UNAUTHENTICATED
+        assert peer.attachments.empty()
+        remote.token_file.write_text(TOKEN)
+        cluster.fake.tokens.clear()
+        with pytest.raises(ServiceError) as revoked:
+            await runner.attach("session", after_cursor=12)
+        assert revoked.value.code == grpc.StatusCode.UNAUTHENTICATED
         assert peer.attachments.empty()
 
 
@@ -276,13 +288,64 @@ async def test_destination_authority_and_incarnation(
     assert peer.attachments.empty()
 
 
-async def test_management_requires_explicit_authority(remote: SandboxServiceClient, peer: Peer) -> None:
+async def test_management_requires_explicit_authority(
+    remote: SandboxServiceClient, peer: Peer, cluster: Cluster
+) -> None:
+    destination = wire.session_proto(DESTINATION, "session")
+    for call, request in (
+        (remote.stub.OpenSession, protocol_pb2.OpenSessionRequest(destination=destination)),
+        (remote.stub.ResumeSession, protocol_pb2.SessionRequest(destination=destination)),
+        (remote.stub.InitializeSandbox, protocol_pb2.SandboxRequest(destination=destination.sandbox)),
+        (remote.stub.ListSandboxes, Empty()),
+    ):
+        with pytest.raises(ServiceError) as rejected:
+            await remote.unary(call, request)
+        assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
+    assert cluster.fake.pod_reads == 0
+    assert peer.attachments.empty()
+
+
+@pytest.mark.parametrize("manager", [False, True])
+async def test_cross_owner_management_requires_both_grants(
+    resources: Resources, remote: SandboxServiceClient, cluster: Cluster, peer: Peer, manager: bool
+) -> None:
+    account = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-control-service")
+    cluster.fake.tokens[TOKEN] = TokenVerdict(
+        username=f"system:serviceaccount:{account.namespace}:{account.name}",
+        pod_name="test-control-pod",
+        pod_uid="test-control-pod-uid",
+        audiences=(AUDIENCE,),
+    )
+    configured = replace(
+        resources,
+        destinations=replace(resources.destinations, trusted_accounts=frozenset() if manager else frozenset({account})),
+        manager_accounts=frozenset({account}) if manager else frozenset(),
+        platform_instructions="Test guidance",
+    )
+    async with service(configured) as target:
+        caller = SandboxServiceClient(target, namespace=SANDBOX_NAMESPACE, token_file=remote.token_file)
+        try:
+            with pytest.raises(ServiceError) as rejected:
+                await caller.runner(DESTINATION).open("session", {})
+            assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
+        finally:
+            await caller.close()
+    assert cluster.fake.pod_reads == 0
+    assert peer.attachments.empty()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [command_pb2.Command(), command_pb2.Command(command_id="missing-operation"),
+     command_pb2.Command(submit_input=command_pb2.SubmitInput(text="missing-id"))],
+)
+async def test_invalid_command_is_not_submitted(
+    remote: SandboxServiceClient, peer: Peer, cluster: Cluster, command: command_pb2.Command
+) -> None:
     with pytest.raises(ServiceError) as rejected:
-        await remote.runner(DESTINATION).open("session", {})
-    assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
-    with pytest.raises(ServiceError) as rejected:
-        await remote.unary(remote.stub.ListSandboxes, Empty())
-    assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
+        await remote.runner(DESTINATION).command("session", command, after_cursor=0)
+    assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert cluster.fake.pod_reads == 0
     assert peer.attachments.empty()
 
 

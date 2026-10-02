@@ -59,7 +59,8 @@ The deployment source adds a separately built service image, Deployment/Service/
 TokenReview and lifecycle/grant RBAC, and network isolation. The app has read-only resource RBAC;
 only Sandbox Service can reach the runner control port. Cross-namespace delegation keeps its
 existing Role/RoleBinding identities and changes the grantee. Runner template/volume identities
-and archive schema are unchanged. The legacy HTTP service adapter remains test-only.
+and archive schema are unchanged. Service-native acceptance tests exercise authenticated gRPC,
+including launch defaults, bootstrap/setup, delivery evidence, and recovery after service restart.
 
 **Source changes are not evidence of a live cutover.** Image publication/pinning, generated-manifest
 validation, and the staging preservation/rollback gate must complete before rollout. Do not let

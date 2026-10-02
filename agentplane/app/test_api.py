@@ -26,7 +26,7 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
-from agentplane.app.api import ModelCatalog, ModelOption, upstream_http_error
+from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -35,7 +35,6 @@ from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, r
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
-from agentplane.app.testing.app_factory import create_app
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.native_runners import Runners
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -49,6 +48,7 @@ from agentplane.sandbox_service.inventory import (
 )
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant, RoleBindingGrant, RoleRef
+from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -197,6 +197,7 @@ def client(
         reviewer=reviewer,
         presets=TEST_PRESETS,
         electric=electric,
+        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -730,6 +731,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
             live_index,
             action_policy,
             reviewer=reviewer,
+            provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,
@@ -783,6 +785,7 @@ async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
             live_index,
             action_policy,
             reviewer=reviewer,
+            provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,
@@ -1008,6 +1011,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         live_index,
         action_policy,
         reviewer=reviewer,
+        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -1085,6 +1089,7 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
         live_index,
         action_policy,
         reviewer=reviewer,
+        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -1142,6 +1147,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
         live_index,
         action_policy,
         reviewer=reviewer,
+        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -1202,6 +1208,7 @@ async def test_a_running_thread_cannot_be_archived(
         live_index,
         action_policy,
         reviewer=reviewer,
+        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -1255,6 +1262,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
         live_index,
         action_policy,
         reviewer=reviewer,
+        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
