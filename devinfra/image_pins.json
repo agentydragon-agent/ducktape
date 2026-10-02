@@ -5,11 +5,11 @@
   },
   "buildbuddy_remote_runner": {
     "image": "ghcr.io/agentydragon/buildbuddy-remote-runner",
-    "digest": "sha256:d11ab240c19cfb5fa5394abc22ea228e6223b217b4fe8a49a70efd91affd2afe"
+    "digest": "sha256:e2dbe8851221704a4b41de6855f21676b9d6082a6f1dca76867e30538c3db468"
   },
   "freecad_test": {
     "image": "ghcr.io/agentydragon/freecad-test",
-    "digest": "sha256:a0811901e1af6f4c1f1e0a6d8624a17b93d429309a1a82b5d0abb6654c65c9ad",
+    "digest": "sha256:0f31310d518ba1f9268abdf0a8ea977ce9d38d278d948dc0a94631fa6cc058d0",
     "platforms": ["linux/amd64"]
   },
   "excalidraw": {
