@@ -1742,7 +1742,11 @@ fn chunk_entry_path(chunk: &ChunkArtifact) -> Option<&str> {
     select_entry_file(
         &chunk.js.entry_file,
         &chunk.analysis.entry_file,
-        chunk.js.files.iter().map(|file| (file.path.as_str(), file.metadata.role)),
+        chunk
+            .js
+            .files
+            .iter()
+            .map(|file| (file.path.as_str(), file.metadata.role)),
     )
 }
 
@@ -1753,17 +1757,20 @@ fn select_entry_file<'a>(
     analyzed: &str,
     files: impl IntoIterator<Item = (&'a str, FileRole)>,
 ) -> Option<&'a str> {
-    files.into_iter().min_by_key(|(path, role)| {
-        if !recorded.is_empty() && *path == recorded {
-            0
-        } else if *path == analyzed {
-            1
-        } else if matches!(role, FileRole::Entry | FileRole::Runtime) {
-            2
-        } else {
-            3
-        }
-    }).map(|(path, _)| path)
+    files
+        .into_iter()
+        .min_by_key(|(path, role)| {
+            if !recorded.is_empty() && *path == recorded {
+                0
+            } else if *path == analyzed {
+                1
+            } else if matches!(role, FileRole::Entry | FileRole::Runtime) {
+                2
+            } else {
+                3
+            }
+        })
+        .map(|(path, _)| path)
 }
 
 pub fn relative_module_specifier(from_dir: &Path, target_path: &Path) -> String {
@@ -1934,10 +1941,19 @@ mod tests {
             ("analysis.js", FileRole::Entry),
             ("recorded.js", FileRole::Entry),
         ];
-        assert_eq!(select_entry_file("recorded.js", "analysis.js", files), Some("recorded.js"));
+        assert_eq!(
+            select_entry_file("recorded.js", "analysis.js", files),
+            Some("recorded.js")
+        );
         for recorded in ["", "missing.js"] {
-            assert_eq!(select_entry_file(recorded, "analysis.js", files), Some("analysis.js"));
-            assert_eq!(select_entry_file(recorded, "missing.js", files), Some("first.js"));
+            assert_eq!(
+                select_entry_file(recorded, "analysis.js", files),
+                Some("analysis.js")
+            );
+            assert_eq!(
+                select_entry_file(recorded, "missing.js", files),
+                Some("first.js")
+            );
         }
         assert_eq!(select_entry_file("missing", "missing", []), None);
     }
