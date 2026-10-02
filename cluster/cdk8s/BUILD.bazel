@@ -1616,6 +1616,7 @@ py_library(
     ],
     deps = [
         ":agent_machine_access",
+        ":agent_namespace_rbac",
         ":agent_rbac_base",
         ":agent_sandbox",
         ":agent_shared_rbac",
@@ -1867,10 +1868,7 @@ py_binary(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main_module = "cluster.cdk8s.generate_manifests",
     visibility = ["//visibility:public"],
-    deps = [
-        ":agent_namespace_rbac",
-        ":generate_manifests_lib",
-    ],
+    deps = [":generate_manifests_lib"],
 )
 
 py_library(
