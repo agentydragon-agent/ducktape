@@ -201,8 +201,14 @@ fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modu
     let fixture = GraphFixture::new(
         "const a = 1; const b = 2; const c = 3; const d = 4; console.log(a + b + c + d);",
         &[
-            ("home.yaml", "members: [{selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}, {selector: {binding: {name: c}}}, {selector: {binding: {name: d}}}]"),
-            ("empty.yaml", "# untouched default-only module\nmembers: []\nannotations: {}\n"),
+            (
+                "home.yaml",
+                "members: [{selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}, {selector: {binding: {name: c}}}, {selector: {binding: {name: d}}}]",
+            ),
+            (
+                "empty.yaml",
+                "# untouched default-only module\nmembers: []\nannotations: {}\n",
+            ),
         ],
     );
     let empty = fixture.modules.join("empty.yaml");

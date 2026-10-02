@@ -22,7 +22,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 
-use spec::{BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding, SourceMatchBindingDetail, is_residual_module_path};
+use spec::{
+    BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding,
+    SourceMatchBindingDetail, is_residual_module_path,
+};
 use spec_modules::{collect_module_files, module_path_from_file};
 use yaml_edit::{apply_yaml_edit, read_yaml};
 
@@ -140,14 +143,20 @@ pub(crate) fn apply_module_edit(file: &Path, doc: &LogicalModule, dry_run: bool)
     apply_yaml_edit(file, &value, dry_run)
 }
 
-fn binding_matches_in_doc(file: &Path, module_path: &str, doc: &LogicalModule) -> Vec<BindingMatch> {
+fn binding_matches_in_doc(
+    file: &Path,
+    module_path: &str,
+    doc: &LogicalModule,
+) -> Vec<BindingMatch> {
     let mut out = Vec::new();
-    let mut add = |location, name| out.push(BindingMatch {
-        file: file.to_path_buf(),
-        module_path: module_path.to_string(),
-        location,
-        name,
-    });
+    let mut add = |location, name| {
+        out.push(BindingMatch {
+            file: file.to_path_buf(),
+            module_path: module_path.to_string(),
+            location,
+            name,
+        })
+    };
     for (member_index, member) in doc.members.iter().enumerate() {
         let minified = member_minified_name(member);
         if minified.is_some() || member.name.is_some() {
@@ -161,7 +170,10 @@ fn binding_matches_in_doc(file: &Path, module_path: &str, doc: &LogicalModule) -
         for (binding_index, binding) in claim.bindings.iter().enumerate() {
             if !binding.local().is_empty() {
                 add(
-                    BindingLocation::SourceMatch { claim_index, binding_index },
+                    BindingLocation::SourceMatch {
+                        claim_index,
+                        binding_index,
+                    },
                     BindingName::new(binding.local().to_string(), source_match_readable(binding)),
                 );
             }
@@ -555,10 +567,10 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
         .collect())
 }
 
-/// Apply a sequence of moves atomically: read every module's YAML
-/// once, mutate in-memory, validate (collisions + realizability +
-/// atom-split), then write back. Source modules drained of members
-/// are deleted unless they carry a module-level `comment:`.
+/// Plan a batch from one module snapshot, validate collisions + realizability +
+/// atom-split, then write destinations before deleting drained sources. Each
+/// file replacement is atomic; the multi-file write is not a transaction.
+/// Remaining semantic content prevents source deletion (see below).
 ///
 /// Contract:
 ///   * Moves are deduplicated on **resolved member identity** (the
@@ -606,8 +618,7 @@ pub fn run_bindings_assign(
     // destination. Identity is the resolved (source module, member
     // index) slot: `<sym>` accepts both the minified and readable
     // spelling, so a raw-string dedupe would let both spellings of
-    // one member produce two plan entries for one slot — the second
-    // extraction would then splice a null sentinel into the spec.
+    // one member produce two plan entries for a single extraction slot.
     let mut by_identity: BTreeMap<(String, usize), PlannedMove> = BTreeMap::new();
     for m in moves {
         let hit = resolve_in_docs(modules_root, &docs, &m.sym)?;
@@ -666,14 +677,23 @@ pub fn run_bindings_assign(
     let plan: Vec<PlannedMove> = by_identity.into_values().collect();
     // Step 3: extract each source module's selected members in one pass,
     // preserving original indices until every identity has been resolved.
-    let mut extracted = take_members(&mut docs, plan.iter().map(|p| (p.source_module.clone(), p.source_index)));
+    let mut extracted = take_members(
+        &mut docs,
+        plan.iter()
+            .map(|p| (p.source_module.clone(), p.source_index)),
+    );
     let mut pulled: BTreeMap<String, Member> = BTreeMap::new();
-    let mut pulled_annotations: BTreeMap<String, (String, Option<BindingAnnotation>)> = BTreeMap::new();
+    let mut pulled_annotations: BTreeMap<String, (String, Option<BindingAnnotation>)> =
+        BTreeMap::new();
     for p in &plan {
-        let mut member = extracted.remove(&(p.source_module.clone(), p.source_index)).expect("resolved member is loaded");
+        let mut member = extracted
+            .remove(&(p.source_module.clone(), p.source_index))
+            .expect("resolved member is loaded");
         let old_effective = member_effective_name(&member)
             .with_context(|| format!("member {:?} has no effective binding name", p.req.sym))?;
-        let (_, doc) = docs.get_mut(&p.source_module).expect("resolved module is loaded");
+        let (_, doc) = docs
+            .get_mut(&p.source_module)
+            .expect("resolved module is loaded");
         let annotation = doc.annotations.remove(&old_effective);
         if let Some(new_readable) = &p.req.readable {
             member.name = Some(new_readable.clone());
@@ -720,8 +740,7 @@ pub fn run_bindings_assign(
                 .iter()
                 .filter(|(other_sym, _)| *other_sym != &p.req.sym)
                 .filter(|(_, member)| {
-                    member_effective_name(member).as_deref()
-                        == Some(new_readable)
+                    member_effective_name(member).as_deref() == Some(new_readable)
                 })
                 .count();
             if !hits.is_empty() || pulled_hits > 0 {
@@ -799,11 +818,21 @@ fn canonical_module_path(raw: &str) -> Result<String> {
 /// and `bindings assign` share this predicate so both treat an
 /// unrenamed member's minified name as a claimed identity.
 fn member_effective_name(member: &Member) -> Option<String> {
-    member.name.clone().filter(|name| !name.is_empty()).or_else(|| member_minified_name(member))
+    member
+        .name
+        .clone()
+        .filter(|name| !name.is_empty())
+        .or_else(|| member_minified_name(member))
 }
 
-fn insert_annotation(doc: &mut LogicalModule, export_name: &str, annotation: Option<BindingAnnotation>) -> Result<()> {
-    let Some(annotation) = annotation else { return Ok(()); };
+fn insert_annotation(
+    doc: &mut LogicalModule,
+    export_name: &str,
+    annotation: Option<BindingAnnotation>,
+) -> Result<()> {
+    let Some(annotation) = annotation else {
+        return Ok(());
+    };
     match doc.annotations.get(export_name) {
         Some(existing) if existing == &annotation => Ok(()),
         Some(_) => bail!("annotations.{export_name} already exists with different metadata"),
@@ -815,7 +844,12 @@ fn insert_annotation(doc: &mut LogicalModule, export_name: &str, annotation: Opt
 }
 
 fn member_minified_name(member: &Member) -> Option<String> {
-    member.selector.binding.as_ref().map(|binding| binding.name.clone()).filter(|name| !name.is_empty())
+    member
+        .selector
+        .binding
+        .as_ref()
+        .map(|binding| binding.name.clone())
+        .filter(|name| !name.is_empty())
 }
 
 /// Move-source modules drained to zero members that are safe to
@@ -825,10 +859,7 @@ fn member_minified_name(member: &Member) -> Option<String> {
 /// carries a module-level `comment:`, `source_matches:`, `annotations:`,
 /// or `anonymous_statements:` (all of which are spec content the sweep must
 /// not destroy).
-fn drained_source_modules(
-    docs: &ModuleDocs,
-    move_sources: &BTreeSet<String>,
-) -> BTreeSet<String> {
+fn drained_source_modules(docs: &ModuleDocs, move_sources: &BTreeSet<String>) -> BTreeSet<String> {
     move_sources
         .iter()
         .filter(|mp| {
@@ -988,7 +1019,9 @@ pub fn run_bindings_unassign(
     }
     // Step 3: remove members and their annotations from the snapshot.
     for ((source_module, _), member) in take_members(&mut docs, plan.keys().cloned()) {
-        let (_, doc) = docs.get_mut(&source_module).expect("resolved module is loaded");
+        let (_, doc) = docs
+            .get_mut(&source_module)
+            .expect("resolved module is loaded");
         if let Some(export_name) = member_effective_name(&member) {
             doc.annotations.remove(&export_name);
         }
@@ -1023,8 +1056,13 @@ pub fn run_bindings_unassign(
 /// Locations come from the same immutable snapshot used to resolve the edit.
 fn set_readable_name(doc: &mut LogicalModule, location: &BindingLocation, name: &str) {
     match *location {
-        BindingLocation::Member { member_index } => doc.members[member_index].name = Some(name.to_string()),
-        BindingLocation::SourceMatch { claim_index, binding_index } => {
+        BindingLocation::Member { member_index } => {
+            doc.members[member_index].name = Some(name.to_string())
+        }
+        BindingLocation::SourceMatch {
+            claim_index,
+            binding_index,
+        } => {
             let binding = &mut doc.source_matches[claim_index].bindings[binding_index];
             *binding = SourceMatchBinding::Detailed(SourceMatchBindingDetail {
                 local: binding.local().to_string(),

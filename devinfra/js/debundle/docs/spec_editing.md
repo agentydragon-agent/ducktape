@@ -58,9 +58,10 @@ debundle bindings assign XOe:runtime/plugins
 `<sym>` accepts minified (`XOe`) or readable
 (`PluginSettingsAccessor`) form. The destination module is
 auto-created if it doesn't yet exist; the source module is auto-deleted
-when its `members:` becomes empty **and** its top-level `comment:` is
-empty/absent (modules with a comment are kept as `members: []`
-shells).
+when its `members:` becomes empty and it has no module-level `comment:`,
+remaining `source_matches:`, `annotations:`, or `anonymous_statements:`.
+An explicit empty-string comment also keeps the module. Unrelated empty modules
+are not swept.
 
 ### Move + rename in one step
 
@@ -297,7 +298,9 @@ annotations:
       Reads the active foo registry without mutating it.
 ```
 
-Edit module and member comments via the CLI (assumes
+Edit module and binding comments via the CLI. Binding comments are stored in
+`annotations.<readable-or-minified-name>.comment`, including source-match
+bindings (assumes
 `DEBUNDLE_MODULES` is exported; pass `--modules <dir>` otherwise):
 
 ```bash

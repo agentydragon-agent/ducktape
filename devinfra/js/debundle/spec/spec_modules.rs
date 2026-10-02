@@ -23,8 +23,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use spec::{
-    AnonymousStatementSelector, BindingSourceKind, Member,
-    MemberSelectorSpec, ModulePath, SourceMatchClaim, is_residual_module_path,
+    AnonymousStatementSelector, BindingSourceKind, Member, MemberSelectorSpec, ModulePath,
+    SourceMatchClaim, is_residual_module_path,
 };
 
 /// The on-disk module and the logical module share one canonical schema.
