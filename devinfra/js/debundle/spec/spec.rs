@@ -1810,5 +1810,4 @@ mod tests {
         assert!(empty.write);
         assert_eq!(omitted.write, empty.write);
     }
-
 }

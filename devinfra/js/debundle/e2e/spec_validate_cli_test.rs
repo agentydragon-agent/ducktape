@@ -674,7 +674,10 @@ fn misspelled_unassigned_mode_field_is_rejected() {
     assert!(source.contains("kind: catchall_file"), "{source}");
     write_text_file(
         &fixture.spec_path,
-        &source.replace("kind: catchall_file", "kind: catchall_file\n    target_path: residual/typo"),
+        &source.replace(
+            "kind: catchall_file",
+            "kind: catchall_file\n    target_path: residual/typo",
+        ),
     );
     let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
     assert!(!out.status.success(), "{}", out.stdout);
@@ -698,6 +701,14 @@ fn binding_patches_refuse_non_binding_selectors() {
         &[],
     );
     assert!(!run.result.status.success(), "{}", run.result.stdout);
-    assert!(run.result.stderr.contains("binding_patches"), "{}", run.result.stderr);
-    assert!(run.result.stderr.contains("binding selector"), "{}", run.result.stderr);
+    assert!(
+        run.result.stderr.contains("binding_patches"),
+        "{}",
+        run.result.stderr
+    );
+    assert!(
+        run.result.stderr.contains("binding selector"),
+        "{}",
+        run.result.stderr
+    );
 }
