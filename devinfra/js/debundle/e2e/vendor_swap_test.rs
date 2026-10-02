@@ -2857,17 +2857,26 @@ fn bundled_facades_preserve_default_reserved_and_string_export_names() {
             ],
         );
         let package_root = ws.write_upstream_package(
-            "upstream/lib", "lib", "1.0.0", "index.js", "exports.answer = 7;",
+            "upstream/lib",
+            "lib",
+            "1.0.0",
+            "index.js",
+            "exports.answer = 7;",
         );
         let vendor = bundled_vendor(
             "external facade name",
             &bundle_path,
-            &[("lib", bundled_package("1.0.0", "index.js", bundle_export, None))],
-            &[("a", swap_symbol("lib", PartialSwapKind::Namespace, None, None))],
+            &[(
+                "lib",
+                bundled_package("1.0.0", "index.js", bundle_export, None),
+            )],
+            &[(
+                "a",
+                swap_symbol("lib", PartialSwapKind::Namespace, None, None),
+            )],
         );
-        let spec = build_bundled_partial_swap_spec(
-            &ws, json!({"static/megachunk.js": vendor}), None,
-        );
+        let spec =
+            build_bundled_partial_swap_spec(&ws, json!({"static/megachunk.js": vendor}), None);
         let path = ws.root.path().join("spec.yaml");
         write_yaml_file(&path, &spec);
         assert_success(&run_debundler(&path, &[("lib", &package_root)]));
