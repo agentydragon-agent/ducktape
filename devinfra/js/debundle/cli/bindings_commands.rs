@@ -1,15 +1,17 @@
 //! `bindings` command arguments, dispatch, and presentation. Spec edits live
 //! in `binding`; this module adapts the CLI to that shared editing API.
-use std::path::PathBuf;
+use crate::binding::{
+    AssignOutcome, BindingsListFilters, Move, UnassignOutcome, parse_batch_json, parse_move_triple,
+    rename_binding, run_bindings_assign, run_bindings_list, run_bindings_unassign,
+};
+use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
+use crate::edit_gate::Gate;
+use crate::emit_report;
+use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::OutputFormat;
-use crate::binding::{AssignOutcome, BindingsListFilters, Move, UnassignOutcome, parse_batch_json,
-    parse_move_triple, rename_binding, run_bindings_assign, run_bindings_list, run_bindings_unassign};
-use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
-use crate::edit_gate::Gate;
-use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
-use crate::emit_report;
+use std::path::PathBuf;
 
 /// Top-level `debundle bindings ...` argument node.
 #[derive(Debug, ClapArgs)]
@@ -334,11 +336,10 @@ fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()>
 
 pub(super) fn run(args: BindingsNs) -> Result<()> {
     match args.command {
-            BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
-            BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
-            BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
-            BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(a),
-            BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(u),
+        BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
+        BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
+        BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
+        BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(a),
+        BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(u),
     }
 }
-

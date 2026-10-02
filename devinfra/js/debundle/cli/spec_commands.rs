@@ -1,15 +1,19 @@
 //! `spec` authoring commands: arguments, adapters, and output formats.
-use std::path::PathBuf;
+use crate::emit_report;
+use crate::validate::{ValidateArgs, run_validate_cmd};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::{OutputFormat, print_report};
-use selector_codemod::match_selector::{MatchSelectorConfig, render_match_selector_text, run_match_selector};
+use selector_codemod::match_selector::{
+    MatchSelectorConfig, render_match_selector_text, run_match_selector,
+};
 use selector_codemod::{SelectorCodemodConfig, render_selector_codemod_text, run_selector_codemod};
-use selector_debt::{SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
-    populate_name_only_module_groups, render_selector_debt_text};
+use selector_debt::{
+    SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
+    populate_name_only_module_groups, render_selector_debt_text,
+};
 use spec_stats::{compute_spec_stats, render_spec_stats_text};
-use crate::validate::{ValidateArgs, run_validate_cmd};
-use crate::emit_report;
+use std::path::PathBuf;
 
 /// Args for `debundle spec ...`.
 #[derive(Debug, ClapArgs)]
@@ -471,13 +475,12 @@ fn emit_selector_debt_ndjson(report: &SelectorDebtReport) -> Result<()> {
 
 pub(super) fn run(args: SpecNs) -> Result<()> {
     match args.command {
-            SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
-            SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
-            SpecNsCommand::SynthesizeSelectors(s) => run_synthesize_selectors_cmd(s),
-            SpecNsCommand::MatchSelector(s) => run_match_selector_cmd(s),
-            SpecNsCommand::Validate(v) => {
-                run_validate_cmd(v).context("running keep-going selector validation")
-            }
+        SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
+        SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
+        SpecNsCommand::SynthesizeSelectors(s) => run_synthesize_selectors_cmd(s),
+        SpecNsCommand::MatchSelector(s) => run_match_selector_cmd(s),
+        SpecNsCommand::Validate(v) => {
+            run_validate_cmd(v).context("running keep-going selector validation")
+        }
     }
 }
-

@@ -1,12 +1,12 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
-use std::path::PathBuf;
+use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
+use crate::emit_report;
+use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::{OutputFormat, PlanWorkArgs, run_plan_work_report};
-use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
-use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
-use crate::emit_report;
+use std::path::PathBuf;
 
 /// Args for `debundle modules ...`. Aggregates the existing
 /// comment-edit verb (in `cli::comment`) with the new
@@ -239,19 +239,18 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
 
 pub(super) fn run(args: ModulesNs) -> Result<()> {
     match args.command {
-            ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
-            ModulesNsCommand::Merge(m) => run_merge(m),
-            ModulesNsCommand::Delete(d) => run_delete(d),
-            ModulesNsCommand::Propose(p) => {
-                let report = run_plan_work_report(&p)?;
-                emit_report(
-                    p.format,
-                    &report,
-                    render_plan_work_text,
-                    "writing propose output",
-                )
-            }
-            ModulesNsCommand::List(args) => run_modules_list(args),
+        ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
+        ModulesNsCommand::Merge(m) => run_merge(m),
+        ModulesNsCommand::Delete(d) => run_delete(d),
+        ModulesNsCommand::Propose(p) => {
+            let report = run_plan_work_report(&p)?;
+            emit_report(
+                p.format,
+                &report,
+                render_plan_work_text,
+                "writing propose output",
+            )
+        }
+        ModulesNsCommand::List(args) => run_modules_list(args),
     }
 }
-

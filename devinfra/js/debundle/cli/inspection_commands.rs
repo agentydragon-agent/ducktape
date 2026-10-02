@@ -1,13 +1,15 @@
 //! Graph/source inspection commands and their ID resolution and rendering.
-use std::path::PathBuf;
+use crate::emit_report;
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
 use peel::factorize::DEFAULT_SIZE_CAP_LINES;
-use peel::{CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat,
-    PatchPlanArgs, SelectionKind, SourceSliceArgs, UnitsArgs, run_explain_report,
-    run_graph_summary_report, run_patch_plan_report, run_source_slice_report, run_units_report};
+use peel::{
+    CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
+    SelectionKind, SourceSliceArgs, UnitsArgs, run_explain_report, run_graph_summary_report,
+    run_patch_plan_report, run_source_slice_report, run_units_report,
+};
 use spec_modules::{collect_module_files, module_path_from_file};
-use crate::emit_report;
+use std::path::PathBuf;
 
 /// Args for `debundle describe <id>`.
 ///
@@ -268,40 +270,40 @@ fn render_source_slice_text(report: &peel::SourceSliceReport, out: &mut String) 
 }
 
 pub(super) fn run_atoms(args: UnitsArgs) -> Result<()> {
-            let report = run_units_report(&args)?;
-            emit_report(
-                args.format,
-                &report,
-                render_units_text,
-                "writing atoms output",
-            )
+    let report = run_units_report(&args)?;
+    emit_report(
+        args.format,
+        &report,
+        render_units_text,
+        "writing atoms output",
+    )
 }
 
 pub(super) fn run_coverage(args: PatchPlanArgs) -> Result<()> {
-            let report = run_patch_plan_report(&args)?;
-            emit_report(
-                args.format,
-                &report,
-                render_patch_plan_text,
-                "writing coverage output",
-            )
+    let report = run_patch_plan_report(&args)?;
+    emit_report(
+        args.format,
+        &report,
+        render_patch_plan_text,
+        "writing coverage output",
+    )
 }
 
 pub(super) fn run_graph_summary(args: GraphSummaryArgs) -> Result<()> {
-            let report = run_graph_summary_report(&args)?;
-            emit_report(
-                args.format,
-                &report,
-                render_graph_summary_text,
-                "writing graph-summary output",
-            )
+    let report = run_graph_summary_report(&args)?;
+    emit_report(
+        args.format,
+        &report,
+        render_graph_summary_text,
+        "writing graph-summary output",
+    )
 }
 
 #[cfg(test)]
 mod tests {
+    use peel::SelectionKind;
     use std::fs;
     use std::path::Path;
-    use peel::SelectionKind;
     use tempfile::TempDir;
 
     fn write(root: &Path, rel: &str, body: &str) {
@@ -432,4 +434,5 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let sel = super::dispatch_id_selection("XOe", tmp.path()).unwrap();
         assert_eq!(sel, SelectionKind::Binding("XOe".to_string()));
-    }}
+    }
+}
