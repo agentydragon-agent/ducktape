@@ -66,3 +66,30 @@ fn modules_delete_force_accepts_clean_deletion() {
     assert!(fixture.modules.join("b.yaml").exists());
     fixture.assert_runs("2\n");
 }
+
+#[test]
+fn edit_gate_resolves_decorator_statement_claims_from_real_source() {
+    let fixture = GraphFixture::new(
+        r#"const ignored = 0;
+class Co {}
+function Ro(tags, target, name, value) { target[name] = value; }
+const Z = 1;
+Ro([Z], Co.prototype, "visible", 2);
+console.log(new Co().visible);
+"#,
+        &[
+            ("state.yaml", r#"members:
+  - selector: {binding: {name: Co}}
+  - selector: {binding: {name: Ro}}
+  - selector: {binding: {name: Z}}
+anonymous_statements:
+  - match: 'Ro([Z], Co.prototype, "visible", 2);'
+    note: observable decorator side effect
+"#),
+            ("empty.yaml", "members: []"),
+        ],
+    );
+    fixture.assert_success(&["modules", "merge", "--target", "state", "empty", "--dry-run"]);
+    fixture.assert_success(&["modules", "merge", "--target", "state", "empty"]);
+    fixture.assert_runs("2\n");
+}

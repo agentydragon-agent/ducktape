@@ -761,31 +761,6 @@ pub fn owner_for_binding<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a 
     node.id.as_str()
 }
 
-/// An `owner_graph.json` node for the statement `ordinal`, declaring `binding`
-/// (exported under its own name) and destined for the module `destination`.
-pub fn owner_node(id: &str, ordinal: usize, binding: &str, destination: &str) -> Value {
-    serde_json::json!({
-        "id": id,
-        "statement_ordinal": ordinal,
-        "declared_bindings": [ { "binding": binding, "export_name": binding } ],
-        "statement_kind": "var_decl",
-        "purity": { "kind": "pure" },
-        "destination": destination
-    })
-}
-
-/// An `owner_graph.json` body over `nodes` and `edges`, with empty module and
-/// atomic graphs.
-pub fn owner_graph(chunk_id: &str, nodes: Vec<Value>, edges: Vec<Value>) -> Value {
-    serde_json::json!({
-        "chunk_id": chunk_id,
-        "nodes": nodes,
-        "edges": edges,
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
-        "atomic_graph": { "nodes": [], "edges": [] }
-    })
-}
-
 pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {
     // `serde_json` is built with `arbitrary_precision` workspace-wide (feature
     // unification), which makes `serde_yaml` emit a `serde_json::Value::Number`

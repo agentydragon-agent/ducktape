@@ -19,13 +19,11 @@
 //! declarator matches its initializer wherever it sits in its statement.
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use debundle_e2e_support::{
-    BindingGroup, Fixture, FixtureOpts, Member, assert_entry_output,
-    assert_generated_module_after_entry_script, assert_module_source, debundler_path,
-    logical_module, logical_module_with_binding_groups, outcomes, owner_graph, parse_stdout_json,
+    BindingGroup, Fixture, FixtureOpts, GraphFixture, Member, assert_entry_output,
+    assert_generated_module_after_entry_script, assert_module_source,
+    logical_module, logical_module_with_binding_groups, outcomes, parse_stdout_json,
     read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture,
     run_match_selector, run_source_only_validate, run_spec_validate, run_synthesize_selectors,
     write_text_file, write_validate_fixture_spec,
@@ -636,106 +634,22 @@ fn elimination_fixture() -> FixtureOpts<'static> {
     )
 }
 
-/// The modules of [`elimination_fixture`] as module files, beside the chunk
-/// at `root/chunk.js`, with an owner graph of the chunk at
-/// `root/owner_graph.json` for the graph-backed commands.
-fn write_elimination_tree(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
-    let source = root.join("chunk.js");
-    write_text_file(&source, ELIMINATION_CHUNK);
-    let modules = root.join("modules");
+fn elimination_tree() -> GraphFixture {
+    let mut modules = Vec::new();
     for (path, name, local, selector) in [
-        ("elimination/either", "Either", "f", EITHER),
-        ("elimination/other", "Other", "g", OTHER),
+        ("elimination/either.yaml", "Either", "f", EITHER),
+        ("elimination/other.yaml", "Other", "g", OTHER),
     ] {
-        let indented = selector
-            .lines()
-            .map(|line| format!("      {line}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        write_text_file(
-            &modules.join(format!("{path}.yaml")),
-            &format!(
-                "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: {local}\n        name: {name}\n"
-            ),
-        );
+        modules.push((path, format!(
+            "source_matches: [{{match: {selector:?}, bindings: [{{local: {local}, name: {name}}}]}}]"
+        )));
     }
-    write_text_file(
-        &modules.join("elimination/third.yaml"),
-        "members:\n  - name: Third\n    selector: { binding: { name: third } }\n",
-    );
-    let graph = write_owner_graph(
-        root,
-        &[
-            GraphStatement::declaring((1, 3), "first", "fn_decl", "elimination/either"),
-            GraphStatement::declaring((4, 6), "second", "fn_decl", "elimination/other"),
-            GraphStatement::declaring((7, 9), "third", "fn_decl", "elimination/third"),
-            GraphStatement::residual((10, 10)),
-        ],
-    );
-    (source, modules, graph)
-}
-
-/// One top-level statement of `chunk.js` in a hand-written owner graph.
-struct GraphStatement {
-    lines: (usize, usize),
-    /// The binding it declares and its statement kind, if it declares one.
-    declared: Option<(&'static str, &'static str)>,
-    destination: &'static str,
-}
-
-impl GraphStatement {
-    fn declaring(
-        lines: (usize, usize),
-        binding: &'static str,
-        kind: &'static str,
-        destination: &'static str,
-    ) -> Self {
-        Self {
-            lines,
-            declared: Some((binding, kind)),
-            destination,
-        }
-    }
-
-    fn residual(lines: (usize, usize)) -> Self {
-        Self {
-            lines,
-            declared: None,
-            destination: "residual",
-        }
-    }
-}
-
-/// An owner graph of `root/chunk.js` at `root/owner_graph.json`, one node per
-/// statement, in order.
-fn write_owner_graph(root: &Path, statements: &[GraphStatement]) -> PathBuf {
-    let nodes = statements
-        .iter()
-        .enumerate()
-        .map(|(ordinal, statement)| {
-            json!({
-                "id": format!("owner:{ordinal}"),
-                "statement_ordinal": ordinal,
-                "source_location": {
-                    "source_path": "chunk.js",
-                    "start_line": statement.lines.0,
-                    "end_line": statement.lines.1,
-                },
-                "declared_bindings": statement.declared
-                    .map(|(binding, _)| vec![json!({"binding": binding, "export_name": binding})])
-                    .unwrap_or_default(),
-                "statement_kind": statement.declared.map_or("side_effect", |(_, kind)| kind),
-                "purity": {"kind": "pure"},
-                "destination": statement.destination,
-            })
-        })
-        .collect::<Vec<_>>();
-    let graph = root.join("owner_graph.json");
-    write_text_file(
-        &graph,
-        &owner_graph("static/app", nodes, vec![]).to_string(),
-    );
-    graph
+    modules.push((
+        "elimination/third.yaml",
+        "members: [{name: Third, selector: {binding: {name: third}}}]".to_string(),
+    ));
+    let modules: Vec<_> = modules.iter().map(|(path, yaml)| (*path, yaml.as_str())).collect();
+    GraphFixture::new(ELIMINATION_CHUNK, &modules)
 }
 
 /// Every command that resolves a spec resolves `Either` jointly, by
@@ -772,8 +686,9 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
         "spec validate --spec"
     );
 
-    let dir = tempfile::tempdir().unwrap();
-    let (source, modules, graph) = write_elimination_tree(dir.path());
+    let tree = elimination_tree();
+    let source = tree.source_path();
+    let modules = &tree.modules;
     let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
     assert!(out.status.success(), "stderr={}", out.stderr);
     let report: Value = serde_json::from_str(&out.stdout).unwrap();
@@ -804,29 +719,20 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
         "spec match-selector"
     );
 
-    let describe = graph_command(
-        &graph,
-        &modules,
-        dir.path(),
-        &["describe", "elimination/either", "--format", "json"],
-    );
+    let describe = tree.command(&["describe", "elimination/either", "--format", "json"]);
     assert!(describe.status.success(), "{describe:?}");
     let describe: Value = serde_json::from_slice(&describe.stdout).unwrap();
     assert_eq!(describe["owner_ids"], json!(["owner:0"]), "describe");
 
     // The edit gate resolves every module's claims before accepting an edit.
-    let unassign = graph_command(
-        &graph,
-        &modules,
-        dir.path(),
-        &["bindings", "unassign", "third"],
-    );
+    let unassign = tree.command(&["bindings", "unassign", "third"]);
     let stderr = String::from_utf8_lossy(&unassign.stderr);
     assert!(unassign.status.success(), "edit gate: {stderr}");
     assert!(
         stderr.contains("resolved by elimination"),
         "edit gate: {stderr}"
     );
+    tree.assert_runs("shared other ok\n");
 }
 
 /// `Either` matches `first` and `second`; the relational `Other` pins
@@ -883,29 +789,19 @@ fn relational_claims_eliminate_only_in_spec_wide_commands() {
         "{run:#}"
     );
 
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("chunk.js");
-    write_text_file(&source, RELATIONAL_ELIMINATION_CHUNK);
-    let modules = dir.path().join("modules");
-    let indented = EITHER
-        .lines()
-        .map(|line| format!("      {line}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    write_text_file(
-        &modules.join("elimination/either.yaml"),
-        &format!(
-            "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: f\n        name: Either\n"
-        ),
+    let either = format!(
+        "source_matches: [{{match: {EITHER:?}, bindings: [{{local: f, name: Either}}]}}]"
     );
-    write_text_file(
-        &modules.join("elimination/other.yaml"),
-        "members:\n  - name: Other\n    selector: { reads_member: { member: other, kind: function_declaration } }\n",
+    let tree = GraphFixture::new(
+        RELATIONAL_ELIMINATION_CHUNK,
+        &[
+            ("elimination/either.yaml", &either),
+            ("elimination/other.yaml", "members: [{name: Other, selector: {reads_member: {member: other, kind: function_declaration}}}]"),
+            ("elimination/marker.yaml", "members: [{name: Marker, selector: {binding: {name: marker}}}]"),
+        ],
     );
-    write_text_file(
-        &modules.join("elimination/marker.yaml"),
-        "members:\n  - name: Marker\n    selector: { binding: { name: marker } }\n",
-    );
+    let source = tree.source_path();
+    let modules = &tree.modules;
     let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
     assert!(out.status.success(), "stderr={}", out.stderr);
     let report: Value = serde_json::from_str(&out.stdout).unwrap();
@@ -918,20 +814,11 @@ fn relational_claims_eliminate_only_in_spec_wide_commands() {
         "spec validate --source-file"
     );
 
-    let graph = write_owner_graph(
-        dir.path(),
-        &[
-            GraphStatement::declaring((1, 1), "marker", "var_decl", "elimination/marker"),
-            GraphStatement::declaring((2, 4), "first", "fn_decl", "elimination/either"),
-            GraphStatement::declaring((5, 7), "second", "fn_decl", "elimination/other"),
-            GraphStatement::residual((8, 8)),
-        ],
-    );
     for args in [
         &["describe", "elimination/either"][..],
         &["bindings", "unassign", "marker"][..],
     ] {
-        let out = graph_command(&graph, &modules, dir.path(), args);
+        let out = tree.command(args);
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success(), "{args:?}: {stderr}");
         assert!(
@@ -939,26 +826,7 @@ fn relational_claims_eliminate_only_in_spec_wide_commands() {
             "{args:?}: {stderr}"
         );
     }
-}
-
-/// A `debundle` graph-backed command over `graph` and `modules`, with chunk
-/// sources under `source_root`.
-fn graph_command(
-    graph: &Path,
-    modules: &Path,
-    source_root: &Path,
-    args: &[&str],
-) -> std::process::Output {
-    Command::new(debundler_path())
-        .args(args)
-        .arg("--graph")
-        .arg(graph)
-        .arg("--modules")
-        .arg(modules)
-        .arg("--source-root")
-        .arg(source_root)
-        .output()
-        .expect("spawn debundle")
+    tree.assert_runs("shared o\n");
 }
 
 /// The record of the export `export_name` in `outcomes`, if one is listed.
