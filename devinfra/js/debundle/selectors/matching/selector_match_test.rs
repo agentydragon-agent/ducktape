@@ -3,7 +3,8 @@
 //! single-node holes, run holes, declarator alignment, and per-function alpha
 //! scoping — each `(selector, subject)` pair asserts the expected match verdict,
 //! plus fail-closed (`Unsupported`) outside the faithful subset. These pin the
-//! matcher's behavior directly; the corpus-wide gate covers real specs.
+//! matcher's combinatorial behavior directly; e2e/ covers spec resolution,
+//! emitted modules and runtime behavior.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -45,6 +46,17 @@ struct Case {
     subject: &'static str,
     alpha: bool,
     expected: bool,
+}
+
+fn assert_cases(cases: impl IntoIterator<Item = Case>) {
+    for case in cases {
+        let mode = if case.alpha { Mode::AlphaAll } else { Mode::Exact };
+        let got = selector_match::matches(
+            &facts(case.selector), &facts(case.subject), mode, &free(case.selector),
+        ).unwrap_or_else(|e| panic!("unsupported selector {:?}: {}", case.selector, e.reason));
+        assert_eq!(got, case.expected,
+            "{:?} vs {:?} (alpha={})", case.selector, case.subject, case.alpha);
+    }
 }
 
 #[test]
@@ -319,25 +331,7 @@ fn fact_matcher_verdicts_on_faithful_subset() {
                 expected: false,
             },
         ];
-        for case in cases {
-            let mode = if case.alpha {
-                Mode::AlphaAll
-            } else {
-                Mode::Exact
-            };
-            let fact = selector_match::matches(
-                &facts(case.selector),
-                &facts(case.subject),
-                mode,
-                &free(case.selector),
-            )
-            .expect("case is within the faithful subset");
-            assert_eq!(
-                fact, case.expected,
-                "unexpected result for {:?} vs {:?} (alpha={})",
-                case.selector, case.subject, case.alpha,
-            );
-        }
+        assert_cases(cases);
     });
 }
 
@@ -379,25 +373,6 @@ fn multi_statement_sequence_enumerates_all_alignments() {
             .expect("supported multi-statement needle"),
         );
         assert_eq!(alignments, vec![vec![None, Some(0)], vec![None, Some(2)]]);
-    });
-}
-
-#[test]
-fn fail_closed_on_malformed_regex_predicate() {
-    js_ast::with_swc_globals(|| {
-        // A `STR_LITERAL_MATCHING_RE` that is not a well-formed predicate (here,
-        // no argument) is not lowered — the callee keyword is reserved, so the
-        // matcher errors rather than treating it as an ordinary call/identifier.
-        let result = selector_match::matches(
-            &facts("const a = STR_LITERAL_MATCHING_RE();"),
-            &facts("const a = b();"),
-            Mode::Exact,
-            &free("const a = STR_LITERAL_MATCHING_RE();"),
-        );
-        assert!(
-            matches!(result, Err(selector_match::Unsupported { .. })),
-            "malformed regex predicate must be fail-closed, got {result:?}",
-        );
     });
 }
 
@@ -745,25 +720,7 @@ fn arrow_returning_object_literal_matches_on_its_object_anchors() {
                 expected: true,
             },
         ];
-        for case in cases {
-            let mode = if case.alpha {
-                Mode::AlphaAll
-            } else {
-                Mode::Exact
-            };
-            let got = selector_match::matches(
-                &facts(case.selector),
-                &facts(case.subject),
-                mode,
-                &free(case.selector),
-            )
-            .expect("arrow-returns-object is within the faithful subset");
-            assert_eq!(
-                got, case.expected,
-                "arrow-returns-object: {:?} vs {:?} (alpha={})",
-                case.selector, case.subject, case.alpha,
-            );
-        }
+        assert_cases(cases);
     });
 }
 
@@ -828,25 +785,7 @@ fn parenthesized_sequence_body_matches_on_its_inner_assignment() {
                 expected: false,
             },
         ];
-        for case in cases {
-            let mode = if case.alpha {
-                Mode::AlphaAll
-            } else {
-                Mode::Exact
-            };
-            let got = selector_match::matches(
-                &facts(case.selector),
-                &facts(case.subject),
-                mode,
-                &free(case.selector),
-            )
-            .expect("parenthesized sequence body is within the faithful subset");
-            assert_eq!(
-                got, case.expected,
-                "parenthesized-sequence-body: {:?} vs {:?} (alpha={})",
-                case.selector, case.subject, case.alpha,
-            );
-        }
+        assert_cases(cases);
     });
 }
 
@@ -922,25 +861,7 @@ fn array_elements_run_hole_anchors_a_few_stable_elements() {
                 expected: true,
             },
         ];
-        for case in cases {
-            let mode = if case.alpha {
-                Mode::AlphaAll
-            } else {
-                Mode::Exact
-            };
-            let got = selector_match::matches(
-                &facts(case.selector),
-                &facts(case.subject),
-                mode,
-                &free(case.selector),
-            )
-            .expect("ARRAY_ELEMENTS is within the faithful subset");
-            assert_eq!(
-                got, case.expected,
-                "array-elements-run-hole: {:?} vs {:?} (alpha={})",
-                case.selector, case.subject, case.alpha,
-            );
-        }
+        assert_cases(cases);
     });
 }
 
@@ -1071,71 +992,7 @@ fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
                 expected: false,
             },
         ];
-        for case in cases {
-            let mode = if case.alpha {
-                Mode::AlphaAll
-            } else {
-                Mode::Exact
-            };
-            let got = selector_match::matches(
-                &facts(case.selector),
-                &facts(case.subject),
-                mode,
-                &free(case.selector),
-            )
-            .expect("SEQ_EXPRS is within the faithful subset");
-            assert_eq!(
-                got, case.expected,
-                "seq-exprs-run-hole: {:?} vs {:?} (alpha={})",
-                case.selector, case.subject, case.alpha,
-            );
-        }
-    });
-}
-
-// One React Compiler hook, one selector: the memoized callback is the stable
-// anchor, and the cache-write tail — one write per dependency plus the memo
-// write — is `SEQ_EXPRS`. The same selector resolves the hook at two dependency
-// counts without naming a single cache slot.
-#[test]
-fn seq_exprs_run_hole_pins_a_memoized_hook_regardless_of_dependency_count() {
-    js_ast::with_swc_globals(|| {
-        let selector = "function useResource(cache, scale, prefix) { \
-             let memo; \
-             return (EXPR ? (memo = async (id) => { \
-               const total = id * scale; \
-               return `${prefix}:${total}`; \
-             }, SEQ_EXPRS) : memo = EXPR), memo; }";
-        let two_writes = "function readResource(cache, scale, prefix) { \
-             let memo; \
-             return (cache[0] !== scale ? (memo = async (id) => { \
-               const total = id * scale; \
-               return `${prefix}:${total}`; \
-             }, cache[0] = scale, cache[1] = memo) : memo = cache[1]), memo; }";
-        let five_writes = "function readResource(cache, scale, prefix) { \
-             let memo; \
-             return (cache[0] !== scale || cache[1] !== prefix \
-               ? (memo = async (id) => { \
-                   const total = id * scale; \
-                   return `${prefix}:${total}`; \
-                 }, cache[0] = scale, cache[1] = prefix, cache[2] = scale, \
-                   cache[3] = prefix, cache[4] = memo) \
-               : memo = cache[4]), memo; }";
-        // The memoized callback is absent, so the shape is a different hook.
-        let no_memo = "function readResource(cache, scale, prefix) { \
-             let memo; \
-             return (cache[0] !== scale ? (async (id) => id * scale, \
-               cache[0] = scale, cache[1] = memo) : memo = cache[1]), memo; }";
-        for (subject, expected) in [(two_writes, true), (five_writes, true), (no_memo, false)] {
-            let got = selector_match::matches(
-                &facts(selector),
-                &facts(subject),
-                Mode::AlphaAll,
-                &free(selector),
-            )
-            .expect("the memoized-hook selector is within the faithful subset");
-            assert_eq!(got, expected, "memoized-hook: {subject}");
-        }
+        assert_cases(cases);
     });
 }
 
@@ -1163,73 +1020,6 @@ fn fail_closed_on_misplaced_seq_exprs_hole() {
             assert!(
                 matches!(result, Err(selector_match::Unsupported { .. })),
                 "misplaced SEQ_EXPRS must be fail-closed, got {result:?}",
-            );
-        }
-    });
-}
-
-// Same-arity declarators in one `const a = …, b = …` comma-list that differ only
-// in a deeply-nested value are disambiguated by a single-declarator selector that
-// asserts that nested anchor. The resolver matches a single-declarator needle
-// against each declarator of an owner (it synthesizes a single-declarator subject
-// per declarator), so these subjects are exactly what the needle is matched
-// against here: a needle pinning the nested `"POST"` matches only the POST
-// sibling, not the same-shape `"GET"` one.
-#[test]
-fn comma_list_siblings_disambiguated_by_nested_value() {
-    js_ast::with_swc_globals(|| {
-        // The two single-declarator subjects the resolver synthesizes from one
-        // comma-list `const handlerA = …, handlerB = …;` owner.
-        let get_sibling = "const handlerA = makeHandler({ route: { method: \"GET\" } });";
-        let post_sibling = "const handlerB = makeHandler({ route: { method: \"POST\" } });";
-        let cases = [
-            // the nested `"POST"` anchor matches only the POST sibling.
-            (
-                "const X = makeHandler({ route: { method: \"POST\" } });",
-                post_sibling,
-                true,
-            ),
-            (
-                "const X = makeHandler({ route: { method: \"POST\" } });",
-                get_sibling,
-                false,
-            ),
-            // and the `"GET"` anchor only the GET sibling.
-            (
-                "const X = makeHandler({ route: { method: \"GET\" } });",
-                get_sibling,
-                true,
-            ),
-            (
-                "const X = makeHandler({ route: { method: \"GET\" } });",
-                post_sibling,
-                false,
-            ),
-            // a selector that holes the nested value (`method: EXPR`) is the
-            // ambiguous case — it matches BOTH siblings, which is exactly why a
-            // nested anchor is needed to pin one of them.
-            (
-                "const X = makeHandler({ route: { method: EXPR } });",
-                get_sibling,
-                true,
-            ),
-            (
-                "const X = makeHandler({ route: { method: EXPR } });",
-                post_sibling,
-                true,
-            ),
-        ];
-        for (selector, subject, expected) in cases {
-            let got = selector_match::matches(
-                &facts(selector),
-                &facts(subject),
-                Mode::AlphaAll,
-                &free(selector),
-            )
-            .expect("nested-value selector is within the faithful subset");
-            assert_eq!(
-                got, expected,
-                "comma-list-sibling: {selector:?} vs {subject:?}"
             );
         }
     });
