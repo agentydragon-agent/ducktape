@@ -295,7 +295,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         ("ducktape-flux", "ducktape-flux-reader"),
         ("public-coder-agent", "agent-public-coder-extended-diagnostics-reader"),
         ("public-coder-agent", "public-coder-agent-reader"),
-        ("public-coder-agent", "agentplane-acceptance-operator-reader"),
+        ("public-coder-agent", "agentplane-testing-login-reader"),
         ("agentplane-testing", "agentplane-testing-operator"),
     }
     testing_config = yaml.safe_load(
@@ -314,7 +314,7 @@ def test_shared_public_coder_reader_and_testing_login_have_named_bind_delegation
     assert "public-coder-agent-devbox-vmi-restart" not in config["kubernetes_grants"]
     for name, role_name in (
         ("public-coder-agent-reader", "public-coder-agent-reader"),
-        ("agentplane-testing-login", "agentplane-acceptance-operator-reader"),
+        ("agentplane-testing-login", "agentplane-testing-login-reader"),
     ):
         assert config["kubernetes_grants"][name] == {
             "kind": "RoleBinding",
@@ -335,7 +335,7 @@ def test_shared_public_coder_reader_and_testing_login_have_named_bind_delegation
     assert {tuple(rule.get("resourceNames", [])) for rule in role["rules"] if rule["verbs"] == ["bind"]} == {
         ("agent-public-coder-extended-diagnostics-reader",),
         ("public-coder-agent-reader",),
-        ("agentplane-acceptance-operator-reader",),
+        ("agentplane-testing-login-reader",),
     }
     binding = _by_name(delegated, "RoleBinding", "agentplane-staging-external-bindings")
     assert binding["subjects"] == [
@@ -493,7 +493,7 @@ def test_shared_agentplane_operator_access_is_testing_only(
     assert config["kubernetes_grants"]["agentplane-testing-login"] == {
         "kind": "RoleBinding",
         "namespace": "public-coder-agent",
-        "role_ref": {"kind": "Role", "name": "agentplane-acceptance-operator-reader"},
+        "role_ref": {"kind": "Role", "name": "agentplane-testing-login-reader"},
     }
     policy = _by_name(docs, "EgressPolicy", AGENTPLANE_TESTING_POLICY)
     assert {host for rule in policy["spec"]["rules"] for host in rule["hosts"]} == {

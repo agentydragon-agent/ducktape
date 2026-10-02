@@ -350,7 +350,7 @@ def test_haku_service_read_delegation_is_scoped_to_owning_namespaces(k8s_dir: Pa
             "public-coder-agent",
             (
                 "agent-public-coder-extended-diagnostics-reader",
-                "agentplane-acceptance-operator-reader",
+                "agentplane-testing-login-reader",
                 "public-coder-agent-reader",
             ),
             "public-coder-agent-app",

@@ -950,11 +950,13 @@ def _rbac(scope: Construct) -> None:
         subjects=_HAKU_SUPERSET_SUBJECTS,
     )
 
-    # Testing-only login bootstrap; never a staging or pod-mounted operator identity.
-    acceptance = "agentplane-acceptance-operator-reader"
+    # Use a new testing-only Role name rather than expanding the old staging+testing
+    # reader's subjects: independently reconciled managed bindings must never acquire
+    # the old staging credential while waiting for this chart to narrow its rules.
+    acceptance = "agentplane-testing-login-reader"
     k8s.KubeRole(
         scope,
-        "agentplane-acceptance-operator-reader",
+        "agentplane-testing-login-reader",
         metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
         rules=[
             k8s.PolicyRule(
@@ -967,7 +969,7 @@ def _rbac(scope: Construct) -> None:
     )
     k8s.KubeRoleBinding(
         scope,
-        "agentplane-acceptance-operator-reader-binding",
+        "agentplane-testing-login-reader-binding",
         metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
         role_ref=_role_ref("Role", acceptance),
         subjects=_HAKU_SUPERSET_SUBJECTS,

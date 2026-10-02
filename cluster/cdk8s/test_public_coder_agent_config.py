@@ -149,7 +149,7 @@ def test_agents_no_longer_restart_the_devbox(app_objects: list[dict[str, Any]]) 
 def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credential(
     app_objects: list[dict[str, Any]], proxy_objects: list[dict[str, Any]]
 ) -> None:
-    objects = _named(app_objects, "agentplane-acceptance-operator-reader")
+    objects = _named(app_objects, "agentplane-testing-login-reader")
     role = _one(objects, "Role")
     binding = _one(objects, "RoleBinding")
     assert binding["roleRef"]["name"] == role["metadata"]["name"]

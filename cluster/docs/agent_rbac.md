@@ -239,8 +239,10 @@ All three managed presets separately select `agentplane-testing-operator` and
 `agentplane-testing-login`, and the `agentplane-testing` egress policy. Static Haku
 and public coder share the same testing roles. The login grant is `get` on exactly
 `public-coder-agent/agentplane-testing-acceptance-operator`, the reflected testing
-Dex login Secret, through the existing `agentplane-acceptance-operator-reader` Role.
-That Role no longer includes `agentplane-acceptance-operator` (the **staging** login).
+Dex login Secret, through the new `agentplane-testing-login-reader` Role.
+The old staging+testing login Role and binding are removed. A new Role name ensures
+independently reconciled managed bindings cannot temporarily acquire the old
+`agentplane-acceptance-operator` (**staging**) permission during rollout.
 No agent receives a staging operator/login grant here. Ordinary diagnostic reads
 and Haku's unrelated Coinbase reader are unchanged.
 

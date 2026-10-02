@@ -195,7 +195,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
             "agentplane-testing-login": RoleBindingGrant(
                 kind="RoleBinding",
                 namespace="public-coder-agent",
-                role_ref=RoleRef(kind="Role", name="agentplane-acceptance-operator-reader"),
+                role_ref=RoleRef(kind="Role", name="agentplane-testing-login-reader"),
             ),
         },
         # Retain cleanup authority when a catalog choice is disabled while its
