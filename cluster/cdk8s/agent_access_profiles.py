@@ -205,14 +205,13 @@ HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
 PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY)
 MANAGED_GRANTS = {
     "public-coder": PUBLIC_GRANTS,
-    "finance-agent": PUBLIC_GRANTS,
+    "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials"),
     "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *HAKU_EXTRAS, "coinbase-credentials"),
 }
 STATIC_GRANTS = {
     "public-coder": PUBLIC_GRANTS,
-    # Preserve redundant narrow inventory bindings and the absence of raw Coinbase
-    # Secret access. Do not fix parity by spreading credential grants.
-    "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY, *HAKU_EXTRAS),
+    # Preserve redundant narrow inventory bindings; Coinbase access is explicitly approved.
+    "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY, *HAKU_EXTRAS, "coinbase-credentials"),
 }
 
 

@@ -521,15 +521,8 @@ def test_static_managed_agent_permission_parity(
     rbac, config = agent_permissions
     static = rbac.identity(kind, name, namespace)
     managed = rbac.managed(config, preset, namespace="agentplane-staging")
-    # The sole known profile drift. Literal scope/resource/name/verb on purpose:
-    # referencing the Coinbase Role here would silently accept its expansion.
-    managed_only = (
-        {Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials")}
-        if preset == "haku"
-        else set()
-    )
-    assert uncovered(static, managed) == set()
-    assert uncovered(managed, static) == managed_only
+    assert not uncovered(static, managed)
+    assert not uncovered(managed, static)
 
 
 def test_agent_permission_superset_and_finance_parity(agent_permissions: tuple[Rbac, dict]) -> None:
@@ -539,7 +532,9 @@ def test_agent_permission_superset_and_finance_parity(agent_permissions: tuple[R
     finance = rbac.managed(config, "finance-agent", namespace="agentplane-staging")
     assert not uncovered(public, haku)
     assert not uncovered(public, finance)
-    assert not uncovered(finance, public)
+    assert uncovered(finance, public) == {
+        Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials")
+    }
     static_public = rbac.identity("Group", "haku:access-profile:public-coder")
     for kind, name, namespace in (
         ("Group", "oidc-ksbx-groups:haku", ""),
@@ -601,7 +596,13 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
         Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "delete"),
     }
     testing_login = Permission("public-coder-agent", "", "secrets", "get", "agentplane-testing-acceptance-operator")
+    coinbase = Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials")
+    denied |= {
+        Permission("agentplane-staging", "", "secrets", verb)
+        for verb in ("get", "list", "watch", "create", "update", "patch", "delete")
+    }
     for name, permissions in profiles.items():
+        assert bool(uncovered({coinbase}, permissions)) == (name in {"public-coder", "public-static"}), name
         assert uncovered(denied, permissions) == denied, name
         assert not uncovered({testing_login}, permissions), name
         if name in {"public-coder", "finance-agent", "public-static"}:

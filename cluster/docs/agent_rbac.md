@@ -195,23 +195,22 @@ The logical profiles are distinct from the transport identities:
 | `oidc-ksbx-groups:haku` group                  | Static Haku; checked independently                                                                                                               |
 | `haku:access-profile:haku` group               | Static Haku Console; checked independently                                                                                                       |
 | `haku-sandbox/haku` ServiceAccount             | Static Haku compute; checked independently                                                                                                       |
-| Managed `haku` preset                          | Includes public coder; matches each static Haku path except the exact Coinbase grant below                                                       |
-| Managed `finance-agent` preset                 | Same Kubernetes permissions as managed public coder; no static finance identity is implied                                                       |
+| Managed `haku` preset                          | Includes public coder; matches each static Haku path, including the exact Coinbase grant below                                                       |
+| Managed `finance-agent` preset                 | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied                                                       |
 | `agentplane-staging/claude-ai` ServiceAccount  | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
 | `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset                                                          |
 
-The sole allowed static/managed Haku difference is managed Haku's **`get` on
-`agentplane-staging/coinbase-api-credentials`**. The test names that scope, resource,
-verb, and object literally, not by a Role whose rules could grow. It must fail if
-the difference grows, disappears, or changes direction. Do not grant static Haku
-this credential merely to satisfy parity. Decide raw Secret access separately.
+Static and managed Haku, plus managed finance, explicitly receive **`get` on
+`agentplane-staging/coinbase-api-credentials`**. Public coder does not. Tests name
+that scope, resource, verb, and object literally, not by a Role whose rules could
+grow. Finance differs from public coder by exactly this named Secret read.
 Static Haku retains redundant narrow inventory bindings; managed Haku's broader
 cluster reader covers those rules without selecting the same Role names.
 
 `test_cluster_integration` compares the rendered, active RBAC rule coverage for
 each identity separately, with the actual Kyverno namespace-reader policy expanded
 against active Namespace labels (including the rendered Flux bootstrap overlay).
-It checks static/managed parity, Haku's public-coder superset, finance equality, and
+It checks static/managed parity, Haku's public-coder superset, finance's exact Coinbase addition, and
 explicit denials for staging operator/login, devbox restart, and public node proxy.
 The separate legacy accounts have their own contracts; their permissions are not
 unioned with Haku's to mask missing access on a particular path.
@@ -237,11 +236,12 @@ namespace-scoped diagnostics bundle in `cluster/cdk8s/agentplane/staging_config.
   explicit service-specific exception allowing logs in `public-coder-agent`, whose
   common namespace classification is metadata-only.
 
-Public coder and finance agent select exactly the same Kubernetes grants. Both
+Public coder and finance agent share diagnostics and testing grants. Finance also
+selects the explicit Coinbase credential grant; public coder does not. Both
 also select the existing `public-coder-agent-node-reader` and
 `public-coder-agent-cluster-metadata-reader` ClusterRoles, bound cluster-wide:
 node inventory, CRD schemas, and node metrics. They do **not** select Haku's broader
-`cluster-diagnostics-reader`, Coinbase credentials, or `haku-sandbox` writes.
+`cluster-diagnostics-reader` or `haku-sandbox` writes.
 Testing operator/login access is a separate shared bundle below. Action policies
 remain separate from these Kubernetes grants.
 
@@ -267,7 +267,7 @@ The Haku preset currently selects `cluster-diagnostics-reader` cluster-wide,
 within `agentplane-staging`, and `get` on exactly
 `agentplane-staging/coinbase-api-credentials` via the existing
 `claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its
-rules are shared while its static `claude-ai` RoleBinding remains Flux-owned.
+rules are shared while its static RoleBinding (legacy `claude-ai` plus all three Haku identities) remains Flux-owned.
 The preset also selects the existing Haku Console metadata and ClickHouse
 diagnostics Roles in their respective namespaces. Their managed binding
 delegation lives in separate Flux Kustomizations dependent on those services.
