@@ -1553,3 +1553,27 @@ fn backend_value_id(count: usize) -> Result<BackendValueId, CompiledSelectorProb
         CompiledSelectorProblemError::TooManyValues { count }
     })?))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tuple_values_join_domains_even_when_ids_were_interned_out_of_order() {
+        let mut model = CompiledSelectorProblemBuilder::default();
+        let ids: Vec<_> = ["a", "b", "c"]
+            .into_iter()
+            .map(|value| model.intern_string(value).unwrap())
+            .collect();
+        let variable = model.add_variable(VariableDomain::String, None);
+        for value in ["c", "a", "b"] {
+            model
+                .add_allowed_tuples(
+                    vec![variable],
+                    vec![vec![ConstraintValue::String(value.to_string())]],
+                )
+                .unwrap();
+        }
+        assert_eq!(model.variable_domain_values(variable).unwrap(), ids);
+    }
+}
