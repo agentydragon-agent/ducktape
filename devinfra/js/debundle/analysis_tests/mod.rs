@@ -1023,7 +1023,10 @@ fn eager_class_parts_retain_untrusted_inline_callback_fallback() {
         "class C { static { api.run(() => a); } }",
     ] {
         let facts = analyze_facts(&parse(source));
-        assert!(facts[0].at_init_unresolved_inline_fn, "{source}: {facts:#?}");
+        assert!(
+            facts[0].at_init_unresolved_inline_fn,
+            "{source}: {facts:#?}"
+        );
     }
 }
 
@@ -1031,13 +1034,22 @@ fn eager_class_parts_retain_untrusted_inline_callback_fallback() {
 fn lazy_class_registration_cannot_suppress_an_eager_callback_source() {
     let hints = AnalysisHints {
         no_sync_callback_members: BTreeMap::from([(
-            "api".to_string(), BTreeSet::from(["save".to_string()]),
+            "api".to_string(),
+            BTreeSet::from(["save".to_string()]),
         )]),
         ..AnalysisHints::default()
     };
-    for lazy_part in ["constructor() { api.save(provider); }", "x = api.save(provider);"] {
+    for lazy_part in [
+        "constructor() { api.save(provider); }",
+        "x = api.save(provider);",
+    ] {
         let source = format!("class C {{ static {{ api.run(provider); }} {lazy_part} }}");
         let facts = analyze_facts_with_hints(&parse(&source), &hints);
-        assert!(facts[0].at_init_unresolved_sources.contains(&test_id("provider")), "{source}: {facts:#?}");
+        assert!(
+            facts[0]
+                .at_init_unresolved_sources
+                .contains(&test_id("provider")),
+            "{source}: {facts:#?}"
+        );
     }
 }

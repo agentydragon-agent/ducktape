@@ -947,7 +947,8 @@ fn extracted_initializer_cannot_read_inline_entry_binding() {
         FixtureOpts::new(
             "const a = 1; const b = a + 1;",
             vec![logical_module("mod_x", &[Member::new("b")])],
-        ).with_unassigned_mode(unassigned_mode_inline()),
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
         &["cycle", "mod_x"],
     );
 }
