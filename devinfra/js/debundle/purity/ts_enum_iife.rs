@@ -135,12 +135,10 @@ pub(crate) fn ts_enum_iife_argument_binding(call: &CallExpr) -> Option<&str> {
         return None;
     }
     match strip_parens(&call.args[0].expr) {
-        Expr::Bin(bin) if bin.op == BinaryOp::LogicalOr => {
-            match strip_parens(&bin.left) {
-                Expr::Ident(ident) => Some(ident.sym.as_ref()),
-                _ => None,
-            }
-        }
+        Expr::Bin(bin) if bin.op == BinaryOp::LogicalOr => match strip_parens(&bin.left) {
+            Expr::Ident(ident) => Some(ident.sym.as_ref()),
+            _ => None,
+        },
         Expr::Assign(assign) if assign.op == AssignOp::Assign => match &assign.left {
             AssignTarget::Simple(SimpleAssignTarget::Ident(ident)) => Some(ident.id.sym.as_ref()),
             _ => None,
