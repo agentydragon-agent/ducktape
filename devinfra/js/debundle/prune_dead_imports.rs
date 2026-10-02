@@ -43,20 +43,28 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 pub fn prune_dead_import_specifiers(bundle: &mut ChunkBundle) {
+    let mut modules: Vec<_> = bundle.chunks.iter_mut()
+        .flat_map(|chunk| &mut chunk.js.files)
+        .filter_map(|file| {
+            let path = file_abs_path(file);
+            Some((path, &mut file.ast_mut()?.module))
+        })
+        .collect();
+    prune_imports(&mut modules);
+}
+
+/// Operate on a stable, flat list of ASTs; no chunk metadata or analysis reports
+/// participate in import liveness. Paths are rooted in the emitted output tree.
+fn prune_imports(modules: &mut [(String, &mut Module)]) {
     // PASS 1: per file, trim dead named specifiers in place. Records every
     // import that originally had named specifiers and is now empty, keyed by
-    // (chunk, file, item) so later passes can locate it by stable index — PASS
+    // (file, item) so later passes can locate it by stable index — PASS
     // 1 only edits specifier vectors, never the ModuleItem list.
     let mut emptied: Vec<EmptiedImport> = Vec::new();
-    for (chunk_index, chunk) in bundle.chunks.iter_mut().enumerate() {
-        for (file_index, file) in chunk.js.files.iter_mut().enumerate() {
-            let importer_abs = file_abs_path(file);
-            let Some(ast) = file.ast_mut() else {
-                continue;
-            };
-            let referenced = collect_referenced_syms(&ast.module);
-            let reexported = collect_local_reexport_origs(&ast.module);
-            for (item_index, item) in ast.module.body.iter_mut().enumerate() {
+    for (file_index, (importer_abs, module)) in modules.iter_mut().enumerate() {
+            let referenced = collect_referenced_syms(module);
+            let reexported = collect_local_reexport_origs(module);
+            for (item_index, item) in module.body.iter_mut().enumerate() {
                 let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
                     continue;
                 };
@@ -80,15 +88,13 @@ pub fn prune_dead_import_specifiers(bundle: &mut ChunkBundle) {
                     && let Some(src) = import.src.value.as_str()
                 {
                     emptied.push(EmptiedImport {
-                        chunk_index,
                         file_index,
                         item_index,
-                        target_abs: resolve_specifier(src, &importer_abs),
+                        target_abs: resolve_specifier(src, importer_abs),
                     });
                 }
             }
         }
-    }
 
     if emptied.is_empty() {
         return;
@@ -99,17 +105,17 @@ pub fn prune_dead_import_specifiers(bundle: &mut ChunkBundle) {
     // bare. An emptied import whose target is in this set is redundant and can
     // be dropped outright; otherwise the target is loaded only by emptied
     // imports and exactly one must survive as a bare side-effect import.
-    let targets_with_surviving_load = collect_targets_with_surviving_load(bundle);
+    let targets_with_surviving_load = collect_targets_with_surviving_load(modules);
 
     // PASS 3 decisions, computed before mutating bodies (item indices from PASS
     // 1 stay valid only until the body is rebuilt). For each emptied import:
     // drop it if the target is independently loaded, else keep the first
     // occurrence per target as a bare import and drop the rest.
     let mut kept_bare: HashSet<String> = HashSet::new();
-    let mut drop_items: HashSet<(usize, usize, usize)> = HashSet::new();
-    let mut bare_items: HashSet<(usize, usize, usize)> = HashSet::new();
+    let mut drop_items: HashSet<(usize, usize)> = HashSet::new();
+    let mut bare_items: HashSet<(usize, usize)> = HashSet::new();
     for entry in &emptied {
-        let key = (entry.chunk_index, entry.file_index, entry.item_index);
+        let key = (entry.file_index, entry.item_index);
         if targets_with_surviving_load.contains(&entry.target_abs) {
             drop_items.insert(key);
         } else if kept_bare.insert(entry.target_abs.clone()) {
@@ -121,14 +127,10 @@ pub fn prune_dead_import_specifiers(bundle: &mut ChunkBundle) {
 
     // PASS 3: rebuild each touched body, dropping the marked import ModuleItems
     // and clearing specifiers on the kept-bare ones.
-    for (chunk_index, chunk) in bundle.chunks.iter_mut().enumerate() {
-        for (file_index, file) in chunk.js.files.iter_mut().enumerate() {
-            let Some(ast) = file.ast_mut() else {
-                continue;
-            };
+    for (file_index, (_, module)) in modules.iter_mut().enumerate() {
             let mut item_index = 0;
-            ast.module.body.retain_mut(|item| {
-                let key = (chunk_index, file_index, item_index);
+            module.body.retain_mut(|item| {
+                let key = (file_index, item_index);
                 item_index += 1;
                 if drop_items.contains(&key) {
                     return false;
@@ -141,13 +143,11 @@ pub fn prune_dead_import_specifiers(bundle: &mut ChunkBundle) {
                 true
             });
         }
-    }
 }
 
 /// One import that originally had named specifiers and was left empty by
-/// PASS 1, located by stable (chunk, file, item) index for PASS 3.
+/// PASS 1, located by stable (file, item) index for PASS 3.
 struct EmptiedImport {
-    chunk_index: usize,
     file_index: usize,
     item_index: usize,
     target_abs: String,
@@ -157,15 +157,10 @@ struct EmptiedImport {
 /// least one specifier, or that was originally bare. Such a target's module
 /// evaluation is already guaranteed, so an emptied import of it carries no
 /// side effect worth preserving.
-fn collect_targets_with_surviving_load(bundle: &ChunkBundle) -> HashSet<String> {
+fn collect_targets_with_surviving_load(modules: &[(String, &mut Module)]) -> HashSet<String> {
     let mut targets = HashSet::new();
-    for chunk in &bundle.chunks {
-        for file in &chunk.js.files {
-            let importer_abs = file_abs_path(file);
-            let Some(ast) = file.ast() else {
-                continue;
-            };
-            for item in &ast.module.body {
+    for (importer_abs, module) in modules {
+            for item in &module.body {
                 let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
                     continue;
                 };
@@ -175,11 +170,10 @@ fn collect_targets_with_surviving_load(bundle: &ChunkBundle) -> HashSet<String> 
                 // load — its fate is decided against this very set).
                 let loads = !import.specifiers.is_empty();
                 if loads && let Some(src) = import.src.value.as_str() {
-                    targets.insert(resolve_specifier(src, &importer_abs));
+                    targets.insert(resolve_specifier(src, importer_abs));
                 }
             }
         }
-    }
     targets
 }
 
@@ -337,76 +331,26 @@ impl Visit for PatBindingCollector {
 
 #[cfg(test)]
 mod tests {
-    use artifact::{
-        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, ChunkTable, FileMetadata,
-        FileRole, JsChunk, JsFile, JsFileBody,
-    };
     use js_ast::parse_js_module;
 
     use super::*;
 
-    /// One chunk `c` (source path `c.js`), files laid out flat so a sibling's
-    /// `./mod.js` resolves to `c/mod.js`.
-    fn bundle(files: &[(&str, &str, FileRole)]) -> ChunkBundle {
-        let mut bundle = ChunkBundle {
-            chunks: Vec::new(),
-            chunk_table: ChunkTable::default(),
-        };
-        let chunk_id = bundle.chunk_table.intern("c".to_string());
-        let js_files = files
-            .iter()
-            .map(|(path, source, role)| {
-                let parsed = parse_js_module(&format!("c/{path}"), source).expect("parse");
-                JsFile {
-                    path: path.to_string(),
-                    body: JsFileBody::Ast(parsed),
-                    header_lines: Vec::new(),
-                    binding_comments: std::collections::BTreeMap::new(),
-                    leading_item_comments: std::collections::BTreeMap::new(),
-                    metadata: FileMetadata {
-                        chunk_id: "c".to_string(),
-                        chunk_file: path.to_string(),
-                        role: *role,
-                        source_path: "c.js".to_string(),
-                    },
-                }
-            })
-            .collect();
-        bundle.chunks.push(ChunkArtifact {
-            chunk_id,
-            js: JsChunk {
-                entry_file: "entry.js".to_string(),
-                files: js_files,
-                metadata: ChunkMetadata {
-                    source_path: "c.js".to_string(),
-                },
-            },
-            analysis: ChunkAnalysisReport {
-                chunk_id: "c".to_string(),
-                source_path: "c.js".to_string(),
-                entry_file: "entry.js".to_string(),
-                counts: Default::default(),
-                files: Vec::new(),
-                imports: Vec::new(),
-                export_aliases: Vec::new(),
-                unresolved_exports: Vec::new(),
-                kept_top_level_declarations: Vec::new(),
-            },
-        });
-        bundle
+    fn pruned_modules(files: &[(&str, &str)]) -> Vec<(String, Module)> {
+        let mut modules: Vec<_> = files.iter().map(|(path, source)| {
+            ((*path).to_string(), parse_js_module(path, source).unwrap().module)
+        }).collect();
+        let mut views: Vec<_> = modules.iter_mut()
+            .map(|(path, module)| (format!("c/{path}"), module)).collect();
+        prune_imports(&mut views);
+        modules
     }
 
     /// One `(source, local)` pair per surviving named import specifier in
     /// `file_path`, sorted. `source` is the raw import specifier string.
-    fn named_imports(bundle: &ChunkBundle, file_path: &str) -> Vec<(String, String)> {
-        let file = bundle.chunks[0]
-            .js
-            .files
-            .iter()
-            .find(|f| f.path == file_path)
-            .expect("file");
+    fn named_imports(modules: &[(String, Module)], file_path: &str) -> Vec<(String, String)> {
+        let (_, module) = modules.iter().find(|(path, _)| path == file_path).expect("file");
         let mut pairs = Vec::new();
-        for item in &file.ast().expect("ast").module.body {
+        for item in &module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
                 let src = import.src.value.as_str().expect("utf8 src").to_string();
                 for spec in &import.specifiers {
@@ -422,15 +366,10 @@ mod tests {
 
     /// Import statements in `file_path` as `(source, specifier_count)`, sorted —
     /// lets a test assert a statement survives with zero specifiers (bare).
-    fn import_statements(bundle: &ChunkBundle, file_path: &str) -> Vec<(String, usize)> {
-        let file = bundle.chunks[0]
-            .js
-            .files
-            .iter()
-            .find(|f| f.path == file_path)
-            .expect("file");
+    fn import_statements(modules: &[(String, Module)], file_path: &str) -> Vec<(String, usize)> {
+        let (_, module) = modules.iter().find(|(path, _)| path == file_path).expect("file");
         let mut stmts = Vec::new();
-        for item in &file.ast().expect("ast").module.body {
+        for item in &module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
                 let src = import.src.value.as_str().expect("utf8 src").to_string();
                 stmts.push((src, import.specifiers.len()));
@@ -446,26 +385,22 @@ mod tests {
             // The entry imports `{ used, dead }` but references only `used`;
             // `mod.js` is also imported by a sibling, so the entry import is not
             // emptied and simply loses the `dead` specifier.
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "entry.js",
                     "import { used, dead } from \"./mod.js\";\nconsole.log(used);\n",
-                    FileRole::Entry,
                 ),
                 (
                     "sib.js",
                     "import { other } from \"./mod.js\";\nexport const useOther = () => other;\n",
-                    FileRole::Module,
                 ),
                 (
                     "mod.js",
                     "export const used = 1;\nexport const dead = 2;\nexport const other = 3;\n",
-                    FileRole::Module,
                 ),
             ]);
-            prune_dead_import_specifiers(&mut bundle);
             assert_eq!(
-                named_imports(&bundle, "entry.js"),
+                named_imports(&modules, "entry.js"),
                 vec![("./mod.js".to_string(), "used".to_string())]
             );
         });
@@ -477,26 +412,22 @@ mod tests {
             // The entry's only specifier (`dead`) is unused, so the import
             // empties. `mod.js` is still loaded (used) by a sibling, so the
             // emptied entry import is dropped outright — not left bare.
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "entry.js",
                     "import { dead } from \"./mod.js\";\nconsole.log(1);\n",
-                    FileRole::Entry,
                 ),
                 (
                     "sib.js",
                     "import { live } from \"./mod.js\";\nexport const useLive = () => live;\n",
-                    FileRole::Module,
                 ),
                 (
                     "mod.js",
                     "export const dead = 1;\nexport const live = 2;\n",
-                    FileRole::Module,
                 ),
             ]);
-            prune_dead_import_specifiers(&mut bundle);
             assert!(
-                import_statements(&bundle, "entry.js").is_empty(),
+                import_statements(&modules, "entry.js").is_empty(),
                 "emptied entry import of an elsewhere-loaded target should be dropped"
             );
         });
@@ -508,21 +439,18 @@ mod tests {
             // Nobody else loads `mod.js`, so emptying the entry's import must
             // not drop the module evaluation: it becomes a bare `import
             // "./mod.js";` (statement kept, zero specifiers).
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "entry.js",
                     "import { dead } from \"./mod.js\";\nconsole.log(1);\n",
-                    FileRole::Entry,
                 ),
                 (
                     "mod.js",
                     "globalThis.__sideEffect = 1;\nexport const dead = 2;\n",
-                    FileRole::Module,
                 ),
             ]);
-            prune_dead_import_specifiers(&mut bundle);
             assert_eq!(
-                import_statements(&bundle, "entry.js"),
+                import_statements(&modules, "entry.js"),
                 vec![("./mod.js".to_string(), 0)]
             );
         });
@@ -533,21 +461,18 @@ mod tests {
         js_ast::with_swc_globals(|| {
             // Two emptied imports of the same sole-loaded target: keep exactly
             // one bare import, drop the other.
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "entry.js",
                     "import { a } from \"./mod.js\";\nimport { b } from \"./mod.js\";\nconsole.log(1);\n",
-                    FileRole::Entry,
                 ),
                 (
                     "mod.js",
                     "globalThis.__sideEffect = 1;\nexport const a = 1;\nexport const b = 2;\n",
-                    FileRole::Module,
                 ),
             ]);
-            prune_dead_import_specifiers(&mut bundle);
             assert_eq!(
-                import_statements(&bundle, "entry.js"),
+                import_statements(&modules, "entry.js"),
                 vec![("./mod.js".to_string(), 0)]
             );
         });
@@ -558,14 +483,12 @@ mod tests {
         js_ast::with_swc_globals(|| {
             // A side-effect-only import the lowerer emitted intentionally is
             // never touched, even though it loads a target nothing else loads.
-            let mut bundle = bundle(&[(
+            let modules = pruned_modules(&[(
                 "entry.js",
                 "import \"./x.js\";\nconsole.log(1);\n",
-                FileRole::Entry,
             )]);
-            prune_dead_import_specifiers(&mut bundle);
             assert_eq!(
-                import_statements(&bundle, "entry.js"),
+                import_statements(&modules, "entry.js"),
                 vec![("./x.js".to_string(), 0)]
             );
         });
@@ -578,20 +501,18 @@ mod tests {
             // referenced, yet both must survive (a namespace can read any
             // export by property; a default is a single binding this pass
             // doesn't reason about).
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "entry.js",
                     "import def from \"./d.js\";\nimport * as ns from \"./n.js\";\nconsole.log(1);\n",
-                    FileRole::Entry,
                 ),
                 ("d.js", "export default 1;\n", FileRole::Module),
                 ("n.js", "export const k = 1;\n", FileRole::Module),
             ]);
-            prune_dead_import_specifiers(&mut bundle);
-            let file = &bundle.chunks[0].js.files[0];
+            let file = &modules.chunks[0].js.files[0];
             let mut defaults = Vec::new();
             let mut namespaces = Vec::new();
-            for item in &file.ast().expect("ast").module.body {
+            for item in &module.body {
                 if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
                     for spec in &import.specifiers {
                         match spec {
@@ -615,14 +536,12 @@ mod tests {
             // `a` is unused in the body but re-exported by a local
             // `export { a }`; trimming the import would orphan the export, so
             // the specifier is kept.
-            let mut bundle = bundle(&[(
+            let modules = pruned_modules(&[(
                 "mod.js",
                 "import { x as a } from \"./v.js\";\nexport { a };\n",
-                FileRole::Module,
             )]);
-            prune_dead_import_specifiers(&mut bundle);
             assert_eq!(
-                named_imports(&bundle, "mod.js"),
+                named_imports(&modules, "mod.js"),
                 vec![("./v.js".to_string(), "a".to_string())]
             );
         });
@@ -634,23 +553,21 @@ mod tests {
             // The import `f` is shadowed by the arrow param `f`, so the body's
             // `f()` refers to the param, not the import. The import is unused
             // and dropped.
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "mod.js",
                     "import { f } from \"./m.js\";\nexport const g = (f) => f();\n",
-                    FileRole::Module,
                 ),
                 ("m.js", "export const f = () => 1;\n", FileRole::Module),
             ]);
-            prune_dead_import_specifiers(&mut bundle);
             assert!(
-                named_imports(&bundle, "mod.js").is_empty(),
+                named_imports(&modules, "mod.js").is_empty(),
                 "shadowed import should be trimmed; the param is the only `f` reference"
             );
             // The whole import statement is gone (sole-loaded? no — nobody else
             // loads m.js, so it becomes bare). Module evaluation is preserved.
             assert_eq!(
-                import_statements(&bundle, "mod.js"),
+                import_statements(&modules, "mod.js"),
                 vec![("./m.js".to_string(), 0)]
             );
         });
@@ -661,17 +578,15 @@ mod tests {
         js_ast::with_swc_globals(|| {
             // A param `f` shadows only inside its own function; a top-level
             // reference to the imported `f` still counts and keeps the import.
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "mod.js",
                     "import { f } from \"./m.js\";\nconst h = (f) => f();\nexport const top = f;\n",
-                    FileRole::Module,
                 ),
                 ("m.js", "export const f = 1;\n", FileRole::Module),
             ]);
-            prune_dead_import_specifiers(&mut bundle);
             assert_eq!(
-                named_imports(&bundle, "mod.js"),
+                named_imports(&modules, "mod.js"),
                 vec![("./m.js".to_string(), "f".to_string())]
             );
         });
