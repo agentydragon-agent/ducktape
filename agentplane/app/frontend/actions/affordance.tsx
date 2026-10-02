@@ -82,7 +82,14 @@ export function ComposerPendingActions(): JSX.Element | null {
             {expanded ? "Hide details" : "Review"}
           </Button>
         </Group>
-        <div id={detailsId} hidden={!expanded}>
+        <div
+          id={detailsId}
+          className="action-affordance-details"
+          role="region"
+          aria-label="Action request details"
+          tabIndex={expanded ? 0 : -1}
+          hidden={!expanded}
+        >
           {expanded && (
             <Stack gap="sm">
               <StaleNotice streams={[actions.stream]} />

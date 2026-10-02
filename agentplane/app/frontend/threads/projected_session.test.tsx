@@ -408,9 +408,12 @@ it.each([
   [{ harness_state: "HARNESS_STATE_STOPPED" }, "Harness not running", "gray", false],
   [{ active_turn_id: "turn-1" }, "Turn running · Runner feed active · harness running", "green", true],
   [{}, "Runner feed active · harness running", "green", false],
-] as const)("uses shared thread row %o for composer status", async (row, label, color, pulse) => {
+] as const)("uses shared thread row %o for the topbar status", async (row, label, color, pulse) => {
   sharedThread = row;
-  const dot = (await render()).querySelector(".agentplane-thread-status-dot");
+  const container = await render();
+  const dot = container.querySelector(".agentplane-thread-status-dot");
+  expect(dot?.closest(".agentplane-composer-controls")).toBeNull();
+  expect(mounted.at(-1)?.topbarTitle?.contains(dot ?? null)).toBe(true);
   expect(dot?.getAttribute("aria-label")).toBe(label);
   expect(dot?.getAttribute("style")).toContain(`--mantine-color-${color}-6`);
   expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(pulse);
