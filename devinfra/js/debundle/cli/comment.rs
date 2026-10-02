@@ -296,7 +296,11 @@ fn edit_comment(
     if replacement == current {
         return Ok(("unchanged", current, false));
     }
-    let action = if replacement.is_some() { "set" } else { "cleared" };
+    let action = if replacement.is_some() {
+        "set"
+    } else {
+        "cleared"
+    };
     Ok((action, replacement, true))
 }
 
@@ -415,7 +419,10 @@ mod tests {
         assert_eq!(set.action, "set");
         let body = read(root, "runtime/plugins.yaml");
         let doc: Value = serde_yaml::from_str(&body).unwrap();
-        assert_eq!(doc["annotations"]["PluginSettingsAccessor"]["comment"].as_str(), Some("readable hit"));
+        assert_eq!(
+            doc["annotations"]["PluginSettingsAccessor"]["comment"].as_str(),
+            Some("readable hit")
+        );
     }
 
     #[test]

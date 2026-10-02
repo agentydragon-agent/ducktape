@@ -112,10 +112,14 @@ fn source_match_comments_use_readable_annotations_and_keep_other_metadata() {
         )],
     );
     fixture.json(&["bindings", "comment", "a", "emitted comment"]);
-    assert_eq!(fixture.json(&["bindings", "comment", "Alpha"])["comment"], "emitted comment");
+    assert_eq!(
+        fixture.json(&["bindings", "comment", "Alpha"])["comment"],
+        "emitted comment"
+    );
     fixture.assert_runs("1\n");
     fixture.json(&["bindings", "comment", "Alpha", "--clear"]);
-    let doc: Value = serde_yaml::from_slice(&fs::read(fixture.modules.join("m.yaml")).unwrap()).unwrap();
+    let doc: Value =
+        serde_yaml::from_slice(&fs::read(fixture.modules.join("m.yaml")).unwrap()).unwrap();
     assert!(doc["annotations"]["Alpha"]["comment"].is_null());
     assert_eq!(doc["annotations"]["Alpha"]["note"], "selector debt");
 }
