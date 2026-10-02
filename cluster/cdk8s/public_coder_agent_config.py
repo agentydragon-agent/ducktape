@@ -880,8 +880,8 @@ def _rbac(scope: Construct) -> None:
             # Pod metrics (metrics.k8s.io) -- nodes_top / pods_top equivalents.
             k8s.PolicyRule(api_groups=["metrics.k8s.io"], resources=["pods"], verbs=["get", "list"]),
             # The devbox is the public-coder agent's ephemeral build machine. Restrict
-            # image-rollout inspection to this one named KubeVirt VM/VMI. Restart permission is
-            # granted separately to Haku's static identities below.
+            # image-rollout inspection to this one named KubeVirt VM/VMI. The rollout
+            # controller, not the agents, owns restarts.
             k8s.PolicyRule(
                 api_groups=["kubevirt.io"],
                 resources=["virtualmachines"],
@@ -910,42 +910,16 @@ def _rbac(scope: Construct) -> None:
         subjects=_HAKU_SUPERSET_SUBJECTS,
     )
 
-    # Deleting the VMI (not the VM) lets runStrategy: Always recreate the devbox from the
-    # current Flux-updated containerDisk template. Keep the reader's existing subjects on this
-    # separate narrow Role so none loses its effective permission. Managed Agentplane SAs are
-    # not among these static subjects; their grant selection is a later change.
-    devbox_vmi_restart = "public-coder-agent-devbox-vmi-restart"
+    # Revoke agent-driven restarts: the image rollout controller owns them now.
+    # Keep an empty Role until old managed Sandboxes with this snapshotted grant
+    # have been replaced. The reconciler reads the Role even for existing bindings;
+    # deleting it immediately would mark those Sandboxes unready. No new selection
+    # or static binding points here, and old bindings now confer no permissions.
     k8s.KubeRole(
         scope,
         "devbox-vmi-restart",
-        metadata=k8s.ObjectMeta(
-            name=devbox_vmi_restart,
-            namespace=NAMESPACE,
-            annotations={
-                "description": "Allows the existing public-coder and Haku subjects to restart only public-coder-devbox."
-            },
-        ),
-        rules=[
-            k8s.PolicyRule(
-                api_groups=["kubevirt.io"],
-                resources=["virtualmachineinstances"],
-                resource_names=["public-coder-devbox"],
-                verbs=["delete"],
-            )
-        ],
-    )
-    k8s.KubeRoleBinding(
-        scope,
-        "devbox-vmi-restart-binding",
-        metadata=k8s.ObjectMeta(
-            name=devbox_vmi_restart,
-            namespace=NAMESPACE,
-            annotations={
-                "description": "Binds the existing public-coder and Haku subjects to the devbox restart Role."
-            },
-        ),
-        role_ref=_role_ref("Role", devbox_vmi_restart),
-        subjects=_HAKU_SUPERSET_SUBJECTS,
+        metadata=k8s.ObjectMeta(name="public-coder-agent-devbox-vmi-restart", namespace=NAMESPACE),
+        rules=[],
     )
 
     # Additional secret-free status for the public-coder workload itself.
@@ -976,27 +950,29 @@ def _rbac(scope: Construct) -> None:
         subjects=_HAKU_SUPERSET_SUBJECTS,
     )
 
-    # On-demand login bootstrap via Console SAR; never a pod-mounted operator identity.
-    acceptance = "agentplane-acceptance-operator-reader"
+    # Use a new testing-only Role name rather than expanding the old staging+testing
+    # reader's subjects: independently reconciled managed bindings must never acquire
+    # the old staging credential while waiting for this chart to narrow its rules.
+    acceptance = "agentplane-testing-login-reader"
     k8s.KubeRole(
         scope,
-        "agentplane-acceptance-operator-reader",
+        "agentplane-testing-login-reader",
         metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
         rules=[
             k8s.PolicyRule(
                 api_groups=[""],
                 resources=["secrets"],
-                resource_names=["agentplane-acceptance-operator", "agentplane-testing-acceptance-operator"],
+                resource_names=["agentplane-testing-acceptance-operator"],
                 verbs=["get"],
             )
         ],
     )
     k8s.KubeRoleBinding(
         scope,
-        "agentplane-acceptance-operator-reader-binding",
+        "agentplane-testing-login-reader-binding",
         metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
         role_ref=_role_ref("Role", acceptance),
-        subjects=[k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group=_RBAC_GROUP)],
+        subjects=_HAKU_SUPERSET_SUBJECTS,
     )
 
     # Cluster-scoped node inventory for scheduling and health diagnostics.

@@ -9,6 +9,7 @@ bindings are written by the integration app at runtime and are never checked in 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from urllib.parse import urlsplit
 
 from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import (
     ActionPolicyBinding,
@@ -28,10 +29,11 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
-from cluster.cdk8s import external_creds
-from cluster.cdk8s.agentplane import app as app_component, egress, testing
+from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
+    AGENTPLANE_TESTING_POLICY,
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -58,7 +60,7 @@ from cluster.cdk8s.agentplane.staging_config import (
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
 from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 _NAMESPACE = "agentplane-staging"
@@ -72,7 +74,6 @@ _GROCY_SF_READS_SET = "grocy-sf-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
-_AGENTPLANE_TESTING_POLICY = "agentplane-testing"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 
 
@@ -479,12 +480,18 @@ def add_staging_action_policies(scope: Construct) -> None:
     # bumping TLS. Nothing is substituted: the suite presents the app token it mints in
     # agentplane-testing (rbac.AcceptanceToken), so any method may pass.
     testing_app = app_component.service(testing.ENV.namespace)
+    # Browser/OIDC acceptance tests follow the app's public callback and Dex issuer.
+    # Neither staging's app nor its real Authentik issuer belongs in this policy.
+    testing_login_hosts = [testing.ENV.app.hostname, urlsplit(testing.ENV.app.oidc_issuer).netloc]
     EgressPolicy(
         scope,
         "egresspolicy-agentplane-testing",
-        metadata=ApiObjectMetadata(name=_AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
         # The proxy matches a request's host on the exact string, and clients spell the full name.
-        rules=[EgressPolicySpecRules(hosts=[testing_app.fqdn], cluster_internal=True)],
+        rules=[
+            EgressPolicySpecRules(hosts=[testing_app.fqdn], cluster_internal=True),
+            EgressPolicySpecRules(hosts=testing_login_hosts, cluster_internal=True),
+        ],
     )
     proxy = egress.proxy(_NAMESPACE)
     NetworkPolicy(
@@ -492,7 +499,17 @@ def add_staging_action_policies(scope: Construct) -> None:
         "networkpolicy-egress-to-testing-app",
         metadata=ApiObjectMetadata(name=f"{proxy.name}-to-testing-app", namespace=_NAMESPACE),
         endpoint_selector=proxy.pods.selector,
-        egress=[testing_app.egress()],
+        egress=[
+            testing_app.egress(),
+            cilium.egress_via_gateway(*testing_login_hosts),
+            # Gateway Service traffic is checked against the selected backend, not
+            # node:443. Keep Dex's backend permission scoped to its login SNI.
+            EgressRule.to_endpoints(
+                dex.service().pods.cilium,
+                dex.service().pod_port,
+                server_names=[urlsplit(testing.ENV.app.oidc_issuer).netloc],
+            ),
+        ],
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
     # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.
@@ -580,7 +597,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             HAKU_MAILBOX_POLICY,
             COINBASE_POLICY,
             PLAID_PGWEB_POLICY,
-            _AGENTPLANE_TESTING_POLICY,
+            AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -605,7 +622,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
             PLAID_PGWEB_POLICY,
-            _AGENTPLANE_TESTING_POLICY,
+            AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
