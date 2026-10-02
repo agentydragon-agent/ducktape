@@ -270,16 +270,29 @@ mod tests {
         js_ast::with_swc_globals(|| {
             let root = tempfile::TempDir::new().unwrap();
             for (name, source) in [
-                ("vendor.js", "import { helper } from './helper.js'; export const value = helper();"),
+                (
+                    "vendor.js",
+                    "import { helper } from './helper.js'; export const value = helper();",
+                ),
                 ("helper.js", "export const helper = () => 7;"),
-                ("caller.js", "import { value } from './vendor.js'; console.log(value);"),
+                (
+                    "caller.js",
+                    "import { value } from './vendor.js'; console.log(value);",
+                ),
                 ("forward.js", "export { value } from './vendor.js';"),
-                ("dynamic.js", "export const load = () => import('./vendor.js');"),
+                (
+                    "dynamic.js",
+                    "export const load = () => import('./vendor.js');",
+                ),
             ] {
                 fs::write(root.path().join(name), source).unwrap();
             }
             let list = root.path().join("js-files.txt");
-            fs::write(&list, "vendor.js\nhelper.js\ncaller.js\nforward.js\ndynamic.js\n").unwrap();
+            fs::write(
+                &list,
+                "vendor.js\nhelper.js\ncaller.js\nforward.js\ndynamic.js\n",
+            )
+            .unwrap();
             let spec: TransformSpec = serde_yaml::from_str(
                 "inputs: {input_root: '.', js_list_path: js-files.txt}\nvendor:\n  vendor.js: {identity: fixture, level: suppress}\n",
             ).unwrap();
@@ -287,7 +300,12 @@ mod tests {
             let prepared = prepare_js_chunks(&spec, loaded).unwrap();
             for chunk in &prepared.artifact.chunks {
                 let name = prepared.artifact.chunk_table.name(chunk.chunk_id);
-                let has_ast = chunk.js.get_file(CANONICAL_CHUNK_ENTRY_FILE).unwrap().ast().is_some();
+                let has_ast = chunk
+                    .js
+                    .get_file(CANONICAL_CHUNK_ENTRY_FILE)
+                    .unwrap()
+                    .ast()
+                    .is_some();
                 assert_eq!(has_ast, name != "helper", "{name}");
             }
         });

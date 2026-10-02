@@ -2854,14 +2854,20 @@ fn partial_swap_preserves_residual_dependency_without_its_ast() {
     let ws = VendorTestWorkspace::new("vendor-residual-dependency-");
     ws.write_chunk("helper.js", "export const helper = () => 'helper';\n");
     ws.write_chunk("vendor.js", "import { helper } from './helper.js';\nexport const old = () => 'bundled';\nexport const residual = () => helper();\n");
-    ws.write_chunk("app.js", "import { old, residual } from './vendor.js';\nconsole.log(old() + ':' + residual());\n");
+    ws.write_chunk(
+        "app.js",
+        "import { old, residual } from './vendor.js';\nconsole.log(old() + ':' + residual());\n",
+    );
     ws.write_js_list("helper.js\nvendor.js\napp.js\n");
     let upstream = "export const replacement = () => 'upstream';\n";
     let package = ws.write_upstream_package("upstream/lib", "lib", "1.0.0", "index.js", upstream);
     let vendor = partial_swap_vendor(
         "residual dependency",
         &[("lib", partial_package("1.0.0", "index.js", None))],
-        &[("old", swap_symbol("lib", PartialSwapKind::Named, Some("replacement"), None))],
+        &[(
+            "old",
+            swap_symbol("lib", PartialSwapKind::Named, Some("replacement"), None),
+        )],
     );
     let spec = ws.root.path().join("transform.yaml");
     write_yaml_file(&spec, &ws.transform_spec(json!({"vendor.js": vendor})));
