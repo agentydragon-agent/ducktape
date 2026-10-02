@@ -8,10 +8,10 @@ use swc_common::sync::Lrc;
 use swc_common::{
     BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
 };
-use swc_ecma_ast::{ExportSpecifier, ExportNamedSpecifier, NamedExport, 
-    ComputedPropName, Decl, EsReserved, Expr, Ident, IdentName, ImportDecl, ImportNamedSpecifier,
-    ImportPhase, ImportSpecifier, Lit, MemberProp, Module, ModuleDecl, ModuleExportName,
-    ModuleItem, Stmt, Str, VarDecl, VarDeclKind,
+use swc_ecma_ast::{
+    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Ident,
+    IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit, MemberProp,
+    Module, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Stmt, Str, VarDecl, VarDeclKind,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
