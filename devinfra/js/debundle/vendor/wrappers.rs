@@ -11,7 +11,8 @@ use artifact::path_from_module_path;
 use binding_targets::module_export_name;
 use js_ast::{
     ParsedJsModule, emit_js_module, import_decl_module_item, is_binding_identifier,
-    member_property, module_export_name_node, named_export_module_item, named_export_specifier, named_import_specifier, parse_js_module,
+    member_property, module_export_name_node, named_export_module_item, named_export_specifier,
+    named_import_specifier, parse_js_module,
 };
 use spec::BundledPartialSwapPackage;
 

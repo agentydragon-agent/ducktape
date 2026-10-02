@@ -6,10 +6,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Result, bail};
 mod emission;
 mod export_surface;
-mod output_imports;
-mod packages;
 mod import_rewrites;
 mod manifests;
+mod output_imports;
+mod packages;
 mod passthrough;
 mod plan;
 mod strip;
@@ -20,18 +20,20 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{
-    ArtifactIndexes, ChunkId, ChunkTable, list_chunk_file_paths,
-};
+use artifact::{ArtifactIndexes, ChunkId, ChunkTable, list_chunk_file_paths};
 use binding_targets::{declaration_ids, module_export_name};
 pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
-pub use import_rewrites::{DeferredImport, IdentRewriteTarget, PartialSwapIdentRewriter, VendorImportRewrites};
-pub use output_imports::{MaterializedOutputChunkIndex, bundled_facade_import_source, resolve_partial_swap_import_target};
 use export_surface::collect_local_idents_by_export_name;
+pub use import_rewrites::{
+    DeferredImport, IdentRewriteTarget, PartialSwapIdentRewriter, VendorImportRewrites,
+};
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
 use js_ast::{module_export_name_node, named_export_module_item, named_export_specifier};
 pub use manifests::*;
+pub use output_imports::{
+    MaterializedOutputChunkIndex, bundled_facade_import_source, resolve_partial_swap_import_target,
+};
 use plan::ChunkBundledPartialSwapPlan;
 pub use plan::{
     VendorImportAction, VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan,
@@ -495,13 +497,13 @@ fn check_partial_swap_consumer_decl(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-    use swc_ecma_visit::VisitMutWith;
     use artifact::{
         ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
         JsChunk, JsFile,
     };
     use spec::{VendorLevel, VendorMark, VendorRole};
+    use std::collections::HashMap;
+    use swc_ecma_visit::VisitMutWith;
 
     #[test]
     fn passthrough_rewrites_boundary_renames_for_multiple_vendor_targets_in_one_pass() {

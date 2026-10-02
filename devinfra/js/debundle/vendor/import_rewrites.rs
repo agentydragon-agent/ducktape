@@ -10,12 +10,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use analysis::local_namespace_iife_target;
 use artifact::ChunkId;
 use js_ast::{is_binding_identifier, member_property};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
-use analysis::local_namespace_iife_target;
 
 use crate::VendorImportAction;
 

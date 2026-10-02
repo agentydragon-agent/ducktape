@@ -1,8 +1,8 @@
 //! Locate upstream packages and validate package/subpath containment.
-use std::fs;
-use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 pub(super) fn read_installed_package_metadata(
     package_name: &str,
@@ -133,4 +133,3 @@ fn assert_path_within_root(path: &Path, root: &Path, message: &str) -> Result<()
     }
     bail!("{message}: {}", path.display());
 }
-

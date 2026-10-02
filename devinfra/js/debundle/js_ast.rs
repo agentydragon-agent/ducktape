@@ -8,7 +8,7 @@ use swc_common::sync::Lrc;
 use swc_common::{
     BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
 };
-use swc_ecma_ast::{
+use swc_ecma_ast::{ExportSpecifier, ExportNamedSpecifier, NamedExport, 
     ComputedPropName, Decl, EsReserved, Expr, Ident, IdentName, ImportDecl, ImportNamedSpecifier,
     ImportPhase, ImportSpecifier, Lit, MemberProp, Module, ModuleDecl, ModuleExportName,
     ModuleItem, Stmt, Str, VarDecl, VarDeclKind,
@@ -758,15 +758,20 @@ pub fn named_export_specifier(
 }
 
 /// Construct a value export, optionally forwarding from another module.
-pub fn named_export_module_item(specifiers: Vec<ExportSpecifier>, source: Option<&str>) -> ModuleItem {
+pub fn named_export_module_item(
+    specifiers: Vec<ExportSpecifier>,
+    source: Option<&str>,
+) -> ModuleItem {
     ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
         span: DUMMY_SP,
         specifiers,
-        src: source.map(|source| Box::new(Str {
-            span: DUMMY_SP,
-            value: source.into(),
-            raw: None,
-        })),
+        src: source.map(|source| {
+            Box::new(Str {
+                span: DUMMY_SP,
+                value: source.into(),
+                raw: None,
+            })
+        }),
         type_only: false,
         with: None,
     }))
@@ -780,13 +785,17 @@ mod tests {
     #[test]
     fn named_export_constructor_preserves_local_hygiene() {
         with_swc_globals(|| {
-            let ctxt = SyntaxContext::empty().apply_mark(swc_common::Mark::new());
+            let ctxt = swc_common::SyntaxContext::empty().apply_mark(swc_common::Mark::new());
             let local = Ident::new("local".into(), DUMMY_SP, ctxt);
             let ExportSpecifier::Named(specifier) = named_export_specifier(
                 ModuleExportName::Ident(local.clone()),
                 Some(module_export_name_node("external-name")),
-            ) else { panic!("expected named specifier") };
-            let ModuleExportName::Ident(orig) = specifier.orig else { panic!("expected local identifier") };
+            ) else {
+                panic!("expected named specifier")
+            };
+            let ModuleExportName::Ident(orig) = specifier.orig else {
+                panic!("expected local identifier")
+            };
             assert_eq!(orig.to_id(), local.to_id());
             assert!(matches!(specifier.exported, Some(ModuleExportName::Str(_))));
         });

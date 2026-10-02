@@ -1,8 +1,8 @@
 //! Inspect export surfaces, preserving the distinction between external names and local identities.
-use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Result, bail};
 use binding_targets::{declaration_name_strings, module_export_name};
 use js_ast::{is_binding_identifier, str_value};
+use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::*;
 
 /// Collect the boundary-rename mapping (vendor-LOCAL binding name → the

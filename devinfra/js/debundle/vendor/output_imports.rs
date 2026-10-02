@@ -1,7 +1,10 @@
 //! Resolve vendor imports in emitted-output coordinates, including materialized chunk paths.
+use artifact::{
+    ArtifactIndexes, ChunkId, ChunkTable, join_module_path, module_path_dirname,
+    normalize_module_path, relative_module_specifier,
+};
 use std::collections::HashMap;
 use std::path::Path;
-use artifact::{ArtifactIndexes, ChunkId, ChunkTable, join_module_path, module_path_dirname, normalize_module_path, relative_module_specifier};
 
 /// Caller-relative module specifier for a generated bundled facade:
 /// `facade_app_path` rebased against the caller file's output-tree

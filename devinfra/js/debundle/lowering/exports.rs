@@ -7,8 +7,8 @@ use crate::chunk_ast::{TopLevelDecl, binding_names};
 use crate::plans::MemberRequest;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
-use js_ast::{named_export_module_item, named_export_specifier};
 use anyhow::{Result, bail};
+use js_ast::{named_export_module_item, named_export_specifier};
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use swc_atoms::Atom;
@@ -268,12 +268,20 @@ fn reject_duplicate_field(
 
 pub(super) fn export_named_for_bindings(bindings: &BTreeMap<String, String>) -> ModuleItem {
     named_export_module_item(
-        bindings.iter().map(|(local, exported)| {
-            named_export_specifier(
-                ModuleExportName::Ident(Ident::new_no_ctxt(local.clone().into(), DUMMY_SP)),
-                (local != exported).then(|| ModuleExportName::Ident(Ident::new_no_ctxt(exported.clone().into(), DUMMY_SP))),
-            )
-        }).collect(),
+        bindings
+            .iter()
+            .map(|(local, exported)| {
+                named_export_specifier(
+                    ModuleExportName::Ident(Ident::new_no_ctxt(local.clone().into(), DUMMY_SP)),
+                    (local != exported).then(|| {
+                        ModuleExportName::Ident(Ident::new_no_ctxt(
+                            exported.clone().into(),
+                            DUMMY_SP,
+                        ))
+                    }),
+                )
+            })
+            .collect(),
         None,
     )
 }
