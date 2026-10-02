@@ -83,8 +83,8 @@ py_test(
         "testdata/pod_*.yaml",
         "__snapshots__/test_inject_mitmproxy.ambr",
     ]),
-    uses_syrupy = True,
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    uses_syrupy = True,
     deps = [
         ":apply",
         ":parked_proxy_policy",
