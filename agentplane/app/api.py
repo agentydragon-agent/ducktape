@@ -56,6 +56,7 @@ from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
+from agentplane.app.threads import bridge as runner_bridge
 from agentplane.app.threads.events import stream
 from agentplane.app.threads.events.debug import (
     ArchivedObservationEntry,
@@ -66,7 +67,6 @@ from agentplane.app.threads.events.debug import (
     ThreadScopeChangedError,
 )
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
-from agentplane.app.threads import bridge as runner_bridge
 from agentplane.app.threads.sessions import SandboxNotReachableError
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError

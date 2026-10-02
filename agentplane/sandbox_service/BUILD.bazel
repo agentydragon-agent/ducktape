@@ -70,11 +70,11 @@ py_library(
     srcs = ["inventory.py"],
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
+        ":binding_storage",
         ":kubernetes_views",
         ":models",
         ":session_config",
         "//agentplane/action_service/policies:resources",
-        "//agentplane/sandbox_service:binding_storage",
         "//util:agent_sandbox",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
@@ -286,6 +286,7 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":action_policy",
+        ":binding_storage",
         ":egress",
         ":inventory",
         ":kubernetes_bindings",
@@ -293,7 +294,6 @@ py_library(
         ":kubernetes_views",
         ":models",
         ":session_config",
-        "//agentplane/sandbox_service:binding_storage",
     ],
 )
 
@@ -346,6 +346,7 @@ py_test(
         ":inventory",
         ":kubernetes_bindings",
         ":kubernetes_grants",
+        ":kubernetes_views",
         ":models",
         ":provisioning",
         ":wire",
@@ -472,7 +473,6 @@ py_test(
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
-        "//agentplane/runner:client",
         "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -503,6 +503,7 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":binding_storage",
         ":client",
         ":conftest",
         ":destinations",
@@ -520,7 +521,6 @@ py_test(
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:scripted_model",
-        "//agentplane/sandbox_service:binding_storage",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
@@ -599,11 +599,11 @@ py_library(
     srcs = ["kubernetes_views.py"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        ":binding_storage",
         ":kubernetes_grants",
         ":models",
         ":session_config",
         "//agentplane:subjects",
-        "//agentplane/sandbox_service:binding_storage",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
