@@ -1,248 +1,61 @@
-//! E2e for `debundle scc` and `debundle cluster` against a synthetic
-//! owner-graph fixture.
+//! Module-quotient queries over graph artifacts from real JS/specs.
 
-use debundle_e2e_support::{owner_graph, owner_node, run_debundle, write_text_file};
-use serde_json::json;
-use std::fs;
+use debundle_e2e_support::GraphFixture;
 
-/// Build a small owner_graph.json with a 2-module SCC + a singleton.
-fn synthetic_graph_json() -> String {
-    let mut graph = owner_graph(
-        "static/index",
-        vec![
-            owner_node("owner:0", 1, "XOe", "ui/plugins"),
-            owner_node("owner:1", 2, "YOe", "residual"),
+fn fixture() -> GraphFixture {
+    GraphFixture::rejected(
+        "const first = 1;\nconst middle = first + 1;\nconst last = middle + 1;\nconst isolated = 7;\n",
+        &[
+            ("ui/plugins.yaml", "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: last}}}]"),
+            ("middle.yaml", "members: [{selector: {binding: {name: middle}}}]"),
+            ("isolated.yaml", "members: [{selector: {binding: {name: isolated}}}]"),
         ],
-        vec![],
-    );
-    graph["module_graph"] = json!({
-        "nodes": [
-            { "key": "ui/plugins", "path": "ui/plugins", "residual": false },
-            { "key": "residual", "path": "residual", "residual": true },
-            { "key": "isolated", "path": "isolated", "residual": false }
-        ],
-        "edges": [
-            {
-                "id": "q_edge:0",
-                "source": "ui/plugins",
-                "target": "residual",
-                "edge_kinds": ["eager_use"],
-                "constrains_init_order": true
-            },
-            {
-                "id": "q_edge:1",
-                "source": "residual",
-                "target": "ui/plugins",
-                "edge_kinds": ["eager_use"],
-                "constrains_init_order": true
-            }
-        ],
-        "sccs": [
-            {
-                "id": "scc:0",
-                "modules": ["ui/plugins", "residual"],
-                "is_cycle": true,
-                "realizable": false,
-                "module_edge_ids": ["q_edge:0", "q_edge:1"],
-                "constraining_module_edge_ids": ["q_edge:0", "q_edge:1"]
-            },
-            {
-                "id": "scc:1",
-                "modules": ["isolated"],
-                "is_cycle": false,
-                "realizable": true,
-                "module_edge_ids": [],
-                "constraining_module_edge_ids": []
-            }
-        ]
-    });
-    graph.to_string()
+    )
 }
 
 #[test]
-fn scc_lists_every_scc_in_quotient() {
-    let dir = tempfile::tempdir().unwrap();
-    let graph_path = dir.path().join("owner_graph.json");
-    let modules = dir.path().join("modules");
-    fs::create_dir_all(&modules).unwrap();
-    write_text_file(&graph_path, &synthetic_graph_json());
-
-    let out = run_debundle(&[
-        "scc",
-        "--graph",
-        graph_path.to_str().unwrap(),
-        "--modules",
-        modules.to_str().unwrap(),
-        "--format",
-        "json",
-    ]);
-    assert!(
-        out.status.success(),
-        "scc exit: stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(parsed["sccs"].as_array().unwrap().len(), 2);
+fn scc_listing_and_filters_agree_on_cycles_and_singletons() {
+    let fixture = fixture();
+    let all = fixture.json(&["scc"]);
+    let cycles = fixture.json(&["scc", "--cycles-only"]);
+    let cycle = &cycles["sccs"][0];
+    assert_eq!(cycles["sccs"].as_array().unwrap().len(), 1);
+    assert_eq!(cycle["is_cycle"], true);
+    assert_eq!(cycle["realizable"], false);
+    let labels = cycle["labels"].as_array().unwrap();
+    assert_eq!(labels.len(), 2);
+    assert!(labels.iter().any(|l| l == "ui/plugins"));
+    assert!(labels.iter().any(|l| l == "middle"));
+    assert!(all["sccs"].as_array().unwrap().contains(cycle));
+    let singletons = fixture.json(&["scc", "--singletons-only"]);
+    assert!(singletons["sccs"].as_array().unwrap().iter().any(|s| s["labels"][0] == "isolated"));
+    assert_eq!(all["sccs"].as_array().unwrap().len(), singletons["sccs"].as_array().unwrap().len() + 1);
+    assert_eq!(fixture.json(&["scc", "--binding", "first"]), cycles);
 }
 
 #[test]
-fn scc_cycles_only_filter() {
-    let dir = tempfile::tempdir().unwrap();
-    let graph_path = dir.path().join("owner_graph.json");
-    let modules = dir.path().join("modules");
-    fs::create_dir_all(&modules).unwrap();
-    write_text_file(&graph_path, &synthetic_graph_json());
-
-    let out = run_debundle(&[
-        "scc",
-        "--graph",
-        graph_path.to_str().unwrap(),
-        "--modules",
-        modules.to_str().unwrap(),
-        "--cycles-only",
-        "--format",
-        "json",
-    ]);
-    assert!(out.status.success());
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let sccs = parsed["sccs"].as_array().unwrap();
-    assert_eq!(sccs.len(), 1);
-    assert_eq!(sccs[0]["id"].as_str(), Some("scc:0"));
-}
-
-#[test]
-fn scc_binding_filter() {
-    let dir = tempfile::tempdir().unwrap();
-    let graph_path = dir.path().join("owner_graph.json");
-    let modules = dir.path().join("modules");
-    fs::create_dir_all(&modules).unwrap();
-    write_text_file(&graph_path, &synthetic_graph_json());
-
-    let out = run_debundle(&[
-        "scc",
-        "--graph",
-        graph_path.to_str().unwrap(),
-        "--modules",
-        modules.to_str().unwrap(),
-        "--binding",
-        "XOe",
-        "--format",
-        "json",
-    ]);
-    assert!(out.status.success());
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let sccs = parsed["sccs"].as_array().unwrap();
-    assert_eq!(sccs.len(), 1);
-}
-
-#[test]
-fn cluster_emits_quotient_neighbors() {
-    let dir = tempfile::tempdir().unwrap();
-    let graph_path = dir.path().join("owner_graph.json");
-    let modules = dir.path().join("modules");
-    fs::create_dir_all(&modules).unwrap();
-    write_text_file(&graph_path, &synthetic_graph_json());
-
-    let out = run_debundle(&[
-        "cluster",
-        "XOe",
-        "--graph",
-        graph_path.to_str().unwrap(),
-        "--modules",
-        modules.to_str().unwrap(),
-        "--format",
-        "json",
-    ]);
-    assert!(out.status.success());
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    // Each module-quotient node carries both its interned id and a
-    // human path label. In this synthetic graph the
-    // interned key already equals the path, so id == label here.
-    assert_eq!(parsed["home_module"]["label"].as_str(), Some("ui/plugins"));
-    assert_eq!(parsed["home_module"]["id"].as_str(), Some("ui/plugins"));
-    assert_eq!(
-        parsed["incoming_modules"][0]["label"].as_str(),
-        Some("residual")
-    );
-    assert_eq!(
-        parsed["outgoing_modules"][0]["label"].as_str(),
-        Some("residual")
-    );
-}
-
-#[test]
-fn cluster_accepts_binding_flag_alias() {
-    // `--binding <sym>` is accepted as an alias for the
-    // positional `<sym>` (the spelling some operator skills document).
-    let dir = tempfile::tempdir().unwrap();
-    let graph_path = dir.path().join("owner_graph.json");
-    let modules = dir.path().join("modules");
-    fs::create_dir_all(&modules).unwrap();
-    write_text_file(&graph_path, &synthetic_graph_json());
-
-    let out = run_debundle(&[
-        "cluster",
-        "--binding",
-        "XOe",
-        "--graph",
-        graph_path.to_str().unwrap(),
-        "--modules",
-        modules.to_str().unwrap(),
-        "--format",
-        "json",
-    ]);
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(parsed["home_module"]["label"].as_str(), Some("ui/plugins"));
+fn cluster_reports_neighbors_and_accepts_the_binding_flag_alias() {
+    let fixture = fixture();
+    let report = fixture.json(&["cluster", "first"]);
+    assert_eq!(fixture.json(&["cluster", "--binding", "first"]), report);
+    assert_eq!(report["home_module"]["label"], "ui/plugins");
+    assert!(!report["home_module"]["id"].as_str().unwrap().is_empty());
+    for direction in ["incoming_modules", "outgoing_modules"] {
+        assert!(report[direction].as_array().unwrap().iter().any(|m| m["label"] == "middle"));
+    }
 }
 
 #[test]
 fn owner_queries_refuse_minified_readable_name_ambiguity() {
-    use debundle_e2e_support::{FixtureOpts, Member, logical_module, run_fixture};
-
-    let fixture = run_fixture(FixtureOpts::new(
-        "const a = 1; const b = 2;",
-        vec![
-            logical_module("first", &[Member::renamed("b", "a")]),
-            logical_module("second", &[Member::renamed("c", "b")]),
-        ],
-    ));
-    let graph = fixture
-        .report_root
-        .join(&fixture.chunk_id)
-        .join("owner_graph.json");
-    let modules = tempfile::tempdir().unwrap();
+    let fixture = GraphFixture::new("const a = 1; const b = 2;", &[
+        ("first.yaml", "members: [{name: b, selector: {binding: {name: a}}}]"),
+        ("second.yaml", "members: [{name: c, selector: {binding: {name: b}}}]"),
+    ]);
     for command in ["scc", "cluster"] {
-        let out = run_debundle(&[
-            command,
-            "--binding",
-            "b",
-            "--graph",
-            graph.to_str().unwrap(),
-            "--modules",
-            modules.path().to_str().unwrap(),
-            "--format",
-            "json",
-        ]);
+        let out = fixture.command(&[command, "--binding", "b", "--format", "json"]);
         let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(
-            !out.status.success(),
-            "{command} silently picked an owner: {:?}",
-            out.stdout
-        );
-        assert!(
-            stderr.contains("ambiguous")
-                && stderr.contains("owner:0")
-                && stderr.contains("owner:1"),
-            "{stderr}"
-        );
-        assert!(
-            out.stdout.is_empty(),
-            "failure must not emit a partial report"
-        );
+        assert!(!out.status.success());
+        assert!(stderr.contains("ambiguous") && stderr.contains("owner:0") && stderr.contains("owner:1"), "{stderr}");
+        assert!(out.stdout.is_empty(), "failure must not emit a partial report");
     }
 }

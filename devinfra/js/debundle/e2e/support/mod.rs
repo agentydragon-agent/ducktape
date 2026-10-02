@@ -774,27 +774,6 @@ pub fn owner_node(id: &str, ordinal: usize, binding: &str, destination: &str) ->
     })
 }
 
-/// An `owner_graph.json` edge of `edge_kind` (`eager_use`, `eager_rebind`) that
-/// constrains init order: `source` depends on `binding` of `target`.
-pub fn owner_edge(
-    id: &str,
-    edge_kind: &str,
-    source: &str,
-    target: &str,
-    binding: &str,
-    ordinal: usize,
-) -> Value {
-    serde_json::json!({
-        "id": id,
-        "source": source,
-        "target": target,
-        "edge_kind": edge_kind,
-        "binding": binding,
-        "statement_ordinal": ordinal,
-        "constrains_init_order": true
-    })
-}
-
 /// An `owner_graph.json` body over `nodes` and `edges`, with empty module and
 /// atomic graphs.
 pub fn owner_graph(chunk_id: &str, nodes: Vec<Value>, edges: Vec<Value>) -> Value {
@@ -805,86 +784,6 @@ pub fn owner_graph(chunk_id: &str, nodes: Vec<Value>, edges: Vec<Value>) -> Valu
         "module_graph": { "nodes": [], "edges": [], "sccs": [] },
         "atomic_graph": { "nodes": [], "edges": [] }
     })
-}
-
-/// Owner graph for a two-statement atomic unit: `alpha` and `beta` mutually
-/// `eager_rebind` each other and share destination `home/atom`, so the
-/// realizability gate must keep them co-located.
-pub fn graph_with_atomic_unit() -> String {
-    owner_graph(
-        "test/chunk",
-        vec![
-            owner_node("owner:0", 0, "alpha", "home/atom"),
-            owner_node("owner:1", 1, "beta", "home/atom"),
-        ],
-        vec![
-            owner_edge(
-                "owner_edge:0",
-                "eager_rebind",
-                "owner:0",
-                "owner:1",
-                "beta",
-                0,
-            ),
-            owner_edge(
-                "owner_edge:1",
-                "eager_rebind",
-                "owner:1",
-                "owner:0",
-                "alpha",
-                1,
-            ),
-        ],
-    )
-    .to_string()
-}
-
-/// Owner graph for an acyclic cross-module read: `alpha` (module `a`)
-/// `eager_use`s `beta` (module `b`) with no back edge, so the split is
-/// realizable.
-pub fn graph_with_acyclic_cross_module_read() -> String {
-    owner_graph(
-        "test/chunk",
-        vec![
-            owner_node("owner:0", 0, "alpha", "a"),
-            owner_node("owner:1", 1, "beta", "b"),
-        ],
-        vec![owner_edge(
-            "owner_edge:0",
-            "eager_use",
-            "owner:0",
-            "owner:1",
-            "beta",
-            0,
-        )],
-    )
-    .to_string()
-}
-
-/// Owner graph with three owners — alpha (module `a`), beta (`b`), gamma (`c`) —
-/// and the `eager_use` chain alpha → gamma → beta: a DAG quotient `a → c → b`
-/// that closes into the 2-cycle `m ↔ c` when `a` and `b` merge into `m`.
-pub fn graph_with_merge_cycle_potential() -> String {
-    owner_graph(
-        "test/chunk",
-        vec![
-            owner_node("owner:0", 0, "alpha", "a"),
-            owner_node("owner:1", 1, "beta", "b"),
-            owner_node("owner:2", 2, "gamma", "c"),
-        ],
-        vec![
-            owner_edge(
-                "owner_edge:0",
-                "eager_use",
-                "owner:0",
-                "owner:2",
-                "gamma",
-                0,
-            ),
-            owner_edge("owner_edge:1", "eager_use", "owner:2", "owner:1", "beta", 2),
-        ],
-    )
-    .to_string()
 }
 
 pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {

@@ -387,19 +387,10 @@ debundle_e2e_test(name = "bindings_unassign_gate_cli_test")
 
 debundle_e2e_test(
     name = "cli_mutation_outcome_test",
-    deps = [
-        "@crates//:serde_json",
-        "@crates//:tempfile",
-    ],
+    deps = ["@crates//:serde_json"],
 )
 
-debundle_e2e_test(
-    name = "edit_gate_source_match_cli_test",
-    deps = [
-        "@crates//:serde_json",
-        "@crates//:tempfile",
-    ],
-)
+debundle_e2e_test(name = "edit_gate_source_match_cli_test")
 
 debundle_e2e_test(
     name = "modules_list_cli_test",
@@ -435,13 +426,7 @@ debundle_e2e_test(
     deps = ["@crates//:serde_json"],
 )
 
-debundle_e2e_test(
-    name = "scc_cluster_cli_test",
-    deps = [
-        "@crates//:serde_json",
-        "@crates//:tempfile",
-    ],
-)
+debundle_e2e_test(name = "scc_cluster_cli_test")
 
 debundle_e2e_test(
     name = "top_level_query_cli_test",
