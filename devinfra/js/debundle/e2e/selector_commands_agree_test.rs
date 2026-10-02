@@ -1098,13 +1098,14 @@ fn candidate_limit_counts_places_not_wildcard_alignments() {
     let mut chunk: String = (0..101).map(|i| format!("f{i}();\n")).collect();
     chunk.push_str("const result = 1;");
     write_text_file(&source, &chunk);
-    let report = run_match_selector(
-        &source,
-        "anchor(); STMT_LIST; const target = 1;",
-        &["--target-binding", "target", "--no-slack"],
-    );
-    assert_eq!(report["outcomes"][0]["outcome"]["kind"], "resolved", "{report:#}");
-    assert_eq!(report["outcomes"][0]["outcome"]["binding"], "result", "{report:#}");
+    // Module-level gaps belong to source_matches binding groups, not the
+    // single-member match-selector command's contiguous-range syntax.
+    let modules = dir.path().join("modules");
+    write_text_file(&modules.join("selected.yaml"),
+        "source_matches:\n  - match: |\n      anchor(); STMT_LIST; const target = 1;\n    bindings: [target]\n");
+    let output = run_source_only_validate(&modules, &source, &["--format", "json"]);
+    assert!(output.status.success(), "{}\n{}", output.stdout, output.stderr);
+
 }
 
 #[test]
@@ -1114,7 +1115,9 @@ fn candidate_limit_still_rejects_too_many_distinct_places() {
     let chunk: String = (0..101).map(|i| format!("const v{i} = 1;\n")).collect();
     write_text_file(&source, &chunk);
     let report = run_match_selector(
-        &source, "const target = 1;", &["--target-binding", "target", "--no-slack"],
+        &source,
+        "const target = 1;",
+        &["--target-binding", "target", "--no-slack"],
     );
     let outcome = &report["outcomes"][0]["outcome"];
     assert_eq!(outcome["kind"], "too_broad", "{report:#}");
