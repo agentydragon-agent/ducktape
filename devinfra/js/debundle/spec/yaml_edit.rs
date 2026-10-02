@@ -28,9 +28,15 @@ fn yaml_semantically_changed(path: &Path, doc: &Value) -> Result<bool> {
 /// semantics, including in dry-run mode. No-op edits preserve the original text.
 pub fn apply_yaml_edit(path: &Path, doc: &Value, dry_run: bool) -> Result<bool> {
     let changed = yaml_semantically_changed(path, doc)?;
-    if !changed || dry_run {
-        return Ok(changed);
+    if changed && !dry_run {
+        write_yaml_atomic(path, doc)?;
     }
+    Ok(changed)
+}
+
+/// Replace one file atomically, without comparing or interpreting its schema.
+/// Callers decide whether the document changed and handle dry-run before calling.
+pub fn write_yaml_atomic(path: &Path, doc: &Value) -> Result<()> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -44,7 +50,7 @@ pub fn apply_yaml_edit(path: &Path, doc: &Value, dry_run: bool) -> Result<bool> 
         .with_context(|| format!("serializing {}", path.display()))?;
     temp.persist(path)
         .with_context(|| format!("replacing {}", path.display()))?;
-    Ok(true)
+    Ok(())
 }
 
 fn empty_yaml_to_mapping(value: Value) -> Value {

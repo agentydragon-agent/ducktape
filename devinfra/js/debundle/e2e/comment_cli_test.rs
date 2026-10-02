@@ -123,3 +123,19 @@ fn source_match_comments_use_readable_annotations_and_keep_other_metadata() {
     assert!(doc["annotations"]["Alpha"]["comment"].is_null());
     assert_eq!(doc["annotations"]["Alpha"]["note"], "selector debt");
 }
+
+#[test]
+fn comment_edit_modes_are_mutually_exclusive_in_both_namespaces() {
+    let fixture = fixture();
+    for (namespace, locator) in [("bindings", "a"), ("modules", "runtime/plugin")] {
+        for modes in [
+            vec!["--edit", "--clear"],
+            vec!["text", "--edit"],
+            vec!["text", "--clear"],
+        ] {
+            let mut args = vec![namespace, "comment", locator];
+            args.extend(modes);
+            fixture.assert_rejected_unchanged(&args, &["cannot be used with"]);
+        }
+    }
+}

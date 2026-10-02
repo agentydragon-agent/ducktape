@@ -19,13 +19,27 @@ use crate::binding::{apply_module_edit, read_module_doc, resolve_unambiguous};
 /// Args for `debundle bindings comment <sym> [...]`.
 #[derive(Debug, ClapArgs)]
 pub struct BindingCommentArgs {
+    /// Binding identifier, in minified or readable form.
+    sym: String,
+    #[command(flatten)]
+    comment: CommentArgs,
+}
+
+/// Args for `debundle modules comment <module> [...]`.
+#[derive(Debug, ClapArgs)]
+pub struct ModuleCommentArgs {
+    /// Module path relative to `--modules`, e.g. `runtime/plugins`.
+    module: String,
+    #[command(flatten)]
+    comment: CommentArgs,
+}
+
+/// Shared read/edit options; the binding or module locator precedes the text.
+#[derive(Debug, ClapArgs)]
+struct CommentArgs {
     /// Modules tree root.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     modules_root: PathBuf,
-
-    /// Binding identifier: minified name (e.g. `XOe`) or readable
-    /// name (e.g. `PluginSettingsAccessor`).
-    sym: String,
 
     /// Replacement comment text. Mutually exclusive with `--edit`
     /// and `--clear`. Omit all three to read the current comment.
@@ -42,39 +56,6 @@ pub struct BindingCommentArgs {
 
     /// Output format for read mode. Default `text` on tty, `json`
     /// on pipe.
-    #[arg(long, value_enum)]
-    format: Option<peel::OutputFormat>,
-
-    /// Validate (or simulate) but do not modify any file.
-    #[arg(long)]
-    dry_run: bool,
-}
-
-/// Args for `debundle modules comment <module> [...]`.
-#[derive(Debug, ClapArgs)]
-pub struct ModuleCommentArgs {
-    /// Modules tree root.
-    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
-    modules_root: PathBuf,
-
-    /// Module path relative to `--modules` (no `.yaml` suffix), e.g.
-    /// `runtime/plugins`.
-    module: String,
-
-    /// Replacement comment text. Mutually exclusive with `--edit`
-    /// and `--clear`. Omit all three to read the current comment.
-    text: Option<String>,
-
-    /// Spawn `$EDITOR` on a tempfile pre-populated with the current
-    /// comment.
-    #[arg(long, conflicts_with_all = ["clear", "text"])]
-    edit: bool,
-
-    /// Remove the `comment:` field entirely.
-    #[arg(long, conflicts_with_all = ["edit", "text"])]
-    clear: bool,
-
-    /// Output format for read mode.
     #[arg(long, value_enum)]
     format: Option<peel::OutputFormat>,
 
@@ -108,27 +89,15 @@ impl CommentMode {
     }
 }
 
-/// Public entry point for the inner `comment` verb under either the
-/// `bindings` or `modules` namespace. Composed by the top-level
-/// `cli/` so the new `modules` clap node can sit alongside `merge`
-/// / `propose` without duplicating the comment YAML logic.
 pub fn run_binding_comment_cmd(args: BindingCommentArgs) -> Result<()> {
-    run_binding_comment(args)
-}
-
-/// See [`run_binding_comment_cmd`].
-pub fn run_module_comment_cmd(args: ModuleCommentArgs) -> Result<()> {
-    run_module_comment(args)
-}
-
-// ---------------------------------------------------------------------
-// Binding comment
-// ---------------------------------------------------------------------
-
-fn run_binding_comment(args: BindingCommentArgs) -> Result<()> {
-    let mode = CommentMode::from_flags(args.text, args.edit, args.clear)?;
-    let outcome = apply_binding_comment(&args.modules_root, &args.sym, mode, args.dry_run)?;
-    let format = peel::OutputFormat::resolve(args.format);
+    let mode = CommentMode::from_flags(args.comment.text, args.comment.edit, args.comment.clear)?;
+    let outcome = apply_binding_comment(
+        &args.comment.modules_root,
+        &args.sym,
+        mode,
+        args.comment.dry_run,
+    )?;
+    let format = peel::OutputFormat::resolve(args.comment.format);
     print_outcome(&outcome, format);
     Ok(())
 }
@@ -243,10 +212,15 @@ pub fn apply_binding_comment(
 // Module comment
 // ---------------------------------------------------------------------
 
-fn run_module_comment(args: ModuleCommentArgs) -> Result<()> {
-    let mode = CommentMode::from_flags(args.text, args.edit, args.clear)?;
-    let outcome = apply_module_comment(&args.modules_root, &args.module, mode, args.dry_run)?;
-    let format = peel::OutputFormat::resolve(args.format);
+pub fn run_module_comment_cmd(args: ModuleCommentArgs) -> Result<()> {
+    let mode = CommentMode::from_flags(args.comment.text, args.comment.edit, args.comment.clear)?;
+    let outcome = apply_module_comment(
+        &args.comment.modules_root,
+        &args.module,
+        mode,
+        args.comment.dry_run,
+    )?;
+    let format = peel::OutputFormat::resolve(args.comment.format);
     print_outcome(&outcome, format);
     Ok(())
 }
