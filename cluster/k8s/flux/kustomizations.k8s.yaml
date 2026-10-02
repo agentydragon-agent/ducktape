@@ -3416,25 +3416,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: "Retirement: prune the OpenClaw spike namespace and PVCs; remove after inventory is empty."
-  name: haku-openclaw-spike-app
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: WaitForTermination
-  interval: 10m
-  path: ./cluster/generated/retired/haku-openclaw-spike
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: Haku workspace credential mirrors in haku-sandbox.
   name: haku-workspaces
   namespace: ducktape-flux

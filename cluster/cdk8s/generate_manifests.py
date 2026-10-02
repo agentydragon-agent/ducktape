@@ -1410,7 +1410,6 @@ def generate_manifests(root: Path) -> None:
         ),
         tofu_controller_kustomization,
     )
-    haku_openclaw_spike_config.retire(root, flux_chart)
     haku_openclaw_spike_app_artifact = artifact(
         "haku-openclaw-spike-app", haku_openclaw_spike_config.OUTPUT_DIR, haku_openclaw_spike_config.PINS_DIR
     )
