@@ -32,7 +32,7 @@ filegroup(
 # Generator output kept beside hand-written files in the parked tree, for the parity test.
 filegroup(
     name = "parked_generated_manifests",
-    srcs = glob(["parked/**/*.k8s.yaml"]),
+    srcs = glob(["parked/**/*.k8s.yaml", "parked/haku-openclaw-spike/**"]),
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
 

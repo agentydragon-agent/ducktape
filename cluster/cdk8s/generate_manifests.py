@@ -41,8 +41,6 @@ from cluster.cdk8s import (
     grafana_dashboards,
     ha_mcp,
     haku_egress_proxy,
-    haku_openclaw_spike_backup,
-    haku_openclaw_spike_config,
     headlamp,
     hubble_ui,
     keda,
@@ -206,6 +204,9 @@ from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustom
 from cluster.cdk8s.ollama import app as ollama_app
 from cluster.cdk8s.openebs_lvm import storage as openebs_lvm_storage
 from cluster.cdk8s.parked import (
+    haku_openclaw_spike_backup,
+    haku_openclaw_spike_config,
+    haku_openclaw_spike_proxy,
     augur_evidence as parked_augur_evidence,
     flux_kustomizations as parked_flux_kustomizations,
 )
@@ -826,16 +827,12 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     haku_openclaw_spike_backup_artifact = artifact("haku-openclaw-spike-backup", haku_openclaw_spike_backup.OUTPUT_DIR)
-    haku_openclaw_spike_backup.haku_openclaw_spike_backup(
-        flux_chart,
-        write_directory(
-            root,
-            haku_openclaw_spike_backup_artifact,
-            haku_openclaw_spike_backup.chart,
-            siblings=["repository.sops.yaml"],
-        ),
-        external_secrets_operator_kustomization,
-        volsync_kustomization,
+    # Archived generators remain reproducible; neither directory is a Flux artifact.
+    write_directory(
+        root,
+        haku_openclaw_spike_backup_artifact,
+        haku_openclaw_spike_backup.chart,
+        siblings=["repository.sops.yaml"],
     )
     authentik_db_backups_artifact = artifact("authentik-db-backups", authentik_db_backups.OUTPUT_DIR)
     authentik_db_backups.authentik_db_backups(
@@ -1416,23 +1413,27 @@ def generate_manifests(root: Path) -> None:
         ),
         tofu_controller_kustomization,
     )
+    haku_openclaw_spike_config.retire(root, flux_chart)
     haku_openclaw_spike_app_artifact = artifact(
         "haku-openclaw-spike-app", haku_openclaw_spike_config.OUTPUT_DIR, haku_openclaw_spike_config.PINS_DIR
     )
-    haku_openclaw_spike_config.haku_openclaw_spike_app(
-        flux_chart,
-        write_directory(
-            root,
-            haku_openclaw_spike_app_artifact,
-            haku_openclaw_spike_config.namespace_chart,
-            haku_openclaw_spike_config.chart,
-            haku_openclaw_spike_config.app_chart,
-            components=[posixpath.relpath(haku_openclaw_spike_config.PINS_DIR, haku_openclaw_spike_config.OUTPUT_DIR)],
-            generator_options=haku_openclaw_spike_config.GENERATOR_OPTIONS,
-            config_map_generator=[haku_openclaw_spike_config.write_kubeconfig_config_map(root)],
-        ),
-        external_secrets_operator_kustomization,
-        seaweedfs_operator_kustomization,
+    write_directory(
+        root,
+        haku_openclaw_spike_app_artifact,
+        haku_openclaw_spike_config.namespace_chart,
+        haku_openclaw_spike_config.chart,
+        haku_openclaw_spike_config.app_chart,
+        components=[posixpath.relpath(haku_openclaw_spike_config.PINS_DIR, haku_openclaw_spike_config.OUTPUT_DIR)],
+        generator_options=haku_openclaw_spike_config.GENERATOR_OPTIONS,
+        config_map_generator=[haku_openclaw_spike_config.write_kubeconfig_config_map(root)],
+    )
+    write_directory(
+        root,
+        artifact("parked-haku-openclaw-spike-proxy", haku_openclaw_spike_proxy.OUTPUT_DIR),
+        haku_openclaw_spike_proxy.chart,
+        egress_fences.haku_openclaw_spike,
+        siblings=["openclaw-spike-kube-token.sops.yaml"],
+        components=["./image-pins"],
     )
     haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
     haku_workspaces.haku_workspaces(
@@ -1623,8 +1624,6 @@ def generate_manifests(root: Path) -> None:
             claude_sandbox_secrets_artifact,
             forgejo_token_rotation_artifact,
             ha_mcp_artifact,
-            haku_openclaw_spike_app_artifact,
-            haku_openclaw_spike_backup_artifact,
             haku_managed_agent_artifact,
             kubectl_passthrough_mcp_artifact,
             loki_read_proxy_artifact,

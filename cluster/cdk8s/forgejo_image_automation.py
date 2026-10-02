@@ -68,7 +68,6 @@ IMAGES = (
     "haku-console",
     "haku-console-static",
     "haku-kube-api-proxy",
-    "haku-openclaw-spike",
     "homeassistant-component-installer",
     "homeassistant-onboarding",
     "homeassistant-token-provisioner",

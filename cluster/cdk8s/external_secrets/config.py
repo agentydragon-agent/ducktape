@@ -144,7 +144,6 @@ def chart(app: App) -> Chart:
             "haku-console",
             "haku-egress-proxy",
             "haku-mailbox",
-            "haku-openclaw-spike",
             "home-assistant",
             "litellm",
             "loki-read-proxy",

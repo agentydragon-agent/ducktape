@@ -138,7 +138,7 @@ py_test(
     deps = [
         ":config",
         "//:conftest",
-        "//cluster/cdk8s:haku_openclaw_spike_config",
+        "//cluster/cdk8s/parked:haku_openclaw_spike_config",
         "//cluster/cdk8s:model_rosters",
         "//cluster/cdk8s:public_coder_agent_config",
         "@pypi//cdk8s",

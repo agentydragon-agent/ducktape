@@ -5,18 +5,6 @@ resources:
   # egress_fences.py) -- see cluster/docs/cdk8s.md.
   - haku-egress-proxy.k8s.yaml
   - claude-code-oauth-token.sops.yaml
-  # Step two of a deliberate two-step, now complete. authentik-jwt-rotation
-  # landed openclaw-spike-kube-token.sops.yaml in 2bb0c7fbd (rotation
-  # haku-k8s-openclaw), so listing it is safe. Holding it back was not an
-  # oversight: listing the file before the rotator's first run breaks
-  # `kustomize build` for this whole namespace, which is the sole egress path
-  # for the spike. But nothing triggered step two, and the gap is silent --
-  # without this line the Secret is never applied, HAKU_KUBE_JWT stays unset
-  # (it is an optional secretKeyRef), iron-proxy has nothing to substitute, and
-  # kubectl reaches the apiserver carrying the literal placeholder and 401s.
-  - openclaw-spike-kube-token.sops.yaml
-components:
-  - ./image-pins
 
 patches:
   # CLEANUP(added 2026-08-29): the encrypted object keeps its historical inner name because the
