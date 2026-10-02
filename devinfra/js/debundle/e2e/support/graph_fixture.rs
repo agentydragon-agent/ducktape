@@ -43,6 +43,61 @@ impl GraphFixture {
         }
     }
 
+    /// A real rebind forces these two declarations into one atomic unit.
+    pub fn atomic_pair() -> Self {
+        Self::new(
+            "let alpha = 0;\nfunction beta() { alpha = 1; }\nbeta();\nconsole.log(alpha);\n",
+            &[("home/atom.yaml", "members: [{selector: {binding: {name: alpha}}}, {selector: {binding: {name: beta}}}]\n")],
+        )
+    }
+
+    pub fn acyclic_pair() -> Self {
+        Self::new(
+            "const beta = 1;\nconst alpha = beta + 1;\nconsole.log(alpha);\n",
+            &[
+                ("a.yaml", "members: [{selector: {binding: {name: alpha}}}]\n"),
+                ("b.yaml", "members: [{selector: {binding: {name: beta}}}]\n"),
+            ],
+        )
+    }
+
+    pub fn assert_success(&self, args: &[&str]) {
+        let out = self.command(args);
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    /// Both edit modes must refuse for the intended reason, without changing
+    /// any spec bytes or creating/deleting files (including nested modules).
+    pub fn assert_rejected_unchanged(&self, args: &[&str], diagnostics: &[&str]) {
+        fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+            let mut files = BTreeMap::new();
+            for entry in fs::read_dir(root).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    files.extend(snapshot(&path));
+                } else {
+                    files.insert(path.clone(), fs::read(path).unwrap());
+                }
+            }
+            files
+        }
+        let before = snapshot(&self.modules);
+        let mut codes = Vec::new();
+        for dry_run in [true, false] {
+            let mut args = args.to_vec();
+            if dry_run { args.push("--dry-run"); }
+            let out = self.command(&args);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(!out.status.success(), "{args:?}: expected rejection");
+            for diagnostic in diagnostics {
+                assert!(stderr.contains(diagnostic), "{args:?}: {stderr}");
+            }
+            assert_eq!(snapshot(&self.modules), before, "{args:?}: spec changed after refusal");
+            codes.push(out.status.code());
+        }
+        assert_eq!(codes[0], codes[1], "dry-run and apply must agree");
+    }
+
     pub fn command(&self, args: &[&str]) -> std::process::Output {
         Command::new(debundler_path())
             .args(args)
