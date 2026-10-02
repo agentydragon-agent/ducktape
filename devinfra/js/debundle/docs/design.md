@@ -563,6 +563,11 @@ post-merge module — or escalates:
   cross-rebind touches it. A tier-1
   reject is exactly the `MutualConstrainingCycle` clause of the
   full verdict; a pass establishes Pass 1 is clean and escalates.
+- **Entry-last guard.** Before any I-SCC vacuity shortcut, reject an
+  effective constraining edge into residual that touches the queried module.
+  Entry evaluates last, including when its implicit import is the only return
+  edge. This reads the maintained edge counts plus the overlay delta; it does
+  not add universal fan-out to the I-condensation.
 - **Tier 2 — I-graph condensation order.** A second
   `CondensationOrder` over the I-graph (constraining ∪ lazy): if
   the post-merge module's I-SCC is not multi-module, or contains
@@ -847,6 +852,15 @@ verdict by:
    - For each constraining edge `(M, X)` inside the SCC, demand
      `post_order[X] < post_order[M]`. Any violation = TDZ at
      runtime → reject the SCC.
+
+The source I-graph omits entry's implicit imports of every emitted module.
+Independently of its SCCs, reject every constraining dependency **into entry**:
+entry evaluates last, so that dependency cannot be satisfied. The pure reference,
+committed/overlay verdicts and boolean tier ladder all enforce this guard and
+report the offending owner edges as `EsmEvaluationTdz`. There is no need to inflate
+the maintained I-graph with universal entry fan-out: a violated pair targeting
+any non-entry ancestor already has a return path in the source I-graph and is
+covered by its ordinary SCC check.
 
 Pure-lazy I-cycles (no constraining edge inside the SCC) skip
 pass 2's simulator and pass. The simulator and the emitter share

@@ -200,19 +200,6 @@ can otherwise multiply dependency plumbing.
 
 ## Concerns to discuss before deciding
 
-### Entry-file universal-edge approximation
-
-The simulator and emitter now share import-ordering through
-`esm_import_order::EsmImportOrder`; keep it that way. The remaining
-approximation is narrower: pass-2 candidate SCC enumeration still runs over
-the real I-graph, without adding the entry-file residual module's universal
-edges. A module that eager-reads an entry-file binding when residual's own
-statements never reference that module can therefore avoid candidate SCC
-checking. This is a pre-existing inline-mode-only under-restriction; catchall
-chunks keep no TDZ-prone bindings in the entry file. Extending candidate
-enumeration with the universal entry edges would close it at the cost of much
-larger SCCs in the incremental planner path.
-
 ### A11 intrinsic integrity: from observed assumption to checked precondition
 
 docs/design.md documents A11 (the chunk runs with unmodified built-in prototypes) as relied on by observation — prototype pollution defeats every purity-whitelist admission argument and is not detected. A `compute_shadowed_globals`-style top-level scan over the analyzed chunks for `<Builtin>.prototype.<x> = ...` assignment shapes would convert the in-corpus half of the assumption into a checked precondition; pollution originating outside the analyzed chunks (host code, other bundles) necessarily stays an assumption.
