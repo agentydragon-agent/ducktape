@@ -3,7 +3,7 @@
 Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
-## Current AI-worker priority queue (2026-09-24)
+## Active work queue
 
 This file is the dispatch queue, not a design record or changelog. Detailed
 plans and evidence live here:
@@ -13,7 +13,9 @@ plans and evidence live here:
 - <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — automation-first CLI/workflow design,
   including porting a spec to the next bundle version.
-- <plans/factor_vocabulary_rename.md> — "factor" terminology rename (P3).
+- <plans/factor_vocabulary_rename.md> — internal naming and wire-format decisions.
+- <plans/module_proposals.md> — proposal metadata and granularity follow-ups.
+- <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
 - <SELECTOR_BUGS.md> — matcher/diagnostic bugs with anonymized examples.
 - <ARCHITECTURE_BACKLOG.md> — deeper refactors, urgent only when they block this
   queue.
@@ -160,7 +162,7 @@ Only when a multi-chunk bump needs them:
 ## Purity classifier
 
 Statement-level overrides, the redundant-hint guardrail and compositional proof:
-<x/purity_recursive.md>.
+<plans/purity_analysis.md>.
 
 ## Rename pipeline
 

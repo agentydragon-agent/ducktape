@@ -100,10 +100,11 @@ The module-quotient pipeline currently has two broad Tarjan consumers:
 
 Remaining legitimate walks (different graphs): `validation.rs::compute_realizability_cut` (FAS iteration, intrinsic), `graph/build.rs::promote_at_init_calls` (closure fixpoint), `atomic_units.rs::compute_atomic_units` (constraining-edge owner SCC).
 
-**Open follow-up.** The verdict-time and factorization-build-time walks
-compute the same partition for different consumers; structurally
-consolidatable behind a wider API change, but not urgent and not on a hot
-path.
+Do not consolidate these walks solely because they all compute SCCs. The
+verdict distinguishes constraining edges from the full import graph (including
+lazy back-edges); the reported module quotient has its own edge/node contract.
+Any reuse must first establish identical edge sets and isolated-node handling,
+and preserve the gate's two-pass semantics.
 
 ## Encapsulation + module boundaries
 
@@ -163,9 +164,7 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
    edge representation (domain graph → counted graph → realizability index)
    has fragile bridging; `pub(super)` blankets `lowering/` field and function
    visibility.
-6. Tests: `e2e/comma_list_owner_split_test.rs` asserts emitted shapes via
-   whitespace OR-chains — parse or normalize instead.
-7. `ChunkBundle` ownership ping-pong through every stage
+6. `ChunkBundle` ownership ping-pong through every stage
    (`artifact = result.artifact`) — cosmetic now that each stage is a pure
    function.
 

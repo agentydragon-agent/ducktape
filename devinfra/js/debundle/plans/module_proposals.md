@@ -1,6 +1,7 @@
 # Graph Planner Follow-Ups
 
-Open work on `debundle modules propose`, kept corpus-neutral: private
+Design follow-ups for <../TODO.md>, not a separate priority queue. Work on
+`debundle modules propose` stays corpus-neutral: private
 downstream findings stay in the downstream repo. The graph model is in
 <../docs/design.md> § Valid peels and atomic modules; the current proposer is
 in <../docs/peel_proposer.md>.
