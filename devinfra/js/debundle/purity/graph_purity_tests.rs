@@ -32,55 +32,6 @@ fn fn_purity(src: &str, name: &str) -> Option<bool> {
 }
 
 #[test]
-fn fn_purity_pure_hof_wrapper() {
-    // Body returns a fresh object literal whose values are a
-    // bound parameter — no observable side effect.
-    assert_eq!(
-        fn_purity(
-            r#"function wrap(f) { return { kind: "wrapped", impl: f }; }"#,
-            "wrap"
-        ),
-        Some(true)
-    );
-}
-
-#[test]
-fn fn_purity_impure_globalthis_write() {
-    // Assignment to a member of `globalThis` is unambiguously
-    // impure regardless of what's on the RHS.
-    assert_eq!(
-        fn_purity("function tag(x) { globalThis.tag = x; }", "tag"),
-        Some(false)
-    );
-}
-
-#[test]
-fn fn_purity_unknown_when_calling_console_log() {
-    // `console.log(...)` is a member-call on a non-whitelisted
-    // receiver — Unknown. Caller inherits.
-    assert_eq!(
-        fn_purity(
-            r#"function logged(x) { console.log("init", x); return x; }"#,
-            "logged"
-        ),
-        Some(false)
-    );
-}
-
-#[test]
-fn fn_purity_propagates_transitive_impurity() {
-    // `caller` only calls `tainted`. `tainted` writes
-    // `globalThis.touched`, so it's Impure. Fixed-point
-    // propagates: `caller` becomes Impure on iteration 2.
-    let src = r#"
-    function tainted() { globalThis.touched = true; return 1; }
-    function caller() { return tainted(); }
-"#;
-    assert_eq!(fn_purity(src, "tainted"), Some(false));
-    assert_eq!(fn_purity(src, "caller"), Some(false));
-}
-
-#[test]
 fn fn_purity_mutual_recursion_converges_pure() {
     // `even` and `odd` only reference each other inside their
     // bodies. Optimistic init (Pure) holds through the

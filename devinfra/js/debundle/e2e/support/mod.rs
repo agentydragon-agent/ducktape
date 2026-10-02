@@ -15,8 +15,8 @@ pub use fixture_spec::{
     BindingGroup, ChunkExportPurityBuilder, FixtureOpts, LogicalModuleEntry, Member,
     logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
     logical_module_with_anon_comment, logical_module_with_binding_groups,
-    logical_module_with_comment, unassigned_mode_catchall_file, unassigned_mode_inline,
-    unassigned_mode_mini_factors,
+    logical_module_with_comment, mixed_selector_failure_fixture, unassigned_mode_catchall_file,
+    unassigned_mode_inline, unassigned_mode_mini_factors,
 };
 pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity, chunk_renames};
 

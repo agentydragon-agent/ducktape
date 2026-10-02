@@ -1029,3 +1029,43 @@ pub fn chunk_rename_with_purity(
     })
     .expect("chunk renames fixture must serialize")
 }
+
+/// One fixture exercising a no-match, an ambiguous selector and a duplicate
+/// claim (two members resolving to the same declaration) at once.
+pub fn mixed_selector_failure_fixture() -> FixtureOpts<'static> {
+    let missing_selector = r#"function selectedFormatter(value) {
+  return value.toLowerCase();
+}"#;
+    let ambiguous_selector = r#"function repeatedHelper() {
+  return "shared";
+}"#;
+    FixtureOpts::new(
+        r#"function renderCard(value) {
+  return value.trim();
+}
+function decoratePrimary() {
+  return "shared";
+}
+function decorateSecondary() {
+  return "shared";
+}
+console.log(renderCard(" ok "), decoratePrimary(), decorateSecondary());
+export { renderCard, decoratePrimary, decorateSecondary };
+"#,
+        vec![
+            logical_module(
+                "diagnostics/missing",
+                &[Member::source_alpha("MissingFormatter", missing_selector)],
+            ),
+            logical_module("owners/card", &[Member::new("renderCard")]),
+            logical_module(
+                "duplicates/card",
+                &[Member::renamed("renderCardAgain", "renderCard")],
+            ),
+            logical_module(
+                "diagnostics/ambiguous",
+                &[Member::source_alpha("AmbiguousHelper", ambiguous_selector)],
+            ),
+        ],
+    )
+}

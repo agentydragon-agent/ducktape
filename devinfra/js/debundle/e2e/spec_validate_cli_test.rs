@@ -6,54 +6,15 @@
 use std::process::Command;
 
 use debundle_e2e_support::{
-    CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module, outcomes,
-    run_source_only_validate, run_spec_validate, write_text_file, write_validate_fixture_spec,
+    CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module,
+    mixed_selector_failure_fixture, outcomes, run_source_only_validate, run_spec_validate,
+    write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
-/// One fixture exercising a no-match, an ambiguous selector and a duplicate
-/// claim (two members resolving to the same declaration) at once.
-fn mixed_failure_fixture() -> FixtureOpts<'static> {
-    let missing_selector = r#"function selectedFormatter(value) {
-  return value.toLowerCase();
-}"#;
-    let ambiguous_selector = r#"function repeatedHelper() {
-  return "shared";
-}"#;
-    FixtureOpts::new(
-        r#"function renderCard(value) {
-  return value.trim();
-}
-function decoratePrimary() {
-  return "shared";
-}
-function decorateSecondary() {
-  return "shared";
-}
-console.log(renderCard(" ok "), decoratePrimary(), decorateSecondary());
-export { renderCard, decoratePrimary, decorateSecondary };
-"#,
-        vec![
-            logical_module(
-                "diagnostics/missing",
-                &[Member::source_alpha("MissingFormatter", missing_selector)],
-            ),
-            logical_module("owners/card", &[Member::new("renderCard")]),
-            logical_module(
-                "duplicates/card",
-                &[Member::renamed("renderCardAgain", "renderCard")],
-            ),
-            logical_module(
-                "diagnostics/ambiguous",
-                &[Member::source_alpha("AmbiguousHelper", ambiguous_selector)],
-            ),
-        ],
-    )
-}
-
 #[test]
 fn validate_json_reports_every_failure_class_in_one_pass() {
-    let fixture = write_validate_fixture_spec(mixed_failure_fixture());
+    let fixture = write_validate_fixture_spec(mixed_selector_failure_fixture());
     let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
     assert!(
         out.status.success(),
@@ -91,7 +52,7 @@ fn validate_json_reports_every_failure_class_in_one_pass() {
 
 #[test]
 fn validate_ndjson_streams_one_object_per_outcome_plus_summary() {
-    let fixture = write_validate_fixture_spec(mixed_failure_fixture());
+    let fixture = write_validate_fixture_spec(mixed_selector_failure_fixture());
     let out = run_spec_validate(&fixture.spec_path, &["--format", "ndjson"]);
     assert!(out.status.success(), "stderr={}", out.stderr);
 
@@ -119,7 +80,7 @@ fn validate_ndjson_streams_one_object_per_outcome_plus_summary() {
 
 #[test]
 fn validate_text_summarizes_counts_and_one_line_per_outcome() {
-    let fixture = write_validate_fixture_spec(mixed_failure_fixture());
+    let fixture = write_validate_fixture_spec(mixed_selector_failure_fixture());
     let out = run_spec_validate(&fixture.spec_path, &["--format", "text"]);
     assert!(out.status.success(), "stderr={}", out.stderr);
 

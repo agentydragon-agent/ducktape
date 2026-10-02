@@ -558,47 +558,9 @@ export { existingHelper };
     );
 }
 
-fn source_match_and_duplicate_claims_fixture() -> FixtureOpts<'static> {
-    let missing_selector = r#"function selectedFormatter(value) {
-  return value.toLowerCase();
-}"#;
-    let ambiguous_selector = r#"function repeatedHelper() {
-  return "shared";
-}"#;
-    FixtureOpts::new(
-        r#"function renderCard(value) {
-  return value.trim();
-}
-function decoratePrimary() {
-  return "shared";
-}
-function decorateSecondary() {
-  return "shared";
-}
-console.log(renderCard(" ok "), decoratePrimary(), decorateSecondary());
-export { renderCard, decoratePrimary, decorateSecondary };
-"#,
-        vec![
-            logical_module(
-                "diagnostics/missing",
-                &[Member::source_alpha("MissingFormatter", missing_selector)],
-            ),
-            logical_module("owners/card", &[Member::new("renderCard")]),
-            logical_module(
-                "duplicates/card",
-                &[Member::renamed("renderCardAgain", "renderCard")],
-            ),
-            logical_module(
-                "diagnostics/ambiguous",
-                &[Member::source_alpha("AmbiguousHelper", ambiguous_selector)],
-            ),
-        ],
-    )
-}
-
 #[test]
 fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_together() {
-    let rejected = run_dry_run_rejection_fixture(source_match_and_duplicate_claims_fixture());
+    let rejected = run_dry_run_rejection_fixture(mixed_selector_failure_fixture());
     let stderr = rejected.stderr;
     for required in [
         "3 selector outcome(s): no_match=1, ambiguous=1, duplicate_claim=1",
@@ -624,10 +586,8 @@ fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_tog
 /// any selector is matched, so fail-fast stops there.
 #[test]
 fn fail_fast_dry_run_stops_at_the_duplicate_claim_found_while_building_requests() {
-    let line = assert_fail_fast_stops_at_first_outcome(
-        source_match_and_duplicate_claims_fixture,
-        "duplicate_claim",
-    );
+    let line =
+        assert_fail_fast_stops_at_first_outcome(mixed_selector_failure_fixture, "duplicate_claim");
     assert!(line.contains("\"renderCard\""), "{line}");
 }
 
@@ -637,7 +597,7 @@ fn fail_fast_dry_run_stops_at_the_duplicate_claim_found_while_building_requests(
 fn fail_fast_dry_run_stops_at_the_first_no_match() {
     let line = assert_fail_fast_stops_at_first_outcome(
         || {
-            let mut opts = source_match_and_duplicate_claims_fixture();
+            let mut opts = mixed_selector_failure_fixture();
             opts.logical_modules
                 .retain(|(path, _)| !path.ends_with("/card"));
             opts
