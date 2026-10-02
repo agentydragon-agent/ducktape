@@ -785,10 +785,6 @@ impl ChunkBundle {
             .with_context(|| format!("missing artifact chunk {chunk_name}"))
     }
 
-    fn find_js_chunk(&self, chunk_id: ChunkId) -> Option<&JsChunk> {
-        self.find_chunk(chunk_id).map(|chunk| &chunk.js)
-    }
-
     pub fn js_chunk(&self, chunk_id: ChunkId) -> Result<&JsChunk> {
         Ok(&self.chunk(chunk_id)?.js)
     }
@@ -1955,6 +1951,12 @@ mod tests {
                 Some("first.js")
             );
         }
+        let modules = [("module.js", FileRole::Module)];
+        assert_eq!(select_entry_file("", "", modules), Some("module.js"));
+        assert_eq!(
+            select_entry_file("", "", [modules[0], files[0]]),
+            Some("first.js")
+        );
         assert_eq!(select_entry_file("missing", "missing", []), None);
     }
 
