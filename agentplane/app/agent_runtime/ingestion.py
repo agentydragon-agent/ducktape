@@ -24,7 +24,7 @@ from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerError, StreamClosedError
 from agentplane.sandbox_service.inventory import SandboxNotFoundError
-from agentplane.sandbox_service.session_access import SessionAttachment, Sessions
+from agentplane.sandbox_service.session_access import SessionAttachment, SessionReader
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -142,7 +142,7 @@ class Feed:
         self,
         *,
         session_id: str,
-        client: Sessions,
+        client: SessionReader,
         event_logs: EventLogStore,
         ingestion: Ingestion,
         lease: IngestionLease,
