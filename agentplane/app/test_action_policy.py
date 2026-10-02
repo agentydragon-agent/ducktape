@@ -27,8 +27,8 @@ from agentplane.app.action_policy import (
     UnknownPolicySetError,
 )
 from agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
-from agentplane.sandbox_service.inventory import sandbox_view
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, action_policy_set, sandbox
+from agentplane.sandbox_service.inventory import sandbox_view
 
 LIVE = sandbox_view(sandbox("live"), None)
 READS = {"type": "exact_actions", "actions": {"github": ["search_code", "get_file_contents"]}}

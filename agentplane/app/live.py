@@ -58,6 +58,7 @@ from agentplane.app.egress import (
     matching_bindings,
 )
 from agentplane.app.identity import CallerIdentity, require_caller
+from agentplane.app.shutdown import Shutdown
 from agentplane.sandbox_service.inventory import (
     MANAGED_LABEL,
     SANDBOX_API,
@@ -66,7 +67,6 @@ from agentplane.sandbox_service.inventory import (
     sandbox_view,
     sandbox_views,
 )
-from agentplane.app.shutdown import Shutdown
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to

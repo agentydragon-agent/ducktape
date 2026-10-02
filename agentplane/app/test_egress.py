@@ -8,7 +8,6 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
-from agentplane.sandbox_service.inventory import sandbox_view
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
     FakeCustomObjectsApi,
@@ -17,6 +16,7 @@ from agentplane.app.testing.kubernetes import (
     egress_policy,
     sandbox,
 )
+from agentplane.sandbox_service.inventory import sandbox_view
 from agentplane.subjects import ServiceAccountRef
 
 LIVE = ServiceAccountRef(namespace=NAMESPACE, name="live")
