@@ -11,8 +11,8 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use super::propose::{
-    DEFAULT_SIZE_CAP_LINES, ProposalDiagnostic, ModuleProposal, ProposalOptions,
-    ProposalsReport, propose_from_files, propose_from_graph,
+    DEFAULT_SIZE_CAP_LINES, ModuleProposal, ProposalDiagnostic, ProposalOptions, ProposalsReport,
+    propose_from_files, propose_from_graph,
 };
 use anonymous_resolution::{SourceClaimSet, resolve_source_claims, resolve_source_claims_of};
 use anyhow::{Context, Result, bail};
@@ -1443,10 +1443,7 @@ fn resolve_module_path_owner_ids(
     Ok((owner_ids.into_iter().collect(), unknown_binding_ids))
 }
 
-fn owner_ids_for_proposal(
-    propose: &ProposalsReport,
-    proposal_id: &str,
-) -> Option<Vec<String>> {
+fn owner_ids_for_proposal(propose: &ProposalsReport, proposal_id: &str) -> Option<Vec<String>> {
     propose
         .proposals
         .iter()
@@ -1454,10 +1451,7 @@ fn owner_ids_for_proposal(
         .map(|proposal| proposal.owner_ids.clone())
 }
 
-fn owner_ids_for_diagnostic(
-    propose: &ProposalsReport,
-    diagnostic_id: &str,
-) -> Option<Vec<String>> {
+fn owner_ids_for_diagnostic(propose: &ProposalsReport, diagnostic_id: &str) -> Option<Vec<String>> {
     propose
         .diagnostics
         .iter()

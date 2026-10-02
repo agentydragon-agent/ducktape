@@ -1,5 +1,5 @@
-pub mod propose;
 pub mod plan;
+pub mod propose;
 pub mod quotient;
 
 #[cfg(test)]
