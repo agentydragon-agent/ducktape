@@ -365,9 +365,7 @@ debundle_e2e_test(name = "intrinsic_alias_lowering_test")
 debundle_e2e_test(
     name = "module_merge_test",
     deps = [
-        "//devinfra/js/debundle:cli",
         "@crates//:serde_yaml",
-        "@crates//:tempfile",
     ],
 )
 

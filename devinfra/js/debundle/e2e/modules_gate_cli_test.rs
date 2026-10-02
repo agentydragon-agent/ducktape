@@ -1,6 +1,7 @@
 //! Module edits against owner graphs generated from executable JS/specs.
 
 use debundle_e2e_support::GraphFixture;
+use std::fs;
 
 #[test]
 fn modules_merge_rejects_when_merge_creates_cycle() {
@@ -21,6 +22,20 @@ fn modules_merge_accepts_existing_and_missing_targets() {
         let fixture = GraphFixture::acyclic_pair();
         let mut args = vec!["modules", "merge", "--target", target];
         args.extend(sources.iter().copied());
+        let before: Vec<_> = ["a.yaml", "b.yaml"]
+            .into_iter()
+            .map(|path| (path, fs::read(fixture.modules.join(path)).unwrap()))
+            .collect();
+        let mut preview = args.clone();
+        preview.push("--dry-run");
+        assert_eq!(fixture.json(&preview)["action"], "dry-run");
+        for (path, bytes) in before {
+            assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
+        }
+        assert_eq!(
+            fixture.modules.join(format!("{target}.yaml")).exists(),
+            target == "a"
+        );
         fixture.assert_success(&args);
         assert!(fixture.modules.join(format!("{target}.yaml")).exists());
         for source in sources {
