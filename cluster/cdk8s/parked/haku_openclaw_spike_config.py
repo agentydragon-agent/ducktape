@@ -19,11 +19,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecClusterRef, BucketSpecReclaimPolicy
 from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
     S3CredentialsSpecIdentityRef,
@@ -42,11 +38,10 @@ from cluster.cdk8s.flux import (
     RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on_many,
-    kustomize_kustomization,
 )
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import config_map_chart, copy_source_file, write_yaml
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
+from cluster.cdk8s.generation import config_map_chart, copy_source_file
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import (
@@ -669,25 +664,4 @@ def haku_openclaw_spike_app(
         description=(
             "Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy."
         ),
-    )
-
-
-def retire(root: Path, flux_chart: Chart) -> None:
-    """Prune the existing owner's inventory before removing its orphan-protected CR.
-
-    This temporary empty owner is not an archived workload deployment. Remove it only
-    after the namespace/PVCs are gone and Flux reports an empty inventory.
-    """
-    directory = f"{GENERATED_ROOT}/retired/haku-openclaw-spike"
-    (root / directory).mkdir(parents=True, exist_ok=True)
-    write_yaml(root / directory / "kustomization.yaml", kustomize_kustomization(resources=[]))
-    flux_kustomization(
-        flux_chart,
-        "haku-openclaw-spike-app",
-        KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
-        ),
-        path=f"./{directory}",
-        deletion_policy=KustomizationSpecDeletionPolicy.WAIT_FOR_TERMINATION,
-        description="Retirement: prune the OpenClaw spike namespace and PVCs; remove after inventory is empty.",
     )

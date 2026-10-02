@@ -464,7 +464,10 @@ and PVCs. Its app, backup, and dedicated Iron proxy generators and manifests are
 retained under `cluster/cdk8s/parked/` and `cluster/parked/haku-openclaw-spike/`.
 Haku sandbox, the Haku CI mitmproxy, and public coder are not decommissioned.
 
-The old app owner used `deletionPolicy: Orphan`; retirement therefore first reconciles
-that same Flux Kustomization against an empty manifest set to prune its inventory.
-Delete the temporary empty owner only after verifying namespace/PVC deletion.
-Historical SeaweedFS/Restic backup storage retains its `Retain` policy.
+The old app owner used `deletionPolicy: Orphan`; retirement first reconciled that
+same Flux Kustomization against an empty manifest set to prune its inventory.
+Live checks on 2026-10-02 at 20:03 UTC confirmed an empty inventory and deletion of
+the namespace, PVCs, backup Flux owner, and dedicated proxy Deployment. The follow-up
+removes the temporary empty owner/directory and the SeaweedFS tenant grant.
+Historical SeaweedFS/Restic backup storage retains its `Retain` policy; physical
+backing storage was not audited as part of these checks.

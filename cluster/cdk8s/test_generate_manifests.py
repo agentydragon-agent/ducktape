@@ -68,7 +68,7 @@ def test_no_image_automation_markers(generated: Path) -> None:
     assert not marked, "Generated files must not carry a Flux image-automation marker:\n" + "\n".join(marked)
 
 
-def test_haku_spike_retirement_prunes_without_redeploying(generated: Path) -> None:
+def test_haku_spike_stays_unwired(generated: Path) -> None:
     active = [
         doc
         for path in generated.rglob("*.k8s.yaml")
@@ -82,14 +82,18 @@ def test_haku_spike_retirement_prunes_without_redeploying(generated: Path) -> No
     assert not any(doc["metadata"]["name"] == f"{spike}-proxy" for doc in active)
     owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
     assert f"{spike}-backup" not in owners
-    retirement = owners[f"{spike}-app"]["spec"]
-    assert retirement["prune"] is True
-    assert not retirement.get("suspend", False)
-    assert retirement["deletionPolicy"] == "WaitForTermination"
-    assert retirement["sourceRef"]["kind"] == "GitRepository"
-    assert not retirement.get("dependsOn")
-    empty = yaml.safe_load((generated / retirement["path"].removeprefix("./") / "kustomization.yaml").read_text())
-    assert not empty.get("resources")
+    assert f"{spike}-app" not in owners
+    assert not (generated / "cluster/generated/retired/haku-openclaw-spike").exists()
+    tenant_grant = next(
+        doc
+        for doc in active
+        if doc["kind"] == "ResourceReferenceGrant"
+        and doc["metadata"].get("namespace") == "seaweedfs"
+        and doc["metadata"]["name"] == "tenants"
+    )
+    for source in tenant_grant["spec"]["from"]:
+        for expression in source["namespaceSelector"]["matchExpressions"]:
+            assert spike not in expression.get("values", [])
     # Keep Haku sandbox/CI's shared proxy and public coder alive.
     assert {"haku-egress-proxy", "haku-namespace", "public-coder-agent-app"} <= owners.keys()
     deployments = {

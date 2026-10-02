@@ -9,14 +9,16 @@ archived there as `image-workflow.yaml.disabled`. The old Authentik blueprint is
 `haku-openclaw-spike-sso.yaml.disabled`: it is a revival input, not a Kubernetes
 manifest or an active Authentik blueprint.
 
-The existing `haku-openclaw-spike-app` Flux object temporarily targets an empty
-GitRepository directory to prune its inventory, including the namespace and PVCs.
-Its former `deletionPolicy: Orphan` means deleting that Flux object outright would
-not retire the app. Remove the empty retirement owner only after Flux is Ready,
-its inventory is empty, and the namespace/PVCs are absent. Check any remaining PV
-reclaim policy separately. Then revoke the temporary SeaweedFS tenant grant.
-PVC data loss is intentional; no unrelated namespace
-is part of this retirement.
+Retirement first pointed the existing `haku-openclaw-spike-app` Flux object at an
+empty GitRepository directory: its old `deletionPolicy: Orphan` would otherwise
+have left the app running. Live checks on 2026-10-02 at 20:03 UTC confirmed Flux
+Ready on the retirement merge, an empty inventory, and no spike namespace, PVCs,
+backup Flux owner, or dedicated proxy Deployment. The empty retirement owner and
+its directory are now removed from GitOps, along with the temporary SeaweedFS
+tenant grant. The archived generators still render, but do not deploy anything.
+
+PVC data loss was intentional. Retained PVs or physical backing storage must be
+checked separately; namespace/PVC deletion does not prove those were erased.
 
 The backup bucket uses `Retain`: historical Restic data is not intentionally
 deleted. The repository password and published token are archived as unchanged

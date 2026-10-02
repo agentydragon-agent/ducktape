@@ -101,8 +101,6 @@ TENANTS = frozenset(
         "authentik",  # authentik/db_backups.py
         "flux-system",  # seaweedfs/pr_visuals_bucket.py
         "forgejo",  # forgejo/app.py
-        # Retirement phase 2: revoke after the spike's S3 CR finalizers finish.
-        "haku-openclaw-spike",
         "home-assistant",  # home_assistant/backup.py
         "langfuse",  # langfuse/app.py
         "loki",  # monitoring/loki.py
