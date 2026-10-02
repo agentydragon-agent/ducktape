@@ -168,12 +168,10 @@ pub fn check_realizability(
         });
     }
 
-    // Canonical I-graph: cross-module edges the emitter actually
-    // emits as ESM imports. By construction every entry of this set
-    // also satisfies `constrains_init_order()` (lazy_use edges are
-    // dropped at the helper); the gate's Pass-1 constraining SCC
-    // search and Pass-2 simulator therefore run over the SAME
-    // adjacency.
+    // One canonical projection provides two distinct adjacencies: `edges`
+    // contains constraining dependencies for Pass 1, while `i_successors`
+    // includes lazy import back-edges for Pass 2's ESM evaluation topology.
+    // Sharing the projection does not make the two SCC partitions equivalent.
     let canonical = chunk_constraining_module_edges(owner_graph, partition);
     if canonical.edges.is_empty() {
         return verdict;

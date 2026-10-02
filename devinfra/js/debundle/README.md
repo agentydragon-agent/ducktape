@@ -4,6 +4,34 @@
 spec, emits a decomposed module tree, and writes analysis artifacts that help
 drive later module extraction and naming work.
 
+## Where behavior lives
+
+There are two flows: `run` transforms source from an authored spec; the authoring
+commands inspect, propose, or edit that spec. Commands that resolve selectors
+or validate edits reuse the shared resolver and gate, rather than implementing
+their own acceptance rules.
+
+| Responsibility | Start here |
+| --- | --- |
+| Load and prepare source; retain ASTs and manifest indexes | `prepare_chunks.rs`, `program_analysis.rs`, `artifacts/` |
+| Read flat/tree specs and authoring module documents | `spec/` |
+| Match, jointly resolve, synthesize, and diagnose selectors | `selectors/{matching,resolution,authoring,diagnostics}/` |
+| Analyze statement effects, dependencies, and structural atoms | `facts/`, `purity/`, `graph/`, `chunk_analysis/` |
+| Assemble assignments and validate realizability | `factor_assembly.rs`, `gate.rs`, `realizability/` |
+| Lower accepted assignments to entry and logical-module files | `lowering/` |
+| Plan/apply vendor substitution and finalize emitted files | `vendor/`, `pipeline.rs`, `artifacts/emission_files.rs` |
+| Propose author-reviewed moves; inspect or edit the spec | `peel/`, `cli/` |
+
+`pipeline.rs` composes these stages. Prepared/source indexes and finalized
+`EmissionFiles` describe different phases: do not pass one phase's data into
+another merely because both contain JavaScript files.
+
+For changes to splitting correctness, start with <docs/design.md>. For selector
+semantics use <SPEC.md> and <docs/selector_resolution.md>. The active work queue
+is <TODO.md>; `plans/` records designs, `perf/` records measurements, and
+`docs/lessons_learned/` preserves rejected approaches. Frozen specimen copies
+elsewhere in the repository are not the live implementation.
+
 ## CLI
 
 `debundle <command> --help` is the per-command reference; `docs/cli.md`

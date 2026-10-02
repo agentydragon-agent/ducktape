@@ -1,6 +1,7 @@
 # Graph Planner Follow-Ups
 
-Open work on `debundle modules propose`, kept corpus-neutral: private
+Design follow-ups for <../TODO.md>, not a separate priority queue. Work on
+`debundle modules propose` stays corpus-neutral: private
 downstream findings stay in the downstream repo. The graph model is in
 <../docs/design.md> § Valid peels and atomic modules; the current proposer is
 in <../docs/peel_proposer.md>.
@@ -9,7 +10,7 @@ Extend the existing command rather than adding a parallel CLI: new information
 goes into proposal metadata, output stays bounded JSON, and corpus taxonomy is
 consumer policy rather than debundler core logic.
 
-- **Proposal metadata.** `FactorizeProposal` carries size, source line range,
+- **Proposal metadata.** Each proposal carries size, source line range,
   ordinal span and cross-cell edge counts. Still missing: source-locality
   scores, likely naming anchors, and warnings when a proposal is graph-valid
   but likely awkward for humans.

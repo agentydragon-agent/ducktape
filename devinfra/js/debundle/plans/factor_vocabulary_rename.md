@@ -101,7 +101,7 @@ The phrase "atomic factor unit" in comments and diagnostics
 - `docs/cli.md`, `docs/spec_editing.md`, `README.md`, `skills/debundle_intake/SKILL.md`: "factorizer" / "factorization algorithm" wording around `modules propose`
 - `docs/wire_format.md`: "the peel factorizer's self-merge bug"
 - `ARCHITECTURE_BACKLOG.md`: `validate_factorization`, `ChunkFactorization::build_with`
-- `x/graph_planner_factorization.md`: rename or update
+- `plans/module_proposals.md`: rename or update
 
 ## Output Schema (JSON field renames)
 
