@@ -626,7 +626,6 @@ minimizer_expectation_case!(
 );
 
 minimizer_expectation_case!(
-    #[ignore = "neighbor-context anchoring pins the whole neighbor function declaration instead of holing it to its anchor"]
     minimizes_neighbor_context_whole_function_neighbor,
     fixture = "neighbor_context_whole_function_neighbor",
     name = "neighbor function declaration is holed to its discriminating anchor, not pinned whole",
@@ -636,7 +635,6 @@ minimizer_expectation_case!(
 );
 
 minimizer_expectation_case!(
-    #[ignore = "class-expression-valued const is pinned whole; not routed through the class read-off"]
     minimizes_class_expression_const_whole_body,
     fixture = "class_expression_const_whole_body",
     name = "class-expression const keeps only one discriminating member, not the whole class body",
