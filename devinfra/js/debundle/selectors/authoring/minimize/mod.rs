@@ -206,7 +206,7 @@ fn finish_minimized_selector(
     if prove_synthesized_selector(index, decl, targets, &source).is_err() {
         return Ok(None);
     }
-    let rewritten_holes = holes_present(&source);
+    let rewritten_holes = holes_present(&source)?;
     Ok(Some(SpecializedSelector {
         match_source: source,
         rewritten_holes,

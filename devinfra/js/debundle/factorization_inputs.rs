@@ -1,10 +1,10 @@
 //! Per-chunk analysis state: inputs, IR, and input-derived caches.
 //!
-//! [`ChunkAnalysis`] is what's known about a chunk before factorize
+//! [`FactorizationInputs`] is what's known about a chunk before propose
 //! runs — the spec-supplied logical modules, the binding catalogue,
 //! the owner graph derived from the chunk facts, and the small
-//! lookup caches that depend only on inputs. The factorize algorithm
-//! consumes a `ChunkAnalysis` plus a default destination to produce a
+//! lookup caches that depend only on inputs. The propose algorithm
+//! consumes a `FactorizationInputs` plus a default destination to produce a
 //! [`crate::ChunkFactorization`] — the partition-and-derived state
 //! that depends on which logical-module assignment the spec chose.
 
@@ -19,14 +19,14 @@ use analysis::{BindingKind, LogicalModuleIndex, ModuleId, OwnerGraph, PlannedMod
 /// Per-chunk inputs + IR + input-derived caches.
 ///
 /// Constructed once per chunk and held by reference (typically via
-/// `Arc<ChunkAnalysis>`) by every [`crate::ChunkFactorization`]
+/// `Arc<FactorizationInputs>`) by every [`crate::ChunkFactorization`]
 /// candidate that explores a partition over the same owner graph.
 /// All fields are private: the lookup tables are precomputed from the
-/// inputs at [`ChunkAnalysis::build`] time, so a mutable input field
+/// inputs at [`FactorizationInputs::build`] time, so a mutable input field
 /// would silently stale the caches. Read access goes through the
 /// accessors below.
 #[derive(Debug, Clone)]
-pub struct ChunkAnalysis {
+pub struct FactorizationInputs {
     chunk_id: String,
     bindings: HashMap<Id, BindingKind>,
     logical_modules: Vec<PlannedModule>,
@@ -44,8 +44,8 @@ struct BindingLookupInfo {
     owner: Option<ModuleId>,
 }
 
-impl ChunkAnalysis {
-    /// Build a `ChunkAnalysis` reusing a caller-supplied owner graph.
+impl FactorizationInputs {
+    /// Build a `FactorizationInputs` reusing a caller-supplied owner graph.
     /// `bindings` should already have every `Owned` binding the spec
     /// assigned and every `Imported` binding the spec re-exports.
     ///

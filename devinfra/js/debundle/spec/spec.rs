@@ -491,7 +491,7 @@ pub enum UnassignedMode {
     /// Unclaimed bindings emit to a separate logical module at
     /// `target` (defaults to [`DEFAULT_RESIDUAL_MODULE_PATH`]). The
     /// module behaves like any other logical module — it can be a
-    /// peel destination for factorize proposals — but structurally
+    /// peel destination for propose proposals — but structurally
     /// is the catch-all for unclaimed code. Renames for bindings
     /// that land in this catch-all should be expressed by listing
     /// them as members of a regular `logical_modules` entry at the
