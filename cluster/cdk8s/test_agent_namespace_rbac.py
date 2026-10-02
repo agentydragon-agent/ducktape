@@ -58,7 +58,9 @@ def test_reader_reconciliation_depends_only_on_shared_roles() -> None:
     )
     agent_namespace_rbac.add_flux_kustomizations(scope, roles)
     readers = [doc for doc in Cdk8sTesting.synth(scope) if doc["metadata"]["name"] != roles.name]
-    assert {doc["metadata"]["name"] for doc in readers} == {f"agent-namespace-rbac-{name}" for name in NAMESPACE_DIAGNOSTICS}
+    assert {doc["metadata"]["name"] for doc in readers} == {
+        f"agent-namespace-rbac-{name}" for name in NAMESPACE_DIAGNOSTICS
+    }
     for doc in readers:
         name = doc["metadata"]["name"].removeprefix("agent-namespace-rbac-")
         spec = doc["spec"]

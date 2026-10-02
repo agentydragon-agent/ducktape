@@ -1512,7 +1512,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, public_coder_agent_devbox_artifact, kubevirt_kustomization, external_secrets_operator_kustomization
     )
     agentplane_staging_artifact = artifact("agentplane-staging", staging.ENV.output_dir)
-    agentplane_staging_kustomization = staging.agentplane_staging(
+    staging.agentplane_staging(
         flux_chart,
         agentplane_staging_artifact,
         agentplane_staging_health_checks,
