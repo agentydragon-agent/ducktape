@@ -237,6 +237,21 @@ pub enum DepKind {
     LocalEffect,
 }
 
+impl DepKind {
+    /// Short human-readable label used in cycle and gate diagnostics.
+    pub fn diagnostic_label(self) -> &'static str {
+        match self {
+            DepKind::EagerUse => "at-init",
+            DepKind::LazyUse => "lazy",
+            DepKind::EagerRebind => "at-init rebind",
+            DepKind::LazyRebind => "lazy rebind",
+            DepKind::DeferredRebind => "deferred rebind",
+            DepKind::Sequenced => "side-effect",
+            DepKind::LocalEffect => "local-effect",
+        }
+    }
+}
+
 /// Stable per-chunk identity of an owner-graph edge. Equal to the
 /// edge's position in [`OwnerGraph::edges`]. The previous
 /// representation stored the report-shape spelling

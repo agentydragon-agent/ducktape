@@ -225,7 +225,7 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
                 n = agg.count,
                 from_b = key.from_label,
                 from_m = key.from,
-                kind = dep_kind_short(agg.kind),
+                kind = agg.kind.diagnostic_label(),
                 to_b = key.to_label,
                 to_m = key.to,
             ));
@@ -308,17 +308,6 @@ struct BindingPairAgg {
     count: usize,
 }
 
-fn dep_kind_short(kind: DepKind) -> &'static str {
-    match kind {
-        DepKind::EagerUse => "at-init",
-        DepKind::LazyUse => "lazy",
-        DepKind::EagerRebind => "at-init rebind",
-        DepKind::LazyRebind => "lazy rebind",
-        DepKind::DeferredRebind => "deferred rebind",
-        DepKind::Sequenced => "side-effect",
-        DepKind::LocalEffect => "local-effect",
-    }
-}
 
 fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
     let mut seen: HashSet<(&str, &str)> = HashSet::new();
@@ -444,7 +433,7 @@ fn render_cross_rebinds(
             format!(
                 "{} --{}--> {} (binding `{}`)",
                 module_path(rebind.from),
-                dep_kind_short(edge.reason.kind),
+                edge.reason.kind.diagnostic_label(),
                 module_path(rebind.to),
                 binding,
             )

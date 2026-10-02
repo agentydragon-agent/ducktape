@@ -539,7 +539,9 @@ fn read_and_parse_source(
         .with_context(|| format!("parsing source file {}", resolved.display()))
 }
 
-fn resolve_source_file(
+/// Locate a graph-referenced source file using the same fallback order for
+/// selector claims and source-slice queries.
+pub fn resolve_source_file(
     source_path: &str,
     source_root: Option<&Path>,
     owner_graph_path: &Path,

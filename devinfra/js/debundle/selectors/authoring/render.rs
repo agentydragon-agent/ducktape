@@ -807,3 +807,22 @@ class C { CASE_REST = 1; }"#,
         });
     }
 }
+
+/// A class-member run hole, represented by an `ANYTHING;` field.
+pub(crate) fn class_member_hole() -> ClassMember {
+    ClassMember::ClassProp(ClassProp {
+        span: DUMMY_SP,
+        key: PropName::Ident(IdentName::new(ANYTHING_HOLE_KEYWORD.into(), DUMMY_SP)),
+        value: None,
+        type_ann: None,
+        is_static: false,
+        decorators: vec![],
+        accessibility: None,
+        is_abstract: false,
+        is_optional: false,
+        is_override: false,
+        readonly: false,
+        declare: false,
+        definite: false,
+    })
+}
