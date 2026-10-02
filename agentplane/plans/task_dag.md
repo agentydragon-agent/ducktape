@@ -74,6 +74,7 @@ flowchart TB
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
+    RUNNER_DIRECTORY["Proposed extraction<br/>Runner directory<br/>shared inventory for app and notifications"]:::future
     ING["Planned service<br/>Subscriptions and notifications<br/>Action inbox -> runner notice; external providers later"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
@@ -122,7 +123,8 @@ flowchart TB
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
     CROSS_IDENTITY_READ_POLICY --> AG
-    CROSS_IDENTITY_READ_POLICY -. future cross-Identity delivery only .-> ING
+    CROSS_IDENTITY_READ_POLICY -. future cross-account delivery only .-> ING
+    RUNNER_DIRECTORY --> ING
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
 
@@ -940,8 +942,8 @@ does not yet.
 
 **Deferred decision:** what one Identity may read of another's Threads, stated explicitly rather
 than left to whatever a query happens to reach. Future cross-Identity notification delivery needs
-this policy, not the hosted lifecycle or surfaces. The [subscriptions v1](notifications.md) stays within a sandbox trust boundary and does
-not wait on cross-Identity delivery policy.
+this policy, not the hosted lifecycle or surfaces. The [subscriptions v1](notifications.md) uses authenticated ServiceAccount authority and
+explicit runner-session scope; it does not require app Thread ownership or cross-account delivery policy.
 
 ### `AG` — hosted Agent and Thread model
 
@@ -955,28 +957,46 @@ background work, but any such runner surface reuses the Action Service contracts
 second tool-request lifecycle; the settled harness behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
 
+### `RUNNER_DIRECTORY` — runner discovery outside the integration app
+
+**Proposed extraction, not implemented:** [runner directory interface and plan](runner_directory.md).
+Extract managed-resource inventory from the app into an independent service used by both the app and
+notifications. The directory exposes authenticated, account-scoped runner list/get, stable runner
+identity, current endpoints, and explicit retirement state. Provisioning-resource reconciliation owns
+registration; runners do not dial notifications. Session inventory stays in the runner's existing
+`ListSessions`/`Attach` protocol; product Thread mapping stays in the app.
+
+Settle storage-incarnation identity, account binding, endpoint replacement, and source freshness before
+implementation. A qualified `(runner_id, session_id)` is the proposed notification destination; using
+only a session ID would require SA-wide uniqueness not guaranteed by today's runner. Discovery does
+not grant runner access; direct connection authentication remains separate. A change feed and generic
+external-runner registration are deferred, not v1 prerequisites.
+
 ### `ING` — Event & Notification Hub
 
 **Planned, not implemented:** the [standalone subscriptions service plan](notifications.md) records
 v1 decisions, implementation order, acceptance criteria, and deferred work. This is an independent
 service, not integration-app notification machinery or browser Web Push.
 
-V1 follows canonical Action events with explicit, replayable subscriptions owned by Threads and
-authorized at the sandbox boundary. All calls name the Thread explicitly. The service owns an inbox
-with non-destructive reads and an explicit acknowledgement HWM, and submits batched automated inbox
-notices through the existing runner protocol. It tracks admission separately from harness confirmation
-and never reminds merely because confirmed notifications remain unacknowledged. Providers own content,
-filter vocabulary, and source verification; the Action Service remains the Action authority.
+V1 follows canonical Action events with explicit, replayable subscriptions and inboxes scoped to the
+caller ServiceAccount and runner session, not app Thread IDs. The service uses the runner directory
+for destination discovery; it neither resolves a workload into a sandbox/Thread nor accepts runner
+callbacks. Destination IDs are explicit in calls and agent prompt guidance. The inbox persists actual
+notification payloads, supports non-destructive reads and an explicit acknowledgement HWM, and sends
+batched automated notices through the existing runner protocol. Admission is not confirmation;
+confirmed but unacknowledged entries do not cause reminders. Providers own content, filters, and source
+verification; Action lifecycle authority stays in the Action Service.
 
-Concrete prerequisites are trusted workload/sandbox/Thread/session bindings and lifecycle signals,
-authorized Action source reads, and authenticated destination-scoped runner access. Trust the service
-with that session's full protocol/history; do not build command-level runner RBAC. Existing busy-turn
-input and receipt behavior is usable now; the remaining `INPUT_DELIVERY` evidence bounds recovery
-claims rather than requiring a new common queue or completion of every native capability experiment.
+Prerequisites are runner-directory extraction, qualified session addressing, authorized Action reads,
+and authenticated direct runner access. Trust the service with the destination's ordinary protocol and
+history; do not build command-level runner RBAC or app-issued Thread tickets as a prerequisite.
+Existing busy-turn input and receipts are usable; remaining `INPUT_DELIVERY` evidence bounds recovery
+claims rather than requiring a new common queue or every native capability experiment to finish.
 
-Deliver only to running harnesses in v1; temporary absence does not destroy subscriptions. Automatic
-Action following, GitHub, return-time catch-up notices, and notification-triggered resume come later.
-Cross-Identity delivery policy is a prerequisite only for that future extension, not same-sandbox v1.
+Deliver only to running harnesses in v1; temporary absence preserves subscriptions. Permanent cleanup
+uses directory retirement or explicit session lifecycle, not a sandbox lookup or a failed connection.
+Automatic Action following, GitHub, return-time catch-up notices, notification-triggered resume, and
+product Thread lifecycle integration come later. Cross-account delivery needs its own future policy.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 
