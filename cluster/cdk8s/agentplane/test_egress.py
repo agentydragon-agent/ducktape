@@ -240,7 +240,7 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
 
 @pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
 def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
-    preset: str, agentplane_manifests: dict[str, list[dict[str, Any]]],
+    preset: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
@@ -279,6 +279,11 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
             "role_ref": {"kind": "ClusterRole", "name": "public-coder-agent-cluster-metadata-reader"},
         },
     }
+    assert {
+        catalog[name]["role_ref"]["name"]
+        for name in selected
+        if catalog[name]["kind"] == "RoleBinding" and catalog[name]["role_ref"]["kind"] == "ClusterRole"
+    } == {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
     assert {
         (catalog[name]["namespace"], catalog[name]["role_ref"]["name"])
         for name in selected
