@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 mod emission;
+mod import_rewrites;
 mod manifests;
 mod passthrough;
 mod plan;
@@ -23,6 +24,7 @@ use artifact::{
 };
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
 pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
+pub use import_rewrites::VendorImportRewrites;
 use js_ast::str_value;
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};

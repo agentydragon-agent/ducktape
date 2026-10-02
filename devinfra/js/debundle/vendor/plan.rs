@@ -97,9 +97,8 @@ impl VendorResolutionPlan {
     }
 
     /// Oracle answer for one named import of `imported_name` targeting
-    /// `chunk`: how lowering's import construction must materialize it.
-    /// Mirrors the post-materialize dispatchers' per-specifier
-    /// classification exactly — `None` means "keep the chunk
+    /// `chunk`: shared classification for lowering and pass-through emission.
+    /// `None` means "keep the chunk
     /// re-import" (the post-strip consumer gate stays the safety net
     /// for shapes with no live rewrite, e.g. a symbol whose package
     /// coordinates are missing the required `namespace`).
@@ -204,8 +203,7 @@ impl VendorResolutionPlan {
     }
 }
 
-/// How a vendor-swapped named import must be constructed in a lowered
-/// module body. Variants mirror [`spec::PartialSwapKind`] split by the
+/// How a vendor-swapped named import must be constructed in an emitted file. Variants mirror [`spec::PartialSwapKind`] split by the
 /// partial (raw package specifier) vs bundled (generated facade)
 /// families.
 #[derive(Debug, Clone)]
