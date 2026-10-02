@@ -1,4 +1,4 @@
-"""Tests for the inject-mitmproxy Kyverno policy.
+"""Tests for the parked inject-mitmproxy Kyverno policy.
 
 Snapshot-backed: the interesting output is a whole injected sidecar plus volumes,
 so spelling every field out inline would obscure rather than clarify. The class
@@ -16,12 +16,13 @@ import yaml
 from syrupy.assertion import SnapshotAssertion
 
 from cluster.validation.kyverno.apply import KyvernoApplyResult, apply_policy
-from cluster.validation.kyverno.paths import manifest, policy
+from cluster.validation.kyverno.parked_proxy_policy import parked_mitmproxy_policy
+from cluster.validation.kyverno.paths import manifest
 
 
 @pytest.fixture
 def mitmproxy_policy(tmp_path: Path) -> Path:
-    return policy("inject-mitmproxy", tmp_path)
+    return parked_mitmproxy_policy(tmp_path)
 
 
 def _mutated_yaml(result: KyvernoApplyResult) -> str:

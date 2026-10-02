@@ -47,6 +47,7 @@ py_library(
 py_library(
     name = "proxy_injection",
     srcs = ["proxy_injection.py"],
+    visibility = ["//cluster/validation/kyverno:__pkg__"],
     deps = [
         "//cluster/cdk8s/providers/kyverno:cluster_policy",
         "//cluster/cdk8s/providers/kyverno:clusterpolicy",
