@@ -214,7 +214,7 @@ async def wait_http_event(
                 if line.startswith("data: "):
                     entry = ParseDict(json.loads(line.removeprefix("data: ")), event_log_pb2.EventEntry())
                     after_cursor = entry.cursor
-                    if entry.event.HasField(kind):
+                    if events.kind(entry) == kind:
                         return entry
             await asyncio.sleep(0.01)
 
@@ -384,8 +384,7 @@ async def test_failed_setup_cannot_be_resumed(
     manager_api: httpx.AsyncClient, destination: dict[str, object], spec: protocol_pb2.SessionSpec
 ) -> None:
     opened = await manager_api.post(
-        "/v1/sessions/open",
-        json={"destination": destination, "spec": MessageToDict(spec), "setup_script": "exit 42"},
+        "/v1/sessions/open", json={"destination": destination, "spec": MessageToDict(spec), "setup_script": "exit 42"}
     )
     assert opened.status_code == 200, opened.text
     attached = ParseDict(opened.json(), protocol_pb2.Attached())
