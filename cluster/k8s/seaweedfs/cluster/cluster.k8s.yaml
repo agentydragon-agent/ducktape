@@ -249,7 +249,6 @@ spec:
               - authentik
               - flux-system
               - forgejo
-              - haku-openclaw-spike
               - home-assistant
               - langfuse
               - loki
@@ -268,7 +267,6 @@ spec:
               - authentik
               - flux-system
               - forgejo
-              - haku-openclaw-spike
               - home-assistant
               - langfuse
               - loki
@@ -287,7 +285,6 @@ spec:
               - authentik
               - flux-system
               - forgejo
-              - haku-openclaw-spike
               - home-assistant
               - langfuse
               - loki
