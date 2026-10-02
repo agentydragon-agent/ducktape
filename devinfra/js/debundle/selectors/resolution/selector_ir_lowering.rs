@@ -5,8 +5,6 @@
 //! only their candidate rows enter the program.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error;
-use std::fmt;
 
 use analysis::StatementKind;
 use selector_ir::{
@@ -555,19 +553,28 @@ fn statement_kind_str_for_spec(kind: BindingSourceKind) -> &'static str {
     statement_kind.into()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum SelectorIrLoweringError {
+    #[error("unsupported selector IR lowering for {selector_kind}: {reason}")]
     Unsupported {
         selector_kind: &'static str,
         reason: &'static str,
     },
+    #[error(
+        "cross_ref/reads_member/passed_to_call/makes_decorate_call/intrinsic_alias \
+                 selector anchor `@{export_name}` does not name a lowered member in module \
+                 {logical_module}"
+    )]
     DanglingAnchor {
         logical_module: String,
         export_name: String,
     },
-    AmbiguousAnchor {
-        export_name: String,
-    },
+    #[error(
+        "cross_ref/reads_member/passed_to_call/makes_decorate_call/intrinsic_alias \
+                 selector anchor `@{export_name}` is ambiguous across lowered members"
+    )]
+    AmbiguousAnchor { export_name: String },
+    #[error("invalid selector IR program: {0}")]
     InvalidProgram(selector_ir::SelectorProgramError),
 }
 
@@ -579,37 +586,6 @@ impl SelectorIrLoweringError {
         }
     }
 }
-
-impl fmt::Display for SelectorIrLoweringError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unsupported {
-                selector_kind,
-                reason,
-            } => write!(
-                f,
-                "unsupported selector IR lowering for {selector_kind}: {reason}"
-            ),
-            Self::DanglingAnchor {
-                logical_module,
-                export_name,
-            } => write!(
-                f,
-                "cross_ref/reads_member/passed_to_call/makes_decorate_call/intrinsic_alias \
-                 selector anchor `@{export_name}` does not name a lowered member in module \
-                 {logical_module}"
-            ),
-            Self::AmbiguousAnchor { export_name } => write!(
-                f,
-                "cross_ref/reads_member/passed_to_call/makes_decorate_call/intrinsic_alias \
-                 selector anchor `@{export_name}` is ambiguous across lowered members"
-            ),
-            Self::InvalidProgram(error) => write!(f, "invalid selector IR program: {error}"),
-        }
-    }
-}
-
-impl Error for SelectorIrLoweringError {}
 
 impl From<selector_ir::SelectorProgramError> for SelectorIrLoweringError {
     fn from(error: selector_ir::SelectorProgramError) -> Self {

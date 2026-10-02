@@ -5,8 +5,6 @@
 //! shows.
 
 use std::collections::{BTreeSet, HashMap};
-use std::error::Error;
-use std::fmt;
 use std::hash::Hash;
 
 use cp_model_proto::operations_research::sat::constraint_proto::Constraint;
@@ -37,97 +35,53 @@ pub struct SelectorCpModel {
     pub projection: Vec<ProjectionVariable>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum InvalidProblem {
+    #[error("duplicate variable id {}", .0.0)]
     DuplicateVariable(ConstraintVariableId),
+    #[error("variable {} has an empty domain", .0.0)]
     EmptyDomain(ConstraintVariableId),
+    #[error("variable {} has duplicate domain values", .0.0)]
     DuplicateDomainValues(ConstraintVariableId),
+    #[error("duplicate shared sparse domain id {}", .0.0)]
     DuplicateSharedDomain(SharedVariableDomainId),
+    #[error("variable {} references unknown shared sparse domain {}",
+                .variable.0, .domain.0)]
     UnknownSharedDomain {
         variable: ConstraintVariableId,
         domain: SharedVariableDomainId,
     },
+    #[error("unknown variable id {}", .0.0)]
     UnknownVariable(ConstraintVariableId),
+    #[error("duplicate allowed row set id {}", .0.0)]
     DuplicateRowSet(AllowedTupleRowsId),
+    #[error("table constraint {} references unknown row set {}",
+                .constraint.0, .row_set.0)]
     UnknownRowSet {
         constraint: AllowedTupleConstraintId,
         row_set: AllowedTupleRowsId,
     },
+    #[error("table constraint {} has no variables", .0.0)]
     TableWithoutVariables(AllowedTupleConstraintId),
+    #[error("table constraint {} row set {} has arity {arity}, expected {expected}",
+                .constraint.0, .row_set.0)]
     RowSetArityMismatch {
         constraint: AllowedTupleConstraintId,
         row_set: AllowedTupleRowsId,
         arity: usize,
         expected: usize,
     },
+    #[error("row set {} has {values} values, not a multiple of arity {arity}",
+                .row_set.0)]
     RowSetNotWholeRows {
         row_set: AllowedTupleRowsId,
         values: usize,
         arity: usize,
     },
+    #[error("all_different constraint {} has fewer than two variables",
+                    .0.0)]
     AllDifferentTooSmall(AllDifferentConstraintId),
 }
-
-impl fmt::Display for InvalidProblem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DuplicateVariable(id) => write!(f, "duplicate variable id {}", id.0),
-            Self::EmptyDomain(id) => write!(f, "variable {} has an empty domain", id.0),
-            Self::DuplicateDomainValues(id) => {
-                write!(f, "variable {} has duplicate domain values", id.0)
-            }
-            Self::DuplicateSharedDomain(id) => {
-                write!(f, "duplicate shared sparse domain id {}", id.0)
-            }
-            Self::UnknownSharedDomain { variable, domain } => write!(
-                f,
-                "variable {} references unknown shared sparse domain {}",
-                variable.0, domain.0
-            ),
-            Self::UnknownVariable(id) => write!(f, "unknown variable id {}", id.0),
-            Self::DuplicateRowSet(id) => write!(f, "duplicate allowed row set id {}", id.0),
-            Self::UnknownRowSet {
-                constraint,
-                row_set,
-            } => write!(
-                f,
-                "table constraint {} references unknown row set {}",
-                constraint.0, row_set.0
-            ),
-            Self::TableWithoutVariables(id) => {
-                write!(f, "table constraint {} has no variables", id.0)
-            }
-            Self::RowSetArityMismatch {
-                constraint,
-                row_set,
-                arity,
-                expected,
-            } => write!(
-                f,
-                "table constraint {} row set {} has arity {arity}, expected {expected}",
-                constraint.0, row_set.0
-            ),
-            Self::RowSetNotWholeRows {
-                row_set,
-                values,
-                arity,
-            } => write!(
-                f,
-                "row set {} has {values} values, not a multiple of arity {arity}",
-                row_set.0
-            ),
-            Self::AllDifferentTooSmall(id) => {
-                write!(
-                    f,
-                    "all_different constraint {} has fewer than two variables",
-                    id.0
-                )
-            }
-        }
-    }
-}
-
-impl Error for InvalidProblem {}
 
 /// A variable's domain as OR-Tools' `Domain` proto encodes it.
 #[derive(Clone)]

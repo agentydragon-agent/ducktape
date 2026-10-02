@@ -5,8 +5,6 @@
 //! or sparse candidate sets, and allowed tuples are stored as interned ids.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::error::Error;
-use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use analysis::OwnerId;
@@ -1347,45 +1345,48 @@ impl CompiledSelectorProblemBuilder {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum CompiledSelectorProblemError {
-    UnknownVariable {
-        variable: ConstraintVariableId,
-    },
-    UnknownSharedVariableDomain {
-        domain_id: SharedVariableDomainId,
-    },
+    #[error("constraint references unknown variable {variable:?}")]
+    UnknownVariable { variable: ConstraintVariableId },
+    #[error("constraint references unknown shared domain {domain_id:?}")]
+    UnknownSharedVariableDomain { domain_id: SharedVariableDomainId },
+    #[error("variable {variable:?} expected {expected:?} domain, found {actual:?}")]
     VariableDomainMismatch {
         variable: ConstraintVariableId,
         expected: VariableDomain,
         actual: VariableDomain,
     },
+    #[error("expected {expected:?} value, found {actual:?}")]
     DomainValueMismatch {
         expected: VariableDomain,
         actual: VariableDomain,
     },
-    DuplicateTargetProjection {
-        target: SelectorTargetId,
-    },
-    UnknownTargetProjection {
-        target: SelectorTargetId,
-    },
-    EmptyAllowedTupleVariables {
-        id: AllowedTupleConstraintId,
-    },
+    #[error("target {target:?} has more than one projection")]
+    DuplicateTargetProjection { target: SelectorTargetId },
+    #[error("target {target:?} has no projection")]
+    UnknownTargetProjection { target: SelectorTargetId },
+    #[error("allowed tuple constraint {id:?} has no variables")]
+    EmptyAllowedTupleVariables { id: AllowedTupleConstraintId },
+    #[error("allowed tuple constraint {id:?} references variable {variable:?} more than once")]
     DuplicateTupleVariable {
         id: AllowedTupleConstraintId,
         variable: ConstraintVariableId,
     },
-    UnknownAllowedTupleRowSet {
-        row_set: AllowedTupleRowsId,
-    },
+    #[error("allowed tuple row set {row_set:?} does not exist")]
+    UnknownAllowedTupleRowSet { row_set: AllowedTupleRowsId },
+    #[error(
+        "allowed tuple constraint {id:?} row {tuple_index} has arity {actual}, expected {expected}"
+    )]
     TupleArityMismatch {
         id: AllowedTupleConstraintId,
         tuple_index: usize,
         expected: usize,
         actual: usize,
     },
+    #[error(
+        "allowed tuple constraint {id:?} row {tuple_index} variable {variable:?} expected {expected:?}, found {actual:?}"
+    )]
     TupleDomainMismatch {
         id: AllowedTupleConstraintId,
         tuple_index: usize,
@@ -1393,6 +1394,9 @@ pub enum CompiledSelectorProblemError {
         expected: VariableDomain,
         actual: VariableDomain,
     },
+    #[error(
+        "allowed tuple constraint {id:?} row {tuple_index} variable {variable:?} has encoded value {value:?} outside {domain:?} domain"
+    )]
     EncodedTupleValueOutOfDomain {
         id: AllowedTupleConstraintId,
         tuple_index: usize,
@@ -1400,138 +1404,35 @@ pub enum CompiledSelectorProblemError {
         domain: VariableDomain,
         value: BackendValueId,
     },
+    #[error(
+        "variable {variable:?} restriction contains encoded value {value:?} outside {domain:?} domain"
+    )]
     EncodedVariableDomainValueOutOfDomain {
         variable: ConstraintVariableId,
         domain: VariableDomain,
         value: BackendValueId,
     },
+    #[error("shared {domain:?} domain contains encoded value {value:?} outside its dictionary")]
     EncodedSharedDomainValueOutOfDomain {
         domain: VariableDomain,
         value: BackendValueId,
     },
-    DegenerateAllDifferent {
-        id: AllDifferentConstraintId,
-    },
+    #[error("all_different constraint {id:?} has fewer than two variables")]
+    DegenerateAllDifferent { id: AllDifferentConstraintId },
+    #[error("all_different constraint {id:?} references variable {variable:?} more than once")]
     DuplicateAllDifferentVariable {
         id: AllDifferentConstraintId,
         variable: ConstraintVariableId,
     },
+    #[error("all_different constraint {id:?} mixes {expected:?} and {actual:?} domains")]
     AllDifferentDomainMismatch {
         id: AllDifferentConstraintId,
         expected: VariableDomain,
         actual: VariableDomain,
     },
-    TooManyValues {
-        count: usize,
-    },
+    #[error("compiled selector problem has too many values: {count}")]
+    TooManyValues { count: usize },
 }
-
-impl fmt::Display for CompiledSelectorProblemError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownVariable { variable } => {
-                write!(f, "constraint references unknown variable {variable:?}")
-            }
-            Self::UnknownSharedVariableDomain { domain_id } => {
-                write!(
-                    f,
-                    "constraint references unknown shared domain {domain_id:?}"
-                )
-            }
-            Self::VariableDomainMismatch {
-                variable,
-                expected,
-                actual,
-            } => write!(
-                f,
-                "variable {variable:?} expected {expected:?} domain, found {actual:?}"
-            ),
-            Self::DomainValueMismatch { expected, actual } => {
-                write!(f, "expected {expected:?} value, found {actual:?}")
-            }
-            Self::DuplicateTargetProjection { target } => {
-                write!(f, "target {target:?} has more than one projection")
-            }
-            Self::UnknownTargetProjection { target } => {
-                write!(f, "target {target:?} has no projection")
-            }
-            Self::EmptyAllowedTupleVariables { id } => {
-                write!(f, "allowed tuple constraint {id:?} has no variables")
-            }
-            Self::DuplicateTupleVariable { id, variable } => write!(
-                f,
-                "allowed tuple constraint {id:?} references variable {variable:?} more than once"
-            ),
-            Self::UnknownAllowedTupleRowSet { row_set } => {
-                write!(f, "allowed tuple row set {row_set:?} does not exist")
-            }
-            Self::TupleArityMismatch {
-                id,
-                tuple_index,
-                expected,
-                actual,
-            } => write!(
-                f,
-                "allowed tuple constraint {id:?} row {tuple_index} has arity {actual}, expected {expected}"
-            ),
-            Self::TupleDomainMismatch {
-                id,
-                tuple_index,
-                variable,
-                expected,
-                actual,
-            } => write!(
-                f,
-                "allowed tuple constraint {id:?} row {tuple_index} variable {variable:?} expected {expected:?}, found {actual:?}"
-            ),
-            Self::EncodedTupleValueOutOfDomain {
-                id,
-                tuple_index,
-                variable,
-                domain,
-                value,
-            } => write!(
-                f,
-                "allowed tuple constraint {id:?} row {tuple_index} variable {variable:?} has encoded value {value:?} outside {domain:?} domain"
-            ),
-            Self::EncodedVariableDomainValueOutOfDomain {
-                variable,
-                domain,
-                value,
-            } => write!(
-                f,
-                "variable {variable:?} restriction contains encoded value {value:?} outside {domain:?} domain"
-            ),
-            Self::EncodedSharedDomainValueOutOfDomain { domain, value } => write!(
-                f,
-                "shared {domain:?} domain contains encoded value {value:?} outside its dictionary"
-            ),
-            Self::DegenerateAllDifferent { id } => {
-                write!(
-                    f,
-                    "all_different constraint {id:?} has fewer than two variables"
-                )
-            }
-            Self::DuplicateAllDifferentVariable { id, variable } => write!(
-                f,
-                "all_different constraint {id:?} references variable {variable:?} more than once"
-            ),
-            Self::AllDifferentDomainMismatch {
-                id,
-                expected,
-                actual,
-            } => write!(
-                f,
-                "all_different constraint {id:?} mixes {expected:?} and {actual:?} domains"
-            ),
-            Self::TooManyValues { count } => {
-                write!(f, "compiled selector problem has too many values: {count}")
-            }
-        }
-    }
-}
-
-impl Error for CompiledSelectorProblemError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendAssignment {
@@ -1586,61 +1487,24 @@ pub trait SelectorProblemBackend {
     fn solve(&self, problem: &CompiledSelectorProblem) -> Result<BackendSolveResult, Self::Error>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum BackendAssignmentError {
-    UnknownVariable {
-        variable: ConstraintVariableId,
-    },
-    UnknownValue {
-        value: BackendValueId,
-    },
+    #[error("assignment references unknown variable {variable:?}")]
+    UnknownVariable { variable: ConstraintVariableId },
+    #[error("assignment references unknown value {value:?}")]
+    UnknownValue { value: BackendValueId },
+    #[error("assignment value {value:?} is outside variable {variable:?} domain")]
     ValueOutsideDomain {
         variable: ConstraintVariableId,
         value: BackendValueId,
     },
-    DuplicateVariable {
-        variable: ConstraintVariableId,
-    },
-    NegativeValue {
-        value: BackendValueId,
-    },
-    ValueIndexOutOfRange {
-        value: BackendValueId,
-    },
+    #[error("assignment includes variable {variable:?} more than once")]
+    DuplicateVariable { variable: ConstraintVariableId },
+    #[error("assignment value id {value:?} is negative")]
+    NegativeValue { value: BackendValueId },
+    #[error("assignment value id {value:?} does not fit in usize")]
+    ValueIndexOutOfRange { value: BackendValueId },
 }
-
-impl fmt::Display for BackendAssignmentError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownVariable { variable } => {
-                write!(f, "assignment references unknown variable {variable:?}")
-            }
-            Self::UnknownValue { value } => {
-                write!(f, "assignment references unknown value {value:?}")
-            }
-            Self::ValueOutsideDomain { variable, value } => {
-                write!(
-                    f,
-                    "assignment value {value:?} is outside variable {variable:?} domain"
-                )
-            }
-            Self::DuplicateVariable { variable } => {
-                write!(
-                    f,
-                    "assignment includes variable {variable:?} more than once"
-                )
-            }
-            Self::NegativeValue { value } => {
-                write!(f, "assignment value id {value:?} is negative")
-            }
-            Self::ValueIndexOutOfRange { value } => {
-                write!(f, "assignment value id {value:?} does not fit in usize")
-            }
-        }
-    }
-}
-
-impl Error for BackendAssignmentError {}
 
 fn intersect_sorted_encoded_values(
     left: &[BackendValueId],
