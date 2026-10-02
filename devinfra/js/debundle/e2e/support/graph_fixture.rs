@@ -1,6 +1,7 @@
 //! Real JS/spec inputs for graph-backed query and edit workflows.
 
 use super::*;
+use std::collections::BTreeMap;
 
 pub struct GraphFixture {
     run: TreeRun,
