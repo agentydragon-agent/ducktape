@@ -2412,12 +2412,3 @@ pub fn assert_export_named_specifiers(
         "export {{ {expected_orig} ... }} `as` clauses mismatch in:\n{source}",
     );
 }
-
-/// Assert exactly one `export { ... }` specifier has the requested shape.
-pub fn assert_export_named_specifier(
-    source: &str,
-    expected_orig: &str,
-    expected_exported_as: Option<&str>,
-) {
-    assert_export_named_specifiers(source, expected_orig, &[expected_exported_as]);
-}

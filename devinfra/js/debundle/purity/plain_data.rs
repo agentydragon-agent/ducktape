@@ -800,10 +800,10 @@ impl Visit for PlainDataWriteScanner<'_> {
         // mutate their own parameter — visit the callee (the
         // param-scope tracking exempts same-named param writes) and
         // skip the vetted argument.
-        if self
-            .candidates
-            .iter()
-            .any(|c| !self.is_shadowed(c) && is_ts_enum_iife_call_for_binding(node, c))
+        if let Some(binding) = ts_enum_iife_argument_binding(node)
+            && self.candidates.contains(binding)
+            && !self.is_shadowed(binding)
+            && is_ts_enum_iife_call_for_binding(node, binding)
         {
             node.callee.visit_with(self);
             return;

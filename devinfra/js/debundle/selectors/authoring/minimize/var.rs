@@ -147,7 +147,7 @@ pub(crate) fn try_var_read_off_candidates(
         if out.iter().any(|kept| kept.match_source == source) {
             continue;
         }
-        let rewritten_holes = holes_present(&source);
+        let rewritten_holes = holes_present(&source)?;
         out.push(SpecializedSelector {
             match_source: source,
             rewritten_holes,
