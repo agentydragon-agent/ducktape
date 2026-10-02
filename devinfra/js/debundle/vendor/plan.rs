@@ -25,14 +25,14 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde_json::Value;
 use swc_common::GLOBALS;
-use swc_ecma_ast::{ExportSpecifier, ImportSpecifier, ModuleDecl, ModuleItem};
+use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
 
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, get_chunk_entry_path, join_module_path,
     list_chunk_file_paths, manifest_relative_path,
 };
 use binding_targets::module_export_name;
-use js_ast::{parse_js_module, str_value};
+use js_ast::parse_js_module;
 use spec::{
     PartialSwapKind, PartialSwapPackage, PartialSwapSymbol, VendorLevel, VendorMark, WrapperShape,
 };
@@ -462,16 +462,8 @@ fn validate_consumer_shapes(
                 let ModuleItem::ModuleDecl(decl) = item else {
                     continue;
                 };
-                let source = match decl {
-                    ModuleDecl::Import(import) => str_value(&import.src),
-                    ModuleDecl::ExportNamed(named) => {
-                        let Some(src) = named.src.as_deref() else {
-                            continue;
-                        };
-                        str_value(src)
-                    }
-                    ModuleDecl::ExportAll(export_all) => str_value(&export_all.src),
-                    _ => continue,
+                let Some(source) = crate::validate::consumer_directive_source(decl) else {
+                    continue;
                 };
                 let Some(target_chunk_id) = resolve_partial_swap_import_target(
                     &source,
@@ -538,89 +530,43 @@ fn check_consumer_shape_has_live_rewrite(
     consumer: &str,
     target_chunk_name: &str,
 ) -> Result<()> {
-    let swapped_list = || symbols.keys().cloned().collect::<Vec<_>>().join(",");
-    match decl {
-        ModuleDecl::Import(import) => {
-            for specifier in &import.specifiers {
-                match specifier {
-                    ImportSpecifier::Named(named) => {
-                        let imported = named
-                            .imported
-                            .as_ref()
-                            .map(module_export_name)
-                            .unwrap_or_else(|| named.local.sym.to_string());
-                        if !symbols.contains_key(&imported) {
-                            continue;
-                        }
-                        // Named imports of swapped names have a live
-                        // rewrite at both application sites — unless the
-                        // consumer file is hands-off (suppress chunk).
-                        if caller_suppressed {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
-                            );
-                        }
-                    }
-                    ImportSpecifier::Namespace(_) => {
-                        bail!(
-                            "partial-swap consumer gate: {consumer} namespace-imports partially-swapped vendor chunk {target_chunk_name}; swapped members [{}] would read as `undefined` on the namespace object — namespace consumers of partially-swapped chunks are unsupported, restructure the spec",
-                            swapped_list(),
-                        );
-                    }
-                    ImportSpecifier::Default(_) => {
-                        if symbols.contains_key("default") {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} default-imports partially-swapped vendor chunk {target_chunk_name} whose `default` export was swapped",
-                            );
-                        }
-                    }
-                }
+    crate::validate::check_consumer_directive(
+        decl,
+        consumer,
+        target_chunk_name,
+        symbols.contains_key("default"),
+        || symbols.keys().cloned().collect::<Vec<_>>().join(","),
+        |imported| {
+            if !symbols.contains_key(imported) {
+                return Ok(());
             }
-        }
-        ModuleDecl::ExportNamed(named) => {
-            for specifier in &named.specifiers {
-                match specifier {
-                    ExportSpecifier::Named(named_spec) => {
-                        let orig = module_export_name(&named_spec.orig);
-                        let Some(symbol) = symbols.get(&orig) else {
-                            continue;
-                        };
-                        if caller_suppressed {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
-                            );
-                        }
-                        if bundled || matches!(symbol.kind, PartialSwapKind::Member) {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
-                            );
-                        }
-                    }
-                    ExportSpecifier::Namespace(_) => {
-                        bail!(
-                            "partial-swap consumer gate: {consumer} re-exports the namespace of partially-swapped vendor chunk {target_chunk_name} (`export * as …`); swapped members [{}] would read as `undefined`",
-                            swapped_list(),
-                        );
-                    }
-                    ExportSpecifier::Default(_) => {
-                        if symbols.contains_key("default") {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} re-exports the swapped `default` of partially-swapped vendor chunk {target_chunk_name}",
-                            );
-                        }
-                    }
-                }
+            // Named imports of swapped names have a live
+            // rewrite at both application sites — unless the
+            // consumer file is hands-off (suppress chunk).
+            if caller_suppressed {
+                bail!(
+                    "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
+                );
             }
-        }
-        ModuleDecl::ExportAll(_) => {
-            bail!(
-                "partial-swap consumer gate: {consumer} uses `export *` from partially-swapped vendor chunk {target_chunk_name}; swapped names [{}] would silently vanish from the re-exporter's surface",
-                swapped_list(),
-            );
-        }
-        _ => {}
-    }
-    Ok(())
+            Ok(())
+        },
+        |orig| {
+            let Some(symbol) = symbols.get(orig) else {
+                return Ok(());
+            };
+            if caller_suppressed {
+                bail!(
+                    "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
+                );
+            }
+            if bundled || matches!(symbol.kind, PartialSwapKind::Member) {
+                bail!(
+                    "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
+                );
+            }
+            Ok(())
+        },
+    )
 }
 
 fn plan_boundary_renames(

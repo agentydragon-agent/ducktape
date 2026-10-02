@@ -1,9 +1,9 @@
-//! Shared validate/resolve helpers for vendor-plan construction.
+//! Shared vendor-plan validation and pre/post-rewrite consumer checks.
 //!
 //! The partial and bundled-partial plan phases perform near-identical
 //! validation/resolution of their vendor marks; the shared pieces live
-//! here so the phases shrink to mode-specific glue. Every helper takes
-//! a `stage` name so diagnostics keep their per-level prefix.
+//! here so the phases shrink to mode-specific glue while diagnostics retain
+//! their phase context.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -12,8 +12,10 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use artifact::{ChunkBundle, ChunkId};
+use binding_targets::module_export_name;
 use js_ast::{ParsedJsModule, is_binding_identifier};
 use spec::{BundledPartialSwapPackage, PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};
+use swc_ecma_ast::{ExportSpecifier, ImportSpecifier, ModuleDecl};
 
 use crate::manifests::PartialSwapSymbolResolution;
 use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
@@ -222,4 +224,88 @@ pub(crate) fn build_partial_swap_symbol_resolutions(
             )
         })
         .collect()
+}
+
+/// Inspect directives in source order; each phase supplies its named-symbol
+/// policy. Namespace/default failures are identical before and after rewriting.
+pub(super) fn check_consumer_directive(
+    decl: &ModuleDecl,
+    consumer: &str,
+    target_chunk_name: &str,
+    swapped_default: bool,
+    swapped_list: impl Fn() -> String,
+    check_named_import: impl Fn(&str) -> Result<()>,
+    check_named_export: impl Fn(&str) -> Result<()>,
+) -> Result<()> {
+    match decl {
+        ModuleDecl::Import(import) => {
+            for specifier in &import.specifiers {
+                match specifier {
+                    ImportSpecifier::Named(named) => {
+                        let imported = named
+                            .imported
+                            .as_ref()
+                            .map(module_export_name)
+                            .unwrap_or_else(|| named.local.sym.to_string());
+                        check_named_import(&imported)?;
+                    }
+                    ImportSpecifier::Namespace(_) => {
+                        bail!(
+                            "partial-swap consumer gate: {consumer} namespace-imports partially-swapped vendor chunk {target_chunk_name}; swapped members [{}] would read as `undefined` on the namespace object — namespace consumers of partially-swapped chunks are unsupported, restructure the spec",
+                            swapped_list(),
+                        );
+                    }
+                    ImportSpecifier::Default(_) => {
+                        if swapped_default {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} default-imports partially-swapped vendor chunk {target_chunk_name} whose `default` export was swapped",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        ModuleDecl::ExportNamed(named) => {
+            for specifier in &named.specifiers {
+                match specifier {
+                    ExportSpecifier::Named(named_spec) => {
+                        let orig = module_export_name(&named_spec.orig);
+                        check_named_export(&orig)?;
+                    }
+                    ExportSpecifier::Namespace(_) => {
+                        bail!(
+                            "partial-swap consumer gate: {consumer} re-exports the namespace of partially-swapped vendor chunk {target_chunk_name} (`export * as …`); swapped members [{}] would read as `undefined`",
+                            swapped_list(),
+                        );
+                    }
+                    ExportSpecifier::Default(_) => {
+                        if swapped_default {
+                            bail!(
+                                "partial-swap consumer gate: {consumer} re-exports the swapped `default` of partially-swapped vendor chunk {target_chunk_name}",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        ModuleDecl::ExportAll(_) => {
+            bail!(
+                "partial-swap consumer gate: {consumer} uses `export *` from partially-swapped vendor chunk {target_chunk_name}; swapped names [{}] would silently vanish from the re-exporter's surface",
+                swapped_list(),
+            );
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Source of an import or re-export; local exports are not consumers.
+pub(super) fn consumer_directive_source(decl: &ModuleDecl) -> Option<String> {
+    let source = match decl {
+        ModuleDecl::Import(import) => &import.src,
+        ModuleDecl::ExportNamed(named) => named.src.as_ref()?,
+        ModuleDecl::ExportAll(export_all) => &export_all.src,
+        _ => return None,
+    };
+    Some(js_ast::str_value(source))
 }
