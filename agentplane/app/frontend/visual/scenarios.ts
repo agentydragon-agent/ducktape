@@ -30,6 +30,9 @@ export interface Scenario extends ScenarioOptions {
   pendingActions?: boolean;
   /** Click the inline approval prompt's Review button once it mounts. */
   openActionReview?: boolean;
+  /** Make the SSH command taller than the inline review and scroll to its decisions. */
+  longPendingAction?: boolean;
+  scrollActionReview?: boolean;
   /** Render a bounded first history page with a Load more control. */
   historyPaged?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
@@ -381,6 +384,28 @@ export const SCENARIOS: Record<string, Scenario> = {
     pendingActions: true,
     captureViewport: true,
     readySelectors: ['button[aria-label="Actions, 2 pending"]', ".action-affordance-notice"],
+  },
+  actions_attention_composer_long_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    pendingActions: true,
+    openActionReview: true,
+    longPendingAction: true,
+    scrollActionReview: true,
+    captureViewport: true,
+    readySelectors: ['.action-affordance-details[data-scroll-ready="true"]'],
+  },
+  actions_attention_composer_long_desktop: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    pendingActions: true,
+    openActionReview: true,
+    longPendingAction: true,
+    scrollActionReview: true,
+    captureViewport: true,
+    readySelectors: ['.action-affordance-details[data-scroll-ready="true"]'],
   },
   actions_attention_composer_open_desktop: {
     element: "#app",

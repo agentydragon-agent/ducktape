@@ -566,8 +566,10 @@ const ACTIONS: ActionRequestView[] = [
     arguments: {
       host: "test-archive-host",
       user: "test-user",
-      command: scenario.hiddenCodepoints
-        ? 'printf "review \u202Ereversed\u202C zero\u200Bwidth control\u001B"'
+      command: scenario.longPendingAction
+        ? Array.from({ length: 55 }, (_, index) => `echo review-step-${index + 1}`).join("\n")
+        : scenario.hiddenCodepoints
+          ? 'printf "review \u202Ereversed\u202C zero\u200Bwidth control\u001B"'
         : 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
       timeout_seconds: 60,
     },
@@ -2195,6 +2197,18 @@ if (scenario.openActionPolicySets) {
     control.click();
   });
   openSets.observe(document, { childList: true, subtree: true });
+}
+if (scenario.scrollActionReview) {
+  const scrollReview = new MutationObserver(() => {
+    const details = document.querySelector<HTMLElement>('.action-affordance-details:not([hidden])');
+    if (!details?.querySelector('button')) return;
+    scrollReview.disconnect();
+    requestAnimationFrame(() => {
+      details.scrollTop = details.scrollHeight;
+      if (details.scrollTop > 0) details.dataset.scrollReady = "true";
+    });
+  });
+  scrollReview.observe(document, { childList: true, subtree: true, attributes: true });
 }
 if (scenario.openActionReview) {
   const openActionReview = new MutationObserver(() => {
