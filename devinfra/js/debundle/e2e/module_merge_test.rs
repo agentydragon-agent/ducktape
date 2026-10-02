@@ -435,13 +435,24 @@ fn merge_does_not_clobber_a_preexisting_temporary_sibling() {
     let sibling = root.join("target.yaml.tmp");
     write_text_file(&sibling, "unrelated data\n");
     let output = run_debundle(&[
-        "modules", "merge", "--modules", root.to_str().unwrap(),
-        "--target", "target.yaml", "source.yaml", "--no-verify",
+        "modules",
+        "merge",
+        "--modules",
+        root.to_str().unwrap(),
+        "--target",
+        "target.yaml",
+        "source.yaml",
+        "--no-verify",
     ]);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert_eq!(fs::read_to_string(&sibling).unwrap(), "unrelated data\n");
     assert!(!root.join("source.yaml").exists());
-    let doc: Value = serde_yaml::from_str(&fs::read_to_string(root.join("target.yaml")).unwrap()).unwrap();
+    let doc: Value =
+        serde_yaml::from_str(&fs::read_to_string(root.join("target.yaml")).unwrap()).unwrap();
     assert_eq!(doc["note"], "merged from: source.yaml");
     assert_eq!(fs::read_dir(root).unwrap().count(), 2);
 }
