@@ -31,8 +31,6 @@ fn fn_purity(src: &str, name: &str) -> Option<bool> {
     graph.function_purity(name).map(|p| p.is_pure())
 }
 
-
-
 #[test]
 fn fn_purity_mutual_recursion_converges_pure() {
     // `even` and `odd` only reference each other inside their

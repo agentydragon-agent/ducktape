@@ -708,7 +708,9 @@ fn builtin_container_initializers_break_the_side_effect_cycle() {
         (r#"new Map([["x", 1], ["y", 2]])"#, r#"b.get("x")"#, "2\n"),
     ] {
         let declaration = format!("const b = {initializer};");
-        let source = format!("const a = (() => 1)();\n{declaration}\nconst c = {read} + a;\nconsole.log(c);\nexport {{ a, b, c }};");
+        let source = format!(
+            "const a = (() => 1)();\n{declaration}\nconst c = {read} + a;\nconsole.log(c);\nexport {{ a, b, c }};"
+        );
         assert_pure_cycle_break(
             &source,
             vec![logical_module("b_module", &[Member::new("b")])],

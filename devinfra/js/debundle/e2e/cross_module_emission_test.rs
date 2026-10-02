@@ -586,10 +586,8 @@ fn dry_run_defaults_to_collecting_source_match_failures_and_duplicate_claims_tog
 /// any selector is matched, so fail-fast stops there.
 #[test]
 fn fail_fast_dry_run_stops_at_the_duplicate_claim_found_while_building_requests() {
-    let line = assert_fail_fast_stops_at_first_outcome(
-        mixed_selector_failure_fixture,
-        "duplicate_claim",
-    );
+    let line =
+        assert_fail_fast_stops_at_first_outcome(mixed_selector_failure_fixture, "duplicate_claim");
     assert!(line.contains("\"renderCard\""), "{line}");
 }
 

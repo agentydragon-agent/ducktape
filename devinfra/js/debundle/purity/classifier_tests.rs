@@ -1115,7 +1115,6 @@ fn object_values_on_plain_object_literal_classifies_pure() {
     assert!((classify(r#"Object.values({a: 1, b: 2})"#)).is_pure());
 }
 
-
 #[test]
 fn object_freeze_on_vite_namespace_facade_classifies_pure() {
     assert!(

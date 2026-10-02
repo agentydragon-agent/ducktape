@@ -1069,4 +1069,3 @@ export { renderCard, decoratePrimary, decorateSecondary };
         ],
     )
 }
-

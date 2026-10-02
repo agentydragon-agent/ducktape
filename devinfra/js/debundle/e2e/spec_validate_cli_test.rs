@@ -6,8 +6,9 @@
 use std::process::Command;
 
 use debundle_e2e_support::{
-    CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module, mixed_selector_failure_fixture, outcomes,
-    run_source_only_validate, run_spec_validate, write_text_file, write_validate_fixture_spec,
+    CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module,
+    mixed_selector_failure_fixture, outcomes, run_source_only_validate, run_spec_validate,
+    write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
