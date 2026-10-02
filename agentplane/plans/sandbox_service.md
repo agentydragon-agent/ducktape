@@ -196,7 +196,10 @@ has been performed by the documentation change.
 
 This is a coordinated writer/authority handoff, not a database migration. Before merging/applying
 changed manifests, arrange a maintenance window and prevent automatic reconciliation/image updates
-from switching only part of the system. Record the current app, runner and policy revisions for rollback.
+from switching only part of the system. This includes the independent
+`agentplane-staging-binding-delegation-*` Kustomizations and image automation, not just the main
+staging/testing stacks. The `unset` image pin and its comments do not suspend Flux; arrange and verify
+that operational gate explicitly. Record the current app, runner and policy revisions for rollback.
 
 1. Complete the staging inventory, consistent backup and isolated restore checks above. Record Sandbox
    names/UIDs, SAs, Pod/volume identities, Thread/session IDs and ingestion high-water marks. Do not

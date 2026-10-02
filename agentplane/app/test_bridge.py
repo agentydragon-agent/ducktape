@@ -53,7 +53,7 @@ from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
-from agentplane.sandbox_service.client import Attachment as ServiceAttachment, SandboxServiceClient
+from agentplane.sandbox_service.client import Attachment, SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
@@ -1295,11 +1295,11 @@ async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
         lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
         assert lease is not None
 
-        async def truncated_stream(attachment: ServiceAttachment) -> event_log_pb2.EventEntry:
+        async def truncated_stream(attachment: Attachment) -> event_log_pb2.EventEntry:
             assert attachment.attached.last_cursor > 0
             raise StreamClosedError
 
-        monkeypatch.setattr(ServiceAttachment, "next_entry", truncated_stream)
+        monkeypatch.setattr(Attachment, "next_entry", truncated_stream)
         async with asyncio.timeout(10):
             await Feed(
                 session_id=SESSION,
