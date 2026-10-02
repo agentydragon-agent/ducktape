@@ -92,4 +92,3 @@ class FakeRbac:
     async def list_cluster_role_binding(self, *, label_selector: str) -> k8s_client.V1ClusterRoleBindingList:
         assert label_selector
         return k8s_client.V1ClusterRoleBindingList(items=list(self.cluster_bindings.values()))
-

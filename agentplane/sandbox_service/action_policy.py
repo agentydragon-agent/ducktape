@@ -6,7 +6,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from agentplane.action_service.policies.resources import (
-    BINDINGS_PLURAL, POLICY_SETS_PLURAL, ActionPolicySet, InvalidResource, parse_policy_set,
+    BINDINGS_PLURAL,
+    POLICY_SETS_PLURAL,
+    ActionPolicySet,
+    InvalidResource,
+    parse_policy_set,
 )
 from agentplane.action_service.policy_view import ActionPolicySetView, set_view
 from agentplane.crd_group import GROUP, VERSION
@@ -107,5 +111,3 @@ class ActionPolicyBindings:
 def _require_known(names: Sequence[str], policy_sets: dict[str, ActionPolicySet | InvalidResource]) -> None:
     if unknown := [name for name in names if name not in policy_sets]:
         raise UnknownPolicySetError(unknown)
-
-

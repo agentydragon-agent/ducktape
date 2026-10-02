@@ -1,177 +1,137 @@
 # Sandbox Service API
 
-## Agreed contract: protobuf/gRPC
+The service uses [protobuf/gRPC](protocol.proto). Its standalone entry point serves this API;
+HTTP is limited to a health probe. The integration app retains its browser-facing HTTP API.
+There is no transparent runner `Attach` tunnel or caller-supplied runner URL.
 
-**Implementation status:** the HTTP adapter documented below is transitional. The gRPC conversion
-and app client cutover are not complete. Do not treat the HTTP routes as a second supported long-term
-API. The [extraction plan](../plans/sandbox_service.md#transport-decision) records the transport decision.
+**Status:** gRPC server/client implementation and acceptance tests are being added in #8744.
+Production app cutover and deployment are not complete. The earlier `api.py` HTTP adapter and
+its native tests remain transitional test coverage, not a second deployed service contract.
 
-The service will expose unary RPCs for inventory, explicit sandbox lifecycle, session inspection/
-management, and command admission; session following will be server-streaming. Reuse the common
-runner protobuf types for commands, snapshots, specs, events, and cursors. Inventory and provisioning
-requests/responses also need typed protobuf messages, not generic JSON envelopes. This is a
-service-level API, not a transparent proxy for the runner's bidirectional `Attach` RPC.
+## Authentication and destinations
 
-- Each session RPC carries an explicit owner, sandbox name and UID, and session ID. Sandbox-level
-  operations omit the session ID. The service resolves endpoints internally.
-- Authenticate workload bearers in `authorization` metadata with the shared principal resolver.
-  Apply the same destination, cross-owner, and management authorization as the transitional adapter.
-- Command submission returns the original matching native `CommandAdmitted` event entry, not a new
-  service-authored receipt. Admission does not mean harness consumption or command completion.
-- Following begins with a snapshot and then original event entries. Preserve source identity and
-  per-reader replay cursors. Distinguish native stream closure, lease expiry, and backend failure;
-  a transport disconnect alone says nothing about whether the session ended.
-- Use gRPC deadlines/cancellation and standard status codes. Reconnect bounded follow leases with
-  the last fully consumed cursor, rechecking identity and destination. Cancel runner attachments on
-  every exit, including stalled or disconnected consumers.
-- Do not automatically retry mutations. A timeout/unavailable response may follow commitment;
-  reconcile command submission using its unchanged ID/payload and runner evidence. Sandbox creation
-  is not currently idempotent; an uncertain create needs inventory reconciliation, not blind retry.
+Every RPC requires one `authorization: Bearer …` metadata value. The shared workload-principal
+resolver performs TokenReview for the configured audience and allowed ServiceAccount namespaces.
+Missing, invalid, duplicate, or revoked credentials are refused. The Python client rereads its
+projected token file on every RPC, including follow reconnects.
 
-The app keeps its browser HTTP API. HTTP health probes can remain. This choice does not require
-agent-facing subscription tools to use gRPC or introduce fine-grained RBAC inside the runner.
+A `SandboxDestination` contains the owner ServiceAccount (namespace/name), Sandbox name, and
+Sandbox UID. A `SessionDestination` wraps that destination and adds an explicit runner session ID.
+The owner is a resource selector, not a forwarded identity. Ordinary callers can address only their
+own account. `trusted_accounts` grants selected service accounts cross-owner access; it defaults to
+empty. All sessions under an account share the sandbox trust boundary. There is no inferred Thread.
 
-The service exposes logs retained by the runner on its state volume, with no additional archive.
-Clients needing independent retention archive events themselves. The app keeps its current PostgreSQL
-archive and consumes runner events through this service after cutover.
+Resolution checks the stored Sandbox account, UID, lifecycle state, and current ready Pod's controller
+ownership before selecting its endpoint. Name reuse with a new UID is refused. A successor Pod under
+the same Sandbox may replace the endpoint. These are Kubernetes association checks, not cryptographic
+runner authentication. **TODO:** proper runner RPC authentication/TLS; v1 requires network isolation.
+Service API authentication is implemented independently of that deferred runner-authentication work.
 
-## Transitional HTTP implementation
+## Inventory and explicit sandbox lifecycle
 
-The current standalone adapter exposes existing-session access and explicit bootstrap/open/resume.
-An optional provisioning router also exposes Sandbox inventory and lifecycle operations. The session
-operations described below require a currently running runner; they do not provision or wake a Sandbox.
+These unary RPCs require an account in **both** `manager_accounts` and `trusted_accounts`, and an
+enabled provisioning backend:
 
-## Identity and destinations
+- `ListSandboxes`, `GetSandbox`: Kubernetes-backed inventory, including concrete stored launch
+  bindings, provisioning state, and current Pod observations.
+- `ListTemplates`, `ListKubernetesGrants`: concrete backend choices, not app UI presets.
+- `CreateSandbox`: concrete template, policy/grant selections, optional session defaults, and bootstrap.
+  Grant intent is stored on the Sandbox so reconciliation can recover partial provisioning without
+  the app. The RPC returns after provisioning orchestration, not necessarily after Pod readiness.
+- `SuspendSandbox`, `ResumeSandbox`, `DeleteSandbox`: explicit owner/name/UID-pinned mutations.
+  Resume refuses incomplete provisioning; deletion requires suspension.
 
-Every operation uses the shared Pod-bound workload Bearer authenticator. Each request
-performs TokenReview for the configured audience and accepted SA namespaces. A destination
-always names its owner and Sandbox name **and UID**. Session operations also require a
-runner session ID (omit it for listing sessions and initializing a Sandbox):
+Create is **not currently idempotent**. After a timeout or lost response, reconcile inventory rather
+than blindly retrying. The client disables gRPC retries and adds no application retry loop. Existing
+Kubernetes ownership labels, stored bindings, identities, and PVC policy remain unchanged.
 
-```json
-{
-  "destination": {
-    "owner": { "namespace": "example-sandboxes", "name": "example-runner-account" },
-    "sandbox": "example-runner",
-    "sandbox_uid": "40e373bd-2742-43de-8d1c-1ef97c4d4801",
-    "session_id": "example-session"
-  }
-}
-```
+## Sessions and commands
 
-The owner is a request selector, not a forwarded identity. An ordinary authenticated SA
-can address only itself; all sessions under that SA share its existing sandbox trust
-boundary. `trusted_accounts` explicitly grants selected service SAs cross-account access.
-It defaults to empty. A trusted client must still name the actual owner, and the service
-checks that against the managed Sandbox's Pod template. No caller-supplied header, Thread
-ID, Pod name, or URL establishes ownership or selects a runner endpoint.
+- `ListSessions`: Sandbox destination; returns native retained `SessionSummary` messages.
+- `InspectSession`: session destination; returns a native `Attached` snapshot. Does not create or resume.
+- `InitializeSandbox`: executes the backend-configured bootstrap through the runner. Exact retries use
+  the runner's stored bootstrap result; no caller-supplied bootstrap override in this RPC.
+- `OpenSession`: explicit session creation/start using stored defaults plus selected overrides. Bootstrap
+  and setup use the runner's existing idempotence; the response is the native attachment snapshot, not
+  a claim that all setup or a model turn has completed.
+- `ResumeSession`: uses exactly the runner-retained spec, without applying today's defaults/instructions
+  or rerunning setup. Missing sessions and failed/interrupted setup are refused.
+- `SubmitCommand`: forwards an unchanged common-protocol `Command` only to a running harness and returns
+  the original `EventEntry` containing its exact matching `CommandAdmitted`. Specify a native `Follow`
+  cursor before the possible admission when reconciling an uncertain submission.
 
-Resolution is confined to the configured inventory namespace. Name reuse with another
-Sandbox UID is rejected. The current ready, non-deleting Pod must have the expected
-namespace/name/account and exactly one controller owner matching the Sandbox UID. A
-successor Pod under the same Sandbox can replace its endpoint. Resolution is not an atomic
-Kubernetes/runner transaction or cryptographic peer verification: runner RPC auth/TLS
-remains an explicit follow-up, and deployment must enforce the intended network boundary.
+Initialize/open/resume require `manager_accounts`. Cross-owner management also requires
+`trusted_accounts`; neither list implies the other. Delivery-only trusted accounts do not gain launch
+permission. This is a service lifecycle boundary, not fine-grained command RBAC inside the runner.
+Read/follow/command RPCs never provision, resume, or wake a Sandbox or harness.
 
-## Operations
+### Launch overrides and field presence
 
-POST bodies carry the composite destination so the same explicit shape works for ordinary
-agents and trusted services. All schemas are exposed in `/openapi.json`.
+`OpenSessionRequest.spec` is the existing runner `SessionSpec`. Its `override_mask` names the exact
+proto fields to replace in stored defaults, including fields explicitly set to empty/default values.
+For example, `paths: ["model", "instructions"]` selects `spec.model` and `spec.instructions`; an empty
+instructions string clears the caller's inherited instructions, but not backend platform guidance.
+Nested paths, unknown paths, duplicate paths, and supplied nondefault fields outside the mask are
+refused. An empty mask means no overrides. Optional `setup_script` distinguishes omitted from empty.
 
-| Route                        | Additional body fields                                                                       | Response                                                                 |
-| ---------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `POST /v1/sessions/inspect`  | None                                                                                         | Native runner `Attached` as protobuf JSON.                               |
-| `POST /v1/sessions/commands` | `command`: native protobuf JSON; `after_cursor`: nonnegative runner-log cursor, default `0`. | Original `EventEntry` containing the exact matching `CommandAdmitted`.   |
-| `POST /v1/sessions/follow`   | `after_cursor`: nonnegative runner-log cursor, default `0`.                                  | SSE `entry` frames, each containing original `EventEntry` protobuf JSON. |
+The backend adds operational guidance and the explicit destination. When management is enabled,
+configure the egress/Actions URLs for bundled instructions or explicitly configure `agent_instructions`.
+Stored specs are never rewritten. Changed defaults may make an Open retry conflict: inspect retained
+state and explicitly resume rather than silently adopting a different spec or creating another ID.
 
-For example, add these fields to the destination body to submit a notice:
+Resume also needs the native harness's retained conversation. The pinned Claude harness can refuse
+resuming an empty conversation that never persisted a turn. The service surfaces that refusal; it does
+not fabricate native history or claim runner admission proves native persistence.
 
-```json
-{
-  "command": {
-    "commandId": "caller-chosen-stable-notice-id",
-    "submitInput": { "text": "You have 7 inbox messages. Retrieve them using the notification service." }
-  },
-  "after_cursor": 0
-}
-```
+## Event following
 
-Read/follow/command attachments omit `SessionSpec`: none of these operations creates a session, resumes
-a harness, or wakes a sandbox. Command submission additionally requires a running harness.
-Admission is neither harness confirmation nor inbox acknowledgement. On uncertain delivery,
-reconcile using the unchanged ID/payload and a cursor before its possible admission; do not
-allocate a new ID. There is no offline command queue.
+`FollowSession` is server-streaming. Its request selects an explicit session and a native `Follow`
+cursor. It emits:
 
-A follow starts only after the runner answers Open. Each follow has a bounded lease
-(default 30 seconds, configured maximum 60); reconnect with the last fully consumed cursor.
-This reauthenticates and re-resolves the destination. Sending to a stalled HTTP consumer gets
-at most five additional seconds before cleanup. There is no unbounded fan-out queue. A
-midstream runner failure emits an `unavailable` transport frame, **not** a synthetic runner
-Event. EOF, expiry, and disconnect convey no extra admission/confirmation evidence.
+1. One native `Attached` snapshot.
+2. Original `EventEntry` messages, preserving serving-log cursor, source origin, and command correlation.
+3. An `ended` observation only when the native runner attachment reaches successful EOF. This is a
+   transport observation, not a synthesized execution Event or deletion of retained history.
 
-Typical errors: `401` invalid bearer, `403` unauthorized owner, `404` missing/stale Sandbox
-incarnation, `409` runner refusal (including unknown or stopped session for commands),
-`422` invalid input, `503` unavailable destination/backend, `504` uncertain receipt timeout.
-A connection failure can happen after commitment: neither 5xx nor disconnect proves that a
-command was rejected. Reconcile from runner evidence.
+A bounded follow lease ends with `DEADLINE_EXCEEDED`; backend transport failure is `UNAVAILABLE`.
+Neither is native closure. Bare service-stream EOF without `ended` is an error in the client, not
+session termination. Reconnect from the last fully consumed/committed cursor; each reconnect checks
+identity and destination again. Follow flow-control stalls are inside the lease deadline, and every
+exit cancels the runner attachment and closes its channel. There is no unbounded fan-out queue.
 
-## Explicit session management
+The service retains no additional session-log archive. Runner logs are durable on the state volume,
+but reading them requires a reachable runner. Clients needing retention independent of that volume
+must archive events themselves. The app keeps its existing PostgreSQL archive and checkpoints as a
+client of service event following; migrating that archive is not a required follow-up.
 
-- `POST /v1/sessions/list`: Sandbox destination without `session_id`; returns
-  `{"sessions": [...]}` with native `SessionSummary` protobuf JSON. This is read-only.
-- `POST /v1/sandboxes/initialize`: Sandbox destination; executes/replays **only** its stored
-  binding's bootstrap and returns native `InitializeResult` protobuf JSON. A nonzero
-  `exitCode` is a completed failed bootstrap, not success. No configured bootstrap is 409.
-- `POST /v1/sessions/open`: session destination, optional `spec` (native `SessionSpec`
-  protobuf JSON overrides), optional `setup_script`. Resolves stored concrete launch
-  defaults without an app preset catalog, prepends backend-owned operational guidance and
-  explicit destination context, runs the stored bootstrap, then sends native Open. A failed
-  bootstrap prevents Open. Returns native `Attached`; setup can still be running, so this
-  snapshot does not promise a ready harness. Follow/inspect for actual progress.
-- `POST /v1/sessions/resume`: session destination only. Finds the runner's retained session
-  and uses its exact stored spec. No current defaults, platform prompt, bootstrap, or setup
-  script are reapplied. Missing sessions and failed/interrupted setup are refused (409).
+## Errors and uncertain outcomes
 
-Initialize/open/resume additionally require `manager_accounts`, an explicit allowlist that
-is empty by default. Cross-owner management also requires `trusted_accounts`; neither list
-implies the other. Delivery-only services do not gain launch authority from cross-owner
-access. This is an HTTP lifecycle boundary, not command-level RBAC on the runner protocol.
+- `UNAUTHENTICATED`: invalid workload bearer.
+- `PERMISSION_DENIED`: unauthorized destination or management operation.
+- `NOT_FOUND`: missing/stale Sandbox incarnation.
+- `INVALID_ARGUMENT`: malformed request or invalid concrete grant selection.
+- `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation.
+- `UNAVAILABLE`: destination/backend unavailable; no offline admission.
+- `DEADLINE_EXCEEDED`: operation deadline or follow lease expired.
 
-When management is enabled, configure `agent_egress_api_url` and `agent_actions_service_url`
-for the bundled platform instructions, or explicitly set `agent_instructions` (including
-an intentional empty string). Stored session specs are never rewritten after a deployment.
-Open retries must use the same destination and launch inputs. Changed defaults/instructions
-can cause an Open retry to conflict: inspect/list retained state and explicitly resume,
-never silently adopt a different spec or allocate another session ID. The runner owns
-idempotence for bootstrap, session identity, and setup. There is no service-side queue.
+Neither a successful write nor a timeout proves admission/rejection. A mutation may commit before
+its response is lost. Reconcile commands with the unchanged ID/payload and runner evidence; admission
+is neither harness consumption nor command completion nor inbox acknowledgement. No service command
+queue, new receipt authority, or exactly-once guarantee is introduced.
 
-Resume also requires the native harness's retained conversation, not just a runner spec.
-For example, the pinned Claude harness can reject resuming an empty conversation that has
-never persisted a turn. This API surfaces that refusal; it does not fabricate a replacement
-conversation or claim that runner admission proves native persistence. Improving empty-native-
-conversation resume is a runner follow-up, not part of this service extraction.
+## Server configuration and cutover
 
-Management requests are bounded by `lifecycle_timeout_s` (default 300). A timeout or client
-loss does not prove that bootstrap, setup, or launch did not happen. Reconcile via the same
-runner identity and retained state; an exact bootstrap retry replays its terminal result.
-List requests use `admission_timeout_s`. Read/command/follow still never start a harness.
+`//agentplane/sandbox_service:server` uses `AGENTPLANE_SANDBOX_SERVICE_*` environment variables or
+kebab-case CLI flags. Required settings are `sandbox_namespace` and
+`allowed_service_account_namespaces`. `token_audience` defaults to the existing `agentplane-egress`
+workload audience. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
-## State and deployment boundary
+`port` defaults to 8080 for gRPC. `health_port` defaults to 8081 for unauthenticated HTTP `/healthz`;
+it is liveness, not proof that Kubernetes or a particular destination is ready. Admission requests
+are bounded by `admission_timeout_s` (default 15); management by `lifecycle_timeout_s` (default 300);
+follow leases by `follow_lease_s` (default 30, configured maximum 60).
 
-The first API follows only the surviving runner log. It has no database and never falls
-back to app PostgreSQL. The app remains the existing retained-archive owner until an explicit
-migration transfers that responsibility; this API does not provide history after runner state
-is lost. No overlapping archive authority is introduced.
-
-`//agentplane/sandbox_service:server` runs the service. Its settings use
-`AGENTPLANE_SANDBOX_SERVICE_*` environment variables or corresponding kebab-case CLI flags.
-Required settings are `sandbox_namespace` and `allowed_service_account_namespaces`;
-`token_audience` defaults to the existing `agentplane-egress` workload audience. Kubernetes
-access is in-cluster unless `kubeconfig` is supplied. `/healthz` is unauthenticated liveness,
-not a claim that Kubernetes or a destination is ready.
-
-This PR adds no deployment, network policy, egress credential rules, staging resources, or
-app HTTP cutover. Before cutover: finish Sandbox lifecycle/grant orchestration; configure
-narrow Kubernetes read/TokenReview permissions;
-audit both sides of runner network access; inventory/back up retained staging state; and
-switch each migrated app path without leaving a permanent direct-runner bypass.
+Deployment must grant the service the appropriate Kubernetes/TokenReview/provisioning permissions,
+project an audience-correct token for app-to-service calls, and enforce sole normal production access
+to runner control/event RPCs. Do not leave a direct-runner app fallback or two provisioning reconcilers.
+Inventory/backup and rollback checks gate staging handoff; no staging data reset is part of this change.

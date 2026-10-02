@@ -357,8 +357,7 @@ class SandboxInventory:
 
     async def finish_provisioning(self, sandbox: SandboxView) -> None:
         await self._patch(
-            sandbox.name,
-            {"metadata": {"uid": str(sandbox.uid), "annotations": {PROVISIONING_ANNOTATION: None}}},
+            sandbox.name, {"metadata": {"uid": str(sandbox.uid), "annotations": {PROVISIONING_ANNOTATION: None}}}
         )
 
     async def binding(self, name: str) -> SandboxBinding | None:
@@ -404,7 +403,11 @@ class SandboxInventory:
         if sandbox.spec.operating_mode != OperatingMode.SUSPENDED:
             raise SandboxRunningError(name)
         await self._custom_objects.delete_namespaced_custom_object(
-            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name, body=k8s_client.V1DeleteOptions(preconditions=k8s_client.V1Preconditions(uid=str(sandbox.metadata.uid)))
+            *SANDBOX_API,
+            self._namespace,
+            SANDBOXES_PLURAL,
+            name,
+            body=k8s_client.V1DeleteOptions(preconditions=k8s_client.V1Preconditions(uid=str(sandbox.metadata.uid))),
         )
 
     async def _set_operating_mode(self, name: str, mode: OperatingMode, *, uid: UUID | None = None) -> None:

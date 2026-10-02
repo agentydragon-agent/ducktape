@@ -29,8 +29,8 @@ from agentplane.egress.resources import (
     TargetMethod,
 )
 from agentplane.sandbox_service.inventory import InventoryError, SandboxView
-from agentplane.subjects import ServiceAccountRef
 from agentplane.sandbox_service.owned_binding import create_binding
+from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOX_API
 from util.kubernetes import CustomObjectsClient
 

@@ -39,7 +39,7 @@ separately deployed service is still in progress; the package extraction alone i
 
 ## Session API
 
-The [authenticated session API](API.md) now has a standalone server entry point. It resolves
+The [authenticated gRPC API](API.md) has a standalone server entry point and Python client. It resolves
 SA-authorized, UID-pinned destinations inside the configured Kubernetes inventory, then
 inspects, commands, or follows existing runner sessions. Separately authorized explicit
 management routes list sessions, bootstrap, open, and resume using runner-retained specs.
@@ -50,9 +50,9 @@ a Sandbox. Read/follow availability is limited to the surviving runner log.
 ## Still to extract
 
 This is **not yet a deployed service or a completed app cutover**. The agreed service API is
-protobuf/gRPC; the current HTTP adapter is transitional and will be replaced, not maintained as a
-parallel API. The low-level relay still requires an already selected/authorized client; the service
-API provides that boundary. Transport conversion, app callers, and deployment/authority handoff remain
+protobuf/gRPC; the standalone server serves it, not the earlier HTTP adapter. The latter remains
+transitional test coverage, not a parallel deployed API. The low-level relay still requires an already selected/authorized client; the service
+API provides that boundary. Full test migration, app callers, and deployment/authority handoff remain
 in the [extraction plan](../plans/sandbox_service.md). Notifications must not work around these gaps
 by depending on the app.
 

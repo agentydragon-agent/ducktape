@@ -7,7 +7,13 @@ from datetime import UTC, datetime
 import pytest
 import pytest_bazel
 
-from agentplane.sandbox_service.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
+from agentplane.sandbox_service.egress import (
+    BindingNotFoundError,
+    EgressInventory,
+    FluxOwnedBindingError,
+    UnknownPolicyError,
+)
+from agentplane.sandbox_service.inventory import sandbox_view
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCustomObjectsApi,
@@ -16,7 +22,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     egress_policy,
     sandbox,
 )
-from agentplane.sandbox_service.inventory import sandbox_view
 from agentplane.subjects import ServiceAccountRef
 
 LIVE = ServiceAccountRef(namespace=NAMESPACE, name="live")

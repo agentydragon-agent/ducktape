@@ -5,8 +5,8 @@ Status: **extraction in progress; not deployed or cut over.** The app uses the i
 [session API](../sandbox_service/API.md) authenticates workloads and resolves UID-pinned
 Sandbox/Pod associations without the app. Explicit bootstrap/open/resume and backend-owned
 launch instructions are implemented; resume preserves the runner-retained spec. Recoverable Sandbox
-provisioning is implemented. The current HTTP adapter is transitional: the agreed service contract is
-gRPC, and the transport conversion, app cutover, and deployment remain in progress. The service follows
+provisioning is implemented. The standalone server now serves gRPC with a typed Python client; transport acceptance is being
+validated in CI. Legacy HTTP test migration, app cutover, and deployment remain in progress. The service follows
 only the surviving runner log. The app keeps its PostgreSQL archive; moving that archive is not planned
 as part of this extraction.
 

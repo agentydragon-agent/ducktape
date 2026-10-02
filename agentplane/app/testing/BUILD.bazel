@@ -6,16 +6,6 @@ package(
 )
 
 py_library(
-    name = "kubernetes",
-    srcs = ["kubernetes.py"],
-    deps = [
-        "//agentplane/app:egress",
-        "//agentplane/sandbox_service:inventory",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
     name = "egress_proxy",
     srcs = ["egress_proxy.py"],
     deps = ["@pypi//httpx"],
@@ -25,7 +15,6 @@ py_library(
     name = "replication_process",
     srcs = ["replication_process.py"],
     deps = [
-        ":kubernetes",
         ":replication_source",
         "//agentplane/app:action_policy",
         "//agentplane/app:api",
@@ -33,7 +22,6 @@ py_library(
         "//agentplane/app:database",
         "//agentplane/app:database_updates",
         "//agentplane/app:decisions",
-        "//agentplane/app:egress",
         "//agentplane/app:electric",
         "//agentplane/app:identity",
         "//agentplane/app:live",
@@ -46,8 +34,10 @@ py_library(
         "//agentplane/app/agent_runtime/thread:store",
         "//agentplane/app/agent_runtime/view:content",
         "//agentplane/protocol:event_log_pb2",
+        "//agentplane/sandbox_service:egress",
         "//agentplane/sandbox_service:inventory",
         "//agentplane/sandbox_service:session_config",
+        "//agentplane/sandbox_service/testing:fake_inventory",
         "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//httpx",

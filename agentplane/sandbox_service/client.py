@@ -1,0 +1,211 @@
+"""gRPC client for Sandbox Service, with no Kubernetes or direct-runner fallback."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import Never
+
+import grpc
+from google.protobuf.empty_pb2 import Empty
+from google.protobuf.message import Message
+
+from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.runner.client import RunnerError, StreamClosedError
+from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, wire
+from agentplane.sandbox_service.destinations import SandboxDestination
+from agentplane.sandbox_service.inventory import NewSandbox, SandboxNotFoundError, SandboxView
+
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//grpcio
+
+
+class ServiceError(ConnectionError):
+    def __init__(self, code: grpc.StatusCode) -> None:
+        super().__init__(f"Sandbox Service returned {code.name}; mutation outcome may be uncertain")
+        self.code = code
+
+
+class FollowLeaseExpired(ConnectionError):
+    """Reconnect from the committed cursor; this is not the native session ending."""
+
+
+def _raise(error: grpc.aio.AioRpcError) -> Never:
+    # Do not include upstream details: they may contain credentials or native output.
+    if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+        raise TimeoutError("Sandbox Service outcome uncertain; reconcile using unchanged identifiers") from error
+    if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
+        raise RunnerError("Sandbox Service refused the requested session or resource state") from error
+    raise ServiceError(error.code()) from error
+
+
+class Attachment:
+    def __init__(
+        self, call: grpc.aio.UnaryStreamCall, attached: runner_pb2.Attached,
+    ) -> None:
+        self.attached = attached
+        self._call = call
+        self._ended = False
+
+    async def next_entry(self) -> event_log_pb2.EventEntry:
+        if self._ended:
+            raise StreamClosedError
+        try:
+            message = await self._call.read()
+        except grpc.aio.AioRpcError as error:
+            if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                raise FollowLeaseExpired("Sandbox Service follow lease or deadline expired") from error
+            _raise(error)
+        if message is grpc.aio.EOF:
+            raise ConnectionError("Sandbox Service follow ended without native closure evidence")
+        assert isinstance(message, protocol_pb2.FollowSessionResponse)
+        if message.HasField("entry"):
+            return message.entry
+        if message.HasField("ended"):
+            self._ended = True
+            self._call.cancel()
+            raise StreamClosedError
+        self._call.cancel()
+        raise ConnectionError("Sandbox Service sent an unexpected follow observation")
+
+    def cancel(self) -> None:
+        self._call.cancel()
+
+
+class SandboxServiceClient:
+    def __init__(
+        self, target: str, *, namespace: str, token_file: Path,
+        request_timeout_s: float = 20, lifecycle_timeout_s: float = 310, follow_timeout_s: float = 90,
+    ) -> None:
+        if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0:
+            raise ValueError("timeouts must be positive")
+        self.target = target
+        self.namespace = namespace
+        self.token_file = token_file
+        self.request_timeout_s = request_timeout_s
+        self.lifecycle_timeout_s = lifecycle_timeout_s
+        self.follow_timeout_s = follow_timeout_s
+        self._channel: grpc.aio.Channel | None = None
+        self._stub: protocol_pb2_grpc.SandboxServiceStub | None = None
+
+    @property
+    def stub(self) -> protocol_pb2_grpc.SandboxServiceStub:
+        if self._stub is None:
+            # No retry service config: uncertain mutations need domain-specific reconciliation.
+            self._channel = grpc.aio.insecure_channel(self.target, options=(("grpc.enable_retries", 0),))
+            self._stub = protocol_pb2_grpc.SandboxServiceStub(self._channel)
+        return self._stub
+
+    async def metadata(self) -> tuple[tuple[str, str], ...]:
+        # Projected tokens rotate. Read for every RPC, including follow reconnects.
+        token = (await asyncio.to_thread(self.token_file.read_text)).strip()
+        return (("authorization", f"Bearer {token}"),)
+
+    async def unary[T](
+        self, call: Callable[..., Awaitable[T]], request: Message, *, timeout_s: float | None = None,
+    ) -> T:
+        try:
+            return await call(
+                request, metadata=await self.metadata(), timeout=timeout_s or self.request_timeout_s,
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def list_sandboxes(self) -> list[SandboxView]:
+        result = await self.unary(self.stub.ListSandboxes, Empty())
+        return [wire.sandbox_view(row) for row in result.sandboxes]
+
+    async def list_templates(self) -> list[str]:
+        result = await self.unary(self.stub.ListTemplates, Empty())
+        return list(result.templates)
+
+    async def get(self, name: str) -> SandboxView:
+        try:
+            result = await self.unary(self.stub.GetSandbox, protocol_pb2.GetSandboxRequest(name=name))
+        except ServiceError as error:
+            if error.code == grpc.StatusCode.NOT_FOUND:
+                raise SandboxNotFoundError(name) from error
+            raise
+        return wire.sandbox_view(result)
+
+    async def create(self, spec: NewSandbox) -> SandboxView:
+        return wire.sandbox_view(await self.unary(
+            self.stub.CreateSandbox, wire.create_proto(spec), timeout_s=self.lifecycle_timeout_s,
+        ))
+
+    async def _lifecycle(self, call: Callable[..., Awaitable[Empty]], name: str) -> None:
+        view = await self.get(name)
+        destination = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid)
+        await self.unary(call, protocol_pb2.SandboxRequest(destination=wire.destination_proto(destination)))
+
+    async def suspend(self, name: str) -> None:
+        await self._lifecycle(self.stub.SuspendSandbox, name)
+
+    async def resume(self, name: str) -> None:
+        await self._lifecycle(self.stub.ResumeSandbox, name)
+
+    async def delete(self, name: str) -> None:
+        await self._lifecycle(self.stub.DeleteSandbox, name)
+
+    def runner(self, destination: SandboxDestination) -> Runner:
+        return Runner(self, destination)
+
+    async def close(self) -> None:
+        if self._channel is not None:
+            await self._channel.close()
+            self._channel = None
+            self._stub = None
+
+
+class Runner:
+    def __init__(self, service: SandboxServiceClient, destination: SandboxDestination) -> None:
+        self.service = service
+        self.destination = destination
+
+    async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
+        result = await self.service.unary(self.service.stub.ListSessions, protocol_pb2.SandboxRequest(
+            destination=wire.destination_proto(self.destination),
+        ))
+        return list(result.sessions)
+
+    async def open(self, session_id: str, spec: dict[str, object], setup_script: str | None = None) -> runner_pb2.Attached:
+        return await self.service.unary(
+            self.service.stub.OpenSession, wire.open_proto(wire.session_proto(self.destination, session_id), spec, setup_script),
+            timeout_s=self.service.lifecycle_timeout_s,
+        )
+
+    async def resume(self, session_id: str) -> runner_pb2.Attached:
+        return await self.service.unary(
+            self.service.stub.ResumeSession, protocol_pb2.SessionRequest(destination=wire.session_proto(self.destination, session_id)),
+            timeout_s=self.service.lifecycle_timeout_s,
+        )
+
+    async def command(self, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> event_log_pb2.EventEntry:
+        receipt = await self.service.unary(self.service.stub.SubmitCommand, protocol_pb2.SubmitCommandRequest(
+            destination=wire.session_proto(self.destination, session_id), command=command,
+            follow=event_log_pb2.Follow(after_cursor=after_cursor),
+        ))
+        if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
+            raise ConnectionError("Sandbox Service did not return the exact command admission")
+        return receipt
+
+    async def attach(self, session_id: str, *, after_cursor: int = 0) -> Attachment:
+        call = self.service.stub.FollowSession(
+            protocol_pb2.FollowSessionRequest(
+                destination=wire.session_proto(self.destination, session_id),
+                follow=event_log_pb2.Follow(after_cursor=after_cursor),
+            ),
+            metadata=await self.service.metadata(), timeout=self.service.follow_timeout_s,
+        )
+        try:
+            message = await call.read()
+            if not isinstance(message, protocol_pb2.FollowSessionResponse) or not message.HasField("attached"):
+                raise ConnectionError("Sandbox Service did not provide an Attached snapshot")
+            return Attachment(call, message.attached)
+        except BaseException as error:
+            call.cancel()
+            if isinstance(error, grpc.aio.AioRpcError):
+                _raise(error)
+            raise

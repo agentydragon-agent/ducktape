@@ -3,14 +3,13 @@
 from collections.abc import AsyncIterator
 from typing import cast
 
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
-from util.kubernetes import CustomObjectsClient
-
 import pytest
 
 from agentplane.runner.conftest import client, config, endpoint, harness, model, runner, spec, workspace
+from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
+from util.kubernetes import CustomObjectsClient
 
 
 @pytest.fixture

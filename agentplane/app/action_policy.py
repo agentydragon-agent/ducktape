@@ -20,19 +20,17 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.action_service.client import OperatorActionServiceClient
-
 from agentplane.action_service.policy_view import (
+    ActionPolicySetView,
     EffectivePolicyView,
     ReadyConditionView,
     SubjectActionPolicyView,
     SubjectBindingView,
 )
 from agentplane.app.action_federation import UpstreamFailure
+from agentplane.sandbox_service.action_policy import MANAGED_BY_APP, MANAGED_BY_LABEL, ActionPolicyBindings
 from agentplane.sandbox_service.egress import FLUX_KUSTOMIZATION_LABEL
-from agentplane.sandbox_service.action_policy import ActionPolicyBindings, MANAGED_BY_LABEL, MANAGED_BY_APP
 from agentplane.subjects import ServiceAccountRef
-
-
 
 
 class BindingProvenance(StrEnum):
@@ -97,6 +95,7 @@ class ActionPolicyInventory(ActionPolicyBindings):
     async def for_subject(self, client: OperatorActionServiceClient, subject: ServiceAccountRef) -> ActionPolicyView:
         """The subject's policy as the Action Service resolves it now."""
         return action_policy_view(await client.service_account_action_policy(subject))
+
 
 def action_policy_view(view: SubjectActionPolicyView) -> ActionPolicyView:
     """The service's answer with each binding's labels read into its provenance; everything else

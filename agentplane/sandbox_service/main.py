@@ -6,22 +6,24 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any, cast
 
+import grpc
 import uvicorn
+from fastapi import FastAPI
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service import protocol_pb2_grpc
+from agentplane.sandbox_service.grpc_api import Resources, SandboxService
+from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.instructions import resolved_agent_instructions
+from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, RoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.api import SessionResources, create_app
-from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.instructions import resolved_agent_instructions
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
@@ -50,6 +52,7 @@ class Settings(BaseSettings):
     follow_lease_s: float = Field(default=30, gt=0, le=60)
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
+    health_port: int = Field(default=8081, ge=1, le=65535)
     kubeconfig: Path | None = None
 
     def __init__(self, **values: Any) -> None:
@@ -78,12 +81,10 @@ async def serve(settings: Settings) -> None:
             core_v1=core,
             custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api)),
         )
-        authenticate = WorkloadPrincipalAuthenticator(
-            WorkloadPrincipalResolver(
-                authentication=k8s_client.AuthenticationV1Api(api),
-                audience=settings.token_audience,
-                allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
-            )
+        principals = WorkloadPrincipalResolver(
+            authentication=k8s_client.AuthenticationV1Api(api),
+            audience=settings.token_audience,
+            allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
         )
         provisioning = None
         if settings.enable_provisioning:
@@ -92,22 +93,32 @@ async def serve(settings: Settings) -> None:
             custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
             provisioning = Provisioning(
                 inventory,
-                EgressInventory(namespace=settings.sandbox_namespace, custom_objects=custom, default_policies=settings.default_policies),
+                EgressInventory(
+                    namespace=settings.sandbox_namespace,
+                    custom_objects=custom,
+                    default_policies=settings.default_policies,
+                ),
                 ActionPolicyBindings(namespace=settings.sandbox_namespace, custom_objects=custom),
                 settings.kubernetes_grants,
                 KubernetesBindings(
-                    inventory, k8s_client.RbacAuthorizationV1Api(api),
-                    cleanup_namespaces=(settings.kubernetes_binding_cleanup_namespaces | {
-                        grant.namespace for grant in settings.kubernetes_grants.values() if isinstance(grant, RoleBindingGrant)
-                    }) - {settings.sandbox_namespace},
-                    cleanup_cluster_bindings=settings.kubernetes_cluster_binding_cleanup or any(
-                        isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()
-                    ),
+                    inventory,
+                    k8s_client.RbacAuthorizationV1Api(api),
+                    cleanup_namespaces=(
+                        settings.kubernetes_binding_cleanup_namespaces
+                        | {
+                            grant.namespace
+                            for grant in settings.kubernetes_grants.values()
+                            if isinstance(grant, RoleBindingGrant)
+                        }
+                    )
+                    - {settings.sandbox_namespace},
+                    cleanup_cluster_bindings=settings.kubernetes_cluster_binding_cleanup
+                    or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
                 ),
             )
-        app = create_app(
-            SessionResources(
-                authenticate=authenticate,
+        service = SandboxService(
+            Resources(
+                principals=principals,
                 destinations=DestinationResolver(inventory, core, settings.runner_port, settings.trusted_accounts),
                 admission_timeout_s=settings.admission_timeout_s,
                 follow_lease_s=settings.follow_lease_s,
@@ -117,10 +128,23 @@ async def serve(settings: Settings) -> None:
                 provisioning=provisioning,
             )
         )
+        if settings.port == settings.health_port:
+            raise ValueError("gRPC and health ports must differ")
+        server = grpc.aio.server()
+        protocol_pb2_grpc.add_SandboxServiceServicer_to_server(service, server)
+        server.add_insecure_port(f"{settings.host}:{settings.port}")
+        await server.start()
+        health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+
+        @health.get("/healthz")
+        async def healthz() -> dict[str, str]:
+            return {"status": "ok"}
+
         reconcile = asyncio.create_task(provisioning.run(), name="sandbox-provisioning") if provisioning else None
         try:
-            await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, access_log=False)).serve()
+            await uvicorn.Server(uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)).serve()
         finally:
+            await server.stop(grace=5)
             if reconcile is not None:
                 reconcile.cancel()
                 with suppress(asyncio.CancelledError):

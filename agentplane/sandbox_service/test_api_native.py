@@ -32,6 +32,13 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 
+def entry_data(stream: str) -> list[str]:
+    return [
+        line for frame in stream.split("\n\n") if frame.startswith("event: entry\n")
+        for line in frame.splitlines() if line.startswith("data: ")
+    ]
+
+
 TOKEN = "test-session-workload-token"
 AUDIENCE = "test-sandbox-service"
 
@@ -126,8 +133,7 @@ async def test_admission_and_follow_preserve_runner_evidence_without_app(
         assert followed.status_code == 200
         entries = [
             ParseDict(json.loads(line.removeprefix("data: ")), event_log_pb2.EventEntry())
-            for line in followed.text.splitlines()
-            if line.startswith("data: ")
+            for line in entry_data(followed.text)
         ]
         assert receipt in entries
         # Reconnect cursors are the runner's own, not an independent HTTP delivery sequence.
@@ -137,8 +143,7 @@ async def test_admission_and_follow_preserve_runner_evidence_without_app(
         assert tail.status_code == 200
         assert all(
             int(json.loads(line.removeprefix("data: "))["cursor"]) > entries[-1].cursor
-            for line in tail.text.splitlines()
-            if line.startswith("data: ")
+            for line in entry_data(tail.text)
         )
         await model.reply(await model.request(), Text("API_OK"))
         await observer.until(events.turn_completed)
@@ -210,7 +215,7 @@ async def wait_http_event(
                 "/v1/sessions/follow", json={"destination": destination, "after_cursor": after_cursor}
             )
             assert response.status_code == 200, response.text
-            for line in response.text.splitlines():
+            for line in entry_data(response.text):
                 if line.startswith("data: "):
                     entry = ParseDict(json.loads(line.removeprefix("data: ")), event_log_pb2.EventEntry())
                     after_cursor = entry.cursor

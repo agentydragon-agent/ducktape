@@ -26,7 +26,9 @@ async def create_binding(
     if (
         existing.get("spec") != body["spec"]
         or metadata.get("ownerReferences") != body["metadata"]["ownerReferences"]
-        or any(metadata.get("labels", {}).get(key) != value for key, value in body["metadata"].get("labels", {}).items())
+        or any(
+            metadata.get("labels", {}).get(key) != value for key, value in body["metadata"].get("labels", {}).items()
+        )
         or metadata.get("deletionTimestamp") is not None
     ):
         raise BindingConflictError(f"initial {plural} binding {name} conflicts with the recorded provisioning intent")

@@ -14,3 +14,32 @@ py_library(
         "@pypi//kubernetes_asyncio",
     ],
 )
+
+py_library(
+    name = "fake_inventory",
+    testonly = True,
+    srcs = ["fake_inventory.py"],
+    deps = [
+        "//agentplane/sandbox_service:egress",
+        "//agentplane/sandbox_service:inventory",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "fake_rbac",
+    testonly = True,
+    srcs = ["fake_rbac.py"],
+    deps = ["@pypi//kubernetes_asyncio"],
+)
+
+py_library(
+    name = "grpc_service",
+    srcs = ["grpc_service.py"],
+    testonly = True,
+    deps = [
+        "//agentplane/sandbox_service:grpc_api",
+        "//agentplane/sandbox_service:protocol_pb2_grpc",
+        "@pypi//grpcio",
+    ],
+)

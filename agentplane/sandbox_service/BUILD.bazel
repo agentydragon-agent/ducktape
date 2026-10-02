@@ -1,7 +1,12 @@
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
+# gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
+# gazelle:resolve py agentplane.sandbox_service.protocol_pb2_grpc //agentplane/sandbox_service:protocol_pb2_grpc
 # gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
 # gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
 # gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
@@ -24,8 +29,11 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":egress",
         "//agentplane/runner:conftest",
+        "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:kubernetes",
+        "//util:kubernetes",
         "@pypi//pytest",
     ],
 )
@@ -146,9 +154,14 @@ py_library(
     name = "api",
     srcs = ["api.py"],
     deps = [
+        ":action_policy",
         ":command_relay",
         ":destinations",
+        ":egress",
         ":inventory",
+        ":kubernetes_grants",
+        ":provisioning",
+        ":provisioning_api",
         ":session_lifecycle",
         "//agentplane:subjects",
         "//agentplane/protocol:command_pb2",
@@ -167,12 +180,19 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
-        ":api",
+        "@pypi//fastapi",
+        "@pypi//grpcio",
+        ":protocol_pb2_grpc",
+        ":grpc_api",
+        ":action_policy",
         ":destinations",
+        ":egress",
         ":instructions",
         ":inventory",
+        ":kubernetes_bindings",
+        ":kubernetes_grants",
+        ":provisioning",
         "//agentplane:subjects",
-        "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
@@ -278,6 +298,301 @@ py_test(
         ":conftest",
         ":instructions",
         "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "action_policy",
+    srcs = ["action_policy.py"],
+    deps = [
+        ":inventory",
+        ":owned_binding",
+        "//agentplane:crd_group",
+        "//agentplane/action_service:policy_view",
+        "//agentplane/action_service/policies:resources",
+        "//util:agent_sandbox",
+        "//util:kubernetes",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "egress",
+    srcs = ["egress.py"],
+    deps = [
+        ":inventory",
+        ":owned_binding",
+        "//agentplane:crd_group",
+        "//agentplane:subjects",
+        "//agentplane/egress:resources",
+        "//util:agent_sandbox",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "kubernetes_bindings",
+    srcs = ["kubernetes_bindings.py"],
+    deps = [
+        ":inventory",
+        ":kubernetes_grants",
+        "//util:agent_sandbox",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "owned_binding",
+    srcs = ["owned_binding.py"],
+    deps = [
+        ":inventory",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "provisioning",
+    srcs = ["provisioning.py"],
+    deps = [
+        ":action_policy",
+        ":egress",
+        ":inventory",
+        ":kubernetes_bindings",
+        ":kubernetes_grants",
+        ":session_config",
+    ],
+)
+
+py_library(
+    name = "provisioning_api",
+    srcs = ["provisioning_api.py"],
+    deps = [
+        ":destinations",
+        ":inventory",
+        ":kubernetes_grants",
+        ":provisioning",
+        "//agentplane:subjects",
+        "//agentplane/workload_auth:http",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_egress",
+    srcs = ["test_egress.py"],
+    deps = [
+        ":conftest",
+        ":egress",
+        ":inventory",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/sandbox_service/testing:fake_inventory",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_kubernetes_bindings",
+    srcs = ["test_kubernetes_bindings.py"],
+    deps = [
+        ":conftest",
+        ":inventory",
+        ":kubernetes_bindings",
+        ":kubernetes_grants",
+        "//:conftest",
+        "//agentplane/sandbox_service/testing:fake_inventory",
+        "//agentplane/sandbox_service/testing:fake_rbac",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_provisioning",
+    srcs = ["test_provisioning.py"],
+    deps = [
+        "@pypi//grpcio",
+        "//agentplane/sandbox_service/testing:grpc_service",
+        "//agentplane/runner:client",
+        ":wire",
+        ":protocol_pb2",
+        ":grpc_api",
+        ":client",
+        ":action_policy",
+        ":conftest",
+        ":destinations",
+        ":egress",
+        ":inventory",
+        ":kubernetes_bindings",
+        ":kubernetes_grants",
+        ":provisioning",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/sandbox_service/testing:fake_inventory",
+        "//agentplane/sandbox_service/testing:fake_rbac",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "//agentplane/workload_auth:principal",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+exports_files(["protocol.proto"])
+
+proto_library(
+    name = "protocol_proto",
+    srcs = ["protocol.proto"],
+    deps = [
+        "//agentplane/protocol:command_proto",
+        "//agentplane/protocol:event_log_proto",
+        "//agentplane/runner:protocol_proto",
+        "@protobuf//:empty_proto",
+        "@protobuf//:field_mask_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "protocol_pb2",
+    deps = [":protocol_proto"],
+)
+
+py_grpc_service_library(
+    name = "protocol_pb2_grpc",
+    proto = ":protocol_proto",
+    py_proto = ":protocol_pb2",
+)
+
+py_library(
+    name = "wire",
+    srcs = ["wire.py"],
+    deps = [
+        "//agentplane/runner:protocol_pb2",
+        ":destinations",
+        ":inventory",
+        ":protocol_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        ":destinations",
+        ":inventory",
+        ":protocol_pb2",
+        ":protocol_pb2_grpc",
+        ":wire",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "grpc_api",
+    srcs = ["grpc_api.py"],
+    deps = [
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/workload_auth:bearer",
+        "//agentplane/workload_auth:principal",
+        "//agentplane:subjects",
+        ":command_relay",
+        ":destinations",
+        ":inventory",
+        ":kubernetes_grants",
+        ":protocol_pb2",
+        ":protocol_pb2_grpc",
+        ":provisioning",
+        ":session_lifecycle",
+        ":wire",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_grpc_api",
+    srcs = ["test_grpc_api.py"],
+    deps = [
+        "//:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service/testing:grpc_service",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "//agentplane/workload_auth:principal",
+        "//agentplane:subjects",
+        ":client",
+        ":conftest",
+        ":destinations",
+        ":grpc_api",
+        ":protocol_pb2",
+        ":wire",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_grpc_native",
+    srcs = ["test_grpc_native.py"],
+    size = "large",
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: both pinned native harnesses
+        "@claude_code_cli_linux_x64//:claude",  # keep: both pinned native harnesses
+    ],
+    target_compatible_with = [
+        # keep: pinned native harness platforms
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:scripted_model",
+        "//agentplane/runner:client",
+        "//agentplane/runner:conftest",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service/testing:grpc_service",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "//agentplane/workload_auth:principal",
+        "//agentplane:subjects",
+        ":client",
+        ":conftest",
+        ":destinations",
+        ":grpc_api",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

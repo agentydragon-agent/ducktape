@@ -16,6 +16,7 @@ from starlette.types import Receive, Scope, Send
 from agentplane.protocol import command_pb2
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
 from agentplane.sandbox_service import session_lifecycle
+from agentplane.sandbox_service.action_policy import UnknownPolicySetError
 from agentplane.sandbox_service.command_relay import admit_running_command
 from agentplane.sandbox_service.destinations import (
     DestinationDeniedError,
@@ -25,9 +26,8 @@ from agentplane.sandbox_service.destinations import (
     SandboxDestination,
     SessionDestination,
 )
-from agentplane.sandbox_service.inventory import InventoryError, SandboxNotFoundError
-from agentplane.sandbox_service.action_policy import UnknownPolicySetError
 from agentplane.sandbox_service.egress import UnknownPolicyError
+from agentplane.sandbox_service.inventory import InventoryError, SandboxNotFoundError
 from agentplane.sandbox_service.kubernetes_grants import DuplicateKubernetesGrantError, UnknownKubernetesGrantError
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.provisioning_api import provisioning_router
@@ -105,6 +105,7 @@ class SessionStream(StreamingResponse):
         super().__init__(self._entries(), media_type="text/event-stream", headers={"Cache-Control": "no-store"})
 
     async def _entries(self) -> AsyncIterator[str]:
+        yield f"event: attached\ndata: {json.dumps(MessageToDict(self._attachment.attached))}\n\n"
         try:
             # Bound authorization staleness, resource use and slow consumers. Reconnect with the
             # last consumed runner cursor; every new request reviews identity and destination again.
@@ -112,8 +113,10 @@ class SessionStream(StreamingResponse):
                 while True:
                     entry = await self._attachment.next_entry()
                     yield f"event: entry\ndata: {json.dumps(MessageToDict(entry))}\n\n"
-        except TimeoutError, StreamClosedError:
-            return
+        except TimeoutError:
+            yield 'event: lease_expired\ndata: {}\n\n'
+        except StreamClosedError:
+            yield 'event: ended\ndata: {}\n\n'
         except RunnerError, grpc.RpcError:
             # A transport envelope, deliberately not a synthetic runner Event or success receipt.
             yield 'event: unavailable\ndata: {"detail":"runner follow ended without a complete receipt"}\n\n'
@@ -134,10 +137,13 @@ def create_app(resources: SessionResources) -> FastAPI:
     app = FastAPI(title="Agentplane Sandbox Service")
 
     if resources.provisioning is not None:
-        app.include_router(provisioning_router(
-            resources.provisioning, resources.authenticate,
-            resources.manager_accounts & resources.destinations.trusted_accounts,
-        ))
+        app.include_router(
+            provisioning_router(
+                resources.provisioning,
+                resources.authenticate,
+                resources.manager_accounts & resources.destinations.trusted_accounts,
+            )
+        )
 
     @app.exception_handler(InventoryError)
     async def inventory_error(request: Request, error: InventoryError) -> JSONResponse:
