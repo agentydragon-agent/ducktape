@@ -5,6 +5,11 @@ Action Service, LLM ingress, acceptance suite, and durable evidence under [`../d
 This directory contains current design gates, genuinely deferred decisions, and north-star context;
 the [task DAG](task_dag.md) is authoritative for status and dependencies.
 
+**Dependency rule:** the integration app is a user-facing client. Other services must not depend on
+its APIs, private tables, implementation, process, or bootstrap, including in v1. The accepted
+[service boundary constraint](../docs/service_boundaries.md) and [Sandbox Service extraction](sandbox_service.md)
+set the direction: app → independent backends; notifications → Sandbox Service/Action Service.
+
 Transcript search/lookup (`T3`) is deliberately deferred product work and is not in the current
 execution sequence. This is a priority decision, not a technical dependency.
 
@@ -18,8 +23,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [Profiles](profiles.md) — broader capability profiles remain deferred
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
-- [Runner directory](runner_directory.md) — proposed extraction of runner inventory from the app,
-  authenticated discovery, stable runner identity, and direct session routing without runner callbacks
+- [Sandbox Service](sandbox_service.md) — extract independent sandbox lifecycle/session access before
+  notification v1; [discovery/access notes](runner_discovery.md) retain network-policy access and the runner-auth TODO
 - [Subscriptions and notifications](notifications.md) — standalone service design: SA-authorized session scope,
   explicit inbox acknowledgement, Action-only v1, and runner delivery; later automatic following and wake
 - [Push mechanism](push_mechanism.md) — remaining push/subscription design for

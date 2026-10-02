@@ -1,0 +1,89 @@
+# Agentplane service dependency rule
+
+Status: **accepted architecture constraint, including v1; extraction is not yet implemented.**
+The integration app currently contains backend responsibilities. This rule determines where those
+responsibilities must go when another Agentplane service needs them; it does not claim they have
+already moved.
+
+## The integration app is a client
+
+The integration app integrates independent capabilities into a user-facing view. **Other Agentplane
+services must not depend on it.** The dependency direction is app to services, never services to app.
+
+```mermaid
+flowchart LR
+    App[Integration app] --> Sandbox[Sandbox Service]
+    App --> Notifications[Notification service]
+    App --> Actions[Action Service]
+    Notifications --> Sandbox
+    Notifications --> Actions
+    Sandbox --> Kubernetes[Kubernetes / provisioning]
+    Sandbox --> Runners[Runners]
+```
+
+The services may depend on shared infrastructure and explicit backend APIs. The graph is the relevant
+ownership direction, not an exhaustive list of existing infrastructure dependencies.
+
+For backend operations, this forbids:
+
+- Calling the app's Thread, runner, provisioning, or private identity endpoints as a service API.
+- Reading app-owned tables or importing `agentplane.app` implementation modules from another backend.
+- Depending on the app's process/attachment, a browser session, or an app-issued ticket merely to act
+  as a service. Shared authentication and independently owned operator authority are different things.
+- Making the app the only source of session instructions, provider configuration, or destination IDs
+  needed to create/manage sessions independently.
+- A "temporary v1" app API or app proxy that becomes a prerequisite for notification delivery.
+
+A shared helper belongs in an independently owned package. Backend records belong to their backend
+owner; a shared database server does not make private tables a supported API. The app can retain
+presentation state and projections, but those must not become hidden sources of backend authority.
+
+## Ownership
+
+- **Sandbox Service:** sandbox provisioning/lifecycle, verified destination bindings, authorized
+  runner-session access, command relay/event following, and backend archive ownership as extracted.
+- **Runner:** native harness scheduling/execution, durable command journal, canonical execution Events
+  and causal receipts.
+- **Notification service:** providers, subscriptions, persisted payloads, inbox HWM, notice policy, and
+  notice delivery bookkeeping.
+- **Action Service:** Action authorization/Decisions, execution lifecycle, and canonical Action history.
+- **Integration app:** user-facing composition, interaction, presentation, and app-only projections/state;
+  a client of the above.
+
+The proposed backend name is **Sandbox Service**: it manages sandboxes and access to their runner
+sessions. It is not another Action executor or a service called "runtime" with unspecified ownership.
+The existing `app/agent_runtime/` package name describes current code placement, not the new boundary.
+
+## Extraction before notification v1
+
+Build the minimum independently usable [Sandbox Service](../plans/sandbox_service.md) before wiring
+notifications. It must resolve explicit session destinations, expose authorized command delivery and
+receipt/event following, and distinguish available, unavailable, and permanently removed destinations
+without querying the app. Migrate the app to be a client of those extracted operations.
+
+Provisioning and suspend/resume implementations belong on the Sandbox Service side as they are
+extracted. Notification-triggered wake and durable acceptance of commands for offline destinations
+remain separate, deferred product features. A service boundary is not permission to silently create
+a second runner-command queue.
+
+Decide ownership of the existing app event archive/ingestion during extraction. Data required by backend
+consumers must move to a backend owner, preserving retained history and provenance; do not build an
+independent competing archive or query app tables from the new service. Pure UI projections can remain
+in the app. Product Thread identity/annotations need not move wholesale for runner-session-scoped v1.
+
+## Review and acceptance gates
+
+- Reject new reverse imports, app API clients, app-table reads, or app-only bootstrap dependencies in
+  backend code. Make this rule visible to coding agents in [`../AGENTS.md`](../AGENTS.md).
+- Declare each moved record, queue, lifecycle operation, and auth decision's owner. No overlapping
+  command authorities or implicit new persistence semantics during the cutover.
+- Exercise provisioning/session setup for the extracted paths, notification ingestion/subscription,
+  payload read/ack, command delivery, and receipt replay **with the integration app unavailable**.
+  For new code, independence is required from its first implementation, not a later cleanup task.
+- Verify restart/recovery also works without the app: a happy path using state pre-created by the app
+  alone does not demonstrate backend independence.
+- Test authorization failures and preserve the distinction between accepted intent, runner admission,
+  and harness effect. Human decision requirements stay in their backend authority even if the UI is down.
+
+Dependency enforcement and those acceptance tests are implementation gates, not claims that this
+planning PR installs a new import linter or proves the extraction complete.

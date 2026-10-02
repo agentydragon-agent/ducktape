@@ -7,6 +7,20 @@ to the browser through authenticated Electric endpoints, and watches Kubernetes 
 Raw runner events remain archived for debug access.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
+## Dependency boundary and planned extraction
+
+The description above is the current implementation, not the desired service boundary.
+**The integration app is a user-facing client; other Agentplane services must not depend on it.**
+This applies to APIs, private tables, implementation imports, browser/app-issued identity, background
+attachments, and app-only provisioning or prompt/bootstrap state, including in v1. See the accepted
+[service dependency rule](../docs/service_boundaries.md).
+
+Backend responsibilities needed by another service move to an independent owner, not a temporary
+app endpoint. The planned [Sandbox Service](../plans/sandbox_service.md) extracts sandbox lifecycle,
+runner-session control/following, and required backend state/configuration; the app becomes its client.
+Notifications depends on that backend and Actions, not this app. Event archive/ingestion ownership
+must be explicit; app-only presentation projections can remain here. The extraction is not yet shipped.
+
 The current bridge's session-scoped runner attachment is implementation state, not
 the desired product model. [Thread, runner, and harness layering](../docs/thread_layering.md) is
 the authoritative design for submission durability, the app queue decision,
