@@ -9,28 +9,13 @@ use analysis::graph::{EdgeRole, build_owner_graph_with};
 use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::partition::Partition;
 use analysis::{AnalysisHints, OwnerGraph};
-use swc_common::{FileName, SourceMap, sync::Lrc};
-use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
 fn module_id(index: usize) -> ModuleId {
     ModuleId(LogicalModuleIndex(index))
 }
 
 fn parse_and_build(source: &str) -> OwnerGraph {
-    let cm: Lrc<SourceMap> = Default::default();
-    let fm = cm.new_source_file(
-        FileName::Custom("test.js".into()).into(),
-        source.to_string(),
-    );
-    let lexer = Lexer::new(
-        Syntax::Es(Default::default()),
-        Default::default(),
-        StringInput::from(&*fm),
-        None,
-    );
-    let module = Parser::new_from(lexer)
-        .parse_module()
-        .expect("parse module");
+    let module = raw_js_test_support::parse(source);
     let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
     build_owner_graph_with(&facts, Default::default()).unwrap()
 }

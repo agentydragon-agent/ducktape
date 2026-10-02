@@ -323,8 +323,7 @@ debundle_e2e_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:gate",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_parser",
+        "//devinfra/js/debundle:raw_js_test_support",
     ],
 )
 
