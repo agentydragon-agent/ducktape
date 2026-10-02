@@ -3,7 +3,9 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
 load(":optimized_cc_library.bzl", "optimized_cc_library")
 
-package(default_visibility = ["//visibility:public"])
+# Rust libraries are implementation details shared with the e2e subpackage.
+# Corpus integrations use the public executable / debundler flag below.
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
 
 exports_files([
     "README.md",
@@ -39,6 +41,12 @@ rust_library(
     name = "source_match_holes",
     srcs = ["selectors/matching/source_match_holes.rs"],
     crate_root = "selectors/matching/source_match_holes.rs",
+    edition = "2024",
+)
+
+rust_test(
+    name = "source_match_holes_test",
+    crate = ":source_match_holes",
     edition = "2024",
 )
 
@@ -1166,6 +1174,7 @@ rust_binary(
     srcs = ["main.rs"],
     crate_root = "main.rs",
     edition = "2024",
+    visibility = ["//visibility:public"],
     deps = [
         ":cli",
         ":gate",

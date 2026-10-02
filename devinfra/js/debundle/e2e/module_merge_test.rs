@@ -377,3 +377,51 @@ fn merge_appends_provenance_to_existing_note() {
         "merged={merged}"
     );
 }
+
+#[test]
+fn merge_preview_and_apply_reject_the_same_document_conflicts() {
+    for (target, source, diagnostic) in [
+        (
+            "members: [{selector: {binding: {name: a}}}]\n",
+            "members: [{selector: {binding: {name: a}}}]\n",
+            "duplicate member name",
+        ),
+        (
+            "annotations: {a: {note: first}}\n",
+            "annotations: {a: {note: second}}\n",
+            "conflicting annotation",
+        ),
+    ] {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write_text_file(&root.join("target.yaml"), target);
+        write_text_file(&root.join("source.yaml"), source);
+        for dry_run in [true, false] {
+            let mut args = vec![
+                "modules",
+                "merge",
+                "--modules",
+                root.to_str().unwrap(),
+                "--target",
+                "target",
+                "source",
+                "--no-verify",
+            ];
+            if dry_run {
+                args.push("--dry-run");
+            }
+            let out = run_debundle(&args);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(!out.status.success(), "dry_run={dry_run}: {stderr}");
+            assert!(stderr.contains(diagnostic), "dry_run={dry_run}: {stderr}");
+            assert_eq!(
+                fs::read_to_string(root.join("target.yaml")).unwrap(),
+                target
+            );
+            assert_eq!(
+                fs::read_to_string(root.join("source.yaml")).unwrap(),
+                source
+            );
+        }
+    }
+}
