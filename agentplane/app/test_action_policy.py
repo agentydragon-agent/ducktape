@@ -19,15 +19,10 @@ from agentplane.action_service.policy_view import (
     SubjectActionPolicyView,
     SubjectBindingView,
 )
-from agentplane.app.action_policy import (
-    MANAGED_BY_APP,
-    MANAGED_BY_LABEL,
-    ActionPolicyInventory,
-    BindingProvenance,
-    UnknownPolicySetError,
-)
-from agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
-from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, action_policy_set, sandbox
+from agentplane.app.action_policy import ActionPolicyInventory, BindingProvenance
+from agentplane.sandbox_service.action_policy import MANAGED_BY_APP, MANAGED_BY_LABEL, UnknownPolicySetError
+from agentplane.sandbox_service.egress import FLUX_KUSTOMIZATION_LABEL
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, action_policy_set, sandbox
 from agentplane.sandbox_service.inventory import sandbox_view
 
 LIVE = sandbox_view(sandbox("live"), None)

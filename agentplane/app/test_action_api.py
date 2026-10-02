@@ -49,14 +49,8 @@ from agentplane.app.action_federation import (
     ExchangeFederationSettings,
     FederatedOperatorActions,
 )
-from agentplane.app.action_policy import (
-    MANAGED_BY_APP,
-    MANAGED_BY_LABEL,
-    ActionPolicyInventory,
-    ActionPolicyUnavailable,
-    ActionPolicyView,
-    BindingProvenance,
-)
+from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView, BindingProvenance
+from agentplane.sandbox_service.action_policy import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
@@ -67,12 +61,12 @@ from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
-from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, sandbox
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.subjects import ServiceAccountRef

@@ -30,12 +30,12 @@ from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
-from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
+from agentplane.sandbox_service.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.session_config import Harness
 from util.net import bind_free_port

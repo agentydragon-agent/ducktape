@@ -51,3 +51,12 @@ class SandboxBinding(BaseModel):
 
     thread_defaults: ThreadDefaults | None = None
     bootstrap: str = Field(max_length=65_536)
+
+
+class LaunchGrants(BaseModel):
+    """Pending concrete policy grants, persisted on the Sandbox until provisioning completes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    policies: list[str]
+    action_policy_sets: list[str]

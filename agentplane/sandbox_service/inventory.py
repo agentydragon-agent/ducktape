@@ -25,13 +25,14 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant
-from agentplane.sandbox_service.session_config import SandboxBinding, ThreadDefaults
+from agentplane.sandbox_service.session_config import LaunchGrants, SandboxBinding, ThreadDefaults
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
 from util.kubernetes import CustomObjectsClient
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
+PROVISIONING_ANNOTATION = "agentplane.allegedly.works/pending-launch-grants"
 KUBERNETES_GRANTS_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants"
 KUBERNETES_GRANTS_READY_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-ready"
 KUBERNETES_GRANTS_ERROR_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-error"
@@ -350,6 +351,16 @@ class SandboxInventory:
         )
         return _view(sandbox, None)
 
+    async def pending_grants(self, name: str) -> LaunchGrants | None:
+        raw = (await self._sandbox(name)).metadata.annotations.get(PROVISIONING_ANNOTATION)
+        return LaunchGrants.model_validate_json(raw) if raw is not None else None
+
+    async def finish_provisioning(self, sandbox: SandboxView) -> None:
+        await self._patch(
+            sandbox.name,
+            {"metadata": {"uid": str(sandbox.uid), "annotations": {PROVISIONING_ANNOTATION: None}}},
+        )
+
     async def binding(self, name: str) -> SandboxBinding | None:
         raw = (await self._sandbox(name)).metadata.annotations.get(SANDBOX_BINDING_ANNOTATION)
         if raw is None:
@@ -377,26 +388,30 @@ class SandboxInventory:
                 name, {"metadata": {"finalizers": [item for item in sandbox.metadata.finalizers if item != finalizer]}}
             )
 
-    async def suspend(self, name: str) -> None:
-        await self._set_operating_mode(name, OperatingMode.SUSPENDED)
+    async def suspend(self, name: str, *, uid: UUID | None = None) -> None:
+        await self._set_operating_mode(name, OperatingMode.SUSPENDED, uid=uid)
 
-    async def resume(self, name: str) -> None:
-        await self._set_operating_mode(name, OperatingMode.RUNNING)
+    async def resume(self, name: str, *, uid: UUID | None = None) -> None:
+        await self._set_operating_mode(name, OperatingMode.RUNNING, uid=uid)
 
-    async def delete(self, name: str) -> None:
+    async def delete(self, name: str, *, uid: UUID | None = None) -> None:
         """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
         everything on the volume. A running one is refused, so the irreversible step is a
         deliberate second one for a browser and for an agent calling the API alike."""
         sandbox = await self._sandbox(name)
+        if uid is not None and sandbox.metadata.uid != uid:
+            raise SandboxNotFoundError(name)
         if sandbox.spec.operating_mode != OperatingMode.SUSPENDED:
             raise SandboxRunningError(name)
         await self._custom_objects.delete_namespaced_custom_object(
-            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name, body=k8s_client.V1DeleteOptions()
+            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name, body=k8s_client.V1DeleteOptions(preconditions=k8s_client.V1Preconditions(uid=str(sandbox.metadata.uid)))
         )
 
-    async def _set_operating_mode(self, name: str, mode: OperatingMode) -> None:
-        await self._sandbox(name)
-        await self._patch(name, {"spec": {"operatingMode": mode}})
+    async def _set_operating_mode(self, name: str, mode: OperatingMode, *, uid: UUID | None = None) -> None:
+        sandbox = await self._sandbox(name)
+        if uid is not None and sandbox.metadata.uid != uid:
+            raise SandboxNotFoundError(name)
+        await self._patch(name, {"metadata": {"uid": str(sandbox.metadata.uid)}, "spec": {"operatingMode": mode}})
 
     async def _patch(self, name: str, patch: dict[str, object]) -> None:
         await self._custom_objects.patch_namespaced_custom_object(
@@ -536,6 +551,8 @@ def _state(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> ProvisioningState
         return ProvisioningState.SUSPENDED
     if pod is None:
         return ProvisioningState.WAITING_FOR_POD
+    if PROVISIONING_ANNOTATION in sandbox.metadata.annotations:
+        return ProvisioningState.WAITING_FOR_GRANTS
     if _resolved_grants(sandbox) and sandbox.metadata.annotations.get(KUBERNETES_GRANTS_READY_ANNOTATION) != "true":
         return ProvisioningState.WAITING_FOR_GRANTS
     return ProvisioningState.RUNNING if _pod_ready(pod) else ProvisioningState.WAITING_FOR_POD_READY

@@ -30,6 +30,7 @@ from agentplane.egress.resources import (
 )
 from agentplane.sandbox_service.inventory import InventoryError, SandboxView
 from agentplane.subjects import ServiceAccountRef
+from agentplane.sandbox_service.owned_binding import create_binding
 from util.agent_sandbox import SANDBOX_API
 from util.kubernetes import CustomObjectsClient
 
@@ -186,7 +187,7 @@ class EgressInventory:
             *EGRESS_API, self._namespace, BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
-    async def grant(self, sandbox: SandboxView, policies: list[str]) -> BindingView:
+    async def grant(self, sandbox: SandboxView, policies: list[str], *, initial: bool = False) -> BindingView:
         """One binding of the ServiceAccount the sandbox runs as to the policies, owned by the
         Sandbox so its deletion garbage-collects it. Creating it is the grant, at launch and
         afterwards alike: granting an already-running sandbox adds another binding rather than
@@ -194,7 +195,8 @@ class EgressInventory:
         """
         known = await self._policies_by_name()
         _require_known(policies, known)
-        created = await self._custom_objects.create_namespaced_custom_object(
+        created = await create_binding(
+            self._custom_objects,
             *EGRESS_API,
             self._namespace,
             BINDINGS_PLURAL,
@@ -204,7 +206,7 @@ class EgressInventory:
                 "metadata": {
                     # The API server names it. A sandbox may be granted more than once, and a name
                     # derived from the sandbox alone would make every grant after the first a 409.
-                    "generateName": f"{sandbox.name}-",
+                    **({"name": f"ap-init-{sandbox.uid.hex}"} if initial else {"generateName": f"{sandbox.name}-"}),
                     # Not the controller: the Sandbox controller owns the Pod and PVC, and this
                     # reference is for cascading deletion only. It cascades only while bindings and
                     # Sandboxes share a namespace — Kubernetes treats a namespaced owner in another

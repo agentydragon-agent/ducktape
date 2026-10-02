@@ -25,7 +25,12 @@ from agentplane.sandbox_service.destinations import (
     SandboxDestination,
     SessionDestination,
 )
-from agentplane.sandbox_service.inventory import SandboxNotFoundError
+from agentplane.sandbox_service.inventory import InventoryError, SandboxNotFoundError
+from agentplane.sandbox_service.action_policy import UnknownPolicySetError
+from agentplane.sandbox_service.egress import UnknownPolicyError
+from agentplane.sandbox_service.kubernetes_grants import DuplicateKubernetesGrantError, UnknownKubernetesGrantError
+from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.provisioning_api import provisioning_router
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 
@@ -67,6 +72,7 @@ class SessionResources:
     manager_accounts: frozenset[ServiceAccountRef] = frozenset()
     platform_instructions: str | None = None
     lifecycle_timeout_s: float = 300
+    provisioning: Provisioning | None = None
 
     def __post_init__(self) -> None:
         if min(self.admission_timeout_s, self.follow_lease_s, self.lifecycle_timeout_s) <= 0:
@@ -126,6 +132,23 @@ class SessionStream(StreamingResponse):
 
 def create_app(resources: SessionResources) -> FastAPI:
     app = FastAPI(title="Agentplane Sandbox Service")
+
+    if resources.provisioning is not None:
+        app.include_router(provisioning_router(
+            resources.provisioning, resources.authenticate,
+            resources.manager_accounts & resources.destinations.trusted_accounts,
+        ))
+
+    @app.exception_handler(InventoryError)
+    async def inventory_error(request: Request, error: InventoryError) -> JSONResponse:
+        return JSONResponse({"detail": str(error)}, status_code=409)
+
+    @app.exception_handler(UnknownPolicyError)
+    @app.exception_handler(UnknownPolicySetError)
+    @app.exception_handler(UnknownKubernetesGrantError)
+    @app.exception_handler(DuplicateKubernetesGrantError)
+    async def invalid_selection(request: Request, error: Exception) -> JSONResponse:
+        return JSONResponse({"detail": str(error)}, status_code=422)
 
     @app.exception_handler(DestinationDeniedError)
     async def denied(request: Request, error: DestinationDeniedError) -> JSONResponse:

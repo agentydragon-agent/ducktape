@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 import pytest
 import pytest_bazel
 
-from agentplane.app.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
-from agentplane.app.testing.kubernetes import (
+from agentplane.sandbox_service.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
+from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCustomObjectsApi,
     egress_binding,

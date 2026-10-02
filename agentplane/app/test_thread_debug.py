@@ -15,7 +15,7 @@ from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore

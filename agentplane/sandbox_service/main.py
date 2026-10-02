@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, cast
 
@@ -10,6 +11,11 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
+from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, RoleBindingGrant
+from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.api import SessionResources, create_app
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.instructions import resolved_agent_instructions
@@ -33,6 +39,11 @@ class Settings(BaseSettings):
     agent_egress_api_url: str | None = None
     agent_actions_service_url: str | None = None
     lifecycle_timeout_s: float = Field(default=300, gt=0)
+    enable_provisioning: bool = False
+    default_policies: list[str] = Field(default_factory=list)
+    kubernetes_grants: dict[str, KubernetesGrant] = Field(default_factory=dict)
+    kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)
+    kubernetes_cluster_binding_cleanup: bool = False
     token_audience: str = "agentplane-egress"
     runner_port: int = Field(default=7000, ge=1, le=65535)
     admission_timeout_s: float = Field(default=15, gt=0, le=60)
@@ -74,6 +85,26 @@ async def serve(settings: Settings) -> None:
                 allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
             )
         )
+        provisioning = None
+        if settings.enable_provisioning:
+            if not settings.manager_accounts & settings.trusted_accounts:
+                raise ValueError("provisioning requires a trusted management account")
+            custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
+            provisioning = Provisioning(
+                inventory,
+                EgressInventory(namespace=settings.sandbox_namespace, custom_objects=custom, default_policies=settings.default_policies),
+                ActionPolicyBindings(namespace=settings.sandbox_namespace, custom_objects=custom),
+                settings.kubernetes_grants,
+                KubernetesBindings(
+                    inventory, k8s_client.RbacAuthorizationV1Api(api),
+                    cleanup_namespaces=(settings.kubernetes_binding_cleanup_namespaces | {
+                        grant.namespace for grant in settings.kubernetes_grants.values() if isinstance(grant, RoleBindingGrant)
+                    }) - {settings.sandbox_namespace},
+                    cleanup_cluster_bindings=settings.kubernetes_cluster_binding_cleanup or any(
+                        isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()
+                    ),
+                ),
+            )
         app = create_app(
             SessionResources(
                 authenticate=authenticate,
@@ -83,9 +114,17 @@ async def serve(settings: Settings) -> None:
                 manager_accounts=settings.manager_accounts,
                 platform_instructions=platform_instructions,
                 lifecycle_timeout_s=settings.lifecycle_timeout_s,
+                provisioning=provisioning,
             )
         )
-        await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, access_log=False)).serve()
+        reconcile = asyncio.create_task(provisioning.run(), name="sandbox-provisioning") if provisioning else None
+        try:
+            await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, access_log=False)).serve()
+        finally:
+            if reconcile is not None:
+                reconcile.cancel()
+                with suppress(asyncio.CancelledError):
+                    await reconcile
 
 
 def main() -> None:

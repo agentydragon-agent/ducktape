@@ -29,7 +29,7 @@ from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, request_session

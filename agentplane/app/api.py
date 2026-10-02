@@ -38,7 +38,9 @@ from agentplane.app.action_federation import (
     operator_actions,
     upstream_failure_detail,
 )
-from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicySetView, UnknownPolicySetError
+from agentplane.app.action_policy import ActionPolicyInventory
+from agentplane.action_service.policy_view import ActionPolicySetView
+from agentplane.sandbox_service.action_policy import UnknownPolicySetError
 from agentplane.app.agent_runtime.events import stream
 from agentplane.app.agent_runtime.events.debug import (
     ArchivedObservationEntry,
@@ -64,7 +66,7 @@ from agentplane.app.consent import (
 )
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
-from agentplane.app.egress import (
+from agentplane.sandbox_service.egress import (
     BindingNotFoundError,
     BindingView,
     EgressInventory,
@@ -74,7 +76,7 @@ from agentplane.app.egress import (
 )
 from agentplane.app.electric import ElectricProxy, router as electric_router
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
-from agentplane.app.kubernetes_bindings import KUBERNETES_BINDINGS_FINALIZER, KubernetesBindings
+from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
@@ -83,8 +85,6 @@ from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import OpenTimeoutError, RunnerError
 from agentplane.sandbox_service.inventory import (
-    KUBERNETES_GRANTS_ANNOTATION,
-    SANDBOX_BINDING_ANNOTATION,
     NewSandbox,
     SandboxInventory,
     SandboxNotFoundError,
@@ -92,7 +92,6 @@ from agentplane.sandbox_service.inventory import (
     SandboxView,
 )
 from agentplane.sandbox_service.kubernetes_grants import (
-    ClusterRoleBindingGrant,
     DuplicateKubernetesGrantError,
     KubernetesGrant,
     KubernetesGrantView,
@@ -100,7 +99,8 @@ from agentplane.sandbox_service.kubernetes_grants import (
     grant_views,
     resolve_grants,
 )
-from agentplane.sandbox_service.session_config import Harness, SandboxBinding
+from agentplane.sandbox_service.session_config import Harness
+from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -261,38 +261,9 @@ async def create_sandbox(
     bindings: KubernetesBindings | None = request.app.state.kubernetes_bindings
     if grants and bindings is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Kubernetes grant provisioning is unavailable")
-    policies = egress.launch_policies(spec.policies)
-    await egress.require_policies(policies)
-    await action_policy.require_policy_sets(spec.action_policy_sets)
-    binding = (
-        SandboxBinding(thread_defaults=spec.thread_defaults, bootstrap=spec.bootstrap)
-        if spec.thread_defaults is not None or spec.bootstrap
-        else None
-    )
-    annotations = {}
-    if binding is not None:
-        annotations[SANDBOX_BINDING_ANNOTATION] = binding.model_dump_json(exclude_none=True)
-    if grants:
-        annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([grant.model_dump(mode="json") for grant in grants])
-    view = await inventory.create(
-        spec,
-        annotations=annotations or None,
-        finalizers=[KUBERNETES_BINDINGS_FINALIZER]
-        if any(
-            isinstance(grant.grant, ClusterRoleBindingGrant) or grant.grant.namespace != inventory.namespace
-            for grant in grants
-        )
-        else None,
-    )
-    if policies:
-        await egress.grant(view, policies)
-    if spec.action_policy_sets:
-        await action_policy.bind(view, spec.action_policy_sets)
-    if grants:
-        assert bindings is not None
-        await bindings.ensure(view)
-        view = await inventory.get(view.name)
-    return view
+    return await Provisioning(
+        inventory, egress, action_policy, request.app.state.kubernetes_grants, bindings
+    ).create(spec)
 
 
 @router.get("/{name}")

@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
+from agentplane.sandbox_service.egress import FLUX_KUSTOMIZATION_LABEL
 from agentplane.sandbox_service.inventory import MANAGED_LABEL
 
 NAMESPACE = "agentplane-test"

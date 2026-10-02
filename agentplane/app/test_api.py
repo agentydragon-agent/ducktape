@@ -30,15 +30,15 @@ from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_h
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
-from agentplane.app.kubernetes_bindings import KubernetesBindings
+from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
-from agentplane.app.testing.kubernetes import (
+from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
     FakeCoreV1Api,

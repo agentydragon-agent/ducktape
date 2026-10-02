@@ -42,12 +42,12 @@ from agentplane.app.conftest import TEST_REASONING_EFFORTS
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.protocol import event_log_pb2
 from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory

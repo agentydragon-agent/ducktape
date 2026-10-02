@@ -29,12 +29,12 @@ from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
-from agentplane.app.testing.kubernetes import (
+from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
     FakeAuthenticationV1Api,

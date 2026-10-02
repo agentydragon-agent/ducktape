@@ -42,11 +42,11 @@ from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH, TEST_REASONING_EFF
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.kubernetes import pod, sandbox
+from agentplane.sandbox_service.testing.fake_inventory import pod, sandbox
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
