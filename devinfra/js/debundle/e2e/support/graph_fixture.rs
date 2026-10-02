@@ -48,7 +48,10 @@ impl GraphFixture {
     pub fn atomic_pair() -> Self {
         Self::new(
             "let alpha = 0;\nfunction beta() { alpha = 1; }\nbeta();\nconsole.log(alpha);\n",
-            &[("home/atom.yaml", "members: [{selector: {binding: {name: alpha}}}, {selector: {binding: {name: beta}}}]\n")],
+            &[(
+                "home/atom.yaml",
+                "members: [{selector: {binding: {name: alpha}}}, {selector: {binding: {name: beta}}}]\n",
+            )],
         )
     }
 
@@ -56,7 +59,10 @@ impl GraphFixture {
         Self::new(
             "const beta = 1;\nconst alpha = beta + 1;\nconsole.log(alpha);\n",
             &[
-                ("a.yaml", "members: [{selector: {binding: {name: alpha}}}]\n"),
+                (
+                    "a.yaml",
+                    "members: [{selector: {binding: {name: alpha}}}]\n",
+                ),
                 ("b.yaml", "members: [{selector: {binding: {name: beta}}}]\n"),
             ],
         )
@@ -64,7 +70,11 @@ impl GraphFixture {
 
     pub fn assert_success(&self, args: &[&str]) {
         let out = self.command(args);
-        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     /// Both edit modes must refuse for the intended reason, without changing
@@ -86,14 +96,20 @@ impl GraphFixture {
         let mut codes = Vec::new();
         for dry_run in [true, false] {
             let mut args = args.to_vec();
-            if dry_run { args.push("--dry-run"); }
+            if dry_run {
+                args.push("--dry-run");
+            }
             let out = self.command(&args);
             let stderr = String::from_utf8_lossy(&out.stderr);
             assert!(!out.status.success(), "{args:?}: expected rejection");
             for diagnostic in diagnostics {
                 assert!(stderr.contains(diagnostic), "{args:?}: {stderr}");
             }
-            assert_eq!(snapshot(&self.modules), before, "{args:?}: spec changed after refusal");
+            assert_eq!(
+                snapshot(&self.modules),
+                before,
+                "{args:?}: spec changed after refusal"
+            );
             codes.push(out.status.code());
         }
         assert_eq!(codes[0], codes[1], "dry-run and apply must agree");

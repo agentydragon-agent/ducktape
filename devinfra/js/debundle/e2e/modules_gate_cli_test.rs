@@ -7,9 +7,15 @@ fn modules_merge_rejects_when_merge_creates_cycle() {
     let fixture = GraphFixture::new(
         "const beta = 1;\nconst gamma = beta + 1;\nconst alpha = gamma + 1;\nconsole.log(alpha);\n",
         &[
-            ("a.yaml", "members: [{selector: {binding: {name: alpha}}}]\n"),
+            (
+                "a.yaml",
+                "members: [{selector: {binding: {name: alpha}}}]\n",
+            ),
             ("b.yaml", "members: [{selector: {binding: {name: beta}}}]\n"),
-            ("c.yaml", "members: [{selector: {binding: {name: gamma}}}]\n"),
+            (
+                "c.yaml",
+                "members: [{selector: {binding: {name: gamma}}}]\n",
+            ),
         ],
     );
     fixture.assert_rejected_unchanged(
@@ -21,13 +27,18 @@ fn modules_merge_rejects_when_merge_creates_cycle() {
 
 #[test]
 fn modules_merge_accepts_existing_and_missing_targets() {
-    for (target, sources) in [("a", vec!["b.yaml"]), ("merged/new_target", vec!["a.yaml", "b.yaml"])] {
+    for (target, sources) in [
+        ("a", vec!["b.yaml"]),
+        ("merged/new_target", vec!["a.yaml", "b.yaml"]),
+    ] {
         let fixture = GraphFixture::acyclic_pair();
         let mut args = vec!["modules", "merge", "--target", target];
         args.extend(sources.iter().copied());
         fixture.assert_success(&args);
         assert!(fixture.modules.join(format!("{target}.yaml")).exists());
-        for source in sources { assert!(!fixture.modules.join(source).exists()); }
+        for source in sources {
+            assert!(!fixture.modules.join(source).exists());
+        }
         fixture.assert_runs("2\n");
     }
 }

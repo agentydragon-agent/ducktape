@@ -14,6 +14,9 @@ fn bindings_unassign_rejects_atom_split_in_both_modes_without_writes() {
 fn bindings_unassign_accepts_when_whole_atom_unassigned_together() {
     let fixture = GraphFixture::atomic_pair();
     fixture.assert_success(&["bindings", "unassign", "alpha", "beta"]);
-    assert!(!fixture.modules.join("home/atom.yaml").exists(), "drained source must be deleted");
+    assert!(
+        !fixture.modules.join("home/atom.yaml").exists(),
+        "drained source must be deleted"
+    );
     fixture.assert_runs("1\n");
 }
