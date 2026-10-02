@@ -21,7 +21,7 @@
 //! round-trip lossless, so the operation never navigates a raw
 //! `serde_yaml::Value` tree.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -31,7 +31,7 @@ use peel::OutputFormat;
 use spec::LogicalModule;
 use yaml_edit::write_yaml_body_if_semantic_changed;
 
-use crate::edit_gate::{Gate, post_delete_spec, post_merge_spec};
+use crate::edit_gate::{Gate, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
 
 #[derive(Debug, ClapArgs)]
@@ -203,34 +203,16 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
         merge.owner_graph_path.as_deref(),
         merge.source_root.as_deref(),
     )?;
-    if let Err(err) = gate.check(&merge.modules_root, || {
-        let target_abs = resolve_module_file(&merge.modules_root, &merge.target);
-        let source_abs: Vec<PathBuf> = merge
-            .sources
-            .iter()
-            .map(|p| resolve_module_file(&merge.modules_root, p))
-            .collect();
-        post_merge_spec(&merge.modules_root, &target_abs, &source_abs)
-    }) {
+    let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
+    let plan = plan_merge(&merge.modules_root, &merge.target, &sources)?;
+    if let Err(err) = gate.check(&merge.modules_root, || plan.post_spec(&merge.modules_root)) {
         emit_gate_rejection_json("merge", merge.format, &err);
         return Err(err);
     }
-
-    let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
     let (summary, action) = if merge.dry_run {
-        // Dry-run shape preview: load each file to confirm shape
-        // before reporting the action. The full validate+write
-        // pass would be the same minus the final `fs::write` /
-        // `fs::remove_file`.
-        (
-            preview_merge(&merge.modules_root, &merge.target, &sources)?,
-            "dry-run",
-        )
+        (plan.summary, "dry-run")
     } else {
-        (
-            merge_modules(&merge.modules_root, &merge.target, &sources)?,
-            "applied",
-        )
+        (plan.apply()?, "applied")
     };
     let merge_outcome = MergeOutcome {
         outcome: MutationOutcome {
@@ -263,26 +245,55 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
     Ok(())
 }
 
-/// Like `merge_modules` but without writing/deleting. Returns the
-/// summary that would be produced. Used by `--dry-run`.
-fn preview_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<MergeSummary> {
-    let target_abs = resolve_module_file(modules_root, target);
-    let source_abs: Vec<PathBuf> = sources
-        .iter()
-        .map(|p| resolve_module_file(modules_root, p))
-        .collect();
-    // Confirm every source + the target deserialize as the typed module
-    // schema. This catches malformed files before any write would happen
-    // in a non-dry-run. A missing target is valid: the apply path will
-    // create it from the merged source claims.
-    read_module_or_default(&target_abs)?;
-    for src in &source_abs {
-        read_module(src)?;
+/// The complete prospective edit. Preview and the gate inspect this exact
+/// document; applying the plan does not reconstruct the merge from disk.
+struct MergePlan {
+    summary: MergeSummary,
+    document: LogicalModule,
+}
+
+impl MergePlan {
+    fn post_spec(&self, modules_root: &Path) -> Result<PostEditSpec> {
+        let mut replaced = self.summary.merged_sources.clone();
+        replaced.push(self.summary.target.clone());
+        let mut post_spec = post_delete_spec(modules_root, &replaced)?;
+        // Use the same document-to-claims projection as binding edits, rather
+        // than independently concatenating the original files' claims.
+        let docs = BTreeMap::from([(
+            String::new(),
+            (
+                self.summary.target.clone(),
+                serde_yaml::to_value(&self.document)?,
+            ),
+        )]);
+        post_spec
+            .modules
+            .extend(post_edit_spec_from_docs(&docs, &BTreeSet::new())?.modules);
+        post_spec
+            .modules
+            .sort_by(|left, right| left.path.cmp(&right.path));
+        Ok(post_spec)
     }
-    Ok(MergeSummary {
-        target: target_abs,
-        merged_sources: source_abs,
-    })
+
+    fn apply(self) -> Result<MergeSummary> {
+        let target = &self.summary.target;
+        let body = serde_yaml::to_string(&self.document)
+            .with_context(|| format!("serializing merged {}", target.display()))?;
+        let doc = serde_yaml::to_value(&self.document)
+            .with_context(|| format!("re-encoding merged {}", target.display()))?;
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("creating parent directory {}", parent.display()))?;
+        }
+        // Retain write-before-delete and the shared atomic per-file writer.
+        // This does not promise a crash-atomic multi-file transaction.
+        write_yaml_body_if_semantic_changed(target, &doc, body)?;
+        for src in &self.summary.merged_sources {
+            fs::remove_file(src)
+                .with_context(|| format!("deleting merged source {}", src.display()))?;
+        }
+        Ok(self.summary)
+    }
 }
 
 /// Merge `sources` into `target` under `modules_root`, then delete the
@@ -299,6 +310,10 @@ pub fn merge_modules(
     target: &Path,
     sources: &[&Path],
 ) -> Result<MergeSummary> {
+    plan_merge(modules_root, target, sources)?.apply()
+}
+
+fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<MergePlan> {
     let target_abs = resolve_module_file(modules_root, target);
     let source_abs: Vec<PathBuf> = sources
         .iter()
@@ -393,24 +408,12 @@ pub fn merge_modules(
         ));
     }
 
-    let body = serde_yaml::to_string(&target_module)
-        .with_context(|| format!("serializing merged {}", target_abs.display()))?;
-    let doc = serde_yaml::to_value(&target_module)
-        .with_context(|| format!("re-encoding merged {}", target_abs.display()))?;
-    if let Some(parent) = target_abs.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("creating parent directory {}", parent.display()))?;
-    }
-    write_yaml_body_if_semantic_changed(&target_abs, &doc, body)?;
-
-    for src in &source_abs {
-        fs::remove_file(src)
-            .with_context(|| format!("deleting merged source {}", src.display()))?;
-    }
-
-    Ok(MergeSummary {
-        target: target_abs,
-        merged_sources: source_abs,
+    Ok(MergePlan {
+        summary: MergeSummary {
+            target: target_abs,
+            merged_sources: source_abs,
+        },
+        document: target_module,
     })
 }
 
