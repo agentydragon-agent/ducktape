@@ -1,9 +1,13 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs;
-use std::path::{Path, PathBuf};
+//! Compose vendor substitution. Package lookup, export inspection, import resolution,
+//! and identifier rewriting live in their named modules; the final consumer gate
+//! remains here because it validates the combined post-strip emission result.
+use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 mod emission;
+mod export_surface;
+mod output_imports;
+mod packages;
 mod import_rewrites;
 mod manifests;
 mod passthrough;
@@ -12,376 +16,27 @@ mod strip;
 mod validate;
 mod wrappers;
 
-use serde_json::Value;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
-use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+use swc_ecma_visit::{Visit, VisitWith};
 
-use analysis::local_namespace_iife_target;
 use artifact::{
-    ArtifactIndexes, ChunkId, ChunkTable, join_module_path, list_chunk_file_paths,
-    module_path_dirname, normalize_module_path, relative_module_specifier,
+    ArtifactIndexes, ChunkId, ChunkTable, list_chunk_file_paths,
 };
-use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
+use binding_targets::{declaration_ids, module_export_name};
 pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
-pub use import_rewrites::VendorImportRewrites;
+pub use import_rewrites::{DeferredImport, IdentRewriteTarget, PartialSwapIdentRewriter, VendorImportRewrites};
+pub use output_imports::{MaterializedOutputChunkIndex, bundled_facade_import_source, resolve_partial_swap_import_target};
+use export_surface::collect_local_idents_by_export_name;
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
-use js_ast::{is_binding_identifier, member_property, module_export_name_node, str_value};
+use js_ast::{module_export_name_node, named_export_module_item, named_export_specifier};
 pub use manifests::*;
 use plan::ChunkBundledPartialSwapPlan;
 pub use plan::{
     VendorImportAction, VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan,
 };
 use spec::PartialSwapKind;
-
-/// Collect the boundary-rename mapping (vendor-LOCAL binding name → the
-/// distinct, valid export name it is published under) and validate it against
-/// the entry's genuine exports — both in a single pass over `module.body`.
-///
-/// Validation bails when a mapping key (a vendor-LOCAL binding name) is itself a
-/// genuine export name of the vendor entry bound to a *different* local. The
-/// caller-side rewrite treats `import { k }` as "the caller spelled export
-/// `<mapping[k]>` by its vendor-local name" — but when the vendor really exports
-/// the name `k` (from another local), that import is legitimate and rewriting it
-/// would silently rebind the caller to the wrong value.
-fn collect_and_validate_boundary_mapping(
-    module: &Module,
-    chunk_path: &str,
-) -> Result<BTreeMap<String, String>> {
-    let mut mapping: BTreeMap<String, String> = BTreeMap::new();
-    // export name -> Some(local sym) when the export aliases a plain local
-    // binding; None when its local identity is not a local ident (forwarded
-    // `export … from`, string-literal orig).
-    let mut export_locals: BTreeMap<String, Option<String>> = BTreeMap::new();
-    for item in &module.body {
-        match item {
-            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
-                for specifier in &named.specifiers {
-                    let ExportSpecifier::Named(named_spec) = specifier else {
-                        continue;
-                    };
-                    let exported = named_spec
-                        .exported
-                        .as_ref()
-                        .map(module_export_name)
-                        .unwrap_or_else(|| module_export_name(&named_spec.orig));
-                    let local = match (&named.src, &named_spec.orig) {
-                        (None, ModuleExportName::Ident(local)) => Some(local.sym.to_string()),
-                        _ => None,
-                    };
-                    // A boundary rename: a non-forwarded local binding published
-                    // under a different, valid identifier.
-                    if let Some(local_sym) = &local
-                        && exported != *local_sym
-                        && is_binding_identifier(&exported)
-                    {
-                        mapping.insert(local_sym.clone(), exported.clone());
-                    }
-                    export_locals.insert(exported, local);
-                }
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-                for name in declaration_name_strings(&export_decl.decl) {
-                    export_locals.insert(name.clone(), Some(name));
-                }
-            }
-            _ => {}
-        }
-    }
-    for local_name in mapping.keys() {
-        let Some(identity) = export_locals.get(local_name) else {
-            continue;
-        };
-        if identity.as_deref() != Some(local_name.as_str()) {
-            let bound_to = identity
-                .as_deref()
-                .map(|local| format!("local `{local}`"))
-                .unwrap_or_else(|| "a non-local origin".to_string());
-            bail!(
-                "boundary_rename vendor entry {chunk_path}: boundary mapping key `{local_name}` collides with a genuine export named `{local_name}` bound to {bound_to}; rewriting caller imports of `{local_name}` would silently rebind them to the wrong value",
-            );
-        }
-    }
-    Ok(mapping)
-}
-
-fn read_installed_package_metadata(
-    package_name: &str,
-    package_roots: &std::collections::HashMap<String, PathBuf>,
-    packages_root: &Option<PathBuf>,
-) -> Result<Value> {
-    let package_root = resolve_package_root(package_name, package_roots, packages_root)?;
-    let metadata_path = package_root.join("package.json");
-    if !metadata_path.exists() {
-        bail!(
-            "Package metadata missing for {package_name}: {}",
-            metadata_path.display()
-        );
-    }
-    Ok(serde_json::from_str(&fs::read_to_string(metadata_path)?)?)
-}
-
-fn resolve_package_root(
-    package_name: &str,
-    package_roots: &std::collections::HashMap<String, PathBuf>,
-    packages_root: &Option<PathBuf>,
-) -> Result<PathBuf> {
-    if let Some(mapped) = package_roots.get(package_name) {
-        let root = absolutize(mapped)?;
-        if !root.exists() {
-            bail!(
-                "Package root not found for {package_name}: {}",
-                root.display()
-            );
-        }
-        return Ok(root);
-    }
-    if !package_roots.is_empty() && packages_root.is_none() {
-        bail!("Package root not provided for {package_name}");
-    }
-    let packages_root = packages_root
-        .as_ref()
-        .map(|path| absolutize(path.as_path()))
-        .transpose()?
-        .or_else(default_packages_root)
-        .context("Could not locate Bazel-provided package tree in runfiles; pass packagesRoot explicitly for tests/fixtures")?;
-    let mut package_root = packages_root.clone();
-    for segment in package_path_segments(package_name)? {
-        package_root.push(segment);
-    }
-    assert_path_within_root(
-        &package_root,
-        &packages_root,
-        &format!("Package {package_name} escapes packages root"),
-    )?;
-    if !package_root.exists() {
-        bail!(
-            "Package root not found for {package_name}: {}",
-            package_root.display()
-        );
-    }
-    Ok(package_root)
-}
-
-fn resolve_package_subpath(
-    package_name: &str,
-    subpath: &str,
-    package_roots: &std::collections::HashMap<String, PathBuf>,
-    packages_root: &Option<PathBuf>,
-) -> Result<PathBuf> {
-    let package_root = resolve_package_root(package_name, package_roots, packages_root)?;
-    let file_path = absolutize(&package_root.join(subpath))?;
-    assert_path_within_root(
-        &file_path,
-        &package_root,
-        &format!("Package {package_name} subpath escapes package root: {subpath}"),
-    )?;
-    if !file_path.exists() {
-        bail!(
-            "Package file not found for {package_name}: {subpath} -> {}",
-            file_path.display()
-        );
-    }
-    let real_path = file_path.canonicalize()?;
-    let real_root = package_root.canonicalize()?;
-    assert_path_within_root(
-        &real_path,
-        &real_root,
-        &format!("Package {package_name} subpath realpath escapes package root: {subpath}"),
-    )?;
-    Ok(file_path)
-}
-
-fn default_packages_root() -> Option<PathBuf> {
-    for env in ["RUNFILES_DIR", "TEST_SRCDIR"] {
-        let Ok(root) = std::env::var(env) else {
-            continue;
-        };
-        let candidate = PathBuf::from(root).join("_main").join("node_modules");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn package_path_segments(package_name: &str) -> Result<Vec<&str>> {
-    if package_name.is_empty() {
-        bail!("Invalid package name: {package_name}");
-    }
-    let segments = package_name.split('/').collect::<Vec<_>>();
-    if segments
-        .iter()
-        .any(|segment| segment.is_empty() || *segment == "." || *segment == "..")
-    {
-        bail!("Invalid package name: {package_name}");
-    }
-    Ok(segments)
-}
-
-fn absolutize(path: &Path) -> Result<PathBuf> {
-    if path.is_absolute() {
-        Ok(path.to_path_buf())
-    } else {
-        Ok(std::env::current_dir()?.join(path))
-    }
-}
-
-fn assert_path_within_root(path: &Path, root: &Path, message: &str) -> Result<()> {
-    let rel = path.strip_prefix(root);
-    if rel.is_ok() {
-        return Ok(());
-    }
-    bail!("{message}: {}", path.display());
-}
-
-fn module_has_export_star(module: &Module) -> bool {
-    module.body.iter().any(|item| match item {
-        // `export * from "./other.js";`
-        ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => true,
-        // `export * as ns from "./other.js";` — still re-exports the
-        // whole namespace, just under one name.
-        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
-            named.src.is_some()
-                && named
-                    .specifiers
-                    .iter()
-                    .any(|s| matches!(s, ExportSpecifier::Namespace(_)))
-        }
-        _ => false,
-    })
-}
-
-/// Export names of `module`. The `default` name is included whether it
-/// comes from an `export default …` declaration or the named form
-/// `export { x as default }` — the two spellings are equivalent on the
-/// module's export surface.
-fn collect_exported_names(module: &Module) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
-    for item in &module.body {
-        match item {
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_))
-            | ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(_)) => {
-                names.insert("default".to_string());
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-                for name in declaration_name_strings(&export_decl.decl) {
-                    names.insert(name);
-                }
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
-                for specifier in &named.specifiers {
-                    if let ExportSpecifier::Named(named_specifier) = specifier {
-                        names.insert(
-                            named_specifier
-                                .exported
-                                .as_ref()
-                                .map(module_export_name)
-                                .unwrap_or_else(|| module_export_name(&named_specifier.orig)),
-                        );
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    names
-}
-
-/// Export names of `module` that are verified aliases of its default
-/// export — bound to the same local binding as the default. Empty when
-/// the default's local identity cannot be established.
-fn verified_default_alias_export_names(module: &Module) -> BTreeSet<String> {
-    let by_export = collect_local_idents_by_export_name(module);
-    let default_id = by_export
-        .get("default")
-        .cloned()
-        .or_else(|| default_export_decl_local_id(module));
-    let Some(default_id) = default_id else {
-        return BTreeSet::new();
-    };
-    by_export
-        .iter()
-        .filter(|(name, id)| name.as_str() != "default" && **id == default_id)
-        .map(|(name, _)| name.clone())
-        .collect()
-}
-
-/// Local binding `Id` of the module's `export default …` declaration,
-/// when the default is a plain local identifier (or a named fn/class).
-fn default_export_decl_local_id(module: &Module) -> Option<Id> {
-    for item in &module.body {
-        match item {
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) => {
-                let Expr::Ident(ident) = &*default_expr.expr else {
-                    return None;
-                };
-                return Some(ident.to_id());
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(default_decl)) => {
-                return match &default_decl.decl {
-                    DefaultDecl::Fn(function) => function.ident.as_ref().map(Ident::to_id),
-                    DefaultDecl::Class(class) => class.ident.as_ref().map(Ident::to_id),
-                    DefaultDecl::TsInterfaceDecl(_) => None,
-                };
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn collect_default_export_object_keys(
-    module: &Module,
-    chunk_path: &str,
-) -> Result<BTreeSet<String>> {
-    for item in &module.body {
-        let ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) = item else {
-            continue;
-        };
-        let Expr::Object(object) = &*default_expr.expr else {
-            bail!(
-                "swap_vendor_chunks vendor entry {chunk_path} named-from-default: upstream default export is not an object literal"
-            );
-        };
-        let mut keys = BTreeSet::new();
-        for prop in &object.props {
-            let PropOrSpread::Prop(prop) = prop else {
-                continue;
-            };
-            // Two accepted prop shapes — both produce the same wrapper
-            // (`export const K = _d.K;`):
-            // * `KeyValue` with `Ident` or `Str` key (`{ ping: fn, "pong": fn }`).
-            // * `Shorthand` (`{ ping, pong }`) where the local binding name
-            //   is the property name; `_d.ping` re-exports the same value
-            //   because object-literal shorthand assigns the binding's
-            //   value as a data property under the binding's name.
-            // Real-world vendor `index.mjs` files use shorthand commonly;
-            // both shapes are emit-equivalent for the wrapper's purposes.
-            let key = match &**prop {
-                Prop::KeyValue(key_value) => prop_name(&key_value.key),
-                Prop::Shorthand(ident) => Some(ident.sym.to_string()),
-                _ => None,
-            };
-            if let Some(key) = key {
-                keys.insert(key);
-            }
-        }
-        return Ok(keys);
-    }
-    bail!(
-        "swap_vendor_chunks vendor entry {chunk_path} named-from-default: upstream has no export default declaration"
-    );
-}
-
-fn prop_name(name: &PropName) -> Option<String> {
-    match name {
-        PropName::Ident(ident) => Some(ident.sym.to_string()),
-        PropName::Str(string) => Some(str_value(string)),
-        _ => None,
-    }
-}
 
 // === partial vendor swap =================================================
 //
@@ -457,38 +112,6 @@ fn plan_chunk_name(plan: &VendorResolutionPlan, chunk_id: ChunkId) -> String {
                 .map(|entry| entry.resolution.chunk_id.clone())
         })
         .unwrap_or_else(|| format!("#{}", chunk_id.0))
-}
-
-/// Map each chunk-local named export to the hygiene-preserving `Id`
-/// (`(atom, SyntaxContext)`) of the binding it re-exports. The `orig`
-/// identifier carries the resolver-assigned `SyntaxContext`, so the
-/// returned `Id` is the canonical binding identity used to key the
-/// self-rewrite `bindings` map.
-fn collect_local_idents_by_export_name(module: &Module) -> BTreeMap<String, Id> {
-    let mut out = BTreeMap::new();
-    for item in &module.body {
-        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
-            continue;
-        };
-        if named.src.is_some() {
-            continue;
-        }
-        for spec in &named.specifiers {
-            let ExportSpecifier::Named(named_spec) = spec else {
-                continue;
-            };
-            let ModuleExportName::Ident(orig) = &named_spec.orig else {
-                continue;
-            };
-            let export_name = named_spec
-                .exported
-                .as_ref()
-                .map(module_export_name)
-                .unwrap_or_else(|| orig.sym.to_string());
-            out.insert(export_name, orig.to_id());
-        }
-    }
-    out
 }
 
 /// Map each top-level binding name to its hygiene-preserving `Id`
@@ -625,371 +248,16 @@ fn module_used_idents(module: &Module) -> BTreeSet<String> {
     collector.0
 }
 
-/// Caller-relative module specifier for a generated bundled facade:
-/// `facade_app_path` rebased against the caller file's output-tree
-/// directory. Shared by the bundled wave and lowering's
-/// construction-time facade imports (where `caller_file_path` is the
-/// materialized module's target file).
-pub fn bundled_facade_import_source(
-    chunk_table: &ChunkTable,
-    caller_chunk_id: ChunkId,
-    caller_file_path: &str,
-    facade_app_path: &str,
-) -> String {
-    let caller_output_file = Path::new(chunk_table.name(caller_chunk_id)).join(caller_file_path);
-    let caller_output_dir = caller_output_file.parent().unwrap_or_else(|| Path::new(""));
-    relative_module_specifier(caller_output_dir, Path::new(facade_app_path))
-}
-
-/// Resolve a directive source to its target chunk for swap
-/// classification: artifact-index resolution first, then the
-/// materialized-output longest-prefix fallback. Shared by the wave
-/// dispatchers, the consumer gate, and lowering's construction-time
-/// vendor consultation (which resolves the source chunk's original
-/// directives from the same coordinate system).
-pub fn resolve_partial_swap_import_target(
-    source: &str,
-    caller_chunk_id: ChunkId,
-    caller_file_path: &str,
-    references: &ArtifactIndexes,
-    chunk_table: &ChunkTable,
-    materialized_index: &MaterializedOutputChunkIndex,
-) -> Option<ChunkId> {
-    references
-        .resolve_runtime_import_reference(source, caller_chunk_id, caller_file_path, chunk_table)
-        .map(|resolved| resolved.target_chunk_id)
-        .or_else(|| {
-            resolve_materialized_output_import_target(
-                source,
-                caller_chunk_id,
-                caller_file_path,
-                chunk_table,
-                materialized_index,
-            )
-        })
-}
-
-fn resolve_materialized_output_import_target(
-    source: &str,
-    caller_chunk_id: ChunkId,
-    caller_file_path: &str,
-    chunk_table: &ChunkTable,
-    materialized_index: &MaterializedOutputChunkIndex,
-) -> Option<ChunkId> {
-    if source.is_empty() || !source.starts_with('.') {
-        return None;
-    }
-    let caller_output_dir = join_module_path(&[
-        chunk_table.name(caller_chunk_id),
-        module_path_dirname(caller_file_path).as_str(),
-    ]);
-    let resolved_path =
-        normalize_module_path(&join_module_path(&[caller_output_dir.as_str(), source])).ok()?;
-    materialized_index.lookup(&resolved_path)
-}
-
-/// Precomputed longest-prefix-match index for resolving partial-swap
-/// relative imports to their target chunk. Built once per
-/// `apply_*partial_vendor_swaps` invocation; replaces the per-import-decl
-/// O(N_chunks) scan over `ChunkTable`.
-///
-/// Per chunk we register candidate keys derived from the chunk name plus,
-/// for slash-bearing names, the post-first-slash stripped form (mirroring
-/// the original `materialized_output_chunk_match_len` two-shape match):
-///   * `by_exact["<name>.js"]`         — exact match against
-///     `resolved_path` (match_len = name.len()).
-///   * `by_dir_prefix["<name>"]`       — `resolved_path` is
-///     `"<name>/<rest>"` (match_len = name.len()).
-///
-/// Lookup checks the exact map plus walks `resolved_path`'s `/`-bounded
-/// ancestors longest-to-shortest against `by_dir_prefix`, then combines
-/// the two candidates with longest-match-wins / tie-breaks-as-`None`
-/// (same semantics as the prior linear scan, including `ambiguous`).
-pub struct MaterializedOutputChunkIndex {
-    by_exact: HashMap<String, ChunkEntry>,
-    by_dir_prefix: HashMap<String, ChunkEntry>,
-}
-
-#[derive(Clone, Copy)]
-enum ChunkEntry {
-    Unique(ChunkId, usize),
-    Ambiguous(usize),
-}
-
-impl ChunkEntry {
-    fn match_len(&self) -> usize {
-        match self {
-            ChunkEntry::Unique(_, len) | ChunkEntry::Ambiguous(len) => *len,
-        }
-    }
-
-    fn merge(&mut self, chunk_id: ChunkId, match_len: usize) {
-        match *self {
-            ChunkEntry::Unique(existing, existing_len) => {
-                debug_assert_eq!(existing_len, match_len);
-                if existing != chunk_id {
-                    *self = ChunkEntry::Ambiguous(match_len);
-                }
-            }
-            ChunkEntry::Ambiguous(existing_len) => {
-                debug_assert_eq!(existing_len, match_len);
-            }
-        }
-    }
-}
-
-impl MaterializedOutputChunkIndex {
-    pub fn build(chunk_table: &ChunkTable) -> Self {
-        let len = chunk_table.len();
-        let mut by_exact: HashMap<String, ChunkEntry> = HashMap::with_capacity(len * 2);
-        let mut by_dir_prefix: HashMap<String, ChunkEntry> = HashMap::with_capacity(len * 2);
-        for index in 0..len {
-            let chunk_id = ChunkId(index);
-            let chunk_name = chunk_table.name(chunk_id);
-            insert_candidate(&mut by_exact, &mut by_dir_prefix, chunk_id, chunk_name);
-            if let Some((_, stripped)) = chunk_name.split_once('/') {
-                insert_candidate(&mut by_exact, &mut by_dir_prefix, chunk_id, stripped);
-            }
-        }
-        Self {
-            by_exact,
-            by_dir_prefix,
-        }
-    }
-
-    fn lookup(&self, resolved_path: &str) -> Option<ChunkId> {
-        let exact = self.by_exact.get(resolved_path).copied();
-        let prefix = self.longest_prefix_match(resolved_path);
-        let candidate = match (exact, prefix) {
-            (None, None) => return None,
-            (Some(c), None) | (None, Some(c)) => c,
-            (Some(a), Some(b)) => {
-                if a.match_len() > b.match_len() {
-                    a
-                } else if b.match_len() > a.match_len() {
-                    b
-                } else {
-                    // Equal lengths: ambiguous unless both resolve to the
-                    // same Unique chunk (only possible when an exact
-                    // `"<name>.js"` key happens to also be a registered
-                    // dir-prefix for the same chunk, which the original
-                    // semantics never produced — but we keep the check
-                    // explicit).
-                    match (a, b) {
-                        (ChunkEntry::Unique(ax, _), ChunkEntry::Unique(bx, _)) if ax == bx => a,
-                        _ => return None,
-                    }
-                }
-            }
-        };
-        match candidate {
-            ChunkEntry::Unique(chunk_id, _) => Some(chunk_id),
-            ChunkEntry::Ambiguous(_) => None,
-        }
-    }
-
-    fn longest_prefix_match(&self, resolved_path: &str) -> Option<ChunkEntry> {
-        // Walk `/`-bounded ancestors of `resolved_path` longest-first.
-        // A by_dir_prefix entry `K` matches iff `resolved_path == "<K>/<rest>"`.
-        let mut end = resolved_path.rfind('/')?;
-        loop {
-            if let Some(entry) = self.by_dir_prefix.get(&resolved_path[..end]) {
-                return Some(*entry);
-            }
-            end = resolved_path[..end].rfind('/')?;
-        }
-    }
-}
-
-fn insert_candidate(
-    by_exact: &mut HashMap<String, ChunkEntry>,
-    by_dir_prefix: &mut HashMap<String, ChunkEntry>,
-    chunk_id: ChunkId,
-    name: &str,
-) {
-    let match_len = name.len();
-    let exact_key = format!("{name}.js");
-    by_exact
-        .entry(exact_key)
-        .and_modify(|e| e.merge(chunk_id, match_len))
-        .or_insert(ChunkEntry::Unique(chunk_id, match_len));
-    by_dir_prefix
-        .entry(name.to_string())
-        .and_modify(|e| e.merge(chunk_id, match_len))
-        .or_insert(ChunkEntry::Unique(chunk_id, match_len));
-}
-
-/// Replacement import decl shapes shared by the wave dispatchers and
-/// lowering's construction-time vendor imports; one single-specifier
-/// `ImportDecl` per value so both application sites emit identical AST.
-pub enum DeferredImport {
-    /// `import * as <local> from "<source>"`
-    Namespace { source: String, local: String },
-    /// `import <local> from "<source>"`
-    Default { source: String, local: String },
-    /// `import { <upstream_export> as <local> } from "<source>"`,
-    /// or `import { <name> } from "<source>"` when local == upstream.
-    Named {
-        source: String,
-        local: String,
-        upstream_export: String,
-    },
-}
-
-impl DeferredImport {
-    pub fn into_module_item(self) -> ModuleItem {
-        let (source, specifier) = match self {
-            DeferredImport::Namespace { source, local } => (
-                source,
-                ImportSpecifier::Namespace(ImportStarAsSpecifier {
-                    span: DUMMY_SP,
-                    local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
-                }),
-            ),
-            DeferredImport::Default { source, local } => (
-                source,
-                ImportSpecifier::Default(ImportDefaultSpecifier {
-                    span: DUMMY_SP,
-                    local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
-                }),
-            ),
-            DeferredImport::Named {
-                source,
-                local,
-                upstream_export,
-            } => (
-                source,
-                js_ast::named_import_specifier(
-                    Ident::new_no_ctxt(local.into(), DUMMY_SP),
-                    &upstream_export,
-                ),
-            ),
-        };
-        js_ast::import_decl_module_item(vec![specifier], &source)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum IdentRewriteTarget {
-    /// kind=member: rewrite `<local>` references to `<namespace>.<upstream_export>`.
-    Member {
-        namespace: String,
-        upstream_export: String,
-        chunk_id: ChunkId,
-        chunk_export: String,
-    },
-    /// kind=named auto-rename: rewrite `<local>` references to a bare
-    /// `<upstream_export>` identifier (matching the new no-alias import).
-    Rename {
-        upstream_export: String,
-        chunk_id: ChunkId,
-        chunk_export: String,
-    },
-}
-
-/// Rewrites references to a partial-swap import local into the
-/// replacement facade access. `bindings` is keyed by the import
-/// local's hygiene-preserving `Id` (`(atom, SyntaxContext)`), captured
-/// from the actual binding `Ident` at construction. The module here has
-/// been through SWC's `resolver` pass (see
-/// `js_ast::parse_and_resolve`), so `ident.to_id()` is the canonical
-/// binding identity. Keying on `Id` (rather than the bare textual
-/// symbol) ensures a same-named binding in a nested scope — a function
-/// parameter, a shadowing `const`/`let`, a `catch` binding — is left
-/// untouched, since it carries a different `SyntaxContext`.
-pub struct PartialSwapIdentRewriter<'a> {
-    pub bindings: &'a BTreeMap<Id, IdentRewriteTarget>,
-    pub references_by_symbol: &'a mut BTreeMap<(ChunkId, String), usize>,
-}
-
-impl VisitMut for PartialSwapIdentRewriter<'_> {
-    fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {
-        if local_namespace_iife_target(call)
-            .is_some_and(|target| self.bindings.contains_key(&target))
-        {
-            // Preserve TS namespace/enum initializer arguments such as
-            // `Sa || (Sa = {})`. The strip pass recognizes that shape as
-            // a local mutation island and can then drop the old vendor
-            // implementation. Rewriting the read side first would turn it
-            // into `<facade>.Enum || (Sa = {})`, making it look like a hard
-            // residual side effect and potentially mutating the replacement
-            // facade.
-            if let Callee::Expr(callee) = &mut call.callee {
-                callee.visit_mut_with(self);
-            }
-            for arg in call.args.iter_mut().skip(1) {
-                arg.visit_mut_with(self);
-            }
-            return;
-        }
-
-        call.visit_mut_children_with(self);
-    }
-
-    fn visit_mut_expr(&mut self, expr: &mut Expr) {
-        // Recurse first so nested matches (e.g., the obj of a member
-        // expression, the callee of a call) are rewritten before we
-        // inspect this node.
-        expr.visit_mut_children_with(self);
-        let Expr::Ident(ident) = expr else {
-            return;
-        };
-        let Some(target) = self.bindings.get(&ident.to_id()) else {
-            return;
-        };
-        let (chunk_id, chunk_export) = match target {
-            IdentRewriteTarget::Member {
-                namespace,
-                upstream_export,
-                chunk_id,
-                chunk_export,
-            } => {
-                *expr = Expr::Member(MemberExpr {
-                    span: DUMMY_SP,
-                    obj: Box::new(Expr::Ident(Ident::new_no_ctxt(
-                        namespace.clone().into(),
-                        DUMMY_SP,
-                    ))),
-                    prop: member_property(upstream_export),
-                });
-                (*chunk_id, chunk_export)
-            }
-            IdentRewriteTarget::Rename {
-                upstream_export,
-                chunk_id,
-                chunk_export,
-            } => {
-                *expr = Expr::Ident(Ident::new_no_ctxt(upstream_export.clone().into(), DUMMY_SP));
-                (*chunk_id, chunk_export)
-            }
-        };
-        *self
-            .references_by_symbol
-            .entry((chunk_id, chunk_export.clone()))
-            .or_insert(0) += 1;
-    }
-}
-
 /// `export { <orig> as <exported> } from "<source>"` (alias omitted when
 /// the names match).
 fn make_named_reexport(source: &str, orig: &str, exported: &str) -> ModuleItem {
-    let exported_name = (orig != exported).then(|| module_export_name_node(exported));
-    ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
-        span: DUMMY_SP,
-        specifiers: vec![ExportSpecifier::Named(ExportNamedSpecifier {
-            span: DUMMY_SP,
-            orig: module_export_name_node(orig),
-            exported: exported_name,
-            is_type_only: false,
-        })],
-        src: Some(Box::new(Str {
-            span: DUMMY_SP,
-            value: source.into(),
-            raw: None,
-        })),
-        type_only: false,
-        with: None,
-    }))
+    named_export_module_item(
+        vec![named_export_specifier(
+            module_export_name_node(orig),
+            (orig != exported).then(|| module_export_name_node(exported)),
+        )],
+        Some(source),
+    )
 }
 
 /// `new URL("<source>", import.meta.url)` — the pass-through rewriter's
@@ -1027,20 +295,13 @@ fn new_url_expr(source: &str) -> Expr {
 
 /// `export * as <exported> from "<source>"`.
 fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
-    ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
-        span: DUMMY_SP,
-        specifiers: vec![ExportSpecifier::Namespace(ExportNamespaceSpecifier {
+    named_export_module_item(
+        vec![ExportSpecifier::Namespace(ExportNamespaceSpecifier {
             span: DUMMY_SP,
             name: module_export_name_node(exported),
         })],
-        src: Some(Box::new(Str {
-            span: DUMMY_SP,
-            value: source.into(),
-            raw: None,
-        })),
-        type_only: false,
-        with: None,
-    }))
+        Some(source),
+    )
 }
 
 /// Post-strip cross-chunk soundness gate for partial vendor swaps.
@@ -1234,6 +495,8 @@ fn check_partial_swap_consumer_decl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use swc_ecma_visit::VisitMutWith;
     use artifact::{
         ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
         JsChunk, JsFile,
@@ -1475,65 +738,5 @@ export { b as beta };
                 })
             })
             .unwrap_or_default()
-    }
-
-    fn chunk_table_with(names: &[&str]) -> ChunkTable {
-        let mut t = ChunkTable::default();
-        for n in names {
-            t.intern((*n).to_string());
-        }
-        t
-    }
-
-    #[test]
-    fn materialized_index_resolves_simple_name() {
-        let table = chunk_table_with(&["app", "vendor"]);
-        let index = MaterializedOutputChunkIndex::build(&table);
-        assert_eq!(
-            index.lookup("vendor.js"),
-            Some(table.get("vendor").unwrap())
-        );
-        assert_eq!(
-            index.lookup("vendor/entry.js"),
-            Some(table.get("vendor").unwrap())
-        );
-        assert_eq!(
-            index.lookup("app/entry.js"),
-            Some(table.get("app").unwrap())
-        );
-        assert_eq!(index.lookup("missing.js"), None);
-    }
-
-    #[test]
-    fn materialized_index_prefers_longer_prefix() {
-        // Chunk "a/b" should win over "a" for path "a/b/x.js" because
-        // match_len(3) > match_len(1).
-        let table = chunk_table_with(&["a", "a/b"]);
-        let index = MaterializedOutputChunkIndex::build(&table);
-        assert_eq!(index.lookup("a/b/x.js"), Some(table.get("a/b").unwrap()));
-        assert_eq!(index.lookup("a/x.js"), Some(table.get("a").unwrap()));
-    }
-
-    #[test]
-    fn materialized_index_stripped_form_resolves() {
-        // Chunk name "static/vendor" exposes stripped form "vendor"; a
-        // path like "vendor.js" should resolve to that chunk.
-        let table = chunk_table_with(&["static/vendor"]);
-        let index = MaterializedOutputChunkIndex::build(&table);
-        let target = table.get("static/vendor").unwrap();
-        assert_eq!(index.lookup("static/vendor.js"), Some(target));
-        assert_eq!(index.lookup("vendor.js"), Some(target));
-        assert_eq!(index.lookup("vendor/foo.js"), Some(target));
-    }
-
-    #[test]
-    fn materialized_index_ambiguous_returns_none() {
-        // Both chunk "vendor" (exact name) and chunk "static/vendor"
-        // (stripped form) match path "vendor.js" with match_len=6 →
-        // ambiguous.
-        let table = chunk_table_with(&["vendor", "static/vendor"]);
-        let index = MaterializedOutputChunkIndex::build(&table);
-        assert_eq!(index.lookup("vendor.js"), None);
-        assert_eq!(index.lookup("vendor/foo.js"), None);
     }
 }

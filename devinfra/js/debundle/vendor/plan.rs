@@ -52,12 +52,9 @@ use crate::wrappers::{
     generate_named_from_json_default_wrapper, generate_named_from_module_default_wrapper,
     plan_bundled_partial_swap_assets, set_diff, wrapper_output_path,
 };
-use crate::{
-    MaterializedOutputChunkIndex, collect_and_validate_boundary_mapping,
-    collect_default_export_object_keys, collect_exported_names, module_has_export_star,
-    read_installed_package_metadata, resolve_package_subpath, resolve_partial_swap_import_target,
-    verified_default_alias_export_names,
-};
+use crate::{MaterializedOutputChunkIndex, resolve_partial_swap_import_target};
+use crate::export_surface::{collect_and_validate_boundary_mapping, collect_default_export_object_keys, collect_exported_names, module_has_export_star, verified_default_alias_export_names};
+use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
 
 #[derive(Debug, Clone)]
 pub struct VendorPlanOptions<'a> {

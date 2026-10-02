@@ -16,7 +16,7 @@ use js_ast::{ParsedJsModule, is_binding_identifier};
 use spec::{BundledPartialSwapPackage, PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};
 
 use crate::manifests::PartialSwapSymbolResolution;
-use crate::{read_installed_package_metadata, resolve_package_subpath};
+use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
 
 /// Parse the vendor map key `<chunk_name>.js` into the chunk name.
 pub(crate) fn vendor_chunk_name(chunk_path: &str, stage: &str) -> Result<String> {

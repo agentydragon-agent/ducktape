@@ -11,10 +11,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use artifact::ChunkId;
-use js_ast::is_binding_identifier;
-use swc_ecma_ast::Id;
+use js_ast::{is_binding_identifier, member_property};
+use swc_common::DUMMY_SP;
+use swc_ecma_ast::*;
+use swc_ecma_visit::{VisitMut, VisitMutWith};
+use analysis::local_namespace_iife_target;
 
-use crate::{DeferredImport, IdentRewriteTarget, VendorImportAction};
+use crate::VendorImportAction;
 
 #[derive(Default)]
 pub struct VendorImportRewrites {
@@ -235,5 +238,156 @@ mod tests {
         assert!(
             matches!(&rewrites.body_rewrites[&local("alias")], IdentRewriteTarget::Rename { upstream_export, .. } if upstream_export == "value")
         );
+    }
+}
+
+/// Replacement import decl shapes shared by the wave dispatchers and
+/// lowering's construction-time vendor imports; one single-specifier
+/// `ImportDecl` per value so both application sites emit identical AST.
+pub enum DeferredImport {
+    /// `import * as <local> from "<source>"`
+    Namespace { source: String, local: String },
+    /// `import <local> from "<source>"`
+    Default { source: String, local: String },
+    /// `import { <upstream_export> as <local> } from "<source>"`,
+    /// or `import { <name> } from "<source>"` when local == upstream.
+    Named {
+        source: String,
+        local: String,
+        upstream_export: String,
+    },
+}
+
+impl DeferredImport {
+    pub fn into_module_item(self) -> ModuleItem {
+        let (source, specifier) = match self {
+            DeferredImport::Namespace { source, local } => (
+                source,
+                ImportSpecifier::Namespace(ImportStarAsSpecifier {
+                    span: DUMMY_SP,
+                    local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                }),
+            ),
+            DeferredImport::Default { source, local } => (
+                source,
+                ImportSpecifier::Default(ImportDefaultSpecifier {
+                    span: DUMMY_SP,
+                    local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                }),
+            ),
+            DeferredImport::Named {
+                source,
+                local,
+                upstream_export,
+            } => (
+                source,
+                js_ast::named_import_specifier(
+                    Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                    &upstream_export,
+                ),
+            ),
+        };
+        js_ast::import_decl_module_item(vec![specifier], &source)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum IdentRewriteTarget {
+    /// kind=member: rewrite `<local>` references to `<namespace>.<upstream_export>`.
+    Member {
+        namespace: String,
+        upstream_export: String,
+        chunk_id: ChunkId,
+        chunk_export: String,
+    },
+    /// kind=named auto-rename: rewrite `<local>` references to a bare
+    /// `<upstream_export>` identifier (matching the new no-alias import).
+    Rename {
+        upstream_export: String,
+        chunk_id: ChunkId,
+        chunk_export: String,
+    },
+}
+
+/// Rewrites references to a partial-swap import local into the
+/// replacement facade access. `bindings` is keyed by the import
+/// local's hygiene-preserving `Id` (`(atom, SyntaxContext)`), captured
+/// from the actual binding `Ident` at construction. The module here has
+/// been through SWC's `resolver` pass (see
+/// `js_ast::parse_and_resolve`), so `ident.to_id()` is the canonical
+/// binding identity. Keying on `Id` (rather than the bare textual
+/// symbol) ensures a same-named binding in a nested scope — a function
+/// parameter, a shadowing `const`/`let`, a `catch` binding — is left
+/// untouched, since it carries a different `SyntaxContext`.
+pub struct PartialSwapIdentRewriter<'a> {
+    pub bindings: &'a BTreeMap<Id, IdentRewriteTarget>,
+    pub references_by_symbol: &'a mut BTreeMap<(ChunkId, String), usize>,
+}
+
+impl VisitMut for PartialSwapIdentRewriter<'_> {
+    fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {
+        if local_namespace_iife_target(call)
+            .is_some_and(|target| self.bindings.contains_key(&target))
+        {
+            // Preserve TS namespace/enum initializer arguments such as
+            // `Sa || (Sa = {})`. The strip pass recognizes that shape as
+            // a local mutation island and can then drop the old vendor
+            // implementation. Rewriting the read side first would turn it
+            // into `<facade>.Enum || (Sa = {})`, making it look like a hard
+            // residual side effect and potentially mutating the replacement
+            // facade.
+            if let Callee::Expr(callee) = &mut call.callee {
+                callee.visit_mut_with(self);
+            }
+            for arg in call.args.iter_mut().skip(1) {
+                arg.visit_mut_with(self);
+            }
+            return;
+        }
+
+        call.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_expr(&mut self, expr: &mut Expr) {
+        // Recurse first so nested matches (e.g., the obj of a member
+        // expression, the callee of a call) are rewritten before we
+        // inspect this node.
+        expr.visit_mut_children_with(self);
+        let Expr::Ident(ident) = expr else {
+            return;
+        };
+        let Some(target) = self.bindings.get(&ident.to_id()) else {
+            return;
+        };
+        let (chunk_id, chunk_export) = match target {
+            IdentRewriteTarget::Member {
+                namespace,
+                upstream_export,
+                chunk_id,
+                chunk_export,
+            } => {
+                *expr = Expr::Member(MemberExpr {
+                    span: DUMMY_SP,
+                    obj: Box::new(Expr::Ident(Ident::new_no_ctxt(
+                        namespace.clone().into(),
+                        DUMMY_SP,
+                    ))),
+                    prop: member_property(upstream_export),
+                });
+                (*chunk_id, chunk_export)
+            }
+            IdentRewriteTarget::Rename {
+                upstream_export,
+                chunk_id,
+                chunk_export,
+            } => {
+                *expr = Expr::Ident(Ident::new_no_ctxt(upstream_export.clone().into(), DUMMY_SP));
+                (*chunk_id, chunk_export)
+            }
+        };
+        *self
+            .references_by_symbol
+            .entry((chunk_id, chunk_export.clone()))
+            .or_insert(0) += 1;
     }
 }
