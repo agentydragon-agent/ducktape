@@ -270,13 +270,6 @@ confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
   `path`, while `spec::is_residual_module_path`, `spec_stats` and the CLI derive
   it from the `residual/` prefix. Possibly intentional (authoring tree versus
   materialized), but undocumented.
-- **Two source-import resolvers can pick different entry files.** Status:
-  reported. `ArtifactSourceImportResolver::resolve` goes through
-  `get_chunk_entry_path`, which falls back from `chunk.entry_file` to the analysis
-  entry file, then the first `Entry` or `Runtime` file, then the first file;
-  `ArtifactIndexes::resolve_source_path_reference` reads only `entry_files`, with
-  no fallback. They disagree for a chunk whose `entry_file` is empty or missing
-  from `files`. Compare the fallbacks before unifying them.
 - **CLI papercuts.** Status: reported. `gate list` and `gate cut` require
   `--graph` even with `--cycles`, which only needs it to derive a default path;
   `scc --cycles-only --singletons-only` silently returns nothing (no
