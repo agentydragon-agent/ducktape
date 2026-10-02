@@ -44,7 +44,12 @@ from cluster.validation.image_automation import (
     check_no_flow_mappings_where_flux_writes,
 )
 from cluster.validation.k8s import RbacRoleRef
-from cluster.validation.kustomize import KustomizeBuildResult, parse_kustomize_file, run_kustomize_build
+from cluster.validation.kustomize import (
+    KustomizeBuildResult,
+    flux_generated_kustomization,
+    parse_kustomize_file,
+    run_kustomize_build,
+)
 
 
 def _local_flux_kust_names(parsed: ParsedCluster, repo_root: Path) -> set[str]:
@@ -479,8 +484,12 @@ def agent_permissions(cluster: ParsedCluster, repo_root: Path, k8s_dir: Path, ge
     # Active, rendered resources only. Bootstrap roots are not children of the
     # generated Flux graph; build them too rather than guessing their labels.
     resources = [resource for group in cluster.flux_kust_resources(repo_root).values() for resource in group]
-    for path in ("flux/flux-system", "flux/ducktape-flux"):
-        bootstrap = asyncio.run(run_kustomize_build(parse_kustomize_file(k8s_dir / path / "kustomization.yaml")))
+    bootstrap_roots = (
+        parse_kustomize_file(k8s_dir / "flux/flux-system/kustomization.yaml"),
+        flux_generated_kustomization(k8s_dir / "flux/ducktape-flux"),
+    )
+    for root in bootstrap_roots:
+        bootstrap = asyncio.run(run_kustomize_build(root))
         resources.extend(bootstrap.resources)
     policy_name = "generate-agent-diagnostics-readers"
     assert any(r.kind == "ClusterPolicy" and r.name == policy_name for r in resources)
@@ -570,7 +579,10 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
 
 def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
     rbac, config = agent_permissions
-    profiles = {name: rbac.managed(config, name, namespace="agentplane-staging") for name in ("public-coder", "finance-agent", "haku")}
+    profiles = {
+        name: rbac.managed(config, name, namespace="agentplane-staging")
+        for name in ("public-coder", "finance-agent", "haku")
+    }
     profiles.update(
         {
             "public-static": rbac.identity("Group", "haku:access-profile:public-coder"),
