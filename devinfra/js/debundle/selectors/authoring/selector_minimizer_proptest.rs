@@ -361,8 +361,16 @@ fn item_strategy(slot: usize) -> impl Strategy<Value = GenItem> {
     prop_oneof![3 => single, 1 => group]
 }
 
+fn ci_config() -> ProptestConfig {
+    let mut config = ProptestConfig::default();
+    if std::env::var_os("PROPTEST_CASES").is_none() {
+        config.cases = 96;
+    }
+    config
+}
+
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 96, ..ProptestConfig::default() })]
+    #![proptest_config(ci_config())]
 
     #[test]
     fn minimized_selector_uniquely_matches_target(
