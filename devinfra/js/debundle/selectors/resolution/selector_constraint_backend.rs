@@ -1251,14 +1251,18 @@ impl CompiledSelectorProblemBuilder {
 
     fn ensure_full_domain_contains(&mut self, domain: VariableDomain, value: BackendValueId) {
         let values = self.full_domains.get_mut(domain);
-        let Ok(index) = usize::try_from(value.0) else {
-            return;
-        };
-        if index < values.len() {
+        // The compiler preloads dense domains, but the public builder also
+        // permits interning values before adding tuples. An ID is not then an
+        // index into this subset. Preserve the dense O(1) path without silently
+        // dropping valid IDs in sparse or out-of-order domains.
+        let index = usize::try_from(value.0).expect("validated nonnegative backend value ID");
+        if values.get(index) == Some(&value) {
             return;
         }
-        if index == values.len() {
+        if values.last().is_none_or(|last| *last < value) {
             values.push(value);
+        } else if let Err(index) = values.binary_search(&value) {
+            values.insert(index, value);
         }
     }
 
@@ -1576,4 +1580,26 @@ mod tests {
         }
         assert_eq!(model.variable_domain_values(variable).unwrap(), ids);
     }
+
+    #[test]
+    fn encoded_rows_fill_holes_without_duplicates() {
+        let mut model = CompiledSelectorProblemBuilder::default();
+        let ids: Vec<_> = ["a", "b", "c"]
+            .into_iter()
+            .map(|value| model.intern_string(value).unwrap())
+            .collect();
+        model.add_full_domain_values(
+            VariableDomain::String,
+            ["a", "c"].map(|value| ConstraintValue::String(value.to_string())),
+        ).unwrap();
+        let left = model.add_variable(VariableDomain::String, None);
+        let right = model.add_variable(VariableDomain::String, None);
+        model.intern_encoded_allowed_binary_row_set(
+            [left, right],
+            [VariableDomain::String; 2],
+            vec![(ids[1], ids[2]), (ids[1], ids[0])],
+        ).unwrap();
+        assert_eq!(model.variable_domain_values(left).unwrap(), ids);
+    }
+
 }
