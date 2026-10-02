@@ -68,9 +68,8 @@ enum GateCommand {
     Cut(GateCutArgs),
 }
 
-/// Shared args: paths to `owner_graph.json` (always written; carries
-/// the recomputable per-edge evidence) and `cycles.json` (the trimmed
-/// blocking-SCC wire shape).
+/// Paths for reading blocking SCCs. List/cut need only the cycles report;
+/// describe additionally requires the graph to recompute per-edge evidence.
 ///
 /// `cycles.json` defaults to the sibling of `--graph` (the standard
 /// per-chunk report layout). Override via `--cycles` if the spec author
@@ -78,8 +77,12 @@ enum GateCommand {
 #[derive(Debug, Clone, ClapArgs)]
 pub struct GateCommonArgs {
     /// Path to `owner_graph.json` (debundler analysis output).
-    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
-    pub owner_graph_path: PathBuf,
+    #[arg(
+        long = "graph",
+        env = "DEBUNDLE_GRAPH",
+        required_unless_present = "cycles_path"
+    )]
+    pub owner_graph_path: Option<PathBuf>,
 
     /// Override the default `cycles.json` location. Defaults to the
     /// sibling of `--graph`.
@@ -88,15 +91,18 @@ pub struct GateCommonArgs {
 }
 
 impl GateCommonArgs {
-    pub fn resolved_cycles_path(&self) -> PathBuf {
-        if let Some(p) = &self.cycles_path {
-            return p.clone();
+    pub fn resolved_cycles_path(&self) -> Result<PathBuf> {
+        if let Some(path) = &self.cycles_path {
+            return Ok(path.clone());
         }
-        let parent = self
+        let graph = self
             .owner_graph_path
+            .as_deref()
+            .context("--graph or --cycles is required")?;
+        Ok(graph
             .parent()
-            .unwrap_or_else(|| Path::new("."));
-        parent.join(output_layout::CYCLES_REPORT)
+            .unwrap_or_else(|| Path::new("."))
+            .join(output_layout::CYCLES_REPORT))
     }
 }
 
@@ -113,6 +119,7 @@ pub struct GateListArgs {
 #[derive(Debug, ClapArgs)]
 pub struct GateDescribeArgs {
     /// Blocking-SCC id (zero-based index into `cycles.json`).
+    #[arg(requires = "owner_graph_path")]
     pub id: usize,
 
     #[command(flatten)]
@@ -180,7 +187,7 @@ pub fn run_gate_cli(args: GateArgs) -> Result<()> {
 }
 
 fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
-    let path = common.resolved_cycles_path();
+    let path = common.resolved_cycles_path()?;
     // The pipeline writes `cycles.json` only when the gate rejects, so
     // its absence is the clean state: zero blocking SCCs. Returning an
     // empty list (rather than a read error) makes `gate list` on a
@@ -238,7 +245,12 @@ fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEnt
 fn run_describe(args: GateDescribeArgs) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
-    let graph = crate::load_owner_graph_report(&args.common.owner_graph_path)?;
+    let graph = crate::load_owner_graph_report(
+        args.common
+            .owner_graph_path
+            .as_deref()
+            .context("gate describe requires --graph")?,
+    )?;
 
     let mut evidence = recompute_evidence(&graph, &entry.modules)?;
     if let Some(binding) = &args.binding {
@@ -806,11 +818,11 @@ mod tests {
     #[test]
     fn cycles_path_defaults_to_graph_sibling() {
         let common = GateCommonArgs {
-            owner_graph_path: PathBuf::from("/tmp/reports/static/app/owner_graph.json"),
+            owner_graph_path: Some(PathBuf::from("/tmp/reports/static/app/owner_graph.json")),
             cycles_path: None,
         };
         assert_eq!(
-            common.resolved_cycles_path(),
+            common.resolved_cycles_path().unwrap(),
             PathBuf::from("/tmp/reports/static/app/cycles.json")
         );
     }
@@ -818,11 +830,11 @@ mod tests {
     #[test]
     fn cycles_path_override_wins() {
         let common = GateCommonArgs {
-            owner_graph_path: PathBuf::from("/tmp/reports/static/app/owner_graph.json"),
+            owner_graph_path: Some(PathBuf::from("/tmp/reports/static/app/owner_graph.json")),
             cycles_path: Some(PathBuf::from("/other/cycles.json")),
         };
         assert_eq!(
-            common.resolved_cycles_path(),
+            common.resolved_cycles_path().unwrap(),
             PathBuf::from("/other/cycles.json")
         );
     }
