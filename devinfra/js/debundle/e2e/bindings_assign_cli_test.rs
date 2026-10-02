@@ -28,6 +28,10 @@ fn list_filters_cover_members_and_source_match_bindings() {
     assert_eq!(all["bindings"].as_array().unwrap().len(), 3);
     assert_eq!(all["bindings"][0]["minified"], "a");
     assert_eq!(all["bindings"][1]["name"], "Beta");
+    assert_eq!(all["bindings"][0]["kind"], "minified");
+    assert!(all["bindings"][0].get("name").is_none());
+    assert_eq!(all["bindings"][1]["kind"], "readable");
+    assert_eq!(all["bindings"][1]["minified"], "b");
     let orphan = fixture.json(&["bindings", "list", "--orphan"]);
     assert_eq!(orphan["bindings"].as_array().unwrap().len(), 1);
     assert_eq!(orphan["bindings"][0]["minified"], "c");
@@ -59,6 +63,9 @@ fn rename_members_and_source_match_shorthand_rekeys_annotations() {
         let applied = fixture.json(&["bindings", "rename", "a", "Readable"]);
         assert_eq!(applied["action"], "applied");
         assert_eq!(applied["new_readable"], "Readable");
+        let renamed = fs::read(&file).unwrap();
+        assert_eq!(fixture.json(&["bindings", "rename", "a", "Readable"])["action"], "unchanged");
+        assert_eq!(fs::read(&file).unwrap(), renamed);
         let doc = module(&fixture, "m.yaml");
         if selector.starts_with("members") {
             assert_eq!(doc["members"][0]["name"], "Readable");
@@ -140,6 +147,15 @@ fn positional_and_json_batches_create_one_canonical_destination() {
         } else {
             vec!["bindings", "assign", "a:UI/Widgets:Alpha", "b:ui/widgets"]
         };
+        let before: Vec<_> = ["src/a.yaml", "src/b.yaml"].into_iter()
+            .map(|path| (path, fs::read(fixture.modules.join(path)).unwrap())).collect();
+        let mut preview = args.clone();
+        preview.push("--dry-run");
+        assert_eq!(fixture.json(&preview)["action"], "dry-run");
+        for (path, bytes) in before {
+            assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
+        }
+        assert!(!fixture.modules.join("ui").exists());
         assert_eq!(fixture.json(&args)["moves_applied"], 2);
         for path in ["src/a.yaml", "src/b.yaml", "UI"] {
             assert!(!fixture.modules.join(path).exists());
@@ -199,12 +215,13 @@ fn positional_readable_name_cannot_contain_a_colon() {
 #[test]
 fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modules() {
     let fixture = GraphFixture::new(
-        "const a = 1; const b = 2; const c = 3; const d = 4; console.log(a + b + c + d);",
+        "const a = 1; const b = 2; const c = 3; const d = 4; const e = 5; console.log(a + b + c + d + e);",
         &[
             (
                 "home.yaml",
                 "members: [{selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}, {selector: {binding: {name: c}}}, {selector: {binding: {name: d}}}]",
             ),
+            ("dest.yaml", "members: [{selector: {binding: {name: e}}}]"),
             (
                 "empty.yaml",
                 "# untouched default-only module\nmembers: []\nannotations: {}\n",
@@ -214,10 +231,10 @@ fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modu
     let empty = fixture.modules.join("empty.yaml");
     let before = fs::read(&empty).unwrap();
     fixture.json(&["bindings", "assign", "a:dest", "c:dest"]);
-    for (path, names) in [("home.yaml", ["b", "d"]), ("dest.yaml", ["a", "c"])] {
+    for (path, names) in [("home.yaml", vec!["b", "d"]), ("dest.yaml", vec!["e", "a", "c"])] {
         let doc = module(&fixture, path);
         let members = doc["members"].as_sequence().unwrap();
-        assert_eq!(members.len(), 2);
+        assert_eq!(members.len(), names.len());
         for (member, name) in members.iter().zip(names) {
             assert_eq!(member["selector"]["binding"]["name"], name);
         }
@@ -227,5 +244,19 @@ fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modu
     assert_eq!(doc["members"].as_sequence().unwrap().len(), 1);
     assert_eq!(doc["members"][0]["selector"]["binding"]["name"], "d");
     assert_eq!(fs::read(&empty).unwrap(), before);
-    fixture.assert_runs("10\n");
+    fixture.assert_runs("15\n");
+}
+
+#[test]
+fn rename_no_verify_explicitly_bypasses_collision_checks() {
+    let fixture = GraphFixture::acyclic_pair();
+    fixture.assert_rejected_unchanged(&["bindings", "rename", "alpha", "beta"], &["name collision"]);
+    let report = fixture.json(&["bindings", "rename", "alpha", "beta", "--no-verify"]);
+    assert_eq!(report["new_readable"], "beta");
+    assert_eq!(report["gate"], "skipped");
+    assert_eq!(module(&fixture, "a.yaml")["members"][0]["name"], "beta");
+    // Restore a valid spec before verifying emitted behavior: the bypass is
+    // permission to write a conflicting spec, not a promise it will compile.
+    fixture.json(&["bindings", "rename", "alpha", "Alpha"]);
+    fixture.assert_runs("2\n");
 }

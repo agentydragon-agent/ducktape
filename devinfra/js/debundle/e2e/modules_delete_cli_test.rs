@@ -134,7 +134,7 @@ fn dry_run_prints_verdict_without_deleting() {
         "delete",
         "--modules",
         root.to_str().unwrap(),
-        "ui/empty.yaml",
+        "ui/empty",
         "--dry-run",
         "--format",
         "text",

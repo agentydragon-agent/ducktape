@@ -1,458 +1,109 @@
-//! End-to-end check of `cli::module::merge_modules` against a tempdir
-//! fixture. Hits the public Rust function directly so the test does
-//! not depend on the built `debundle` binary.
+//! Real JS/spec → merge CLI → rewritten spec → emitted Node behavior.
 
 use std::fs;
-use std::path::Path;
 
-use debundle_cli::module::merge_modules;
-use debundle_e2e_support::{run_debundle, write_text_file};
+use debundle_e2e_support::{GraphFixture, write_text_file};
 use serde_yaml::Value;
-use tempfile::TempDir;
-
-fn member_names(doc: &Value) -> Vec<String> {
-    doc["members"]
-        .as_sequence()
-        .expect("members sequence")
-        .iter()
-        .map(|m| {
-            m["selector"]["binding"]["name"]
-                .as_str()
-                .expect("name")
-                .to_string()
-        })
-        .collect()
-}
 
 #[test]
-fn merges_two_sources_into_target_and_deletes_sources() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-
-    write_text_file(
-        &root.join("ui/target.yaml"),
-        "members:\n  - selector: { binding: { name: alpha } }\n",
-    );
-    write_text_file(
-        &root.join("ui/src1.yaml"),
-        "members:\n  - selector: { binding: { name: bravo } }\n",
-    );
-    write_text_file(
-        &root.join("ui/src2.yaml"),
-        "members:\n  - selector: { binding: { name: charlie } }\n",
-    );
-
-    let summary = merge_modules(
-        root,
-        Path::new("ui/target.yaml"),
-        &[Path::new("ui/src1.yaml"), Path::new("ui/src2.yaml")],
-    )
-    .expect("merge succeeds");
-
-    assert_eq!(summary.merged_sources.len(), 2);
-    let line = summary.summary_line();
-    assert!(line.contains("merged 2 source(s) into"), "line={line}");
-    assert!(line.contains("ui/target.yaml"), "line={line}");
-
-    assert!(!root.join("ui/src1.yaml").exists());
-    assert!(!root.join("ui/src2.yaml").exists());
-    assert!(root.join("ui/target.yaml").exists());
-
-    let merged_text = fs::read_to_string(root.join("ui/target.yaml")).unwrap();
-    // Provenance lives in a durable, non-emitting `note:` field, not a
-    // `#` YAML comment the rewriters would drop on the next edit.
-    assert!(
-        !merged_text.contains("# merged from"),
-        "provenance must not be a `#` comment:\n{merged_text}"
-    );
-    let merged: Value = serde_yaml::from_str(&merged_text).unwrap();
-    assert_eq!(
-        merged["note"].as_str(),
-        Some("merged from: ui/src1.yaml, ui/src2.yaml"),
-        "missing provenance note in:\n{merged_text}"
-    );
-    assert_eq!(member_names(&merged), vec!["alpha", "bravo", "charlie"]);
-}
-
-#[test]
-fn duplicate_member_name_across_sources_errors_and_keeps_sources() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-
-    write_text_file(
-        &root.join("target.yaml"),
-        "members:\n  - selector: { binding: { name: keep } }\n",
-    );
-    write_text_file(
-        &root.join("a.yaml"),
-        "members:\n  - selector: { binding: { name: collide } }\n",
-    );
-    write_text_file(
-        &root.join("b.yaml"),
-        "members:\n  - selector: { binding: { name: collide } }\n",
-    );
-
-    let err = merge_modules(
-        root,
-        Path::new("target.yaml"),
-        &[Path::new("a.yaml"), Path::new("b.yaml")],
-    )
-    .expect_err("collision must error");
-    let msg = format!("{err}");
-    assert!(
-        msg.contains("duplicate member name \"collide\""),
-        "msg={msg}"
-    );
-
-    // Sources must remain on disk after a failed merge so the author
-    // can fix the conflict and re-run.
-    assert!(root.join("a.yaml").exists());
-    assert!(root.join("b.yaml").exists());
-}
-
-#[test]
-fn duplicate_member_name_between_member_and_source_match_binding_errors() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-
-    write_text_file(
-        &root.join("target.yaml"),
-        "members:\n  - name: Widget\n    selector: { binding: { name: minifiedWidget } }\n",
-    );
-    write_text_file(
-        &root.join("src.yaml"),
-        "source_matches:\n  - match: 'const selected = makeWidget();'\n    bindings:\n      - local: selected\n        name: Widget\n",
-    );
-
-    let err = merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")])
-        .expect_err("collision must error");
-    let msg = format!("{err}");
-    assert!(
-        msg.contains("duplicate member name \"Widget\""),
-        "msg={msg}"
-    );
-
-    assert!(root.join("src.yaml").exists());
-}
-
-#[test]
-fn modules_merge_new_subcommand_path_works_through_binary() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write_text_file(
-        &root.join("target.yaml"),
-        "members:\n  - selector: { binding: { name: a } }\n",
-    );
-    write_text_file(
-        &root.join("src.yaml"),
-        "members:\n  - selector: { binding: { name: b } }\n",
-    );
-
-    let out = run_debundle(&[
-        "modules",
-        "merge",
-        "--modules",
-        root.to_str().unwrap(),
-        "--target",
-        "target.yaml",
-        "src.yaml",
-        // Skip the gate: this test only exercises the YAML
-        // splice surface, not the realizability gate.
-        "--no-verify",
-    ]);
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(!root.join("src.yaml").exists());
-    let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
-    let doc: Value = serde_yaml::from_str(&merged).unwrap();
-    assert_eq!(member_names(&doc), vec!["a", "b"]);
-}
-
-#[test]
-fn modules_merge_can_create_missing_target_through_binary() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    let src_body = "members:\n  - selector: { binding: { name: a } }\n";
-    write_text_file(&root.join("src.yaml"), src_body);
-
-    let dry_run = run_debundle(&[
-        "modules",
-        "merge",
-        "--modules",
-        root.to_str().unwrap(),
-        "--target",
-        "new/group",
-        "src",
-        "--dry-run",
-        "--no-verify",
-    ]);
-    assert!(
-        dry_run.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&dry_run.stderr)
-    );
-    assert!(
-        String::from_utf8_lossy(&dry_run.stdout).contains("dry-run"),
-        "expected dry-run verdict on stdout, got {:?}",
-        String::from_utf8_lossy(&dry_run.stdout)
-    );
-    assert!(!root.join("new/group.yaml").exists());
-    assert_eq!(fs::read_to_string(root.join("src.yaml")).unwrap(), src_body);
-
-    let out = run_debundle(&[
-        "modules",
-        "merge",
-        "--modules",
-        root.to_str().unwrap(),
-        "--target",
-        "new/group",
-        "src",
-        "--no-verify",
-    ]);
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(!root.join("src.yaml").exists());
-    let merged = fs::read_to_string(root.join("new/group.yaml")).unwrap();
-    let doc: Value = serde_yaml::from_str(&merged).unwrap();
-    assert_eq!(member_names(&doc), vec!["a"]);
-}
-
-#[test]
-fn modules_merge_dry_run_does_not_modify_files() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    let src_body = "members:\n  - selector: { binding: { name: b } }\n";
-    let target_body = "members:\n  - selector: { binding: { name: a } }\n";
-    write_text_file(&root.join("target.yaml"), target_body);
-    write_text_file(&root.join("src.yaml"), src_body);
-
-    let out = run_debundle(&[
-        "modules",
-        "merge",
-        "--modules",
-        root.to_str().unwrap(),
-        "--target",
-        "target.yaml",
-        "src.yaml",
-        "--dry-run",
-        // Skip the gate: this test only exercises the YAML
-        // splice surface.
-        "--no-verify",
-    ]);
-    assert!(out.status.success());
-    assert!(
-        String::from_utf8_lossy(&out.stdout).contains("dry-run"),
-        "expected dry-run verdict on stdout, got {:?}",
-        String::from_utf8_lossy(&out.stdout)
-    );
-    assert!(root.join("src.yaml").exists(), "src must not be deleted");
-    assert_eq!(fs::read_to_string(root.join("src.yaml")).unwrap(), src_body);
-    assert_eq!(
-        fs::read_to_string(root.join("target.yaml")).unwrap(),
-        target_body
-    );
-}
-
-#[test]
-fn merge_carries_source_matches_into_target() {
-    // `source_matches:` entries are claims just like `members:` —
-    // destroying them with the source file silently unclaims their
-    // owners on the next `debundle run`.
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write_text_file(
-        &root.join("target.yaml"),
-        "members:\n  - selector: { binding: { name: a } }\n",
-    );
-    write_text_file(
-        &root.join("src.yaml"),
-        "source_matches:\n  - match: 'const x = 1;'\n    bindings:\n      - local: x\n        name: ExportedX\nmembers: []\n",
-    );
-
-    merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")]).unwrap();
-
-    let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
-    let doc: Value = serde_yaml::from_str(&merged).unwrap();
-    let groups = doc["source_matches"]
-        .as_sequence()
-        .unwrap_or_else(|| panic!("source_matches must be carried into the target: {merged}"));
-    assert_eq!(groups.len(), 1, "merged={merged}");
-    assert_eq!(
-        groups[0]["bindings"][0]["name"].as_str(),
-        Some("ExportedX"),
-        "merged={merged}"
-    );
-}
-
-#[test]
-fn merge_concatenates_module_comments_with_divider() {
-    // README.md § "Comments" promises: `modules merge` concatenates
-    // source-module comments into the target's module-level `comment:`
-    // with a `--- from <source>:` divider.
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write_text_file(
-        &root.join("target.yaml"),
-        "comment: target overview\nmembers:\n  - selector: { binding: { name: a } }\n",
-    );
-    write_text_file(
-        &root.join("src1.yaml"),
-        "comment: src1 notes\nmembers:\n  - selector: { binding: { name: b } }\n",
-    );
-    write_text_file(
-        &root.join("src2.yaml"),
-        "members:\n  - selector: { binding: { name: c } }\n",
-    );
-
-    merge_modules(
-        root,
-        Path::new("target.yaml"),
-        &[Path::new("src1.yaml"), Path::new("src2.yaml")],
-    )
-    .unwrap();
-
-    let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
-    let doc: Value = serde_yaml::from_str(&merged).unwrap();
-    let comment = doc["comment"].as_str().expect("merged comment present");
-    assert!(comment.contains("target overview"), "comment={comment}");
-    assert!(comment.contains("--- from src1.yaml:"), "comment={comment}");
-    assert!(comment.contains("src1 notes"), "comment={comment}");
-    assert!(
-        !comment.contains("src2.yaml"),
-        "comment-less sources add no divider: {comment}"
-    );
-}
-
-#[test]
-fn merge_into_uncommented_target_adopts_source_comment_with_divider() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write_text_file(
-        &root.join("target.yaml"),
-        "members:\n  - selector: { binding: { name: a } }\n",
-    );
-    write_text_file(
-        &root.join("src.yaml"),
-        "comment: src notes\nmembers:\n  - selector: { binding: { name: b } }\n",
-    );
-
-    merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")]).unwrap();
-
-    let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
-    let doc: Value = serde_yaml::from_str(&merged).unwrap();
-    let comment = doc["comment"].as_str().expect("merged comment present");
-    assert!(comment.contains("--- from src.yaml:"), "comment={comment}");
-    assert!(comment.contains("src notes"), "comment={comment}");
-}
-
-#[test]
-fn merge_appends_provenance_to_existing_note() {
-    // `modules merge` composes its `merged from:` provenance with any
-    // existing module-level `note:` rather than clobbering it. The note
-    // is non-emitting scratch metadata that survives rewriter edits.
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write_text_file(
-        &root.join("target.yaml"),
-        "note: hand-authored debt rationale\nmembers:\n  - selector: { binding: { name: a } }\n",
-    );
-    write_text_file(
-        &root.join("src.yaml"),
-        "members:\n  - selector: { binding: { name: b } }\n",
-    );
-
-    merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")]).unwrap();
-
-    let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
-    let doc: Value = serde_yaml::from_str(&merged).unwrap();
-    let note = doc["note"].as_str().expect("merged note present");
-    assert_eq!(
-        note, "hand-authored debt rationale\nmerged from: src.yaml",
-        "merged={merged}"
-    );
-}
-
-#[test]
-fn merge_preview_and_apply_reject_the_same_document_conflicts() {
-    for (target, source, diagnostic) in [
-        (
-            "members: [{selector: {binding: {name: a}}}]\n",
-            "members: [{selector: {binding: {name: a}}}]\n",
-            "duplicate member name",
-        ),
-        (
-            "annotations: {a: {note: first}}\n",
-            "annotations: {a: {note: second}}\n",
-            "conflicting annotation",
-        ),
-    ] {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write_text_file(&root.join("target.yaml"), target);
-        write_text_file(&root.join("source.yaml"), source);
-        for dry_run in [true, false] {
-            let mut args = vec![
-                "modules",
-                "merge",
-                "--modules",
-                root.to_str().unwrap(),
-                "--target",
-                "target",
-                "source",
-                "--no-verify",
-            ];
-            if dry_run {
-                args.push("--dry-run");
-            }
-            let out = run_debundle(&args);
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            assert!(!out.status.success(), "dry_run={dry_run}: {stderr}");
-            assert!(stderr.contains(diagnostic), "dry_run={dry_run}: {stderr}");
-            assert_eq!(
-                fs::read_to_string(root.join("target.yaml")).unwrap(),
-                target
-            );
-            assert_eq!(
-                fs::read_to_string(root.join("source.yaml")).unwrap(),
-                source
-            );
+fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments() {
+    for metadata in ["", "comment: target overview\nnote: existing debt\n"] {
+        let target = format!("{metadata}members: [{{selector: {{binding: {{name: a}}}}}}]\nanonymous_statements: [{{match: 'console.log(\"first\");'}}]");
+        let fixture = GraphFixture::new(
+            "const a = 1; const b = 2; const c = 3; const d = 4; console.log(\"first\"); console.log(\"second\"); console.log(a + b + c + d);",
+            &[
+                ("ui/target.yaml", &target),
+                ("ui/src1.yaml", "comment: source overview\nmembers: [{selector: {binding: {name: b}}}]\nsource_matches: [{match: 'const d = 4;', bindings: [{local: d, name: Delta}]}]\nannotations: {Delta: {note: binding debt}}\nanonymous_statements: [{match: 'console.log(\"second\");'}]"),
+                ("ui/src2.yaml", "members: [{selector: {binding: {name: c}}}]"),
+                ("ui/empty.yaml", "members: []"),
+            ],
+        );
+        let sibling = fixture.modules.join("ui/target.yaml.tmp");
+        write_text_file(&sibling, "unrelated data\n");
+        let paths = ["ui/target.yaml", "ui/src1.yaml", "ui/src2.yaml", "ui/empty.yaml"];
+        let before: Vec<_> = paths.iter().map(|p| fs::read(fixture.modules.join(p)).unwrap()).collect();
+        // Both suffix forms work, including nested paths. Preview never rewrites
+        // the target, deletes sources, or touches someone else's scratch file.
+        let args = ["modules", "merge", "--target", "ui/target", "ui/src1", "ui/src2.yaml", "ui/empty", "--format", "text"];
+        let mut preview = args.to_vec();
+        preview.push("--dry-run");
+        let out = fixture.command(&preview);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("dry-run: would merge 3 source(s)"));
+        for (path, bytes) in paths.iter().zip(before) {
+            assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
         }
+        let out = fixture.command(&args);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("merged 3 source(s) into") && stdout.contains("ui/target.yaml"), "{stdout}");
+        let doc: Value = serde_yaml::from_slice(&fs::read(fixture.modules.join("ui/target.yaml")).unwrap()).unwrap();
+        let names: Vec<_> = doc["members"].as_sequence().unwrap().iter().map(|m| m["selector"]["binding"]["name"].as_str().unwrap()).collect();
+        assert_eq!(names, ["a", "b", "c"]);
+        assert_eq!(doc["source_matches"].as_sequence().unwrap().len(), 1);
+        assert_eq!(doc["source_matches"][0]["bindings"][0]["name"], "Delta");
+        assert_eq!(doc["annotations"]["Delta"]["note"], "binding debt");
+        let statements: Vec<_> = doc["anonymous_statements"].as_sequence().unwrap().iter().map(|s| s["match"].as_str().unwrap()).collect();
+        assert_eq!(statements, ["console.log(\"first\");", "console.log(\"second\");"]);
+        let provenance = "merged from: ui/src1.yaml, ui/src2.yaml, ui/empty.yaml";
+        let note = if metadata.is_empty() { provenance.to_string() } else { format!("existing debt\n{provenance}") };
+        assert_eq!(doc["note"].as_str(), Some(note.as_str()));
+        let comment = doc["comment"].as_str().unwrap();
+        assert_eq!(comment.contains("target overview"), !metadata.is_empty());
+        assert!(comment.contains("--- from ui/src1.yaml:") && comment.contains("source overview"));
+        assert!(!comment.contains("src2.yaml") && !comment.contains("empty.yaml"));
+        assert_eq!(fs::read_to_string(sibling).unwrap(), "unrelated data\n");
+        // Only the target and the preexisting scratch file remain: no leaked
+        // replacement tempfile, and even the empty source records provenance.
+        assert_eq!(fs::read_dir(fixture.modules.join("ui")).unwrap().count(), 2);
+        fixture.assert_runs("first\nsecond\n10\n");
     }
 }
 
 #[test]
-fn merge_does_not_clobber_a_preexisting_temporary_sibling() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write_text_file(&root.join("target.yaml"), "members: []\n");
-    write_text_file(&root.join("source.yaml"), "members: []\n");
-    let sibling = root.join("target.yaml.tmp");
-    write_text_file(&sibling, "unrelated data\n");
-    let output = run_debundle(&[
-        "modules",
-        "merge",
-        "--modules",
-        root.to_str().unwrap(),
-        "--target",
-        "target.yaml",
-        "source.yaml",
-        "--no-verify",
-    ]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(fs::read_to_string(&sibling).unwrap(), "unrelated data\n");
-    assert!(!root.join("source.yaml").exists());
-    let doc: Value =
-        serde_yaml::from_str(&fs::read_to_string(root.join("target.yaml")).unwrap()).unwrap();
-    assert_eq!(doc["note"], "merged from: source.yaml");
-    assert_eq!(fs::read_dir(root).unwrap().count(), 2);
+fn merge_rejects_document_conflicts_before_writing_in_both_modes() {
+    for (target, first, second, diagnostic) in [
+        (
+            "members: [{selector: {binding: {name: a}}}]",
+            "members: [{name: Clash, selector: {binding: {name: b}}}]",
+            "members: [{name: Clash, selector: {binding: {name: c}}}]",
+            "duplicate member name \"Clash\"",
+        ),
+        (
+            "members: [{selector: {binding: {name: a}}}]",
+            "members: [{selector: {binding: {name: a}}}]",
+            "members: []",
+            "duplicate member name \"a\"",
+        ),
+        (
+            "members: [{name: Widget, selector: {binding: {name: a}}}]",
+            "source_matches: [{match: 'const b = 2;', bindings: [{local: b, name: Widget}]}]",
+            "members: []",
+            "duplicate member name \"Widget\"",
+        ),
+        (
+            "members: [{selector: {binding: {name: a}}}]\nannotations: {a: {note: first}}",
+            "members: [{selector: {binding: {name: b}}}]\nannotations: {a: {note: second}}",
+            "members: []",
+            "conflicting annotation",
+        ),
+    ] {
+        let fixture = GraphFixture::new(
+            "const a = 1; const b = 2; const c = 3; console.log(a + b + c);",
+            &[
+                ("target.yaml", "members: [{selector: {binding: {name: a}}}]"),
+                ("first.yaml", "members: [{selector: {binding: {name: b}}}]"),
+                ("second.yaml", "members: [{selector: {binding: {name: c}}}]"),
+            ],
+        );
+        // Start with real graph artifacts, then model an author's conflicting
+        // edits. Invalid claims must not be silently repaired by a merge.
+        for (path, yaml) in [("target.yaml", target), ("first.yaml", first), ("second.yaml", second)] {
+            write_text_file(&fixture.modules.join(path), yaml);
+        }
+        fixture.assert_rejected_unchanged(
+            &["modules", "merge", "--target", "target", "first", "second"],
+            &[diagnostic],
+        );
+    }
 }
