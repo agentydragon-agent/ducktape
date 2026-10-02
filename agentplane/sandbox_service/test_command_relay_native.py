@@ -34,19 +34,29 @@ async def test_admission_and_replay_do_not_wait_for_model_reply(
         assert events.of_kind(observer.seen, "command_admitted") == [receipt]
         confirmations = events.of_kind(observer.seen, "harness_user_message_confirmed")
         assert any(
-            command.command_id in entry.event.harness_user_message_confirmed.origin_command_ids for entry in confirmations
+            command.command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+            for entry in confirmations
         )
 
 
 async def test_stopped_session_is_not_resumed(client: RunnerClient, spec: protocol_pb2.SessionSpec) -> None:
-    async with await client.attach("test-stopped", spec=spec) as observer:
+    observer = await client.attach("test-stopped", spec=spec)
+    try:
         await observer.stop_runner_session("test-stop")
         await observer.until(events.is_kind("harness_exited"))
+        # Stop closes this feed; consume EOF rather than racing it with a Detach write.
+        await observer.drain_until_end()
+    finally:
+        observer.cancel()
     command = command_pb2.Command(command_id="test-no-wake", submit_input=command_pb2.SubmitInput(text="Do not wake"))
     with pytest.raises(RunnerError, match="session is stopped"):
         await admit_running_command(client, "test-stopped", command, after_cursor=0, timeout_s=15)
-    async with await client.attach("test-stopped") as observer:
+    observer = await client.attach("test-stopped")
+    try:
         assert observer.attached.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
+        await observer.drain_until_end()
+    finally:
+        observer.cancel()
     assert all(
         entry.event.command_admitted.command != command for entry in events.of_kind(observer.seen, "command_admitted")
     )

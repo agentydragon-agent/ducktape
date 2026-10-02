@@ -8,12 +8,7 @@ from agentplane.runner.client import RunnerClient, RunnerError
 
 
 async def admit_running_command(
-    client: RunnerClient,
-    session_id: str,
-    command: command_pb2.Command,
-    *,
-    after_cursor: int,
-    timeout_s: float,
+    client: RunnerClient, session_id: str, command: command_pb2.Command, *, after_cursor: int, timeout_s: float
 ) -> event_log_pb2.EventEntry:
     """Return the runner's exact admission receipt, not transport or harness confirmation.
 

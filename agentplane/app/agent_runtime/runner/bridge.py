@@ -178,11 +178,7 @@ class RunnerBridge:
 
     async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> None:
         await admit_running_command(
-            self._runners.client(sandbox),
-            session_id,
-            command,
-            after_cursor=after_cursor,
-            timeout_s=COMMAND_ADMISSION_S,
+            self._runners.client(sandbox), session_id, command, after_cursor=after_cursor, timeout_s=COMMAND_ADMISSION_S
         )
 
     async def _wait_for_admission(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:

@@ -127,7 +127,9 @@ async def test_stopped_attachment_sends_no_command(
         assert runner.requests.empty()
 
 
-async def test_timeout_cancels_attachment(peer: tuple[ControlledRunner, RunnerClient], command: command_pb2.Command) -> None:
+async def test_timeout_cancels_attachment(
+    peer: tuple[ControlledRunner, RunnerClient], command: command_pb2.Command
+) -> None:
     async with asyncio.timeout(8):
         runner, client = peer
         with pytest.raises(TimeoutError):
