@@ -5,17 +5,25 @@ Status: **design decisions and implementation plan, not a shipped service.** Thi
 The first implementation follows Actions; GitHub and automatic lifecycle integration come later.
 Endpoint/tool names below illustrate the intended operations, not an existing wire API.
 
+**Scope revision:** runner sessions, not integration-app Threads, own the destination scope under the
+authenticated ServiceAccount. The [runner directory proposal](runner_directory.md) replaces app Thread
+lookup and runner-to-notification registration; qualified runner/session IDs are the proposed address.
+
 ## Decisions
 
 - **A separate, loosely coupled Agentplane service**, not a component of the integration app.
   It owns subscriptions, inboxes, and notification delivery bookkeeping. The app may be a client
   and provide a UI, but its process and private database tables are not the service interface.
-- **Thread-owned resources, sandbox-scoped authority.** Sibling Threads in one sandbox are mutually
-  trusted, as with their existing Action/egress access. No per-Thread credentials are required.
-- **Explicit Thread IDs everywhere in v1.** Supply the ID in the agent's context; do not infer
-  "current Thread", even when a sandbox has only one. A Thread ID selects a resource, not authority.
+- **ServiceAccount-authorized, runner-session-scoped resources.** Workloads under the same SA have
+  the same authority, as with Actions/egress. Do not resolve a workload into a sandbox or require app
+  Thread identity. No per-session caller credentials or sibling-session isolation are required.
+- **Explicit destination IDs everywhere in v1.** Supply them in agent context; never infer "current
+  session". The proposed shape is `runner_id` plus `session_id`, qualified by the authenticated SA.
+  A bare session ID requires an additional SA-wide uniqueness contract that does not exist today.
+- **Independent runner discovery.** Extract inventory from the app into a directory consumed by both
+  app and notifications. Registration derives from provisioning resources, not runner callbacks.
 - **Include service instructions in the agent prompt.** Explain how to subscribe/listen, retrieve,
-  and explicitly acknowledge notifications, with concrete examples and the destination Thread ID.
+  and explicitly acknowledge notifications, with concrete examples and the destination IDs.
 - **Provider-owned semantics.** Each notification provider defines its payloads, filter schema,
   upstream authentication/verification, and source integration. Prefer upstream event names and
   fields rather than an Agentplane-specific vocabulary for the same facts.
@@ -60,35 +68,42 @@ outcome must never cause the notification service to resubmit the Action.
 
 ## Ownership and authorization
 
-Use the shared [workload authentication](../docs/workload_authentication.md) foundation. Its principal
-contains namespace, ServiceAccount, and Pod identity, not a Thread claim. Authorize every requested
-`thread_id` against an authoritative workload-to-sandbox and sandbox-to-Thread mapping. A caller may
-manage subscriptions and read/ack inboxes for any Thread in its sandbox, not for an arbitrary Thread
-whose ID it knows. Verify ownership on operations by subscription ID as well. Fail closed when the
-binding cannot be established; do not derive it from caller headers or naming conventions.
+Use the shared [workload authentication](../docs/workload_authentication.md) foundation. Derive the
+owner ServiceAccount from the authenticated principal, never from a caller-supplied `owner` field.
+Every request names its runner session explicitly. Workloads under that same account can manage its
+subscriptions and read/ack its session inboxes; another account cannot merely by knowing the IDs.
+Verify resource ownership on operations by subscription ID as well.
 
-Record the authenticated caller separately from the owning Thread. Destination access does not grant
-source access: the Action provider also needs an authorized way to read the selected request. Current
-Action caller-own access is ServiceAccount-based, so do not assume that the subscriptions service's
-own workload identity can read requests submitted by another caller. Choose a trusted delegation or
+The proposed qualified destination is `(runner_id, session_id)`, scoped under that SA. Obtain the
+runner's trusted ServiceAccount association and current endpoint from the
+[runner directory](runner_directory.md#session-scope-and-routing). Validate the association before
+binding a subscription; validate that the session exists without implicitly creating it. This does
+not require the notification service to resolve workload-to-sandbox membership or query app Threads.
+Session IDs alone are runner-local; do not silently assume account-wide uniqueness or choose the first
+matching runner. Finalize the qualification contract before implementing storage keys.
+
+Record the authenticated creator separately from the owning account/session. Destination access does
+not grant source access: the Action provider also needs an authorized way to read the selected request.
+Current Action caller-own access is ServiceAccount-based, so do not assume that the subscriptions
+service's own workload identity can read another caller's requests. Choose a trusted delegation or
 source-access mechanism before wiring this integration; do not solve it with unrestricted operator
-reads. Recheck access as bindings are revoked or destinations removed.
+reads. Recheck access as source authority or runner bindings are revoked or retired.
 
-Cross-sandbox/cross-Identity delivery is out of scope for v1 and still needs an explicit policy.
-Same-sandbox Thread ownership does not depend on that future policy or on a hosted-Agent model.
+Cross-account delivery is out of scope for v1 and needs an explicit policy. Product Thread ownership
+and an app Thread-to-session mapping are not prerequisites for notification ownership or routing.
 
 ### Service-to-runner authorization
 
-Authorize the service for the selected destination session, with full ordinary `Attach` protocol
-access, including the history it exposes. Not interrupting turns, changing models, or resuming stopped
-harnesses is service behavior, not a security-enforced restriction on individual commands.
+Use the directory to discover the destination, then connect directly to the runner. Directory lookup
+is not permission to connect. Authenticate/authorize service-to-runner access, trusting the notification
+service with the destination's ordinary protocol and history. Not interrupting turns, changing models,
+or resuming stopped harnesses is service behavior, not a command-level security restriction.
 
-A short-lived signed JWT scoped to the service, intended runner/session, and expiry is a candidate,
-**not a settled requirement**. Select the issuer, trusted binding source, authenticated/encrypted
-transport, renewal/revocation behavior, and expiry behavior for long-lived streams before deployment.
-A caller-supplied session ID alone is not authorization. The current runner spec does not provide
-attachment authorization or transport security; this is new boundary work, not a capability already
-available. Do not add command scopes, protocol roles, or receipt filtering as a prerequisite.
+Select authenticated encrypted transport, expected runner identity, and credential renewal/revocation
+behavior before deployment. JWT remains a candidate, not a requirement; an app-issued Thread ticket
+is not needed merely because product Threads live in the app. If using expiring credentials, define
+expiry for long-lived streams. The current runner lacks this attachment-auth/transport boundary.
+Do not add command scopes, receipt filtering, or runner-to-notification registration as prerequisites.
 
 ## Proposed storage: service-owned PostgreSQL
 
@@ -99,13 +114,13 @@ approach; exact schema, retention limits, and worker-claim mechanics remain to b
 
 Persist these logical records:
 
-- **Subscriptions:** owning Thread, provider configuration, authenticated creator, creation
-  idempotency key, lifecycle state, and source checkpoint.
-- **Inbox entries:** ordered Thread-local cursor, stable provider event identity, source reference,
+- **Subscriptions:** owning ServiceAccount and qualified runner session, provider configuration,
+  authenticated creator, creation idempotency key, lifecycle state, and source checkpoint.
+- **Inbox entries:** ordered session-inbox-local cursor, stable provider event identity, source reference,
   matching subscriptions, and the actual provider-defined notification payload, always persisted.
   Reads serve that snapshot without refetching content from the source. Action lifecycle authority
   remains in the Action Service; retained notification content is not a second authoritative Action log.
-- **Thread inbox state:** cursor allocation, explicit acknowledgement HWM, and confirmed notice
+- **Session inbox state:** cursor allocation, explicit acknowledgement HWM, and confirmed notice
   coverage. These last two positions must not be conflated.
 - **Notice deliveries:** exact text, covered range, destination binding, stable runner command ID,
   and observed admission/confirmation/failure. Include enough identity to resume after a worker crash.
@@ -120,7 +135,7 @@ The storage invariants matter more than the eventual table names:
    identities within the destination inbox; record overlapping subscription matches separately.
 2. Inbox cursors must describe a committed prefix. A plain PostgreSQL sequence is insufficient:
    transaction B could commit cursor 12 before A commits 11, letting acknowledgement skip a late
-   entry. Serialize allocation/insertion with a short per-Thread inbox-row lock (or an equivalent
+   entry. Serialize allocation/insertion with a short per-inbox row lock (or an equivalent
    proven scheme), releasing it at commit. Do not hold it during network calls.
 3. Persist a notice's identity, exact input, and covered range before runner submission. Perform
    runner I/O outside database transactions; commit observed receipts and follow-checkpoint advancement
@@ -147,7 +162,8 @@ Illustrative creation:
 
 ```json
 {
-  "thread_id": "thread-123",
+  "runner_id": "runner-17",
+  "session_id": "session-123",
   "client_key": "follow-action-456",
   "provider": "actions",
   "config": {
@@ -159,11 +175,11 @@ Illustrative creation:
 
 Read and acknowledge are separate operations:
 
-- `read(thread_id, after_cursor, limit)` returns an ordered, bounded page without changing the HWM.
-- `acknowledge(thread_id, through_cursor)` monotonically advances the HWM. Repetition is harmless;
+- `read(runner_id, session_id, after_cursor, limit)` returns an ordered, bounded page without changing the HWM.
+- `acknowledge(runner_id, session_id, through_cursor)` monotonically advances the HWM. Repetition is harmless;
   an older cursor cannot move it backwards. Reject cursors beyond the inbox's committed position.
 - Acknowledging `X` means **all entries through `X`**, not just entry `X`. Use service-assigned,
-  Thread-inbox-local cursors, distinct from source event IDs and Action sequence numbers. Start with
+  session-inbox-local cursors, distinct from source event IDs and Action sequence numbers. Start with
   contiguous, unfiltered reads so paging does not encourage acknowledging unseen filtered entries.
 - Acknowledgement is the agent's declaration that entries are handled, not evidence of successful
   external work. It need not immediately delete the retained entries.
@@ -171,9 +187,9 @@ Read and acknowledge are separate operations:
 ### Agent prompt instructions
 
 Ship prompt guidance with the first usable service, not only operator documentation or tool schemas.
-Provide the agent's explicit Thread ID, the actual service endpoint/tool names and authentication usage,
+Provide the agent's explicit runner/session IDs, the actual service endpoint/tool names and authentication usage,
 how to discover accessible providers and their filters, and how to create/inspect/update/cancel its
-subscriptions. Describe inbox notices as automated wakeups to retrieve content, not the payload itself.
+subscriptions under its authenticated ServiceAccount. Describe inbox notices as automated wakeups to retrieve content, not the payload itself.
 Instructions must explain that reads are non-destructive, acknowledgement advances a prefix HWM,
 there are no repeated reminders, and v1 does not wake stopped destinations.
 
@@ -181,16 +197,16 @@ Include at least these two worked examples using the implemented API rather than
 invent call shapes:
 
 1. **Listen for an Action:** submit an Action and obtain its real request ID, then create an idempotent
-   subscription with the supplied `thread_id`, that request ID, and replay from sequence zero. Explain
+   subscription with the supplied `runner_id` and `session_id`, that request ID, and replay from sequence zero. Explain
    that approval/completion before subscription creation is recovered from history, but creation must
    actually succeed. Continue other work and retrieve the inbox when its automated notice arrives.
 2. **Read and explicitly acknowledge:** read a page after the current acknowledged cursor, inspect/handle
    its entries, and only then acknowledge through that page's last handled contiguous cursor. For
    example, starting from HWM 180, a read returning entries 181–184 does not change HWM 180;
-   `acknowledge(thread_id, through_cursor=184)` advances it after all four are handled. If only 181–182
+   `acknowledge(runner_id, session_id, through_cursor=184)` advances it after all four are handled. If only 181–182
    are handled, acknowledge through 182, not 184. Repeat pagination for any remaining entries.
 
-Example IDs/cursors must be clearly distinguished from the real Thread ID and tool results. Do not
+Example IDs/cursors must be clearly distinguished from the real destination IDs and tool results. Do not
 include real service credentials or imply that prompt text grants source/destination access. Explain
 how to inspect a failed subscription or delivery rather than assuming silence means nothing happened.
 
@@ -198,7 +214,7 @@ Integrate guidance with the existing prompt/context composition; do not assume s
 instructions can be changed in place. The [runner session contract](../runner/SPEC.md#sessions) fixes
 `SessionSpec.instructions` for a session's lifetime. Supply guidance when creating enabled sessions;
 if existing sessions are supported, choose an explicit supported context/input path rather than
-silently changing the stored spec. Future runner-hosted MCP context can hide repetitive Thread IDs
+silently changing the stored spec. Future runner-hosted MCP context can hide repetitive destination IDs
 in tool calls, but does not replace the need to teach the agent the subscription and HWM semantics.
 
 ### Race-free explicit Action following
@@ -223,8 +239,8 @@ HTTP request hidden inside Action submission. Its exact API and intent storage a
 
 Send a bounded service-authored notice, for example:
 
-> Agentplane notifications: 7 notifications are available through inbox cursor 184 for Thread
-> thread-123. Retrieve them using the inbox read tool. This is an automated notification.
+> Agentplane notifications: 7 notifications are available through inbox cursor 184 for runner
+> runner-17, session session-123. Retrieve them using the inbox read tool. This is an automated notification.
 
 The count is a snapshot bounded by the cursor. Provider content is retrieved separately, retaining its
 source provenance; external content is not promoted to operator instructions. Although the transport
@@ -269,10 +285,12 @@ is submitted, suppress unnecessary notices; an already-admitted command cannot b
 
 ## Lifetime and unavailable destinations
 
-Subscriptions belong to the Thread, not to an attachment or harness process. Temporary disconnect,
-process restart, or sandbox suspension does not itself cancel them. Explicit cancellation stops future
-matching but does not implicitly acknowledge existing inbox entries or cancel the underlying Action.
-An already-submitted notice may still arrive; cancellation is not selective runner-input withdrawal.
+Subscriptions belong to the authenticated SA and qualified runner session, not an app Thread,
+attachment, or harness process. Temporary disconnect, process restart retaining state, or runtime
+suspension does not itself cancel them. Explicit cancellation stops future matching but does not
+acknowledge existing inbox entries or cancel the Action. Already-submitted notices may still arrive;
+cancellation is not selective runner-input withdrawal. App Thread archiving has no implicit effect;
+any future archive-to-subscription behavior must be explicit integration.
 
 V1 delivers only to a running harness. `Open` without a spec observes an existing session without
 starting it; a stopped session replays and ends. Starting/resuming requires an explicit spec, which the
@@ -280,11 +298,11 @@ notification service must not supply to wake a stopped destination in v1. Failed
 harness launch are not successful delivery. A stop racing with submission still needs honest receipt
 reconciliation, not an offline-delivery claim.
 
-The proposed lifetime rule is cancellation when the Thread is permanently removed, including sandbox
-deletion when that ends its Threads. Determine removal from authoritative lifecycle state, not runner
-unreachability or a timeout. Never silently retarget a successor session or sandbox. Finalize the exact
-cleanup signal alongside the binding API; the hosted-Thread lifecycle is not a prerequisite for v1.
-
+Use authoritative runner retirement from the directory, or an explicit session-retirement operation,
+for permanent-destination cleanup. The service does not discover sandbox deletion on its own. Missing
+endpoints, timeouts, failed lookups, or absence from a list are not retirement. Finalize session-retirement
+and orphan-retention rules before implementation; the runner's current API has no general session-delete
+operation to assume. Never silently retarget a replacement runner or a reused session ID.
 Keep accepted inbox entries and their payloads under bounded retention, making expiry/replay gaps visible rather than
 silently acknowledging them. They remain readable when the agent returns. A coalesced notice on the
 next running harness is desirable but **not a v1 acceptance requirement**; initially there is no
@@ -294,13 +312,14 @@ already-recorded receipt or reinterpret it as an acknowledgement.
 
 ## Implementation sequence and remaining choices
 
-1. **Settle the concrete boundaries:** authoritative workload/sandbox/Thread/session lookup and
-   deletion signals; Action source-read authorization; service-to-runner authentication and transport.
-   These are real implementation prerequisites, not a request for a general identity/RBAC framework.
+1. **Extract runner discovery:** implement the [runner directory](runner_directory.md) from existing
+   app inventory and migrate the app client. Settle stable runner/storage identity, account bindings,
+   authenticated list/get, endpoint/retirement semantics, and qualified session IDs. Separately settle
+   authorized Action reads and direct runner authentication. No app Thread lookup or runner callbacks.
 2. **Build the standalone service:** owned persistence/migrations, provider discovery, explicit
-   Thread-scoped subscription CRUD, inbox cursor/read/HWM operations, and observable health/errors.
+   SA-authorized session-scoped subscription CRUD, inbox cursor/read/HWM operations, and observable health/errors.
    Pick concrete limits, retention, idempotency/update contracts, and cancellation race semantics.
-   Wire agent prompt instructions with the actual Thread ID, service usage, and subscribe/read/ack examples.
+   Wire agent prompt instructions with the actual runner/session IDs, service usage, and subscribe/read/ack examples.
 3. **Implement only the Action provider:** canonical replay and follow, source authorization,
    individual ordered Decisions/outcomes, and atomic cursor/matching bookkeeping.
 4. **Deliver notices through the runner:** independent attachment, persisted command identity and
@@ -323,18 +342,21 @@ as a shipped API. Operator UI and generic webhook setup are not prerequisites fo
   when a harness returns; later request authorized harness/sandbox resume through the lifecycle owner.
   Wake policy and budgets are separate from notification delivery. No automatic resume in v1.
 - **Runner-hosted MCP conveniences:** a connection bound to a runner session could reliably supply
-  `thread_id` for "my inbox" tools. Hosting an undifferentiated sandbox-wide MCP endpoint is not enough.
-  Keep the service API explicit; this provides context, not sibling-Thread isolation.
-- **Cross-sandbox/Identity delivery and hosted Threads surviving sandbox replacement:** separate
-  authorization/lifecycle decisions, not inferred from resource IDs or existing source permissions.
+  `runner_id`/`session_id` for "my inbox" tools. Hosting an undifferentiated sandbox-wide MCP endpoint is not enough.
+  Keep the service API explicit; this provides context, not sibling-session isolation.
+- **Cross-account delivery and product Thread integration:** separate authorization/lifecycle decisions,
+  including archive behavior or following a Thread across successor runner sessions. No implicit retargeting.
+- **Directory extensions:** external-runner registration and a resumable discovery change feed are
+  separate future work, not reasons for runners to depend on notifications.
 
 ## Acceptance criteria
 
-- Sibling Threads in a sandbox can access each other's Thread-owned resources; a caller in another
-  sandbox cannot. Forged IDs, stale mappings, and unauthorized Action sources fail closed.
-- Enabled agent sessions receive service instructions and the correct explicit Thread ID in their
+- Workloads sharing an SA can access its session-scoped resources; a caller under another account
+  cannot. Forged owner IDs, mismatched runner bindings, and unauthorized Action sources fail closed.
+  The service never resolves a workload into an app Thread or accepts arbitrary destination URLs.
+- Enabled agent sessions receive service instructions and the correct explicit runner/session IDs in their
   prompt/context, with working subscribe and read/ack examples using the shipped API. Verify the agent
-  can follow them without relying on undocumented tools or implicit Thread detection.
+  can follow them without relying on undocumented tools or implicit session detection.
 - Retried subscription creation produces one subscription. A decision and completion before creation
   are replayed, including for terminal Actions. Catch-up/live races and source replay lose no events
   and create no duplicate entries. Approval never stands in for execution success.
@@ -353,7 +375,7 @@ as a shipped API. Operator UI and generic webhook setup are not prerequisites fo
 - New arrivals during an in-flight notice receive later coverage. An unread/unacknowledged confirmed
   notice is not repeated, including after reconnect/restart. Bursts and delivery failures stay bounded.
 - A stopped harness is not resumed; temporary absence preserves subscriptions and retained inbox
-  entries. Permanent deletion cleans up via authoritative state, without retargeting another Thread.
-- The independently deployed service works without the integration app's delivery attachment or
-  private database tables. Runner access is authenticated and destination-authorized, without new
-  command-level RBAC. Source availability, pending/failed delivery, and acknowledgement remain distinct.
+  entries. Permanent deletion cleans up via authoritative state, without retargeting another runner/session.
+- The independently deployed service works using the shared runner directory, without the integration app's
+  process, Thread API, delivery attachment, or private database tables. Runner access is authenticated
+  and destination-authorized, without new command-level RBAC. Source availability, pending/failed delivery, and acknowledgement remain distinct.
