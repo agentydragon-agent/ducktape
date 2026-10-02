@@ -19,4 +19,3 @@ needs a reservation rule for hole-shaped names that every future hole keyword
 falls inside and that real chunk identifiers do not (an all-caps rule would
 catch globals such as `JSON` and `URL`). A reserved name the binary does not
 implement is then `invalid` with "unsupported selector hole", on every command.
-
