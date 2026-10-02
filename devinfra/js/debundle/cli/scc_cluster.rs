@@ -101,6 +101,23 @@ pub struct ClusterReport {
     pub outgoing_modules: Vec<ModuleRef>,
 }
 
+/// These queries need one home module, unlike multi-owner selection commands.
+/// Never prefer a minified spelling over another owner's readable spelling.
+fn resolve_one_binding_owner<'a>(
+    graph: &'a analysis::OwnerGraphReport,
+    sym: &str,
+) -> Result<&'a analysis::OwnerGraphNodeReport> {
+    let owners = resolve_binding_owners(graph, sym);
+    match owners.as_slice() {
+        [owner] => Ok(*owner),
+        [] => anyhow::bail!("no owner declares binding {sym:?}"),
+        _ => anyhow::bail!(
+            "ambiguous binding {sym:?}: matches owners {}",
+            owners.iter().map(|owner| owner.id.as_str()).collect::<Vec<_>>().join(", "),
+        ),
+    }
+}
+
 pub fn run_scc(args: SccArgs) -> Result<()> {
     let graph = crate::load_owner_graph_report(&args.common.owner_graph_path)?;
     // If a binding was supplied, find its owner -> destination module
@@ -108,10 +125,7 @@ pub fn run_scc(args: SccArgs) -> Result<()> {
     // Uses the shared `resolve_binding_owners` helper so minified and
     // readable name forms both resolve.
     let restrict_to_module: Option<analysis::ModuleKey> = if let Some(sym) = &args.binding {
-        let owner = resolve_binding_owners(&graph, sym)
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("no owner declares binding {sym:?}"))?;
+        let owner = resolve_one_binding_owner(&graph, sym)?;
         Some(owner.destination.clone())
     } else {
         None
@@ -187,10 +201,7 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
     // Use the shared `resolve_binding_owners` helper (same code path
     // `describe` / `show-source` / `scc --binding` use), so minified
     // and readable names both work.
-    let owner = resolve_binding_owners(&graph, sym)
-        .into_iter()
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("no owner declares binding {sym:?}"))?;
+    let owner = resolve_one_binding_owner(&graph, sym)?;
     let home_key = &owner.destination;
     // Dedup + sort by interned id; carry the path label alongside.
     let mut incoming: std::collections::BTreeMap<String, ModuleRef> =
