@@ -9,7 +9,10 @@ use serde_yaml::Value;
 fn fixture() -> GraphFixture {
     GraphFixture::new(
         "const a = 1; console.log(a);",
-        &[("runtime/plugin.yaml", "members: [{selector: {binding: {name: a}}}]")],
+        &[(
+            "runtime/plugin.yaml",
+            "members: [{selector: {binding: {name: a}}}]",
+        )],
     )
 }
 
@@ -29,14 +32,22 @@ fn binding_and_module_comments_set_read_clear_and_dry_run() {
         assert_eq!(read["action"], "read");
         assert_eq!(read["comment"], "plugin glue");
         let doc: Value = serde_yaml::from_slice(&fs::read(&file).unwrap()).unwrap();
-        let location = if namespace == "bindings" { &doc["members"][0] } else { &doc };
+        let location = if namespace == "bindings" {
+            &doc["annotations"]["a"]
+        } else {
+            &doc
+        };
         assert_eq!(location["comment"], "plugin glue");
         fixture.assert_runs("1\n");
         let clear = fixture.json(&[namespace, "comment", locator, "--clear"]);
         assert_eq!(clear["action"], "cleared");
         let doc: Value = serde_yaml::from_slice(&fs::read(&file).unwrap()).unwrap();
-        let location = if namespace == "bindings" { &doc["members"][0] } else { &doc };
-        assert!(location.as_mapping().unwrap().get("comment").is_none());
+        let location = if namespace == "bindings" {
+            &doc["annotations"]["a"]
+        } else {
+            &doc
+        };
+        assert!(location["comment"].is_null());
         assert!(fixture.json(&[namespace, "comment", locator])["comment"].is_null());
     }
 }
@@ -47,7 +58,10 @@ fn ambiguous_binding_comment_refuses_with_locations_without_writes() {
         "const a = 1; const b = 2; console.log(a + b);",
         &[
             ("a.yaml", "members: [{selector: {binding: {name: a}}}]"),
-            ("b.yaml", "members: [{name: a, selector: {binding: {name: b}}}]"),
+            (
+                "b.yaml",
+                "members: [{name: a, selector: {binding: {name: b}}}]",
+            ),
         ],
     );
     fixture.assert_rejected_unchanged(
@@ -65,12 +79,18 @@ fn edit_mode_replaces_or_clears_the_prepopulated_comment() {
         // The editor must receive the existing text, not an empty buffer.
         fs::write(&editor, "#!/bin/sh\n[ \"$(cat \"$1\")\" = existing ] || exit 1\nprintf %s \"$REPLACEMENT\" > \"$1\"\n").unwrap();
         fs::set_permissions(&editor, fs::Permissions::from_mode(0o755)).unwrap();
-        let out = fixture.process(&["bindings", "comment", "a", "--edit", "--format", "json"])
+        let out = fixture
+            .process(&["bindings", "comment", "a", "--edit", "--format", "json"])
             .env("EDITOR", &editor)
             .env_remove("VISUAL")
             .env("REPLACEMENT", replacement)
-            .output().unwrap();
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         assert_eq!(parse_stdout_json(&out)["action"], action);
         let read = fixture.json(&["bindings", "comment", "a"]);
         if replacement.is_empty() {
@@ -80,4 +100,22 @@ fn edit_mode_replaces_or_clears_the_prepopulated_comment() {
         }
         fixture.assert_runs("1\n");
     }
+}
+
+#[test]
+fn source_match_comments_use_readable_annotations_and_keep_other_metadata() {
+    let fixture = GraphFixture::new(
+        "const a = 1; console.log(a);",
+        &[(
+            "m.yaml",
+            "source_matches: [{match: 'const a = 1;', bindings: [{local: a, name: Alpha}]}]\nannotations: {Alpha: {note: selector debt}}",
+        )],
+    );
+    fixture.json(&["bindings", "comment", "a", "emitted comment"]);
+    assert_eq!(fixture.json(&["bindings", "comment", "Alpha"])["comment"], "emitted comment");
+    fixture.assert_runs("1\n");
+    fixture.json(&["bindings", "comment", "Alpha", "--clear"]);
+    let doc: Value = serde_yaml::from_slice(&fs::read(fixture.modules.join("m.yaml")).unwrap()).unwrap();
+    assert!(doc["annotations"]["Alpha"]["comment"].is_null());
+    assert_eq!(doc["annotations"]["Alpha"]["note"], "selector debt");
 }

@@ -206,4 +206,3 @@ fn batch_with_one_non_empty_refuses_atomically() {
     assert!(root.join("y.yaml").exists());
     assert!(root.join("z.yaml").exists());
 }
-

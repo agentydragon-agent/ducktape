@@ -1,35 +1,9 @@
-//! CLI verbs `debundle bindings comment <sym>` and
-//! `debundle modules comment <module>`: edit the `comment:` field on a
-//! single member entry or on a module YAML.
-//!
-//! This module is intentionally generic over `serde_yaml::Value` so it
-//! does not need the analysis crate. The two `comment:` fields it
-//! touches:
-//!
-//! * Per-member: `<modules>/.../*.yaml :: members[i].comment`. The
-//!   member is located by matching the supplied `<sym>` against either
-//!   `members[i].selector.binding.name` (minified form) or
-//!   `members[i].name` (readable form). If both happen to match
-//!   different members, the command refuses with the full match list.
-//! * Module-level: `<modules>/<module>.yaml :: comment`. The module
-//!   path argument is filesystem-relative (no `.yaml` suffix), same
-//!   shape `spec_modules::module_path_from_file` emits.
-//!
-//! Read and edit modes are shared by both verbs:
-//!
-//! * Positional `"text"` — replace the existing comment with the
-//!   literal arg.
-//! * `--edit` — spawn `$EDITOR` (fallback `$VISUAL`, then `vi`) on a
-//!   tempfile prepopulated with the current comment; pick up the
-//!   result.
-//! * `--clear` — remove the `comment:` field entirely.
-//! * No arg — read the current comment and print (text or JSON
-//!   depending on `--format` / tty).
-//!
-//! Changed documents are reserialized through the shared YAML writer;
-//! textual layout and YAML comments are not an editing contract.
-//! `--dry-run` skips the write but still prints the verdict. Comments don't participate in
-//! factorization, so there is no `--no-verify`.
+//! CLI binding and module comment workflows. Binding comments live in the
+//! canonical `annotations.<readable-or-minified-name>.comment` field; module
+//! comments live in `comment`. Read, literal replacement, `$EDITOR`, and clear
+//! modes share one transition function. Changed YAML is reserialized; textual
+//! layout and YAML comments are not an editing contract.
+
 
 use std::fs;
 use std::io::{Read, Write};
@@ -39,11 +13,10 @@ use std::process::Command;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use serde::Serialize;
-use serde_yaml::Value;
-use spec::ModulePath;
+use spec::{BindingAnnotation, LogicalModule, ModulePath};
 use yaml_edit::{apply_yaml_edit, read_yaml};
 
-use crate::binding::{BindingLocation, resolve_unambiguous};
+use crate::binding::resolve_unambiguous;
 
 /// Args for `debundle bindings comment <sym> [...]`.
 #[derive(Debug, ClapArgs)]
@@ -245,105 +218,27 @@ pub fn apply_binding_comment(
     // Same `<sym>` resolution (and refusal shape on zero/ambiguous
     // matches) as `bindings assign` / `bindings rename`.
     let hit = resolve_unambiguous(modules_root, sym)?;
-    let member_index = match &hit.location {
-        BindingLocation::Member { member_index } => *member_index,
-        BindingLocation::SourceMatch { .. } => bail!(
-            "bindings comment does not support canonical source_matches[] bindings; `{sym}` \
-             resolved to {}#{}. Use annotations.<name>.comment instead.",
-            hit.file.display(),
-            hit.location.describe()
-        ),
-    };
     let file = hit.file;
-    let mut doc = read_yaml(&file)?;
-    let current: Option<String> = current_member_comment(&doc, member_index)?;
-
-    let (new_action, new_comment, dirty) = match mode {
-        CommentMode::Read => ("read", current.clone(), false),
-        CommentMode::Set(text) => {
-            set_member_comment(&mut doc, member_index, Some(text.clone()))?;
-            ("set", Some(text), true)
+    let mut doc: LogicalModule = serde_yaml::from_value(read_yaml(&file)?)?;
+    let name = hit.name.readable().unwrap_or_else(|| hit.name.minified());
+    let current = doc.annotations.get(name).and_then(|a| a.comment.clone());
+    let (action, comment, dirty) = edit_comment(current, mode)?;
+    if dirty {
+        let annotation = doc.annotations.entry(name.to_string()).or_default();
+        annotation.comment = comment.clone();
+        // Clearing the only annotation must not leave a phantom module keeper.
+        if annotation == &BindingAnnotation::default() {
+            doc.annotations.remove(name);
         }
-        CommentMode::Edit => {
-            let effective_current = current.clone().unwrap_or_default();
-            let edited = run_editor(&effective_current)?;
-            if edited == effective_current {
-                ("unchanged", current.clone(), false)
-            } else if edited.is_empty() {
-                set_member_comment(&mut doc, member_index, None)?;
-                ("cleared", None, true)
-            } else {
-                set_member_comment(&mut doc, member_index, Some(edited.clone()))?;
-                ("set", Some(edited), true)
-            }
-        }
-        CommentMode::Clear => {
-            if current.is_some() {
-                set_member_comment(&mut doc, member_index, None)?;
-                ("cleared", None, true)
-            } else {
-                ("unchanged", None, false)
-            }
-        }
-    };
-
-    let changed = dirty && apply_yaml_edit(&file, &doc, dry_run)?;
-    let action = if dirty && !changed {
-        "unchanged"
-    } else if changed && dry_run {
-        "dry-run"
-    } else {
-        new_action
-    };
-
+    }
+    let action = persist_comment(&file, &doc, action, dirty, dry_run)?;
     Ok(CommentOutcome {
         locator: sym.to_string(),
         kind: OutcomeKind::Binding,
-        comment: new_comment,
+        comment,
         action,
         path: file,
     })
-}
-
-fn current_member_comment(doc: &Value, index: usize) -> Result<Option<String>> {
-    let members = doc
-        .as_mapping()
-        .and_then(|m| m.get(yk("members")))
-        .and_then(Value::as_sequence)
-        .ok_or_else(|| anyhow!("module YAML missing members sequence"))?;
-    let member = members
-        .get(index)
-        .ok_or_else(|| anyhow!("member index {index} out of range"))?;
-    let Some(map) = member.as_mapping() else {
-        return Ok(None);
-    };
-    Ok(map
-        .get(yk("comment"))
-        .and_then(Value::as_str)
-        .map(str::to_string))
-}
-
-fn set_member_comment(doc: &mut Value, index: usize, value: Option<String>) -> Result<()> {
-    let members = doc
-        .as_mapping_mut()
-        .and_then(|m| m.get_mut(yk("members")))
-        .and_then(Value::as_sequence_mut)
-        .ok_or_else(|| anyhow!("module YAML missing members sequence"))?;
-    let member = members
-        .get_mut(index)
-        .ok_or_else(|| anyhow!("member index {index} out of range"))?;
-    let map = member
-        .as_mapping_mut()
-        .ok_or_else(|| anyhow!("member entry is not a mapping"))?;
-    match value {
-        Some(text) => {
-            map.insert(yk("comment"), Value::String(text));
-        }
-        None => {
-            map.remove(yk("comment"));
-        }
-    }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------
@@ -368,54 +263,54 @@ pub fn apply_module_comment(
     if !file.exists() {
         bail!("module YAML not found: {}", file.display());
     }
-    let mut doc = read_yaml(&file)?;
-    let current: Option<String> = current_module_comment(&doc);
-
-    let (new_action, new_comment, dirty) = match mode {
-        CommentMode::Read => ("read", current.clone(), false),
-        CommentMode::Set(text) => {
-            set_module_comment(&mut doc, Some(text.clone()))?;
-            ("set", Some(text), true)
-        }
-        CommentMode::Edit => {
-            let effective_current = current.clone().unwrap_or_default();
-            let edited = run_editor(&effective_current)?;
-            if edited == effective_current {
-                ("unchanged", current.clone(), false)
-            } else if edited.is_empty() {
-                set_module_comment(&mut doc, None)?;
-                ("cleared", None, true)
-            } else {
-                set_module_comment(&mut doc, Some(edited.clone()))?;
-                ("set", Some(edited), true)
-            }
-        }
-        CommentMode::Clear => {
-            if current.is_some() {
-                set_module_comment(&mut doc, None)?;
-                ("cleared", None, true)
-            } else {
-                ("unchanged", None, false)
-            }
-        }
-    };
-
-    let changed = dirty && apply_yaml_edit(&file, &doc, dry_run)?;
-    let action = if dirty && !changed {
-        "unchanged"
-    } else if changed && dry_run {
-        "dry-run"
-    } else {
-        new_action
-    };
-
+    let mut doc: LogicalModule = serde_yaml::from_value(read_yaml(&file)?)?;
+    let (action, comment, dirty) = edit_comment(doc.comment.clone(), mode)?;
+    doc.comment = comment.clone();
+    let action = persist_comment(&file, &doc, action, dirty, dry_run)?;
     Ok(CommentOutcome {
         locator: module.to_string(),
         kind: OutcomeKind::Module,
-        comment: new_comment,
+        comment,
         action,
         path: file,
     })
+}
+
+fn edit_comment(
+    current: Option<String>,
+    mode: CommentMode,
+) -> Result<(&'static str, Option<String>, bool)> {
+    let replacement = match mode {
+        CommentMode::Read => return Ok(("read", current, false)),
+        CommentMode::Set(text) => Some(text),
+        CommentMode::Clear => None,
+        CommentMode::Edit => {
+            let text = current.as_deref().unwrap_or("");
+            let edited = run_editor(text)?;
+            if edited == text {
+                return Ok(("unchanged", current, false));
+            }
+            (!edited.is_empty()).then_some(edited)
+        }
+    };
+    if replacement == current {
+        return Ok(("unchanged", current, false));
+    }
+    let action = if replacement.is_some() { "set" } else { "cleared" };
+    Ok((action, replacement, true))
+}
+
+fn persist_comment(
+    file: &Path,
+    doc: &LogicalModule,
+    action: &'static str,
+    dirty: bool,
+    dry_run: bool,
+) -> Result<&'static str> {
+    if dirty {
+        apply_yaml_edit(file, &serde_yaml::to_value(doc)?, dry_run)?;
+    }
+    Ok(if dirty && dry_run { "dry-run" } else { action })
 }
 
 /// Resolve a module-path argument to its on-disk YAML through the
@@ -427,36 +322,6 @@ fn module_path_to_yaml(modules_root: &Path, module: &str) -> Result<PathBuf> {
     let canonical =
         ModulePath::parse(raw, "").map_err(|err| anyhow!("invalid module path: {err}"))?;
     Ok(modules_root.join(format!("{canonical}.yaml")))
-}
-
-fn current_module_comment(doc: &Value) -> Option<String> {
-    doc.as_mapping()
-        .and_then(|m| m.get(yk("comment")))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-}
-
-fn set_module_comment(doc: &mut Value, value: Option<String>) -> Result<()> {
-    let map = doc
-        .as_mapping_mut()
-        .ok_or_else(|| anyhow!("module YAML is not a mapping"))?;
-    match value {
-        Some(text) => {
-            map.insert(yk("comment"), Value::String(text));
-        }
-        None => {
-            map.remove(yk("comment"));
-        }
-    }
-    Ok(())
-}
-
-// ---------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------
-
-fn yk(s: &str) -> Value {
-    Value::String(s.to_string())
 }
 
 /// Spawn the user's editor on a tempfile pre-populated with `current`.
@@ -516,6 +381,7 @@ fn run_editor(current: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_yaml::Value;
     use tempfile::TempDir;
 
     fn write(root: &Path, rel: &str, body: &str) {
@@ -549,7 +415,7 @@ mod tests {
         assert_eq!(set.action, "set");
         let body = read(root, "runtime/plugins.yaml");
         let doc: Value = serde_yaml::from_str(&body).unwrap();
-        assert_eq!(doc["members"][0]["comment"].as_str(), Some("readable hit"));
+        assert_eq!(doc["annotations"]["PluginSettingsAccessor"]["comment"].as_str(), Some("readable hit"));
     }
 
     #[test]
@@ -571,7 +437,7 @@ mod tests {
         write(
             root,
             "m.yaml",
-            "members:\n  - selector: { binding: { name: Unset } }\n  - comment: \"\"\n    selector: { binding: { name: Empty } }\n",
+            "members:\n  - selector: { binding: { name: Unset } }\n  - selector: { binding: { name: Empty } }\nannotations: {Empty: {comment: \"\"}}\n",
         );
         let unset = apply_binding_comment(root, "Unset", CommentMode::Read, false).unwrap();
         assert_eq!(unset.comment, None);
@@ -583,7 +449,7 @@ mod tests {
     fn setting_same_binding_comment_preserves_formatting() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
-        let original = "# hand formatted\nmembers: [ { selector: { binding: { name: XOe } }, comment: keep } ]\n";
+        let original = "# hand formatted\nmembers: [ { selector: { binding: { name: XOe } } } ]\nannotations: {XOe: {comment: keep}}\n";
         write(root, "m.yaml", original);
 
         let out =

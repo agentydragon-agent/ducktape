@@ -158,7 +158,10 @@ impl GraphFixture {
             .args(args)
             .env("DEBUNDLE_MODULES", &self.modules)
             .env("DEBUNDLE_GRAPH", &self.graph)
-            .env("DEBUNDLE_SOURCE_ROOT", self.run._root.path().join("snapshot"));
+            .env(
+                "DEBUNDLE_SOURCE_ROOT",
+                self.run._root.path().join("snapshot"),
+            );
         command
     }
 

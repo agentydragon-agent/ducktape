@@ -14,8 +14,14 @@ fn list_filters_cover_members_and_source_match_bindings() {
     let fixture = GraphFixture::new(
         "const a = 1; const b = 2; const c = 3; console.log(a + b + c);",
         &[
-            ("pair.yaml", "source_matches: [{match: 'const a = 1; const b = 2;', bindings: [a, {local: b, name: Beta}]}]"),
-            ("solo.yaml", "members: [{name: Solo, selector: {binding: {name: c}}}]"),
+            (
+                "pair.yaml",
+                "source_matches: [{match: 'const a = 1; const b = 2;', bindings: [a, {local: b, name: Beta}]}]",
+            ),
+            (
+                "solo.yaml",
+                "members: [{name: Solo, selector: {binding: {name: c}}}]",
+            ),
         ],
     );
     let all = fixture.json(&["bindings", "list"]);
@@ -28,7 +34,13 @@ fn list_filters_cover_members_and_source_match_bindings() {
     let unrenamed = fixture.json(&["bindings", "list", "--unrenamed"]);
     assert_eq!(unrenamed["bindings"].as_array().unwrap().len(), 1);
     assert_eq!(unrenamed["bindings"][0]["minified"], "a");
-    assert_eq!(fixture.json(&["bindings", "list", "--in", "pair"])["bindings"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        fixture.json(&["bindings", "list", "--in", "pair"])["bindings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 }
 
 #[test]
@@ -55,7 +67,10 @@ fn rename_members_and_source_match_shorthand_rekeys_annotations() {
             assert_eq!(doc["source_matches"][0]["bindings"][0]["name"], "Readable");
         }
         assert!(doc["annotations"]["a"].is_null());
-        assert_eq!(doc["annotations"]["Readable"]["note"], "stable selector debt");
+        assert_eq!(
+            doc["annotations"]["Readable"]["note"],
+            "stable selector debt"
+        );
         fixture.assert_runs("1\n");
     }
 }
@@ -64,7 +79,10 @@ fn rename_members_and_source_match_shorthand_rekeys_annotations() {
 fn source_match_groups_cannot_be_split_by_assign_or_unassign() {
     let fixture = GraphFixture::new(
         "const a = 1; console.log(a);",
-        &[("m.yaml", "source_matches: [{match: 'const a = 1;', bindings: [a]}]")],
+        &[(
+            "m.yaml",
+            "source_matches: [{match: 'const a = 1;', bindings: [a]}]",
+        )],
     );
     for (verb, operand) in [("assign", "a:dest"), ("unassign", "a")] {
         fixture.assert_rejected_unchanged(
@@ -86,11 +104,17 @@ fn rename_and_assign_refuse_collisions_with_all_binding_forms() {
         } else {
             "const a = 1; const b = 2; console.log(a + b);"
         };
-        let fixture = GraphFixture::new(source, &[
-            ("src.yaml", "members: [{selector: {binding: {name: a}}}]"),
-            ("occupied.yaml", occupied),
-        ]);
-        for args in [vec!["bindings", "rename", "a", "b"], vec!["bindings", "assign", "a:dest:b"]] {
+        let fixture = GraphFixture::new(
+            source,
+            &[
+                ("src.yaml", "members: [{selector: {binding: {name: a}}}]"),
+                ("occupied.yaml", occupied),
+            ],
+        );
+        for args in [
+            vec!["bindings", "rename", "a", "b"],
+            vec!["bindings", "assign", "a:dest:b"],
+        ] {
             fixture.assert_rejected_unchanged(&args, &["name collision"]);
         }
     }
@@ -107,7 +131,10 @@ fn positional_and_json_batches_create_one_canonical_destination() {
             ],
         );
         let batch = fixture.graph.with_file_name("moves.json");
-        write_text_file(&batch, r#"[{"sym":"a","module":"UI/Widgets","readable":"Alpha"},{"sym":"b","module":"ui/widgets"}]"#);
+        write_text_file(
+            &batch,
+            r#"[{"sym":"a","module":"UI/Widgets","readable":"Alpha"},{"sym":"b","module":"ui/widgets"}]"#,
+        );
         let args = if batch_json {
             vec!["bindings", "assign", "--batch", batch.to_str().unwrap()]
         } else {
@@ -120,8 +147,16 @@ fn positional_and_json_batches_create_one_canonical_destination() {
         let doc = module(&fixture, "ui/widgets.yaml");
         let members = doc["members"].as_sequence().unwrap();
         assert_eq!(members.len(), 2);
-        assert!(members.iter().any(|m| m["selector"]["binding"]["name"] == "a" && m["name"] == "Alpha"));
-        assert!(members.iter().any(|m| m["selector"]["binding"]["name"] == "b"));
+        assert!(
+            members
+                .iter()
+                .any(|m| m["selector"]["binding"]["name"] == "a" && m["name"] == "Alpha")
+        );
+        assert!(
+            members
+                .iter()
+                .any(|m| m["selector"]["binding"]["name"] == "b")
+        );
         fixture.assert_runs("3\n");
     }
 }
@@ -129,19 +164,27 @@ fn positional_and_json_batches_create_one_canonical_destination() {
 #[test]
 fn move_and_unassign_annotations_preserve_only_intentionally_retained_modules() {
     for comment in ["", "comment: keepalive\n"] {
-        let yaml = format!("{comment}members: [{{selector: {{binding: {{name: a}}}}}}]\nannotations: {{a: {{note: selector debt}}}}\n");
+        let yaml = format!(
+            "{comment}members: [{{selector: {{binding: {{name: a}}}}}}]\nannotations: {{a: {{note: selector debt}}}}\n"
+        );
         let fixture = GraphFixture::new(
             "const a = 1; console.log(a);",
             &[("src.yaml", &yaml), ("unrelated.yaml", "members: []")],
         );
         fixture.json(&["bindings", "assign", "a:dest:Readable"]);
-        assert_eq!(fixture.modules.join("src.yaml").exists(), !comment.is_empty());
+        assert_eq!(
+            fixture.modules.join("src.yaml").exists(),
+            !comment.is_empty()
+        );
         assert!(fixture.modules.join("unrelated.yaml").exists());
         let doc = module(&fixture, "dest.yaml");
         assert!(doc["annotations"]["a"].is_null());
         assert_eq!(doc["annotations"]["Readable"]["note"], "selector debt");
         fixture.json(&["bindings", "unassign", "Readable"]);
-        assert!(!fixture.modules.join("dest.yaml").exists(), "removed annotation must not keep drained module alive");
+        assert!(
+            !fixture.modules.join("dest.yaml").exists(),
+            "removed annotation must not keep drained module alive"
+        );
         assert!(fixture.modules.join("unrelated.yaml").exists());
         fixture.assert_runs("1\n");
     }
@@ -150,8 +193,5 @@ fn move_and_unassign_annotations_preserve_only_intentionally_retained_modules() 
 #[test]
 fn positional_readable_name_cannot_contain_a_colon() {
     let fixture = GraphFixture::acyclic_pair();
-    fixture.assert_rejected_unchanged(
-        &["bindings", "assign", "alpha:dest:Bad:Name"],
-        &[":"],
-    );
+    fixture.assert_rejected_unchanged(&["bindings", "assign", "alpha:dest:Bad:Name"], &[":"]);
 }
