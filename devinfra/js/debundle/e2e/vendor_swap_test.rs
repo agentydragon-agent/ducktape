@@ -25,60 +25,36 @@ fn assert_success(result: &CommandResult) {
     );
 }
 
+
+
+
+
+
+
+
+
 #[test]
-fn named_from_module_default_handles_export_named_as_default_re_export() {
-    // Cytoscape v3.30.4 ships `export { cytoscape as default };` (a named
-    // re-export of a local) instead of a bare `export default cytoscape;`.
-    // The wrapper must accept the re-export form.
-    let upstream_source = r#"const lib = { ping() { return "pong"; } };
+fn named_from_module_default_accepts_all_upstream_export_forms() {
+    // Named exports before/after their declaration and anonymous function/class
+    // defaults must all avoid TDZ and preserve the wrapper's runtime surface.
+    for upstream_source in [
+        r#"const lib = { ping() { return "pong"; } };
 const aux = "side";
 export { lib as default, aux };
-"#;
-
-    let fixture = run_named_from_module_default_fixture(upstream_source);
-
-    assert_wrapper_named_from_module_default(&fixture);
-}
-
-#[test]
-fn named_from_module_default_handles_export_named_as_default_before_local_decl() {
-    // ESM allows `export { lib as default };` to appear *before* the local
-    // declaration. The generated wrapper's
-    // `const __vendor_default__ = lib;` must therefore live after the
-    // declaration to avoid a TDZ at module init.
-    let upstream_source = r#"export { lib as default };
+"#,
+        r#"export { lib as default };
 const lib = { ping() { return "pong"; } };
-"#;
-
-    let fixture = run_named_from_module_default_fixture(upstream_source);
-
-    assert_wrapper_named_from_module_default(&fixture);
-}
-
-#[test]
-fn named_from_module_default_handles_anonymous_default_function() {
-    // `export default function () { ... }` collapses into
-    // `const __vendor_default__ = function () { ... };`.
-    let upstream_source = r#"export default function () { return "ping"; }
-"#;
-
-    let fixture = run_named_from_module_default_fixture(upstream_source);
-
-    assert_wrapper_named_from_module_default(&fixture);
-}
-
-#[test]
-fn named_from_module_default_handles_anonymous_default_class() {
-    // `export default class { ... }` collapses into
-    // `const __vendor_default__ = class { ... };`.
-    let upstream_source = r#"export default class {
+"#,
+        r#"export default function () { return "ping"; }
+"#,
+        r#"export default class {
   ping() { return "ping"; }
 }
-"#;
-
-    let fixture = run_named_from_module_default_fixture(upstream_source);
-
-    assert_wrapper_named_from_module_default(&fixture);
+"#,
+    ] {
+        let fixture = run_named_from_module_default_fixture(upstream_source);
+        assert_wrapper_named_from_module_default(&fixture);
+    }
 }
 
 fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
@@ -1314,12 +1290,12 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
 
 #[test]
 fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleton_user() {
-    // Red test for React-like singleton package families. Swapping a renderer
+    // Runtime regression for React-like singleton package families. Swapping a renderer
     // facade while leaving a component in the residual vendor chunk can mix two
     // dispatcher singletons: the swapped renderer initializes the package copy,
     // but the residual component still reads the in-blob copy. The emitted app
-    // must eventually run as `package`; today it throws `residual dispatcher is
-    // null`, matching the browser-load failure seen with React hooks.
+    // must run as `package`, rather than throwing `residual dispatcher is null`
+    // as it did in the original React-like mixed-copy regression.
     // TODO: add a browser/importmap load probe alongside this Node check once
     // the e2e harness has a browser runner.
     const VENDOR_PATH: &str = "static/vendor.js";
@@ -2030,120 +2006,35 @@ fn partial_swap_rewrites_namespace_kind_reexport_from_consumer() {
 }
 
 #[test]
-fn partial_swap_bails_on_namespace_import_of_partially_swapped_chunk() {
-    // `import * as M from "<chunk>"` then `M.e6` — the strip pass removes
-    // `e6` from the chunk's export surface, so the member read would
-    // silently evaluate to `undefined` at runtime. The consumer gate must
-    // reject the spec instead of emitting the broken tree.
-    let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-namespace-consumer-",
-        "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
-        "import * as M from \"../megachunk/entry.js\";\nexport const r = M.e6();\n",
-        "zod",
-        "3.23.8",
-        "lib/index.mjs",
-        "export const boolean = () => true;\n",
-    );
-    let vendor = partial_swap_vendor(
-        "namespace consumer fixture",
-        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
-        &[(
-            "e6",
-            swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None),
-        )],
-    );
-    let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
-
-    assert!(
-        !fixture.result.status.success(),
-        "debundler must reject a namespace import of a partially-swapped chunk\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
-    assert!(
-        fixture.result.stderr.contains("namespace")
-            && fixture.result.stderr.contains("static/megachunk"),
-        "expected namespace-consumer gate diagnostic in stderr:\n{}",
-        fixture.result.stderr,
-    );
+fn partial_swap_rejects_consumers_that_would_lose_swapped_exports() {
+    // Namespace reads would become undefined; member-kind re-exports have no
+    // live namespace-member equivalent; export-star would silently lose names.
+    for (label, vendor_source, consumer, diagnostics) in [
+        ("vendor-partial-swap-namespace-consumer-", "export const e6 = () => true;\nexport const keepMe = () => 7;\n", "import * as M from \"../megachunk/entry.js\";\nexport const r = M.e6();\n", ["namespace", "static/megachunk"]),
+        ("vendor-partial-swap-member-reexport-", "export const e6 = () => true;\n", "export { e6 as zodBoolean } from \"../megachunk/entry.js\";\n", ["e6", "re-export"]),
+        ("vendor-partial-swap-export-star-", "export const e6 = () => true;\nexport const keepMe = () => 7;\n", "export * from \"../megachunk/entry.js\";\n", ["export *", "static/megachunk"]),
+    ] {
+        let (ws, package_root) = setup_partial_swap_consumer_fixture(
+            label, vendor_source, consumer, "zod", "3.23.8", "lib/index.mjs",
+            "export const boolean = () => true;\n",
+        );
+        let vendor = partial_swap_vendor(
+            label,
+            &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
+            &[("e6", swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None))],
+        );
+        let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
+        assert!(!fixture.result.status.success(), "{label}: {}", fixture.result.stdout);
+        for diagnostic in diagnostics {
+            assert!(fixture.result.stderr.contains(diagnostic), "{label}: {}", fixture.result.stderr);
+        }
+    }
 }
 
-#[test]
-fn partial_swap_bails_on_member_kind_reexport_from_consumer() {
-    // kind=member symbols rewrite references to `<namespace>.<export>`
-    // member accesses — that shape has no live re-export equivalent, so a
-    // re-export consumer of a member-kind symbol must hard-fail rather
-    // than silently survive the strip with a dangling export name.
-    let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-member-reexport-",
-        "export const e6 = () => true;\n",
-        "export { e6 as zodBoolean } from \"../megachunk/entry.js\";\n",
-        "zod",
-        "3.23.8",
-        "lib/index.mjs",
-        "export const boolean = () => true;\n",
-    );
-    let vendor = partial_swap_vendor(
-        "member re-export consumer fixture",
-        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
-        &[(
-            "e6",
-            swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None),
-        )],
-    );
-    let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
-    assert!(
-        !fixture.result.status.success(),
-        "debundler must reject a member-kind re-export consumer\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
-    assert!(
-        fixture.result.stderr.contains("e6") && fixture.result.stderr.contains("re-export"),
-        "expected re-export gate diagnostic naming the swapped symbol:\n{}",
-        fixture.result.stderr,
-    );
-}
 
-#[test]
-fn partial_swap_bails_on_export_star_from_partially_swapped_chunk() {
-    // `export * from "<chunk>"` re-exports whatever survives the strip —
-    // the swapped names silently vanish from the re-exporter's surface.
-    let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-export-star-",
-        "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
-        "export * from \"../megachunk/entry.js\";\n",
-        "zod",
-        "3.23.8",
-        "lib/index.mjs",
-        "export const boolean = () => true;\n",
-    );
-    let vendor = partial_swap_vendor(
-        "export-star consumer fixture",
-        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
-        &[(
-            "e6",
-            swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None),
-        )],
-    );
-    let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
-    assert!(
-        !fixture.result.status.success(),
-        "debundler must reject `export *` from a partially-swapped chunk\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
-    assert!(
-        fixture.result.stderr.contains("export *")
-            && fixture.result.stderr.contains("static/megachunk"),
-        "expected export-star gate diagnostic in stderr:\n{}",
-        fixture.result.stderr,
-    );
-}
 
-// ─── boundary_rename / suppress ─────────────────────────────────────────
 
 #[test]
 fn boundary_rename_rewrites_caller_imports_end_to_end() {

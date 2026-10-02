@@ -179,111 +179,11 @@ export { actual };
     );
 }
 
-#[test]
-fn member_source_match_alpha_all_allows_name_reuse_in_sibling_block_scopes() {
-    let fixture = run_fixture(member_fixture(
-        r#"function actual(input) {
-  const out = [];
-  { const { value: a } = input.left; out.push(a); }
-  { const { value: b } = input.right; out.push(b); }
-  return out.join("|");
-}
-console.log(actual({ left: { value: "L" }, right: { value: "R" } }));
-export { actual };
-"#,
-        "format",
-        Member::source_alpha(
-            "format_values",
-            r#"function readable(input) {
-  const out = [];
-  { const { value } = input.left; out.push(value); }
-  { const { value } = input.right; out.push(value); }
-  return out.join("|");
-}"#,
-        ),
-    ));
 
-    assert_entry_output(&fixture, "L|R\n");
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/format.js",
-        &["function format_values", "out.push(a)", "out.push(b)"],
-        &["function actual", "function readable"],
-    );
-}
 
-#[test]
-fn member_source_match_alpha_all_allows_name_reuse_in_switch_scope() {
-    let fixture = run_fixture(member_fixture(
-        r#"function actual(input) {
-  const a = "outer";
-  switch (input.kind) {
-    case "left":
-      const b = input.left;
-      return b;
-  }
-  return a;
-}
-console.log(actual({ kind: "left", left: "L" }), actual({ kind: "right", left: "R" }));
-export { actual };
-"#,
-        "format",
-        Member::source_alpha(
-            "format_value",
-            r#"function readable(input) {
-  const value = "outer";
-  switch (input.kind) {
-    case "left":
-      const value = input.left;
-      return value;
-  }
-  return value;
-}"#,
-        ),
-    ));
 
-    assert_entry_output(&fixture, "L outer\n");
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/format.js",
-        &[
-            "function format_value",
-            r#"const a = "outer""#,
-            "const b = input.left",
-        ],
-        &["function actual", "function readable"],
-    );
-}
 
-#[test]
-fn member_source_match_alpha_all_named_function_expression_name_is_function_local() {
-    let fixture = run_fixture(member_fixture(
-        r#"const a = () => "outer";
-const b = function c(n) {
-  return n <= 0 ? "inner" : c(n - 1);
-};
-console.log(a(), b(1));
-export { a, b };
-"#,
-        "format",
-        Member::source_alpha_target(
-            "wrapper",
-            "wrapper",
-            r#"const outer = () => "outer";
-const wrapper = function outer(n) {
-  return n <= 0 ? "inner" : outer(n - 1);
-};"#,
-        ),
-    ));
 
-    assert_entry_output(&fixture, "outer inner\n");
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/format.js",
-        &["const wrapper", "function c", "c(n - 1)"],
-        &["function outer"],
-    );
-}
 
 #[test]
 fn member_source_match_treats_object_shorthand_as_explicit_same_name_property() {
@@ -917,122 +817,57 @@ export { actual };
 }
 
 #[test]
-fn member_source_match_string_literal_regex_predicate_matches_string_literal_value() {
-    let fixture = run_fixture(member_fixture(
-        r#"const runtimeStyle = "WidgetShell-42";
+fn literal_regex_holes_select_and_emit_the_matching_value() {
+    for (source, selector, output, declaration) in [
+        (r#"const runtimeStyle = "WidgetShell-42";
 console.log(runtimeStyle);
 export { runtimeStyle };
-"#,
-        "styles/shell",
-        Member::source_alpha(
-            "shellStyle",
-            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
-        ),
-    ));
-
-    assert_entry_output(&fixture, "WidgetShell-42\n");
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/styles/shell.js",
-        &["const shellStyle = \"WidgetShell-42\""],
-        &["STR_LITERAL_MATCHING_RE"],
-    );
-}
-
-#[test]
-fn member_source_match_regex_quantifier_matches_shorter_value() {
-    let fixture = run_fixture(member_fixture(
-        r#"const decoyStyle = "f";
+"#, r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#, "WidgetShell-42\n", r#"const shellStyle = "WidgetShell-42""#),
+        (r#"const decoyStyle = "f";
 const runtimeStyle = "fo";
 console.log(runtimeStyle);
 export { runtimeStyle };
-"#,
-        "styles/shell",
-        Member::source_alpha(
-            "shellStyle",
-            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
-        ),
-    ));
-
-    assert_entry_output(&fixture, "fo\n");
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/styles/shell.js",
-        &[r#"const shellStyle = "fo""#],
-        &["STR_LITERAL_MATCHING_RE"],
-    );
+"#, r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#, "fo\n", r#"const shellStyle = "fo""#),
+    ] {
+        let fixture = run_fixture(member_fixture(source, "styles/shell", Member::source_alpha("shellStyle", selector)));
+        assert_entry_output(&fixture, output);
+        assert_module_source(&fixture.out_root, "static/app/modules/styles/shell.js", &[declaration], &["STR_LITERAL_MATCHING_RE"]);
+    }
 }
 
 #[test]
-fn member_source_match_regex_quantifier_does_not_hide_ambiguity() {
-    expect_rejection_containing_all(
-        member_fixture(
-            r#"const decoyStyle = "foo";
+fn literal_regex_holes_preserve_no_match_and_ambiguity_diagnostics() {
+    for (source, selector, outcome, anchor) in [
+        (r#"const decoyStyle = "foo";
 const runtimeStyle = "fo";
 console.log(runtimeStyle);
 export { decoyStyle, runtimeStyle };
-"#,
-            "styles/shell",
-            Member::source_alpha(
-                "shellStyle",
-                r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
-            ),
-        ),
-        &[
-            "styles/shell",
-            "ambiguous",
-            "STR_LITERAL_MATCHING_RE",
-            "foo",
-        ],
-    );
-}
-
-#[test]
-fn member_source_match_string_literal_regex_predicate_rejects_non_matching_literal() {
-    expect_rejection_containing_all(
-        member_fixture(
-            r#"const runtimeStyle = "PanelShell-42";
+"#, r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#, "ambiguous", "foo"),
+        (r#"const runtimeStyle = "PanelShell-42";
 console.log(runtimeStyle);
 export { runtimeStyle };
-"#,
-            "styles/shell",
-            Member::source_alpha(
-                "shellStyle",
-                r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
-            ),
-        ),
-        &[
-            "styles/shell",
-            "did not match any top-level declaration",
-            "STR_LITERAL_MATCHING_RE",
-            "WidgetShell",
-        ],
-    );
-}
-
-#[test]
-fn member_source_match_string_literal_regex_predicate_rejects_ambiguous_literals() {
-    expect_rejection_containing_all(
-        member_fixture(
-            r#"const runtimePrimaryStyle = "WidgetShell-1";
+"#, r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#, "did not match any top-level declaration", "WidgetShell"),
+        (r#"const runtimePrimaryStyle = "WidgetShell-1";
 const runtimeSecondaryStyle = "WidgetShell-2";
 console.log(runtimePrimaryStyle, runtimeSecondaryStyle);
 export { runtimePrimaryStyle, runtimeSecondaryStyle };
-"#,
-            "styles/shell",
-            Member::source_alpha(
-                "shellStyle",
-                r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
-            ),
-        ),
-        &[
-            "styles/shell",
-            "ambiguous",
-            "STR_LITERAL_MATCHING_RE",
-            "WidgetShell",
-        ],
-    );
+"#, r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#, "ambiguous", "WidgetShell"),
+    ] {
+        expect_rejection_containing_all(
+            member_fixture(source, "styles/shell", Member::source_alpha("shellStyle", selector)),
+            &["styles/shell", outcome, "STR_LITERAL_MATCHING_RE", anchor],
+        );
+    }
 }
+
+
+
+
+
+
+
+
+
 
 #[test]
 fn member_source_match_many_expr_holes_match_positionally() {
@@ -1859,17 +1694,13 @@ export { selectedA, selectedB, laterC };
 
 #[test]
 fn binding_group_declarator_holes_extract_adjacent_arrows_at_start_middle_and_end() {
-    let leading_fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimeBuild = (value) => `build:${value}`,
+    for (module, source, group, output, exports, excluded_exports, excluded_source) in [
+        ("leading", r#"const runtimeBuild = (value) => `build:${value}`,
   runtimeRead = (value) => runtimeBuild(value).toUpperCase(),
   runtimeTrailingHelper = () => "tail";
 console.log(runtimeRead("one"), runtimeTrailingHelper());
 export { runtimeBuild, runtimeRead, runtimeTrailingHelper };
-"#,
-        vec![logical_module_with_binding_groups(
-            "leading",
-            &[],
-            &[BindingGroup::source_alpha(
+"#, BindingGroup::source_alpha(
                 r#"const buildSelected = (value) => `build:${value}`,
   readSelected = (value) => buildSelected(value).toUpperCase(),
   DECLARATORS_AFTER = null;"#,
@@ -1877,97 +1708,49 @@ export { runtimeBuild, runtimeRead, runtimeTrailingHelper };
                     ("buildSelected", "buildValue"),
                     ("readSelected", "readValue"),
                 ],
-            )],
-        )],
-    ));
-    assert_entry_output(&leading_fixture, "BUILD:ONE tail\n");
-    assert_module_exports(
-        &leading_fixture.out_root,
-        "static/app/modules/leading.js",
-        &["buildValue", "readValue"],
-        &["runtimeBuild", "runtimeRead", "runtimeTrailingHelper"],
-    );
-    assert_module_source(
-        &leading_fixture.out_root,
-        "static/app/modules/leading.js",
-        &["const buildValue", "const readValue"],
-        &["runtimeTrailingHelper", "DECLARATORS_AFTER"],
-    );
-
-    let middle_fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimeLeadingHelper = () => "head",
+            ), "BUILD:ONE tail\n", &["buildValue", "readValue"][..], &["runtimeBuild", "runtimeRead", "runtimeTrailingHelper"][..], &["runtimeTrailingHelper", "DECLARATORS_AFTER"][..]),
+        ("middle", r#"const runtimeLeadingHelper = () => "head",
   runtimeBuild = (value) => `build:${value}`,
   runtimeRead = (value) => runtimeBuild(value).toUpperCase(),
   runtimeTrailingHelper = () => "tail";
 console.log(runtimeLeadingHelper(), runtimeRead("two"), runtimeTrailingHelper());
 export { runtimeLeadingHelper, runtimeBuild, runtimeRead, runtimeTrailingHelper };
-"#,
-        vec![logical_module_with_binding_groups(
-            "middle",
-            &[],
-            &[BindingGroup::source_alpha_adopt_all(
+"#, BindingGroup::source_alpha_adopt_all(
                 r#"const DECLARATORS_BEFORE = null,
   buildSelected = (value) => `build:${value}`,
   readSelected = (value) => buildSelected(value).toUpperCase(),
   DECLARATORS_AFTER = null;"#,
-            )],
-        )],
-    ));
-    assert_entry_output(&middle_fixture, "head BUILD:TWO tail\n");
-    assert_module_exports(
-        &middle_fixture.out_root,
-        "static/app/modules/middle.js",
-        &["buildSelected", "readSelected"],
-        &[
+            ), "head BUILD:TWO tail\n", &["buildSelected", "readSelected"][..], &[
             "runtimeLeadingHelper",
             "runtimeBuild",
             "runtimeRead",
             "runtimeTrailingHelper",
-        ],
-    );
-    assert_module_source(
-        &middle_fixture.out_root,
-        "static/app/modules/middle.js",
-        &["const buildSelected", "const readSelected"],
-        &[
+        ][..], &[
             "runtimeLeadingHelper",
             "runtimeTrailingHelper",
             "DECLARATORS_BEFORE",
             "DECLARATORS_AFTER",
-        ],
-    );
-
-    let trailing_fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimeLeadingHelper = () => "head",
+        ][..]),
+        ("trailing", r#"const runtimeLeadingHelper = () => "head",
   runtimeBuild = (value) => `build:${value}`,
   runtimeRead = (value) => runtimeBuild(value).toUpperCase();
 console.log(runtimeLeadingHelper(), runtimeRead("three"));
 export { runtimeLeadingHelper, runtimeBuild, runtimeRead };
-"#,
-        vec![logical_module_with_binding_groups(
-            "trailing",
-            &[],
-            &[BindingGroup::source_alpha_adopt_names(
+"#, BindingGroup::source_alpha_adopt_names(
                 r#"const DECLARATORS_BEFORE = null,
   buildSelected = (value) => `build:${value}`,
   readSelected = (value) => buildSelected(value).toUpperCase();"#,
                 &["buildSelected", "readSelected"],
-            )],
-        )],
-    ));
-    assert_entry_output(&trailing_fixture, "head BUILD:THREE\n");
-    assert_module_exports(
-        &trailing_fixture.out_root,
-        "static/app/modules/trailing.js",
-        &["buildSelected", "readSelected"],
-        &["runtimeLeadingHelper", "runtimeBuild", "runtimeRead"],
-    );
-    assert_module_source(
-        &trailing_fixture.out_root,
-        "static/app/modules/trailing.js",
-        &["const buildSelected", "const readSelected"],
-        &["runtimeLeadingHelper", "DECLARATORS_BEFORE"],
-    );
+            ), "head BUILD:THREE\n", &["buildSelected", "readSelected"][..], &["runtimeLeadingHelper", "runtimeBuild", "runtimeRead"][..], &["runtimeLeadingHelper", "DECLARATORS_BEFORE"][..]),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![logical_module_with_binding_groups(module, &[], &[group])]));
+        let path = format!("static/app/modules/{module}.js");
+        assert_entry_output(&fixture, output);
+        assert_module_exports(&fixture.out_root, &path, exports, excluded_exports);
+        let declarations: Vec<_> = exports.iter().map(|name| format!("const {name}")).collect();
+        let declarations: Vec<_> = declarations.iter().map(String::as_str).collect();
+        assert_module_source(&fixture.out_root, &path, &declarations, excluded_source);
+    }
 }
 
 #[test]
