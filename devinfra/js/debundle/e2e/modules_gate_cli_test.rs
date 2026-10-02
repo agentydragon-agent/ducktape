@@ -69,8 +69,11 @@ fn modules_delete_force_accepts_clean_deletion() {
 
 #[test]
 fn edit_gate_resolves_decorator_statement_claims_from_real_source() {
+    // A leading export is not an owner: source statement ordinals must not be
+    // confused with positions in the owner table when resolving the decorator.
     let fixture = GraphFixture::new(
-        r#"const ignored = 0;
+        r#"export { Co };
+const ignored = 0;
 class Co {}
 function Ro(tags, target, name, value) { target[name] = value; }
 const Z = 1;
