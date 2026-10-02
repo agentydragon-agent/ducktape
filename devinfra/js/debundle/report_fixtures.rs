@@ -267,3 +267,10 @@ pub fn graph_of(
         },
     }
 }
+
+/// An owner graph whose atomic units are one-per-owner, in owner order.
+/// Atomic edges stay empty: tests exercising that distinct graph provide it explicitly.
+pub fn singleton_graph(owners: Vec<OwnerGraphNodeReport>, edges: Vec<OwnerGraphEdgeReport>) -> OwnerGraphReport {
+    let units = owners.iter().enumerate().map(|(i, owner)| atomic_unit_for(&format!("atomic:{i}"), &[owner])).collect();
+    graph_of(owners, edges, units, vec![])
+}
