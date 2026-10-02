@@ -492,8 +492,12 @@ def agent_permissions(cluster: ParsedCluster, repo_root: Path, k8s_dir: Path) ->
         bootstrap = asyncio.run(run_kustomize_build(root))
         resources.extend(bootstrap.resources)
     assert not any(r.kind == "ClusterPolicy" and r.name == "generate-agent-diagnostics-readers" for r in resources)
-    assert not any(r.kind == "ClusterRole" and r.name == "kyverno-background-controller-rolebindings" for r in resources)
-    assert not any(r.kind == "RoleBinding" and r.name in {"agent-readable-metadata", "agent-readable-logs"} for r in resources)
+    assert not any(
+        r.kind == "ClusterRole" and r.name == "kyverno-background-controller-rolebindings" for r in resources
+    )
+    assert not any(
+        r.kind == "RoleBinding" and r.name in {"agent-readable-metadata", "agent-readable-logs"} for r in resources
+    )
     # Compare binding scopes directly; broad Haku roles cannot mask omissions.
     # Labels are now descriptive output of the shared policy, not an access trigger.
     expected: set[tuple[str, str, str]] = set()
@@ -508,9 +512,13 @@ def agent_permissions(cluster: ParsedCluster, repo_root: Path, k8s_dir: Path) ->
             expected.add((resource.name, "agent-diagnostics-metadata", "agent-readable-namespace-metadata"))
     actual: set[tuple[str, str, str]] = set()
     for resource in resources:
-        if isinstance(resource, RoleBindingResource) and resource.name in {"agent-diagnostics-metadata", "agent-diagnostics-logs"}:
+        if isinstance(resource, RoleBindingResource) and resource.name in {
+            "agent-diagnostics-metadata",
+            "agent-diagnostics-logs",
+        }:
             assert resource.kind == "RoleBinding"
-            assert resource.role_ref is not None and resource.role_ref.kind == "ClusterRole"
+            assert resource.role_ref is not None
+            assert resource.role_ref.kind == "ClusterRole"
             actual.add((resource.namespace, resource.name, resource.role_ref.name))
     assert actual == expected
     docs = yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text())

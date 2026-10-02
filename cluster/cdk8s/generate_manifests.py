@@ -368,10 +368,7 @@ def generate_manifests(root: Path) -> None:
         ),
     )
     kyverno_artifact = artifact("kyverno", kyverno_app.OUTPUT_DIR)
-    kyverno_kustomization = kyverno_app.kyverno(
-        flux_chart,
-        write_directory(root, kyverno_artifact, kyverno_app.chart),
-    )
+    kyverno_kustomization = kyverno_app.kyverno(flux_chart, write_directory(root, kyverno_artifact, kyverno_app.chart))
     local_path_provisioner_artifact = artifact("local-path-provisioner", local_path_provisioner.OUTPUT_DIR)
     local_path_provisioner_kustomization = local_path_provisioner.local_path_provisioner(
         flux_chart, write_directory(root, local_path_provisioner_artifact, local_path_provisioner.chart)

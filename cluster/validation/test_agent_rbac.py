@@ -111,6 +111,5 @@ def test_aggregation_is_not_silently_ignored() -> None:
         rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name="aggregate"), None)
 
 
-
 if __name__ == "__main__":
     pytest_bazel.main()

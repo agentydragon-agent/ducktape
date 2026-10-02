@@ -26,7 +26,6 @@ py_library(
 # One target per policy: a failure names the policy it belongs to, and a single
 # policy can be run on its own.
 
-
 py_test(
     name = "test_default_vpa_requests_only",
     srcs = ["test_default_vpa_requests_only.py"],

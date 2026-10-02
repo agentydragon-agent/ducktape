@@ -57,14 +57,25 @@ def test_kyverno_no_longer_generates_agent_bindings() -> None:
     docs = Cdk8sTesting.synth(kyverno_app.chart(Cdk8sTesting.app()))
     for build in kyverno_policies.CHARTS:
         docs.extend(Cdk8sTesting.synth(build(Cdk8sTesting.app())))
-    assert not any(doc["kind"] == "ClusterRole" and doc["metadata"]["name"] == "kyverno-background-controller-rolebindings" for doc in docs)
+    assert not any(
+        doc["kind"] == "ClusterRole" and doc["metadata"]["name"] == "kyverno-background-controller-rolebindings"
+        for doc in docs
+    )
     policies = [doc for doc in docs if doc["kind"] == "ClusterPolicy"]
     assert {doc["metadata"]["name"] for doc in policies} == {
-        "require-gitops", "default-revision-history-limit", "default-disable-service-links",
-        "default-vpa-requests-only", "inject-mitmproxy", "inject-haku-egress-proxy",
-        "restrict-agent-kustomization-patch", "restrict-agent-gateway-routes", "require-secret-store-conditions",
+        "require-gitops",
+        "default-revision-history-limit",
+        "default-disable-service-links",
+        "default-vpa-requests-only",
+        "inject-mitmproxy",
+        "inject-haku-egress-proxy",
+        "restrict-agent-kustomization-patch",
+        "restrict-agent-gateway-routes",
+        "require-secret-store-conditions",
     }
-    assert not any(rule.get("generate", {}).get("kind") == "RoleBinding" for doc in policies for rule in doc["spec"]["rules"])
+    assert not any(
+        rule.get("generate", {}).get("kind") == "RoleBinding" for doc in policies for rule in doc["spec"]["rules"]
+    )
     release = next(doc for doc in docs if doc["kind"] == "HelmRelease")
     for controller in ("backgroundController", "cleanupController", "reportsController"):
         assert release["spec"]["values"][controller]["enabled"] is True
