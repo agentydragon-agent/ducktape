@@ -20,7 +20,7 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{ArtifactIndexes, ChunkId, ChunkTable, list_chunk_file_paths};
+use artifact::{ChunkId, ChunkTable, list_chunk_file_paths};
 use binding_targets::{declaration_ids, module_export_name};
 pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
 use export_surface::collect_local_idents_by_export_name;
@@ -29,7 +29,7 @@ pub use import_rewrites::{
 };
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
-use js_ast::{module_export_name_node, named_export_module_item, named_export_specifier};
+use js_ast::{module_export_name_node, named_export_module_item, named_export_specifier, str_value};
 pub use manifests::*;
 pub use output_imports::{
     MaterializedOutputChunkIndex, bundled_facade_import_source, resolve_partial_swap_import_target,
@@ -498,7 +498,7 @@ fn check_partial_swap_consumer_decl(
 mod tests {
     use super::*;
     use artifact::{
-        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
+        ArtifactIndexes, ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
         JsChunk, JsFile,
     };
     use spec::{VendorLevel, VendorMark, VendorRole};
