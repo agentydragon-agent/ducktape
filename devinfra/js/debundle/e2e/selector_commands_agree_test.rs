@@ -1096,13 +1096,15 @@ fn candidate_limit_counts_places_not_wildcard_alignments() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("chunk.js");
     let calls: String = (0..101).map(|i| format!("f{i}();\n")).collect();
-    let chunk = format!("function result() {{ {calls} }}");
+    let chunk = format!("const a = 1; {calls} const b = 2;");
     write_text_file(&source, &chunk);
-    // One function placement, with 101 possible free-name bindings for anchor.
+    // A binding group has one placement tuple but 101 free-name bindings.
+    // Two claimed bindings select the module-level sequence matcher; a single
+    // claimed binding uses contiguous windows, not top-level STMT_LIST gaps.
     let modules = dir.path().join("modules");
     write_text_file(
         &modules.join("selected.yaml"),
-        "source_matches:\n  - match: |\n      function target() { STMT_LIST; anchor(); STMT_LIST; }\n    bindings: [target]\n",
+        "source_matches:\n  - match: |\n      const first = 1; STMT_LIST; anchor(); STMT_LIST; const second = 2;\n    bindings: [first, second]\n",
     );
     let output = run_source_only_validate(&modules, &source, &["--format", "json"]);
     assert!(
@@ -1112,11 +1114,7 @@ fn candidate_limit_counts_places_not_wildcard_alignments() {
         output.stderr
     );
     let report: Value = serde_json::from_str(&output.stdout).unwrap();
-    assert_eq!(
-        export_record(outcomes(&report), "target"),
-        None,
-        "{report:#}"
-    );
+    assert!(outcomes(&report).is_empty(), "{report:#}");
 }
 
 #[test]
