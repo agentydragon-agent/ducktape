@@ -126,12 +126,17 @@ mod tests {
     #[test]
     fn every_keyword_accepts_bare_and_labeled_spellings() {
         for keyword in HOLE_KEYWORDS {
-            for name in [keyword.to_string(), format!("{keyword}_"), format!("{keyword}_label")] {
+            for name in [
+                keyword.to_string(),
+                format!("{keyword}_"),
+                format!("{keyword}_label"),
+            ] {
                 assert_eq!(hole_keyword(&name), Some(keyword));
                 assert!(is_hole_keyword(&name));
             }
-            assert_eq!(hole_keyword(&format!("{keyword}suffix")), None);
+            assert_eq!(hole_name_for(&format!("{keyword}suffix"), keyword), None);
         }
+        assert_eq!(hole_keyword("STMT_LISTsuffix"), Some(STMT_HOLE_KEYWORD));
         for name in ["JSON", "URL", "prefix_ANYTHING", "anything"] {
             assert_eq!(hole_keyword(name), None);
         }

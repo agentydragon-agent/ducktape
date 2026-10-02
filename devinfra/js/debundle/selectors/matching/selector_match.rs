@@ -29,7 +29,8 @@ use regex::Regex;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
     DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for, is_hole_keyword, labeled_hole_name_for,
+    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for, is_hole_keyword,
+    labeled_hole_name_for,
 };
 
 /// A needle construct whose faithful encoding this matcher has not implemented.

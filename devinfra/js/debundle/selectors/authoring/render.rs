@@ -15,8 +15,8 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD, hole_keyword, hole_name_for,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    hole_keyword, hole_name_for,
 };
 use swc_common::{DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
@@ -665,15 +665,22 @@ mod interior_holing_tests {
                 ("(x, SEQ_EXPRS_value);", "SEQ_EXPRS"),
                 ("class C { ANYTHING_members; }", "ANYTHING"),
             ] {
-                assert_eq!(holes_present(source).unwrap(), BTreeSet::from([keyword.to_string()]));
+                assert_eq!(
+                    holes_present(source).unwrap(),
+                    BTreeSet::from([keyword.to_string()])
+                );
             }
-            assert!(holes_present(
-                r#"// ANYTHING
+            assert!(
+                holes_present(
+                    r#"// ANYTHING
 const x = "STMT_LIST";
 const y = { DECLARATORS: 1 };
 x.ARGS;
 class C { CASE_REST = 1; }"#,
-            ).unwrap().is_empty());
+                )
+                .unwrap()
+                .is_empty()
+            );
         });
     }
 

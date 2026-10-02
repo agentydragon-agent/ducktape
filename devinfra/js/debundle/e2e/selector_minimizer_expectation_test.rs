@@ -77,9 +77,13 @@ fn run_case(case: &MinimizedSelectorCase) {
         for keyword in ["ARGS", "CASE_REST"] {
             if source.contains(keyword) {
                 assert!(
-                    candidate["rewritten_holes"].as_array().unwrap().iter()
+                    candidate["rewritten_holes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
                         .any(|hole| hole.as_str() == Some(keyword)),
-                    "{}: missing {keyword} in {candidate}", case.name,
+                    "{}: missing {keyword} in {candidate}",
+                    case.name,
                 );
             }
         }

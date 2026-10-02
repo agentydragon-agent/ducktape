@@ -34,8 +34,8 @@ use selector_resolve::{Member, MemberSelector, SpecModule};
 use serde::Serialize;
 use source_match::ParsedSourceMatchSelector;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
-    SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, is_hole_keyword,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    is_hole_keyword,
 };
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
