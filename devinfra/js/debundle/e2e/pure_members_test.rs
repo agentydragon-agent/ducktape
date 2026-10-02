@@ -16,13 +16,22 @@
 
 use analysis::{DepKind, EdgeRoleReport};
 use debundle_e2e_support::*;
-use serde_json::json;
+use spec::ChunkRenames;
 
 const VENDOR_FILE: &[(&str, &str)] = &[(
     "static/app/vendor.js",
     "export function makePure(arg) { return arg; }\n\
      export function forwardRef(render) { return { render }; }\n",
 )];
+
+fn namespace_rename(name: &str, pure_members: &[&str]) -> ChunkRenames {
+    let mut renames = chunk_renames(&[
+        ChunkRenameEntry::new(name, "ns").with_kind("import_specifier"),
+    ]);
+    renames.annotations.entry(name.to_string()).or_default().pure_members =
+        pure_members.iter().map(|name| (*name).to_string()).collect();
+    renames
+}
 
 /// Cycle-forcing fixture body parameterized by the per-case knobs.
 ///
@@ -39,7 +48,7 @@ const VENDOR_FILE: &[(&str, &str)] = &[(
 /// owned strings to satisfy `FixtureOpts<'a>`'s lifetime.
 struct PureMembersCase {
     source: String,
-    pure_members: serde_json::Value,
+    pure_members: ChunkRenames,
 }
 
 impl PureMembersCase {
@@ -55,24 +64,7 @@ export {{ a, b, c }};
         );
         Self {
             source,
-            pure_members: json!({
-                "members": [
-                    {
-                        "name": "React",
-                        "selector": {
-                            "binding": {
-                                "name": "ns",
-                                "kind": "import_specifier",
-                            },
-                        },
-                    },
-                ],
-                "annotations": {
-                    "React": {
-                        "pure_members": pure_members,
-                    },
-                },
-            }),
+            pure_members: namespace_rename("React", pure_members),
         }
     }
 
@@ -150,24 +142,7 @@ fn pure_members_member_call_does_not_promote_callback_body_reads() {
     // call site; at-init promotion must still record ordinary eager
     // argument reads, but it must not treat the callback body's lazy
     // reads as if they fired during the wrapper declaration.
-    let pure_members = json!({
-        "members": [
-            {
-                "name": "ReactLike",
-                "selector": {
-                    "binding": {
-                        "name": "ns",
-                        "kind": "import_specifier",
-                    },
-                },
-            },
-        ],
-        "annotations": {
-            "ReactLike": {
-                "pure_members": ["forwardRef"],
-            },
-        },
-    });
+    let pure_members = namespace_rename("ReactLike", &["forwardRef"]);
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"import * as ns from "./vendor.js";
