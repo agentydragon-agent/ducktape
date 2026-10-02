@@ -10,6 +10,7 @@ rust_library(
     srcs = [
         "support/ast_assertions.rs",
         "support/fixture_spec.rs",
+        "support/graph_fixture.rs",
         "support/mod.rs",
     ],
     crate_name = "debundle_e2e_support",
@@ -378,23 +379,11 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(
-    name = "modules_gate_cli_test",
-    deps = [
-        "@crates//:serde_json",
-        "@crates//:tempfile",
-    ],
-)
+debundle_e2e_test(name = "modules_gate_cli_test")
 
-debundle_e2e_test(
-    name = "bindings_assign_gate_cli_test",
-    deps = ["@crates//:tempfile"],
-)
+debundle_e2e_test(name = "bindings_assign_gate_cli_test")
 
-debundle_e2e_test(
-    name = "bindings_unassign_gate_cli_test",
-    deps = ["@crates//:tempfile"],
-)
+debundle_e2e_test(name = "bindings_unassign_gate_cli_test")
 
 debundle_e2e_test(
     name = "cli_mutation_outcome_test",
@@ -456,24 +445,12 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "top_level_query_cli_test",
-    deps = [
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:peel",
-        "//devinfra/js/debundle:report_fixtures",
-        "@crates//:serde_json",
-        "@crates//:tempfile",
-    ],
+    deps = ["@crates//:serde_json"],
 )
 
 debundle_e2e_test(
     name = "binding_name_resolution_cli_test",
-    deps = [
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:peel",
-        "//devinfra/js/debundle:report_fixtures",
-        "@crates//:serde_json",
-        "@crates//:tempfile",
-    ],
+    deps = ["//devinfra/js/debundle:peel"],
 )
 
 # The tests below do not build on `:support`.
