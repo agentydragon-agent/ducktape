@@ -13,7 +13,9 @@ use super::propose::{
     DEFAULT_SIZE_CAP_LINES, ModuleProposal, ProposalDiagnostic, ProposalOptions, ProposalsReport,
     propose_from_files, propose_from_graph,
 };
-use anonymous_resolution::{SourceClaimSet, resolve_source_claims, resolve_source_claims_of, resolve_source_file};
+use anonymous_resolution::{
+    SourceClaimSet, resolve_source_claims, resolve_source_claims_of, resolve_source_file,
+};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
 use serde::Serialize;

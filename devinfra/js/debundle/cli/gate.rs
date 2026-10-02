@@ -408,7 +408,6 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
     }
 }
 
-
 fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
     edge.binding.as_ref().map(|a| a.as_ref()) == Some(binding)
         || edge.from_binding.as_ref().map(|a| a.as_ref()) == Some(binding)

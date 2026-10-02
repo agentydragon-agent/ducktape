@@ -41,9 +41,8 @@ use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
     ArrowExpr, ArrowFunctionBody, AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class,
-    ClassMember, Constructor, Expr, ExprOrSpread, ExprStmt, Function, Module,
-    ModuleItem, NewExpr, ObjectLit, ObjectPat, ObjectPatProp, Pat, Prop, PropName, PropOrSpread,
-    SeqExpr, Stmt,
+    ClassMember, Constructor, Expr, ExprOrSpread, ExprStmt, Function, Module, ModuleItem, NewExpr,
+    ObjectLit, ObjectPat, ObjectPatProp, Pat, Prop, PropName, PropOrSpread, SeqExpr, Stmt,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -564,7 +563,6 @@ fn stmt_list_hole() -> Stmt {
         expr: Box::new(Expr::Ident(ident_node(STMT_LIST_HOLE_KEYWORD))),
     })
 }
-
 
 pub fn render_match_selector_text(report: &MatchSelectorReport, out: &mut String) {
     use std::fmt::Write;

@@ -308,7 +308,6 @@ struct BindingPairAgg {
     count: usize,
 }
 
-
 fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
     let mut seen: HashSet<(&str, &str)> = HashSet::new();
     for edge in cut {
