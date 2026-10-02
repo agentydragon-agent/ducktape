@@ -37,7 +37,10 @@ fn class_render_with<'a>(
 pub(super) fn hole_class(class: &Class, kept: &BTreeSet<AnchorSpan>) -> Class {
     let mut holed = class.clone();
     // Preserve superclass presence, not its rebuild-volatile identifier.
-    holed.super_class = class.super_class.as_ref().map(|_| Box::new(anything_expr()));
+    holed.super_class = class
+        .super_class
+        .as_ref()
+        .map(|_| Box::new(anything_expr()));
     holed.body = hole_class_members(&class.body, kept);
     holed
 }

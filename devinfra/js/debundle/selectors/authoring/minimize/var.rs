@@ -47,13 +47,7 @@ pub(crate) fn try_var_read_off_candidates(
     let render_with = |kept: &BTreeSet<AnchorSpan>,
                        regex_anchors: &BTreeMap<AnchorSpan, String>|
      -> Result<String> {
-        render_var_slots(
-            var,
-            &only_target,
-            &export_for,
-            kept,
-            regex_anchors,
-        )
+        render_var_slots(var, &only_target, &export_for, kept, regex_anchors)
     };
 
     let item = index

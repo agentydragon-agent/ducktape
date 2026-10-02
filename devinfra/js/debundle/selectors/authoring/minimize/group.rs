@@ -11,9 +11,7 @@ use super::object::{object_anchor_ranking, try_object_read_off_candidates};
 use super::var::try_var_read_off_candidates;
 use super::{render_var_slots, render_via_neighbor_context};
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
-use crate::render::{
-    AnchorSpan, MAX_MINIMIZER_ANCHORS, holes_present, node_holds_anchor,
-};
+use crate::render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, holes_present, node_holds_anchor};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
     match_single_member_selector, prove_synthesized_selector, single_ident_pat_name,
@@ -21,10 +19,7 @@ use crate::{
 
 /// Non-object slots reuse the shape index's ranked features instead of a second
 /// expression walk. Object slots keep the shared value-before-key policy.
-fn slot_anchor_ranking(
-    declarator: &VarDeclarator,
-    ranked_spans: &[AnchorSpan],
-) -> Vec<AnchorSpan> {
+fn slot_anchor_ranking(declarator: &VarDeclarator, ranked_spans: &[AnchorSpan]) -> Vec<AnchorSpan> {
     if let Some(Expr::Object(object)) = declarator.init.as_deref() {
         return object_anchor_ranking(object);
     }
@@ -55,13 +50,7 @@ fn slot_minimal_anchors(
     let export_for = |name: &str| (name == runtime).then(|| export.to_string());
     let no_regex = BTreeMap::new();
     let render_slot = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
-        render_var_slots(
-            var,
-            &only_this,
-            &export_for,
-            kept,
-            &no_regex,
-        )
+        render_var_slots(var, &only_this, &export_for, kept, &no_regex)
     };
     // The slot resolves when its single-target view proves.
     let slot_resolves = |kept: &BTreeSet<AnchorSpan>| -> Result<bool> {
@@ -157,7 +146,9 @@ fn try_var_group_read_off(
         if value_first {
             seed = ranked.first().copied().into_iter().collect();
         }
-        union.extend(slot_minimal_anchors(index, var, decl, slot, target, &seed, &ranked)?);
+        union.extend(slot_minimal_anchors(
+            index, var, decl, slot, target, &seed, &ranked,
+        )?);
         tuple_ranked.extend(ranked.into_iter().take(MAX_MINIMIZER_ANCHORS));
     }
 
@@ -165,16 +156,13 @@ fn try_var_group_read_off(
     let render_with = |kept: &BTreeSet<AnchorSpan>,
                        regex_anchors: &BTreeMap<AnchorSpan, String>|
      -> Result<String> {
-        render_var_slots(
-            var,
-            target_slots,
-            &export_for,
-            kept,
-            regex_anchors,
-        )
+        render_var_slots(var, target_slots, &export_for, kept, regex_anchors)
     };
     let resolves = |kept: &BTreeSet<AnchorSpan>| -> Result<bool> {
-        Ok(prove_synthesized_selector(index, decl, targets, &render_with(kept, &no_regex)?).is_ok())
+        Ok(
+            prove_synthesized_selector(index, decl, targets, &render_with(kept, &no_regex)?)
+                .is_ok(),
+        )
     };
     for anchor in tuple_ranked {
         if resolves(&union)? {
@@ -261,7 +249,9 @@ pub(crate) fn minimize_var_group_selector_candidates(
         }
         if let Some(selector) =
             try_var_group_read_off(index, var, decl, targets, &target_slots, value_first)?
-            && !out.iter().any(|kept| kept.match_source == selector.match_source)
+            && !out
+                .iter()
+                .any(|kept| kept.match_source == selector.match_source)
         {
             out.push(selector);
         }
@@ -277,7 +267,9 @@ pub(crate) fn minimize_var_group_selector(
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],
 ) -> Result<Option<SpecializedSelector>> {
-    Ok(minimize_var_group_selector_candidates(index, var, decl, targets, 1)?
-        .into_iter()
-        .next())
+    Ok(
+        minimize_var_group_selector_candidates(index, var, decl, targets, 1)?
+            .into_iter()
+            .next(),
+    )
 }

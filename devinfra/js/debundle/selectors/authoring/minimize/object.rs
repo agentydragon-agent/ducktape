@@ -136,13 +136,7 @@ pub(crate) fn try_object_read_off_candidates(
     let export_for =
         |name: &str| (name == target.runtime_binding).then(|| target.export_name.clone());
     let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
-        render_var_slots(
-            var,
-            &only_target,
-            &export_for,
-            kept,
-            &no_regex,
-        )
+        render_var_slots(var, &only_target, &export_for, kept, &no_regex)
     };
 
     let item = index

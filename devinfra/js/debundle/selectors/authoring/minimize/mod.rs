@@ -45,8 +45,8 @@ use swc_ecma_visit::VisitMutWith;
 
 use crate::regex_anchor::RegexAnchorSubstitution;
 use crate::render::{
-    AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded, hole_stmt,
-    holes_present, ident_node, named_pat,
+    AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
+    hole_stmt, holes_present, ident_node, named_pat,
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
