@@ -26,7 +26,7 @@ Standing under it:
   human Decision, automatic at-most-one Execution, caller-own/operator-all reads, and no blind retry.
 - Submission is non-blocking, and a caller polls the durable Action event sequence from pending
   to a terminal state ([Action Service specification](../action_service/SPEC.md)); the open work is
-  making those Decision/result events available in a Thread-owned inbox and delivering a later
+  making those Decision/result events available in an SA-authorized runner-session inbox and delivering a later
   machine notice through the [standalone subscriptions service](notifications.md) (`ING` in
   [the DAG](task_dag.md)).
 - [`external_access.md`](external_access.md): delegated identity where the target's RBAC can
@@ -182,7 +182,7 @@ paragraph that led to it. One agent writes the interaction surface it is then dr
 Standing under it:
 
 - The [notification service design](notifications.md) (`ING` in [the DAG](task_dag.md)): a UI event
-  can later be another provider-owned source. Events go to a Thread inbox; a batched automated
+  can later be another provider-owned source. Events go to a runner-session inbox; a batched automated
   user-message notice tells the agent to retrieve them. UI providers and automatic wake are not v1.
 - Haku already owns a deployed UI: it authors the `haku/ui` repository on Forgejo, the image is
   published from it, and Flux applies the workload under the constrained `haku-state` reconciler
@@ -197,7 +197,7 @@ Missing:
 - **The event pipe.** Rai clicks; the click reaches `haku-ui`, Haku's own code behind an
   Authentik proxy defined in ducktape; that code decides whether Haku the agent should hear
   about it and posts JSON to an ingress that is Agentplane's code, which batches and rate-limits
-  and stores it in Haku's Thread inbox, with an automated notice delivered through the runner.
+  and stores it in Haku's runner-session inbox, with an automated notice delivered through the runner.
   Haku is allowed to write code that gets deployed where it can send messages to Haku; if it built the UI to lie,
   it would be lying to itself. So the UI posts as Haku's Kubernetes identity, the envelope names
   `haku-ui` as the source, and Rai's identity is Authentik's business at the UI's edge, not the

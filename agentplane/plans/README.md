@@ -18,7 +18,9 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [Profiles](profiles.md) — broader capability profiles remain deferred
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
-- [Subscriptions and notifications](notifications.md) — standalone service design: Thread-owned subscriptions,
+- [Runner directory](runner_directory.md) — proposed extraction of runner inventory from the app,
+  authenticated discovery, stable runner identity, and direct session routing without runner callbacks
+- [Subscriptions and notifications](notifications.md) — standalone service design: SA-authorized session scope,
   explicit inbox acknowledgement, Action-only v1, and runner delivery; later automatic following and wake
 - [Push mechanism](push_mechanism.md) — remaining push/subscription design for
   `NO_MANUAL_REFRESH`'s Settings tabs; the Actions attention drawer shipped in PR #8618
