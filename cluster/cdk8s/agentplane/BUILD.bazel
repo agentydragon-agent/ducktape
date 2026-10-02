@@ -289,6 +289,7 @@ py_library(
     deps = [
         ":app",
         ":app_settings",
+        ":dex",
         ":egress",
         ":staging_config",
         ":testing",
@@ -298,6 +299,7 @@ py_library(
         "//agentplane/crds:actionpolicyset",
         "//agentplane/crds:egressbinding",
         "//agentplane/crds:egresspolicy",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s/providers/agentplane:action_policy_set",
         "//cluster/cdk8s/providers/agentplane:egress_binding",
