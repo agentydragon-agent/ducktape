@@ -446,6 +446,7 @@ rust_test(
     crate = ":analysis",
     edition = "2024",
     deps = [
+        ":raw_js_test_support",
         "@crates//:swc_ecma_parser",
     ],
 )
@@ -488,10 +489,10 @@ rust_test(
     crate = ":gate",
     edition = "2024",
     deps = [
+        ":raw_js_test_support",
         "@crates//:proptest",
         "@crates//:serde_json",
         "@crates//:swc_common",
-        "@crates//:swc_ecma_parser",
     ],
 )
 
@@ -519,7 +520,7 @@ rust_test(
     crate = ":chunk_analysis",
     edition = "2024",
     deps = [
-        "@crates//:swc_ecma_parser",
+        ":raw_js_test_support",
     ],
 )
 
@@ -1262,5 +1263,18 @@ rust_binary(
     deps = [
         ":chunk_facts",
         ":js_ast",
+    ],
+)
+
+rust_library(
+    name = "raw_js_test_support",
+    testonly = True,
+    srcs = ["raw_js_test_support.rs"],
+    crate_root = "raw_js_test_support.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_parser",
     ],
 )
