@@ -2069,39 +2069,39 @@ data:
           kind: Role
           name: agentplane-testing-login-reader
     kubernetes_binding_cleanup_namespaces:
-      - ducktape-flux
-      - node-feature-discovery
-      - openebs
-      - authentik
-      - gatus
-      - loki
-      - clickhouse
-      - agentplane-index
-      - haku-ci
-      - proxmox-proxy
-      - agent-sandbox-system
-      - cert-manager
-      - study-casino
       - activitywatch
-      - monitoring
+      - agent-sandbox-system
+      - agentplane-index
       - agentplane-testing
-      - vm-images-publisher
-      - grocy-vallejo
-      - oci-cache
-      - litellm
       - airlock
-      - tana-mcp
-      - haku-console
-      - nix-cache
-      - nvidia-device-plugin
+      - authentik
+      - cert-manager
       - cli-proxy-api
-      - flux-system
-      - local-path-storage
-      - plaid-mcp
+      - clickhouse
       - cnpg-system
-      - haku-sandbox
+      - ducktape-flux
+      - flux-system
+      - gatus
       - grocy-sf
+      - grocy-vallejo
+      - haku-ci
+      - haku-console
+      - haku-sandbox
+      - litellm
+      - local-path-storage
+      - loki
+      - monitoring
+      - nix-cache
+      - node-feature-discovery
+      - nvidia-device-plugin
+      - oci-cache
+      - openebs
+      - plaid-mcp
+      - proxmox-proxy
       - public-coder-agent
+      - study-casino
+      - tana-mcp
+      - vm-images-publisher
     kubernetes_cluster_binding_cleanup: true
     token_audience: agentplane-sandbox-service
     runner_port: 7000

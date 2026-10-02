@@ -14,10 +14,6 @@ def create_app(*args: Any, **kwargs: Any) -> FastAPI:
     arguments.apply_defaults()
     values = arguments.arguments
     values["provisioner"] = Provisioning(
-        values["inventory"],
-        values["egress"],
-        values["action_policy"],
-        values["kubernetes_grants"] or {},
-        None,
+        values["inventory"], values["egress"], values["action_policy"], values["kubernetes_grants"] or {}, None
     )
     return production_app(*arguments.args, **arguments.kwargs)

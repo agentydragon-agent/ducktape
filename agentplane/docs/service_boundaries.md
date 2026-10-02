@@ -1,9 +1,8 @@
 # Agentplane service dependency rule
 
-Status: **accepted architecture constraint, including v1; extraction is not yet implemented.**
-The integration app currently contains backend responsibilities. This rule determines where those
-responsibilities must go when another Agentplane service needs them; it does not claim they have
-already moved.
+Status: **accepted architecture constraint, including v1.** Sandbox Service and the production app
+client are implemented in source; the live authority handoff is not yet verified. Notification
+implementation remains separate. See the [extraction plan](../plans/sandbox_service.md) for rollout gates.
 
 ## The integration app is a client
 
@@ -50,7 +49,7 @@ presentation state and projections, but those must not become hidden sources of 
 - **Integration app:** user-facing composition, interaction, presentation, and app-only projections/state;
   a client of the above, retaining its existing PostgreSQL session archive and ingestion checkpoints.
 
-The proposed backend name is **Sandbox Service**: it manages sandboxes and access to their runner
+The backend is named **Sandbox Service**: it manages sandboxes and access to their runner
 sessions. It is not another Action executor or a service called "runtime" with unspecified ownership.
 The existing `app/agent_runtime/` package name describes current code placement, not the new boundary.
 
@@ -100,5 +99,5 @@ general staging-disposability guidance is not permission to bypass this task-spe
 - Test authorization failures and preserve the distinction between accepted intent, runner admission,
   and harness effect. Human decision requirements stay in their backend authority even if the UI is down.
 
-Dependency enforcement and those acceptance tests are implementation gates, not claims that this
-planning PR installs a new import linter or proves the extraction complete.
+Dependency enforcement and those acceptance tests are implementation gates. Source changes and unit
+tests do not themselves prove the live handoff complete or staging data preservation.

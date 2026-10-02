@@ -247,9 +247,7 @@ async def list_templates(inventory: Inventory) -> list[str]:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(
-    request: Request,
-    spec: NewSandbox,
-    caller: Annotated[CallerIdentity, Depends(require_caller)],
+    request: Request, spec: NewSandbox, caller: Annotated[CallerIdentity, Depends(require_caller)]
 ) -> SandboxView:
     """Create exactly the fields the caller selected; browser presets have already filled them."""
     grants = resolve_grants(spec.kubernetes_grants, request.app.state.kubernetes_grants)
@@ -1003,6 +1001,10 @@ def create_app(
     @app.exception_handler(ConnectionError)
     async def sandbox_service_unavailable(request: Request, error: ConnectionError) -> JSONResponse:
         return JSONResponse({"detail": "Sandbox Service unavailable; outcome may be uncertain"}, status_code=503)
+
+    @app.exception_handler(TimeoutError)
+    async def sandbox_service_deadline(request: Request, error: TimeoutError) -> JSONResponse:
+        return JSONResponse({"detail": "Upstream deadline expired; mutation outcome may be uncertain"}, status_code=504)
 
     app.state.provisioner = provisioner
     app.state.inventory = inventory

@@ -670,6 +670,28 @@ def test_direct_session_launch_leaves_platform_instructions_to_service(
     assert captured == [{"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "plain-model"}]
 
 
+@pytest.mark.parametrize(("error_type", "status_code"), [(TimeoutError, 504), (ConnectionError, 503)])
+def test_service_launch_failure_preserves_uncertainty(
+    client: TestClient,
+    bridge: RunnerBridge,
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[Exception],
+    status_code: int,
+) -> None:
+    async def failed_open(
+        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+    ) -> protocol_pb2.Attached:
+        raise error_type("test upstream failure")
+
+    monkeypatch.setattr(bridge, "open_session", failed_open)
+    response = client.post(
+        "/sandboxes/live/sessions",
+        json={"session_id": "uncertain", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "m"}},
+    )
+    assert response.status_code == status_code
+    assert "uncertain" in response.json()["detail"]
+
+
 def test_a_runner_that_does_not_answer_is_a_503(
     inventory: SandboxInventory,
     store: ThreadStore,

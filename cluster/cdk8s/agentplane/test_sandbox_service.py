@@ -43,7 +43,9 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     for rule in resource("Role", app.NAME)["rules"]:
         assert set(rule["verbs"]) <= {"get", "list", "watch"}
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
-    assert backend_config["kubernetes_binding_cleanup_namespaces"] == sorted(backend_config["kubernetes_binding_cleanup_namespaces"])
+    assert backend_config["kubernetes_binding_cleanup_namespaces"] == sorted(
+        backend_config["kubernetes_binding_cleanup_namespaces"]
+    )
     assert backend_config["enable_provisioning"]
     assert backend_config["manager_accounts"] == [{"namespace": namespace, "name": app.NAME}]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
