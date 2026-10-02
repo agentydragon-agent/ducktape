@@ -74,7 +74,7 @@ flowchart TB
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
-    RUNNER_DIRECTORY["Proposed extraction<br/>Runner directory<br/>shared inventory for app and notifications"]:::future
+    RUNNER_DISCOVERY["Planned refactor<br/>Shared runner discovery library<br/>Kubernetes inventory; no new service"]:::future
     ING["Planned service<br/>Subscriptions and notifications<br/>Action inbox -> runner notice; external providers later"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
@@ -124,7 +124,7 @@ flowchart TB
     HOSTED_THREAD_SURFACES --> AG
     CROSS_IDENTITY_READ_POLICY --> AG
     CROSS_IDENTITY_READ_POLICY -. future cross-account delivery only .-> ING
-    RUNNER_DIRECTORY --> ING
+    RUNNER_DISCOVERY --> ING
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
 
@@ -957,20 +957,21 @@ background work, but any such runner surface reuses the Action Service contracts
 second tool-request lifecycle; the settled harness behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
 
-### `RUNNER_DIRECTORY` — runner discovery outside the integration app
+### `RUNNER_DISCOVERY` — shared hosted-runner lookup, not another service
 
-**Proposed extraction, not implemented:** [runner directory interface and plan](runner_directory.md).
-Extract managed-resource inventory from the app into an independent service used by both the app and
-notifications. The directory exposes authenticated, account-scoped runner list/get, stable runner
-identity, current endpoints, and explicit retirement state. Provisioning-resource reconciliation owns
-registration; runners do not dial notifications. Session inventory stays in the runner's existing
-`ListSessions`/`Attach` protocol; product Thread mapping stays in the app.
+**Planned refactor, not implemented:** [shared runner discovery and access plan](runner_discovery.md).
+Kubernetes already describes hosted sandboxes and their runner Pod incarnations. Extract the small
+endpoint/account/lifetime projection and lookup/watch code from the app into a library shared with
+notifications. Do not introduce a separate directory deployment, registration protocol, database, or
+identity issuer. Session inventory stays in runner `ListSessions`/`Attach`; product Thread mapping
+stays in the app. Explicit runtime/session references avoid choosing a "current" session.
 
-Settle storage-incarnation identity, account binding, endpoint replacement, and source freshness before
-implementation. A qualified `(runner_id, session_id)` is the proposed notification destination; using
-only a session ID would require SA-wide uniqueness not guaranteed by today's runner. Discovery does
-not grant runner access; direct connection authentication remains separate. A change feed and generic
-external-runner registration are deferred, not v1 prerequisites.
+Settle immutable runtime/storage bindings and authoritative removal semantics. A destination's SA
+association is checked against caller authority; resolving a current endpoint is routing, not a new
+Thread authorization mechanism. V1 reuses the app's existing Cilium-controlled runner RPC path, adds
+notification egress, and tightens runner ingress to intended control-plane clients. Test both allowed
+and denied peers and overlapping rules. **TODO after v1:** proper runner authentication and transport
+security consistently for app and notifications. No JWT issuer or command-level RBAC gates v1.
 
 ### `ING` — Event & Notification Hub
 
@@ -979,22 +980,23 @@ v1 decisions, implementation order, acceptance criteria, and deferred work. This
 service, not integration-app notification machinery or browser Web Push.
 
 V1 follows canonical Action events with explicit, replayable subscriptions and inboxes scoped to the
-caller ServiceAccount and runner session, not app Thread IDs. The service uses the runner directory
-for destination discovery; it neither resolves a workload into a sandbox/Thread nor accepts runner
-callbacks. Destination IDs are explicit in calls and agent prompt guidance. The inbox persists actual
+caller ServiceAccount and runner session, not app Thread IDs. The service uses shared Kubernetes-backed
+discovery for destination routing, not app Thread lookup or runner callbacks. SA is the authorization
+principal; an authenticated Pod's provisioning association may establish its self-delivery route. Destination IDs are explicit in calls and agent prompt guidance. The inbox persists actual
 notification payloads, supports non-destructive reads and an explicit acknowledgement HWM, and sends
 batched automated notices through the existing runner protocol. Admission is not confirmation;
 confirmed but unacknowledged entries do not cause reminders. Providers own content, filters, and source
 verification; Action lifecycle authority stays in the Action Service.
 
-Prerequisites are runner-directory extraction, qualified session addressing, authorized Action reads,
-and authenticated direct runner access. Trust the service with the destination's ordinary protocol and
-history; do not build command-level runner RBAC or app-issued Thread tickets as a prerequisite.
+Prerequisites are shared discovery extraction, explicit session addressing, authorized Action reads,
+and the v1 Cilium ingress/egress changes. Trust notifications with full protocol/history access to the
+configured runner set. Proper RPC authentication/transport security is a deferred TODO, not a v1 gate;
+do not build command-level runner RBAC, a directory service, or app-issued Thread tickets.
 Existing busy-turn input and receipts are usable; remaining `INPUT_DELIVERY` evidence bounds recovery
 claims rather than requiring a new common queue or every native capability experiment to finish.
 
 Deliver only to running harnesses in v1; temporary absence preserves subscriptions. Permanent cleanup
-uses directory retirement or explicit session lifecycle, not a sandbox lookup or a failed connection.
+uses authoritative runtime removal or explicit session lifecycle, never a failed-connection heuristic.
 Automatic Action following, GitHub, return-time catch-up notices, notification-triggered resume, and
 product Thread lifecycle integration come later. Cross-account delivery needs its own future policy.
 
