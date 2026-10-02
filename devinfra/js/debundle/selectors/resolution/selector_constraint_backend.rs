@@ -316,13 +316,6 @@ impl CompiledSelectorProblem {
         }
     }
 
-    pub fn shared_variable_domain(
-        &self,
-        id: SharedVariableDomainId,
-    ) -> Option<&CompiledSharedVariableDomain> {
-        self.shared_variable_domains.get(id.0)
-    }
-
     pub fn decode_assignment(
         &self,
         assignment: &BackendAssignment,
