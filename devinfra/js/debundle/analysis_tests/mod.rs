@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::*;
-use swc_common::{FileName, SyntaxContext, sync::Lrc};
+use raw_js_test_support::{parse, parse_with_source_map};
+use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
-use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
 mod factorization_validation;
 
@@ -13,25 +13,6 @@ mod factorization_validation;
 /// through resolver so they use the empty context uniformly.
 fn test_id(name: &str) -> Id {
     (name.into(), SyntaxContext::empty())
-}
-
-fn parse_with_source_map(source: &str) -> (Module, Lrc<swc_common::SourceMap>) {
-    let cm: Lrc<swc_common::SourceMap> = Default::default();
-    let fm = cm.new_source_file(
-        FileName::Custom("test.js".into()).into(),
-        source.to_string(),
-    );
-    let lexer = Lexer::new(
-        Syntax::Es(Default::default()),
-        Default::default(),
-        StringInput::from(&*fm),
-        None,
-    );
-    (Parser::new_from(lexer).parse_module().unwrap(), cm)
-}
-
-fn parse(source: &str) -> Module {
-    parse_with_source_map(source).0
 }
 
 fn hints_with_decorate_helper(name: &str) -> AnalysisHints {
