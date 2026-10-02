@@ -11,7 +11,6 @@ use spec::{
     PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel, VendorMark,
     WrapperShape,
 };
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -1770,44 +1769,26 @@ struct PartialSwapKindFixtureArgs<'a> {
 }
 
 fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> PartialSwapFixture {
-    const MEGACHUNK_PATH: &str = "static/megachunk.js";
-    const CALLER_PATH: &str = "static/app.js";
-
-    let ws = VendorTestWorkspace::new("vendor-partial-swap-kind-");
-    ws.write_chunk(MEGACHUNK_PATH, args.chunk_source);
-    ws.write_chunk(CALLER_PATH, args.caller_source);
-    ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
-    let package_root = ws.write_upstream_package(
-        &format!("upstream/{}", args.package_name),
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-kind-",
+        args.chunk_source,
+        args.caller_source,
         args.package_name,
         args.package_version,
         args.subpath,
         args.upstream_source,
     );
-
-    let vendor = VendorMark {
-        identity: format!("megachunk {:?} swap fixture", args.kind),
-        role: Default::default(),
-        level: VendorLevel::PartialSwap(PartialSwapMark {
-            packages: BTreeMap::from([(
-                args.package_name.into(),
-                PartialSwapPackage {
-                    version: args.package_version.into(),
-                    subpath: args.subpath.into(),
-                    namespace: None,
-                },
-            )]),
-            symbols: BTreeMap::from([(
-                args.chunk_export.into(),
-                PartialSwapSymbol {
-                    package: args.package_name.into(),
-                    kind: args.kind,
-                    upstream_export: args.upstream_export.map(str::to_owned),
-                    local: None,
-                },
-            )]),
-        }),
-    };
+    let vendor = partial_swap_vendor(
+        &format!("megachunk {:?} swap fixture", args.kind),
+        &[(
+            args.package_name,
+            partial_package(args.package_version, args.subpath, None),
+        )],
+        &[(
+            args.chunk_export,
+            swap_symbol(args.package_name, args.kind, args.upstream_export, None),
+        )],
+    );
 
     run_partial_swap_with_mark(ws, vendor, &[(args.package_name, &package_root)])
 }
