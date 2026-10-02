@@ -6,6 +6,11 @@ use debundle_e2e_support::{
     CommandResult, assert_node_output, run_debundler, write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
+use spec::{
+    PartialSwapKind, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel,
+    VendorMark, WrapperShape,
+};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -271,7 +276,7 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
     run_full_swap_fixture(FullSwapFixtureArgs {
         temp_prefix: "vendor-swap-named-from-module-default-",
         chunk_source: "export { x as default };\nconst x = 0;\n",
-        wrapper_shape: Some("named_from_module_default"),
+        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source,
         default_export_aliases: &[],
     })
@@ -281,7 +286,7 @@ struct FullSwapFixtureArgs<'a> {
     temp_prefix: &'a str,
     chunk_source: &'a str,
     /// `None` runs the plain (wrapper-less) swap path.
-    wrapper_shape: Option<&'a str>,
+    wrapper_shape: Option<WrapperShape>,
     upstream_source: &'a str,
     /// Upstream named exports asserted as package-default aliases
     /// (`SwapMark::default_export_aliases`). Empty for most fixtures.
@@ -305,28 +310,21 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
         args.upstream_source,
     );
 
-    let mut vendor_mark = json!({
-        "level": "swap",
-        "identity": format!("{PACKAGE_NAME}/{SUBPATH}"),
-        "package": PACKAGE_NAME,
-        "version": PACKAGE_VERSION,
-        "subpath": SUBPATH,
-    });
-    if let Some(wrapper_shape) = args.wrapper_shape {
-        vendor_mark
-            .as_object_mut()
-            .expect("vendor mark is a JSON object")
-            .insert("wrapper_shape".to_string(), json!(wrapper_shape));
-    }
-    if !args.default_export_aliases.is_empty() {
-        vendor_mark
-            .as_object_mut()
-            .expect("vendor mark is a JSON object")
-            .insert(
-                "default_export_aliases".to_string(),
-                json!(args.default_export_aliases),
-            );
-    }
+    let vendor_mark = VendorMark {
+        identity: format!("{PACKAGE_NAME}/{SUBPATH}"),
+        role: Default::default(),
+        level: VendorLevel::Swap(SwapMark {
+            package: PACKAGE_NAME.into(),
+            version: PACKAGE_VERSION.into(),
+            subpath: SUBPATH.into(),
+            wrapper_shape: args.wrapper_shape,
+            default_export_aliases: args
+                .default_export_aliases
+                .iter()
+                .map(|s| (*s).into())
+                .collect(),
+        }),
+    };
     let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = json!({
         "vendor": {
@@ -513,7 +511,7 @@ fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> Vend
     run_full_swap_fixture(FullSwapFixtureArgs {
         temp_prefix: "vendor-swap-named-from-default-",
         chunk_source: args.chunk_source,
-        wrapper_shape: Some("named_from_default"),
+        wrapper_shape: Some(WrapperShape::NamedFromDefault),
         upstream_source: args.upstream_source,
         default_export_aliases: &[],
     })
@@ -849,9 +847,9 @@ impl PartialSwapFixture {
     }
 }
 
-fn run_partial_swap_raw(
+fn run_partial_swap_with_mark(
     ws: VendorTestWorkspace,
-    vendor_spec: serde_json::Map<String, Value>,
+    vendor_spec: impl serde::Serialize,
     packages: &[(&str, &Path)],
 ) -> PartialSwapFixture {
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
@@ -859,7 +857,7 @@ fn run_partial_swap_raw(
     let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = json!({
         "vendor": {
-            MEGACHUNK_PATH: Value::Object(vendor_spec),
+            MEGACHUNK_PATH: vendor_spec,
         },
         "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
         "swap_vendor_chunks": {
@@ -930,7 +928,7 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
     );
     vendor.insert("symbols".into(), Value::Object(symbols_json));
 
-    run_partial_swap_raw(ws, vendor, &[(PACKAGE_NAME, &package_root)])
+    run_partial_swap_with_mark(ws, vendor, &[(PACKAGE_NAME, &package_root)])
 }
 
 #[test]
@@ -1191,7 +1189,7 @@ fn partial_swap_namespace_kind_replaces_whole_import() {
     // which must stay intact post-swap. Only the import statement
     // should change to `import * as React from "react"`.
     let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
-        kind: "namespace",
+        kind: PartialSwapKind::Namespace,
         package_name: "react",
         package_version: "18.3.1",
         subpath: "index.js",
@@ -1232,7 +1230,7 @@ fn partial_swap_default_kind_replaces_whole_import() {
     // (`z(...)`), which must stay intact. Only the import statement
     // should change to `import z from "clsx"`.
     let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
-        kind: "default",
+        kind: PartialSwapKind::Default,
         package_name: "clsx",
         package_version: "2.1.1",
         subpath: "dist/clsx.mjs",
@@ -1275,7 +1273,7 @@ fn partial_swap_named_kind_auto_renames_local_binding() {
     // upstream export name. So `mobxObserver(...)` becomes
     // `observer(...)`.
     let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
-        kind: "named",
+        kind: PartialSwapKind::Named,
         package_name: "mobx-react-lite",
         package_version: "4.0.7",
         subpath: "dist/index.js",
@@ -1318,7 +1316,7 @@ fn partial_swap_named_kind_no_rewrite_when_local_already_matches() {
     // export name, the emitted import drops the `as` alias and no
     // identifier rewrite is needed.
     let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
-        kind: "named",
+        kind: PartialSwapKind::Named,
         package_name: "mobx-react-lite",
         package_version: "4.0.7",
         subpath: "dist/index.js",
@@ -2034,8 +2032,7 @@ fn partial_swap_does_not_rewrite_shadowing_inner_binding() {
 }
 
 struct PartialSwapKindFixtureArgs<'a> {
-    /// "namespace", "default", or "named"
-    kind: &'a str,
+    kind: PartialSwapKind,
     package_name: &'a str,
     package_version: &'a str,
     subpath: &'a str,
@@ -2063,34 +2060,31 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
         args.upstream_source,
     );
 
-    let mut symbol_obj = serde_json::Map::new();
-    symbol_obj.insert("package".to_string(), Value::from(args.package_name));
-    symbol_obj.insert("kind".to_string(), Value::from(args.kind));
-    if let Some(upstream_export) = args.upstream_export {
-        symbol_obj.insert("upstream_export".to_string(), Value::from(upstream_export));
-    }
-
-    let mut symbols = serde_json::Map::new();
-    symbols.insert(args.chunk_export.to_string(), Value::Object(symbol_obj));
-
-    let mut vendor = serde_json::Map::new();
-    vendor.insert("level".into(), json!("partial_swap"));
-    vendor.insert(
-        "identity".into(),
-        json!(format!("megachunk {} swap fixture", args.kind)),
-    );
-    vendor.insert(
-        "packages".into(),
-        json!({
-            args.package_name: {
-                "version": args.package_version,
-                "subpath": args.subpath,
-            },
+    let vendor = VendorMark {
+        identity: format!("megachunk {:?} swap fixture", args.kind),
+        role: Default::default(),
+        level: VendorLevel::PartialSwap(PartialSwapMark {
+            packages: BTreeMap::from([(
+                args.package_name.into(),
+                PartialSwapPackage {
+                    version: args.package_version.into(),
+                    subpath: args.subpath.into(),
+                    namespace: None,
+                },
+            )]),
+            symbols: BTreeMap::from([(
+                args.chunk_export.into(),
+                PartialSwapSymbol {
+                    package: args.package_name.into(),
+                    kind: args.kind,
+                    upstream_export: args.upstream_export.map(str::to_owned),
+                    local: None,
+                },
+            )]),
         }),
-    );
-    vendor.insert("symbols".into(), Value::Object(symbols));
+    };
 
-    run_partial_swap_raw(ws, vendor, &[(args.package_name, &package_root)])
+    run_partial_swap_with_mark(ws, vendor, &[(args.package_name, &package_root)])
 }
 
 // ─── partial-swap consumer soundness ────────────────────────────────────
@@ -2189,7 +2183,7 @@ fn partial_swap_rewrites_named_kind_reexport_from_consumer() {
         json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs" } }),
         json!({ "e6": { "package": "zod", "kind": "named", "upstream_export": "boolean" } }),
     );
-    let fixture = run_partial_swap_raw(ws, vendor, &[("zod", &package_root)]);
+    let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert!(
         fixture.result.status.success(),
@@ -2244,7 +2238,7 @@ fn partial_swap_rewrites_default_kind_reexport_from_consumer() {
         json!({ "clsx": { "version": "2.1.1", "subpath": "dist/clsx.mjs" } }),
         json!({ "aQ": { "package": "clsx", "kind": "default" } }),
     );
-    let fixture = run_partial_swap_raw(ws, vendor, &[("clsx", &package_root)]);
+    let fixture = run_partial_swap_with_mark(ws, vendor, &[("clsx", &package_root)]);
 
     assert!(
         fixture.result.status.success(),
@@ -2291,7 +2285,7 @@ fn partial_swap_rewrites_namespace_kind_reexport_from_consumer() {
         json!({ "react": { "version": "18.3.1", "subpath": "index.js" } }),
         json!({ "a": { "package": "react", "kind": "namespace" } }),
     );
-    let fixture = run_partial_swap_raw(ws, vendor, &[("react", &package_root)]);
+    let fixture = run_partial_swap_with_mark(ws, vendor, &[("react", &package_root)]);
 
     assert!(
         fixture.result.status.success(),
@@ -2342,7 +2336,7 @@ fn partial_swap_bails_on_namespace_import_of_partially_swapped_chunk() {
         json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs", "namespace": "z" } }),
         json!({ "e6": { "package": "zod", "upstream_export": "boolean" } }),
     );
-    let fixture = run_partial_swap_raw(ws, vendor, &[("zod", &package_root)]);
+    let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert!(
         !fixture.result.status.success(),
@@ -2378,7 +2372,7 @@ fn partial_swap_bails_on_member_kind_reexport_from_consumer() {
         json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs", "namespace": "z" } }),
         json!({ "e6": { "package": "zod", "upstream_export": "boolean" } }),
     );
-    let fixture = run_partial_swap_raw(ws, vendor, &[("zod", &package_root)]);
+    let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert!(
         !fixture.result.status.success(),
@@ -2411,7 +2405,7 @@ fn partial_swap_bails_on_export_star_from_partially_swapped_chunk() {
         json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs", "namespace": "z" } }),
         json!({ "e6": { "package": "zod", "upstream_export": "boolean" } }),
     );
-    let fixture = run_partial_swap_raw(ws, vendor, &[("zod", &package_root)]);
+    let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert!(
         !fixture.result.status.success(),
@@ -2799,7 +2793,7 @@ fn named_from_module_default_rejects_unverified_named_exports() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
         temp_prefix: "vendor-swap-module-default-overclaim-",
         chunk_source: "const x = 0;\nconst y = 1;\nexport { x as default, y as other };\n",
-        wrapper_shape: Some("named_from_module_default"),
+        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source: "export default function f() { return \"pkg\"; }\n",
         default_export_aliases: &[],
     });
@@ -2822,7 +2816,7 @@ fn named_from_module_default_accepts_verified_default_aliases() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
         temp_prefix: "vendor-swap-module-default-alias-",
         chunk_source: "const x = () => \"val\";\nexport { x as default, x as alias };\n",
-        wrapper_shape: Some("named_from_module_default"),
+        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source: "export default function f() { return \"val\"; }\n",
         default_export_aliases: &[],
     });
@@ -2855,7 +2849,7 @@ fn named_from_module_default_rejects_single_named_export_without_assertion() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
         temp_prefix: "vendor-swap-module-default-single-unasserted-",
         chunk_source: "const Ft = () => \"cy\";\nexport { Ft as c };\n",
-        wrapper_shape: Some("named_from_module_default"),
+        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source: "export default function f() { return \"cy\"; }\n",
         default_export_aliases: &[],
     });
@@ -2881,7 +2875,7 @@ fn named_from_module_default_admits_authored_default_alias() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
         temp_prefix: "vendor-swap-module-default-single-asserted-",
         chunk_source: "const Ft = () => \"cy\";\nexport { Ft as c };\n",
-        wrapper_shape: Some("named_from_module_default"),
+        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source: "export default function f() { return \"cy\"; }\n",
         default_export_aliases: &["c"],
     });
@@ -2911,7 +2905,7 @@ fn named_from_json_default_generates_named_pulls_from_json_keys() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
         temp_prefix: "vendor-swap-named-from-json-default-",
         chunk_source: "export { version, flag } from \"lib\";\n",
-        wrapper_shape: Some("named_from_json_default"),
+        wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
         upstream_source: "{ \"version\": \"1.2.3\", \"flag\": true }\n",
         default_export_aliases: &[],
     });
@@ -2947,7 +2941,7 @@ fn named_from_json_default_rejects_names_missing_from_json() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
         temp_prefix: "vendor-swap-named-from-json-default-missing-",
         chunk_source: "export { missing } from \"lib\";\n",
-        wrapper_shape: Some("named_from_json_default"),
+        wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
         upstream_source: "{ \"version\": \"1.2.3\" }\n",
         default_export_aliases: &[],
     });
