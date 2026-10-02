@@ -679,6 +679,7 @@ def retire(root: Path, flux_chart: Chart) -> None:
     after the namespace/PVCs are gone and Flux reports an empty inventory.
     """
     directory = f"{GENERATED_ROOT}/retired/haku-openclaw-spike"
+    (root / directory).mkdir(parents=True, exist_ok=True)
     write_yaml(root / directory / "kustomization.yaml", kustomize_kustomization(resources=[]))
     flux_kustomization(
         flux_chart,
