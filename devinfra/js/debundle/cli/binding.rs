@@ -792,7 +792,8 @@ pub fn run_bindings_assign(
     // identically. Runs before any file is written.
     gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
 
-    let (files_written, files_deleted) = apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
+    let (files_written, files_deleted) =
+        apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(AssignOutcome {
         outcome: MutationOutcome {
             verb: "assign",
@@ -968,7 +969,7 @@ pub struct UnassignOutcome {
     pub unassigned: usize,
 }
 
-/// Remove one or more bindings from their current modules atomically.
+/// Remove one or more bindings from their current modules as one validated batch.
 /// Source modules drained of members are deleted unless they carry a
 /// module-level `comment:`, remaining `source_matches:`, `annotations:`,
 /// or `anonymous_statements:` — same drain rule as
@@ -1053,7 +1054,8 @@ pub fn run_bindings_unassign(
     // claims in surviving modules stay claimed.
     gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
 
-    let (files_written, files_deleted) = apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
+    let (files_written, files_deleted) =
+        apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(UnassignOutcome {
         outcome: MutationOutcome {
             verb: "unassign",
