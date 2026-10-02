@@ -73,7 +73,8 @@ fn cover_object_slot(
         ranked,
         |kept| Ok(prove_synthesized_selector(index, decl, targets, &render_with(kept)?).is_ok()),
         |trial| {
-            let matches = match_single_member_selector(index, &target.export_name, &render_with(trial)?)?;
+            let matches =
+                match_single_member_selector(index, &target.export_name, &render_with(trial)?)?;
             // Object ranking distinguishes the declaration as well as the binding.
             let target_unresolved = !matches.iter().any(|m| {
                 m.body_idx == decl.body_idx && m.binding.binding_name == target.runtime_binding
