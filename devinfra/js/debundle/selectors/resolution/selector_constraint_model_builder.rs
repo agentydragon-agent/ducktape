@@ -1572,6 +1572,7 @@ impl FactDomains {
 
 #[cfg(test)]
 mod tests {
+    use selector_test_fixtures::{owner_fact, declared_binding, member_read, module_member_use, call_argument_use, broad_specific_targets};
     use super::*;
     use analysis::{OwnerId, StatementOrdinal};
     use selector_constraint_backend::{AllowedTupleConstraintId, BackendValueId, ConstraintValue};
@@ -1592,20 +1593,6 @@ mod tests {
         ConstraintValue::String(value.to_string())
     }
 
-    fn owner_fact(owner: usize, ordinal: usize, statement_kind: &str) -> SelectorFact {
-        SelectorFact::Owner {
-            owner: OwnerId(owner),
-            statement_ordinal: StatementOrdinal(ordinal),
-            statement_kind: statement_kind.to_string(),
-        }
-    }
-
-    fn declared_binding(owner: usize, binding: &str) -> SelectorFact {
-        SelectorFact::DeclaredBinding {
-            owner: OwnerId(owner),
-            binding: binding.to_string(),
-        }
-    }
 
     fn owner_reference(owner: usize, binding: &str, edge_kind: &str) -> SelectorFact {
         SelectorFact::OwnerReferencesBinding {
@@ -1615,35 +1602,7 @@ mod tests {
         }
     }
 
-    fn member_read(ordinal: usize, object: Option<&str>, member: &str) -> SelectorFact {
-        SelectorFact::MemberRead {
-            statement_ordinal: StatementOrdinal(ordinal),
-            object: object.map(str::to_string),
-            member: member.to_string(),
-        }
-    }
 
-    fn module_member_use(ordinal: usize, module: &str, member: &str) -> SelectorFact {
-        SelectorFact::ModuleMemberUse {
-            statement_ordinal: StatementOrdinal(ordinal),
-            module: module.to_string(),
-            member: member.to_string(),
-        }
-    }
-
-    fn call_argument_use(
-        argument: &str,
-        callee_object: Option<&str>,
-        callee_member: &str,
-        arg_index: usize,
-    ) -> SelectorFact {
-        SelectorFact::CallArgumentUse {
-            argument: argument.to_string(),
-            callee_object: callee_object.map(str::to_string),
-            callee_member: callee_member.to_string(),
-            arg_index,
-        }
-    }
 
     fn decorate_call(callee: &str, class_anchor: &str, member: Option<&str>) -> SelectorFact {
         SelectorFact::DecorateCallUse {
@@ -1875,44 +1834,7 @@ mod tests {
 
     #[test]
     fn target_injectivity_prunes_fixed_values_from_broad_targets() {
-        let mut program = SelectorProgram::default();
-        let broad_owner = program.add_variable(VariableDomain::Owner, Some("broad".to_string()));
-        let strict_owner = program.add_variable(VariableDomain::Owner, Some("strict".to_string()));
-        let broad_target = program.add_target(
-            broad_owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("Broad".to_string()),
-            },
-        );
-        let strict_target = program.add_target(
-            strict_owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("Strict".to_string()),
-            },
-        );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: broad_owner },
-            binding: StringTerm::Const {
-                value: "shared".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: strict_owner },
-            binding: StringTerm::Const {
-                value: "specific".to_string(),
-            },
-        });
-        program.require_all_different(vec![broad_target, strict_target]);
-
-        let facts = fact_store(vec![
-            owner_fact(10, 0, "var"),
-            owner_fact(20, 1, "var"),
-            declared_binding(10, "shared"),
-            declared_binding(20, "shared"),
-            declared_binding(20, "specific"),
-        ]);
+        let (program, facts, broad_target, strict_target) = broad_specific_targets();
 
         let model = compile_selector_problem(&program, &facts).unwrap();
 
