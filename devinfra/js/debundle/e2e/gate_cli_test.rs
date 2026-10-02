@@ -39,10 +39,16 @@ console.log(B.ref, D.ref);
 export { A, B, C, D };
 "#,
         vec![
-            logical_module("mod_x", &[
-                Member::new("A"), Member::new("D"), Member::new("local"),
-                Member::new("lazy"), Member::new("extra"),
-            ]),
+            logical_module(
+                "mod_x",
+                &[
+                    Member::new("A"),
+                    Member::new("D"),
+                    Member::new("local"),
+                    Member::new("lazy"),
+                    Member::new("extra"),
+                ],
+            ),
             logical_module("mod_y", &[Member::new("B"), Member::new("C")]),
             logical_module("mod_outside", &[Member::new("outside")]),
         ],
@@ -182,8 +188,14 @@ fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
          the two files speak different module vocabularies: {parsed}"
     );
     for e in evidence {
-        assert_ne!(e["from"], e["to"], "intra-module edge leaked into evidence: {e}");
-        assert!(e["from_binding"].is_string(), "source binding label missing: {e}");
+        assert_ne!(
+            e["from"], e["to"],
+            "intra-module edge leaked into evidence: {e}"
+        );
+        assert!(
+            e["from_binding"].is_string(),
+            "source binding label missing: {e}"
+        );
         for endpoint in [&e["from"], &e["to"]] {
             let path = endpoint.as_str().unwrap();
             assert!(
@@ -210,10 +222,12 @@ fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
             .any(|e| e["from"] == "mod_x" && e["to"] == "mod_y" && e["binding"] == "C"),
         "evidence missing mod_x -> mod_y via C: {parsed}"
     );
-    assert!(evidence.iter().any(|e| {
-        e["from_binding"] == "lazy" && e["binding"] == "C" && e["kind"] == "lazy_use"
-    }), "describe must include lazy edges, not just the cut: {parsed}");
-
+    assert!(
+        evidence.iter().any(|e| {
+            e["from_binding"] == "lazy" && e["binding"] == "C" && e["kind"] == "lazy_use"
+        }),
+        "describe must include lazy edges, not just the cut: {parsed}"
+    );
 }
 
 #[test]
@@ -221,10 +235,21 @@ fn gate_describe_binding_filter_narrows_evidence_to_one_symbol() {
     let rejected = rejected_cycle_fixture();
     // A occurs as the target binding, D as the source binding. Neither half
     // of the filter may disappear, and an absent binding must select nothing.
-    for (binding, endpoint) in [("A", "binding"), ("D", "from_binding"), ("absent", "binding")] {
+    for (binding, endpoint) in [
+        ("A", "binding"),
+        ("D", "from_binding"),
+        ("absent", "binding"),
+    ] {
         let parsed = gate_json(&[
-            "gate", "describe", "0", "--graph", graph_path(&rejected).to_str().unwrap(),
-            "--binding", binding, "--format", "json",
+            "gate",
+            "describe",
+            "0",
+            "--graph",
+            graph_path(&rejected).to_str().unwrap(),
+            "--binding",
+            binding,
+            "--format",
+            "json",
         ]);
         let evidence = parsed["evidence"].as_array().unwrap();
         if binding == "absent" {
@@ -233,8 +258,10 @@ fn gate_describe_binding_filter_narrows_evidence_to_one_symbol() {
             assert!(evidence.iter().any(|e| e[endpoint] == binding), "{parsed}");
         }
         for e in evidence {
-            assert!(e["binding"] == binding || e["from_binding"] == binding,
-                "binding filter kept an unrelated row: {e}");
+            assert!(
+                e["binding"] == binding || e["from_binding"] == binding,
+                "binding filter kept an unrelated row: {e}"
+            );
         }
     }
 }
