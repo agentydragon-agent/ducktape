@@ -681,11 +681,7 @@ def generate_manifests(root: Path) -> None:
     )
     agents_mitmproxy_artifact = artifact("agents-mitmproxy", mitmproxy.OUTPUT_DIR)
     write_directory(
-        root,
-        agents_mitmproxy_artifact,
-        mitmproxy.namespace_chart,
-        mitmproxy.chart,
-        egress_fences.mitmproxy_cloud_api,
+        root, agents_mitmproxy_artifact, mitmproxy.namespace_chart, mitmproxy.chart, egress_fences.mitmproxy_cloud_api
     )
     parked_flux_kustomizations.retire(
         root, flux_chart, name="agents-mitmproxy", directory_name="agents-mitmproxy", after=claude_rbac_kustomization
@@ -1467,9 +1463,7 @@ def generate_manifests(root: Path) -> None:
         agent_workspaces.chart,
         components=[posixpath.relpath(agent_workspaces.PINS_DIR, agent_workspaces.OUTPUT_DIR)],
     )
-    parked_flux_kustomizations.retire(
-        root, flux_chart, name="agent-workspaces-app", directory_name="agent-workspaces"
-    )
+    parked_flux_kustomizations.retire(root, flux_chart, name="agent-workspaces-app", directory_name="agent-workspaces")
     parked_flux_kustomizations.haku_dispatch(flux_chart, cnpg_kustomization, external_secrets_operator_kustomization)
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
     haku_console_kustomization = haku_charts.haku_console(

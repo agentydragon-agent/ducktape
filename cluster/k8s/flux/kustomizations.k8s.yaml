@@ -1352,21 +1352,24 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: "Retirement: prune agents-mitmproxy; remove this owner after inventory is empty."
   name: agents-mitmproxy
   namespace: ducktape-flux
 spec:
-  deletionPolicy: Orphan
+  deletionPolicy: WaitForTermination
   dependsOn:
-    - name: cert-manager-trust
+    - name: claude-rbac
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/generated/agents/mitmproxy
+  path: ./cluster/generated/retired/agents-mitmproxy
   prune: true
+  retryInterval: 1m
   sourceRef:
-    kind: ExternalArtifact
-    name: agents-mitmproxy
+    kind: GitRepository
+    name: ducktape
     namespace: ducktape-flux
-  timeout: 5m
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -3578,26 +3581,19 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Disposable agent workspace template + warm pool in agent-workspaces. See agents/agent-sandbox/README.md for usage.
+    description: "Retirement: prune agent-workspaces; remove this owner after inventory is empty."
   name: agent-workspaces-app
   namespace: ducktape-flux
 spec:
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: agent-sandbox-controller
-      namespace: ducktape-flux
-    - name: kyverno-policies
-      namespace: ducktape-flux
+  deletionPolicy: WaitForTermination
   interval: 10m
-  path: ./cluster/generated/agents/agent-sandbox/workspaces
+  path: ./cluster/generated/retired/agent-workspaces
   prune: true
   retryInterval: 1m
   sourceRef:
-    kind: ExternalArtifact
-    name: agent-workspaces-app
+    kind: GitRepository
+    name: ducktape
     namespace: ducktape-flux
-  timeout: 5m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

@@ -472,7 +472,6 @@ removes the temporary empty owner/directory and the SeaweedFS tenant grant.
 Historical SeaweedFS/Restic backup storage retains its `Retain` policy; physical
 backing storage was not audited as part of these checks.
 
-
 ## Retire standalone agent workspaces and Claude compute (2026-10-02)
 
 Park the standalone Codex namespace and Claude's shared mitmproxy, preserving

@@ -34,6 +34,8 @@ filegroup(
     name = "parked_generated_manifests",
     srcs = glob([
         "parked/**/*.k8s.yaml",
+        "parked/agent-workspaces/kustomization.yaml",
+        "parked/agents-mitmproxy/kustomization.yaml",
         "parked/haku-openclaw-spike/**",
     ]),
     visibility = ["//cluster/cdk8s:__pkg__"],

@@ -71,9 +71,7 @@ def _add_sandbox(chart: Chart) -> None:
         chart,
         "parked-compute-egress",
         metadata=k8s.ObjectMeta(name="parked-compute-egress", namespace=NAMESPACE),
-        spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(), policy_types=["Egress"], egress=[]
-        ),
+        spec=k8s.NetworkPolicySpec(pod_selector=k8s.LabelSelector(), policy_types=["Egress"], egress=[]),
     )
     k8s.KubeLimitRange(
         chart,

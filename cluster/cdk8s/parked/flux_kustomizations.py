@@ -13,7 +13,11 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many, kustomize_kustomization,
+    SOPS_DECRYPTION,
+    Kustomization,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+    kustomize_kustomization,
 )
 from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
@@ -209,9 +213,7 @@ def sdr(
     )
 
 
-def retire(
-    root: Path, chart: Chart, *, name: str, directory_name: str, after: Kustomization | None = None
-) -> None:
+def retire(root: Path, chart: Chart, *, name: str, directory_name: str, after: Kustomization | None = None) -> None:
     """Prune an existing owner's inventory before removing its temporary empty declaration.
 
     No dependency on the retired workload's operators: a failed upgrade must not block

@@ -131,7 +131,6 @@ spec:
   conditions:
     - namespaces:
         - activitywatch
-        - agent-workspaces
         - agentplane-index
         - agentplane-staging
         - agentplane-testing

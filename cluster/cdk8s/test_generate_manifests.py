@@ -128,9 +128,7 @@ def test_legacy_sandboxes_retire_without_redeploying(generated: Path) -> None:
         assert retirement["prune"] is True
         assert not retirement.get("suspend", False)
         assert retirement["deletionPolicy"] == "WaitForTermination"
-        assert retirement["sourceRef"] == {
-            "kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"
-        }
+        assert retirement["sourceRef"] == {"kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
         assert retirement["path"] == f"./cluster/generated/retired/{directory}"
         empty = yaml.safe_load((generated / retirement["path"].removeprefix("./") / "kustomization.yaml").read_text())
         assert not empty.get("resources")
@@ -141,14 +139,23 @@ def test_legacy_sandboxes_retire_without_redeploying(generated: Path) -> None:
     claude = [doc for doc in active if doc["metadata"].get("namespace") == "claude-sandbox"]
     quota = next(doc for doc in claude if doc["kind"] == "ResourceQuota")
     assert str(quota["spec"]["hard"]["pods"]) == "0"
-    fence = next(doc for doc in claude if doc["kind"] == "NetworkPolicy" and doc["metadata"]["name"] == "parked-compute-egress")
+    fence = next(
+        doc for doc in claude if doc["kind"] == "NetworkPolicy" and doc["metadata"]["name"] == "parked-compute-egress"
+    )
     assert fence["spec"] == {"podSelector": {}, "policyTypes": ["Egress"], "egress": []}
     assert {"buildbuddy-api-key", "claude-forgejo-credentials"} <= {
         doc["metadata"]["name"] for doc in claude if doc["kind"] == "ExternalSecret"
     }
     assert not any(doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in active)
-    assert any(doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-haku-egress-proxy" for doc in active)
-    assert {"agent-sandbox-controller", "haku-egress-proxy", "public-coder-agent-app", "claude-sandbox-secrets"} <= owners.keys()
+    assert any(
+        doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-haku-egress-proxy" for doc in active
+    )
+    assert {
+        "agent-sandbox-controller",
+        "haku-egress-proxy",
+        "public-coder-agent-app",
+        "claude-sandbox-secrets",
+    } <= owners.keys()
     for directory, kind in (("agents-mitmproxy", "Deployment"), ("agent-workspaces", "SandboxWarmPool")):
         archived = [
             doc
