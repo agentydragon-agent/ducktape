@@ -17,22 +17,36 @@ pub fn read_yaml(path: &Path) -> Result<Value> {
     Ok(empty_yaml_to_mapping(parsed))
 }
 
-pub fn yaml_semantically_changed(path: &Path, doc: &Value) -> Result<bool> {
+fn yaml_semantically_changed(path: &Path, doc: &Value) -> Result<bool> {
     if !path.exists() {
         return Ok(true);
     }
     Ok(read_yaml(path)? != *doc)
 }
 
-pub fn write_yaml_if_semantic_changed(path: &Path, doc: &Value) -> Result<bool> {
-    let body =
-        serde_yaml::to_string(doc).with_context(|| format!("serializing {}", path.display()))?;
-    write_yaml_body_if_semantic_changed(path, doc, body)
+/// Compare once, then optionally persist. Returns whether the edit changes YAML
+/// semantics, including in dry-run mode. No-op edits preserve the original text.
+pub fn apply_yaml_edit(path: &Path, doc: &Value, dry_run: bool) -> Result<bool> {
+    let changed = yaml_semantically_changed(path, doc)?;
+    if changed && !dry_run {
+        let body =
+            serde_yaml::to_string(doc).with_context(|| format!("serializing {}", path.display()))?;
+        write_yaml_body(path, body)?;
+    }
+    Ok(changed)
 }
 
 pub fn write_yaml_body_if_semantic_changed(path: &Path, doc: &Value, body: String) -> Result<bool> {
     if !yaml_semantically_changed(path, doc)? {
         return Ok(false);
+    }
+    write_yaml_body(path, body)?;
+    Ok(true)
+}
+
+fn write_yaml_body(path: &Path, body: String) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     }
     // Write-temp-then-rename so a crash mid-write can never leave a
     // truncated module YAML behind. The sibling `.yaml.tmp` name keeps
@@ -42,7 +56,7 @@ pub fn write_yaml_body_if_semantic_changed(path: &Path, doc: &Value, body: Strin
     fs::write(&tmp, body).with_context(|| format!("writing {}", tmp.display()))?;
     fs::rename(&tmp, path)
         .with_context(|| format!("renaming {} -> {}", tmp.display(), path.display()))?;
-    Ok(true)
+    Ok(())
 }
 
 fn empty_yaml_to_mapping(value: Value) -> Value {
@@ -60,7 +74,7 @@ mod tests {
     use serde_yaml::{Mapping, Value};
     use tempfile::TempDir;
 
-    use super::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
+    use super::{apply_yaml_edit, read_yaml, yaml_semantically_changed};
 
     fn yk(s: &str) -> Value {
         Value::String(s.to_string())
@@ -84,7 +98,7 @@ mod tests {
         let doc = read_yaml(&path).unwrap();
 
         assert!(!yaml_semantically_changed(&path, &doc).unwrap());
-        assert!(!write_yaml_if_semantic_changed(&path, &doc).unwrap());
+        assert!(!apply_yaml_edit(&path, &doc, false).unwrap());
         assert_eq!(
             fs::read_to_string(path).unwrap(),
             "# keep me\nmembers: [ { selector: { binding: { name: a } } } ]\n"
@@ -100,4 +114,17 @@ mod tests {
             yaml_semantically_changed(&dir.path().join("new.yaml"), &Value::Mapping(map)).unwrap()
         );
     }
+    #[test]
+    fn dry_run_reports_change_without_creating_directories() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nested/m.yaml");
+        let doc: Value = serde_yaml::from_str("members: []").unwrap();
+        assert!(apply_yaml_edit(&path, &doc, true).unwrap());
+        assert!(!path.parent().unwrap().exists());
+        assert!(apply_yaml_edit(&path, &doc, false).unwrap());
+        assert_eq!(read_yaml(&path).unwrap(), doc);
+        assert!(!path.with_extension("yaml.tmp").exists());
+        assert!(!apply_yaml_edit(&path, &doc, false).unwrap());
+    }
+
 }

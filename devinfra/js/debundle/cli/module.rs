@@ -281,10 +281,6 @@ impl MergePlan {
             .with_context(|| format!("serializing merged {}", target.display()))?;
         let doc = serde_yaml::to_value(&self.document)
             .with_context(|| format!("re-encoding merged {}", target.display()))?;
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("creating parent directory {}", parent.display()))?;
-        }
         // Retain write-before-delete and the shared atomic per-file writer.
         // This does not promise a crash-atomic multi-file transaction.
         write_yaml_body_if_semantic_changed(target, &doc, body)?;
@@ -629,16 +625,10 @@ fn claim_names(module: &LogicalModule, path: &Path) -> Result<ModuleClaimNames> 
                     idx
                 ));
             }
-            let readable_name = member.name.as_deref().unwrap_or(&binding.name);
-            if !names.readable_names.insert(readable_name.to_string()) {
-                return Err(anyhow!(
-                    "duplicate member name \"{}\" within {} (entry {})",
-                    readable_name,
-                    path.display(),
-                    idx
-                ));
-            }
-        } else if let Some(readable_name) = member.name.as_deref()
+        }
+        if let Some(readable_name) = member.name.as_deref().or_else(|| {
+            member.selector.binding.as_ref().map(|binding| binding.name.as_str())
+        })
             && !names.readable_names.insert(readable_name.to_string())
         {
             return Err(anyhow!(

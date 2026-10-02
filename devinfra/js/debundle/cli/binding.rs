@@ -25,7 +25,7 @@ use serde_yaml::{Mapping, Value};
 
 use spec::{ModulePath, is_residual_module_path};
 use spec_modules::{collect_module_files, module_path_from_file};
-use yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
+use yaml_edit::{apply_yaml_edit, read_yaml};
 
 use crate::edit_gate::{Gate, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome};
@@ -369,7 +369,7 @@ pub fn rename_binding(
     let annotation = remove_annotation(&mut doc, &old_effective)?;
     set_readable_name(&mut doc, &hit.file, &hit.location, new)?;
     insert_annotation(&mut doc, new, annotation)?;
-    let changed = yaml_semantically_changed(&hit.file, &doc)?;
+    let changed = apply_yaml_edit(&hit.file, &doc, dry_run)?;
     let action = if !changed {
         "unchanged"
     } else if dry_run {
@@ -377,9 +377,6 @@ pub fn rename_binding(
     } else {
         "applied"
     };
-    if changed && !dry_run {
-        write_yaml_if_semantic_changed(&hit.file, &doc)?;
-    }
     Ok(RenameOutcome {
         outcome: MutationOutcome {
             verb: "rename",
@@ -738,15 +735,12 @@ pub fn run_bindings_assign(
             // members sit in `pulled`, so no self-exclusion needed).
             let mut hits = Vec::new();
             for (mp, (file, doc)) in &docs {
-                let Some(seq) = members_seq(doc) else {
-                    continue;
-                };
-                for (idx, member) in seq.iter().enumerate() {
-                    let Some(map) = member.as_mapping() else {
-                        continue;
-                    };
-                    if member_effective_name(map).as_deref() == Some(new_readable) {
-                        hits.push(format!("  {} ({}@{})", file.display(), mp, idx));
+                for binding in binding_matches_in_doc(file, mp, doc) {
+                    if binding.name.readable().filter(|name| !name.is_empty())
+                        .unwrap_or_else(|| binding.name.minified()) == new_readable {
+                        hits.push(format!(
+                            "  {} ({}@{})", file.display(), mp, binding.location.describe()
+                        ));
                     }
                 }
             }
@@ -967,14 +961,7 @@ fn apply_doc_changes(
         if to_delete.contains(mp) {
             continue;
         }
-        let changed = yaml_semantically_changed(file, doc)?;
-        if changed && !dry_run {
-            if let Some(parent) = file.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("creating {}", parent.display()))?;
-            }
-            write_yaml_if_semantic_changed(file, doc)?;
-        }
+        let changed = apply_yaml_edit(file, doc, dry_run)?;
         if changed {
             files_written.push(file.display().to_string());
         }

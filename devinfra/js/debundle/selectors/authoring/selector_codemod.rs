@@ -226,7 +226,7 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
             candidates.push(candidate);
         }
 
-        if config.apply && file_changed && yaml_edit::write_yaml_if_semantic_changed(&file, &doc)? {
+        if config.apply && file_changed && yaml_edit::apply_yaml_edit(&file, &doc, false)? {
             summary.files_written.push(file.display().to_string());
         }
     }
