@@ -109,11 +109,15 @@ fn resolve_one_binding_owner<'a>(
 ) -> Result<&'a analysis::OwnerGraphNodeReport> {
     let owners = resolve_binding_owners(graph, sym);
     match owners.as_slice() {
-        [owner] => Ok(*owner),
+        [owner] => Ok(owner),
         [] => anyhow::bail!("no owner declares binding {sym:?}"),
         _ => anyhow::bail!(
             "ambiguous binding {sym:?}: matches owners {}",
-            owners.iter().map(|owner| owner.id.as_str()).collect::<Vec<_>>().join(", "),
+            owners
+                .iter()
+                .map(|owner| owner.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
         ),
     }
 }
