@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from cluster.validation.agent_rbac import Permission, Rbac, namespace_readers, uncovered
-from cluster.validation.k8s import K8sResource, RbacRoleRef, parse_k8s_resources
+from cluster.validation.agent_rbac import Permission, Rbac, uncovered
+from cluster.validation.k8s import RbacRoleRef, parse_k8s_resources
 
 
 def test_rule_coverage_is_not_role_name_equality() -> None:
@@ -110,43 +110,6 @@ def test_aggregation_is_not_silently_ignored() -> None:
     with pytest.raises(AssertionError, match="aggregated"):
         rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name="aggregate"), None)
 
-
-def test_kyverno_expands_actual_subjects_and_labels_and_rejects_unhandled_conditions() -> None:
-    policy: dict[str, Any] = {
-        "metadata": {"name": "generate-agent-diagnostics-readers"},
-        "spec": {
-            "rules": [
-                {
-                    "name": "logs",
-                    "match": {
-                        "any": [{"resources": {"kinds": ["Namespace"], "selector": {"matchLabels": {"logs": "true"}}}}]
-                    },
-                    "generate": {
-                        "kind": "RoleBinding",
-                        "apiVersion": "rbac.authorization.k8s.io/v1",
-                        "name": "logs",
-                        "namespace": "{{request.object.metadata.name}}",
-                        "generateExisting": True,
-                        "synchronize": True,
-                        "data": {
-                            "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "logs"},
-                            "subjects": [{"kind": "Group", "name": "console"}],
-                        },
-                    },
-                }
-            ]
-        },
-    }
-    namespaces = [
-        K8sResource.model_validate({"kind": "Namespace", "metadata": {"name": name, "labels": labels}})
-        for name, labels in (("approved", {"logs": "true"}), ("metadata-only", {"metadata": "true"}))
-    ]
-    bindings = namespace_readers(policy, namespaces)
-    assert [b.namespace for b in bindings] == ["approved"]
-    assert bindings[0].subjects[0].name == "console"
-    policy["spec"]["rules"][0]["exclude"] = {"any": []}
-    with pytest.raises(AssertionError):
-        namespace_readers(policy, namespaces)
 
 
 if __name__ == "__main__":

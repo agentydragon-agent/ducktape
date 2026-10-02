@@ -224,7 +224,7 @@ def _add_cluster_roles(chart: Chart) -> None:
     )
     # Pod logs explicitly classified as safe for durable agent access. Additive to
     # agent-readable-namespace-metadata; grants only the Kubernetes log subresource. A Namespace
-    # with the agent-readable-logs label receives both bindings.
+    # classified LOGS in namespace_access receives both Flux-owned bindings.
     _cluster_role(
         chart, "agent-readable-namespace-logs", k8s.PolicyRule(api_groups=[""], resources=["pods/log"], verbs=["get"])
     )

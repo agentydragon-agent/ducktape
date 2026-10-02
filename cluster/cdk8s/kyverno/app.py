@@ -1,10 +1,8 @@
-"""Kyverno itself: its Namespace, the HelmRepository and HelmRelease installing the chart,
-and the background controller's extra RoleBinding read access."""
+"""Kyverno itself: its Namespace and the HelmRepository/HelmRelease installing the chart."""
 
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
@@ -136,36 +134,6 @@ def chart(app: App) -> Chart:
         install=RETRY_FAILED_INSTALL,
         target_namespace=namespace.name,
         values=_values(),
-    )
-    return chart
-
-
-def background_controller_rbac_chart(app: App) -> Chart:
-    chart = Chart(app, "clusterrole-background-controller-rolebindings", disable_resource_name_hashes=True)
-    # Kyverno validates generate policies against the background controller's
-    # permissions before admitting them. The generated diagnostics RoleBindings
-    # are synchronized by that controller, so it needs to be able to read them as
-    # well as the create/update/patch/delete permissions supplied by the chart.
-    read = ["get", "list", "watch"]
-    k8s.KubeClusterRole(
-        chart,
-        "rolebindings",
-        metadata=k8s.ObjectMeta(
-            name="kyverno-background-controller-rolebindings",
-            labels={"rbac.kyverno.io/aggregate-to-background-controller": "true"},
-        ),
-        rules=[
-            k8s.PolicyRule(api_groups=["rbac.authorization.k8s.io"], resources=["rolebindings"], verbs=read),
-            # Keep the controller's permissions in step with the non-standard read-only
-            # resources granted by agent-readable-namespace-metadata. Kubernetes rejects
-            # a RoleBinding when the controller would grant permissions it does not hold.
-            k8s.PolicyRule(api_groups=["autoscaling.k8s.io"], resources=["verticalpodautoscalers"], verbs=read),
-            k8s.PolicyRule(
-                api_groups=["gateway.networking.k8s.io"],
-                resources=["gateways", "httproutes", "tlsroutes", "grpcroutes"],
-                verbs=read,
-            ),
-        ],
     )
     return chart
 

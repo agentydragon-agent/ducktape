@@ -1981,6 +1981,8 @@ py_test(
         ":agent_namespace_rbac",
         ":namespace_access",
         ":namespaces",
+        "//cluster/cdk8s/kyverno:app",
+        "//cluster/cdk8s/kyverno:policies",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

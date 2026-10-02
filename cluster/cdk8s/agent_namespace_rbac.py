@@ -1,7 +1,7 @@
 """GitOps-owned diagnostics bindings from the same policy as managed grants.
 
 Distinct names permit a two-stage migration from Kyverno without adopting its
-synchronized objects. Remove the old generator only after these bindings deploy.
+synchronized objects. The old generator is retired; labels alone grant no access.
 """
 
 from collections.abc import Mapping
