@@ -46,8 +46,8 @@ The sections below hold details, not competing priority queues.
    Anonymous uniqueness uses coarse semantic-token buckets with exact equality;
    profile real workloads before adding more fingerprint machinery.
 4. **Remaining selector authoring gaps.** Follow <SELECTOR_BUGS.md> and the
-   minimizer work below. Solver-domain gap reachability still needs investigation;
-   keep near-miss ranking heuristics distinct from boolean backtracking.
+   minimizer work below. Keep near-miss ranking heuristics distinct from boolean
+   backtracking.
 5. **Remaining responsibility seams.** Extract vendor/lowering boundaries only
    when they simplify real callers. Prefer deleting redundant setup over deleting
    behavioral assertions or adding test frameworks.
