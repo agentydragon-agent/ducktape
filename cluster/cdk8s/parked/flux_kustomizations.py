@@ -10,12 +10,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 
 
