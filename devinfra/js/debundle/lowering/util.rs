@@ -128,12 +128,10 @@ pub(super) fn split_var_decl(
         decls: residual_decls,
     };
     if was_exported {
-        Some(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(
-            ExportDecl {
-                span: DUMMY_SP,
-                decl: Decl::Var(Box::new(residual_var)),
-            },
-        )))
+        Some(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            span: DUMMY_SP,
+            decl: Decl::Var(Box::new(residual_var)),
+        })))
     } else {
         Some(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(
             residual_var,
