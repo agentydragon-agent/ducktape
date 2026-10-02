@@ -16,6 +16,7 @@ from agentplane.egress import sidecar
 from cluster.cdk8s.agentplane import binding_delegation, staging, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
+    AGENTPLANE_TESTING_POLICY,
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     COINBASE_POLICY,
@@ -123,6 +124,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             GROCY_SF_READONLY_POLICY,
             HOME_ASSISTANT_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
+    AGENTPLANE_TESTING_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
             PLAID_PGWEB_POLICY,
@@ -174,7 +176,6 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
         "haku-sandbox-write",
         "agentplane-testing-operator",
         "coinbase-credentials",
-        "public-coder-agent-devbox-vmi-restart",
     } <= set(haku["kubernetes_grants"])
     assert config["kubernetes_grants"]["cluster-diagnostics"] == {
         "kind": "ClusterRoleBinding",
@@ -253,9 +254,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     assert set(haku) - set(selected) == {
         "cluster-diagnostics",
         "haku-sandbox-write",
-        "agentplane-testing-operator",
         "coinbase-credentials",
-        "public-coder-agent-devbox-vmi-restart",
     }
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"}
     assert {
@@ -266,6 +265,8 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         "ducktape-flux-read",
         "public-coder-volsync-status",
         "public-coder-agent-reader",
+        "agentplane-testing-operator",
+        "agentplane-testing-login",
     } <= set(selected)
     # Only these two narrow ClusterRoles may be bound cluster-wide. In particular,
     # never bind the namespaced log/metadata readers or Haku's broader reader there.
@@ -294,6 +295,8 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         ("ducktape-flux", "ducktape-flux-reader"),
         ("public-coder-agent", "agent-public-coder-extended-diagnostics-reader"),
         ("public-coder-agent", "public-coder-agent-reader"),
+        ("public-coder-agent", "agentplane-acceptance-operator-reader"),
+        ("agentplane-testing", "agentplane-testing-operator"),
     }
     testing_config = yaml.safe_load(
         _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "agentplane-app-config")["data"][
@@ -303,16 +306,20 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     assert "kubernetes_grants" not in testing_config["sandbox_presets"]["public-coder"]
 
 
-def test_managed_haku_public_coder_reader_and_restart_have_named_bind_delegation(
+def test_shared_public_coder_reader_and_testing_login_have_named_bind_delegation(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    for name in ("public-coder-agent-reader", "public-coder-agent-devbox-vmi-restart"):
+    assert "public-coder-agent-devbox-vmi-restart" not in config["kubernetes_grants"]
+    for name, role_name in (
+        ("public-coder-agent-reader", "public-coder-agent-reader"),
+        ("agentplane-testing-login", "agentplane-acceptance-operator-reader"),
+    ):
         assert config["kubernetes_grants"][name] == {
             "kind": "RoleBinding",
             "namespace": "public-coder-agent",
-            "role_ref": {"kind": "Role", "name": name},
+            "role_ref": {"kind": "Role", "name": role_name},
         }
         assert name in config["sandbox_presets"]["haku"]["kubernetes_grants"]
     assert "public-coder-agent" in config["kubernetes_binding_cleanup_namespaces"]
@@ -328,7 +335,7 @@ def test_managed_haku_public_coder_reader_and_restart_have_named_bind_delegation
     assert {tuple(rule.get("resourceNames", [])) for rule in role["rules"] if rule["verbs"] == ["bind"]} == {
         ("agent-public-coder-extended-diagnostics-reader",),
         ("public-coder-agent-reader",),
-        ("public-coder-agent-devbox-vmi-restart",),
+        ("agentplane-acceptance-operator-reader",),
     }
     binding = _by_name(delegated, "RoleBinding", "agentplane-staging-external-bindings")
     assert binding["subjects"] == [
@@ -471,6 +478,30 @@ def test_runner_context_configuration_matches_the_verified_qwen_roster(
         for container in runner_containers:
             environment = {variable["name"]: variable.get("value") for variable in container.get("env", [])}
             assert json.loads(environment["AGENTPLANE_MODEL_CONTEXT_WINDOWS"]) == expected
+
+
+@pytest.mark.parametrize("preset", ["public-coder", "finance-agent", "haku"])
+def test_shared_agentplane_operator_access_is_testing_only(
+    preset: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    selected = config["sandbox_presets"][preset]
+    assert {"agentplane-testing-operator", "agentplane-testing-login"} <= set(selected["kubernetes_grants"])
+    assert "public-coder-agent-devbox-vmi-restart" not in selected["kubernetes_grants"]
+    assert AGENTPLANE_TESTING_POLICY in selected["policies"]
+    assert config["kubernetes_grants"]["agentplane-testing-login"] == {
+        "kind": "RoleBinding",
+        "namespace": "public-coder-agent",
+        "role_ref": {"kind": "Role", "name": "agentplane-acceptance-operator-reader"},
+    }
+    policy = _by_name(docs, "EgressPolicy", AGENTPLANE_TESTING_POLICY)
+    assert {host for rule in policy["spec"]["rules"] for host in rule["hosts"]} == {
+        "agentplane-app.agentplane-testing.svc.cluster.local",
+        "agentplane-testing.allegedly.works",
+        "agentplane-dex-testing.allegedly.works",
+    }
+    assert all("credential" not in rule for rule in policy["spec"]["rules"])
 
 
 if __name__ == "__main__":
