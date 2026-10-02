@@ -4,20 +4,7 @@ use debundle_e2e_support::GraphFixture;
 
 #[test]
 fn modules_merge_rejects_when_merge_creates_cycle() {
-    let fixture = GraphFixture::new(
-        "const beta = 1;\nconst gamma = beta + 1;\nconst alpha = gamma + 1;\nconsole.log(alpha);\n",
-        &[
-            (
-                "a.yaml",
-                "members: [{selector: {binding: {name: alpha}}}]\n",
-            ),
-            ("b.yaml", "members: [{selector: {binding: {name: beta}}}]\n"),
-            (
-                "c.yaml",
-                "members: [{selector: {binding: {name: gamma}}}]\n",
-            ),
-        ],
-    );
+    let fixture = GraphFixture::dependency_chain();
     fixture.assert_rejected_unchanged(
         &["modules", "merge", "--target", "a.yaml", "b.yaml"],
         &["unrealizable"],

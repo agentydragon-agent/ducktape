@@ -12,6 +12,15 @@ pub struct GraphFixture {
 impl GraphFixture {
     /// Module paths are relative to this fixture's single `main` chunk tree.
     pub fn new(source: &str, modules: &[(&str, &str)]) -> Self {
+        Self::run(source, modules, true)
+    }
+
+    /// A rejected real spec still emits graph and gate diagnostic artifacts.
+    pub fn rejected(source: &str, modules: &[(&str, &str)]) -> Self {
+        Self::run(source, modules, false)
+    }
+
+    fn run(source: &str, modules: &[(&str, &str)], succeeds: bool) -> Self {
         let files: Vec<_> = modules
             .iter()
             .map(|(path, yaml)| (format!("main/{path}"), *yaml))
@@ -32,7 +41,12 @@ impl GraphFixture {
             },
             &[],
         );
-        assert!(run.result.status.success(), "{}", run.result.stderr);
+        assert_eq!(
+            run.result.status.success(),
+            succeeds,
+            "{}",
+            run.result.stderr
+        );
         let modules_root = run._root.path().join("modules/main");
         if files.is_empty() {
             fs::remove_file(modules_root.join("empty.yaml")).unwrap();
@@ -66,6 +80,28 @@ impl GraphFixture {
                 ("b.yaml", "members: [{selector: {binding: {name: beta}}}]\n"),
             ],
         )
+    }
+
+    /// Merging the endpoints a/b makes a cycle through the middle c.
+    pub fn dependency_chain() -> Self {
+        Self::new(
+            "const beta = 1;\nconst gamma = beta + 1;\nconst alpha = gamma + 1;\nconsole.log(alpha);\n",
+            &[
+                (
+                    "a.yaml",
+                    "members: [{selector: {binding: {name: alpha}}}]\n",
+                ),
+                ("b.yaml", "members: [{selector: {binding: {name: beta}}}]\n"),
+                (
+                    "c.yaml",
+                    "members: [{selector: {binding: {name: gamma}}}]\n",
+                ),
+            ],
+        )
+    }
+
+    pub fn source_path(&self) -> PathBuf {
+        self.run._root.path().join("snapshot/main.js")
     }
 
     pub fn assert_success(&self, args: &[&str]) {

@@ -1,317 +1,75 @@
-//! End-to-end coverage for the edit gate's view of canonical
-//! source-match claims.
-//!
-//! The CLI edit gate (`gate_post_edit_partition`) must see the SAME
-//! claims `debundle run` materializes. A module whose binding is selected
-//! via `source_matches[]` still owns that binding's owner; treating it as
-//! residual lets the gate green-light edits the run pipeline's authoritative
-//! gate rejects (atom-split between the source-match-claimed owner and a
-//! moved/unassigned sibling).
-//!
-//! Shells out to the built `debundle` binary against synthetic
-//! `owner_graph.json` + source-file fixtures, mirroring
-//! `bindings_unassign_gate_cli_test.rs`.
+//! Source-backed edit gates must resolve the same claims as the run pipeline.
 
-use debundle_e2e_support::{graph_with_atomic_unit, owner_node, run_debundle, write_text_file};
-use serde_json::{Value, json};
+use debundle_e2e_support::{GraphFixture, write_text_file};
 use std::fs;
-use std::path::{Path, PathBuf};
 
-/// [`graph_with_atomic_unit`] plus an independent gamma (owner:2). Every node
-/// carries a `source_location` into `static/chunk.js` so source-backed
-/// selector resolution can run.
-fn graph_with_atomic_unit_and_sources() -> String {
-    let mut graph = serde_json::from_str::<Value>(&graph_with_atomic_unit()).unwrap();
-    let nodes = graph["nodes"].as_array_mut().unwrap();
-    nodes.push(owner_node("owner:2", 2, "gamma", "solo/gamma"));
-    for (line, node) in nodes.iter_mut().enumerate() {
-        node["source_location"] = chunk_location(line + 1);
+const GAMMA: (&str, &str) = (
+    "solo/gamma.yaml",
+    "members: [{selector: {binding: {name: gamma}}}]\n",
+);
+const MEMBER: &str = "members: [{selector: {binding: {name: beta}}}]\n";
+const MATCH: &str =
+    "source_matches: [{match: 'let alpha = 0;', bindings: [{local: alpha, name: Alpha}]}]\n";
+
+fn atomic_fixture(yaml: &str) -> GraphFixture {
+    GraphFixture::new(
+        "let alpha = 0;\nfunction beta() { alpha = 1; }\nconst gamma = 3;\nconsole.log(alpha, typeof beta, gamma);\n",
+        &[("home/atom.yaml", yaml), GAMMA],
+    )
+}
+
+#[test]
+fn source_match_siblings_cannot_be_split_in_either_yaml_order() {
+    for yaml in [format!("{MEMBER}{MATCH}"), format!("{MATCH}{MEMBER}")] {
+        atomic_fixture(&yaml).assert_rejected_unchanged(
+            &["bindings", "unassign", "beta"],
+            &["splits one or more atomic units"],
+        );
     }
-    graph.to_string()
-}
-
-fn chunk_location(line: usize) -> Value {
-    json!({ "source_path": "static/chunk.js", "start_line": line, "end_line": line })
-}
-
-const CHUNK_SOURCE: &str = "const alpha = 1;\nconst beta = 2;\nconst gamma = 3;\n";
-
-/// Module spec where `alpha` is claimed via a canonical source-match
-/// selector and `beta` via a plain binding selector — both co-located,
-/// so the pre-edit spec is realizable.
-const ATOM_YAML_SOURCE_MATCH: &str = r#"members:
-  - selector: { binding: { name: beta } }
-source_matches:
-  - match: 'const alpha = 1;'
-    bindings:
-      - local: alpha
-        name: Alpha
-"#;
-
-/// Same claim set, with the canonical source-match claim ordered first.
-const ATOM_YAML_SOURCE_MATCH_FIRST: &str = r#"source_matches:
-  - match: 'const alpha = 1;'
-    bindings:
-      - local: alpha
-        name: Alpha
-members:
-  - selector: { binding: { name: beta } }
-"#;
-
-const GAMMA_YAML: &str = "members:\n  - selector: { binding: { name: gamma } }\n";
-
-fn write_fixture(root: &Path, atom_yaml: &str) -> (PathBuf, PathBuf) {
-    let modules = root.join("modules");
-    let graph = root.join("owner_graph.json");
-    write_text_file(&graph, &graph_with_atomic_unit_and_sources());
-    write_text_file(&root.join("static/chunk.js"), CHUNK_SOURCE);
-    write_text_file(&modules.join("home/atom.yaml"), atom_yaml);
-    write_text_file(&modules.join("solo/gamma.yaml"), GAMMA_YAML);
-    (modules, graph)
-}
-
-fn run_unassign(root: &Path, modules: &Path, graph: &Path, sym: &str) -> std::process::Output {
-    run_debundle(&[
-        "bindings",
-        "unassign",
-        "--modules",
-        modules.to_str().unwrap(),
-        "--graph",
-        graph.to_str().unwrap(),
-        "--source-root",
-        root.to_str().unwrap(),
-        sym,
-    ])
 }
 
 #[test]
-fn unassign_rejects_atom_split_when_sibling_is_claimed_via_source_match() {
-    // Truth: alpha (source_matches[] claim) and beta (binding member)
-    // co-locate in home/atom — realizable. Unassigning beta sends it
-    // to residual while alpha stays claimed → atom split. A gate
-    // that only reads `selector.binding` treats alpha as residual
-    // and wrongly passes.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (modules, graph) = write_fixture(root, ATOM_YAML_SOURCE_MATCH);
-    let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
-
-    let out = run_unassign(root, &modules, &graph, "beta");
-
-    assert!(
-        !out.status.success(),
-        "unassigning beta must be rejected (atom split with source_match-claimed alpha); \
-         stdout: {}; stderr: {}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("splits one or more atomic units") || stderr.contains("atom-split"),
-        "expected atom-split diagnostic, got stderr:\n{stderr}",
-    );
-    assert_eq!(
-        fs::read_to_string(modules.join("home/atom.yaml")).unwrap(),
-        pre_atom,
-        "atom.yaml must be unchanged after rejection",
-    );
+fn independent_unassign_resolves_source_match_claims_and_still_runs() {
+    let fixture = atomic_fixture(&format!("{MEMBER}{MATCH}"));
+    fixture.assert_success(&["bindings", "unassign", "gamma"]);
+    assert!(!fixture.modules.join("solo/gamma.yaml").exists());
+    fixture.assert_runs("0 function 3\n");
 }
 
 #[test]
-fn unassign_rejects_atom_split_when_sibling_is_claimed_via_source_matches() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (modules, graph) = write_fixture(root, ATOM_YAML_SOURCE_MATCH_FIRST);
-    let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
-
-    let out = run_unassign(root, &modules, &graph, "beta");
-
-    assert!(
-        !out.status.success(),
-        "unassigning beta must be rejected (atom split with source-match-claimed alpha); \
-         stdout: {}; stderr: {}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
-    assert_eq!(
-        fs::read_to_string(modules.join("home/atom.yaml")).unwrap(),
-        pre_atom,
-    );
+fn missing_sources_are_a_hard_error_without_writes() {
+    let fixture = atomic_fixture(&format!("{MEMBER}{MATCH}"));
+    fs::remove_file(fixture.source_path()).unwrap();
+    fixture.assert_rejected_unchanged(&["bindings", "unassign", "gamma"], &["source"]);
 }
 
 #[test]
-fn unassign_of_independent_binding_passes_with_source_match_claims_present() {
-    // Positive control: the spec contains a source_matches[] claim (so
-    // the gate must resolve it against the chunk source), but the
-    // edit itself — unassigning the independent gamma — splits
-    // nothing. The gate must accept.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (modules, graph) = write_fixture(root, ATOM_YAML_SOURCE_MATCH);
-
-    let out = run_unassign(root, &modules, &graph, "gamma");
-
-    assert!(
-        out.status.success(),
-        "unassigning the independent gamma must pass; stderr: {}",
-        String::from_utf8_lossy(&out.stderr),
-    );
-    assert!(
-        !modules.join("solo/gamma.yaml").exists(),
-        "drained gamma.yaml must be deleted",
-    );
-}
-
-#[test]
-fn gate_hard_errors_when_source_match_spec_has_unresolvable_sources() {
-    // Soundness: when the spec carries source_match claims the gate
-    // cannot resolve (chunk source missing), the gate must hard-error
-    // rather than silently treating those owners as residual.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (modules, graph) = write_fixture(root, ATOM_YAML_SOURCE_MATCH);
-    fs::remove_file(root.join("static/chunk.js")).unwrap();
-
-    let out = run_unassign(root, &modules, &graph, "gamma");
-
-    assert!(
-        !out.status.success(),
-        "gate must refuse to run with unresolvable source_match claims; stdout: {}",
-        String::from_utf8_lossy(&out.stdout),
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("source"),
-        "expected a source-resolution error, got stderr:\n{stderr}",
-    );
-    assert!(
-        modules.join("solo/gamma.yaml").exists(),
-        "no file may be touched when the gate errors",
-    );
-}
-
-/// Owner graph of [`graph_with_atomic_unit_and_sources`] plus one anonymous
-/// side-effect owner per ordinal in `anonymous_ordinals`.
-fn graph_with_anonymous_owners(anonymous_ordinals: &[usize]) -> String {
-    let mut graph: Value = serde_json::from_str(&graph_with_atomic_unit_and_sources()).unwrap();
-    let nodes = graph["nodes"].as_array_mut().unwrap();
-    for &ordinal in anonymous_ordinals {
-        nodes.push(json!({
-            "id": format!("owner:{ordinal}"),
-            "statement_ordinal": ordinal,
-            "source_location": chunk_location(ordinal + 1),
-            "declared_bindings": [],
-            "statement_kind": "side_effect",
-            "purity": { "kind": "pure" },
-            "destination": "home/atom"
-        }));
+fn malformed_manual_claim_edits_are_refused_before_unassigning() {
+    // Generate genuine graph facts first, then model an author's bad YAML edit.
+    for (source, yaml, diagnostic) in [
+        (
+            "const alpha = 1; const beta = 1; const gamma = 3;",
+            "source_matches: [{match: 'const x = 1;', bindings: [{local: x, name: X}]}]",
+            "is ambiguous — matched 2 declarations (alpha, beta)",
+        ),
+        (
+            "const alpha = 1; const beta = 2; const gamma = 3;",
+            "source_matches: [{match: 'const x = 1;', bindings: [{local: x, name: X}]}, {match: 'const y = 1;', bindings: [{local: y, name: Y}]}]",
+            "admit no joint assignment",
+        ),
+        (
+            r#"import { dep } from "external"; const gamma = 3;"#,
+            r#"source_matches: [{match: 'import { dep } from "external";', bindings: [{local: dep, name: Dep}]}]"#,
+            "binding `dep` does not map to an owner-graph node",
+        ),
+        (
+            "const alpha = {}; const gamma = 3; alpha.x = 1; alpha.x = 1;",
+            "anonymous_statements: [{match: 'alpha.x = 1;'}]",
+            "anonymous statement selector matched 2 source statements",
+        ),
+    ] {
+        let fixture = GraphFixture::new(source, &[GAMMA]);
+        write_text_file(&fixture.modules.join("home/atom.yaml"), yaml);
+        fixture.assert_rejected_unchanged(&["bindings", "unassign", "gamma"], &[diagnostic]);
     }
-    graph.to_string()
-}
-
-fn write_custom_fixture(
-    root: &Path,
-    graph_json: &str,
-    chunk_source: &str,
-    atom_yaml: &str,
-) -> (PathBuf, PathBuf) {
-    let modules = root.join("modules");
-    let graph = root.join("owner_graph.json");
-    write_text_file(&graph, graph_json);
-    write_text_file(&root.join("static/chunk.js"), chunk_source);
-    write_text_file(&modules.join("home/atom.yaml"), atom_yaml);
-    write_text_file(&modules.join("solo/gamma.yaml"), GAMMA_YAML);
-    (modules, graph)
-}
-
-fn assert_gate_error(out: &std::process::Output, expected: &str) {
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        !out.status.success() && stderr.contains(expected),
-        "expected the gate to fail with {expected:?}; stderr:\n{stderr}",
-    );
-}
-
-#[test]
-fn gate_rejects_source_match_that_matches_two_declarations() {
-    // `x` is an alpha-renamed wildcard, so the template matches both
-    // `const alpha = 1` and `const beta = 1`.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (modules, graph) = write_custom_fixture(
-        root,
-        &graph_with_atomic_unit_and_sources(),
-        "const alpha = 1;\nconst beta = 1;\nconst gamma = 3;\n",
-        "source_matches:\n  - match: 'const x = 1;'\n    bindings:\n      - local: x\n        name: X\n",
-    );
-
-    let out = run_unassign(root, &modules, &graph, "gamma");
-
-    assert_gate_error(&out, "is ambiguous — matched 2 declarations (alpha, beta)");
-}
-
-#[test]
-fn gate_rejects_source_matches_that_claim_the_same_declaration() {
-    // Both templates match only `const alpha = 1`, so the entries cannot take
-    // a place each.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (modules, graph) = write_custom_fixture(
-        root,
-        &graph_with_atomic_unit_and_sources(),
-        "const alpha = 1;\nconst beta = 2;\nconst gamma = 3;\n",
-        r#"source_matches:
-  - match: 'const x = 1;'
-    bindings:
-      - local: x
-        name: X
-  - match: 'const y = 1;'
-    bindings:
-      - local: y
-        name: Y
-"#,
-    );
-
-    let out = run_unassign(root, &modules, &graph, "gamma");
-
-    assert_gate_error(&out, "admit no joint assignment");
-}
-
-#[test]
-fn gate_rejects_source_match_resolving_to_an_import_specifier() {
-    // An import specifier declares no chunk-top owner, so a claim on one
-    // names nothing the gate (or `run`) can place.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (modules, graph) = write_custom_fixture(
-        root,
-        &graph_with_atomic_unit_and_sources(),
-        &format!("{CHUNK_SOURCE}import {{ dep }} from \"./dep.js\";\n"),
-        "members:\n  - selector: { binding: { name: alpha } }\n  - selector: { binding: { name: beta } }\n\
-         source_matches:\n  - match: 'import { dep } from \"./dep.js\";'\n    bindings:\n      - local: dep\n        name: Dep\n",
-    );
-
-    let out = run_unassign(root, &modules, &graph, "gamma");
-
-    assert_gate_error(&out, "binding `dep` does not map to an owner-graph node");
-}
-
-#[test]
-fn gate_rejects_anonymous_selector_matching_two_statements() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (modules, graph) = write_custom_fixture(
-        root,
-        &graph_with_anonymous_owners(&[3, 4]),
-        &format!("{CHUNK_SOURCE}alpha.x = 1;\nalpha.x = 1;\n"),
-        "members:\n  - selector: { binding: { name: alpha } }\n  - selector: { binding: { name: beta } }\n\
-         anonymous_statements:\n  - match: 'alpha.x = 1;'\n",
-    );
-
-    let out = run_unassign(root, &modules, &graph, "gamma");
-
-    assert_gate_error(
-        &out,
-        "anonymous statement selector matched 2 source statements",
-    );
 }
