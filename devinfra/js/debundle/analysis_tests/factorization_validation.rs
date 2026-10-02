@@ -2,7 +2,7 @@
 //! and purity interplay through `validate_factorization` over real
 //! parsed chunks. They exercise the analysis crate's
 //! `chunk_factorization`, `validation`, and purity machinery. Despite
-//! the name, nothing here tests `peel::factorize`.
+//! the name, nothing here tests `peel::propose`.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -727,7 +727,7 @@ fn split_comma_list_attributes_reads_per_declarator() {
 fn split_comma_list_assigns_per_declarator_source_ranges() {
     // Each post-split single-declarator owner must report just its
     // declarator's line range, not the parent statement's (for
-    // `export const`, not the `ExportDecl` wrapper's). The factorizer's
+    // `export const`, not the `ExportDecl` wrapper's). The proposer's
     // `size_lines_estimate` and the lane workers' `body_extraction`
     // per-owner snippets both rely on this.
     for source in [

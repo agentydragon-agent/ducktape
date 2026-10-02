@@ -100,7 +100,7 @@ this same value.
 `"<chunk_id>::"` (the in-process `PlannedModule.id` spelling minted in
 `lowering/plans.rs`), lowercases, and normalizes separators. Two
 spellings of one module therefore collapse to a single value, so `==`
-is an honest identity test — this is what makes the peel factorizer's
+is an honest identity test — this is what makes the peel proposer's
 self-merge bug structurally impossible.
 
 The internal array handle `ModuleId(LogicalModuleIndex)` is an

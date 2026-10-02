@@ -92,3 +92,53 @@ pub fn hole_name_for<'a>(name: &'a str, keyword: &str) -> Option<&'a str> {
 pub fn labeled_hole_name_for<'a>(name: &'a str, keyword: &str) -> Option<&'a str> {
     hole_name_for(name, keyword)
 }
+
+/// Canonical spellings, ordered so the longer `STMT_LIST` keyword wins over
+/// `STMT` when decoding a readability label.
+const HOLE_KEYWORDS: [&str; 9] = [
+    ANYTHING_HOLE_KEYWORD,
+    EXPR_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD,
+    STMT_HOLE_KEYWORD,
+    CASE_REST_HOLE_KEYWORD,
+    DECLARATORS_HOLE_KEYWORD,
+    ARGS_HOLE_KEYWORD,
+    ARRAY_ELEMENTS_HOLE_KEYWORD,
+    SEQ_EXPRS_HOLE_KEYWORD,
+];
+
+/// Decode a bare or labeled hole to its canonical keyword. This classifies the
+/// vocabulary only; callers still validate which holes a syntax position admits.
+pub fn hole_keyword(name: &str) -> Option<&'static str> {
+    HOLE_KEYWORDS
+        .into_iter()
+        .find(|keyword| hole_name_for(name, keyword).is_some())
+}
+
+pub fn is_hole_keyword(name: &str) -> bool {
+    hole_keyword(name).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_keyword_accepts_bare_and_labeled_spellings() {
+        for keyword in HOLE_KEYWORDS {
+            for name in [
+                keyword.to_string(),
+                format!("{keyword}_"),
+                format!("{keyword}_label"),
+            ] {
+                assert_eq!(hole_keyword(&name), Some(keyword));
+                assert!(is_hole_keyword(&name));
+            }
+            assert_eq!(hole_name_for(&format!("{keyword}suffix"), keyword), None);
+        }
+        assert_eq!(hole_keyword("STMT_LISTsuffix"), Some(STMT_HOLE_KEYWORD));
+        for name in ["JSON", "URL", "prefix_ANYTHING", "anything"] {
+            assert_eq!(hole_keyword(name), None);
+        }
+    }
+}
