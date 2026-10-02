@@ -28,7 +28,7 @@ pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) use binding_targets::{
     TargetAccessRecorder, callee_base_expr, declaration_ids, hoisted_var_ids, record_assign_target,
-    record_pat_write, record_update_target, strip_parens,
+    record_pat_write, record_update_target,
 };
 pub(crate) use serde::{Deserialize, Serialize};
 pub(crate) use swc_common::{Span, Spanned};

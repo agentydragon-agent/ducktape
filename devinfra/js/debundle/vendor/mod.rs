@@ -838,15 +838,34 @@ pub enum DeferredImport {
 
 impl DeferredImport {
     pub fn into_module_item(self) -> ModuleItem {
-        match self {
-            DeferredImport::Namespace { source, local } => make_namespace_import(&source, &local),
-            DeferredImport::Default { source, local } => make_default_import(&source, &local),
+        let (source, specifier) = match self {
+            DeferredImport::Namespace { source, local } => (
+                source,
+                ImportSpecifier::Namespace(ImportStarAsSpecifier {
+                    span: DUMMY_SP,
+                    local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                }),
+            ),
+            DeferredImport::Default { source, local } => (
+                source,
+                ImportSpecifier::Default(ImportDefaultSpecifier {
+                    span: DUMMY_SP,
+                    local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                }),
+            ),
             DeferredImport::Named {
                 source,
                 local,
                 upstream_export,
-            } => make_named_import(&source, &local, &upstream_export),
-        }
+            } => (
+                source,
+                js_ast::named_import_specifier(
+                    Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                    &upstream_export,
+                ),
+            ),
+        };
+        js_ast::import_decl_module_item(vec![specifier], &source)
     }
 }
 
@@ -952,70 +971,6 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
             .entry((chunk_id, chunk_export.clone()))
             .or_insert(0) += 1;
     }
-}
-
-fn make_namespace_import(package: &str, namespace: &str) -> ModuleItem {
-    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
-        span: DUMMY_SP,
-        specifiers: vec![ImportSpecifier::Namespace(ImportStarAsSpecifier {
-            span: DUMMY_SP,
-            local: Ident::new_no_ctxt(namespace.into(), DUMMY_SP),
-        })],
-        src: Box::new(Str {
-            span: DUMMY_SP,
-            value: package.into(),
-            raw: None,
-        }),
-        type_only: false,
-        with: None,
-        phase: ImportPhase::Evaluation,
-    }))
-}
-
-fn make_default_import(package: &str, local: &str) -> ModuleItem {
-    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
-        span: DUMMY_SP,
-        specifiers: vec![ImportSpecifier::Default(ImportDefaultSpecifier {
-            span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
-        })],
-        src: Box::new(Str {
-            span: DUMMY_SP,
-            value: package.into(),
-            raw: None,
-        }),
-        type_only: false,
-        with: None,
-        phase: ImportPhase::Evaluation,
-    }))
-}
-
-fn make_named_import(package: &str, local: &str, upstream_export: &str) -> ModuleItem {
-    let imported = if local == upstream_export {
-        None
-    } else {
-        Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-            upstream_export.into(),
-            DUMMY_SP,
-        )))
-    };
-    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
-        span: DUMMY_SP,
-        specifiers: vec![ImportSpecifier::Named(ImportNamedSpecifier {
-            span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
-            imported,
-            is_type_only: false,
-        })],
-        src: Box::new(Str {
-            span: DUMMY_SP,
-            value: package.into(),
-            raw: None,
-        }),
-        type_only: false,
-        with: None,
-        phase: ImportPhase::Evaluation,
-    }))
 }
 
 /// `export { <orig> as <exported> } from "<source>"` (alias omitted when

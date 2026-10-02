@@ -157,14 +157,14 @@ pub(crate) fn collect_plain_array_bindings(
 }
 
 fn expr_returns_plain_array(expr: &Expr, known_plain_arrays: &BTreeSet<String>) -> bool {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Array(_) => true,
         Expr::Ident(ident) => known_plain_arrays.contains(ident.sym.as_ref()),
         Expr::Call(call) => {
             let Callee::Expr(callee) = &call.callee else {
                 return false;
             };
-            let Expr::Member(member) = strip_parens(callee) else {
+            let Expr::Member(member) = callee.unwrap_parens() else {
                 return false;
             };
             matches!(
@@ -177,7 +177,7 @@ fn expr_returns_plain_array(expr: &Expr, known_plain_arrays: &BTreeSet<String>) 
 }
 
 fn expr_is_plain_array_receiver(expr: &Expr, known_plain_arrays: &BTreeSet<String>) -> bool {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Array(_) => true,
         Expr::Ident(ident) => known_plain_arrays.contains(ident.sym.as_ref()),
         Expr::Call(_) => expr_returns_plain_array(expr, known_plain_arrays),
@@ -270,7 +270,7 @@ pub(crate) fn collect_fluent_const_bindings(
 /// a fluent API is not part of the asserted contract (builder APIs
 /// chain calls, not constructors).
 pub(crate) fn fluent_chain_root(expr: &Expr) -> Option<&str> {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Ident(ident) => Some(ident.sym.as_ref()),
         Expr::Member(member) => match &member.prop {
             MemberProp::Ident(_) | MemberProp::PrivateName(_) => fluent_chain_root(&member.obj),
@@ -682,7 +682,7 @@ impl Visit for PlainDataWriteScanner<'_> {
         // the value — the reference isn't captured. Skip the bare
         // candidate Ident so the escape default doesn't fire.
         if matches!(node.op, UnaryOp::TypeOf | UnaryOp::Bang | UnaryOp::Void)
-            && matches!(strip_parens(&node.arg), Expr::Ident(_))
+            && matches!(node.arg.unwrap_parens(), Expr::Ident(_))
         {
             return;
         }
@@ -723,7 +723,7 @@ impl Visit for PlainDataWriteScanner<'_> {
     // Ident receiver (candidate or not); everything else (nested
     // receivers, computed keys) is traversed normally.
     fn visit_member_expr(&mut self, node: &MemberExpr) {
-        if !matches!(strip_parens(&node.obj), Expr::Ident(_)) {
+        if !matches!(node.obj.unwrap_parens(), Expr::Ident(_)) {
             node.obj.visit_with(self);
         }
         node.prop.visit_with(self);
@@ -732,14 +732,14 @@ impl Visit for PlainDataWriteScanner<'_> {
     // Spread sources (`{...X}`, `[...X]`, `f(...X)`) copy values /
     // iterate; the receiver object's identity is not captured.
     fn visit_spread_element(&mut self, node: &SpreadElement) {
-        if matches!(strip_parens(&node.expr), Expr::Ident(_)) {
+        if matches!(node.expr.unwrap_parens(), Expr::Ident(_)) {
             return;
         }
         node.visit_children_with(self);
     }
 
     fn visit_expr_or_spread(&mut self, node: &ExprOrSpread) {
-        if node.spread.is_some() && matches!(strip_parens(&node.expr), Expr::Ident(_)) {
+        if node.spread.is_some() && matches!(node.expr.unwrap_parens(), Expr::Ident(_)) {
             return;
         }
         node.visit_children_with(self);
@@ -749,7 +749,7 @@ impl Visit for PlainDataWriteScanner<'_> {
     // doc-comment's residual-assumption note).
     fn visit_return_stmt(&mut self, node: &ReturnStmt) {
         if let Some(arg) = node.arg.as_deref()
-            && matches!(strip_parens(arg), Expr::Ident(_))
+            && matches!(arg.unwrap_parens(), Expr::Ident(_))
         {
             return;
         }
@@ -788,7 +788,7 @@ impl Visit for PlainDataWriteScanner<'_> {
                 .any(|(_, p)| *p == prop.sym.as_ref())
             && node.args.len() == 1
             && node.args[0].spread.is_none()
-            && matches!(strip_parens(&node.args[0].expr), Expr::Ident(_))
+            && matches!(node.args[0].expr.unwrap_parens(), Expr::Ident(_))
         {
             // Receiver `Object` and the static prop carry no
             // candidate refs; nothing else to visit.
@@ -821,7 +821,8 @@ impl Visit for PlainDataWriteScanner<'_> {
             // `() => X` return position — non-escaping by the same
             // scope decision as `return X`.
             match node.body.as_ref() {
-                ArrowFunctionBody::Expr(expr) if matches!(strip_parens(expr), Expr::Ident(_)) => {}
+                ArrowFunctionBody::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(_)) => {
+                }
                 body => body.visit_with(s),
             }
         });
@@ -906,8 +907,8 @@ impl PlainArrayMethodScanner<'_> {
 impl Visit for PlainArrayMethodScanner<'_> {
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Callee::Expr(callee) = &node.callee
-            && let Expr::Member(member) = strip_parens(callee)
-            && let Expr::Ident(recv) = strip_parens(member.obj.as_ref())
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && let Expr::Ident(recv) = member.obj.as_ref().unwrap_parens()
         {
             let allowed = match &member.prop {
                 MemberProp::Ident(prop) => SAFE_PLAIN_ARRAY_METHODS.contains(&prop.sym.as_ref()),

@@ -301,7 +301,7 @@ pub(crate) fn is_pure_object_define_property_on_fresh_namespace(
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> bool {
-    let Expr::Member(member) = strip_parens(callee_expr) else {
+    let Expr::Member(member) = callee_expr.unwrap_parens() else {
         return false;
     };
     if !matches!(
@@ -338,7 +338,7 @@ fn is_fresh_namespace_object_literal(
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> bool {
-    let Expr::Object(obj) = strip_parens(expr) else {
+    let Expr::Object(obj) = expr.unwrap_parens() else {
         return false;
     };
     obj.props.iter().all(|prop| match prop {
@@ -347,7 +347,7 @@ fn is_fresh_namespace_object_literal(
             Prop::Shorthand(_) => true,
             Prop::KeyValue(kv) => {
                 if prop_name_is(&kv.key, "__proto__") {
-                    return matches!(strip_parens(&kv.value), Expr::Lit(Lit::Null(_)));
+                    return matches!(kv.value.unwrap_parens(), Expr::Lit(Lit::Null(_)));
                 }
                 prop_name_is_static_data_key(&kv.key)
                     && classify_expr_purity(
@@ -369,7 +369,7 @@ fn is_symbol_to_string_tag(
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,
 ) -> bool {
-    let Expr::Member(member) = strip_parens(expr) else {
+    let Expr::Member(member) = expr.unwrap_parens() else {
         return false;
     };
     matches!(
@@ -389,7 +389,7 @@ fn is_data_descriptor_literal(
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> bool {
-    let Expr::Object(obj) = strip_parens(expr) else {
+    let Expr::Object(obj) = expr.unwrap_parens() else {
         return false;
     };
     obj.props.iter().all(|prop| match prop {
@@ -466,7 +466,7 @@ pub(crate) fn is_pure_plain_data_arg_for(
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> bool {
-    let arg = strip_parens(arg);
+    let arg = arg.unwrap_parens();
     if prop == "fromEntries" {
         // `Object.fromEntries(I)` iterates I. Restrict I to a fresh
         // Array literal whose every element is a 2-element Array
@@ -541,7 +541,7 @@ fn is_fresh_entry_array_for_from_entries(
         if elem.spread.is_some() {
             return false;
         }
-        let Expr::Array(entry) = strip_parens(&elem.expr) else {
+        let Expr::Array(entry) = elem.expr.unwrap_parens() else {
             return false;
         };
         if entry.elems.len() != 2 {
@@ -611,7 +611,7 @@ pub(crate) fn is_result_primitive(
     primitives: &BTreeSet<String>,
     local_shadowed: &BTreeSet<String>,
 ) -> bool {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_)) => true,
         Expr::Tpl(_) => true,
         // A chunk-top `const` provably bound to a primitive value: the
@@ -650,7 +650,7 @@ pub(crate) fn is_safe_property_key(
     if is_result_primitive(key, primitives, local_shadowed) {
         return true;
     }
-    if let Expr::Member(member) = strip_parens(key)
+    if let Expr::Member(member) = key.unwrap_parens()
         && let Some((recv, prop)) = static_member_pair(member)
         && recv == "Symbol"
         && !shadowed.contains(recv)

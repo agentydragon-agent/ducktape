@@ -14,8 +14,8 @@ use artifact::{
     join_module_path, module_path_dirname, normalize_relative_module_specifier,
     relative_module_path,
 };
+use js_ast::import_decl_module_item;
 use std::collections::BTreeMap;
-use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 
 pub(crate) fn resolve_imported_binding(
@@ -182,19 +182,4 @@ pub(crate) fn group_specifiers_into_import_decls(
         }
     }
     result
-}
-
-pub(crate) fn import_decl_module_item(specifiers: Vec<ImportSpecifier>, src: &str) -> ModuleItem {
-    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
-        span: DUMMY_SP,
-        specifiers,
-        src: Box::new(Str {
-            span: DUMMY_SP,
-            value: src.into(),
-            raw: None,
-        }),
-        type_only: false,
-        with: None,
-        phase: ImportPhase::Evaluation,
-    }))
 }

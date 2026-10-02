@@ -31,6 +31,7 @@
 //!   imports are irrelevant here.
 //! - `Source`-bodied files (no AST) are upstream-verbatim and skipped.
 
+use binding_targets::module_export_name;
 use std::collections::BTreeSet;
 
 use artifact::{ChunkBundle, FileRole, JsFile, join_module_path, module_path_dirname};
@@ -126,7 +127,7 @@ fn collect_consumers(
                     match spec {
                         ImportSpecifier::Named(named) => {
                             consumed.insert(match &named.imported {
-                                Some(name) => export_name_string(name),
+                                Some(name) => module_export_name(name),
                                 None => named.local.sym.to_string(),
                             });
                         }
@@ -147,7 +148,7 @@ fn collect_consumers(
                 for spec in &named.specifiers {
                     match spec {
                         ExportSpecifier::Named(n) => {
-                            consumed.insert(export_name_string(&n.orig));
+                            consumed.insert(module_export_name(&n.orig));
                         }
                         ExportSpecifier::Namespace(_) => {
                             if let Some(src) = &named.src
@@ -192,12 +193,12 @@ fn prune_local_named_exports(
             // Re-export of an imported binding: keep it (pruning would orphan
             // the import). Only dead exports of locally declared bindings —
             // the decorator scaffolding — are pruned.
-            let local = export_name_string(&n.orig);
+            let local = module_export_name(&n.orig);
             if import_locals.contains(&local) {
                 return true;
             }
             let public = match &n.exported {
-                Some(name) => export_name_string(name),
+                Some(name) => module_export_name(name),
                 None => local.clone(),
             };
             consumed.contains(&public)
@@ -205,13 +206,6 @@ fn prune_local_named_exports(
         // Drop a now-empty `export {};` rather than emit it.
         !named.specifiers.is_empty()
     });
-}
-
-fn export_name_string(name: &ModuleExportName) -> String {
-    match name {
-        ModuleExportName::Ident(ident) => ident.sym.to_string(),
-        ModuleExportName::Str(s) => s.value.as_str().unwrap_or_default().to_string(),
-    }
 }
 
 #[cfg(test)]
@@ -223,6 +217,23 @@ mod tests {
     use js_ast::parse_js_module;
 
     use super::*;
+
+    #[test]
+    fn string_export_names_do_not_collapse_to_empty() {
+        js_ast::with_swc_globals(|| {
+            let parsed =
+                parse_js_module("surrogate.js", r#"const a = 1; export { a as "\ud800" };"#)
+                    .unwrap();
+            let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = &parsed.module.body[1]
+            else {
+                panic!("named export");
+            };
+            let ExportSpecifier::Named(specifier) = &export.specifiers[0] else {
+                panic!("named specifier");
+            };
+            assert!(!module_export_name(specifier.exported.as_ref().unwrap()).is_empty());
+        });
+    }
 
     /// One chunk `c` (source path `c.js`), files laid out flat so a sibling's
     /// `./mod.js` resolves to `c/mod.js`.
@@ -290,8 +301,8 @@ mod tests {
                 for spec in &named.specifiers {
                     if let ExportSpecifier::Named(n) = spec {
                         names.push(match &n.exported {
-                            Some(name) => export_name_string(name),
-                            None => export_name_string(&n.orig),
+                            Some(name) => module_export_name(name),
+                            None => module_export_name(&n.orig),
                         });
                     }
                 }

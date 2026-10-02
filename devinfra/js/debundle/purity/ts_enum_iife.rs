@@ -103,7 +103,7 @@ pub(crate) fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -
             let param_name = param_ident.id.sym.as_ref();
             match arrow.body.as_ref() {
                 ArrowFunctionBody::Expr(body_expr) => {
-                    is_ts_enum_iife_body_expr(strip_parens(body_expr.as_ref()), param_name)
+                    is_ts_enum_iife_body_expr(body_expr.as_ref().unwrap_parens(), param_name)
                 }
                 ArrowFunctionBody::FunctionBody(block) => {
                     is_ts_enum_iife_body_block(block, param_name)
@@ -134,8 +134,8 @@ pub(crate) fn ts_enum_iife_argument_binding(call: &CallExpr) -> Option<&str> {
     if call.args.len() != 1 || call.args[0].spread.is_some() {
         return None;
     }
-    match strip_parens(&call.args[0].expr) {
-        Expr::Bin(bin) if bin.op == BinaryOp::LogicalOr => match strip_parens(&bin.left) {
+    match call.args[0].expr.unwrap_parens() {
+        Expr::Bin(bin) if bin.op == BinaryOp::LogicalOr => match bin.left.unwrap_parens() {
             Expr::Ident(ident) => Some(ident.sym.as_ref()),
             _ => None,
         },
@@ -156,14 +156,14 @@ fn is_ts_enum_iife_arg(expr: &Expr, binding: &str) -> bool {
         Expr::Paren(p) => is_ts_enum_iife_arg(&p.expr, binding),
         Expr::Object(obj) => obj.props.is_empty(),
         Expr::Bin(b) if b.op == BinaryOp::LogicalOr => {
-            matches!(strip_parens(b.left.as_ref()), Expr::Ident(id) if id.sym.as_ref() == binding)
+            matches!(b.left.as_ref().unwrap_parens(), Expr::Ident(id) if id.sym.as_ref() == binding)
                 && is_ts_enum_iife_arg(&b.right, binding)
         }
         Expr::Assign(a) if a.op == AssignOp::Assign => {
             matches!(
                 &a.left,
                 AssignTarget::Simple(SimpleAssignTarget::Ident(id)) if id.id.sym.as_ref() == binding
-            ) && matches!(strip_parens(a.right.as_ref()), Expr::Object(obj) if obj.props.is_empty())
+            ) && matches!(a.right.as_ref().unwrap_parens(), Expr::Object(obj) if obj.props.is_empty())
         }
         _ => false,
     }
@@ -183,12 +183,12 @@ fn is_ts_enum_iife_body_expr(expr: &Expr, param: &str) -> bool {
         return false;
     }
     let (last, rest) = seq.exprs.split_last().expect("non-empty checked above");
-    let last_inner = strip_parens(last.as_ref());
+    let last_inner = last.as_ref().unwrap_parens();
     if !matches!(last_inner, Expr::Ident(id) if id.sym.as_ref() == param) {
         return false;
     }
     rest.iter()
-        .all(|e| is_ts_enum_iife_property_write(strip_parens(e.as_ref()), param))
+        .all(|e| is_ts_enum_iife_property_write(e.as_ref().unwrap_parens(), param))
 }
 
 fn is_ts_enum_iife_body_block(block: &FunctionBody, param: &str) -> bool {
@@ -196,7 +196,9 @@ fn is_ts_enum_iife_body_block(block: &FunctionBody, param: &str) -> bool {
         return false;
     };
     if !rest.iter().all(|stmt| match stmt {
-        Stmt::Expr(expr) => is_ts_enum_iife_property_write(strip_parens(expr.expr.as_ref()), param),
+        Stmt::Expr(expr) => {
+            is_ts_enum_iife_property_write(expr.expr.as_ref().unwrap_parens(), param)
+        }
         _ => false,
     }) {
         return false;
@@ -207,7 +209,7 @@ fn is_ts_enum_iife_body_block(block: &FunctionBody, param: &str) -> bool {
     let Some(arg) = ret.arg.as_deref() else {
         return false;
     };
-    is_ts_enum_iife_body_expr(strip_parens(arg), param)
+    is_ts_enum_iife_body_expr(arg.unwrap_parens(), param)
 }
 
 /// One step of the IIFE body:
@@ -245,7 +247,7 @@ fn is_ts_enum_iife_property_write(expr: &Expr, param: &str) -> bool {
     let key_ok = match &member.prop {
         MemberProp::Ident(ident) => ident.sym.as_ref() != "__proto__",
         MemberProp::Computed(c) => {
-            let key = strip_parens(c.expr.as_ref());
+            let key = c.expr.as_ref().unwrap_parens();
             matches!(key, Expr::Lit(Lit::Str(s)) if s.value.to_string_lossy() != "__proto__")
                 || matches!(key, Expr::Lit(Lit::Num(_)))
                 // TS numeric-enum reverse-mapping: the computed key

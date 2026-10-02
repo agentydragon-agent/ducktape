@@ -199,7 +199,7 @@ pub(crate) fn declares_direct_function(item: &ModuleItem) -> bool {
                 && var.decls[0]
                     .init
                     .as_deref()
-                    .map(strip_parens)
+                    .map(Expr::unwrap_parens)
                     .is_some_and(|init| matches!(init, Expr::Fn(_) | Expr::Arrow(_)))
         }),
     }
@@ -239,7 +239,7 @@ fn async_var_function_binding(var: &VarDecl) -> Option<Id> {
     let Pat::Ident(binding) = &var.decls[0].name else {
         return None;
     };
-    let init = var.decls[0].init.as_deref().map(strip_parens)?;
+    let init = var.decls[0].init.as_deref().map(Expr::unwrap_parens)?;
     let is_async = match init {
         Expr::Fn(fn_expr) => fn_expr.function.is_async,
         Expr::Arrow(arrow) => arrow.is_async,
