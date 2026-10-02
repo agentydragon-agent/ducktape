@@ -194,9 +194,9 @@ Public coder and finance agent select exactly the same Kubernetes grants. Both
 also select the existing `public-coder-agent-node-reader` and
 `public-coder-agent-cluster-metadata-reader` ClusterRoles, bound cluster-wide:
 node inventory, CRD schemas, and node metrics. They do **not** select Haku's broader
-`cluster-diagnostics-reader`, credentials, sandbox writes, testing operator
-capability, or named VMI restart. Their egress and Action policies remain separate
-from these Kubernetes grants.
+`cluster-diagnostics-reader`, Coinbase credentials, or `haku-sandbox` writes.
+Testing operator/login access is a separate shared bundle below. Action policies
+remain separate from these Kubernetes grants.
 
 These bundles are plain deployment-side grant lists, not a new API or a broad
 cluster-wide role. Metadata and log readers retain their separate namespaced
@@ -207,8 +207,10 @@ The testing environment's public-coder preset does not select these staging gran
 Preset changes affect **new Sandboxes only**. After deployment, launch a new Sandbox
 (or explicitly migrate through the operator workflow), then check its effective
 access with `kubectl auth can-i` and exercise the intended reads. In particular,
-verify Ducktape Flux access and approved logs, and verify that Secrets, exec, writes,
-node proxy access, and logs outside the approved scopes remain denied. Do not treat
+verify Ducktape Flux access, approved logs, and testing operator/login access. Verify
+that staging operator login and staging Sandbox lifecycle/exec remain denied; public coder and finance
+must also remain denied node proxy access and Secrets/exec outside their explicit
+permissions. Namespace diagnostic reads in staging are distinct from operator access. Do not treat
 a configured catalog or preset as proof that existing Sandboxes received bindings.
 
 ### Managed Haku additional authority
@@ -226,25 +228,30 @@ It also selects the `ducktape-flux` reader Role and the public-coder VolSync
 status Role. The former namespace and Role are owned by the bootstrap Flux
 source, so its independent delegation Kustomization has no generated predecessor;
 the latter depends on the public-coder app Kustomization. Public-coder's wider
-reader and named VMI restart grants are also explicit Haku preset choices within
-`public-coder-agent`. The reader observes Pods, logs, ConfigMaps, service and
-workload metadata, RBAC/Flux metadata, Pod metrics, and the named
-`public-coder-devbox` VM/VMI; it has no Secret read or Pod exec. The separate
-`public-coder-agent-devbox-vmi-restart` Role permits only `delete` on that named
-VMI, causing its `runStrategy: Always` VM to recreate it. Flux owns these Role
-rules and the existing static Haku bindings; the independent public-coder
-delegation permits Agentplane to bind only these named Roles and the VolSync
-status Role to managed Sandbox SAs.
-Managed Haku's existing `cluster-diagnostics-reader` covers the static
-public-coder node and cluster-metadata readers, so this catalog adds no
-duplicate ClusterRoleBindings for those capabilities.
+reader observes Pods, logs, ConfigMaps, service and workload metadata, RBAC/Flux
+metadata, Pod metrics, and the named `public-coder-devbox` VM/VMI. It grants no
+Secret read, Pod exec, or VMI deletion. Managed Haku's broader cluster reader
+already covers public coder's two narrow cluster readers.
 
-The narrow restart Role is introduced by PR #8672. This managed-grant change
-must deploy after that Role split: until it lands, the reader Role still
-includes the VMI `delete` verb and the separate restart Role is absent.
+### Testing-only Agentplane operator access
 
-The preset also selects the existing `agentplane-testing-operator` Role in
-`agentplane-testing`; its static Haku RoleBinding remains Flux-owned. This is a
+All three managed presets separately select `agentplane-testing-operator` and
+`agentplane-testing-login`, and the `agentplane-testing` egress policy. Static Haku
+and public coder share the same testing roles. The login grant is `get` on exactly
+`public-coder-agent/agentplane-testing-acceptance-operator`, the reflected testing
+Dex login Secret, through the new `agentplane-testing-login-reader` Role.
+The old staging+testing login Role and binding are removed. A new Role name ensures
+independently reconciled managed bindings cannot temporarily acquire the old
+`agentplane-acceptance-operator` (**staging**) permission during rollout.
+No agent receives a staging operator/login grant here. Ordinary diagnostic reads
+and Haku's unrelated Coinbase reader are unchanged.
+
+The testing egress policy admits the testing app's internal API and the public
+**testing** app/Dex origins needed for the OIDC redirect flow, without credential
+substitution. It does not admit staging app or Authentik login origins.
+
+The existing `agentplane-testing-operator` Role and its static Haku/public-coder
+RoleBinding remain Flux-owned. This is a
 **testing-only write grant**: it can create, patch, and delete Sandboxes, create
 Pod exec and port-forward sessions, create/patch/delete ActionPolicySets and
 ActionPolicyBindings, and mint the `agentplane-agent` ServiceAccount token used
@@ -253,6 +260,17 @@ It grants no write access in `agentplane-staging` and no direct Kubernetes
 Secret read. Pod exec can expose data mounted in testing Pods, and a holder can
 operate every Sandbox in the testing namespace and use that environment's
 credentialless MCP fixtures. Treat it as operator authority, not a diagnostics reader.
+
+### Retired devbox restart capability
+
+The image rollout controller, not agents, owns devbox restarts. No preset or
+catalog entry selects `public-coder-agent-devbox-vmi-restart`, and its static
+RoleBinding is removed. Its Role temporarily remains **empty**, revoking the
+permission even for existing managed bindings. Deleting the Role immediately
+would make the reconciler mark Sandboxes with that snapshotted grant unready.
+Remove the empty Role once those old Sandboxes have been replaced. Namespace
+cleanup delegation remains available for their old bindings.
+
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
 read selection. Kyverno's `agent-readable-*` labels grant the static identities access; managed
 Sandbox SAs require explicit catalog entries and preset selections before they receive
