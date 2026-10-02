@@ -48,6 +48,11 @@ Selector implementation is grouped under `selectors/`: AST matching and
 generation and minimization in `authoring/`, and selector-debt reporting in
 `diagnostics/`. Bazel target names remain stable.
 
+The CLI root only composes and routes commands. `cli/{bindings,modules,spec,
+inspection}_commands.rs` own each family's arguments, adapters, and renderers;
+`cli/binding.rs`, `cli/module.rs`, and `cli/edit_gate.rs` own spec editing and
+validation independently of presentation.
+
 ### Analysis and planning vocabulary
 
 - `chunk_analysis::ChunkAnalysisOutput` contains semantic statement facts, the
