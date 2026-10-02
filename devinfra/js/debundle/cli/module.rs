@@ -151,7 +151,9 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
     let gate = merge.edit.gate()?;
     let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
     let plan = plan_merge(&merge.edit.modules_root, &merge.target, &sources)?;
-    if let Err(err) = gate.check(&merge.edit.modules_root, || plan.post_spec(&merge.edit.modules_root)) {
+    if let Err(err) = gate.check(&merge.edit.modules_root, || {
+        plan.post_spec(&merge.edit.modules_root)
+    }) {
         emit_gate_rejection_json("merge", merge.edit.format, &err);
         return Err(err);
     }

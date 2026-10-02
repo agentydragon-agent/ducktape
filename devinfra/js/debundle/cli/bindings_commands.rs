@@ -245,13 +245,14 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
 
 fn run_bindings_unassign_cmd(args: BindingsUnassignArgs) -> Result<()> {
     let gate = args.edit.gate()?;
-    let out = match run_bindings_unassign(&args.edit.modules_root, args.syms, args.edit.dry_run, gate) {
-        Ok(out) => out,
-        Err(err) => {
-            emit_gate_rejection_json("unassign", args.edit.format, &err);
-            return Err(err);
-        }
-    };
+    let out =
+        match run_bindings_unassign(&args.edit.modules_root, args.syms, args.edit.dry_run, gate) {
+            Ok(out) => out,
+            Err(err) => {
+                emit_gate_rejection_json("unassign", args.edit.format, &err);
+                return Err(err);
+            }
+        };
     let format = OutputFormat::resolve(args.edit.format);
     print_unassign_outcome(&out, format)
 }
