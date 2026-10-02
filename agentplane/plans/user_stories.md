@@ -26,8 +26,9 @@ Standing under it:
   human Decision, automatic at-most-one Execution, caller-own/operator-all reads, and no blind retry.
 - Submission is non-blocking, and a caller polls the durable Action event sequence from pending
   to a terminal state ([Action Service specification](../action_service/SPEC.md)); the open work is
-  delivering those redacted Decision/result events into an Agent/Thread as a later machine input
-  through the Event & Notification Hub (`ING` in [the DAG](task_dag.md)).
+  making those Decision/result events available in a Thread-owned inbox and delivering a later
+  machine notice through the [standalone subscriptions service](notifications.md) (`ING` in
+  [the DAG](task_dag.md)).
 - [`external_access.md`](external_access.md): delegated identity where the target's RBAC can
   express the boundary, brokered credential where it cannot, agent-requested grants, and the
   revocation gate (placeholder token, substitution only while the ledger and the apiserver agree).
@@ -56,9 +57,9 @@ Missing:
   credential boundary, dispatch/result transport, health discovery, and exactly-one/no-retry
   behavior across loss.
 - **Delivery to Rai and the Thread.** Send a redacted notification with approve/deny through the
-  same DecisionProvider, and deliver the Decision/result — already pollable from the durable Action
-  event sequence — as a later machine input through the Event & Notification Hub on the runner paths
-  the tests pin.
+  same DecisionProvider, and expose the Decision/result — already pollable from the durable Action
+  event sequence — through the standalone service's inbox. Deliver a small runner input telling the
+  agent to retrieve it; fetching does not acknowledge it. See the [v1 plan](notifications.md).
 - **Standing grants as a separate product.** An `EgressBinding` or Kubernetes binding can represent
   reusable authority; it is not another outcome or repeated Execution of one ActionRequest.
 
@@ -180,9 +181,9 @@ paragraph that led to it. One agent writes the interaction surface it is then dr
 
 Standing under it:
 
-- The decision that external events arrive as thread inputs, and the batcher and envelope
-  of the Event & Notification Hub (`ING` in [the DAG](task_dag.md)): a UI event is one more source, delivered as a
-  `<agentplane-event>` in a user-message envelope, batched with whatever else arrived.
+- The [notification service design](notifications.md) (`ING` in [the DAG](task_dag.md)): a UI event
+  can later be another provider-owned source. Events go to a Thread inbox; a batched automated
+  user-message notice tells the agent to retrieve them. UI providers and automatic wake are not v1.
 - Haku already owns a deployed UI: it authors the `haku/ui` repository on Forgejo, the image is
   published from it, and Flux applies the workload under the constrained `haku-state` reconciler
   ([`cluster/generated/haku/ui-image-webhook`](../../cluster/cdk8s/haku/ui_image_webhook.md)).
@@ -196,13 +197,13 @@ Missing:
 - **The event pipe.** Rai clicks; the click reaches `haku-ui`, Haku's own code behind an
   Authentik proxy defined in ducktape; that code decides whether Haku the agent should hear
   about it and posts JSON to an ingress that is Agentplane's code, which batches and rate-limits
-  and delivers it to the Haku sandbox's session as an `Input` in an envelope. Haku is allowed to
-  write code that gets deployed where it can send messages to Haku; if it built the UI to lie,
+  and stores it in Haku's Thread inbox, with an automated notice delivered through the runner.
+  Haku is allowed to write code that gets deployed where it can send messages to Haku; if it built the UI to lie,
   it would be lying to itself. So the UI posts as Haku's Kubernetes identity, the envelope names
   `haku-ui` as the source, and Rai's identity is Authentik's business at the UI's edge, not the
-  envelope's. The UI never gets a direct pipe: the ingress is the Event & Notification Hub's
-  batcher with a workload identity on the caller side, feeding
-  the existing inputs route: no new object.
+  envelope's. The UI never gets a direct pipe: a provider authenticates the source, and the standalone
+  service manages the subscription, inbox, and runner notice. This future provider needs its own
+  source/destination access policy; a UI event must not imply permission to wake a stopped harness.
 - **Rendering state Haku owns**: the cards and paragraphs are data Haku edits, so "dismiss and
   rewrite" is a write to that state followed by the page re-rendering, not a redeploy.
 

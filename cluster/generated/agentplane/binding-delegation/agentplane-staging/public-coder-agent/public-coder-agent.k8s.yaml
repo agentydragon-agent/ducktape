@@ -30,7 +30,7 @@ rules:
   - apiGroups:
       - rbac.authorization.k8s.io
     resourceNames:
-      - public-coder-agent-devbox-vmi-restart
+      - agentplane-testing-login-reader
     resources:
       - roles
     verbs:

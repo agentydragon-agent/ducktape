@@ -133,42 +133,32 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     assert _PUBLIC_CODER_SUBJECT not in haku_cluster_binding["subjects"]
 
 
-def test_public_coder_devbox_restart_preserves_reader_subjects(app_objects: list[dict[str, Any]]) -> None:
-    """The delete grant is isolated without changing the reader's existing subject set."""
+def test_agents_no_longer_restart_the_devbox(app_objects: list[dict[str, Any]]) -> None:
     reader = _one(_named(app_objects, "public-coder-agent-reader"), "Role")
     reader_vmi_rule = one(rule for rule in reader["rules"] if "virtualmachineinstances" in rule["resources"])
     assert reader_vmi_rule["verbs"] == _READ
     assert "delete" not in {verb for rule in reader["rules"] for verb in rule["verbs"]}
 
-    restart = _named(app_objects, "public-coder-agent-devbox-vmi-restart")
-    role = _one(restart, "Role")
-    binding = _one(restart, "RoleBinding")
-    assert role["rules"] == [
-        {
-            "apiGroups": ["kubevirt.io"],
-            "resourceNames": ["public-coder-devbox"],
-            "resources": ["virtualmachineinstances"],
-            "verbs": ["delete"],
-        }
-    ]
-    assert binding["roleRef"]["name"] == role["metadata"]["name"]
-    assert _subjects(binding) == _HAKU_SUBJECTS | {("Group", console_config.PUBLIC_CODER_GROUP, None)}
-    assert _PUBLIC_CODER_SUBJECT in binding["subjects"]
+    retired = _named(app_objects, "public-coder-agent-devbox-vmi-restart")
+    # Existing managed Sandboxes retain a resolved reference to this Role. Keep
+    # the reference readable, but revoke every permission and every static binding.
+    assert not _one(retired, "Role").get("rules")
+    assert not any(obj["kind"] == "RoleBinding" for obj in retired)
 
 
 def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credential(
     app_objects: list[dict[str, Any]], proxy_objects: list[dict[str, Any]]
 ) -> None:
-    objects = _named(app_objects, "agentplane-acceptance-operator-reader")
+    objects = _named(app_objects, "agentplane-testing-login-reader")
     role = _one(objects, "Role")
     binding = _one(objects, "RoleBinding")
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
-    assert one(binding["subjects"]) == _PUBLIC_CODER_SUBJECT
+    assert _subjects(binding) == _HAKU_SUBJECTS | {("Group", console_config.PUBLIC_CODER_GROUP, None)}
     rule = one(role["rules"])
     assert rule["resources"] == ["secrets"]
     assert rule["verbs"] == ["get"]
     secret_names = set(rule["resourceNames"])
-    assert secret_names
+    assert secret_names == {"agentplane-testing-acceptance-operator"}
 
     for objects in (app_objects, proxy_objects):
         deployment = _one(objects, "Deployment")
@@ -207,14 +197,7 @@ def test_public_coder_never_exceeds_haku(
     """Every role public-coder is bound to, Haku is bound to as well: the profile never exceeds
     the orchestrator that dispatches to it."""
     subjects_by_role_ref: dict[tuple[str | None, str, str], set[tuple[str, str, str | None]]] = {}
-    binding_sources = (
-        clickhouse_diagnostics_objects,
-        _synth(ducktape_flux.chart),
-        console_objects,
-        # Less the acceptance-operator reader, which is public-coder's alone: the secrets it names
-        # are the profile's own login bootstrap (see the acceptance test above).
-        [obj for obj in app_objects if obj["metadata"]["name"] != "agentplane-acceptance-operator-reader"],
-    )
+    binding_sources = (clickhouse_diagnostics_objects, _synth(ducktape_flux.chart), console_objects, app_objects)
     for objects in binding_sources:
         for binding in objects:
             if binding["kind"] not in {"RoleBinding", "ClusterRoleBinding"}:

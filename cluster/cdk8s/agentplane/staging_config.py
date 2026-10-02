@@ -12,6 +12,7 @@ from agentplane.app.kubernetes_grants import ClusterRoleBindingGrant, ClusterRol
 from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import Harness, SandboxPreset, ThreadPreset
 from cluster.cdk8s.agentplane.app_settings import (
+    AGENTPLANE_TESTING_POLICY,
     AIQUOTA_READ_POLICY,
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -191,10 +192,10 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
                 namespace="public-coder-agent",
                 role_ref=RoleRef(kind="Role", name="public-coder-agent-reader"),
             ),
-            "public-coder-agent-devbox-vmi-restart": RoleBindingGrant(
+            "agentplane-testing-login": RoleBindingGrant(
                 kind="RoleBinding",
                 namespace="public-coder-agent",
-                role_ref=RoleRef(kind="Role", name="public-coder-agent-devbox-vmi-restart"),
+                role_ref=RoleRef(kind="Role", name="agentplane-testing-login-reader"),
             ),
         },
         # Retain cleanup authority when a catalog choice is disabled while its
@@ -222,16 +223,22 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         "public-coder-volsync-status",
         "public-coder-agent-reader",
     ]
-    public_diagnostics = [*shared_diagnostics, "public-coder-node-read", "public-coder-cluster-metadata-read"]
-    cfg.sandbox_presets["public-coder"].kubernetes_grants = public_diagnostics.copy()
+    # Testing operator/login authority is explicit, not hidden in diagnostics.
+    shared_testing = ["agentplane-testing-operator", "agentplane-testing-login"]
+    public_grants = [
+        *shared_diagnostics,
+        *shared_testing,
+        "public-coder-node-read",
+        "public-coder-cluster-metadata-read",
+    ]
+    cfg.sandbox_presets["public-coder"].kubernetes_grants = public_grants.copy()
     cfg.sandbox_presets["haku"].kubernetes_grants = [
         *shared_diagnostics,
+        *shared_testing,
         # Haku-only authority, deliberately outside the shared read-only bundle.
         "cluster-diagnostics",
         "haku-sandbox-write",
-        "agentplane-testing-operator",
         "coinbase-credentials",
-        "public-coder-agent-devbox-vmi-restart",
     ]
     # The "finance-agent" thread/sandbox presets live only here, not in app_settings.py:
     # they name staging-only credentials (forgejo-finance-agent, plaid-pgweb) that
@@ -267,6 +274,8 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         # through the same agentydragon-agent account, for the same generic-tooling role.
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
-        kubernetes_grants=public_diagnostics.copy(),
+        kubernetes_grants=public_grants.copy(),
     )
+    for preset in ("public-coder", "finance-agent", "haku"):
+        cfg.sandbox_presets[preset].policies.append(AGENTPLANE_TESTING_POLICY)
     return cfg
