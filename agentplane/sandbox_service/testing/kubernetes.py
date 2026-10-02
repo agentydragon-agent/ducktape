@@ -44,7 +44,10 @@ async def kubernetes() -> AsyncIterator[Cluster]:
             },
         )
         pod = pod_for(fake, SANDBOX, pod_uid="test-pod-uid", ip="127.0.0.1")
-        pod["spec"] = {"serviceAccountName": ACCOUNT}
+        pod["spec"] = {
+            "serviceAccountName": ACCOUNT,
+            "containers": [{"name": "runner", "image": "registry.test/runner:unused"}],
+        }
         pod["status"] |= {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]}
         fake.pods[SANDBOX] = pod
         configuration = k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")
