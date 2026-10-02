@@ -9,7 +9,7 @@ use swc_ecma_ast::*;
 
 use super::object::{object_anchor_ranking, try_object_read_off_candidates};
 use super::var::try_var_read_off_candidates;
-use super::{render_var_slots, render_via_neighbor_context};
+use super::{extend_anchor_cover, render_var_slots, render_via_neighbor_context};
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
 use crate::render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, holes_present, node_holds_anchor};
 use crate::{
@@ -43,7 +43,6 @@ fn slot_minimal_anchors(
 ) -> Result<BTreeSet<AnchorSpan>> {
     let export = target.export_name.as_str();
     let runtime = target.runtime_binding.as_str();
-    let slot_decl_span = var.decls[slot].span();
     // Single-target view of this slot: the slot is the lone target, every other
     // declarator holes to a `DECLARATORS_*` run.
     let only_this = BTreeSet::from([slot]);
@@ -62,28 +61,13 @@ fn slot_minimal_anchors(
         )
         .is_ok())
     };
-    let mut kept: BTreeSet<AnchorSpan> = seed.clone();
-    while !slot_resolves(&kept)? {
-        let mut best: Option<((bool, usize), AnchorSpan)> = None;
-        for &anchor in ranked.iter().take(MAX_MINIMIZER_ANCHORS) {
-            if kept.contains(&anchor) || !node_holds_anchor(slot_decl_span, anchor) {
-                continue;
-            }
-            let mut trial = kept.clone();
-            trial.insert(anchor);
-            let matches = match_single_member_selector(index, export, &render_slot(&trial)?)?;
-            let target_unresolved = !matches.iter().any(|m| m.binding.binding_name == runtime);
-            let score = (target_unresolved, matches.len());
-            if best.is_none_or(|(best_score, _)| score < best_score) {
-                best = Some((score, anchor));
-            }
-        }
-        let Some((_, anchor)) = best else {
-            break;
-        };
-        kept.insert(anchor);
-    }
-    Ok(kept)
+    // Preserve the existing slot score; the production proof above checks the
+    // actual declaration and the final group proof checks the complete tuple.
+    extend_anchor_cover(seed.clone(), ranked, slot_resolves, |trial| {
+        let matches = match_single_member_selector(index, export, &render_slot(trial)?)?;
+        let target_unresolved = !matches.iter().any(|m| m.binding.binding_name == runtime);
+        Ok((target_unresolved, matches.len()))
+    })
 }
 
 /// Resolve the complete declarator tuple: independently useful slot anchors
