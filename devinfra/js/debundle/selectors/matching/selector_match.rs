@@ -380,8 +380,8 @@ impl Index {
         };
         // Compile each `STR_LITERAL_MATCHING_RE(...)` predicate once now (the
         // structure needed to detect one is fully built above). A pattern that
-        // fails to compile is simply absent — `homo` then matches nothing, as the
-        // per-candidate `Regex::new(...).is_ok_and(...)` did before.
+        // fails to compile is absent; `unsupported_needle_construct` rejects it
+        // before any candidate traversal (including an empty candidate set).
         for node in 0..n as NodeId {
             if let Some(pattern) = regex_predicate_pattern(&index, node)
                 && let Ok(compiled) = Regex::new(pattern)
@@ -1405,6 +1405,9 @@ pub fn consumed_nodes(index: &Index) -> HashSet<NodeId> {
 fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
     let consumed = consumed_nodes(index);
     for node in 0..index.kind.len() as NodeId {
+        if regex_predicate_pattern(index, node).is_some() && !index.predicate_regex.contains_key(&node) {
+            return Some("invalid STR_LITERAL_MATCHING_RE regex");
+        }
         let Some(name) = index.ident_of(node).or_else(|| index.prop_name_of(node)) else {
             continue;
         };
