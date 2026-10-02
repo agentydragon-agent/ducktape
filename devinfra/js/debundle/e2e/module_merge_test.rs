@@ -17,11 +17,15 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
                 ("ui/target.yaml", &target),
                 (
                     "ui/src1.yaml",
-                    "comment: source overview\nmembers: [{selector: {binding: {name: b}}}]\nsource_matches: [{match: 'const d = 4;', bindings: [{local: d, name: Delta}]}]\nannotations: {Delta: {note: binding debt}}\nanonymous_statements: [{match: 'console.log(\"second\");'}]",
+                    "comment: source overview\nmembers: [{selector: {binding: {name: b}}}]\nanonymous_statements: [{match: 'console.log(\"second\");'}]",
                 ),
                 (
                     "ui/src2.yaml",
                     "members: [{selector: {binding: {name: c}}}]",
+                ),
+                (
+                    "ui/claims.yaml",
+                    "members: []\nsource_matches: [{match: 'const d = 4;', bindings: [{local: d, name: Delta}]}]\nannotations: {Delta: {note: binding debt}}",
                 ),
                 ("ui/empty.yaml", "members: []"),
             ],
@@ -32,6 +36,7 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
             "ui/target.yaml",
             "ui/src1.yaml",
             "ui/src2.yaml",
+            "ui/claims.yaml",
             "ui/empty.yaml",
         ];
         let before: Vec<_> = paths
@@ -47,6 +52,7 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
             "ui/target",
             "ui/src1",
             "ui/src2.yaml",
+            "ui/claims",
             "ui/empty",
             "--format",
             "text",
@@ -59,7 +65,7 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
             "{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        assert!(String::from_utf8_lossy(&out.stdout).contains("dry-run: would merge 3 source(s)"));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("dry-run: would merge 4 source(s)"));
         for (path, bytes) in paths.iter().zip(before) {
             assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
         }
@@ -71,7 +77,7 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
         );
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(
-            stdout.contains("merged 3 source(s) into") && stdout.contains("ui/target.yaml"),
+            stdout.contains("merged 4 source(s) into") && stdout.contains("ui/target.yaml"),
             "{stdout}"
         );
         let doc: Value =
@@ -97,7 +103,7 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
             statements,
             ["console.log(\"first\");", "console.log(\"second\");"]
         );
-        let provenance = "merged from: ui/src1.yaml, ui/src2.yaml, ui/empty.yaml";
+        let provenance = "merged from: ui/src1.yaml, ui/src2.yaml, ui/claims.yaml, ui/empty.yaml";
         let note = if metadata.is_empty() {
             provenance.to_string()
         } else {
@@ -114,6 +120,38 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
         assert_eq!(fs::read_dir(fixture.modules.join("ui")).unwrap().count(), 2);
         fixture.assert_runs("first\nsecond\n10\n");
     }
+}
+
+#[test]
+fn merge_preserves_anonymous_only_modules_and_runtime_order() {
+    let fixture = GraphFixture::new(
+        "console.log(\"first\"); console.log(\"second\");",
+        &[
+            (
+                "target.yaml",
+                "members: []\nanonymous_statements: [{match: 'console.log(\"first\");'}]",
+            ),
+            (
+                "source.yaml",
+                "members: []\nanonymous_statements: [{match: 'console.log(\"second\");'}]",
+            ),
+        ],
+    );
+    fixture.assert_success(&["modules", "merge", "--target", "target", "source"]);
+    assert!(!fixture.modules.join("source.yaml").exists());
+    let doc: Value =
+        serde_yaml::from_slice(&fs::read(fixture.modules.join("target.yaml")).unwrap()).unwrap();
+    let statements: Vec<_> = doc["anonymous_statements"]
+        .as_sequence()
+        .unwrap()
+        .iter()
+        .map(|s| s["match"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        statements,
+        ["console.log(\"first\");", "console.log(\"second\");"]
+    );
+    fixture.assert_runs("first\nsecond\n");
 }
 
 #[test]
@@ -161,9 +199,12 @@ fn merge_rejects_document_conflicts_before_writing_in_both_modes() {
         ] {
             write_text_file(&fixture.modules.join(path), yaml);
         }
-        fixture.assert_rejected_unchanged(
-            &["modules", "merge", "--target", "target", "first", "second"],
-            &[diagnostic],
-        );
+        for no_verify in [false, true] {
+            let mut args = vec!["modules", "merge", "--target", "target", "first", "second"];
+            if no_verify {
+                args.push("--no-verify");
+            }
+            fixture.assert_rejected_unchanged(&args, &[diagnostic]);
+        }
     }
 }

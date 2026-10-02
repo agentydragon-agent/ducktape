@@ -64,7 +64,7 @@ struct CommentArgs {
     dry_run: bool,
 }
 
-/// Mode dispatched by `apply_*_command`.
+/// Read/edit operation shared by binding and module comment commands.
 #[derive(Debug, Clone)]
 pub enum CommentMode {
     /// Print the current comment.
