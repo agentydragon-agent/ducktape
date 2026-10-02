@@ -291,7 +291,7 @@ def test_create_binds_the_sandbox_to_its_action_policy_sets(
 
     sandbox_uid = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
     (written,) = [obj for (kind, _), obj in custom_objects.objects.items() if kind == "actionpolicybindings"]
-    assert written["metadata"]["name"].startswith(f"{row['name']}-")
+    assert written["metadata"]["name"] == f"ap-init-{UUID(sandbox_uid).hex}"
     assert written["metadata"]["labels"] == {"app.agentplane.allegedly.works/managed-by": "integration-app"}
     assert written["metadata"]["ownerReferences"][0]["uid"] == sandbox_uid
     assert written["spec"] == {"subject": {"namespace": NAMESPACE, "name": row["name"]}, "policySets": ["github-reads"]}
