@@ -12,7 +12,10 @@ use vendor::{
     VendorResolutionPlan, bundled_facade_import_source, resolve_partial_swap_import_target,
 };
 
-use super::super::*;
+use std::collections::{BTreeMap, BTreeSet};
+use artifact::{ArtifactIndexes, ChunkId, ChunkTable};
+use crate::imports::{RuntimeImportInfo, RuntimeImportKind};
+use swc_ecma_ast::*;
 
 /// Planner-boundary target vocabulary for one runtime re-import. Intra-chunk import lists stay keyed by
 /// dense `ModuleId`s — the gate's universe never sees vendor targets —

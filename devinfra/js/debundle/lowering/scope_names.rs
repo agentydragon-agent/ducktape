@@ -1,4 +1,7 @@
-use super::*;
+use std::collections::BTreeSet;
+use swc_ecma_visit::{Visit, VisitWith};
+use crate::chunk_ast::declaration_names;
+use swc_ecma_ast::*;
 
 /// Names occupying the file-scope binding namespace of `body`.
 ///

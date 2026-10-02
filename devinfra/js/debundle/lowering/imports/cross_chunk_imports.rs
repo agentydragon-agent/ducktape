@@ -5,7 +5,15 @@
 
 use super::super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
 use super::super::util::is_valid_js_identifier;
-use super::super::*;
+use std::collections::{BTreeMap, BTreeSet};
+use anyhow::{Context, Result};
+use swc_common::DUMMY_SP;
+use swc_ecma_visit::{VisitMutWith, VisitWith};
+use analysis::top_level_id;
+use artifact::{ArtifactIndexes, ChunkBundle, SelectedModuleLowering};
+use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation};
+use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
+use swc_ecma_ast::*;
 
 const CROSS_CHUNK_IMPORT_RENAME_CONTRIBUTOR: &str = "spec-named cross-chunk import readability";
 

@@ -2,7 +2,16 @@
 //! duplicates, auto-grow residual exports for cross-module references,
 //! and convert binding maps into `export { ... }` ModuleItems.
 
-use super::*;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use anyhow::{Result, bail};
+use swc_common::DUMMY_SP;
+use swc_ecma_visit::{Visit, VisitWith};
+use analysis::{BindingKind, top_level_id};
+use crate::body_facts::ModuleBodyFacts;
+use crate::chunk_ast::{TopLevelDecl, binding_names};
+use crate::plans::MemberRequest;
+use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
+use swc_ecma_ast::*;
 use rustc_hash::FxHashSet;
 use swc_atoms::Atom;
 

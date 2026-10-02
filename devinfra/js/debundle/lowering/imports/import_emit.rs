@@ -1,4 +1,9 @@
-use super::super::*;
+use std::collections::BTreeMap;
+use swc_common::DUMMY_SP;
+use artifact::relative_module_path;
+use crate::imports::{EntryExport, import_decl_module_item};
+use crate::rename_ledger::{RenameLedger, RenameScope};
+use swc_ecma_ast::*;
 
 /// Map plan-side `original -> exported` to `actual_local -> exported`.
 ///

@@ -6,7 +6,14 @@
 //! (scope: that plan's `Module`, origin: `ImportInduced`) and applied
 //! from the sealed projection in `lower_single_plan`.
 
-use super::super::*;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use anyhow::{Result, bail};
+use analysis::{LogicalModuleIndex, ModuleId, top_level_id};
+use gate::ChunkFactorization;
+use crate::chunk_ast::declaration_names;
+use crate::imports::{EntryExport, import_decl_module_item};
+use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
+use swc_ecma_ast::*;
 use super::import_emit::{
     disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
 };

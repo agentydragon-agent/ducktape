@@ -9,7 +9,10 @@ use binding_targets::{
 };
 use selector_outcome::{Declaration, DeclarationKind};
 
-use super::*;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use anyhow::{Context, Result, bail};
+use crate::imports::{RuntimeImportFacts, RuntimeImportInfo, record_runtime_imports};
+use swc_ecma_ast::*;
 
 #[derive(Debug, Clone)]
 pub(super) struct TopLevelDecl {

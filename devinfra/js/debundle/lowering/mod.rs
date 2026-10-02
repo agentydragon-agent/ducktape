@@ -1,33 +1,18 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use rayon::prelude::*;
 use serde::Serialize;
-use swc_common::{DUMMY_SP, GLOBALS, SyntaxContext};
-use swc_ecma_ast::*;
-use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+use swc_common::GLOBALS;
 
-use analysis::{
-    AnalysisHints, AtomicUnitConflict, BindingKind, DepKind, KnownEffect, LocalEffectPolicy,
-    LogicalModuleIndex, ModuleId, OwnerGraphAndUnits, OwnerGraphOptions, PlannedModule,
-    RedundantPurityHint, top_level_id,
-};
-use chunk_analysis::{ChunkAnalysisOutput, DynamicImportTarget, compute_chunk_analysis};
-use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
+use analysis::{OwnerGraphOptions, RedundantPurityHint};
 
-use artifact::{
-    ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle, ChunkId, ChunkTable,
-    ChunkValidationSummary, DirectoryDependencyFact, FileMetadata, FileRole, JsFile, JsFileBody,
-    SelectedModuleLowering, get_chunk_entry_path, join_module_path, module_path_dirname,
-    normalize_module_path, normalize_relative_module_specifier, relative_module_path,
-};
-use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
+use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, SelectedModuleLowering, normalize_module_path};
+
 use output_layout::MODULES_REPORT;
-use selector_resolve::MemberSelector;
-use spec::{
-    ChunkExportPurity, ChunkRenames, LogicalModule, MemberEffect, MemberPurity, UnassignedMode,
-};
+
+use spec::{ChunkExportPurity, ChunkRenames, LogicalModule, UnassignedMode};
 
 mod anonymous;
 mod body_facts;
@@ -39,6 +24,7 @@ mod imports;
 mod io;
 mod lower;
 mod materialize;
+mod module_output;
 mod naturalize;
 mod plans;
 mod rebind_fold;
@@ -52,55 +38,13 @@ mod visitors;
 
 pub use imports::naturalize_cross_chunk_imports;
 
-use anonymous::ResolvedAnonymousStatement;
-use body_facts::{ModuleBodyFacts, collect_module_body_facts};
-use chunk_ast::{
-    ChunkAstAnalysis, TopLevelDecl, analyze_chunk_ast, binding_declaration, binding_ids,
-    binding_names, declaration_ids, declaration_names, top_level_declaration_ids,
-    top_level_declaration_names,
-};
-use chunk_renames::collect_chunk_renames;
-use exports::{
-    ExportGrowthFacts, auto_grown_residual_exports, entry_exports_for_moved_bindings,
-    export_named_for_bindings, reject_duplicate_export_names, reject_duplicate_member_bindings,
-    trim_dead_named_specifiers,
-};
-use imports::{
-    ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
-    PlannedVendorReimports, RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind,
-    RuntimeImportLookup, VendorReimportOracle, collect_entry_exports_by_original_local,
-    collect_imported_reexports_by_module, cross_module_imports_for_plan, final_module_exports,
-    group_specifiers_into_import_decls, import_decl_module_item, imported_binding_named_specifier,
-    phantom_side_effect_imports, plan_module_reference_needs, plan_vendor_reimports,
-    record_runtime_imports, residual_entry_imports_for_moved_body, resolve_imported_binding,
-    runtime_reimport_named_specifier, runtime_reimport_specifier,
-    source_chunk_imports_for_moved_body,
-};
+
+use imports::VendorReimportOracle;
 use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json};
-use lower::{
-    LowerChunkAst, LowerChunkContext, LowerChunkInputs, LowerChunkPlan, LowerChunkSpecFacts,
-    LoweredChunk, lower_chunk,
-};
-use materialize::{
-    ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs,
-    collect_materialized_logical_chunks, finish_logical_chunk, prepare_logical_chunk,
-    resolve_prepared_chunks,
-};
-use naturalize::{NaturalizedRenames, collect_plan_export_rename_intents, naturalize_module_body};
-use plans::{
-    LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect,
-    logical_requests_for_chunk,
-};
-use rebind_fold::{RebindFold, compute_rebind_folds};
-use rename_ledger::{
-    RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
-    SealedRenames, merge_module_renames,
-};
-use rewrite_runtime::rewrite_runtime_sources_for_target;
+
+use materialize::{ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs, collect_materialized_logical_chunks, finish_logical_chunk, prepare_logical_chunk, resolve_prepared_chunks};
+
 use util::normalize_optional_relative_dir;
-use visitors::{
-    IdentifierRenamer, RenameAndShorthandNaturalizer, RenameCaptureProbe, ShorthandNaturalizer,
-};
 
 pub struct MaterializeLogicalModulesResult {
     /// Finalized lowered and pass-through files, kept outside a bundle until

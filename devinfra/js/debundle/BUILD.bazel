@@ -754,6 +754,7 @@ rust_library(
         "lowering/materialize/outcome_sink.rs",
         "lowering/materialize/plan_builder.rs",
         "lowering/mod.rs",
+        "lowering/module_output.rs",
         "lowering/naturalize.rs",
         "lowering/plans.rs",
         "lowering/rebind_fold.rs",
