@@ -8,7 +8,10 @@ use serde_json::json;
 fn describe_and_show_source_accept_both_name_forms() {
     let fixture = GraphFixture::new(
         "const XOe = class PluginSettingsAccessor {};\nconst YOe = XOe;\n",
-        &[("ui/plugins.yaml", "members: [{name: PluginSettingsAccessor, selector: {binding: {name: XOe}}}]\n")],
+        &[(
+            "ui/plugins.yaml",
+            "members: [{name: PluginSettingsAccessor, selector: {binding: {name: XOe}}}]\n",
+        )],
     );
     for name in ["XOe", "PluginSettingsAccessor"] {
         let report = fixture.json(&["describe", name]);
@@ -16,7 +19,12 @@ fn describe_and_show_source_accept_both_name_forms() {
         let report = fixture.json(&["show-source", name, "--context-lines", "1"]);
         let slices = report["slices"].as_array().unwrap();
         assert_eq!(slices.len(), 1);
-        assert!(slices[0]["text"].as_str().unwrap().contains("class PluginSettingsAccessor"));
+        assert!(
+            slices[0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("class PluginSettingsAccessor")
+        );
     }
     let graph = fixture.owner_graph();
     for name in ["XOe", "PluginSettingsAccessor"] {
@@ -30,13 +38,25 @@ fn describe_and_show_source_accept_both_name_forms() {
 fn minified_match_precedes_readable_collision_without_hiding_it() {
     // The readable collision is in an earlier owner, so source ordering alone
     // cannot satisfy the name resolver's minified-first priority contract.
-    let fixture = GraphFixture::new("const ZZZ = 2;\nconst Collide = 1;\n", &[
-        ("a.yaml", "members: [{name: Collide, selector: {binding: {name: ZZZ}}}]\n"),
-        ("b.yaml", "members: [{selector: {binding: {name: Collide}}}]\n"),
-    ]);
+    let fixture = GraphFixture::new(
+        "const ZZZ = 2;\nconst Collide = 1;\n",
+        &[
+            (
+                "a.yaml",
+                "members: [{name: Collide, selector: {binding: {name: ZZZ}}}]\n",
+            ),
+            (
+                "b.yaml",
+                "members: [{selector: {binding: {name: Collide}}}]\n",
+            ),
+        ],
+    );
     let graph = fixture.owner_graph();
     let owners = resolve_binding_owners(&graph, "Collide");
-    assert_eq!(owners.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(), ["owner:1", "owner:0"]);
+    assert_eq!(
+        owners.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+        ["owner:1", "owner:0"]
+    );
     let report = fixture.json(&["describe", "Collide"]);
     assert_eq!(report["owner_ids"].as_array().unwrap().len(), 2);
 }

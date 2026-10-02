@@ -13,8 +13,17 @@ fn atoms_coverage_summary_and_proposals_describe_the_real_graph() {
     let atoms = fixture.json(&["atoms"]);
     assert_eq!(atoms["units"].as_array().unwrap().len(), 2);
     let coverage = fixture.json(&["coverage"]);
-    assert_eq!(coverage["summary"]["total_patch_sets"], coverage["rows"].as_array().unwrap().len());
-    assert!(coverage["rows"].as_array().unwrap().iter().all(|row| row.get("matching_proposal_ids").is_none()));
+    assert_eq!(
+        coverage["summary"]["total_patch_sets"],
+        coverage["rows"].as_array().unwrap().len()
+    );
+    assert!(
+        coverage["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row.get("matching_proposal_ids").is_none())
+    );
     let summary = fixture.json(&["graph-summary"]);
     assert_eq!(summary["owner_count"], 2);
     assert_eq!(summary["atomic_unit_count"], 2);
@@ -36,17 +45,28 @@ fn describe_and_show_source_dispatch_bindings_and_module_ids() {
     assert_eq!(report["owner_ids"], json!(["owner:0", "owner:1"]));
     let report = fixture.json(&["show-source", "ZZ", "--context-lines", "1"]);
     assert_eq!(report["slices"].as_array().unwrap().len(), 1);
-    assert!(report["slices"][0]["text"].as_str().unwrap().contains("class PaymentError"));
+    assert!(
+        report["slices"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("class PaymentError")
+    );
 }
 
 #[test]
 fn coverage_counts_anonymous_statement_claims() {
-    let fixture = GraphFixture::new("let value = 0;\nvalue = 1;\n", &[(
-        "features/state.yaml",
-        "members: [{name: Readable, selector: {binding: {name: value}}}]\nanonymous_statements: [{match: 'value = 1;'}]\n",
-    )]);
+    let fixture = GraphFixture::new(
+        "let value = 0;\nvalue = 1;\n",
+        &[(
+            "features/state.yaml",
+            "members: [{name: Readable, selector: {binding: {name: value}}}]\nanonymous_statements: [{match: 'value = 1;'}]\n",
+        )],
+    );
     let report = fixture.json(&["coverage"]);
-    assert_eq!(report["summary"], json!({"total_patch_sets":1,"complete_patch_sets":1,"split_patch_sets":0,"unknown_binding_count":0}));
+    assert_eq!(
+        report["summary"],
+        json!({"total_patch_sets":1,"complete_patch_sets":1,"split_patch_sets":0,"unknown_binding_count":0})
+    );
     let row = &report["rows"][0];
     assert_eq!(row["path"], "features/state");
     assert_eq!(row["status"], "complete_units");
@@ -57,9 +77,13 @@ fn coverage_counts_anonymous_statement_claims() {
 #[test]
 fn source_match_claims_combine_with_members_in_either_yaml_order() {
     let members = "members: [{selector: {binding: {name: beta}}}]\n";
-    let matches = "source_matches: [{match: 'let alpha = 1;', bindings: [{local: alpha, name: Alpha}]}]\n";
+    let matches =
+        "source_matches: [{match: 'let alpha = 1;', bindings: [{local: alpha, name: Alpha}]}]\n";
     for yaml in [format!("{members}{matches}"), format!("{matches}{members}")] {
-        let fixture = GraphFixture::new("let alpha = 1;\nfunction beta() { alpha = 2; }\n", &[("features/state.yaml", &yaml)]);
+        let fixture = GraphFixture::new(
+            "let alpha = 1;\nfunction beta() { alpha = 2; }\n",
+            &[("features/state.yaml", &yaml)],
+        );
         let coverage = fixture.json(&["coverage"]);
         assert_eq!(coverage["summary"]["total_patch_sets"], 1);
         assert_eq!(coverage["summary"]["complete_patch_sets"], 1);
@@ -72,22 +96,47 @@ fn source_match_claims_combine_with_members_in_either_yaml_order() {
         assert_eq!(row["missing_owner_ids"], json!([]));
         let describe = fixture.json(&["describe", "features/state"]);
         assert_eq!(describe["owner_ids"], json!(["owner:0", "owner:1"]));
-        assert_eq!(describe["bindings"].as_array().unwrap().iter().map(|b| b["binding"].as_str().unwrap()).collect::<Vec<_>>(), ["alpha", "beta"]);
+        assert_eq!(
+            describe["bindings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|b| b["binding"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["alpha", "beta"]
+        );
     }
 }
 
 #[test]
 fn anonymous_only_module_path_dispatches_before_proposal_prefix() {
-    let fixture = GraphFixture::new("console.log(\"task\");\n", &[(
-        "auto_partition/auto_partition_0187.yaml", "anonymous_statements: [{match: 'console.log(\"task\");'}]\n",
-    )]);
+    let fixture = GraphFixture::new(
+        "console.log(\"task\");\n",
+        &[(
+            "auto_partition/auto_partition_0187.yaml",
+            "anonymous_statements: [{match: 'console.log(\"task\");'}]\n",
+        )],
+    );
     let report = fixture.json(&["describe", "auto_partition/auto_partition_0187"]);
     assert_eq!(report["query"]["kind"], "module");
     assert_eq!(report["owner_ids"], json!(["owner:0"]));
-    assert_eq!(report["atomic_units"][0]["anonymous_statement_owner_ids"], json!(["owner:0"]));
-    let report = fixture.json(&["show-source", "auto_partition/auto_partition_0187", "--context-lines", "0"]);
+    assert_eq!(
+        report["atomic_units"][0]["anonymous_statement_owner_ids"],
+        json!(["owner:0"])
+    );
+    let report = fixture.json(&[
+        "show-source",
+        "auto_partition/auto_partition_0187",
+        "--context-lines",
+        "0",
+    ]);
     assert_eq!(report["slices"].as_array().unwrap().len(), 1);
-    assert!(report["slices"][0]["text"].as_str().unwrap().contains("console.log(\"task\");"));
+    assert!(
+        report["slices"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("console.log(\"task\");")
+    );
 }
 
 #[test]
@@ -96,9 +145,19 @@ fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
     let report = fixture.json(&["modules", "propose", "--size-cap-lines", "10000"]);
     let proposals = report["proposals"].as_array().unwrap();
     assert_eq!(proposals.len(), 2);
-    assert!(proposals.iter().all(|p| p["landable_today"] == false
-        && p["unaddressable_anonymous_owner_ids"].as_array().unwrap().len() == 1
-        && p["landability_notes"].as_array().unwrap().iter().any(|n| n.as_str().unwrap().contains("full-AST selector"))));
+    assert!(proposals.iter().all(|p| {
+        p["landable_today"] == false
+            && p["unaddressable_anonymous_owner_ids"]
+                .as_array()
+                .unwrap()
+                .len()
+                == 1
+            && p["landability_notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|n| n.as_str().unwrap().contains("full-AST selector"))
+    }));
 }
 
 #[test]
@@ -106,6 +165,9 @@ fn missing_proposal_reports_stale_id_and_recovery_command() {
     let out = fixture().command(&["show-source", "auto_partition_0499"]);
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("proposal id \"auto_partition_0499\" not found"), "{stderr}");
+    assert!(
+        stderr.contains("proposal id \"auto_partition_0499\" not found"),
+        "{stderr}"
+    );
     assert!(stderr.contains("debundle modules propose"), "{stderr}");
 }
