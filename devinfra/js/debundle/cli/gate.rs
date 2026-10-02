@@ -77,7 +77,11 @@ enum GateCommand {
 #[derive(Debug, Clone, ClapArgs)]
 pub struct GateCommonArgs {
     /// Path to `owner_graph.json` (debundler analysis output).
-    #[arg(long = "graph", env = "DEBUNDLE_GRAPH", required_unless_present = "cycles_path")]
+    #[arg(
+        long = "graph",
+        env = "DEBUNDLE_GRAPH",
+        required_unless_present = "cycles_path"
+    )]
     pub owner_graph_path: Option<PathBuf>,
 
     /// Override the default `cycles.json` location. Defaults to the
@@ -91,8 +95,14 @@ impl GateCommonArgs {
         if let Some(path) = &self.cycles_path {
             return Ok(path.clone());
         }
-        let graph = self.owner_graph_path.as_deref().context("--graph or --cycles is required")?;
-        Ok(graph.parent().unwrap_or_else(|| Path::new(".")).join(output_layout::CYCLES_REPORT))
+        let graph = self
+            .owner_graph_path
+            .as_deref()
+            .context("--graph or --cycles is required")?;
+        Ok(graph
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(output_layout::CYCLES_REPORT))
     }
 }
 
@@ -236,7 +246,10 @@ fn run_describe(args: GateDescribeArgs) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
     let graph = crate::load_owner_graph_report(
-        args.common.owner_graph_path.as_deref().context("gate describe requires --graph")?,
+        args.common
+            .owner_graph_path
+            .as_deref()
+            .context("gate describe requires --graph")?,
     )?;
 
     let mut evidence = recompute_evidence(&graph, &entry.modules)?;
