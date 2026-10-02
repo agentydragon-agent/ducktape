@@ -606,6 +606,24 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
     assert not uncovered(expected, actual)
 
 
+def test_cluster_diagnostics_kustomizations_are_read_only(agent_permissions: tuple[Rbac, dict]) -> None:
+    rbac, _ = agent_permissions
+    rules = rbac.rules(
+        RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name="cluster-diagnostics-reader"),
+        None,
+    )
+    reads = {
+        Permission(None, "kustomize.toolkit.fluxcd.io", "kustomizations", verb)
+        for verb in ("get", "list", "watch")
+    }
+    writes = {
+        Permission("flux-system", "kustomize.toolkit.fluxcd.io", "kustomizations", verb)
+        for verb in ("create", "update", "patch", "delete", "deletecollection")
+    }
+    assert not uncovered(reads, rules)
+    assert uncovered(writes, rules) == writes
+
+
 def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
     rbac, config = agent_permissions
     profiles = {
@@ -629,6 +647,10 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
         Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "create"),
         Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "patch"),
         Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "delete"),
+    }
+    denied |= {
+        Permission(namespace, "kustomize.toolkit.fluxcd.io", "kustomizations", "patch")
+        for namespace in ("flux-system", "ducktape-flux", "agentplane-testing", "agentplane-staging")
     }
     testing_login = Permission("public-coder-agent", "", "secrets", "get", "agentplane-testing-acceptance-operator")
     coinbase = Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials")

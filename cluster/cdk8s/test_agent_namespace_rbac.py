@@ -97,7 +97,6 @@ def test_kyverno_no_longer_generates_agent_bindings() -> None:
         "default-vpa-requests-only",
         "inject-mitmproxy",
         "inject-haku-egress-proxy",
-        "restrict-agent-kustomization-patch",
         "restrict-agent-gateway-routes",
         "require-secret-store-conditions",
     }

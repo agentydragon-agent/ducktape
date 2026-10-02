@@ -562,5 +562,7 @@ of launching a local Kubernetes MCP process.
 - **Write isolation**: Full CRUD only in `claude-sandbox` namespace
 - **Broad read**: Cluster-wide diagnostics read; see <../cdk8s/agent_rbac_base.py>
 - **Resource quotas**: see <../cdk8s/agent_rbac_base.py>
-- **Flux patch**: Can trigger Flux reconciliation via annotation patch (Kyverno policy
-  restricts to annotation-only patches)
+- **Flux reconciliation**: Diagnostics grant only read access to Kustomizations, not
+  patch access. The former annotation-only Kyverno policy is removed with that grant.
+  TODO: Consider readding a narrowly scoped way for agents to request reconciliation
+  without arbitrary Kustomization write access.

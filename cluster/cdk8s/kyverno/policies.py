@@ -22,9 +22,7 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesMatchAnyResources,
     ClusterPolicySpecRulesMatchAnyResourcesOperations,
     ClusterPolicySpecRulesMatchAnyResourcesSelector,
-    ClusterPolicySpecRulesMatchAnySubjects,
     ClusterPolicySpecRulesMutate,
-    ClusterPolicySpecRulesValidateCelExpressions,
     ClusterPolicySpecValidationFailureAction,
 )
 
@@ -345,84 +343,6 @@ def default_vpa_requests_only_chart(app: App) -> Chart:
     return chart
 
 
-def restrict_agent_kustomization_patch_chart(app: App) -> Chart:
-    chart = _chart(app, "restrict-agent-kustomization-patch")
-    kustomization_updates = ClusterPolicySpecRulesMatchAnyResources(
-        kinds=["kustomize.toolkit.fluxcd.io/v1/Kustomization"], operations=[_UPDATE]
-    )
-    ClusterPolicy(
-        chart,
-        "policy",
-        metadata=ApiObjectMetadata(
-            name="restrict-agent-kustomization-patch",
-            annotations=_annotations(
-                title="Restrict Agent Kustomization Patches",
-                category="Access Control",
-                severity="medium",
-                subject="Kustomization",
-                description=(
-                    "Restricts agent identities (claude-code-web user, kubectl-sandbox-users group) to only "
-                    "patching the reconcile.fluxcd.io/requestedAt annotation on Flux Kustomization resources. "
-                    "Changes to spec or any other annotation are blocked.\n"
-                ),
-            ),
-        ),
-        admission=True,
-        background=False,
-        validation_failure_action=ClusterPolicySpecValidationFailureAction.ENFORCE,
-        rules=[
-            ClusterPolicySpecRules(
-                name="only-reconcile-annotation",
-                match=ClusterPolicySpecRulesMatch(
-                    any=[
-                        ClusterPolicySpecRulesMatchAny(
-                            resources=kustomization_updates,
-                            subjects=[ClusterPolicySpecRulesMatchAnySubjects(kind="User", name="claude-code-web")],
-                        ),
-                        ClusterPolicySpecRulesMatchAny(
-                            resources=kustomization_updates,
-                            subjects=[
-                                ClusterPolicySpecRulesMatchAnySubjects(
-                                    kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users"
-                                )
-                            ],
-                        ),
-                    ]
-                ),
-                validate=Validate.cel(
-                    message=(
-                        "Agent service accounts may only patch the reconcile.fluxcd.io/requestedAt annotation. "
-                        "Changes to spec or other annotations are not permitted.\n"
-                    ),
-                    expressions=[
-                        ClusterPolicySpecRulesValidateCelExpressions(
-                            expression="object.spec == oldObject.spec", message="Changes to spec are not permitted."
-                        ),
-                        ClusterPolicySpecRulesValidateCelExpressions(
-                            expression=(
-                                "(!has(object.metadata.annotations) ||\n\n"
-                                " object.metadata.annotations.all(k,\n"
-                                "   k == 'reconcile.fluxcd.io/requestedAt' ||\n"
-                                "   (has(oldObject.metadata.annotations) &&\n"
-                                "    k in oldObject.metadata.annotations &&\n"
-                                "    object.metadata.annotations[k] == oldObject.metadata.annotations[k])))\n"
-                                "&& (!has(oldObject.metadata.annotations) ||\n\n"
-                                " oldObject.metadata.annotations.all(k,\n"
-                                "   k == 'reconcile.fluxcd.io/requestedAt' ||\n"
-                                "   (has(object.metadata.annotations) &&\n"
-                                "    k in object.metadata.annotations &&\n"
-                                "    oldObject.metadata.annotations[k] == object.metadata.annotations[k])))\n"
-                            ),
-                            message="Only the reconcile.fluxcd.io/requestedAt annotation may be changed.",
-                        ),
-                    ],
-                ),
-            )
-        ],
-    )
-    return chart
-
-
 def restrict_agent_gateway_routes_chart(app: App) -> Chart:
     chart = _chart(app, "restrict-agent-gateway-routes")
     ClusterPolicy(
@@ -623,7 +543,6 @@ CHARTS = (
     default_vpa_requests_only_chart,
     proxy_injection.inject_mitmproxy_chart,
     proxy_injection.inject_haku_egress_proxy_chart,
-    restrict_agent_kustomization_patch_chart,
     restrict_agent_gateway_routes_chart,
     require_secret_store_conditions_chart,
     cleanup_controller_jobs_chart,

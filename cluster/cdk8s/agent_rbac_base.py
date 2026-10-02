@@ -189,13 +189,9 @@ def _add_cluster_roles(chart: Chart) -> None:
         _read("admissionregistration.k8s.io", "mutatingwebhookconfigurations", "validatingwebhookconfigurations"),
         _read("source.toolkit.fluxcd.io", "gitrepositories", "helmrepositories", "ocirepositories", "helmcharts"),
         _read("helm.toolkit.fluxcd.io", "helmreleases"),
-        # patch is required to set reconcile.fluxcd.io/requestedAt for manual reconciliation
-        # triggers. RBAC cannot restrict which fields are patched -- the annotation-only
-        # constraint is enforced by the restrict-agent-kustomization-patch Kyverno ClusterPolicy in
-        # kyverno/policies.py.
-        k8s.PolicyRule(
-            api_groups=["kustomize.toolkit.fluxcd.io"], resources=["kustomizations"], verbs=[*_READ, "patch"]
-        ),
+        # TODO: Consider restoring a narrowly scoped way for agents to request Flux
+        # reconciliation, without granting arbitrary Kustomization patches.
+        _read("kustomize.toolkit.fluxcd.io", "kustomizations"),
         _read("metrics.k8s.io", "pods", "nodes"),
         # nodes/proxy allows GET requests proxied through the apiserver to the kubelet HTTP API.
         # Enables: /stats/summary (resource usage), /metrics, /pods, /logs/<filename> (node system
