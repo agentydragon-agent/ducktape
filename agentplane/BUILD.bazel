@@ -10,6 +10,10 @@ py_library(
 py_library(
     name = "subjects",
     srcs = ["subjects.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 
