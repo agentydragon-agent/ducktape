@@ -26,7 +26,7 @@
 //! `suppress`-marked chunks are skipped entirely — suppress means
 //! hands-off, so their directives pass through byte-identical.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap};
 
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
@@ -41,7 +41,7 @@ use spec::PartialSwapKind;
 
 use crate::plan::VendorResolutionPlan;
 use crate::{
-    DeferredImport, IdentRewriteTarget, MaterializedOutputChunkIndex, PartialSwapIdentRewriter,
+    DeferredImport, VendorImportRewrites, MaterializedOutputChunkIndex, PartialSwapIdentRewriter,
     bundled_facade_import_source, is_valid_identifier, make_named_reexport,
     make_namespace_reexport, new_url_expr, resolve_partial_swap_import_target,
 };
@@ -63,12 +63,7 @@ pub(crate) fn rewrite_passthrough_module(
     context: &PassthroughContext<'_>,
     references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
 ) {
-    let mut state = FileRewriteState {
-        bindings: BTreeMap::new(),
-        emitted_member_namespace_for: BTreeSet::new(),
-        emitted_default_namespace_for: BTreeSet::new(),
-        references_by_symbol: BTreeMap::new(),
-    };
+    let mut state = VendorImportRewrites::default();
 
     // Pass A: vendor directive surgery — partial/bundled swap import
     // replacement plus boundary-rename name mapping, in position.
@@ -95,36 +90,26 @@ pub(crate) fn rewrite_passthrough_module(
 
     // Pass C: body reference rewrites for member-access / named-rename
     // bindings collected in Pass A.
-    if !state.bindings.is_empty() {
+    if !state.body_rewrites.is_empty() {
         let mut rewriter = PartialSwapIdentRewriter {
-            bindings: &state.bindings,
-            references_by_symbol: &mut state.references_by_symbol,
+            bindings: &state.body_rewrites,
+            references_by_symbol: &mut state.references_rewritten,
         };
         module.visit_mut_with(&mut rewriter);
     }
 
-    for (key, count) in state.references_by_symbol {
+    for (key, count) in state.references_rewritten {
         *references_by_symbol.entry(key).or_insert(0) += count;
     }
 }
 
-struct FileRewriteState {
-    bindings: BTreeMap<Id, IdentRewriteTarget>,
-    /// Packages whose shared `import * as <ns> from "<pkg>"` was
-    /// already emitted in this file (partial `kind=member`).
-    emitted_member_namespace_for: BTreeSet<String>,
-    /// Packages whose shared `import <ns> from "<facade>"` was already
-    /// emitted in this file (bundled `kind=member|named`).
-    emitted_default_namespace_for: BTreeSet<String>,
-    references_by_symbol: BTreeMap<(ChunkId, String), usize>,
-}
 
 fn rewrite_directive_items(
     original_body: Vec<ModuleItem>,
     caller_chunk_id: ChunkId,
     caller_file_path: &str,
     context: &PassthroughContext<'_>,
-    state: &mut FileRewriteState,
+    state: &mut VendorImportRewrites,
 ) -> Vec<ModuleItem> {
     let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len() + 4);
     for item in original_body {
@@ -160,7 +145,7 @@ fn rewrite_import_decl(
     caller_chunk_id: ChunkId,
     caller_file_path: &str,
     context: &PassthroughContext<'_>,
-    state: &mut FileRewriteState,
+    state: &mut VendorImportRewrites,
     new_body: &mut Vec<ModuleItem>,
 ) {
     let source = str_value(&import_decl.src);
@@ -281,8 +266,7 @@ fn rewrite_import_decl(
 /// bundled-partially swapped chunk: `Some(replacement imports)` when a
 /// live rewrite exists (the specifier is dropped and the imports are
 /// spliced in position), `None` to retain the specifier on the chunk
-/// re-import. Mirrors `VendorResolutionPlan::swapped_named_import_action`
-/// (lowering's construction-time classification) exactly.
+/// re-import. Classification and materialization are shared with lowering.
 fn plan_named_import_replacement(
     target_chunk_id: ChunkId,
     imported_name: &str,
@@ -290,127 +274,12 @@ fn plan_named_import_replacement(
     caller_chunk_id: ChunkId,
     caller_file_path: &str,
     context: &PassthroughContext<'_>,
-    state: &mut FileRewriteState,
+    state: &mut VendorImportRewrites,
 ) -> Option<Vec<DeferredImport>> {
-    if let Some(chunk_mapping) = context.plan.partial_swaps.get(&target_chunk_id) {
-        let target = chunk_mapping.symbols.get(imported_name)?;
-        let package_coords = chunk_mapping.packages.get(&target.package)?;
-        let mut imports = Vec::new();
-        match target.kind {
-            PartialSwapKind::Member => {
-                let upstream_export = target.upstream_export.as_deref()?;
-                let namespace = package_coords.namespace.as_deref()?;
-                state.bindings.insert(
-                    local.to_id(),
-                    IdentRewriteTarget::Member {
-                        namespace: namespace.to_string(),
-                        upstream_export: upstream_export.to_string(),
-                        chunk_id: target_chunk_id,
-                        chunk_export: imported_name.to_string(),
-                    },
-                );
-                if state
-                    .emitted_member_namespace_for
-                    .insert(target.package.clone())
-                {
-                    imports.push(DeferredImport::Namespace {
-                        source: target.package.clone(),
-                        local: namespace.to_string(),
-                    });
-                }
-            }
-            PartialSwapKind::Namespace => {
-                imports.push(DeferredImport::Namespace {
-                    source: target.package.clone(),
-                    local: local.sym.to_string(),
-                });
-                *state
-                    .references_by_symbol
-                    .entry((target_chunk_id, imported_name.to_string()))
-                    .or_insert(0) += 1;
-            }
-            PartialSwapKind::Default => {
-                imports.push(DeferredImport::Default {
-                    source: target.package.clone(),
-                    local: local.sym.to_string(),
-                });
-                *state
-                    .references_by_symbol
-                    .entry((target_chunk_id, imported_name.to_string()))
-                    .or_insert(0) += 1;
-            }
-            PartialSwapKind::Named => {
-                let upstream_export = target.upstream_export.as_deref()?;
-                imports.push(DeferredImport::Named {
-                    source: target.package.clone(),
-                    local: upstream_export.to_string(),
-                    upstream_export: upstream_export.to_string(),
-                });
-                if local.sym.as_ref() != upstream_export {
-                    state.bindings.insert(
-                        local.to_id(),
-                        IdentRewriteTarget::Rename {
-                            upstream_export: upstream_export.to_string(),
-                            chunk_id: target_chunk_id,
-                            chunk_export: imported_name.to_string(),
-                        },
-                    );
-                } else {
-                    *state
-                        .references_by_symbol
-                        .entry((target_chunk_id, imported_name.to_string()))
-                        .or_insert(0) += 1;
-                }
-            }
-        }
-        return Some(imports);
-    }
-
-    let chunk_mapping = context.plan.bundled_partial_swaps.get(&target_chunk_id)?;
-    let target = chunk_mapping.symbols.get(imported_name)?;
-    let package_coords = chunk_mapping.packages.get(&target.package)?;
-    let import_source = bundled_facade_import_source(
-        context.chunk_table,
-        caller_chunk_id,
-        caller_file_path,
-        &package_coords.facade_app_path,
-    );
-    let mut imports = Vec::new();
-    match target.kind {
-        PartialSwapKind::Member | PartialSwapKind::Named => {
-            let upstream_export = target.upstream_export.as_deref()?;
-            let namespace = package_coords.namespace.as_deref()?;
-            state.bindings.insert(
-                local.to_id(),
-                IdentRewriteTarget::Member {
-                    namespace: namespace.to_string(),
-                    upstream_export: upstream_export.to_string(),
-                    chunk_id: target_chunk_id,
-                    chunk_export: imported_name.to_string(),
-                },
-            );
-            if state
-                .emitted_default_namespace_for
-                .insert(target.package.clone())
-            {
-                imports.push(DeferredImport::Default {
-                    source: import_source,
-                    local: namespace.to_string(),
-                });
-            }
-        }
-        PartialSwapKind::Namespace | PartialSwapKind::Default => {
-            imports.push(DeferredImport::Default {
-                source: import_source,
-                local: local.sym.to_string(),
-            });
-            *state
-                .references_by_symbol
-                .entry((target_chunk_id, imported_name.to_string()))
-                .or_insert(0) += 1;
-        }
-    }
-    Some(imports)
+    let action = context.plan.swapped_named_import_action(target_chunk_id, imported_name)?;
+    Some(state.materialize(action, local.to_id(), target_chunk_id, imported_name.to_string(), |path| {
+        bundled_facade_import_source(context.chunk_table, caller_chunk_id, caller_file_path, path)
+    }))
 }
 
 /// Rewrite `export { <chunk_export> as <name> } from "<vendor-chunk>"`
@@ -430,7 +299,7 @@ fn rewrite_export_from_decl(
     caller_chunk_id: ChunkId,
     caller_file_path: &str,
     context: &PassthroughContext<'_>,
-    state: &mut FileRewriteState,
+    state: &mut VendorImportRewrites,
     new_body: &mut Vec<ModuleItem>,
 ) {
     let Some(src) = named.src.as_deref() else {

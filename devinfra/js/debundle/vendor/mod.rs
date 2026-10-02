@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 mod emission;
+mod import_rewrites;
 mod manifests;
 mod passthrough;
 mod plan;
@@ -26,6 +27,7 @@ pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_output
 use js_ast::str_value;
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
+pub use import_rewrites::VendorImportRewrites;
 pub use manifests::*;
 use plan::ChunkBundledPartialSwapPlan;
 pub use plan::{
