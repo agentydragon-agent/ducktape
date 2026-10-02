@@ -370,7 +370,11 @@ fn assert_class_members_differ(left: &str, right: &str) {
             &format!("class C {{ {member} }}"),
             &["--target-binding", "C", "--no-slack"],
         );
-        assert_eq!(outcome(&report)["kind"], expected, "{left} vs {member}: {report:#}");
+        assert_eq!(
+            outcome(&report)["kind"],
+            expected,
+            "{left} vs {member}: {report:#}"
+        );
     }
 }
 
@@ -404,10 +408,13 @@ fn unprojected_decorators_are_invalid_selectors() {
         "class C { @dec x = 1; m() {} }",
         "class C { x = 1; @dec m() {} }",
     ] {
-        let report = run_match_selector(
-            &source, selector, &["--target-binding", "C", "--no-slack"],
+        let report =
+            run_match_selector(&source, selector, &["--target-binding", "C", "--no-slack"]);
+        assert_eq!(
+            outcome(&report)["kind"],
+            "invalid",
+            "{selector}: {report:#}"
         );
-        assert_eq!(outcome(&report)["kind"], "invalid", "{selector}: {report:#}");
     }
 }
 
@@ -420,5 +427,11 @@ fn invalid_regex_predicate_is_not_a_no_match() {
         &["--target-binding", "w", "--no-slack"],
     );
     assert_eq!(outcome(&report)["kind"], "invalid", "{report:#}");
-    assert!(outcome(&report)["error"].as_str().unwrap().contains("regex"), "{report:#}");
+    assert!(
+        outcome(&report)["error"]
+            .as_str()
+            .unwrap()
+            .contains("regex"),
+        "{report:#}"
+    );
 }
