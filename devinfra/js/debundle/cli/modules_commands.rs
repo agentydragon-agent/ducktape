@@ -92,8 +92,8 @@ struct ModulesListArgs {
     pub unassigned_bindings: bool,
 
     /// Restrict to auto-deletable modules: truly empty (the `--empty`
-    /// predicate) AND no module-level `comment:`. This is the subset
-    /// safe to sweep with `modules delete` — a comment would otherwise
+    /// predicate) AND no module-level `comment:` or `note:`. This is the subset
+    /// safe to sweep with `modules delete` — authored metadata would otherwise
     /// pin the module as a kept shell.
     #[arg(long = "auto-deletable")]
     pub auto_deletable: bool,
@@ -144,7 +144,6 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
             .map(|claim| claim.bindings.len())
             .sum::<usize>();
         let member_count = module.members.len() + source_match_binding_count;
-        let claim_count = member_count + module.source_matches.len();
         let entry = ModuleListEntry {
             path,
             member_count,
@@ -152,15 +151,8 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
             residual,
             has_comment: module.comment.is_some(),
         };
-        // `--empty` matches the `modules delete` definition: no claims,
-        // annotations, or anonymous statements. A module that carries
-        // anonymous statements is not deletable-without-`--force` and isn't
-        // empty in any meaningful sense — its rebuild side-effects are still
-        // part of the spec.
-        let is_truly_empty = claim_count == 0
-            && module.annotations.is_empty()
-            && entry.anonymous_statement_count == 0;
-        let is_auto_deletable = is_truly_empty && !entry.has_comment;
+        let is_truly_empty = module.is_structurally_empty();
+        let is_auto_deletable = module.is_auto_deletable();
         let keep = (!args.empty || is_truly_empty)
             && (!args.residual || entry.residual)
             && (!args.unassigned_bindings || is_truly_empty)

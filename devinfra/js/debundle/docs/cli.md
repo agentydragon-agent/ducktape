@@ -288,7 +288,11 @@ refactors whose intermediate states would be invalid can land in one shot:
 `--dry-run` runs steps 1–4 and stops. `--no-verify` skips step 3 (still
 does duplicate-claim detection — that's a structural error, not a
 validation one). `bindings unassign` shares the same post-batch validation
-and drain sweep.
+and drain sweep. Automatic cleanup preserves module-level `comment:` and
+`note:` fields, including explicitly empty values. `modules list --auto-deletable`
+uses the same metadata-preserving predicate; `--empty` only tests structural
+emptiness. Explicit `modules delete <path>` may remove a comment/note-only module
+without `--force`, because it owns no code and the author named it for deletion.
 
 ### `--batch` JSON format
 

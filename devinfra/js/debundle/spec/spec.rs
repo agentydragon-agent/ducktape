@@ -741,6 +741,23 @@ pub struct LogicalModule {
     pub note: Option<String>,
 }
 
+impl LogicalModule {
+    /// No ownership claims or binding metadata. Explicit deletion of this
+    /// module cannot alter the partition, even if it has a comment or note.
+    pub fn is_structurally_empty(&self) -> bool {
+        self.members.is_empty()
+            && self.source_matches.is_empty()
+            && self.annotations.is_empty()
+            && self.anonymous_statements.is_empty()
+    }
+
+    /// Automatic cleanup must also preserve authored module metadata, including
+    /// explicit empty comments/notes. Callers decide which paths are eligible.
+    pub fn is_auto_deletable(&self) -> bool {
+        self.is_structurally_empty() && self.comment.is_none() && self.note.is_none()
+    }
+}
+
 /// Co-mover spec for a top-level anonymous side-effect statement.
 /// See [`LogicalModule::anonymous_statements`].
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -587,7 +587,7 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 ///   * Destination modules are auto-created.
 ///   * Only modules that were sources of a move in THIS batch are
 ///     swept after draining, and only when they have no module-level
-///     `comment:`, no remaining `source_matches:`, `annotations:`, or
+///     `comment:` or `note:`, no remaining `source_matches:`, `annotations:`, or
 ///     `anonymous_statements:`.
 ///   * [`Gate::Run`] runs the unified realizability gate
 ///     ([`crate::edit_gate::gate_post_edit_partition`]) against the
@@ -859,7 +859,7 @@ fn member_minified_name(member: &Member) -> Option<String> {
 /// auto-delete. Only modules that were sources of the current batch
 /// are considered — a pre-existing empty module shell is not this
 /// command's business — and a drained source survives when it still
-/// carries a module-level `comment:`, `source_matches:`, `annotations:`,
+/// carries a module-level `comment:` or `note:`, `source_matches:`, `annotations:`,
 /// or `anonymous_statements:` (all of which are spec content the sweep must
 /// not destroy).
 fn drained_source_modules(docs: &ModuleDocs, move_sources: &BTreeSet<String>) -> BTreeSet<String> {
@@ -872,11 +872,7 @@ fn drained_source_modules(docs: &ModuleDocs, move_sources: &BTreeSet<String>) ->
             let Some((_, doc)) = docs.get(*mp) else {
                 return false;
             };
-            doc.members.is_empty()
-                && doc.comment.is_none()
-                && doc.annotations.is_empty()
-                && doc.source_matches.is_empty()
-                && doc.anonymous_statements.is_empty()
+            doc.is_auto_deletable()
         })
         .cloned()
         .collect()
@@ -961,7 +957,7 @@ pub struct UnassignOutcome {
 
 /// Remove one or more bindings from their current modules atomically.
 /// Source modules drained of members are deleted unless they carry a
-/// module-level `comment:`, remaining `source_matches:`, `annotations:`,
+/// module-level `comment:` or `note:`, remaining `source_matches:`, `annotations:`,
 /// or `anonymous_statements:` — same drain rule as
 /// `run_bindings_assign`.
 ///
