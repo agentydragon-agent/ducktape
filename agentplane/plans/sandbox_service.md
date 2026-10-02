@@ -1,8 +1,11 @@
 # Sandbox Service extraction
 
-Status: **extraction started; no standalone service yet.** The app now uses an independent
-[running-session command relay](../sandbox_service/README.md). Authenticated API, provisioning,
-discovery, session configuration, and archive ownership remain to be extracted.
+Status: **extraction in progress; not deployed or cut over.** The app uses the independent
+[command relay, inventory and concrete launch values](../sandbox_service/README.md). A standalone
+[existing-session API](../sandbox_service/API.md) authenticates workloads and resolves UID-pinned
+Sandbox/Pod associations without the app. Provisioning orchestration, backend session configuration,
+app HTTP cutover and archive ownership migration remain. The initial API follows only the surviving
+runner log; retained app PostgreSQL history has not moved.
 
 This is the concrete backend boundary required by the
 [service dependency rule](../docs/service_boundaries.md). The integration app must be a client;

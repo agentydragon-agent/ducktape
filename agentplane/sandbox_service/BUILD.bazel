@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -122,6 +122,120 @@ py_test(
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "//util:agent_sandbox",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "destinations",
+    srcs = ["destinations.py"],
+    deps = [
+        ":inventory",
+        ":kubernetes_grants",
+        "//agentplane:subjects",
+        "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "api",
+    srcs = ["api.py"],
+    deps = [
+        ":command_relay",
+        ":destinations",
+        ":inventory",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/workload_auth:http",
+        "@pypi//fastapi",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":api",
+        ":destinations",
+        ":inventory",
+        "//agentplane:subjects",
+        "//agentplane/workload_auth:http",
+        "//agentplane/workload_auth:principal",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server",
+    main_module = "agentplane.sandbox_service.main",
+    deps = [":main"],
+)
+
+py_test(
+    name = "test_destinations",
+    srcs = ["test_destinations.py"],
+    deps = [
+        ":conftest",
+        ":destinations",
+        ":inventory",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_api_native",
+    size = "large",
+    srcs = ["test_api_native.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
+        "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
+    ],
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":api",
+        ":conftest",
+        ":destinations",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:conftest",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:scripted_model",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "//agentplane/workload_auth:http",
+        "//agentplane/workload_auth:principal",
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

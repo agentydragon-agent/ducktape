@@ -37,13 +37,19 @@ The app still orchestrates grant reconciliation and policy binding, and still ca
 these Python components in-process. Moving that orchestration and switching callers
 to a separately deployed API are subsequent cuts, not accomplished by this move.
 
+## Existing-session API
+
+The [authenticated session API](API.md) now has a standalone server entry point. It resolves
+SA-authorized, UID-pinned destinations inside the configured Kubernetes inventory, then
+inspects, commands, or follows an existing runner session. It does not start sessions or
+sandboxes. Read/follow availability is explicitly limited to the surviving runner log.
+
 ## Still to extract
 
-This is **not yet a deployed service or an authenticated public API**. Callers must
-select and authorize the destination before using the relay. Destination discovery,
-API authentication/authorization, provisioning/lifecycle, session configuration and
-backend prompt assembly, event following/fan-out, and deliberate archive ownership
-remain in the [extraction plan](../plans/sandbox_service.md). Notifications must not
+This is **not yet a deployed service or an app HTTP cutover**. The low-level relay still
+requires an already selected/authorized client; the API provides that boundary. Remote
+provisioning/lifecycle, session configuration and backend prompt assembly, shared fan-out,
+and archive-ownership migration remain in the [extraction plan](../plans/sandbox_service.md). Notifications must not
 work around these gaps by depending on the app.
 
 TODO: proper runner RPC authentication/TLS. The planned v1 service-to-runner connection
