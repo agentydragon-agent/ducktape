@@ -101,9 +101,8 @@ pub fn prepare_js_chunks(
     let prepared_chunks = parsed_chunks
         .into_iter()
         .map(|(chunk_id, chunk_name, mut prepared)| {
-            let needs_ast =
-                needs_ast_for_chunk(&chunk_name, spec, &vendor_target_chunk_ids)
-                    || prepared.has_rewritable_specifier;
+            let needs_ast = needs_ast_for_chunk(&chunk_name, spec, &vendor_target_chunk_ids)
+                || prepared.has_rewritable_specifier;
 
             if !needs_ast
                 && let Some(pos) = prepared
