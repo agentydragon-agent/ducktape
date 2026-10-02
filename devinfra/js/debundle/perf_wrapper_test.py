@@ -12,11 +12,11 @@ import pytest_bazel
 def test_postprocessing_preserves_status_and_partial_output(tmp_path: Path, status: int) -> None:
     perf = tmp_path / "perf"
     perf.write_text(
-        '#!/usr/bin/env bash\n'
+        "#!/usr/bin/env bash\n"
         'if [[ "$1" == record ]]; then exit 0; fi\n'
-        'echo partial-report\n'
-        'echo diagnostic >&2\n'
-        f'exit {status}\n'
+        "echo partial-report\n"
+        "echo diagnostic >&2\n"
+        f"exit {status}\n"
     )
     perf.chmod(0o755)
     output = tmp_path / "profile"

@@ -198,7 +198,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         binding_assignment,
         &mut entry_body,
         &mut selected_by_module,
-    )?;
+    );
     // Two passes: build entry imports in plan order (so the
     // first plan to claim a binding wins disambiguation), then
     // order them through the shared `EsmImportOrder` so ECMA-262's
@@ -750,7 +750,7 @@ fn split_entry_body(
     binding_assignment: &HashMap<Id, usize>,
     entry_body: &mut Vec<ModuleItem>,
     selected_by_module: &mut [Vec<ModuleItem>],
-) -> Result<()> {
+) {
     for (ordinal, item) in body.iter().enumerate() {
         if !selected_ordinals.contains(&ordinal) {
             entry_body.push(item.clone());
@@ -760,9 +760,10 @@ fn split_entry_body(
             selected_by_module[module_index].push(item.clone());
             continue;
         }
-        let mut remaining =
-            remaining_item_after_selection(item, binding_assignment, selected_by_module)?;
-        entry_body.append(&mut remaining);
+        entry_body.extend(remaining_item_after_selection(
+            item,
+            binding_assignment,
+            selected_by_module,
+        ));
     }
-    Ok(())
 }

@@ -49,11 +49,13 @@ pub(super) fn normalize_optional_relative_dir(value: &str) -> Result<String> {
     normalize_module_path(value)
 }
 
+/// Selection leaves at most one item: an unchanged statement or one residual
+/// declaration containing the unselected declarators. No temporary Vec is needed.
 pub(super) fn remaining_item_after_selection(
     item: &ModuleItem,
     binding_assignment: &HashMap<Id, usize>,
     selected_by_module: &mut [Vec<ModuleItem>],
-) -> Result<Vec<ModuleItem>> {
+) -> Option<ModuleItem> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => {
             split_var_decl(var, false, binding_assignment, selected_by_module)
@@ -65,9 +67,9 @@ pub(super) fn remaining_item_after_selection(
                 if let Some(module_index) = assigned_module_for_ids(&ids, binding_assignment) {
                     selected_by_module[module_index]
                         .push(ModuleItem::Stmt(Stmt::Decl(decl.clone())));
-                    Ok(Vec::new())
+                    None
                 } else {
-                    Ok(vec![item.clone()])
+                    Some(item.clone())
                 }
             }
         },
@@ -75,12 +77,12 @@ pub(super) fn remaining_item_after_selection(
             let ids = declaration_ids(decl);
             if let Some(module_index) = assigned_module_for_ids(&ids, binding_assignment) {
                 selected_by_module[module_index].push(item.clone());
-                Ok(Vec::new())
+                None
             } else {
-                Ok(vec![item.clone()])
+                Some(item.clone())
             }
         }
-        _ => Ok(vec![item.clone()]),
+        _ => Some(item.clone()),
     }
 }
 
@@ -89,7 +91,7 @@ pub(super) fn split_var_decl(
     was_exported: bool,
     binding_assignment: &HashMap<Id, usize>,
     selected_by_module: &mut [Vec<ModuleItem>],
-) -> Result<Vec<ModuleItem>> {
+) -> Option<ModuleItem> {
     let mut residual_decls = Vec::new();
     for declarator in &var.decls {
         let ids = binding_ids(&declarator.name);
@@ -116,7 +118,7 @@ pub(super) fn split_var_decl(
         }
     }
     if residual_decls.is_empty() {
-        return Ok(Vec::new());
+        return None;
     }
     let residual_var = VarDecl {
         span: var.span,
@@ -126,16 +128,16 @@ pub(super) fn split_var_decl(
         decls: residual_decls,
     };
     if was_exported {
-        Ok(vec![ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(
+        Some(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(
             ExportDecl {
                 span: DUMMY_SP,
                 decl: Decl::Var(Box::new(residual_var)),
             },
-        ))])
+        )))
     } else {
-        Ok(vec![ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(
+        Some(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(
             residual_var,
-        ))))])
+        )))))
     }
 }
 

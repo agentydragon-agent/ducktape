@@ -8,9 +8,9 @@
 //! each chunk source the owner graph's `source_location` data names.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::env;
 use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use analysis::{OwnerGraphReport, OwnerId, StatementKind};
@@ -455,7 +455,11 @@ impl Visit for StatementFingerprint {
     fn visit_number(&mut self, number: &Number) {
         // Merging signed zeros in the coarse bucket is safe regardless of the
         // AST equality policy: only the exact fallback can declare a duplicate.
-        let value = if number.value == 0.0 { 0.0 } else { number.value };
+        let value = if number.value == 0.0 {
+            0.0
+        } else {
+            number.value
+        };
         value.to_bits().hash(&mut self.0);
     }
 }
@@ -469,7 +473,8 @@ fn unique_body_indices(body: &[ModuleItem]) -> BTreeSet<usize> {
             let mut fingerprint = StatementFingerprint::default();
             item.visit_with(&mut fingerprint);
             let bucket = buckets.entry(fingerprint.0.finish()).or_default();
-            if let Some((_, unique)) = bucket.iter_mut()
+            if let Some((_, unique)) = bucket
+                .iter_mut()
                 .find(|(representative, _)| item.eq_ignore_span(&body[*representative]))
             {
                 *unique = false;
@@ -477,8 +482,11 @@ fn unique_body_indices(body: &[ModuleItem]) -> BTreeSet<usize> {
                 bucket.push((index, true));
             }
         }
-        buckets.into_values().flatten()
-            .filter_map(|(index, unique)| unique.then_some(index)).collect()
+        buckets
+            .into_values()
+            .flatten()
+            .filter_map(|(index, unique)| unique.then_some(index))
+            .collect()
     })
 }
 
@@ -595,10 +603,23 @@ mod tests {
     fn check_against_pairwise_oracle(source: &str) -> BTreeSet<usize> {
         js_ast::with_swc_globals(|| {
             let module = js_ast::parse_js_module_ast("test.js", source).unwrap();
-            let expected = SyntaxContext::within_ignored_ctxt(|| module.body.iter().enumerate()
-                .filter_map(|(i, item)| (module.body.iter()
-                    .filter(|other| item.eq_ignore_span(other)).take(2).count() == 1).then_some(i))
-                .collect::<BTreeSet<_>>());
+            let expected = SyntaxContext::within_ignored_ctxt(|| {
+                module
+                    .body
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, item)| {
+                        (module
+                            .body
+                            .iter()
+                            .filter(|other| item.eq_ignore_span(other))
+                            .take(2)
+                            .count()
+                            == 1)
+                            .then_some(i)
+                    })
+                    .collect::<BTreeSet<_>>()
+            });
             let actual = unique_body_indices(&module.body);
             assert_eq!(actual, expected);
             actual
@@ -608,9 +629,12 @@ mod tests {
     #[test]
     fn token_collisions_and_ignored_literal_spelling_keep_exact_semantics() {
         // +/- deliberately have identical fingerprints, but are distinct ASTs.
-        assert_eq!(check_against_pairwise_oracle(
-            "log(16); log(0x10); log('x'); log(\"x\"); a + b; a - b; f(x => x); f(x => x);"
-        ), BTreeSet::from([4, 5]));
+        assert_eq!(
+            check_against_pairwise_oracle(
+                "log(16); log(0x10); log('x'); log(\"x\"); a + b; a - b; f(x => x); f(x => x);"
+            ),
+            BTreeSet::from([4, 5])
+        );
     }
 
     #[test]

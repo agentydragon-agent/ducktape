@@ -169,7 +169,6 @@ rust_test(
     edition = "2024",
 )
 
-
 rust_library(
     name = "output_layout",
     srcs = ["artifacts/output_layout.rs"],
