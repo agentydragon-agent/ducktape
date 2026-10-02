@@ -3,17 +3,12 @@
 //! selector needle, computed over the fact model (`selector_match::Index` /
 //! `chunk_facts`).
 //!
-//! The divergence walk mirrors `selector_match`'s own `homo` / `match_children` /
-//! `align_var_declarators` descent — the same order in which the fact matcher's
-//! recursive match short-circuits to `Ok(false)`: top-level item kind, then
-//! module-decl kind / shape, statement kind / shape, declaration kind / shape,
-//! class/function name, var-decl keyword, declarator alignment (count /
-//! pinned-order / hole placement), and the class member-in-order scan. Each early
-//! divergence is one reason variant with its fixed score. The matcher itself
-//! discards the divergence location by collapsing to `Result<bool>`; this is that
-//! same descent instrumented to return *where and why* the first `false` fired,
-//! reading exactly the EDB relations `homo` reads (node kind, ordered children,
-//! ident/prop/operator labels).
+//! The matcher remains the non-match oracle, including alpha-binding rollback
+//! and list-hole placement. Diagnostics then rank a *useful* mismatch (kind,
+//! declaration name/keyword, pinned declarator or class member) rather than
+//! exposing the first failed backtracking attempt. In particular, the class
+//! label scan is a diagnostic heuristic, not a second matching algorithm.
+//! Exact and near-miss body-debt scans reuse the same projected indices.
 //!
 //! Declarator labels and the candidate's declared bindings are rendered by the
 //! pure-AST helpers in this module (`render_var_declarator_label`) and
@@ -33,20 +28,15 @@ use selector_match::{Index, Mode};
 /// empty index whose match fails closed, so it pins nothing — the same outcome as
 /// the resolver. Returns no groups when the needle is all-holes (nothing pinned).
 fn fact_exact_groups(
-    runtime_module: &Module,
-    needle_body: &[ModuleItem],
+    needle_indices: &[Index],
+    subject_indices: &[Index],
     mode: Mode,
 ) -> Vec<Vec<Option<usize>>> {
-    // An item that does not project to facts (unsupported construct) maps to a
-    // rootless index, which matches nothing — the resolver's fail-closed outcome.
-    let index_of = |item: &ModuleItem| item_index(item).unwrap_or_else(empty_index);
-    let needle_indices: Vec<Index> = needle_body.iter().map(index_of).collect();
-    let subject_indices: Vec<Index> = runtime_module.body.iter().map(index_of).collect();
     selector_match::match_top_level_sequence_indexed(
-        &needle_indices,
-        &subject_indices,
+        needle_indices,
+        subject_indices,
         mode,
-        &free_identifiers(&needle_indices),
+        &free_identifiers(needle_indices),
     )
     .unwrap_or_default()
     .into_iter()
@@ -54,10 +44,11 @@ fn fact_exact_groups(
     .collect()
 }
 
-/// A rootless [`Index`] (no facts): it matches nothing, mirroring the resolver's
-/// fail-closed handling of a top-level item that does not project to facts.
-fn empty_index() -> Index {
-    Index::build(&chunk_facts::ChunkFacts::default())
+/// Rootless indices fail closed, as in the matcher, when projection is unsupported.
+fn item_indices(body: &[ModuleItem]) -> Vec<Index> {
+    body.iter().map(|item| item_index(item).unwrap_or_else(|| {
+        Index::build(&chunk_facts::ChunkFacts::default())
+    })).collect()
 }
 
 /// A scored "first structural divergence" between a non-matching candidate and the
@@ -284,7 +275,9 @@ pub fn fact_source_match_body_debt(
         "source_match",
     )?;
     let mode = selector_mode(selector);
-    let exact_groups = fact_exact_groups(runtime_module, &parsed.body, mode);
+    let needle_indices = item_indices(&parsed.body);
+    let subject_indices = item_indices(&runtime_module.body);
+    let exact_groups = fact_exact_groups(&needle_indices, &subject_indices, mode);
     let exact_body_indices = exact_groups
         .iter()
         .flat_map(|group| group.iter().flatten().copied())
@@ -292,8 +285,9 @@ pub fn fact_source_match_body_debt(
     let near_misses = near_misses_among(
         runtime_module,
         &parsed.body,
+        &needle_indices,
         mode,
-        (0..runtime_module.body.len()).filter(|body_idx| !exact_body_indices.contains(body_idx)),
+        subject_indices.iter().enumerate().filter(|(idx, _)| !exact_body_indices.contains(idx)),
         min_score,
         limit,
     )?;
@@ -312,9 +306,17 @@ pub fn fact_near_misses(
     min_score: usize,
     limit: usize,
 ) -> Result<Vec<SourceMatchNearMiss>> {
+    if !matches!(parsed.body(), [needle] if module_item_list_hole_name(needle).is_none()) {
+        return Ok(Vec::new());
+    }
+    let needle_indices = item_indices(parsed.body());
+    let candidates = candidates.into_iter().filter_map(|idx| {
+        item_index(&runtime_module.body[idx]).map(|index| (idx, index))
+    });
     near_misses_among(
         runtime_module,
         parsed.body(),
+        &needle_indices,
         selector_mode(parsed.selector()),
         candidates,
         min_score,
@@ -327,11 +329,12 @@ pub fn fact_near_misses(
 /// ([`fact_first_mismatch_reason`]), when it scores `>= min_score`. Rows are
 /// sorted `(score desc, body_idx asc)` and truncated to `limit` (0 = no
 /// limit). A template of several statements, or of holes only, has none.
-fn near_misses_among(
+fn near_misses_among<I: std::borrow::Borrow<Index>>(
     runtime_module: &Module,
     body: &[ModuleItem],
+    needle_indices: &[Index],
     mode: Mode,
-    candidates: impl IntoIterator<Item = usize>,
+    candidates: impl IntoIterator<Item = (usize, I)>,
     min_score: usize,
     limit: usize,
 ) -> Result<Vec<SourceMatchNearMiss>> {
@@ -341,13 +344,15 @@ fn near_misses_among(
     if module_item_list_hole_name(needle).is_some() {
         return Ok(Vec::new());
     }
-    let Some(needle_index) = item_index(needle) else {
+    let [needle_index] = needle_indices else {
         return Ok(Vec::new());
     };
+    let free = free_identifiers([needle_index]);
     let mut near_misses = Vec::new();
-    for body_idx in candidates {
+    for (body_idx, candidate_index) in candidates {
+        let candidate_index = candidate_index.borrow();
         let candidate = &runtime_module.body[body_idx];
-        let Some(reason) = fact_first_mismatch_reason(needle, &needle_index, candidate, mode)?
+        let Some(reason) = fact_first_mismatch_reason(needle, needle_index, candidate, candidate_index, mode, &free)?
         else {
             continue;
         };
@@ -386,20 +391,19 @@ pub(crate) fn fact_first_mismatch_reason(
     needle: &ModuleItem,
     needle_index: &Index,
     candidate: &ModuleItem,
+    candidate_index: &Index,
     mode: Mode,
+    free: &BTreeSet<String>,
 ) -> Result<Option<MismatchReason>> {
-    let Some(candidate_index) = item_index(candidate) else {
-        return Ok(None);
-    };
     let (Some(nroot), Some(croot)) = (needle_index.root(), candidate_index.root()) else {
         return Ok(None);
     };
     // The fact matcher is the non-match oracle; a match means no near-miss row.
     if selector_match::matches_indexed(
         needle_index,
-        &candidate_index,
+        candidate_index,
         mode,
-        &free_identifiers([needle_index]),
+        free,
     )
     .map_err(unsupported_error("fact near-miss"))?
     .is_some()
@@ -409,23 +413,8 @@ pub(crate) fn fact_first_mismatch_reason(
     let nkind = needle_index.kind(nroot);
     let ckind = candidate_index.kind(croot);
     let reason = match (is_module_decl_kind(nkind), is_module_decl_kind(ckind)) {
-        (false, false) => first_stmt_divergence(
-            needle,
-            needle_index,
-            nroot,
-            candidate,
-            &candidate_index,
-            croot,
-            mode,
-        )?,
-        (true, true) => first_module_decl_divergence(
-            needle,
-            needle_index,
-            nroot,
-            candidate,
-            &candidate_index,
-            croot,
-            mode,
+        (false, false) | (true, true) => first_item_divergence(
+            needle, needle_index, nroot, candidate, candidate_index, croot, mode,
         )?,
         _ => MismatchReason {
             score: 1,
@@ -524,7 +513,7 @@ fn is_decl_kind(kind: &str) -> bool {
     matches!(kind, "ClassDecl" | "FnDecl" | "VarDecl")
 }
 
-fn first_module_decl_divergence(
+fn first_item_divergence(
     needle: &ModuleItem,
     needle_index: &Index,
     nroot: NodeId,
@@ -535,74 +524,27 @@ fn first_module_decl_divergence(
 ) -> Result<MismatchReason> {
     let nkind = needle_index.kind(nroot);
     let ckind = candidate_index.kind(croot);
-    if nkind == "ExportDecl" && ckind == "ExportDecl" {
-        // Both export declarations: descend into the inner declaration (ExportDecl
-        // child ordinal 0).
-        let ndecl = needle_index.children(nroot)[0];
-        let cdecl = candidate_index.children(croot)[0];
-        return first_decl_divergence(
-            export_decl_inner(needle),
-            needle_index,
-            ndecl,
-            export_decl_inner(candidate),
-            candidate_index,
-            cdecl,
-            mode,
-        );
+    let declarations = if nkind == "ExportDecl" && ckind == "ExportDecl" {
+        Some((export_decl_inner(needle), needle_index.children(nroot)[0],
+              export_decl_inner(candidate), candidate_index.children(croot)[0]))
+    } else if is_decl_kind(nkind) && is_decl_kind(ckind) {
+        Some((stmt_decl_inner(needle), nroot, stmt_decl_inner(candidate), croot))
+    } else { None };
+    if let Some((ndecl, nroot, cdecl, croot)) = declarations {
+        return first_decl_divergence(ndecl, needle_index, nroot, cdecl, candidate_index, croot, mode);
     }
+    let (category, label): (&str, fn(&str) -> &'static str) = if is_module_decl_kind(nkind) {
+        ("module declaration", module_decl_kind_label)
+    } else {
+        ("statement", stmt_kind_label)
+    };
     Ok(if nkind != ckind {
         MismatchReason {
             score: 10,
-            reason: format!(
-                "module declaration kind differs: selector is {}, candidate is {}",
-                module_decl_kind_label(nkind),
-                module_decl_kind_label(ckind),
-            ),
+            reason: format!("{category} kind differs: selector is {}, candidate is {}", label(nkind), label(ckind)),
         }
     } else {
-        MismatchReason {
-            score: 20,
-            reason: "module declaration shape differs".to_string(),
-        }
-    })
-}
-
-fn first_stmt_divergence(
-    needle: &ModuleItem,
-    needle_index: &Index,
-    nroot: NodeId,
-    candidate: &ModuleItem,
-    candidate_index: &Index,
-    croot: NodeId,
-    mode: Mode,
-) -> Result<MismatchReason> {
-    let nkind = needle_index.kind(nroot);
-    let ckind = candidate_index.kind(croot);
-    if is_decl_kind(nkind) && is_decl_kind(ckind) {
-        return first_decl_divergence(
-            stmt_decl_inner(needle),
-            needle_index,
-            nroot,
-            stmt_decl_inner(candidate),
-            candidate_index,
-            croot,
-            mode,
-        );
-    }
-    Ok(if nkind != ckind {
-        MismatchReason {
-            score: 10,
-            reason: format!(
-                "statement kind differs: selector is {}, candidate is {}",
-                stmt_kind_label(nkind),
-                stmt_kind_label(ckind),
-            ),
-        }
-    } else {
-        MismatchReason {
-            score: 20,
-            reason: "statement shape differs".to_string(),
-        }
+        MismatchReason { score: 20, reason: format!("{category} shape differs") }
     })
 }
 
@@ -623,43 +565,20 @@ fn first_decl_divergence(
     let ckind = candidate_index.kind(croot);
     let alpha = mode == Mode::AlphaAll;
     Ok(match (nkind, ckind) {
-        ("ClassDecl", "ClassDecl") => {
-            // ClassDecl children: [Ident(name), Class]. The name (exact, not
-            // alpha-renamable in exact mode) gates first.
+        ("ClassDecl", "ClassDecl") | ("FnDecl", "FnDecl") => {
             let nname = needle_index.ident(needle_index.children(nroot)[0]);
             let cname = candidate_index.ident(candidate_index.children(croot)[0]);
             if !alpha && nname != cname {
                 MismatchReason {
                     score: 40,
-                    reason: format!(
-                        "class name differs: selector `{}`, candidate `{}`",
-                        nname.unwrap_or_default(),
-                        cname.unwrap_or_default(),
-                    ),
+                    reason: format!("{} name differs: selector `{}`, candidate `{}`",
+                        decl_kind_label(nkind), nname.unwrap_or_default(), cname.unwrap_or_default()),
                 }
+            } else if nkind == "ClassDecl" {
+                first_class_divergence(needle_index, needle_index.children(nroot)[1],
+                    candidate_index, candidate_index.children(croot)[1], mode)?
             } else {
-                let nclass = needle_index.children(nroot)[1];
-                let cclass = candidate_index.children(croot)[1];
-                first_class_divergence(needle_index, nclass, candidate_index, cclass, mode)?
-            }
-        }
-        ("FnDecl", "FnDecl") => {
-            let nname = needle_index.ident(needle_index.children(nroot)[0]);
-            let cname = candidate_index.ident(candidate_index.children(croot)[0]);
-            if !alpha && nname != cname {
-                MismatchReason {
-                    score: 40,
-                    reason: format!(
-                        "function name differs: selector `{}`, candidate `{}`",
-                        nname.unwrap_or_default(),
-                        cname.unwrap_or_default(),
-                    ),
-                }
-            } else {
-                MismatchReason {
-                    score: 35,
-                    reason: "function signature or body differs".to_string(),
-                }
+                MismatchReason { score: 35, reason: "function signature or body differs".to_string() }
             }
         }
         ("VarDecl", "VarDecl") => first_var_decl_divergence(
@@ -988,7 +907,7 @@ mod tests {
 
         let needle_index = item_index(&needle).expect("test needle projects to facts");
         let fact_reason =
-            fact_first_mismatch_reason(&needle, &needle_index, &candidate, selector_mode(&sel))
+            fact_first_mismatch_reason(&needle, &needle_index, &candidate, &item_index(&candidate).unwrap(), selector_mode(&sel), &free_identifiers([&needle_index]))
                 .expect("fact near-miss does not error on supported needle")
                 .unwrap_or_else(|| {
                     panic!(
