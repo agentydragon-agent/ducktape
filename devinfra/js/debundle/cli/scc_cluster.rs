@@ -19,7 +19,7 @@ pub struct SccArgs {
     pub binding: Option<String>,
 
     /// Restrict to SCCs that are true cycles (≥2 modules in a loop).
-    #[arg(long = "cycles-only")]
+    #[arg(long = "cycles-only", conflicts_with = "singletons_only")]
     pub cycles_only: bool,
 
     /// Restrict to SCCs containing the residual catch-all module.
