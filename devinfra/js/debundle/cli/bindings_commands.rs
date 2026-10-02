@@ -5,7 +5,7 @@ use crate::binding::{
     rename_binding, run_bindings_assign, run_bindings_list, run_bindings_unassign,
 };
 use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
-use crate::edit_gate::Gate;
+use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
 use anyhow::{Context, Result};
@@ -116,38 +116,18 @@ struct BindingsRenameArgs {
 
 #[derive(Debug, ClapArgs)]
 struct BindingsUnassignArgs {
-    /// Modules tree root.
-    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
-    pub modules_root: PathBuf,
+    #[command(flatten)]
+    pub edit: GraphEditArgs,
     /// Binding symbols (minified or readable) to remove from their
     /// current modules. Same resolution rules as `bindings assign`.
     #[arg(required = true)]
     pub syms: Vec<String>,
-    /// Validate but do not modify any file.
-    #[arg(long)]
-    pub dry_run: bool,
-    /// Skip realizability validation. Don't use casually.
-    #[arg(long)]
-    pub no_verify: bool,
-    /// `owner_graph.json` for the chunk being edited. Required for
-    /// the realizability + atom-split gate; ignored when
-    /// `--no-verify` is set.
-    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
-    pub owner_graph_path: Option<PathBuf>,
-    /// Root used to resolve relative `source_location.source_path`
-    /// values when the gate checks anonymous statement selectors.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
-    pub source_root: Option<PathBuf>,
-    /// Output format. Default `text` on tty, `json` on pipe.
-    #[arg(long, value_enum)]
-    pub format: Option<OutputFormat>,
 }
 
 #[derive(Debug, ClapArgs)]
 struct BindingsAssignArgs {
-    /// Modules tree root.
-    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
-    pub modules_root: PathBuf,
+    #[command(flatten)]
+    pub edit: GraphEditArgs,
     /// Positional `<sym>:<module>[:<readable>]` triples. May be empty
     /// when `--batch` is supplied.
     ///
@@ -166,24 +146,6 @@ struct BindingsAssignArgs {
     /// propose-row admission rules: docs/cli.md § "Batch atomicity".
     #[arg(long)]
     pub batch: Option<String>,
-    /// Validate but do not modify any file.
-    #[arg(long)]
-    pub dry_run: bool,
-    /// Skip realizability + collision validation. Don't use casually.
-    #[arg(long)]
-    pub no_verify: bool,
-    /// `owner_graph.json` for the chunk being edited. Required for
-    /// the realizability + atom-split gate; ignored when
-    /// `--no-verify` is set.
-    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
-    pub owner_graph_path: Option<PathBuf>,
-    /// Root used to resolve relative `source_location.source_path`
-    /// values when the gate checks anonymous statement selectors.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
-    pub source_root: Option<PathBuf>,
-    /// Output format. Default `text` on tty, `json` on pipe.
-    #[arg(long, value_enum)]
-    pub format: Option<OutputFormat>,
 }
 
 fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {
@@ -266,39 +228,31 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
         };
         moves.extend(parse_batch_json(&text)?);
     }
-    // `Gate::from_cli` is the shared "graph or no-verify" policy
+    // `GraphEditArgs::gate` is the shared "graph or no-verify" policy
     // every mutating verb uses; no verb can silently skip the
     // realizability gate.
-    let gate = Gate::from_cli(
-        args.no_verify,
-        args.owner_graph_path.as_deref(),
-        args.source_root.as_deref(),
-    )?;
-    let out = match run_bindings_assign(&args.modules_root, moves, args.dry_run, gate) {
+    let gate = args.edit.gate()?;
+    let out = match run_bindings_assign(&args.edit.modules_root, moves, args.edit.dry_run, gate) {
         Ok(out) => out,
         Err(err) => {
-            emit_gate_rejection_json("assign", args.format, &err);
+            emit_gate_rejection_json("assign", args.edit.format, &err);
             return Err(err);
         }
     };
-    let format = OutputFormat::resolve(args.format);
+    let format = OutputFormat::resolve(args.edit.format);
     print_assign_outcome(&out, format)
 }
 
 fn run_bindings_unassign_cmd(args: BindingsUnassignArgs) -> Result<()> {
-    let gate = Gate::from_cli(
-        args.no_verify,
-        args.owner_graph_path.as_deref(),
-        args.source_root.as_deref(),
-    )?;
-    let out = match run_bindings_unassign(&args.modules_root, args.syms, args.dry_run, gate) {
+    let gate = args.edit.gate()?;
+    let out = match run_bindings_unassign(&args.edit.modules_root, args.syms, args.edit.dry_run, gate) {
         Ok(out) => out,
         Err(err) => {
-            emit_gate_rejection_json("unassign", args.format, &err);
+            emit_gate_rejection_json("unassign", args.edit.format, &err);
             return Err(err);
         }
     };
-    let format = OutputFormat::resolve(args.format);
+    let format = OutputFormat::resolve(args.edit.format);
     print_unassign_outcome(&out, format)
 }
 

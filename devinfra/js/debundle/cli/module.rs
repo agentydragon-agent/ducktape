@@ -31,14 +31,13 @@ use peel::OutputFormat;
 use spec::LogicalModule;
 use yaml_edit::apply_yaml_edit;
 
-use crate::edit_gate::{Gate, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
+use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
 
 #[derive(Debug, ClapArgs)]
 pub struct MergeArgs {
-    /// Root directory containing the per-module YAML tree.
-    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
-    pub modules_root: PathBuf,
+    #[command(flatten)]
+    pub edit: GraphEditArgs,
 
     /// Target module path (relative to --modules) to merge into.
     /// Created if it doesn't exist yet.
@@ -51,29 +50,6 @@ pub struct MergeArgs {
     /// a directory.
     #[arg(required = true)]
     pub sources: Vec<PathBuf>,
-
-    /// Validate but do not modify any file.
-    #[arg(long)]
-    pub dry_run: bool,
-
-    /// Skip the realizability gate. Don't use casually — bypassing
-    /// it can let an unrealizable spec ship.
-    #[arg(long)]
-    pub no_verify: bool,
-
-    /// `owner_graph.json` for the chunk being merged. Required for
-    /// the realizability gate; ignored when `--no-verify` is set.
-    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
-    pub owner_graph_path: Option<PathBuf>,
-
-    /// Root used to resolve relative `source_location.source_path`
-    /// values when the gate checks anonymous statement selectors.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
-    pub source_root: Option<PathBuf>,
-
-    /// Output format. Default `text` on tty, `json` on pipe.
-    #[arg(long, value_enum)]
-    pub format: Option<OutputFormat>,
 }
 
 /// Summary returned by [`merge_modules`].
@@ -117,9 +93,8 @@ impl MergeSummary {
 /// Top-level `debundle modules delete` argument shape.
 #[derive(Debug, ClapArgs)]
 pub struct DeleteArgs {
-    /// Root directory containing the per-module YAML tree.
-    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
-    pub modules_root: PathBuf,
+    #[command(flatten)]
+    pub edit: GraphEditArgs,
 
     /// Module paths (relative to --modules) to delete. The `.yaml`
     /// suffix is optional. All paths are validated up front; if any
@@ -127,35 +102,10 @@ pub struct DeleteArgs {
     #[arg(required = true)]
     pub paths: Vec<PathBuf>,
 
-    /// Validate but do not delete any file.
-    #[arg(long)]
-    pub dry_run: bool,
-
-    /// Skip the realizability gate. Don't use casually — bypassing
-    /// it on a non-empty deletion can let an unrealizable spec ship.
-    #[arg(long)]
-    pub no_verify: bool,
-
     /// Delete a module that still has members or anonymous statements.
     /// Default refuses non-empty deletions; pass `--force` to override.
     #[arg(long)]
     pub force: bool,
-
-    /// `owner_graph.json` for the chunk being edited. Required for
-    /// the realizability gate on non-empty `--force` deletions;
-    /// ignored when `--no-verify` is set or when every target module
-    /// is structurally empty (no-op gate).
-    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
-    pub owner_graph_path: Option<PathBuf>,
-
-    /// Root used to resolve relative `source_location.source_path`
-    /// values when the gate checks anonymous statement selectors.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
-    pub source_root: Option<PathBuf>,
-
-    /// Output format. Default `text` on tty, `json` on pipe.
-    #[arg(long, value_enum)]
-    pub format: Option<OutputFormat>,
 }
 
 /// Summary returned by [`delete_modules`].
@@ -192,24 +142,20 @@ impl DeleteSummary {
 /// * `--dry-run`: run the gate but do not modify any file.
 /// * `--no-verify`: skip the gate; apply the merge regardless.
 pub fn run_merge(merge: MergeArgs) -> Result<()> {
-    if merge.no_verify {
+    if merge.edit.no_verify {
         eprintln!(
             "warning: --no-verify skips the realizability gate; the merge YAML splice will \
              not be re-checked for cross-module cycles."
         );
     }
-    let gate = Gate::from_cli(
-        merge.no_verify,
-        merge.owner_graph_path.as_deref(),
-        merge.source_root.as_deref(),
-    )?;
+    let gate = merge.edit.gate()?;
     let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
-    let plan = plan_merge(&merge.modules_root, &merge.target, &sources)?;
-    if let Err(err) = gate.check(&merge.modules_root, || plan.post_spec(&merge.modules_root)) {
-        emit_gate_rejection_json("merge", merge.format, &err);
+    let plan = plan_merge(&merge.edit.modules_root, &merge.target, &sources)?;
+    if let Err(err) = gate.check(&merge.edit.modules_root, || plan.post_spec(&merge.edit.modules_root)) {
+        emit_gate_rejection_json("merge", merge.edit.format, &err);
         return Err(err);
     }
-    let (summary, action) = if merge.dry_run {
+    let (summary, action) = if merge.edit.dry_run {
         (plan.summary, "dry-run")
     } else {
         (plan.apply()?, "applied")
@@ -228,9 +174,9 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
         },
         target: summary.target.display().to_string(),
     };
-    match OutputFormat::resolve(merge.format) {
+    match OutputFormat::resolve(merge.edit.format) {
         OutputFormat::Text => {
-            if merge.dry_run {
+            if merge.edit.dry_run {
                 println!(
                     "dry-run: would merge {} source(s) into {}",
                     summary.merged_sources.len(),
@@ -426,13 +372,13 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
 /// * `--dry-run`: run the gate but do not delete any file.
 /// * `--no-verify`: skip the gate; delete unconditionally.
 ///
-/// All paths are resolved relative to `args.modules_root` unless
+/// All paths are resolved relative to `args.edit.modules_root` unless
 /// absolute. Paths that do not exist on disk are reported as an
 /// error before any deletion is attempted; the operation is
 /// best-effort atomic (collect-then-remove) but cannot roll back a
 /// partial removal if the filesystem fails midway.
 pub fn run_delete(args: DeleteArgs) -> Result<()> {
-    if args.no_verify {
+    if args.edit.no_verify {
         eprintln!(
             "warning: --no-verify skips the realizability gate; the deletion will not be \
              re-checked for cross-module cycles."
@@ -442,7 +388,7 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     let paths_abs: Vec<PathBuf> = args
         .paths
         .iter()
-        .map(|p| resolve_module_file(&args.modules_root, p))
+        .map(|p| resolve_module_file(&args.edit.modules_root, p))
         .collect();
 
     // Verify every path exists up-front so we never get stuck in a
@@ -495,21 +441,17 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     let gate_outcome = if all_empty {
         GateOutcome::NotRequired
     } else {
-        let gate = Gate::from_cli(
-            args.no_verify,
-            args.owner_graph_path.as_deref(),
-            args.source_root.as_deref(),
-        )?;
-        if let Err(err) = gate.check(&args.modules_root, || {
-            post_delete_spec(&args.modules_root, &paths_abs)
+        let gate = args.edit.gate()?;
+        if let Err(err) = gate.check(&args.edit.modules_root, || {
+            post_delete_spec(&args.edit.modules_root, &paths_abs)
         }) {
-            emit_gate_rejection_json("delete", args.format, &err);
+            emit_gate_rejection_json("delete", args.edit.format, &err);
             return Err(err);
         }
         gate.outcome()
     };
 
-    let summary = delete_modules(&paths_abs, args.dry_run)?;
+    let summary = delete_modules(&paths_abs, args.edit.dry_run)?;
     let delete_outcome = DeleteOutcome {
         outcome: MutationOutcome {
             verb: "delete",
@@ -527,7 +469,7 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
                 .collect(),
         },
     };
-    match OutputFormat::resolve(args.format) {
+    match OutputFormat::resolve(args.edit.format) {
         OutputFormat::Text => println!("{}", summary.summary_line()),
         format => print_outcome_json(&delete_outcome, format)?,
     }
@@ -782,14 +724,16 @@ mod tests {
             "members: []\n",
         );
         let args = DeleteArgs {
-            modules_root: root.to_path_buf(),
             paths: vec![PathBuf::from("auto_partition/auto_partition_0004")],
-            dry_run: true,
-            no_verify: false,
             force: false,
-            owner_graph_path: None,
-            source_root: None,
-            format: Some(OutputFormat::Text),
+            edit: GraphEditArgs {
+                modules_root: root.to_path_buf(),
+                dry_run: true,
+                no_verify: false,
+                owner_graph_path: None,
+                source_root: None,
+                format: Some(OutputFormat::Text),
+            },
         };
         run_delete(args).expect("bare path resolves to the .yaml file");
         assert!(

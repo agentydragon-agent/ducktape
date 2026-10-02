@@ -194,7 +194,7 @@ fn record_decl(
         }
         ModuleDecl::ExportDecl(d) => {
             let line = lines.line_for_span(d.span());
-            for name in exported_decl_names(&d.decl) {
+            for name in declaration_name_strings(&d.decl) {
                 sites.entry(name).or_default().push(ExportSite {
                     line,
                     shape: "decl",
@@ -244,10 +244,6 @@ fn record_decl(
         // Imports and TS-only declarations don't contribute exports.
         _ => {}
     }
-}
-
-fn exported_decl_names(decl: &Decl) -> Vec<String> {
-    declaration_name_strings(decl)
 }
 
 #[cfg(test)]

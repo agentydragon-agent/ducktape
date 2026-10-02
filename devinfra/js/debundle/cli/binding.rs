@@ -9,10 +9,10 @@
 //!   members, the operation refuses with a structured list.
 //! * Mutating commands validate-by-default (atomic post-batch state)
 //!   and refuse on collision / atom-split rejection.
-//! * Operations are YAML-shape preserving via `serde_yaml::Value`.
+//! * Changed YAML documents are reserialized; textual preservation is not required.
 //!
 //! The per-command contract lives in the clap doc-comments
-//! (`cli/mod.rs`); cross-command semantics (batch atomicity, rejection
+//! (`cli/bindings_commands.rs`); cross-command semantics (batch atomicity, rejection
 //! diagnostics) in `docs/cli.md`.
 
 use std::collections::{BTreeMap, BTreeSet};
