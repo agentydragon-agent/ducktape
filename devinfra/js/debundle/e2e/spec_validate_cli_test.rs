@@ -7,23 +7,14 @@ use std::process::Command;
 
 use debundle_e2e_support::{
     CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module,
-    mixed_selector_failure_fixture, outcomes, run_source_only_validate, run_spec_validate,
+    mixed_selector_failure_fixture, outcomes, run_source_only_validate, run_spec_validate, validate_json,
     write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
 #[test]
 fn validate_json_reports_every_failure_class_in_one_pass() {
-    let fixture = write_validate_fixture_spec(mixed_selector_failure_fixture());
-    let out = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
-    assert!(
-        out.status.success(),
-        "spec validate exited non-zero: stderr={}",
-        out.stderr
-    );
-
-    let report: Value = serde_json::from_str(&out.stdout)
-        .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout));
+    let report = validate_json(mixed_selector_failure_fixture());
     assert_eq!(
         report["counts"],
         json!({"no_match": 1, "ambiguous": 1, "duplicate_claim": 1}),
@@ -163,20 +154,7 @@ export { renderCard };
 #[test]
 fn validate_source_only_json_reports_every_source_selector_failure() {
     let fixture = write_source_only_validate_fixture();
-    let out = run_source_only_validate(
-        &fixture.modules_root,
-        &fixture.source_file,
-        &["--format", "json"],
-    );
-    assert!(
-        out.status.success(),
-        "source-only validate exited non-zero\nstdout:\n{}\nstderr:\n{}",
-        out.stdout,
-        out.stderr,
-    );
-
-    let report: Value = serde_json::from_str(&out.stdout)
-        .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout));
+    let report = fixture.json();
     assert_eq!(
         report["counts"],
         json!({"no_match": 1, "ambiguous": 1}),
@@ -210,12 +188,7 @@ fn validate_source_only_json_reports_every_source_selector_failure() {
 #[test]
 fn validate_source_only_ndjson_is_one_line_per_queue_item_plus_summary() {
     let fixture = write_source_only_validate_fixture();
-    let out = run_source_only_validate(
-        &fixture.modules_root,
-        &fixture.source_file,
-        &["--format", "ndjson"],
-    );
-    assert!(out.status.success(), "stderr={}", out.stderr);
+    let out = fixture.run("ndjson");
 
     let parsed: Vec<Value> = out
         .stdout
@@ -247,38 +220,26 @@ fn validate_source_only_ndjson_is_one_line_per_queue_item_plus_summary() {
 
 #[test]
 fn validate_source_only_clean_modules_report_no_problems() {
-    let dir = tempfile::tempdir().unwrap();
-    let source_file = dir.path().join("chunk.js");
-    write_text_file(
-        &source_file,
+    let fixture = SourceOnlyValidateFixture::new(
         r#"const widget = makeWidget("ok");
 "#,
-    );
-    let modules_root = dir.path().join("modules");
-    write_text_file(
-        &modules_root.join("ui/widget.yaml"),
-        r#"source_matches:
+        &[
+            ("ui/widget.yaml", r#"source_matches:
   - match: 'const w = makeWidget("ok");'
     bindings:
       - local: w
         name: Widget
-"#,
+"#),
+        ],
     );
-
-    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
-    assert!(out.status.success(), "stderr={}", out.stderr);
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = fixture.json();
     assert!(outcomes(&report).is_empty(), "{report:#}");
 }
 
 #[test]
 fn validate_source_only_accepts_a_seq_exprs_selector() {
-    let dir = tempfile::tempdir().unwrap();
-    let source_file = dir.path().join("chunk.js");
-    // One memoized hook, claimed by a selector whose cache-write tail is a
-    // `SEQ_EXPRS` run hole: validate reports nothing, i.e. it resolved.
-    write_text_file(
-        &source_file,
+    // The cache-write tail is a SEQ_EXPRS run hole; it must resolve.
+    let fixture = SourceOnlyValidateFixture::new(
         r#"const slots = [];
 function loadLabel(cache, label) {
   let memo;
@@ -292,11 +253,8 @@ function loadLabel(cache, label) {
 }
 loadLabel(slots, "first")("a").then((value) => console.log(value));
 "#,
-    );
-    let modules_root = dir.path().join("modules");
-    write_text_file(
-        &modules_root.join("resource/label.yaml"),
-        r#"source_matches:
+        &[
+            ("resource/label.yaml", r#"source_matches:
   - match: |
       function readable(cache, label) {
         let memo;
@@ -308,31 +266,23 @@ loadLabel(slots, "first")("a").then((value) => console.log(value));
     bindings:
       - local: readable
         name: LabelResource
-"#,
+"#),
+        ],
     );
-
-    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
-    assert!(out.status.success(), "stderr={}", out.stderr);
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = fixture.json();
     assert!(outcomes(&report).is_empty(), "{report:#}");
 }
 
 #[test]
 fn validate_source_only_reports_a_misplaced_seq_exprs_hole() {
-    let dir = tempfile::tempdir().unwrap();
-    let source_file = dir.path().join("chunk.js");
-    write_text_file(
-        &source_file,
+    let fixture = SourceOnlyValidateFixture::new(
         r#"function actual(value) {
   return value.trim();
 }
 console.log(actual(" ok "));
 "#,
-    );
-    let modules_root = dir.path().join("modules");
-    write_text_file(
-        &modules_root.join("hooks/lone_hole.yaml"),
-        r#"source_matches:
+        &[
+            ("hooks/lone_hole.yaml", r#"source_matches:
   - match: |
       function readable(value) {
         return (SEQ_EXPRS);
@@ -340,12 +290,10 @@ console.log(actual(" ok "));
     bindings:
       - local: readable
         name: LoneHole
-"#,
+"#),
+        ],
     );
-
-    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
-    assert!(out.status.success(), "stderr={}", out.stderr);
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = fixture.json();
     let record = find_module_outcome(outcomes(&report), "hooks/lone_hole");
     assert_eq!(record["outcome"]["kind"], "invalid", "{record:#}");
     assert!(
@@ -359,17 +307,11 @@ console.log(actual(" ok "));
 
 #[test]
 fn validate_source_only_reports_stale_annotations() {
-    let dir = tempfile::tempdir().unwrap();
-    let source_file = dir.path().join("chunk.js");
-    write_text_file(
-        &source_file,
+    let fixture = SourceOnlyValidateFixture::new(
         r#"const claimed = makeWidget("ok");
 "#,
-    );
-    let modules_root = dir.path().join("modules");
-    write_text_file(
-        &modules_root.join("ui/widget.yaml"),
-        r#"source_matches:
+        &[
+            ("ui/widget.yaml", r#"source_matches:
   - match: 'const selected = makeWidget("ok");'
     bindings:
       - local: selected
@@ -377,12 +319,10 @@ fn validate_source_only_reports_stale_annotations() {
 annotations:
   StaleWidget:
     note: no matching claim
-"#,
+"#),
+        ],
     );
-
-    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
-    assert!(out.status.success(), "stderr={}", out.stderr);
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = fixture.json();
     let outcomes = outcomes(&report);
     assert_eq!(outcomes.len(), 1, "{report:#}");
     let record = &outcomes[0];
@@ -402,38 +342,22 @@ annotations:
 
 #[test]
 fn validate_source_only_reports_anonymous_statement_failures() {
-    let dir = tempfile::tempdir().unwrap();
-    let source_file = dir.path().join("chunk.js");
-    write_text_file(
-        &source_file,
+    let fixture = SourceOnlyValidateFixture::new(
         r#"sideEffect("shared");
 sideEffect("shared");
 "#,
-    );
-    let modules_root = dir.path().join("modules");
-    write_text_file(
-        &modules_root.join("effects/ambiguous.yaml"),
-        r#"anonymous_statements:
+        &[
+            ("effects/ambiguous.yaml", r#"anonymous_statements:
   - source_match:
       match: 'sideEffect("shared");'
-"#,
-    );
-    write_text_file(
-        &modules_root.join("effects/missing.yaml"),
-        r#"anonymous_statements:
+"#),
+            ("effects/missing.yaml", r#"anonymous_statements:
   - source_match:
       match: 'sideEffect("missing");'
-"#,
+"#),
+        ],
     );
-
-    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
-    assert!(
-        out.status.success(),
-        "source-only validate exited non-zero\nstdout:\n{}\nstderr:\n{}",
-        out.stdout,
-        out.stderr,
-    );
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = fixture.json();
     assert_eq!(
         report["counts"],
         json!({"no_match": 1, "ambiguous": 1}),
@@ -469,33 +393,20 @@ sideEffect("shared");
 
 #[test]
 fn validate_source_only_reports_multi_statement_anonymous_selector_as_invalid() {
-    let dir = tempfile::tempdir().unwrap();
-    let source_file = dir.path().join("chunk.js");
-    write_text_file(
-        &source_file,
+    let fixture = SourceOnlyValidateFixture::new(
         r#"setup();
 start();
 "#,
-    );
-    let modules_root = dir.path().join("modules");
-    write_text_file(
-        &modules_root.join("effects/startup.yaml"),
-        r#"anonymous_statements:
+        &[
+            ("effects/startup.yaml", r#"anonymous_statements:
   - source_match:
       match: |
         setup();
         start();
-"#,
+"#),
+        ],
     );
-
-    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
-    assert!(
-        out.status.success(),
-        "source-only validate exited non-zero\nstdout:\n{}\nstderr:\n{}",
-        out.stdout,
-        out.stderr,
-    );
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = fixture.json();
     let outcomes = outcomes(&report);
     assert_eq!(outcomes.len(), 1, "{report:#}");
     let record = &outcomes[0];
@@ -512,35 +423,22 @@ start();
 
 #[test]
 fn validate_source_only_reports_source_match_failures_per_export() {
-    let dir = tempfile::tempdir().unwrap();
-    let source_file = dir.path().join("chunk.js");
-    write_text_file(
-        &source_file,
+    let fixture = SourceOnlyValidateFixture::new(
         r#"const leftOne = renderPanel("shared"), rightOne = renderPanel("shared");
 const leftTwo = renderPanel("shared"), rightTwo = renderPanel("shared");
 "#,
-    );
-    let modules_root = dir.path().join("modules");
-    write_text_file(
-        &modules_root.join("ui/panels.yaml"),
-        r#"source_matches:
+        &[
+            ("ui/panels.yaml", r#"source_matches:
   - match: 'const left = renderPanel("shared"), right = renderPanel("shared");'
     bindings:
       - local: left
         name: LeftPanel
       - local: right
         name: RightPanel
-"#,
+"#),
+        ],
     );
-
-    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
-    assert!(
-        out.status.success(),
-        "source-only validate exited non-zero\nstdout:\n{}\nstderr:\n{}",
-        out.stdout,
-        out.stderr,
-    );
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = fixture.json();
     assert_eq!(report["counts"], json!({"ambiguous": 2}), "{report:#}");
 
     let outcomes = outcomes(&report);
@@ -567,49 +465,58 @@ struct SourceOnlyValidateFixture {
     source_file: std::path::PathBuf,
 }
 
+impl SourceOnlyValidateFixture {
+    fn new(source: &str, modules: &[(&str, &str)]) -> Self {
+        let root = tempfile::tempdir().unwrap();
+        let source_file = root.path().join("chunk.js");
+        let modules_root = root.path().join("modules");
+        write_text_file(&source_file, source);
+        for (path, yaml) in modules {
+            write_text_file(&modules_root.join(path), yaml);
+        }
+        Self { _root: root, source_file, modules_root }
+    }
+
+    fn run(&self, format: &str) -> CommandResult {
+        let out = run_source_only_validate(&self.modules_root, &self.source_file, &["--format", format]);
+        assert!(out.status.success(), "source-only validate failed\nstdout:\n{}\nstderr:\n{}", out.stdout, out.stderr);
+        out
+    }
+
+    fn json(&self) -> Value {
+        let out = self.run("json");
+        serde_json::from_str(&out.stdout)
+            .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout))
+    }
+}
+
 fn write_source_only_validate_fixture() -> SourceOnlyValidateFixture {
-    let root = tempfile::tempdir().unwrap();
-    let source_file = root.path().join("chunk.js");
-    write_text_file(
-        &source_file,
+    SourceOnlyValidateFixture::new(
         r#"const leftPanel = renderPanel("shared");
 const rightPanel = renderPanel("shared");
 const widget = makeWidget("ok");
 "#,
-    );
-    let modules_root = root.path().join("modules");
-    write_text_file(
-        &modules_root.join("ui/ok.yaml"),
-        r#"source_matches:
+        &[
+            ("ui/ok.yaml", r#"source_matches:
   - match: 'const w = makeWidget("ok");'
     bindings:
       - local: w
         name: Widget
-"#,
-    );
-    write_text_file(
-        &modules_root.join("ui/missing.yaml"),
-        r#"source_matches:
+"#),
+            ("ui/missing.yaml", r#"source_matches:
   - match: 'const w = makeWidget("missing");'
     bindings:
       - local: w
         name: MissingWidget
-"#,
-    );
-    write_text_file(
-        &modules_root.join("ui/ambiguous.yaml"),
-        r#"source_matches:
+"#),
+            ("ui/ambiguous.yaml", r#"source_matches:
   - match: 'const panel = renderPanel("shared");'
     bindings:
       - local: panel
         name: AmbiguousPanel
-"#,
-    );
-    SourceOnlyValidateFixture {
-        _root: root,
-        modules_root,
-        source_file,
-    }
+"#),
+        ],
+    )
 }
 
 fn candidate_owners(record: &Value) -> Vec<u64> {
