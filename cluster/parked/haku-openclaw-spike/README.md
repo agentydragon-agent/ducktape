@@ -5,7 +5,9 @@
 This directory is an archive, not a live Flux source. Generators live under
 `cluster/cdk8s/parked/haku_openclaw_spike_*.py` and still render these snapshots.
 The Nix image source remains in `haku/openclaw_spike/`; its disabled CI workflow is
-archived there as `image-workflow.yaml.disabled`.
+archived there as `image-workflow.yaml.disabled`. The old Authentik blueprint is
+`haku-openclaw-spike-sso.yaml.disabled`: it is a revival input, not a Kubernetes
+manifest or an active Authentik blueprint.
 
 The existing `haku-openclaw-spike-app` Flux object temporarily targets an empty
 GitRepository directory to prune its inventory, including the namespace and PVCs.
