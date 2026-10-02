@@ -1,6 +1,6 @@
 //! Golden minimizer outputs: each fixture's `expected_match.js` is the selector
 //! `synthesize-selectors --apply` emits for its `source.js`. Two cases are `#[ignore]`d
-//! until the gaps tracked in TODO.md § P3 close.
+//! until the gaps tracked in TODO.md § Read-off minimizer polish close.
 
 use std::collections::BTreeSet;
 use std::fs;

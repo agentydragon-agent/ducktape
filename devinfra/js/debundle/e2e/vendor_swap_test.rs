@@ -1251,8 +1251,7 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     // namespace import for `react/jsx-runtime`, and a shared internal cell
     // that proves both aliases came from one bundled package family rather
     // than from a residual in-blob copy plus raw CJS.
-    // TODO: once the schema exists, keep this as an executable fixture. The
-    // Node probe below is the minimal gate; a browser importmap/load test would
+    // The Node probe below is the minimal gate; a browser importmap/load test would
     // be the stronger proof for the live-proxy path.
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
     const CALLER_PATH: &str = "static/app.js";

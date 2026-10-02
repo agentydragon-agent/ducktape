@@ -1,12 +1,13 @@
 # Debundle Architecture Backlog
 
 Current architecture-level follow-ups for `devinfra/js/debundle/`. This
-file is an active backlog: resolved items are deleted, not struck through.
+file holds design details; dispatch order lives in <TODO.md>. Resolved items
+are deleted, not struck through.
 
-## What hurts most (priority order)
+## Architectural pressure points
 
 1. **Finding the right owner of a behavior is laborious.** `BUILD.bazel` has
-   over 1,200 lines of fine-grained Rust targets; `pipeline.rs`, `cli/mod.rs`,
+   over 1,200 lines of fine-grained Rust targets; `pipeline.rs`,
    `artifacts/artifact.rs`, `spec/spec.rs`, `selectors/resolution/selector_resolve.rs`,
    `selectors/matching/chunk_facts.rs`, and `peel/quotient.rs` are each
    over 1,000 lines. This is not a blanket request for smaller files: split
@@ -136,10 +137,11 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
 1. `vendor/mod.rs` further split (~1.6k lines including tests after the
    emission/manifests/passthrough/plan/strip/validate/wrappers extraction):
    package/subpath resolution helpers, export-surface collection,
-   `MaterializedOutputChunkIndex`, the shared import factories
-   (`DeferredImport` / `IdentRewriteTarget` / `PartialSwapIdentRewriter` and
-   the `make_*` constructors), and the post-strip consumer scan are each
-   liftable.
+   `MaterializedOutputChunkIndex`, identifier rewriting
+   (`IdentRewriteTarget` / `PartialSwapIdentRewriter`), and the post-strip
+   consumer scan are distinct responsibilities. `DeferredImport` already uses
+   the shared `js_ast` import constructors; named/namespace re-export
+   construction remains separate. Preserve the scan retirement condition above.
 2. Two top-level fact traversals remain: `program_analysis.rs::analyze_program_shallow`
    scans every chunk during prepare to build the manifest and determine AST
    retention; `facts/` performs the more expensive owner/graph analysis only
@@ -149,10 +151,12 @@ Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
    the cheap prepare path for pass-through chunks and the manifest's
    source-order/unsplit-var-declaration semantics.
 3. `lowering/lower.rs` — extract the remaining inline phases of `lower_chunk`
-   (naturalization, disambiguation, import planning, the per-module loop);
-   each needs substantial captured state from `LowerChunkInputs` (15–20
-   fields). Related: `lowering/mod.rs` carries a ~95-line import block from
-   wildcard `use super::*` in every sub-module.
+   (naturalization, disambiguation, import/entry planning). Per-module output
+   already lives in `module_output.rs`; its `ModuleOutputContext` carries
+   runtime AST, chunk/path information, and the top-level mark. Narrow any
+   further context extraction to remaining outer orchestration. Related:
+   `lowering/mod.rs` centralizes imports consumed through wildcard
+   `use super::*` in sibling modules.
 4. `artifacts/output_layout.rs` has repetitive `self.root.join(CONSTANT)`
    accessors; a data-driven path helper is possible but low priority. Keep
    named accessors if they make call sites and output contracts clearer.
@@ -179,30 +183,20 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
    trait or table to collapse repeated per-variant match clusters. ~150 LOC,
    medium risk (over-abstraction hazard; the per-form holing strategies differ
    for good reasons).
-2. Migrate `e2e/vendor_swap_test.rs` off raw `serde_json::json!` vendor-mark
-   literals onto the typed vendor-mark builders. The raw-`json!` form bypasses
-   `FixtureOpts` and the typed `VendorResolutionPlan` constructors, so test
-   fixtures can drift from real config shapes without a compile error
-   (e.g. a renamed vendor-mark field stays green in tests while breaking real
-   specs). Points: <e2e/vendor_swap_test.rs> (~lines 1680, 1821 and the
-   `report_out_dir` literals), builder surface in `vendor/mod.rs`.
+2. The bundled/partial vendor fixtures in `e2e/vendor_swap_test.rs` now use
+   typed builders and shared transform construction. Audit remaining valid
+   package-root partial-swap setup (`run_partial_swap_fixture`)
+   before extending that pattern. Keep deliberately malformed raw JSON in
+   validation tests: making invalid inputs impossible to construct would remove
+   their coverage, not improve it.
 
 **Organization only (≈0 LOC removed, navigability win):** split giant
 files at existing responsibility seams — <selectors/authoring/selector_codemod.rs>,
 <selectors/resolution/selector_resolve.rs>, <selectors/matching/chunk_facts.rs>,
-<peel/quotient.rs>, <lowering/rename_ledger.rs>, <cli/mod.rs>,
+<peel/quotient.rs>, <lowering/rename_ledger.rs>,
 <artifacts/artifact.rs>. Before moving code, document the exported API of
 that seam; Bazel already treats many files as separate crates, so file moves
 can otherwise multiply dependency plumbing.
-
-## Quick wins (≤30 min each)
-
-1. **Carry chunk-top-level `Mark` on `ChunkContext`** so `top_level_id`
-   lookups do not have to be threaded through every materialize-side
-   function as a separate parameter. The `Mark` lives on `LowerChunkAst`
-   but is still threaded through several helpers below `lower_chunk`.
-   Folding the `top_level_id` helper onto a small `ChunkContext`
-   accessor would let helpers take just that context instead.
 
 ## Concerns to discuss before deciding
 

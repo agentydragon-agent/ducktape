@@ -2,8 +2,8 @@
 
 Selector issues found while porting a downstream debundle spec, or reported by
 code review. Examples are intentionally generic and anonymized. Every entry
-carries a **Status**: the date it was last reproduced, or `unreproduced` with how
-it was found. An entry is deleted when its fix lands with a test, or when it is
+carries a **Status** distinguishing runtime reproduction, source-confirmed
+omissions, and unverified reports. An entry is deleted when its fix lands with a test, or when it is
 disproved.
 
 ## Unknown Hole Keywords Match As Identifiers
@@ -22,12 +22,14 @@ implement is then `invalid` with "unsupported selector hole", on every command.
 
 ## Invalid Regex Predicate Matches Nothing
 
-Status: unreproduced (code review 2026-09-30, not verified).
-`selectors/matching/selector_match.rs` compiles a `STR_LITERAL_MATCHING_RE` pattern with
-`if let Ok(compiled) = Regex::new(pattern)`, so a pattern that fails to compile
-makes the predicate match nothing with no diagnostic (a silent fallback, STYLE.md
-§ General, Exceptions). Not checked: whether `selectors/matching/source_match/parse_validate.rs`
-rejects an invalid pattern earlier. If it does not, reject it there as `invalid`.
+Status: source-confirmed silent compile failure; CLI reproduction still needed.
+`selectors/matching/selector_match.rs` builds regex predicates with
+`if let Ok(compiled) = Regex::new(pattern)`, silently omitting invalid patterns.
+`source_match/parse_validate.rs::parse_selector_module` parses JavaScript and
+validates `ANYTHING` positions, not regex syntax; `unsupported_needle_construct`
+checks predicate shape/position, not the pattern's validity. Add a CLI fixture
+with `STR_LITERAL_MATCHING_RE("[")` and require `invalid`, not `no_match`, before
+choosing the shared validation boundary.
 
 ## Solver Domain Encoding Ignores Id Gaps
 
@@ -35,7 +37,10 @@ Status: unreproduced (code review 2026-09-30, not verified).
 `selectors/resolution/selector_constraint_backend.rs` `ensure_full_domain_contains` returns silently
 when `usize::try_from` fails or when `index > values.len()`, and appends only when
 `index == values.len()`. A gap in encoded ids drops the value from the full
-domain instead of raising. Fix: treat both branches as invariant violations.
+domain instead of raising. Reachability is unverified: first trace
+`DomainValueDictionary` interning and callers `add_allowed_tuples` /
+`intern_encoded_allowed_binary_row_set`. If contiguous allocation is an invariant,
+assert it; do not report a reachable dropped-candidate bug without that evidence.
 
 ## Too-Broad Count Can Overstate Places
 
