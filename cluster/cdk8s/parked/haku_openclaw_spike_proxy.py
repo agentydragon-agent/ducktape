@@ -29,7 +29,6 @@ OPENCLAW_SPIKE_PROXY = ServiceRef(
 _PUBLISHED_SECRETS_READER = "authentik-jwt-rotation-published-secrets-reader"
 
 
-
 def _quantities(**values: str) -> dict[str, k8s.Quantity]:
     return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
 

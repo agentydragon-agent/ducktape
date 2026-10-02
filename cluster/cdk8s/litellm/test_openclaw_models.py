@@ -2,7 +2,6 @@ import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
 from cluster.cdk8s import public_coder_agent_config
-from cluster.cdk8s.parked import haku_openclaw_spike_config
 from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
@@ -13,6 +12,7 @@ from cluster.cdk8s.model_rosters import (
     Provider,
     exposed_name,
 )
+from cluster.cdk8s.parked import haku_openclaw_spike_config
 
 
 def _public_coder_agent_models() -> list[dict]:

@@ -80,9 +80,7 @@ def test_haku_spike_retirement_prunes_without_redeploying(generated: Path) -> No
     assert not any(doc["metadata"].get("namespace") == spike for doc in active)
     assert not any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == spike for doc in active)
     assert not any(doc["metadata"]["name"] == f"{spike}-proxy" for doc in active)
-    owners = {
-        doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"
-    }
+    owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
     assert f"{spike}-backup" not in owners
     retirement = owners[f"{spike}-app"]["spec"]
     assert retirement["prune"] is True
@@ -94,7 +92,9 @@ def test_haku_spike_retirement_prunes_without_redeploying(generated: Path) -> No
     assert not empty.get("resources")
     # Keep Haku sandbox/CI's shared proxy and public coder alive.
     assert {"haku-egress-proxy", "haku-namespace", "public-coder-agent-app"} <= owners.keys()
-    deployments = {(doc["metadata"].get("namespace"), doc["metadata"]["name"]) for doc in active if doc["kind"] == "Deployment"}
+    deployments = {
+        (doc["metadata"].get("namespace"), doc["metadata"]["name"]) for doc in active if doc["kind"] == "Deployment"
+    }
     assert ("haku-egress-proxy", "haku-egress-proxy") in deployments
     assert ("public-coder-agent", "proxy") in deployments
     # Preserved snapshots remain reproducible outside the live manifest roots.

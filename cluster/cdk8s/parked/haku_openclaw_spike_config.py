@@ -24,7 +24,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
-
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecClusterRef, BucketSpecReclaimPolicy
 from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
     S3CredentialsSpecIdentityRef,
@@ -34,7 +33,6 @@ from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
 )
 
 from cluster.cdk8s import namespaces, node_scheduling
-from cluster.cdk8s.parked import haku_openclaw_spike_proxy
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
@@ -57,6 +55,7 @@ from cluster.cdk8s.openclaw_gateway import (
     session_memory_hook,
     trusted_proxy_gateway,
 )
+from cluster.cdk8s.parked import haku_openclaw_spike_proxy
 from cluster.cdk8s.providers.seaweedfs.bucket import Bucket, BucketAccess
 from cluster.cdk8s.providers.seaweedfs.s3_credentials import S3Credentials
 from cluster.cdk8s.secret_ref import SecretRef

@@ -204,11 +204,11 @@ from cluster.cdk8s.oci_cache import flux_kustomizations as oci_cache_flux_kustom
 from cluster.cdk8s.ollama import app as ollama_app
 from cluster.cdk8s.openebs_lvm import storage as openebs_lvm_storage
 from cluster.cdk8s.parked import (
+    augur_evidence as parked_augur_evidence,
+    flux_kustomizations as parked_flux_kustomizations,
     haku_openclaw_spike_backup,
     haku_openclaw_spike_config,
     haku_openclaw_spike_proxy,
-    augur_evidence as parked_augur_evidence,
-    flux_kustomizations as parked_flux_kustomizations,
 )
 from cluster.cdk8s.plaid_mcp import (
     app as plaid_mcp_app,
@@ -829,10 +829,7 @@ def generate_manifests(root: Path) -> None:
     haku_openclaw_spike_backup_artifact = artifact("haku-openclaw-spike-backup", haku_openclaw_spike_backup.OUTPUT_DIR)
     # Archived generators remain reproducible; neither directory is a Flux artifact.
     write_directory(
-        root,
-        haku_openclaw_spike_backup_artifact,
-        haku_openclaw_spike_backup.chart,
-        siblings=["repository.sops.yaml"],
+        root, haku_openclaw_spike_backup_artifact, haku_openclaw_spike_backup.chart, siblings=["repository.sops.yaml"]
     )
     authentik_db_backups_artifact = artifact("authentik-db-backups", authentik_db_backups.OUTPUT_DIR)
     authentik_db_backups.authentik_db_backups(

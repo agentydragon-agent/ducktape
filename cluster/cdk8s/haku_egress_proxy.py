@@ -7,16 +7,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import cilium, egress_fences
 from cluster.cdk8s.agents import namespaces
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
-from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "haku-egress-proxy"
@@ -258,10 +257,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(
-        root,
-        OUTPUT_DIR,
-        namespaces.haku_egress_proxy,
-        chart,
-        egress_fences.haku_cloud_api,
-    )
+    write_charts(root, OUTPUT_DIR, namespaces.haku_egress_proxy, chart, egress_fences.haku_cloud_api)
