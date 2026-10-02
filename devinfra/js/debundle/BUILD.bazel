@@ -449,7 +449,7 @@ rust_library(
         "counted_digraph.rs",
         "esm_import_order.rs",
         "gate.rs",
-        "gate_chunk_analysis.rs",
+        "factorization_inputs.rs",
         "realizability/condensation_order.rs",
         "realizability/condensation_order_proptest.rs",
         "realizability/esm_simulator.rs",
@@ -670,7 +670,7 @@ rust_test(
 rust_library(
     name = "peel",
     srcs = [
-        "peel/factorize.rs",
+        "peel/propose.rs",
         "peel/gate_differential_test.rs",
         "peel/mod.rs",
         "peel/plan.rs",

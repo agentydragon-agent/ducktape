@@ -1,4 +1,4 @@
-pub mod factorize;
+pub mod propose;
 pub mod plan;
 pub mod quotient;
 

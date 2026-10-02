@@ -75,11 +75,11 @@ in a pipeline), the default flips to `json`. So
 `debundle modules propose | jq …` works without an explicit `--format json`.
 
 Read-only inspection commands prefer fast graph/spec lookups. `modules
-propose` is the command that runs the proposal factorizer by default;
+propose` is the command that runs the proposal proposer by default;
 `describe`, `coverage`, and `graph-summary` do not run it unless the
 selection itself is a proposal/diagnostic id or `--include-proposals` is
 passed (it is expensive on large graphs), and proposal-derived JSON fields
-are omitted when the factorizer is skipped.
+are omitted when the proposer is skipped.
 
 The mutating verbs (`bindings assign`, `bindings unassign`,
 `bindings rename`, `modules merge`, `modules delete`) take the same
@@ -381,7 +381,7 @@ When a binding's role is unclear or a proposal is suspicious:
 
 1. **`debundle describe <sym>`** — graph + spec context: the binding's
    owner, home module, atom membership, and incoming/outgoing edges. Add
-   `--include-proposals` only when factorizer proposal/diagnostic
+   `--include-proposals` only when proposer proposal/diagnostic
    annotations are needed.
 2. **`debundle show-source <sym>`** — print the original source span for
    the owner. Use `--context-lines 40` to widen the view.
