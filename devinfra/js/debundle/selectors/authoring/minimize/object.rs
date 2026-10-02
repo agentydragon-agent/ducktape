@@ -8,8 +8,8 @@ use readoff_render::kept_spans_for_anchor_set;
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use super::{finish_minimized_selector, render_var_slots};
-use crate::render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, node_holds_anchor, span_key};
+use super::{extend_anchor_cover, finish_minimized_selector, render_var_slots};
+use crate::render::{AnchorSpan, node_holds_anchor, span_key};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
     match_single_member_selector, prove_synthesized_selector,
@@ -68,35 +68,19 @@ fn cover_object_slot(
     render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
 ) -> Result<Option<SpecializedSelector>> {
     let targets = std::slice::from_ref(target);
-    let mut kept: BTreeSet<AnchorSpan> = BTreeSet::new();
-    while prove_synthesized_selector(index, decl, targets, &render_with(&kept)?).is_err() {
-        // Score a trial by `(target slot not yet resolved, total matches)`; a
-        // smaller score is better, so an anchor that makes the target binding the
-        // resolved one and rules out the most competitors wins.
-        let mut best: Option<((bool, usize), AnchorSpan)> = None;
-        for &anchor in ranked.iter().take(MAX_MINIMIZER_ANCHORS) {
-            if kept.contains(&anchor) {
-                continue;
-            }
-            let mut trial = kept.clone();
-            trial.insert(anchor);
-            let matches =
-                match_single_member_selector(index, &target.export_name, &render_with(&trial)?)?;
+    let kept = extend_anchor_cover(
+        BTreeSet::new(),
+        ranked,
+        |kept| Ok(prove_synthesized_selector(index, decl, targets, &render_with(kept)?).is_ok()),
+        |trial| {
+            let matches = match_single_member_selector(index, &target.export_name, &render_with(trial)?)?;
+            // Object ranking distinguishes the declaration as well as the binding.
             let target_unresolved = !matches.iter().any(|m| {
                 m.body_idx == decl.body_idx && m.binding.binding_name == target.runtime_binding
             });
-            let score = (target_unresolved, matches.len());
-            if best.is_none_or(|(best_score, _)| score < best_score) {
-                best = Some((score, anchor));
-            }
-        }
-        // No remaining anchor to add: the target's own keys/values cannot single
-        // out its slot. Defer to the caller.
-        let Some((_, anchor)) = best else {
-            return Ok(None);
-        };
-        kept.insert(anchor);
-    }
+            Ok((target_unresolved, matches.len()))
+        },
+    )?;
     finish_minimized_selector(index, decl, target, render_with(&kept)?)
 }
 
