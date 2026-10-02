@@ -14,8 +14,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
 
-from cluster.cdk8s import agent_access_profiles as access
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.flux import NAMESPACE
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT

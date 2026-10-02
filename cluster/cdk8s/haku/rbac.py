@@ -19,7 +19,6 @@ SERVICE_ACCOUNT = "haku"
 ADMIN_ROLE = "haku-sandbox-admin"
 
 
-
 def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
     return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
 
@@ -96,10 +95,7 @@ def chart(app: App) -> Chart:
         "haku-binding",
         metadata=k8s.ObjectMeta(name="haku", namespace=NAMESPACE),
         role_ref=access.role_ref("haku-sandbox-write"),
-        subjects=[
-            access.HAKU_SERVICE_ACCOUNT.k8s(),
-            access.HAKU_CONSOLE.k8s(),
-        ],
+        subjects=[access.HAKU_SERVICE_ACCOUNT.k8s(), access.HAKU_CONSOLE.k8s()],
     )
     k8s.KubeRoleBinding(
         chart,

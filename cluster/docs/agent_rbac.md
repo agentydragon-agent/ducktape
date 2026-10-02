@@ -189,16 +189,16 @@ Role names, binding names, cleanup scopes, and Flux ownership remain unchanged.
 
 The logical profiles are distinct from the transport identities:
 
-| Access path | Logical profile / contract |
-| --- | --- |
-| `haku:access-profile:public-coder` group | Static public coder; equals managed `public-coder` |
-| `oidc-ksbx-groups:haku` group | Static Haku; checked independently |
-| `haku:access-profile:haku` group | Static Haku Console; checked independently |
-| `haku-sandbox/haku` ServiceAccount | Static Haku compute; checked independently |
-| Managed `haku` preset | Includes public coder; matches each static Haku path except the exact Coinbase grant below |
-| Managed `finance-agent` preset | Same Kubernetes permissions as managed public coder; no static finance identity is implied |
-| `agentplane-staging/claude-ai` ServiceAccount | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
-| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset |
+| Access path                                    | Logical profile / contract                                                                                                                       |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `haku:access-profile:public-coder` group       | Static public coder; equals managed `public-coder`                                                                                               |
+| `oidc-ksbx-groups:haku` group                  | Static Haku; checked independently                                                                                                               |
+| `haku:access-profile:haku` group               | Static Haku Console; checked independently                                                                                                       |
+| `haku-sandbox/haku` ServiceAccount             | Static Haku compute; checked independently                                                                                                       |
+| Managed `haku` preset                          | Includes public coder; matches each static Haku path except the exact Coinbase grant below                                                       |
+| Managed `finance-agent` preset                 | Same Kubernetes permissions as managed public coder; no static finance identity is implied                                                       |
+| `agentplane-staging/claude-ai` ServiceAccount  | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
+| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset                                                          |
 
 The sole allowed static/managed Haku difference is managed Haku's **`get` on
 `agentplane-staging/coinbase-api-credentials`**. The test names that scope, resource,

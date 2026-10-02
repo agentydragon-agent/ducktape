@@ -315,7 +315,6 @@ py_test(
         "@multitool//tools/kustomize",
     ],
     deps = [
-        ":k8s",
         ":agent_rbac",
         ":checks",
         ":cluster",
@@ -325,6 +324,7 @@ py_test(
         ":flux_bootstrap_auth",
         ":health_checks",
         ":image_automation",
+        ":k8s",
         ":kustomize",
         "//cluster/cdk8s:manifest_roots",
         "//util/bazel:runfiles",

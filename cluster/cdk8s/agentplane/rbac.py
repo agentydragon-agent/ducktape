@@ -14,8 +14,7 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ApiResource, IApiResource, Role, RoleBinding, RolePolicyRule, ServiceAccount, k8s
 from constructs import Construct
 
-from cluster.cdk8s import agent_access_profiles as access
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.namespaces import AgentReadable, Vpa
@@ -161,8 +160,10 @@ class AgentRbac(Construct):
             metadata=ApiObjectMetadata(name="agent-agentplane-testing-operator", namespace=env.namespace),
             role=Role.from_role_name(self, "role-ref", TESTING_OPERATOR_ROLE_NAME),
         ).add_subjects(
-            *[subject.imported(self, f"operator-subject-{index}")
-              for index, subject in enumerate(access.TESTING_OPERATOR_SUBJECTS)]
+            *[
+                subject.imported(self, f"operator-subject-{index}")
+                for index, subject in enumerate(access.TESTING_OPERATOR_SUBJECTS)
+            ]
         )
 
 

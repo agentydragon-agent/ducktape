@@ -43,15 +43,26 @@ def test_non_resource_url_prefixes() -> None:
 
 
 def test_binding_scope_and_subjects_are_resolved_separately() -> None:
-    rbac = Rbac(parse_k8s_resources([
-        {"kind": "ClusterRole", "metadata": {"name": "reader"}, "rules": [
-            {"apiGroups": [""], "resources": ["pods", "pods/log"], "verbs": ["get", "list"]},
-            {"nonResourceURLs": ["/healthz"], "verbs": ["get"]},
-        ]},
-        {"kind": "RoleBinding", "metadata": {"name": "read", "namespace": "testing"},
-         "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "reader"},
-         "subjects": [{"kind": "Group", "name": "console"}]},
-    ]))
+    rbac = Rbac(
+        parse_k8s_resources(
+            [
+                {
+                    "kind": "ClusterRole",
+                    "metadata": {"name": "reader"},
+                    "rules": [
+                        {"apiGroups": [""], "resources": ["pods", "pods/log"], "verbs": ["get", "list"]},
+                        {"nonResourceURLs": ["/healthz"], "verbs": ["get"]},
+                    ],
+                },
+                {
+                    "kind": "RoleBinding",
+                    "metadata": {"name": "read", "namespace": "testing"},
+                    "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "reader"},
+                    "subjects": [{"kind": "Group", "name": "console"}],
+                },
+            ]
+        )
+    )
     console = rbac.identity("Group", "console")
     assert len(console) == 4
     assert not rbac.identity("Group", "oidc"), "Do not union separate agent access paths"
@@ -62,23 +73,51 @@ def test_binding_scope_and_subjects_are_resolved_separately() -> None:
 
 
 def test_aggregation_is_not_silently_ignored() -> None:
-    rbac = Rbac(parse_k8s_resources([{"kind": "ClusterRole", "metadata": {"name": "aggregate"},
-                                    "aggregationRule": {"clusterRoleSelectors": []}}]))
+    rbac = Rbac(
+        parse_k8s_resources(
+            [
+                {
+                    "kind": "ClusterRole",
+                    "metadata": {"name": "aggregate"},
+                    "aggregationRule": {"clusterRoleSelectors": []},
+                }
+            ]
+        )
+    )
     with pytest.raises(AssertionError, match="aggregated"):
         rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name="aggregate"), None)
 
 
 def test_kyverno_expands_actual_subjects_and_labels_and_rejects_unhandled_conditions() -> None:
-    policy: dict[str, Any] = {"metadata": {"name": "generate-agent-diagnostics-readers"}, "spec": {"rules": [{
-        "name": "logs", "match": {"any": [{"resources": {"kinds": ["Namespace"],
-                                                       "selector": {"matchLabels": {"logs": "true"}}}}]},
-        "generate": {"kind": "RoleBinding", "apiVersion": "rbac.authorization.k8s.io/v1", "name": "logs",
-                     "namespace": "{{request.object.metadata.name}}", "generateExisting": True, "synchronize": True,
-                     "data": {"roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "logs"},
-                              "subjects": [{"kind": "Group", "name": "console"}]}},
-    }]}}
-    namespaces = [K8sResource.model_validate({"kind": "Namespace", "metadata": {"name": name, "labels": labels}})
-                  for name, labels in (("approved", {"logs": "true"}), ("metadata-only", {"metadata": "true"}))]
+    policy: dict[str, Any] = {
+        "metadata": {"name": "generate-agent-diagnostics-readers"},
+        "spec": {
+            "rules": [
+                {
+                    "name": "logs",
+                    "match": {
+                        "any": [{"resources": {"kinds": ["Namespace"], "selector": {"matchLabels": {"logs": "true"}}}}]
+                    },
+                    "generate": {
+                        "kind": "RoleBinding",
+                        "apiVersion": "rbac.authorization.k8s.io/v1",
+                        "name": "logs",
+                        "namespace": "{{request.object.metadata.name}}",
+                        "generateExisting": True,
+                        "synchronize": True,
+                        "data": {
+                            "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "logs"},
+                            "subjects": [{"kind": "Group", "name": "console"}],
+                        },
+                    },
+                }
+            ]
+        },
+    }
+    namespaces = [
+        K8sResource.model_validate({"kind": "Namespace", "metadata": {"name": name, "labels": labels}})
+        for name, labels in (("approved", {"logs": "true"}), ("metadata-only", {"metadata": "true"}))
+    ]
     bindings = namespace_readers(policy, namespaces)
     assert [b.namespace for b in bindings] == ["approved"]
     assert bindings[0].subjects[0].name == "console"

@@ -21,13 +21,19 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import agent_access_profiles as access
-from cluster.cdk8s import external_creds, forgejo_images, namespaces, public_coder_proxy, public_coder_sshpiper
+from cluster.cdk8s import (
+    agent_access_profiles as access,
+    external_creds,
+    forgejo_images,
+    namespaces,
+    public_coder_proxy,
+    public_coder_sshpiper,
+)
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
-from cluster.cdk8s.haku import console, console_config, kube_api_proxy
+from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import (
     ANTIGRAVITY_MODELS,

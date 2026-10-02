@@ -48,8 +48,8 @@ py_library(
     name = "installation",
     srcs = ["installation.py"],
     deps = [
-        "//cluster/cdk8s:agent_access_profiles",
         ":client",
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",

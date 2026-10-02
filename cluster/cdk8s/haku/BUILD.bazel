@@ -34,9 +34,9 @@ py_library(
     name = "console",
     srcs = ["console.py"],
     deps = [
-        "//cluster/cdk8s:agent_access_profiles",
         ":console_config",
         ":database",
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:node_scheduling",
@@ -175,8 +175,8 @@ py_library(
     name = "rbac",
     srcs = ["rbac.py"],
     deps = [
-        "//cluster/cdk8s:agent_access_profiles",
         ":namespace",
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",

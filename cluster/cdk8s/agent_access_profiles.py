@@ -14,7 +14,11 @@ from cdk8s_plus_34 import Group, ISubject, ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.app.kubernetes_grants import (
-    ClusterRoleBindingGrant, ClusterRoleRef, KubernetesGrant, RoleBindingGrant, RoleRef,
+    ClusterRoleBindingGrant,
+    ClusterRoleRef,
+    KubernetesGrant,
+    RoleBindingGrant,
+    RoleRef,
 )
 
 RBAC_GROUP = "rbac.authorization.k8s.io"
@@ -29,8 +33,12 @@ class Subject:
     namespace: str | None = None
 
     def k8s(self) -> k8s.Subject:
-        return k8s.Subject(kind=self.kind, name=self.name, namespace=self.namespace,
-                          api_group=RBAC_GROUP if self.kind == "Group" else None)
+        return k8s.Subject(
+            kind=self.kind,
+            name=self.name,
+            namespace=self.namespace,
+            api_group=RBAC_GROUP if self.kind == "Group" else None,
+        )
 
     def json(self) -> dict[str, str]:
         if self.kind == "Group":
@@ -90,12 +98,7 @@ LOG_NAMESPACES = (
     "study-casino",
     "tana-mcp",
 )
-METADATA_ONLY_NAMESPACES = (
-    "agent-sandbox-system",
-    "nix-cache",
-    "public-coder-agent",
-    "vm-images-publisher",
-)
+METADATA_ONLY_NAMESPACES = ("agent-sandbox-system", "nix-cache", "public-coder-agent", "vm-images-publisher")
 
 
 def _namespace_read_grants() -> dict[str, RoleBindingGrant]:
@@ -115,86 +118,86 @@ def _namespace_read_grants() -> dict[str, RoleBindingGrant]:
     return grants
 
 
-
-
 def catalog() -> dict[str, KubernetesGrant]:
     """Fresh existing grant models; consumers must not mutate another profile's catalog."""
     return {
-    # Reuse public-coder's narrow cluster inventory, not Haku's broader
-    # cluster-diagnostics-reader (which includes node proxy access).
-    "public-coder-node-read": ClusterRoleBindingGrant(
-        kind="ClusterRoleBinding",
-        role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-node-reader"),
-    ),
-    "public-coder-cluster-metadata-read": ClusterRoleBindingGrant(
-        kind="ClusterRoleBinding",
-        role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-cluster-metadata-reader"),
-    ),
-    "cluster-diagnostics": ClusterRoleBindingGrant(
-        kind="ClusterRoleBinding",
-        role_ref=ClusterRoleRef(kind="ClusterRole", name="cluster-diagnostics-reader"),
-    ),
-    "haku-sandbox-write": RoleBindingGrant(
-        kind="RoleBinding", namespace="haku-sandbox", role_ref=RoleRef(kind="Role", name="haku-sandbox-admin")
-    ),
-    "agentplane-testing-operator": RoleBindingGrant(
-        kind="RoleBinding",
-        namespace="agentplane-testing",
-        role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
-    ),
-    "agentplane-staging-metadata": RoleBindingGrant(
-        kind="RoleBinding",
-        namespace="agentplane-staging",
-        role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-metadata"),
-    ),
-    "agentplane-staging-logs": RoleBindingGrant(
-        kind="RoleBinding",
-        namespace="agentplane-staging",
-        role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
-    ),
-    **_namespace_read_grants(),
-    "coinbase-credentials": RoleBindingGrant(
-        kind="RoleBinding",
-        namespace="agentplane-staging",
-        role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
-    ),
-    "haku-console-metadata": RoleBindingGrant(
-        kind="RoleBinding",
-        namespace="haku-console",
-        role_ref=RoleRef(kind="Role", name="agent-haku-console-metadata-reader"),
-    ),
-    "clickhouse-diagnostics": RoleBindingGrant(
-        kind="RoleBinding",
-        namespace="clickhouse",
-        role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader"),
-    ),
-    "ducktape-flux-read": RoleBindingGrant(
-        kind="RoleBinding",
-        namespace="ducktape-flux",
-        role_ref=RoleRef(kind="Role", name="ducktape-flux-reader"),
-    ),
-    "public-coder-volsync-status": RoleBindingGrant(
-        kind="RoleBinding",
-        namespace="public-coder-agent",
-        role_ref=RoleRef(kind="Role", name="agent-public-coder-extended-diagnostics-reader"),
-    ),
-    "public-coder-agent-reader": RoleBindingGrant(
-        kind="RoleBinding",
-        namespace="public-coder-agent",
-        role_ref=RoleRef(kind="Role", name="public-coder-agent-reader"),
-    ),
-    "agentplane-testing-login": RoleBindingGrant(
-        kind="RoleBinding",
-        namespace="public-coder-agent",
-        role_ref=RoleRef(kind="Role", name="agentplane-testing-login-reader"),
-    ),
+        # Reuse public-coder's narrow cluster inventory, not Haku's broader
+        # cluster-diagnostics-reader (which includes node proxy access).
+        "public-coder-node-read": ClusterRoleBindingGrant(
+            kind="ClusterRoleBinding",
+            role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-node-reader"),
+        ),
+        "public-coder-cluster-metadata-read": ClusterRoleBindingGrant(
+            kind="ClusterRoleBinding",
+            role_ref=ClusterRoleRef(kind="ClusterRole", name="public-coder-agent-cluster-metadata-reader"),
+        ),
+        "cluster-diagnostics": ClusterRoleBindingGrant(
+            kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="cluster-diagnostics-reader")
+        ),
+        "haku-sandbox-write": RoleBindingGrant(
+            kind="RoleBinding", namespace="haku-sandbox", role_ref=RoleRef(kind="Role", name="haku-sandbox-admin")
+        ),
+        "agentplane-testing-operator": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="agentplane-testing",
+            role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
+        ),
+        "agentplane-staging-metadata": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="agentplane-staging",
+            role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-metadata"),
+        ),
+        "agentplane-staging-logs": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="agentplane-staging",
+            role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
+        ),
+        **_namespace_read_grants(),
+        "coinbase-credentials": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="agentplane-staging",
+            role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
+        ),
+        "haku-console-metadata": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="haku-console",
+            role_ref=RoleRef(kind="Role", name="agent-haku-console-metadata-reader"),
+        ),
+        "clickhouse-diagnostics": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="clickhouse",
+            role_ref=RoleRef(kind="Role", name="agent-clickhouse-diagnostics-reader"),
+        ),
+        "ducktape-flux-read": RoleBindingGrant(
+            kind="RoleBinding", namespace="ducktape-flux", role_ref=RoleRef(kind="Role", name="ducktape-flux-reader")
+        ),
+        "public-coder-volsync-status": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="public-coder-agent",
+            role_ref=RoleRef(kind="Role", name="agent-public-coder-extended-diagnostics-reader"),
+        ),
+        "public-coder-agent-reader": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="public-coder-agent",
+            role_ref=RoleRef(kind="Role", name="public-coder-agent-reader"),
+        ),
+        "agentplane-testing-login": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="public-coder-agent",
+            role_ref=RoleRef(kind="Role", name="agentplane-testing-login-reader"),
+        ),
     }
 
 
 SHARED_DIAGNOSTICS = (
-    "agentplane-staging-metadata", "agentplane-staging-logs", *_namespace_read_grants(),
-    "haku-console-metadata", "clickhouse-diagnostics", "ducktape-flux-read",
-    "public-coder-volsync-status", "public-coder-agent-reader",
+    "agentplane-staging-metadata",
+    "agentplane-staging-logs",
+    *_namespace_read_grants(),
+    "haku-console-metadata",
+    "clickhouse-diagnostics",
+    "ducktape-flux-read",
+    "public-coder-volsync-status",
+    "public-coder-agent-reader",
 )
 TESTING_ACCESS = ("agentplane-testing-operator", "agentplane-testing-login")
 PUBLIC_INVENTORY = ("public-coder-node-read", "public-coder-cluster-metadata-read")
@@ -216,8 +219,12 @@ STATIC_GRANTS = {
 def profile_subjects(grant: str) -> tuple[Subject, ...]:
     """Static profile membership for a binding, in its existing manifest order."""
     assert grant in catalog(), grant
-    return tuple(subject for profile, identities in STATIC_IDENTITIES.items()
-                 if grant in STATIC_GRANTS[profile] for subject in identities)
+    return tuple(
+        subject
+        for profile, identities in STATIC_IDENTITIES.items()
+        if grant in STATIC_GRANTS[profile]
+        for subject in identities
+    )
 
 
 def role_ref(grant: str) -> k8s.RoleRef:

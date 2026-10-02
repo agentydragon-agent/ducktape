@@ -29,12 +29,15 @@ class Permission:
         if self.verb not in ("*", other.verb):
             return False
         if self.url is not None or other.url is not None:
-            return self.url is not None and other.url is not None and (
-                self.url == other.url or (self.url.endswith("*") and other.url.startswith(self.url[:-1]))
+            return (
+                self.url is not None
+                and other.url is not None
+                and (self.url == other.url or (self.url.endswith("*") and other.url.startswith(self.url[:-1])))
             )
         resource_matches = self.resource in ("*", other.resource) or (
-            self.resource.startswith("*/") and "/" in other.resource
-            and self.resource[1:] == other.resource[other.resource.index("/"):]
+            self.resource.startswith("*/")
+            and "/" in other.resource
+            and self.resource[1:] == other.resource[other.resource.index("/") :]
         )
         return (
             (self.namespace is None or self.namespace == other.namespace)
@@ -71,13 +74,18 @@ class Rbac:
         permissions: set[Permission] = set()
         for rule in role.rules:
             if rule.non_resource_urls:
-                assert not rule.resources and not rule.api_groups and not rule.resource_names, rule
+                assert not rule.resources, rule
+                assert not rule.api_groups, rule
+                assert not rule.resource_names, rule
                 # Non-resource URL rules have no effect in a namespaced RoleBinding.
                 if namespace is None:
-                    permissions.update(Permission(None, "", "", verb, url=url)
-                                       for verb, url in product(rule.verbs, rule.non_resource_urls))
+                    permissions.update(
+                        Permission(None, "", "", verb, url=url)
+                        for verb, url in product(rule.verbs, rule.non_resource_urls)
+                    )
             else:
-                assert rule.resources and rule.api_groups, rule
+                assert rule.resources, rule
+                assert rule.api_groups, rule
                 permissions.update(
                     Permission(namespace, group, resource, verb, name)
                     for group, resource, verb, name in product(
@@ -89,14 +97,16 @@ class Rbac:
     def identity(self, kind: str, name: str, namespace: str = "") -> set[Permission]:
         subjects = {(kind, name, namespace), ("Group", "system:authenticated", "")}
         if kind == "ServiceAccount":
-            subjects.update({("Group", "system:serviceaccounts", ""),
-                             ("Group", f"system:serviceaccounts:{namespace}", "")})
+            subjects.update(
+                {("Group", "system:serviceaccounts", ""), ("Group", f"system:serviceaccounts:{namespace}", "")}
+            )
         permissions: set[Permission] = set()
         for binding in self.bindings:
             if any((s.kind, s.name, s.namespace) in subjects for s in binding.subjects):
                 assert binding.role_ref is not None, binding
-                permissions.update(self.rules(binding.role_ref,
-                                              binding.namespace if binding.kind == "RoleBinding" else None))
+                permissions.update(
+                    self.rules(binding.role_ref, binding.namespace if binding.kind == "RoleBinding" else None)
+                )
         return permissions
 
     def managed(self, config: dict[str, Any], preset: str) -> set[Permission]:
@@ -125,18 +135,31 @@ def namespace_readers(policy: dict[str, Any], namespaces: Iterable[K8sResource])
         for match in rule["match"]["any"]:
             assert set(match) == {"resources"}, match
             resources = match["resources"]
-            assert set(resources) == {"kinds", "selector"} and resources["kinds"] == ["Namespace"], resources
+            assert set(resources) == {"kinds", "selector"}, resources
+            assert resources["kinds"] == ["Namespace"], resources
             assert set(resources["selector"]) == {"matchLabels"}, resources
             selectors.append(resources["selector"]["matchLabels"])
         generate = rule["generate"]
-        assert generate["kind"] == "RoleBinding" and generate["namespace"] == "{{request.object.metadata.name}}"
-        assert generate["generateExisting"] and generate["synchronize"]
+        assert generate["kind"] == "RoleBinding"
+        assert generate["namespace"] == "{{request.object.metadata.name}}"
+        assert generate["generateExisting"]
+        assert generate["synchronize"]
         for namespace in namespaces:
             assert namespace.kind == "Namespace"
             if any(all(namespace.metadata.labels.get(k) == v for k, v in selector.items()) for selector in selectors):
                 data = generate["data"]
-                bindings.append(RoleBindingResource.model_validate({
-                    **data, "apiVersion": generate["apiVersion"], "kind": generate["kind"],
-                    "metadata": {**data.get("metadata", {}), "name": generate["name"], "namespace": namespace.name},
-                }))
+                bindings.append(
+                    RoleBindingResource.model_validate(
+                        {
+                            **data,
+                            "apiVersion": generate["apiVersion"],
+                            "kind": generate["kind"],
+                            "metadata": {
+                                **data.get("metadata", {}),
+                                "name": generate["name"],
+                                "namespace": namespace.name,
+                            },
+                        }
+                    )
+                )
     return bindings

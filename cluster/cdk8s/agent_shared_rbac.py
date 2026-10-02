@@ -15,6 +15,8 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agent-shared-rbac"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/shared-rbac"
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     k8s.KubeClusterRoleBinding(
