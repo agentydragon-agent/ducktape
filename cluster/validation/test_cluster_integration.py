@@ -191,7 +191,7 @@ def test_agentplane_external_delegation_has_independent_flux_ownership(k8s_dir: 
     assert binding["metadata"] == {"name": name, "namespace": target}
     assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": name}
     assert binding["subjects"] == [
-        {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+        {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
     ]
     assert yaml.safe_load((path / "kustomization.yaml").read_text())["resources"] == ["haku-sandbox.k8s.yaml"]
 
@@ -331,7 +331,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         assert binding["metadata"] == {"name": delegation_role, "namespace": namespace}
         assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": delegation_role}
         assert binding["subjects"] == [
-            {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+            {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
         ]
         assert yaml.safe_load((path / "kustomization.yaml").read_text())["resources"] == [f"{namespace}.k8s.yaml"]
 
@@ -378,7 +378,7 @@ def test_haku_service_read_delegation_is_scoped_to_owning_namespaces(k8s_dir: Pa
             for role_name in role_names
         ]
         assert binding["subjects"] == [
-            {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+            {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
         ]
         flux = one(
             doc

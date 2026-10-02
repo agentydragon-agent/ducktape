@@ -81,7 +81,8 @@ class SandboxService(Construct):
             "config",
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
             model=Settings,
-            content=settings.model_dump(mode="json", exclude_none=True),
+            content=settings.model_dump(mode="json", exclude_none=True)
+            | {"kubernetes_binding_cleanup_namespaces": sorted(settings.kubernetes_binding_cleanup_namespaces)},
             path="/etc/agentplane-sandbox-service/config.yaml",
         )
         deployment = Deployment(

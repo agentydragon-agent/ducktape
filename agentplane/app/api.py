@@ -91,7 +91,6 @@ from agentplane.sandbox_service.inventory import (
     SandboxRunningError,
     SandboxView,
 )
-from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import (
     DuplicateKubernetesGrantError,
     KubernetesGrant,
@@ -249,9 +248,6 @@ async def list_templates(inventory: Inventory) -> list[str]:
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(
     request: Request,
-    inventory: Inventory,
-    egress: Egress,
-    action_policy: ActionPolicy,
     spec: NewSandbox,
     caller: Annotated[CallerIdentity, Depends(require_caller)],
 ) -> SandboxView:
@@ -960,7 +956,6 @@ def create_app(
     operator_actions: FederatedOperatorActions | None = None,
     electric: ElectricProxy | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
-    kubernetes_bindings: KubernetesBindings | None = None,
     *,
     provisioner: SandboxProvisioner,
     event_logs: EventLogStore,
@@ -1020,7 +1015,6 @@ def create_app(
     app.state.models = catalog
     app.state.presets = configured_presets
     app.state.kubernetes_grants = configured_grants
-    app.state.kubernetes_bindings = kubernetes_bindings
     app.state.egress = egress
     app.state.action_policy = action_policy
     app.state.decisions = decisions

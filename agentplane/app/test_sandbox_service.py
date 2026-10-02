@@ -11,7 +11,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.bridge import MalformedMessageError, RunnerBridge
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -93,6 +93,11 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
             thread_changes=database_updates.changes[Channel.THREADS],
         )
         try:
+            with pytest.raises(MalformedMessageError):
+                await bridge.open_session(
+                    SANDBOX, "invalid-overrides", {"reasoning_effort": "low", "reasoningEffort": "high"}
+                )
+            assert "invalid-overrides" not in runner.runner.sessions
             opened = await bridge.open_session(SANDBOX, "remote-app", spec)
             assert "Backend guidance" in opened.spec.instructions
             thread = await event_logs.find(SANDBOX, "remote-app")

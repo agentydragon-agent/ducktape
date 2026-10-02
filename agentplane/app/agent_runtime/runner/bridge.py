@@ -98,9 +98,12 @@ class RunnerBridge:
             snapshot = await self._event_logs.feed_state(existing)
             if snapshot is not None and isinstance(snapshot.end, FeedError):
                 raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
-        attached = await self._runners.client(sandbox).open(
-            session_id, MessageToDict(spec) if isinstance(spec, protocol_pb2.SessionSpec) else spec, setup_script
-        )
+        try:
+            attached = await self._runners.client(sandbox).open(
+                session_id, MessageToDict(spec) if isinstance(spec, protocol_pb2.SessionSpec) else spec, setup_script
+            )
+        except (ValueError, ParseError) as error:
+            raise MalformedMessageError(f"invalid session overrides: {error}") from error
         return await self._archive_open(sandbox, session_id, attached)
 
     async def _archive_open(

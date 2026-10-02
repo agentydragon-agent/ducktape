@@ -18,6 +18,6 @@ def create_app(*args: Any, **kwargs: Any) -> FastAPI:
         values["egress"],
         values["action_policy"],
         values["kubernetes_grants"] or {},
-        values["kubernetes_bindings"],
+        None,
     )
     return production_app(*arguments.args, **arguments.kwargs)
