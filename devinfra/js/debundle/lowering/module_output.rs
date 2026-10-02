@@ -9,7 +9,6 @@ use super::imports::import_emit::relative_source;
 use super::imports::imports_runtime::source_chunk_import_for_target;
 use super::scope_names::collect_local_binding_names;
 
-use crate::body_facts::ModuleBodyFacts;
 use crate::exports::export_named_for_bindings;
 use crate::imports::{
     ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
@@ -19,7 +18,7 @@ use crate::imports::{
     plan_vendor_reimports, residual_entry_imports_for_moved_body,
     source_chunk_imports_for_moved_body,
 };
-use crate::naturalize::NaturalizedRenames;
+use crate::naturalize::NaturalizedModuleBody;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
@@ -51,9 +50,7 @@ struct ModuleOutputContext<'a> {
 pub(super) struct ModuleEmissionInputs<'a> {
     pub(super) index: usize,
     pub(super) plan: &'a ModulePlan,
-    pub(super) body: Vec<ModuleItem>,
-    pub(super) local_renames: NaturalizedRenames,
-    pub(super) body_facts: &'a ModuleBodyFacts,
+    pub(super) naturalized: NaturalizedModuleBody,
     pub(super) factorization: &'a ChunkFactorization,
     pub(super) declaration_by_name: &'a HashMap<Id, usize>,
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
@@ -85,9 +82,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     let ModuleEmissionInputs {
         index,
         plan,
-        mut body,
-        local_renames,
-        body_facts,
+        naturalized,
         factorization,
         declaration_by_name,
         binding_assignment,
@@ -105,6 +100,11 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         runtime_ast,
         vendor_import_oracle,
     } = inputs;
+    let NaturalizedModuleBody {
+        mut body,
+        renames: local_renames,
+        facts: body_facts,
+    } = naturalized;
     let ModuleReferenceNeeds {
         cross_module_imports_by_provider,
         residual_entry_imports,
@@ -113,7 +113,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         phantom_side_effect_providers,
     } = plan_module_reference_needs(
         index,
-        body_facts,
+        &body_facts,
         factorization,
         declaration_by_name,
         binding_assignment,

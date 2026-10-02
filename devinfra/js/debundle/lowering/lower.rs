@@ -19,7 +19,6 @@ use super::scope_names::{
     collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names,
 };
 use super::util::remaining_item_after_selection;
-use crate::body_facts::{ModuleBodyFacts, collect_module_body_facts};
 use crate::chunk_ast::{TopLevelDecl, top_level_declaration_names};
 use crate::exports::{
     ExportGrowthFacts, auto_grown_residual_exports, entry_exports_for_moved_bindings,
@@ -29,7 +28,7 @@ use crate::imports::{
     ArtifactSourceImportResolutionCache, RuntimeImportFacts, VendorReimportOracle,
     collect_entry_exports_by_original_local, collect_imported_reexports_by_module,
 };
-use crate::naturalize::{NaturalizedRenames, naturalize_module_body};
+use crate::naturalize::NaturalizedModuleBody;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{
     RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
@@ -349,41 +348,23 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         }
         entry_captured = probe.captured;
     }
-    // Naturalize every moved body up front and cache the per-plan
-    // local renames + post-naturalize body facts. Both
-    // `auto_grown_residual_exports` (entry_exports_and_trim below)
-    // and `plan_module_reference_needs` (the per-plan loop further
-    // down) read the same `ModuleBodyFacts`; computing once here
-    // eliminates a second walk over every moved body. Building the
-    // cache upstream of both consumers also keeps the per-plan loop
-    // free of facts-collection so it can be parallelized later
-    // without re-introducing the duplicate walk.
-    //
-    // The naturalize pass must precede facts collection because the
-    // in-place sym rewrites it performs (`plan.bindings` + heuristic
-    // return-object aliases) change which `(sym, ctxt)` tuples the
-    // body references; auto-grow then sees the post-naturalize set,
-    // which is also what the per-plan loop sees today.
-    let mut naturalized_bodies: Vec<Vec<ModuleItem>> = Vec::with_capacity(module_plans.len());
-    let mut local_renames_by_module: Vec<NaturalizedRenames> =
-        Vec::with_capacity(module_plans.len());
-    let mut body_facts_by_module: Vec<ModuleBodyFacts> = Vec::with_capacity(module_plans.len());
-    for (index, plan) in module_plans.iter().enumerate() {
-        let mut body = std::mem::take(&mut selected_by_module[index]);
-        let plan_driven = sealed_renames.module_renames_by_name(ModuleId::logical(index));
-        let renames = naturalize_module_body(
-            &mut body,
-            plan,
-            ModuleId::logical(index),
-            plan_driven,
-            chunk_top_level_mark,
-        )?;
-        naturalized_bodies.push(body);
-        local_renames_by_module.push(renames);
-    }
-    for body in &naturalized_bodies {
-        body_facts_by_module.push(collect_module_body_facts(body));
-    }
+    // Naturalize before collecting facts: both entry export growth and module
+    // emission must see the same post-rename references and their rename maps.
+    let naturalized_modules = selected_by_module
+        .into_iter()
+        .zip(module_plans)
+        .enumerate()
+        .map(|(index, (body, plan))| {
+            let module = ModuleId::logical(index);
+            NaturalizedModuleBody::prepare(
+                body,
+                plan,
+                module,
+                sealed_renames.module_renames_by_name(module),
+                chunk_top_level_mark,
+            )
+        })
+        .collect::<Result<Vec<_>>>()?;
     // Auto-grow entry's export list for any residual binding a
     // moved module body references. Without this, the per-module
     // emit path below would surface a "moved module references
@@ -410,7 +391,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         pre_existing_public_export_names.iter().cloned(),
     );
     auto_grown_residual_exports(
-        &body_facts_by_module,
+        naturalized_modules.iter().map(|module| &module.facts),
         &ExportGrowthFacts {
             declaration_by_name,
             binding_assignment,
@@ -633,33 +614,24 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // `SelectedModuleLowering`) is independent — the only shared
     // mutable state the loop body touches is `source_import_cache`
     // (memoization for source-chunk import resolution), wrapped in a
-    // `Mutex` above. Naturalized bodies, local renames, and body
-    // facts are precomputed upstream (see the
-    // `module.naturalize_body` / `module.collect_body_facts` passes
-    // above); the per-plan worker just consumes them.
+    // `Mutex` above. Each worker consumes one naturalized body with its
+    // matching rename maps and facts, prepared upstream.
     //
     // `swc_common::GLOBALS` is a `scoped_tls` thread-local; it does
     // NOT carry into rayon worker threads, so we capture the parent
     // thread's `Globals` and re-set it inside each worker closure.
     // Mirrors the chunk-level `par_iter` in `lowering/mod.rs`.
-    let per_plan_bodies: Vec<Vec<ModuleItem>> = std::mem::take(&mut naturalized_bodies);
-    let per_plan_local_renames: Vec<NaturalizedRenames> =
-        std::mem::take(&mut local_renames_by_module);
     let module_outputs: Vec<LoweredModuleOutput> = GLOBALS.with(|globals| -> Result<_> {
-        per_plan_bodies
+        naturalized_modules
             .into_par_iter()
-            .zip(per_plan_local_renames.into_par_iter())
             .zip(module_plans.par_iter())
-            .zip(body_facts_by_module.par_iter())
             .enumerate()
-            .map(|(index, (((body, local_renames), plan), body_facts))| {
+            .map(|(index, (module, plan))| {
                 GLOBALS.set(globals, || {
                     emit_module(ModuleEmissionInputs {
                         index,
                         plan,
-                        body,
-                        local_renames,
-                        body_facts,
+                        naturalized: module,
                         factorization,
                         declaration_by_name,
                         binding_assignment,
