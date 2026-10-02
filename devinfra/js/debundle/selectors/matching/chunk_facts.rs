@@ -25,10 +25,10 @@ use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
     ArrayPat, ArrowFunctionBody, AssignTarget, AssignTargetPat, BlockStmt, Callee, Class,
     ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, FunctionBody,
-    ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropKind, MethodKind, Module, ModuleDecl, ModuleItem,
-    ObjectPat, ObjectPatProp, OptChainBase, ParamOrTsParamProp, Pat, PrivateName, Prop, PropName,
-    PropOrSpread, SimpleAssignTarget, Stmt, SuperProp, Tpl, UsingDecl, VarDecl, VarDeclOrExpr,
-    VarDeclarator,
+    ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropKind, MethodKind, Module, ModuleDecl,
+    ModuleItem, ObjectPat, ObjectPatProp, OptChainBase, ParamOrTsParamProp, Pat, PrivateName, Prop,
+    PropName, PropOrSpread, SimpleAssignTarget, Stmt, SuperProp, Tpl, UsingDecl, VarDecl,
+    VarDeclOrExpr, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -554,7 +554,9 @@ impl Extractor {
     }
 
     fn function(&mut self, function: &Function) -> Result<NodeId, Unsupported> {
-        if !function.decorators.is_empty() || function.params.iter().any(|p| !p.decorators.is_empty()) {
+        if !function.decorators.is_empty()
+            || function.params.iter().any(|p| !p.decorators.is_empty())
+        {
             return unsupported("function decorators");
         }
         // async/generator are part of the function's identity (production compares
@@ -630,7 +632,9 @@ impl Extractor {
 
     fn class_property_node(&mut self, is_static: bool) -> NodeId {
         let id = self.node(NodeKind::ClassProp);
-        self.facts.operator.push((id, if is_static { "static" } else { "instance" }.into()));
+        self.facts
+            .operator
+            .push((id, if is_static { "static" } else { "instance" }.into()));
         id
     }
 

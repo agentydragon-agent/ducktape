@@ -1405,7 +1405,9 @@ pub fn consumed_nodes(index: &Index) -> HashSet<NodeId> {
 fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
     let consumed = consumed_nodes(index);
     for node in 0..index.kind.len() as NodeId {
-        if regex_predicate_pattern(index, node).is_some() && !index.predicate_regex.contains_key(&node) {
+        if regex_predicate_pattern(index, node).is_some()
+            && !index.predicate_regex.contains_key(&node)
+        {
             return Some("invalid STR_LITERAL_MATCHING_RE regex");
         }
         let Some(name) = index.ident_of(node).or_else(|| index.prop_name_of(node)) else {
