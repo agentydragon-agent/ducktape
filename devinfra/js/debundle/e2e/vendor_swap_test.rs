@@ -346,6 +346,13 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
     }
 }
 
+fn assert_wrapper_output(fixture: &VendorSwapFixture, script: &str, expected: &str) {
+    assert_success(&fixture.result);
+    let probe = fixture.wrapper_path.with_file_name("probe.mjs");
+    write_text_file(&probe, script);
+    assert_node_output(&probe, expected, "");
+}
+
 #[test]
 fn named_from_default_handles_object_literal_with_keyvalue_props() {
     // Canonical accepted shape: upstream's `export default` is an
@@ -363,22 +370,10 @@ fn named_from_default_handles_object_literal_with_keyvalue_props() {
         chunk_source: "export { ping, pong } from \"lib\";\n",
     });
 
-    assert_success(&fixture.result);
-
-    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
-    // The wrapper hoists upstream's default into a `const _d = { ... }`
-    // and re-emits each named export as `export const ping = _d.ping;`.
-    assert!(
-        wrapper_source.contains("export const ping = _d.ping"),
-        "wrapper should emit a named-export pull for `ping`:\n{wrapper_source}",
-    );
-    assert!(
-        wrapper_source.contains("export const pong = _d.pong"),
-        "wrapper should emit a named-export pull for `pong`:\n{wrapper_source}",
-    );
-    assert!(
-        wrapper_source.contains("export default _d"),
-        "wrapper should preserve the default export:\n{wrapper_source}",
+    assert_wrapper_output(
+        &fixture,
+        "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
+        "pong ping true true\n",
     );
 }
 
@@ -386,10 +381,8 @@ fn named_from_default_handles_object_literal_with_keyvalue_props() {
 fn named_from_default_accepts_shorthand_props() {
     // Shorthand object-literal props (`{ ping, pong }` — local
     // binding names used directly as both key and value) produce
-    // the same wrapper shape as `KeyValue` props: each shorthand
-    // key reflects a data property on the default export whose
-    // value is the local binding, so `export const K = _d.K;`
-    // re-exports the right value. Real-world vendor `index.mjs`
+    // the same values as `KeyValue` props. Generated export locals must
+    // avoid the upstream bindings rather than redeclaring them. Real-world `index.mjs`
     // files use shorthand commonly; accepting it removes an
     // otherwise-unmotivated authoring requirement.
     let upstream_source = r#"const ping = () => "pong";
@@ -402,20 +395,10 @@ export default { ping, pong };
         chunk_source: "export { ping, pong } from \"lib\";\n",
     });
 
-    assert_success(&fixture.result);
-
-    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
-    assert!(
-        wrapper_source.contains("export const ping = _d.ping"),
-        "wrapper should emit a named-export pull for `ping`:\n{wrapper_source}",
-    );
-    assert!(
-        wrapper_source.contains("export const pong = _d.pong"),
-        "wrapper should emit a named-export pull for `pong`:\n{wrapper_source}",
-    );
-    assert!(
-        wrapper_source.contains("export default _d"),
-        "wrapper should preserve the default export:\n{wrapper_source}",
+    assert_wrapper_output(
+        &fixture,
+        "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
+        "pong ping true true\n",
     );
 }
 
@@ -433,10 +416,11 @@ export default { ping, "pong": () => "ping" };
         chunk_source: "export { ping, pong } from \"lib\";\n",
     });
 
-    assert_success(&fixture.result);
-    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
-    assert!(wrapper_source.contains("export const ping = _d.ping"));
-    assert!(wrapper_source.contains("export const pong = _d.pong"));
+    assert_wrapper_output(
+        &fixture,
+        "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
+        "pong ping true true\n",
+    );
 }
 
 #[test]
