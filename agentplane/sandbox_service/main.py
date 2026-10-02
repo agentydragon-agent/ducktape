@@ -6,8 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import uvicorn
-from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio import config as k8s_config
+from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

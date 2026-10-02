@@ -13,7 +13,7 @@ always names its owner, Sandbox name **and UID**, and runner session ID:
 ```json
 {
   "destination": {
-    "owner": {"namespace": "example-sandboxes", "name": "example-runner-account"},
+    "owner": { "namespace": "example-sandboxes", "name": "example-runner-account" },
     "sandbox": "example-runner",
     "sandbox_uid": "40e373bd-2742-43de-8d1c-1ef97c4d4801",
     "session_id": "example-session"
@@ -40,11 +40,11 @@ remains an explicit follow-up, and deployment must enforce the intended network 
 POST bodies carry the composite destination so the same explicit shape works for ordinary
 agents and trusted services. All schemas are exposed in `/openapi.json`.
 
-| Route | Additional body fields | Response |
-| --- | --- | --- |
-| `POST /v1/sessions/inspect` | None | Native runner `Attached` as protobuf JSON. |
-| `POST /v1/sessions/commands` | `command`: native protobuf JSON; `after_cursor`: nonnegative runner-log cursor, default `0`. | Original `EventEntry` containing the exact matching `CommandAdmitted`. |
-| `POST /v1/sessions/follow` | `after_cursor`: nonnegative runner-log cursor, default `0`. | SSE `entry` frames, each containing original `EventEntry` protobuf JSON. |
+| Route                        | Additional body fields                                                                       | Response                                                                 |
+| ---------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `POST /v1/sessions/inspect`  | None                                                                                         | Native runner `Attached` as protobuf JSON.                               |
+| `POST /v1/sessions/commands` | `command`: native protobuf JSON; `after_cursor`: nonnegative runner-log cursor, default `0`. | Original `EventEntry` containing the exact matching `CommandAdmitted`.   |
+| `POST /v1/sessions/follow`   | `after_cursor`: nonnegative runner-log cursor, default `0`.                                  | SSE `entry` frames, each containing original `EventEntry` protobuf JSON. |
 
 For example, add these fields to the destination body to submit a notice:
 
@@ -52,7 +52,7 @@ For example, add these fields to the destination body to submit a notice:
 {
   "command": {
     "commandId": "caller-chosen-stable-notice-id",
-    "submitInput": {"text": "You have 7 inbox messages. Retrieve them using the notification service."}
+    "submitInput": { "text": "You have 7 inbox messages. Retrieve them using the notification service." }
   },
   "after_cursor": 0
 }
