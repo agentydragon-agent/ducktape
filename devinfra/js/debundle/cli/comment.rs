@@ -14,7 +14,8 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 use spec::{BindingAnnotation, LogicalModule, ModulePath};
 
-use crate::binding::{apply_module_edit, read_module_doc, resolve_unambiguous};
+use crate::binding::{read_module_doc, resolve_unambiguous};
+use yaml_edit::write_yaml_atomic;
 
 /// Args for `debundle bindings comment <sym> [...]`.
 #[derive(Debug, ClapArgs)]
@@ -283,8 +284,9 @@ fn persist_comment(
     dirty: bool,
     dry_run: bool,
 ) -> Result<&'static str> {
-    if dirty {
-        apply_module_edit(file, doc, dry_run)?;
+    // edit_comment already compared the original and replacement metadata.
+    if dirty && !dry_run {
+        write_yaml_atomic(file, &serde_yaml::to_value(doc)?)?;
     }
     Ok(if dirty && dry_run { "dry-run" } else { action })
 }

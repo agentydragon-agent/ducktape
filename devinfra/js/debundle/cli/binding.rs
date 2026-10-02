@@ -117,7 +117,7 @@ impl BindingLocation {
 type ModuleDocs = BTreeMap<String, (PathBuf, LogicalModule)>;
 
 /// Load one planning snapshot for resolution, collision checks, and edits.
-/// Persistence still compares each prospective document against disk.
+/// Batch persistence compares against this same pre-edit snapshot.
 pub fn load_module_docs(modules_root: &Path) -> Result<ModuleDocs> {
     let mut docs = BTreeMap::new();
     for file in collect_module_files(modules_root)? {
@@ -135,9 +135,14 @@ pub(crate) fn read_module_doc(file: &Path) -> Result<LogicalModule> {
 }
 
 /// Compare typed semantics so omitted defaults do not rewrite unrelated files.
-pub(crate) fn apply_module_edit(file: &Path, doc: &LogicalModule, dry_run: bool) -> Result<bool> {
+fn apply_module_edit(
+    file: &Path,
+    original: Option<&LogicalModule>,
+    doc: &LogicalModule,
+    dry_run: bool,
+) -> Result<bool> {
     let value = serde_yaml::to_value(doc)?;
-    if file.exists() && serde_yaml::to_value(read_module_doc(file)?)? == value {
+    if original.map(serde_yaml::to_value).transpose()?.as_ref() == Some(&value) {
         return Ok(false);
     }
     if !dry_run {
@@ -350,6 +355,7 @@ pub fn rename_binding(
     let (_, doc) = docs
         .get_mut(&hit.module_path)
         .expect("resolved module is loaded");
+    let original_doc = doc.clone();
     let old_readable = hit.name.readable().map(str::to_string);
     let old_effective = old_readable
         .clone()
@@ -357,7 +363,7 @@ pub fn rename_binding(
     let annotation = doc.annotations.remove(&old_effective);
     set_readable_name(doc, &hit.location, new);
     insert_annotation(doc, new, annotation)?;
-    let changed = apply_module_edit(&hit.file, doc, dry_run)?;
+    let changed = apply_module_edit(&hit.file, Some(&original_doc), doc, dry_run)?;
     let action = if !changed {
         "unchanged"
     } else if dry_run {
@@ -615,8 +621,9 @@ pub fn run_bindings_assign(
         });
     }
 
-    // Resolve and edit the same snapshot; never reread the tree per binding.
-    let mut docs = load_module_docs(modules_root)?;
+    // Preserve the planning snapshot for semantic no-op detection at apply time.
+    let original_docs = load_module_docs(modules_root)?;
+    let mut docs = original_docs.clone();
     // Step 1: locate each move's member and canonicalize its
     // destination. Identity is the resolved (source module, member
     // index) slot: `<sym>` accepts both the minified and readable
@@ -785,7 +792,7 @@ pub fn run_bindings_assign(
     // identically. Runs before any file is written.
     gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
 
-    let (files_written, files_deleted) = apply_doc_changes(&docs, &to_delete, dry_run)?;
+    let (files_written, files_deleted) = apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(AssignOutcome {
         outcome: MutationOutcome {
             verb: "assign",
@@ -887,6 +894,7 @@ fn drained_source_modules(docs: &ModuleDocs, move_sources: &BTreeSet<String>) ->
 /// can never lose a member that was not yet spliced into its
 /// destination on disk.
 fn apply_doc_changes(
+    original_docs: &ModuleDocs,
     docs: &ModuleDocs,
     to_delete: &BTreeSet<String>,
     dry_run: bool,
@@ -897,7 +905,8 @@ fn apply_doc_changes(
         if to_delete.contains(mp) {
             continue;
         }
-        let changed = apply_module_edit(file, doc, dry_run)?;
+        let original = original_docs.get(mp).map(|(_, doc)| doc);
+        let changed = apply_module_edit(file, original, doc, dry_run)?;
         if changed {
             files_written.push(file.display().to_string());
         }
@@ -999,8 +1008,9 @@ pub fn run_bindings_unassign(
         });
     }
 
-    // Resolve and edit the same snapshot; never reread the tree per binding.
-    let mut docs = load_module_docs(modules_root)?;
+    // Preserve the planning snapshot for semantic no-op detection at apply time.
+    let original_docs = load_module_docs(modules_root)?;
+    let mut docs = original_docs.clone();
     // Step 1: resolve each sym and dedupe on member identity (same
     // rule as `run_bindings_assign` — both spellings of one member
     // are one removal).
@@ -1043,7 +1053,7 @@ pub fn run_bindings_unassign(
     // claims in surviving modules stay claimed.
     gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
 
-    let (files_written, files_deleted) = apply_doc_changes(&docs, &to_delete, dry_run)?;
+    let (files_written, files_deleted) = apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(UnassignOutcome {
         outcome: MutationOutcome {
             verb: "unassign",
