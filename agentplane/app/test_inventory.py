@@ -176,8 +176,8 @@ async def test_suspend_and_resume_patch_the_operating_mode(
     resumed = await inventory.get("live")
 
     assert custom_objects.patches == [
-        ("sandboxes", "live", {"spec": {"operatingMode": "Suspended"}}),
-        ("sandboxes", "live", {"spec": {"operatingMode": "Running"}}),
+        ("sandboxes", "live", {"metadata": {"uid": str(suspended.uid)}, "spec": {"operatingMode": "Suspended"}}),
+        ("sandboxes", "live", {"metadata": {"uid": str(resumed.uid)}, "spec": {"operatingMode": "Running"}}),
     ]
     assert (suspended.state, resumed.state) == (ProvisioningState.SUSPENDED, ProvisioningState.RUNNING)
     with pytest.raises(SandboxNotFoundError):

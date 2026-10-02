@@ -39,6 +39,9 @@ from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
+# The generated protobuf stubs also need their library types in this target's mypy environment.
+# gazelle:include_dep @pypi//protobuf
+
 TOKEN = "test-provisioner-token"
 ADMIN = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-provisioner")
 AUDIENCE = "test-provisioning"
