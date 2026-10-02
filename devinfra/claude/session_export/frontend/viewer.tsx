@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from "react";
 import {
+  ActionIcon,
   Accordion,
   Alert,
   Badge,
   Button,
+  Box,
   Center,
   Code,
+  Drawer,
   Group,
   Image,
   Loader,
@@ -16,11 +19,11 @@ import {
   Select,
   SimpleGrid,
   Stack,
-  Switch,
   Text,
   TextInput,
   Title,
 } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 
 import {
   ApiError,
@@ -30,6 +33,7 @@ import {
   type SessionEvent,
   type SessionSummary,
 } from "./api";
+import { EventInspector } from "./event-inspector";
 import {
   foldSessionEvents,
   transcriptEventTime,
@@ -40,24 +44,87 @@ import {
 
 type StatusFilter = "all" | "active" | "paused" | "archived";
 type WatchStatus = "connecting" | "connected" | "reconnecting";
-type RoutineGroup = { kind: "routine-group"; id: string; count: number };
-type TranscriptRow = TranscriptItem | RoutineGroup;
-
 const ALL_STATUSES = ["active", "paused", "archived"];
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_DEFAULT_WIDTH = 300;
+const TRANSCRIPT_MIN_WIDTH = 420;
+const SIDEBAR_RESIZER_WIDTH = 8;
+const SIDEBAR_WIDTH_STORAGE_KEY = "claude-session-sidebar-width";
+const SIDEBAR_VISIBLE_STORAGE_KEY = "claude-session-sidebar-visible";
 
-function transcriptRows(items: TranscriptItem[], showRoutineEvents: boolean): TranscriptRow[] {
-  if (showRoutineEvents) return items;
-  const rows: TranscriptRow[] = [];
-  for (const item of items) {
-    if (item.kind === "notice" && item.routine) {
-      const previous = rows.at(-1);
-      if (previous?.kind === "routine-group") previous.count += 1;
-      else rows.push({ kind: "routine-group", id: item.id, count: 1 });
-    } else {
-      rows.push(item);
+function clampSidebarWidth(width: number): number {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
+}
+
+function readSidebarWidth(): number {
+  try {
+    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    const width = stored === null ? SIDEBAR_DEFAULT_WIDTH : Number(stored);
+    return Number.isFinite(width) ? clampSidebarWidth(width) : SIDEBAR_DEFAULT_WIDTH;
+  } catch {
+    return SIDEBAR_DEFAULT_WIDTH;
+  }
+}
+
+function readSidebarVisibility(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_VISIBLE_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function storeSidebarPreference(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Session browsing still works when the browser disables local storage.
+  }
+}
+
+function maxSidebarWidth(layoutWidth: number): number {
+  return Math.max(
+    SIDEBAR_MIN_WIDTH,
+    Math.min(SIDEBAR_MAX_WIDTH, layoutWidth - TRANSCRIPT_MIN_WIDTH - SIDEBAR_RESIZER_WIDTH)
+  );
+}
+
+type TranscriptScrollIntent =
+  | { kind: "tail"; sessionId: string }
+  | {
+      kind: "anchor";
+      sessionId: string;
+      element: HTMLElement | null;
+      sequences: string[];
+      top: number;
+      scrollTop: number;
+      scrollHeight: number;
+    };
+
+function sequenceOrder(left: SessionEvent, right: SessionEvent): number {
+  const leftSequence = BigInt(left.sequence_num);
+  const rightSequence = BigInt(right.sequence_num);
+  return leftSequence < rightSequence ? -1 : leftSequence > rightSequence ? 1 : 0;
+}
+
+function mergeSessionEvents(previous: SessionEvent[], incoming: SessionEvent[]): SessionEvent[] {
+  if (incoming.length === 0) return previous;
+  const bySequence = new Map(previous.map((event) => [event.sequence_num, event]));
+  let changed = false;
+  for (const event of incoming) {
+    const existing = bySequence.get(event.sequence_num);
+    if (existing === undefined || JSON.stringify(existing) !== JSON.stringify(event)) {
+      bySequence.set(event.sequence_num, event);
+      changed = true;
     }
   }
-  return rows;
+  return changed ? [...bySequence.values()].sort(sequenceOrder) : previous;
+}
+
+function mergeSessionPage(latest: SessionSummary[], previous: SessionSummary[]): SessionSummary[] {
+  const latestIds = new Set(latest.map((session) => session.id));
+  return [...latest, ...previous.filter((session) => !latestIds.has(session.id))];
 }
 
 function errorMessage(reason: unknown): string {
@@ -119,6 +186,99 @@ function SessionRow({
         </Stack>
       }
     />
+  );
+}
+
+function SessionList({
+  id,
+  sessions,
+  visibleSessions,
+  selectedId,
+  loadingSessions,
+  nextSessionCursor,
+  loadingMoreSessions,
+  search,
+  filter,
+  onSearchChange,
+  onFilterChange,
+  onSelect,
+  onLoadMore,
+}: {
+  id: string;
+  sessions: SessionSummary[];
+  visibleSessions: SessionSummary[];
+  selectedId: string | null;
+  loadingSessions: boolean;
+  nextSessionCursor: string | null;
+  loadingMoreSessions: boolean;
+  search: string;
+  filter: StatusFilter;
+  onSearchChange: (search: string) => void;
+  onFilterChange: (filter: StatusFilter) => void;
+  onSelect: (sessionId: string) => void;
+  onLoadMore: () => void;
+}): JSX.Element {
+  return (
+    <Paper
+      id={id}
+      component="aside"
+      aria-label="Session list"
+      withBorder
+      radius="sm"
+      p="xs"
+      style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}
+    >
+      <Stack gap="xs" style={{ flex: 1, minHeight: 0 }}>
+        <TextInput
+          label="Search loaded sessions"
+          type="search"
+          value={search}
+          onChange={(event) => onSearchChange(event.currentTarget.value)}
+        />
+        <Select
+          label="Status"
+          data={[
+            { value: "all", label: "All sessions" },
+            { value: "active", label: "Active" },
+            { value: "paused", label: "Paused" },
+            { value: "archived", label: "Archived" },
+          ]}
+          value={filter}
+          onChange={(value) => {
+            if (value !== null) onFilterChange(value as StatusFilter);
+          }}
+        />
+        <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
+          {loadingSessions ? (
+            <Center h={240}>
+              <Loader size="sm" aria-label="Loading sessions" />
+            </Center>
+          ) : visibleSessions.length === 0 ? (
+            <Center h={180} px="md">
+              <Text c="dimmed" ta="center">
+                {sessions.length === 0 ? "No sessions in the sync yet." : "No matching sessions."}
+              </Text>
+            </Center>
+          ) : (
+            <Stack gap={4}>
+              {visibleSessions.map((session) => (
+                <SessionRow
+                  key={session.id}
+                  session={session}
+                  selected={session.id === selectedId}
+                  onSelect={() => onSelect(session.id)}
+                />
+              ))}
+            </Stack>
+          )}
+          {nextSessionCursor !== null && (
+            <Button fullWidth variant="default" mt="xs" loading={loadingMoreSessions} onClick={onLoadMore}>
+              Load more sessions
+            </Button>
+          )}
+        </ScrollArea>
+      </Stack>
+    </Paper>
   );
 }
 
@@ -297,13 +457,32 @@ function ToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
               {(tool.result !== undefined || (tool.outputImages?.length ?? 0) > 0) && (
                 <Stack gap={4}>
                   <Text size="xs" c="dimmed">
-                    {tool.failed ? "Error output" : tool.name === "Bash" ? "Command output" : "Output"}
+                    {tool.filePreview !== undefined
+                      ? "File contents"
+                      : tool.failed
+                        ? "Error output"
+                        : tool.name === "Bash"
+                          ? "Command output"
+                          : "Output"}
                   </Text>
-                  {tool.result !== undefined && (
+                  {tool.filePreview !== undefined ? (
+                    <Stack gap={4} data-tool-file-preview>
+                      <Text size="xs" ff="monospace" c="dimmed" data-tool-file-path={tool.filePreview.path}>
+                        {tool.filePreview.path}
+                      </Text>
+                      <Code
+                        block
+                        style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}
+                        data-tool-file-content
+                      >
+                        {tool.filePreview.contents || "(empty file)"}
+                      </Code>
+                    </Stack>
+                  ) : tool.result !== undefined ? (
                     <Code block style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}>
                       {tool.result}
                     </Code>
-                  )}
+                  ) : null}
                   {tool.outputImages?.map((outputImage, imageIndex) => (
                     <Image
                       key={`${outputImage.mimeType}-${imageIndex}`}
@@ -355,44 +534,123 @@ function ToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
   );
 }
 
-function rawEvents(item: TranscriptItem): string {
-  return JSON.stringify(
-    item.events.map(({ event_type, sequence_num, created_at, payload }) => ({
-      event_type,
-      sequence_num,
-      created_at,
-      payload,
-    })),
-    null,
-    2
-  );
-}
-
-function RawEvents({ item }: { item: TranscriptItem }): JSX.Element {
+function FoldableDetail({ label, detail }: { label: string; detail: string }): JSX.Element {
+  const [expanded, setExpanded] = useState(false);
   return (
-    <Accordion variant="contained" radius="sm">
-      <Accordion.Item value="raw-events">
-        <Accordion.Control>Original event data</Accordion.Control>
-        <Accordion.Panel>
-          <ScrollArea type="auto" mah={384}>
-            <Code block>{rawEvents(item)}</Code>
-          </ScrollArea>
-        </Accordion.Panel>
-      </Accordion.Item>
-    </Accordion>
+    <Stack gap={4}>
+      <Group gap={4}>
+        <ActionIcon
+          variant={expanded ? "light" : "subtle"}
+          size="xs"
+          aria-label={expanded ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <Text size="xs" fw={600}>
+            {expanded ? "−" : "+"}
+          </Text>
+        </ActionIcon>
+        <Text size="xs" c="dimmed">
+          {label}
+        </Text>
+      </Group>
+      {expanded && (
+        <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          {detail}
+        </Text>
+      )}
+    </Stack>
   );
 }
 
-function TranscriptCard({
-  item,
-  showToolDetails,
-  session,
-}: {
-  item: TranscriptItem;
-  showToolDetails: boolean;
-  session: SessionSummary;
-}): JSX.Element {
+function CompactToolRun({ item }: { item: TranscriptToolRun }): JSX.Element {
+  const [expanded, setExpanded] = useState(false);
   const time = transcriptEventTime(item);
+  return (
+    <Paper
+      component="article"
+      aria-label={item.tools.length === 1 ? `${item.tools[0]?.name ?? "Tool"} activity` : "Tool activity"}
+      data-fold-kind="tool-run"
+      data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
+      data-tool-count={item.tools.length}
+      data-parent-tool-use-id={item.parentToolUseId}
+      withBorder
+      radius="sm"
+      p="xs"
+    >
+      <Group gap={4} wrap="nowrap">
+        <ActionIcon
+          variant={expanded ? "light" : "subtle"}
+          size="sm"
+          aria-label={expanded ? "Hide tool details" : "Show tool details"}
+          aria-expanded={expanded}
+          data-tool-run-toggle
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <Text size="xs" fw={600}>
+            {expanded ? "−" : "+"}
+          </Text>
+        </ActionIcon>
+        <Badge size="xs" variant="light" color="cyan">
+          {item.tools.length}
+        </Badge>
+        <Text size="xs" c="dimmed" lineClamp={1} style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>
+          {toolRunPreview(item)}
+        </Text>
+        <Badge size="xs" variant="dot" color={toolStatusColor(item.status)}>
+          {item.status}
+        </Badge>
+        {time !== null && (
+          <Text component="time" size="xs" c="dimmed" dateTime={item.events.at(-1)?.created_at}>
+            {time}
+          </Text>
+        )}
+      </Group>
+      {expanded && (
+        <Stack gap="sm" mt="xs">
+          <ToolRun item={item} />
+        </Stack>
+      )}
+    </Paper>
+  );
+}
+
+function TranscriptCard({ item, session }: { item: TranscriptItem; session: SessionSummary }): JSX.Element {
+  if (item.kind === "tool-run") return <CompactToolRun item={item} />;
+  const time = transcriptEventTime(item);
+  if (item.kind === "thinking") {
+    return (
+      <Paper
+        component="details"
+        aria-label="Thinking"
+        data-fold-kind="thinking"
+        data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
+        withBorder
+        radius="sm"
+        p="xs"
+      >
+        <Box component="summary" fz="xs" style={{ cursor: "pointer" }}>
+          <Text component="span" size="xs" fw={500}>
+            Thinking
+          </Text>
+          {time !== null && (
+            <Text
+              component="time"
+              size="xs"
+              c="dimmed"
+              dateTime={item.events.at(-1)?.created_at}
+              style={{ float: "right" }}
+            >
+              {time}
+            </Text>
+          )}
+        </Box>
+        <Text size="sm" mt="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          {item.text}
+        </Text>
+      </Paper>
+    );
+  }
   const title =
     item.kind === "message"
       ? item.role === "user"
@@ -404,44 +662,37 @@ function TranscriptCard({
           ? item.state === "held"
             ? "Peer message held"
             : "Peer message dropped"
-          : item.kind === "tool-run"
-            ? item.tools.length === 1
-              ? (item.tools[0]?.name ?? "Tool")
-              : "Tool run"
-            : item.kind === "activity"
-              ? item.title
-              : item.kind === "thinking"
-                ? "Thinking"
-                : item.kind === "context"
-                  ? "Context usage"
-                  : item.kind === "stats"
-                    ? "Code statistics"
-                    : item.kind === "usage"
-                      ? "Plan usage"
-                      : item.kind === "status"
-                        ? "Session status"
-                        : item.kind === "summary" || item.kind === "notice"
-                          ? item.title
-                          : "Transcript item";
+          : item.kind === "activity"
+            ? item.title
+            : item.kind === "context"
+              ? "Context usage"
+              : item.kind === "stats"
+                ? "Code statistics"
+                : item.kind === "usage"
+                  ? "Plan usage"
+                  : item.kind === "status"
+                    ? "Session status"
+                    : item.kind === "summary" || item.kind === "notice"
+                      ? item.title
+                      : "Transcript item";
   const color =
     item.kind === "message" || item.kind === "peer-message"
       ? item.kind === "message" && item.role === "assistant"
         ? "violet"
         : "blue"
-      : item.kind === "tool-run"
-        ? "cyan"
-        : item.kind === "peer-hold"
-          ? item.state === "held"
-            ? "yellow"
-            : "gray"
-          : "gray";
+      : item.kind === "peer-hold"
+        ? item.state === "held"
+          ? "yellow"
+          : "gray"
+        : "gray";
   return (
     <Paper
       component="article"
       aria-label={title}
       data-fold-kind={item.kind}
-      data-tool-count={item.kind === "tool-run" ? item.tools.length : undefined}
-      data-parent-tool-use-id={item.kind === "message" || item.kind === "tool-run" ? item.parentToolUseId : undefined}
+      data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
+      data-message-role={item.kind === "message" ? item.role : undefined}
+      data-parent-tool-use-id={item.kind === "message" ? item.parentToolUseId : undefined}
       data-peer-from={item.kind === "peer-message" || item.kind === "peer-hold" ? item.from : undefined}
       data-peer-handback={item.kind === "peer-message" && item.handback ? "true" : undefined}
       data-peer-state={item.kind === "peer-hold" ? item.state : undefined}
@@ -457,17 +708,7 @@ function TranscriptCard({
             <Badge variant="light" color={color}>
               {title}
             </Badge>
-            {item.kind === "tool-run" && (
-              <>
-                <Badge variant="light" color="cyan">
-                  {item.tools.length} {item.tools.length === 1 ? "tool" : "tools"}
-                </Badge>
-                <Badge variant="dot" color={toolStatusColor(item.status)}>
-                  {item.status}
-                </Badge>
-              </>
-            )}
-            {(item.kind === "message" || item.kind === "tool-run") && item.parentToolUseId !== undefined && (
+            {item.kind === "message" && item.parentToolUseId !== undefined && (
               <Badge size="xs" variant="light" color="blue">
                 Subagent
               </Badge>
@@ -522,40 +763,8 @@ function TranscriptCard({
             </Group>
           </Stack>
         )}
-        {item.kind === "tool-run" && (
-          <>
-            <Text size="sm" c="dimmed" lineClamp={2} style={{ overflowWrap: "anywhere" }}>
-              {toolRunPreview(item)}
-            </Text>
-            <Accordion key={showToolDetails ? "expanded" : "compact"} defaultValue={showToolDetails ? "details" : null}>
-              <Accordion.Item value="details">
-                <Accordion.Control>Tool details and original events</Accordion.Control>
-                <Accordion.Panel>
-                  <Stack gap="sm">
-                    <ToolRun item={item} />
-                    <RawEvents item={item} />
-                  </Stack>
-                </Accordion.Panel>
-              </Accordion.Item>
-            </Accordion>
-          </>
-        )}
         {item.kind === "activity" && item.detail !== undefined && (
-          <Text size="sm" c="dimmed">
-            {item.detail}
-          </Text>
-        )}
-        {item.kind === "thinking" && (
-          <Accordion variant="default" radius="sm">
-            <Accordion.Item value="thinking">
-              <Accordion.Control>Show thinking</Accordion.Control>
-              <Accordion.Panel>
-                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                  {item.text}
-                </Text>
-              </Accordion.Panel>
-            </Accordion.Item>
-          </Accordion>
+          <FoldableDetail label="Task details" detail={item.detail} />
         )}
         {item.kind === "summary" &&
           (item.details.length === 0 ? (
@@ -695,31 +904,36 @@ function TranscriptCard({
             </Text>
           </Stack>
         )}
-        {item.kind === "notice" && item.detail !== undefined && (
-          <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {item.detail}
-          </Text>
-        )}
-        {item.kind !== "tool-run" && <RawEvents item={item} />}
+        {item.kind === "notice" && item.detail !== undefined && <FoldableDetail label="Details" detail={item.detail} />}
       </Stack>
     </Paper>
   );
 }
 
 export function SessionViewer(): JSX.Element {
+  const isMobile = useMediaQuery("(max-width: 48em)", false);
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
-  const [showRoutineEvents, setShowRoutineEvents] = useState(false);
-  const [showToolDetails, setShowToolDetails] = useState(false);
   const [showRawEvents, setShowRawEvents] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(readSidebarVisibility);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+  const [layoutWidth, setLayoutWidth] = useState(0);
+  const [isResizing, setIsResizing] = useState(false);
+  const layoutRef = useRef<HTMLDivElement>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [nextSessionCursor, setNextSessionCursor] = useState<string | null>(null);
   const [resumeToken, setResumeToken] = useState<string | null>(null);
   const [watchStatus, setWatchStatus] = useState<WatchStatus>("connecting");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [events, setEvents] = useState<SessionEvent[]>([]);
-  // A watch refresh must never remove the transcript DOM or reset its scroll/disclosures.
+  const sessionsFilter = useRef<StatusFilter | null>(null);
   const loadedSession = useRef<string | null>(null);
+  const loadedEventsSession = useRef<string | null>(null);
+  const eventHistory = useRef<SessionEvent[]>([]);
+  const eventViewport = useRef<HTMLDivElement | null>(null);
+  const followTail = useRef(true);
+  const pendingTranscriptScroll = useRef<TranscriptScrollIntent | null>(null);
   const [nextEventCursor, setNextEventCursor] = useState<string | null>(null);
   const [hasMoreEvents, setHasMoreEvents] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -729,20 +943,147 @@ export function SessionViewer(): JSX.Element {
   const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
   const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
   const [refreshCount, setRefreshCount] = useState(0);
+  const [eventRefreshToken, setEventRefreshToken] = useState(0);
+  const refreshCountRef = useRef(refreshCount);
+  refreshCountRef.current = refreshCount;
+  const eventLoadRefreshCount = useRef(0);
+  const pendingEventRefresh = useRef<string | null>(null);
+  const olderPageRequest = useRef<AbortController | null>(null);
+
+  const captureScrollAnchor = useCallback((sessionId: string): void => {
+    const viewport = eventViewport.current;
+    if (viewport === null) return;
+    const viewportTop = viewport.getBoundingClientRect().top;
+    const candidates = [...viewport.querySelectorAll<HTMLElement>("[data-fold-kind], [data-raw-event]")];
+    const element = candidates.find((candidate) => candidate.getBoundingClientRect().bottom > viewportTop) ?? null;
+    const sequences =
+      element?.dataset.historySequences?.split(" ") ??
+      (element?.dataset.sequence === undefined ? [] : [element.dataset.sequence]);
+    pendingTranscriptScroll.current = {
+      kind: "anchor",
+      sessionId,
+      element,
+      sequences,
+      top: element?.getBoundingClientRect().top ?? viewportTop,
+      scrollTop: viewport.scrollTop,
+      scrollHeight: viewport.scrollHeight,
+    };
+  }, []);
+
+  const updateTail = useCallback((): void => {
+    const viewport = eventViewport.current;
+    if (viewport !== null) {
+      followTail.current = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 48;
+    }
+  }, []);
+
+  const setEventViewport = useCallback(
+    (viewport: HTMLDivElement | null): void => {
+      const previous = eventViewport.current;
+      if (previous !== null) previous.removeEventListener("scroll", updateTail);
+      eventViewport.current = viewport;
+      if (viewport === null) return;
+      viewport.addEventListener("scroll", updateTail, { passive: true });
+      updateTail();
+    },
+    [updateTail]
+  );
+
+  useLayoutEffect(() => {
+    const viewport = eventViewport.current;
+    const intent = pendingTranscriptScroll.current;
+    if (viewport === null || intent === null || intent.sessionId !== selectedId) return;
+    if (intent.kind === "tail") {
+      viewport.scrollTop = viewport.scrollHeight;
+      followTail.current = true;
+      pendingTranscriptScroll.current = null;
+      return;
+    }
+
+    let anchor = intent.element?.isConnected === true ? intent.element : null;
+    if (anchor === null && intent.sequences.length > 0) {
+      anchor =
+        [...viewport.querySelectorAll<HTMLElement>("[data-history-sequences], [data-sequence]")].find((candidate) => {
+          const sequences =
+            candidate.dataset.historySequences?.split(" ") ??
+            (candidate.dataset.sequence === undefined ? [] : [candidate.dataset.sequence]);
+          return intent.sequences.some((sequence) => sequences.includes(sequence));
+        }) ?? null;
+    }
+    if (anchor !== null) {
+      viewport.scrollTop += anchor.getBoundingClientRect().top - intent.top;
+    } else {
+      viewport.scrollTop = intent.scrollTop + (viewport.scrollHeight - intent.scrollHeight);
+    }
+    followTail.current = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 48;
+    pendingTranscriptScroll.current = null;
+  }, [events, selectedId]);
+
+  const availableLayoutWidth = layoutWidth || Math.max(0, window.innerWidth - 64);
+  const sidebarMaxWidth = maxSidebarWidth(availableLayoutWidth);
+  const visibleSidebarWidth = Math.min(sidebarWidth, sidebarMaxWidth);
+
+  useEffect(() => {
+    storeSidebarPreference(SIDEBAR_VISIBLE_STORAGE_KEY, String(sidebarVisible));
+  }, [sidebarVisible]);
+
+  useEffect(() => {
+    storeSidebarPreference(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    const layout = layoutRef.current;
+    if (layout === null) return;
+    const updateWidth = (): void => setLayoutWidth(layout.clientWidth);
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    if (typeof ResizeObserver === "undefined") {
+      return () => window.removeEventListener("resize", updateWidth);
+    }
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(layout);
+    return () => {
+      window.removeEventListener("resize", updateWidth);
+      observer.disconnect();
+    };
+  }, [isMobile, sidebarVisible]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const resize = (event: PointerEvent): void => {
+      const bounds = layoutRef.current?.getBoundingClientRect();
+      if (bounds !== undefined) {
+        setSidebarWidth(clampSidebarWidth(Math.min(event.clientX - bounds.left, maxSidebarWidth(bounds.width))));
+      }
+    };
+    const stopResizing = (): void => setIsResizing(false);
+    window.addEventListener("pointermove", resize);
+    window.addEventListener("pointerup", stopResizing);
+    window.addEventListener("pointercancel", stopResizing);
+    return () => {
+      window.removeEventListener("pointermove", resize);
+      window.removeEventListener("pointerup", stopResizing);
+      window.removeEventListener("pointercancel", stopResizing);
+    };
+  }, [isResizing]);
 
   useEffect(() => {
     let current = true;
+    const filterChanged = sessionsFilter.current !== filter;
     const statuses = filter === "all" ? ALL_STATUSES : [filter];
     // Only the first fetch needs a loading placeholder; watch refreshes retain the list.
     setSessionError(null);
     void listSessions(statuses)
       .then((page) => {
         if (!current) return;
-        setSessions(page.data);
+        sessionsFilter.current = filter;
+        setSessions((previous) => (filterChanged ? page.data : mergeSessionPage(page.data, previous)));
         setNextSessionCursor(page.next_cursor);
         setResumeToken(page.resume_token ?? null);
         setSelectedId((previous) =>
-          page.data.some((session) => session.id === previous) ? previous : (page.data[0]?.id ?? null)
+          filterChanged && !page.data.some((session) => session.id === previous)
+            ? (page.data[0]?.id ?? null)
+            : (previous ?? page.data[0]?.id ?? null)
         );
       })
       .catch((reason: unknown) => {
@@ -772,7 +1113,14 @@ export function SessionViewer(): JSX.Element {
     let current = true;
     if (selectedId === null) {
       loadedSession.current = null;
+      loadedEventsSession.current = null;
+      eventHistory.current = [];
+      pendingTranscriptScroll.current = null;
+      pendingEventRefresh.current = null;
+      olderPageRequest.current?.abort();
+      olderPageRequest.current = null;
       setLoadingEvents(false);
+      setLoadingMoreEvents(false);
       setEvents([]);
       setNextEventCursor(null);
       setHasMoreEvents(false);
@@ -780,20 +1128,38 @@ export function SessionViewer(): JSX.Element {
         current = false;
       };
     }
-    if (loadedSession.current !== selectedId) {
-      loadedSession.current = selectedId;
-      setLoadingEvents(true);
-      setEvents([]);
-      setNextEventCursor(null);
-      setHasMoreEvents(false);
-    }
+    loadedSession.current = selectedId;
+    loadedEventsSession.current = null;
+    eventHistory.current = [];
+    pendingTranscriptScroll.current = null;
+    pendingEventRefresh.current = null;
+    olderPageRequest.current?.abort();
+    olderPageRequest.current = null;
+    eventLoadRefreshCount.current = refreshCountRef.current;
+    followTail.current = true;
+    setLoadingEvents(true);
+    setLoadingMoreEvents(false);
+    setEvents([]);
+    setNextEventCursor(null);
+    setHasMoreEvents(false);
     setEventError(null);
-    void listSessionEvents(selectedId)
+    const controller = new AbortController();
+    void listSessionEvents(selectedId, undefined, "desc", controller.signal)
       .then((page) => {
-        if (!current) return;
-        setEvents(page.data);
+        if (!current || loadedSession.current !== selectedId) return;
+        const merged = mergeSessionEvents([], page.data);
+        eventHistory.current = merged;
+        loadedEventsSession.current = selectedId;
+        if (merged.length > 0) {
+          pendingTranscriptScroll.current = { kind: "tail", sessionId: selectedId };
+          setEvents(merged);
+        }
         setNextEventCursor(page.has_more ? page.last_id : null);
         setHasMoreEvents(page.has_more);
+        if (pendingEventRefresh.current === selectedId) {
+          pendingEventRefresh.current = null;
+          setEventRefreshToken((token) => token + 1);
+        }
       })
       .catch((reason: unknown) => {
         if (current) setEventError(errorMessage(reason));
@@ -803,8 +1169,66 @@ export function SessionViewer(): JSX.Element {
       });
     return () => {
       current = false;
+      controller.abort();
     };
-  }, [refreshCount, selectedId]);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (selectedId === null) return;
+    if (loadedEventsSession.current !== selectedId) {
+      if (refreshCount > eventLoadRefreshCount.current) pendingEventRefresh.current = selectedId;
+      return;
+    }
+    let current = true;
+    const controller = new AbortController();
+    setEventError(null);
+    void (async () => {
+      try {
+        const newestPage = await listSessionEvents(selectedId, undefined, "desc", controller.signal);
+        if (!current || loadedSession.current !== selectedId) return;
+        const previousNewest = eventHistory.current.at(-1);
+        const catchUpEvents: SessionEvent[] = [];
+        if (previousNewest !== undefined) {
+          let cursor = previousNewest.event_id;
+          while (true) {
+            const page = await listSessionEvents(selectedId, cursor, "asc", controller.signal);
+            if (!current || loadedSession.current !== selectedId) return;
+            const previousCursor = cursor;
+            if (page.data.length > 0) {
+              catchUpEvents.push(...page.data);
+              if (page.last_id === null) throw new Error("The event page omitted its cursor.");
+              cursor = page.last_id;
+            }
+            if (!page.has_more) break;
+            if (page.data.length === 0 || page.last_id === null || page.last_id === previousCursor) {
+              throw new Error("The event history cursor did not advance.");
+            }
+          }
+        }
+        if (!current || loadedSession.current !== selectedId) return;
+        const merged = mergeSessionEvents(eventHistory.current, [...newestPage.data, ...catchUpEvents]);
+        if (merged !== eventHistory.current) {
+          if (followTail.current) {
+            pendingTranscriptScroll.current = { kind: "tail", sessionId: selectedId };
+          } else {
+            captureScrollAnchor(selectedId);
+          }
+          eventHistory.current = merged;
+          setEvents(merged);
+        }
+        if (previousNewest === undefined) {
+          setNextEventCursor(newestPage.has_more ? newestPage.last_id : null);
+          setHasMoreEvents(newestPage.has_more);
+        }
+      } catch (reason) {
+        if (current && loadedSession.current === selectedId) setEventError(errorMessage(reason));
+      }
+    })();
+    return () => {
+      current = false;
+      controller.abort();
+    };
+  }, [captureScrollAnchor, eventRefreshToken, refreshCount, selectedId]);
 
   const visibleSessions = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -815,8 +1239,7 @@ export function SessionViewer(): JSX.Element {
 
   const selectedSession = sessions.find((session) => session.id === selectedId) ?? null;
   const transcript = useMemo(() => foldSessionEvents(events), [events]);
-  const rows = useMemo(() => transcriptRows(transcript, showRoutineEvents), [transcript, showRoutineEvents]);
-  const routineEventCount = transcript.filter((item) => item.kind === "notice" && item.routine).length;
+  const rows = transcript;
   const watchLabel =
     watchStatus === "connected" ? "Live updates on" : watchStatus === "connecting" ? "Connecting…" : "Reconnecting…";
 
@@ -839,233 +1262,275 @@ export function SessionViewer(): JSX.Element {
   }, [filter, loadingMoreSessions, nextSessionCursor]);
 
   const loadMoreEvents = useCallback(async (): Promise<void> => {
-    if (selectedId === null || nextEventCursor === null || loadingMoreEvents) return;
+    const sessionId = selectedId;
+    if (sessionId === null || nextEventCursor === null || loadingMoreEvents) return;
+    const controller = new AbortController();
+    olderPageRequest.current?.abort();
+    olderPageRequest.current = controller;
     setLoadingMoreEvents(true);
     setEventError(null);
     try {
-      const page = await listSessionEvents(selectedId, nextEventCursor);
-      setEvents((previous) => [...previous, ...page.data]);
+      const page = await listSessionEvents(sessionId, nextEventCursor, "desc", controller.signal);
+      if (controller.signal.aborted || loadedSession.current !== sessionId) return;
+      const merged = mergeSessionEvents(eventHistory.current, page.data);
+      if (merged !== eventHistory.current) {
+        captureScrollAnchor(sessionId);
+        eventHistory.current = merged;
+        setEvents(merged);
+      }
       setNextEventCursor(page.has_more ? page.last_id : null);
       setHasMoreEvents(page.has_more);
     } catch (reason) {
-      setEventError(errorMessage(reason));
+      if (!controller.signal.aborted && loadedSession.current === sessionId) setEventError(errorMessage(reason));
     } finally {
-      setLoadingMoreEvents(false);
+      if (olderPageRequest.current === controller) {
+        olderPageRequest.current = null;
+        if (loadedSession.current === sessionId) setLoadingMoreEvents(false);
+      }
     }
-  }, [loadingMoreEvents, nextEventCursor, selectedId]);
+  }, [captureScrollAnchor, loadingMoreEvents, nextEventCursor, selectedId]);
+
+  const toggleSidebar = (): void => {
+    if (isMobile) {
+      setMobileDrawerOpen((opened) => !opened);
+    } else {
+      setSidebarVisible((visible) => !visible);
+    }
+  };
+
+  const renderSessionList = (id: string, closeDrawerOnSelect: boolean): JSX.Element => (
+    <SessionList
+      id={id}
+      sessions={sessions}
+      visibleSessions={visibleSessions}
+      selectedId={selectedId}
+      loadingSessions={loadingSessions}
+      nextSessionCursor={nextSessionCursor}
+      loadingMoreSessions={loadingMoreSessions}
+      search={search}
+      filter={filter}
+      onSearchChange={setSearch}
+      onFilterChange={setFilter}
+      onSelect={(sessionId) => {
+        setSelectedId(sessionId);
+        if (closeDrawerOnSelect) setMobileDrawerOpen(false);
+      }}
+      onLoadMore={() => void loadMoreSessions()}
+    />
+  );
 
   return (
-    <Paper component="div" role="region" aria-labelledby="session-viewer-title" withBorder radius="md" p="md">
-      <Stack gap="md">
-        <Group justify="space-between" align="center">
-          <Stack gap={4}>
-            <Title id="session-viewer-title" order={2} size="h3">
-              Sessions
-            </Title>
-            <Text size="sm" c="dimmed">
-              Read-only view of the synced Claude Code session history.
-            </Text>
-          </Stack>
-          <Group gap="sm">
-            {resumeToken !== null && (
-              <Badge role="status" variant="dot" color={watchStatus === "connected" ? "green" : "yellow"}>
-                {watchLabel}
-              </Badge>
-            )}
-            <Button variant="default" onClick={() => setRefreshCount((count) => count + 1)}>
-              Refresh
-            </Button>
+    <>
+      <Paper
+        component="div"
+        role="region"
+        aria-label="Session history"
+        withBorder
+        radius="md"
+        p="md"
+        style={{ display: "flex", flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden" }}
+      >
+        <Stack gap="sm" style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+          <Group justify="flex-end" align="center" wrap="wrap">
+            <Group gap="sm">
+              {resumeToken !== null && (
+                <Badge role="status" variant="dot" color={watchStatus === "connected" ? "green" : "yellow"}>
+                  {watchLabel}
+                </Badge>
+              )}
+              <Button
+                variant="default"
+                aria-controls={isMobile ? "session-sidebar-mobile" : "session-sidebar"}
+                aria-expanded={isMobile ? mobileDrawerOpen : sidebarVisible}
+                onClick={toggleSidebar}
+              >
+                {isMobile ? "Session list" : sidebarVisible ? "Hide session list" : "Show session list"}
+              </Button>
+              <Button variant="default" onClick={() => setRefreshCount((count) => count + 1)}>
+                Refresh
+              </Button>
+            </Group>
           </Group>
-        </Group>
 
-        <SimpleGrid cols={{ base: 1, sm: 2 }}>
-          <TextInput
-            label="Search loaded sessions"
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.currentTarget.value)}
-          />
-          <Select
-            label="Status"
-            data={[
-              { value: "all", label: "All sessions" },
-              { value: "active", label: "Active" },
-              { value: "paused", label: "Paused" },
-              { value: "archived", label: "Archived" },
-            ]}
-            value={filter}
-            onChange={(value) => {
-              if (value !== null) setFilter(value as StatusFilter);
+          {sessionError !== null && (
+            <Alert color="red" title="Could not load sessions">
+              {sessionError}
+            </Alert>
+          )}
+
+          <div
+            ref={layoutRef}
+            data-session-viewer-layout
+            style={{
+              display: "flex",
+              flex: 1,
+              minHeight: 0,
+              minWidth: 0,
+              overflow: "hidden",
+              userSelect: isResizing ? "none" : undefined,
             }}
-          />
-        </SimpleGrid>
+          >
+            {!isMobile && sidebarVisible && (
+              <div
+                data-session-sidebar-width={visibleSidebarWidth}
+                style={{ flex: `0 0 ${visibleSidebarWidth}px`, minWidth: 0, overflow: "hidden" }}
+              >
+                {renderSessionList("session-sidebar", false)}
+              </div>
+            )}
+            {!isMobile && sidebarVisible && (
+              <div
+                role="separator"
+                aria-label="Resize session list"
+                aria-controls="session-sidebar"
+                aria-orientation="vertical"
+                aria-valuemin={SIDEBAR_MIN_WIDTH}
+                aria-valuemax={sidebarMaxWidth}
+                aria-valuenow={visibleSidebarWidth}
+                aria-valuetext={`${visibleSidebarWidth} pixels`}
+                tabIndex={0}
+                data-session-sidebar-resizer
+                onPointerDown={(event) => {
+                  if (event.button !== 0 || event.isPrimary === false) return;
+                  event.preventDefault();
+                  setIsResizing(true);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") {
+                    event.preventDefault();
+                    setSidebarWidth(clampSidebarWidth(visibleSidebarWidth - 16));
+                  } else if (event.key === "ArrowRight") {
+                    event.preventDefault();
+                    setSidebarWidth(clampSidebarWidth(Math.min(visibleSidebarWidth + 16, sidebarMaxWidth)));
+                  } else if (event.key === "Home") {
+                    event.preventDefault();
+                    setSidebarWidth(SIDEBAR_MIN_WIDTH);
+                  } else if (event.key === "End") {
+                    event.preventDefault();
+                    setSidebarWidth(sidebarMaxWidth);
+                  }
+                }}
+                style={{
+                  alignSelf: "stretch",
+                  cursor: "col-resize",
+                  flex: `0 0 ${SIDEBAR_RESIZER_WIDTH}px`,
+                  outlineOffset: -2,
+                  touchAction: "none",
+                  userSelect: isResizing ? "none" : undefined,
+                }}
+              >
+                <div
+                  aria-hidden="true"
+                  style={{
+                    borderLeft: "1px solid var(--mantine-color-default-border)",
+                    height: "100%",
+                    margin: "auto",
+                    width: 1,
+                  }}
+                />
+              </div>
+            )}
 
-        {sessionError !== null && (
-          <Alert color="red" title="Could not load sessions">
-            {sessionError}
-          </Alert>
-        )}
-
-        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-          <Paper component="aside" aria-label="Session list" withBorder radius="sm" p="xs">
-            <ScrollArea h="min(32rem, 60vh)" type="auto">
-              {loadingSessions ? (
+            <Paper
+              component="div"
+              role="region"
+              aria-label="Session transcript"
+              withBorder
+              radius="sm"
+              p="md"
+              style={{ flex: 1, height: "100%", minHeight: 0, minWidth: 0, overflow: "hidden" }}
+            >
+              {selectedSession === null ? (
                 <Center h={240}>
-                  <Loader size="sm" aria-label="Loading sessions" />
-                </Center>
-              ) : visibleSessions.length === 0 ? (
-                <Center h={180} px="md">
                   <Text c="dimmed" ta="center">
-                    {sessions.length === 0 ? "No sessions in the sync yet." : "No matching sessions."}
+                    Select a session to view its transcript.
                   </Text>
                 </Center>
               ) : (
-                <Stack gap={4}>
-                  {visibleSessions.map((session) => (
-                    <SessionRow
-                      key={session.id}
-                      session={session}
-                      selected={session.id === selectedId}
-                      onSelect={() => setSelectedId(session.id)}
-                    />
-                  ))}
+                <Stack gap="md" aria-busy={loadingEvents} style={{ height: "100%", minHeight: 0 }}>
+                  <Group justify="space-between" align="flex-start" gap="xs">
+                    <Stack gap={4}>
+                      <Title order={4}>{selectedSession.title || "Untitled session"}</Title>
+                      <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
+                        {sessionSubtitle(selectedSession)}
+                      </Text>
+                    </Stack>
+                    <Group gap={4}>
+                      <Badge variant="light" color={statusColor(selectedSession.status)}>
+                        {selectedSession.status}
+                      </Badge>
+                      <Button
+                        variant={showRawEvents ? "light" : "subtle"}
+                        size="compact-xs"
+                        aria-label={showRawEvents ? "Show folded transcript" : "Show raw event stream"}
+                        aria-pressed={showRawEvents}
+                        onClick={() => setShowRawEvents((value) => !value)}
+                      >
+                        {showRawEvents ? "Transcript" : "Events"}
+                      </Button>
+                    </Group>
+                  </Group>
+
+                  {eventError !== null && (
+                    <Alert color="red" title="Could not load transcript">
+                      {eventError}
+                    </Alert>
+                  )}
+
+                  {loadingEvents ? (
+                    <Center h={180}>
+                      <Loader size="sm" aria-label="Loading transcript" />
+                    </Center>
+                  ) : events.length === 0 ? (
+                    <Center h={180}>
+                      <Text c="dimmed" ta="center">
+                        No events are stored for this session yet.
+                      </Text>
+                    </Center>
+                  ) : (
+                    <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto" viewportRef={setEventViewport}>
+                      <Stack gap="sm" pr="sm">
+                        {hasMoreEvents && (
+                          <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
+                            Load older events
+                          </Button>
+                        )}
+                        {showRawEvents ? (
+                          <EventInspector key={selectedId} events={events} />
+                        ) : transcript.length === 0 ? (
+                          <Text size="sm" c="dimmed" role="status">
+                            No loaded events appear in the folded transcript.
+                          </Text>
+                        ) : (
+                          rows.map((row) => (
+                            <TranscriptCard key={`${row.kind}-${row.id}`} item={row} session={selectedSession} />
+                          ))
+                        )}
+                      </Stack>
+                    </ScrollArea>
+                  )}
                 </Stack>
               )}
-              {nextSessionCursor !== null && (
-                <Button
-                  fullWidth
-                  variant="default"
-                  mt="xs"
-                  loading={loadingMoreSessions}
-                  onClick={() => void loadMoreSessions()}
-                >
-                  Load more sessions
-                </Button>
-              )}
-            </ScrollArea>
-          </Paper>
-
-          <Paper component="div" role="region" aria-label="Session transcript" withBorder radius="sm" p="md">
-            {selectedSession === null ? (
-              <Center h={240}>
-                <Text c="dimmed" ta="center">
-                  Select a session to view its transcript.
-                </Text>
-              </Center>
-            ) : (
-              <Stack gap="md" aria-busy={loadingEvents}>
-                <Group justify="space-between" align="flex-start" gap="xs">
-                  <Stack gap={4}>
-                    <Title order={4}>{selectedSession.title || "Untitled session"}</Title>
-                    <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
-                      {sessionSubtitle(selectedSession)}
-                    </Text>
-                  </Stack>
-                  <Badge variant="light" color={statusColor(selectedSession.status)}>
-                    {selectedSession.status}
-                  </Badge>
-                </Group>
-
-                <Group gap="md">
-                  <Switch
-                    label="Raw event stream"
-                    checked={showRawEvents}
-                    onChange={(event) => setShowRawEvents(event.currentTarget.checked)}
-                  />
-                  {!showRawEvents && (
-                    <>
-                      <Switch
-                        label={`Show routine events (${routineEventCount})`}
-                        checked={showRoutineEvents}
-                        onChange={(event) => setShowRoutineEvents(event.currentTarget.checked)}
-                      />
-                      <Switch
-                        label="Expand tool details"
-                        checked={showToolDetails}
-                        onChange={(event) => setShowToolDetails(event.currentTarget.checked)}
-                      />
-                    </>
-                  )}
-                </Group>
-
-                {eventError !== null && (
-                  <Alert color="red" title="Could not load transcript">
-                    {eventError}
-                  </Alert>
-                )}
-
-                {loadingEvents ? (
-                  <Center h={180}>
-                    <Loader size="sm" aria-label="Loading transcript" />
-                  </Center>
-                ) : (showRawEvents ? events.length === 0 : transcript.length === 0) ? (
-                  <Center h={180}>
-                    <Text c="dimmed" ta="center">
-                      No events are stored for this session yet.
-                    </Text>
-                  </Center>
-                ) : (
-                  <ScrollArea h="min(32rem, 60vh)" type="auto">
-                    <Stack gap="sm" pr="sm">
-                      {showRawEvents
-                        ? events.map((event) => (
-                            <Paper
-                              key={event.event_id}
-                              component="article"
-                              aria-label={`Raw event ${event.sequence_num}`}
-                              data-raw-event
-                              withBorder
-                              radius="sm"
-                              p="sm"
-                            >
-                              <Text size="xs" c="dimmed" mb="xs">
-                                {event.sequence_num} · {event.event_type}
-                              </Text>
-                              <Code block style={{ maxHeight: 384, overflow: "auto", whiteSpace: "pre-wrap" }}>
-                                {JSON.stringify(event, null, 2)}
-                              </Code>
-                            </Paper>
-                          ))
-                        : rows.map((row) =>
-                            row.kind === "routine-group" ? (
-                              <Paper
-                                key={`routine-${row.id}`}
-                                data-fold-kind="routine-group"
-                                withBorder
-                                radius="sm"
-                                p="xs"
-                              >
-                                <Group justify="space-between" gap="xs">
-                                  <Text size="xs" c="dimmed">
-                                    {row.count} routine {row.count === 1 ? "event" : "events"} hidden
-                                  </Text>
-                                  <Button size="compact-xs" variant="subtle" onClick={() => setShowRoutineEvents(true)}>
-                                    Show
-                                  </Button>
-                                </Group>
-                              </Paper>
-                            ) : (
-                              <TranscriptCard
-                                key={`${row.kind}-${row.id}`}
-                                item={row}
-                                showToolDetails={showToolDetails}
-                                session={selectedSession}
-                              />
-                            )
-                          )}
-                      {hasMoreEvents && (
-                        <Button variant="default" loading={loadingMoreEvents} onClick={() => void loadMoreEvents()}>
-                          Load more events
-                        </Button>
-                      )}
-                    </Stack>
-                  </ScrollArea>
-                )}
-              </Stack>
-            )}
-          </Paper>
-        </SimpleGrid>
-      </Stack>
-    </Paper>
+            </Paper>
+          </div>
+        </Stack>
+      </Paper>
+      {isMobile && (
+        <Drawer
+          opened={mobileDrawerOpen}
+          onClose={() => setMobileDrawerOpen(false)}
+          title="Sessions"
+          position="left"
+          size="min(88vw, 24rem)"
+          padding="md"
+          styles={{
+            body: { display: "flex", height: "calc(100dvh - 5rem)", minHeight: 0 },
+            content: { height: "100dvh" },
+          }}
+        >
+          {renderSessionList("session-sidebar-mobile", true)}
+        </Drawer>
+      )}
+    </>
   );
 }

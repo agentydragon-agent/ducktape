@@ -1,41 +1,72 @@
 const SYNC_READY = ["#overview-heading", "#pairing-heading"];
 const VIEWER_READY = [
-  "#session-viewer-title",
+  '[aria-label="Session history"]',
   '[data-fold-kind="tool-run"][data-tool-count="5"]',
-  '[data-tool-name="Bash"]',
-  '[data-tool-name="Grep"]',
-  '[data-tool-name="Glob"]',
-  '[data-tool-name="Read"]',
-  '[data-tool-name="Task"]',
-  "[data-tool-output-image]",
+  "[data-tool-run-toggle]",
 ];
-const TOOL_RESULT_READY = ["#session-viewer-title", '[data-tool-name="Read"]', "[data-tool-output-image]"];
+const TOOL_RESULT_READY = ['[aria-label="Session history"]', '[data-tool-name="Read"]', "[data-tool-output-image]"];
+const READ_FILE_READY = [
+  '[aria-label="Session history"]',
+  '[data-tool-file-path="src/session-viewer.ts"]',
+  "[data-tool-file-preview]",
+];
+const EVENT_VISIBILITY_READY = [
+  '[aria-label="Session history"]',
+  '[data-fold-kind="message"][data-message-role="user"]',
+  '[data-fold-kind="message"][data-message-role="assistant"]',
+];
 const SUBAGENT_READY = [
-  "#session-viewer-title",
+  '[aria-label="Session history"]',
   '[data-subagent-activity][data-subagent-tool-count="2"]',
   '[data-subagent-latest-tool="Grep"]',
-  '[data-parent-tool-use-id="agent-17"] [data-tool-name="Grep"]',
 ];
 const PEER_HOLD_READY = [
-  "#session-viewer-title",
+  '[aria-label="Session history"]',
   '[data-fold-kind="peer-message"][data-peer-from="plan-agent"]',
   '[data-fold-kind="peer-hold"][data-peer-state="held"]',
   '[data-fold-kind="peer-hold"][data-peer-state="dropped"]',
 ];
 const PEER_MESSAGE_READY = [
-  "#session-viewer-title",
+  '[aria-label="Session history"]',
   '[data-fold-kind="peer-message"][data-peer-from="review-agent"][data-peer-handback="true"]',
 ];
 
 const LOCAL_COMMAND_READY = [
-  "#session-viewer-title",
+  '[aria-label="Session history"]',
   '[data-fold-kind="context"][data-context-model="claude-sonnet-4-5"]',
   '[data-fold-kind="stats"][data-stats-state="data"]',
   '[data-fold-kind="usage"]',
   '[data-fold-kind="status"]',
 ];
 
+const NOISY_READY = ['#app[data-noisy-ready="true"]'];
+const SIDEBAR_EXPANDED_READY = ['#app[data-noisy-ready="true"][data-sidebar-ready="expanded"]'];
+const LATEST_TAIL_READY = ['#app[data-latest-tail-ready="true"]'];
+const HISTORY_ANCHOR_READY = ['#app[data-history-anchor-ready="true"]'];
+
 export const SCENARIOS = {
+  SessionNoisySidebar: { element: "#app", readySelectors: SIDEBAR_EXPANDED_READY },
+  SessionNoisySidebarCollapsed: {
+    element: "#app",
+    readySelectors: ['#app[data-noisy-ready="true"][data-sidebar-ready="collapsed"]'],
+  },
+  SessionNoisySidebarWide: {
+    element: "#app",
+    readySelectors: ['#app[data-noisy-ready="true"][data-sidebar-ready="wide"]'],
+  },
+  SessionNoisySidebar_mobile: {
+    element: "#app",
+    readySelectors: ['#app[data-noisy-ready="true"][data-sidebar-ready="mobile-open"]'],
+    viewport: { width: 420, height: 900 },
+  },
+  SessionNoisy: { element: "#app", readySelectors: NOISY_READY },
+  SessionNoisy_mobile: { element: "#app", readySelectors: NOISY_READY, viewport: { width: 420, height: 900 } },
+  SessionNoisyThinking: { element: "#app", readySelectors: NOISY_READY },
+  SessionNoisyRaw: { element: "#app", readySelectors: NOISY_READY },
+  SessionNoisyHook: { element: "#app", readySelectors: NOISY_READY },
+  SessionNoisyHook_mobile: { element: "#app", readySelectors: NOISY_READY, viewport: { width: 420, height: 900 } },
+  SessionLatestFirstTail: { element: "#app", readySelectors: LATEST_TAIL_READY },
+  SessionLatestFirstAnchor: { element: "#app", readySelectors: HISTORY_ANCHOR_READY },
   SessionViewer: { element: "#app", readySelectors: VIEWER_READY },
   SessionViewer_dark: { element: "#app", readySelectors: VIEWER_READY, colorScheme: "dark" },
   SessionViewer_mobile: {
@@ -47,6 +78,18 @@ export const SCENARIOS = {
   SessionToolResult_mobile: {
     element: "#app",
     readySelectors: TOOL_RESULT_READY,
+    viewport: { width: 420, height: 900 },
+  },
+  SessionReadFileResult: { element: "#app", readySelectors: READ_FILE_READY },
+  SessionReadFileResult_mobile: {
+    element: "#app",
+    readySelectors: READ_FILE_READY,
+    viewport: { width: 420, height: 900 },
+  },
+  SessionEventVisibility: { element: "#app", readySelectors: EVENT_VISIBILITY_READY },
+  SessionEventVisibility_mobile: {
+    element: "#app",
+    readySelectors: EVENT_VISIBILITY_READY,
     viewport: { width: 420, height: 900 },
   },
   SessionSubagent: { element: "#app", readySelectors: SUBAGENT_READY },
