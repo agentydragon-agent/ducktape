@@ -44,6 +44,7 @@ MANAGER = ServiceAccountRef(namespace=NAMESPACE, name="test-integration-app")
 class Authentication:
     async def create_token_review(self, body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
         return k8s_client.V1TokenReview(
+            spec=body.spec,
             status=k8s_client.V1TokenReviewStatus(
                 authenticated=body.spec.token == TOKEN,
                 audiences=[AUDIENCE],

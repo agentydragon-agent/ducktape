@@ -189,11 +189,13 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         stopped = await runner.attach(SESSION)
         try:
             async with asyncio.timeout(20):
-                while True:
-                    try:
-                        entry = await stopped.next_entry()
-                    except StreamClosedError:
-                        break
+                cursor = 0
+                # A fresh follow of a stopped session can remain open for a future resume.
+                # Check its retained snapshot prefix, not an EOF that this attachment needn't see.
+                while cursor < stopped.attached.last_cursor:
+                    entry = await stopped.next_entry()
+                    assert entry.cursor > cursor
+                    cursor = entry.cursor
                     assert entry.event.command_admitted.command.command_id != "no-wake"
         finally:
             stopped.cancel()
