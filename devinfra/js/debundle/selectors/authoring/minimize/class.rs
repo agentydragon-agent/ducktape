@@ -9,7 +9,7 @@ use swc_ecma_ast::*;
 
 use super::read_off_candidates;
 use crate::render::{
-    AnchorSpan, anything_expr, anything_param, emit_selector, holed_function_body, ident_node,
+    AnchorSpan, anything_expr, anything_param, collapse_omitted_runs, emit_selector, holed_function_body, ident_node,
     node_retains_any,
 };
 use crate::{
@@ -93,20 +93,13 @@ fn class_rest_member() -> ClassMember {
 }
 
 fn hole_class_members(members: &[ClassMember], kept: &BTreeSet<AnchorSpan>) -> Vec<ClassMember> {
-    let mut out = Vec::new();
-    let mut dropped_run = false;
-    for member in members {
-        if node_retains_any(member.span(), kept) {
-            if dropped_run {
-                out.push(class_rest_member());
-                dropped_run = false;
-            }
-            out.push(hole_class_member(member, kept));
-        } else {
-            dropped_run = true;
-        }
-    }
-    if dropped_run || out.is_empty() {
+    let mut out = collapse_omitted_runs(
+        members.iter().map(|member| {
+            node_retains_any(member.span(), kept).then(|| hole_class_member(member, kept))
+        }),
+        class_rest_member,
+    );
+    if out.is_empty() {
         out.push(class_rest_member());
     }
     out
