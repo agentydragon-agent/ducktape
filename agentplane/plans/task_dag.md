@@ -74,7 +74,7 @@ flowchart TB
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
-    ING["Deferred support<br/>Event & Notification Hub<br/>Action decisions and subscribed external events -> Thread ingress"]:::future
+    ING["Planned service<br/>Subscriptions and notifications<br/>Action inbox -> runner notice; external providers later"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
     HARNESS_SKILLS["Unranked candidate<br/>project-scoped skills and commands<br/>both native harnesses"]:::future
@@ -122,11 +122,11 @@ flowchart TB
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
     CROSS_IDENTITY_READ_POLICY --> AG
-    CROSS_IDENTITY_READ_POLICY -. cross-Identity delivery .-> ING
+    CROSS_IDENTITY_READ_POLICY -. future cross-Identity delivery only .-> ING
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
 
-    INPUT_DELIVERY -. reliable Thread ingress .-> ING
+    INPUT_DELIVERY -. bounds recovery guarantees .-> ING
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_WEB_SEARCH
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_VISUAL_INPUT
@@ -939,9 +939,9 @@ does not yet.
 ### `CROSS_IDENTITY_READ_POLICY` — an explicit policy for reading across Identities
 
 **Deferred decision:** what one Identity may read of another's Threads, stated explicitly rather
-than left to whatever a query happens to reach. This is the piece `ING` actually waits on — its
-cross-Identity delivery needs the policy, not the hosted lifecycle or the surfaces — which the
-merged node hid by making `ING` look blocked on all three.
+than left to whatever a query happens to reach. Future cross-Identity notification delivery needs
+this policy, not the hosted lifecycle or surfaces. The [subscriptions v1](notifications.md) stays within a sandbox trust boundary and does
+not wait on cross-Identity delivery policy.
 
 ### `AG` — hosted Agent and Thread model
 
@@ -957,28 +957,26 @@ second tool-request lifecycle; the settled harness behavior and the seam are in
 
 ### `ING` — Event & Notification Hub
 
-**Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
-user/Agent subscriptions, and deliver structured events into an Agent/Thread ingress. The Hub owns
-subscription matching, deduplication, batching/debounce, rate limits, backpressure, offline delivery,
-and Thread wake/queue semantics. It is not an executor or an Action decision authority. It consumes
-the canonical Action event sequence, preserving individual events and ordering, and adds no second
-Action outbox or event store; cross-Identity delivery requires an explicit read policy, which is
-`CROSS_IDENTITY_READ_POLICY`.
+**Planned, not implemented:** the [standalone subscriptions service plan](notifications.md) records
+v1 decisions, implementation order, acceptance criteria, and deferred work. This is an independent
+service, not integration-app notification machinery or browser Web Push.
 
-Make Action approval and denial notifications an explicit first consumer: deliver the
-decision to the requesting Agent/Thread, correlated with the original Action request.
-Distinguish approval from execution success and preserve later execution results/errors.
-Use this same ingress for subscribed external notifications, with an agent-facing
-interface to create, inspect, update, and cancel subscriptions (initially including
-GitHub event filters), subject to source authorization and destination access checks.
+V1 follows canonical Action events with explicit, replayable subscriptions owned by Threads and
+authorized at the sandbox boundary. All calls name the Thread explicitly. The service owns an inbox
+with non-destructive reads and an explicit acknowledgement HWM, and submits batched automated inbox
+notices through the existing runner protocol. It tracks admission separately from harness confirmation
+and never reminds merely because confirmed notifications remain unacknowledged. Providers own content,
+filter vocabulary, and source verification; the Action Service remains the Action authority.
 
-Define notification identity, provenance, ordering, retry/deduplication, and the point
-at which delivery is confirmed by the harness. Notifications are not fabricated human
-messages or runner observations. Specify busy, suspended, and unavailable Thread
-behavior before promising offline delivery; this deferred Hub must not silently add
-an app command queue to the current runner-only design. Test approval/denial while an
-agent is busy or disconnected, duplicate/replayed events, subscription cancellation,
-unauthorized sources/destinations, and truthful delivery state after reconnect.
+Concrete prerequisites are trusted workload/sandbox/Thread/session bindings and lifecycle signals,
+authorized Action source reads, and authenticated destination-scoped runner access. Trust the service
+with that session's full protocol/history; do not build command-level runner RBAC. Existing busy-turn
+input and receipt behavior is usable now; the remaining `INPUT_DELIVERY` evidence bounds recovery
+claims rather than requiring a new common queue or completion of every native capability experiment.
+
+Deliver only to running harnesses in v1; temporary absence does not destroy subscriptions. Automatic
+Action following, GitHub, return-time catch-up notices, and notification-triggered resume come later.
+Cross-Identity delivery policy is a prerequisite only for that future extension, not same-sandbox v1.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 
