@@ -32,28 +32,24 @@ Safety evidence outranks speculative deletion counts. Source inspection is not
 an end-to-end reproduction; performance candidates require fresh opt profiles.
 The sections below hold details, not competing priority queues.
 
-1. **Context-aware JavaScript names and vendor emission.** Distinguish binding
-   identifiers from exported property names before deduplicating validators;
-   replace unsafe wrapper interpolation with AST construction and parser/Node
-   regressions. A blanket reserved-word ban would reject valid export names.
-2. **Strict spec automation.** Keep next-version porting the product target.
+1. **Strict spec automation.** Keep next-version porting the product target.
    Prioritize unknown-field/default consistency, correct edits and explicit
    skipped-candidate reasons. Whole-document YAML reserialization, unrelated
    formatting changes and dropping comments are acceptable: text preservation
    is not a requirement. Keep gate-before-write, atomic writes and dry-run
    reporting, not the input's textual layout.
-3. **Public browser smoke.** Build <plans/excalidraw_live_smoke.md> and cover
+2. **Public browser smoke.** Build <plans/excalidraw_live_smoke.md> and cover
    bundled vendor singleton/importmap behavior. Node probes already run;
    browser loading is the missing contract, not a missing vendor schema.
-4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
+3. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
    and alpha-binding snapshots before ownership redesign, indexes or undo logs.
    Preserve ordering/hygiene and the independent Node differential oracle.
    Anonymous uniqueness uses coarse semantic-token buckets with exact equality;
    profile real workloads before adding more fingerprint machinery.
-5. **Remaining selector authoring gaps.** Follow <SELECTOR_BUGS.md> and the
+4. **Remaining selector authoring gaps.** Follow <SELECTOR_BUGS.md> and the
    minimizer work below. Solver-domain gap reachability still needs investigation;
    keep near-miss ranking heuristics distinct from boolean backtracking.
-6. **Remaining responsibility seams.** Extract vendor/lowering boundaries only
+5. **Remaining responsibility seams.** Extract vendor/lowering boundaries only
    when they simplify real callers. Prefer deleting redundant setup over deleting
    behavioral assertions or adding test frameworks.
 
@@ -237,16 +233,6 @@ confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
   falls back to its default; a `spec/spec_tree.rs` test carried exactly that typo and
   still passed. Adding `deny_unknown_fields` is a behaviour change: a spec with a
   typo then fails to load.
-- **Vendor name validation accepts reserved words.** Status: function read,
-  reachability not checked. `vendor/mod.rs` `is_valid_identifier` accepts
-  `class`, `default` and `await`; it gates namespace, local and facade names that
-  `vendor/validate.rs` emits as binding names, so a reserved word would produce
-  unparseable JS. `lowering/util.rs` `is_valid_js_identifier` rejects reserved
-  words. Related, reported: `vendor/wrappers.rs` uses string interpolation to
-  build `export const {name} = _d.{name};`, so a string-literal export name in a
-  vendor chunk yields invalid JS (and bypasses the AST-only rule). Use one identifier
-  policy with separate binding-identifier and IdentifierName contexts; do not
-  reject valid string-literal exports merely to reuse a binding check.
 - **One SCC reads differently by path in the peel kernel.** Status: reported,
   likely benign. The post-seed reporting in `peel/quotient.rs` keeps an SCC
   whose owners collapse into one class, while the `translate_*` helpers drop it
