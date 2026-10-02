@@ -41,7 +41,12 @@ impl GraphFixture {
             },
             &[],
         );
-        assert_eq!(run.result.status.success(), succeeds, "{}", run.result.stderr);
+        assert_eq!(
+            run.result.status.success(),
+            succeeds,
+            "{}",
+            run.result.stderr
+        );
         let modules_root = run._root.path().join("modules/main");
         if files.is_empty() {
             fs::remove_file(modules_root.join("empty.yaml")).unwrap();
@@ -82,9 +87,15 @@ impl GraphFixture {
         Self::new(
             "const beta = 1;\nconst gamma = beta + 1;\nconst alpha = gamma + 1;\nconsole.log(alpha);\n",
             &[
-                ("a.yaml", "members: [{selector: {binding: {name: alpha}}}]\n"),
+                (
+                    "a.yaml",
+                    "members: [{selector: {binding: {name: alpha}}}]\n",
+                ),
                 ("b.yaml", "members: [{selector: {binding: {name: beta}}}]\n"),
-                ("c.yaml", "members: [{selector: {binding: {name: gamma}}}]\n"),
+                (
+                    "c.yaml",
+                    "members: [{selector: {binding: {name: gamma}}}]\n",
+                ),
             ],
         )
     }
