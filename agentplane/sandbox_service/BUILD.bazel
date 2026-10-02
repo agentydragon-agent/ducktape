@@ -1,0 +1,74 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+# gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
+# gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
+# gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
+# gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
+
+py_library(
+    name = "command_relay",
+    srcs = ["command_relay.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//agentplane/runner:conftest"],
+)
+
+py_test(
+    name = "test_command_relay",
+    srcs = ["test_command_relay.py"],
+    deps = [
+        ":command_relay",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_command_relay_native",
+    size = "large",
+    srcs = ["test_command_relay_native.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
+        "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
+    ],
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":command_relay",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:scripted_model",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

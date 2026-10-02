@@ -22,6 +22,7 @@ from agentplane.app.presets import PresetCatalog
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerError
+from agentplane.sandbox_service.command_relay import admit_running_command
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -176,23 +177,13 @@ class RunnerBridge:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
 
     async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> None:
-        attachment = await self._runners.client(sandbox).attach(session_id, after_cursor=after_cursor)
-        try:
-            if attachment.attached.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
-                raise RunnerError("session is stopped; explicitly open it before sending commands")
-            await attachment.command(command)
-            await attachment.detach()
-            # Writes only reach gRPC's outgoing buffer. Keep the attachment until this runner's
-            # event stream proves it committed this exact Command, then the separate feed copies
-            # that receipt into PostgreSQL. This is not a native-effect wait.
-            await attachment.until(
-                lambda entry: (
-                    entry.event.HasField("command_admitted") and entry.event.command_admitted.command == command
-                ),
-                timeout_s=COMMAND_ADMISSION_S,
-            )
-        finally:
-            attachment.cancel()
+        await admit_running_command(
+            self._runners.client(sandbox),
+            session_id,
+            command,
+            after_cursor=after_cursor,
+            timeout_s=COMMAND_ADMISSION_S,
+        )
 
     async def _wait_for_admission(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Wait for the ingester's committed prefix, never for a native command effect."""

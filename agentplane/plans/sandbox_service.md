@@ -1,6 +1,10 @@
 # Sandbox Service extraction
 
-Status: **planned, not implemented.** This is the concrete backend boundary required by the
+Status: **extraction started; no standalone service yet.** The app now uses an independent
+[running-session command relay](../sandbox_service/README.md). Authenticated API, provisioning,
+discovery, session configuration, and archive ownership remain to be extracted.
+
+This is the concrete backend boundary required by the
 [service dependency rule](../docs/service_boundaries.md). The integration app must be a client;
 notifications must not start with an app API, app-owned table, or app-issued Thread ticket dependency.
 
