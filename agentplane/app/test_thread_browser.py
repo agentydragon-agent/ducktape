@@ -13,6 +13,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import cast
 from urllib.parse import parse_qs, urlsplit
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -1015,6 +1016,17 @@ async def expect_projected_cursor(page: Page, cursor: int) -> None:
     )
 
 
+async def expect_archived_events(
+    event_logs: EventLogStore, thread_id: UUID, expected: list[event_log_pb2.EventEntry]
+) -> list[event_log_pb2.EventEntry]:
+    async with asyncio.timeout(15):
+        while True:
+            events = await event_logs.events(thread_id, limit=100)
+            if events == expected:
+                return events
+            await asyncio.sleep(0.01)
+
+
 async def expect_history_bottom(page: Page) -> None:
     await page.wait_for_function(
         """() => {
@@ -1091,6 +1103,8 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
     if raw:
+        (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+        await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
         lifecycle = page.locator(f'[data-thread-anchor="{failed.cursor}"]')
         await lifecycle.get_by_role("button", name="Evidence", exact=True).click()
         raw_frames = lifecycle.locator("summary", has_text=f"Observation {failed.cursor} raw frames")
@@ -1185,11 +1199,11 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     await expect_projected_cursor(page, source.entries[-1].cursor)
     await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
     await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
-    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    await expect(page.locator(f'.agentplane-user-bubble[data-message-phase="{outcome}"]')).to_have_count(1)
     await page.reload()
     await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
     await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
-    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    await expect(page.locator(f'.agentplane-user-bubble[data-message-phase="{outcome}"]')).to_have_count(1)
     await page.screenshot(path=undeclared_outputs_dir() / f"command-{outcome}-retained.png")
     await page.get_by_role("button", name="Dismiss", exact=True).click()
     await expect(page.get_by_text(reason, exact=False)).to_have_count(0)
@@ -1201,7 +1215,9 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     assert source.commands.empty()
 
 
-async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thread_browser: ThreadBrowser) -> None:
+async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_input(
+    thread_browser: ThreadBrowser,
+) -> None:
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1213,7 +1229,7 @@ async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thre
     assert command.command_id
     assert command.HasField("submit_input")
     assert command.submit_input.text == "Test input from the real browser"
-    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    await expect_pending_message_bubble(page, command.submit_input.text)
     source.append(
         event_pb2.Event(
             harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
@@ -1225,6 +1241,7 @@ async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thre
         )
     )
     await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
+    await expect(page.locator('.agentplane-user-bubble[data-message-phase="pending"]')).to_have_count(0)
     await expect(composer).to_have_value("")
 
 
@@ -1369,10 +1386,10 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
 
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
-        pending = page.get_by_role("region", name="Pending commands")
+        pending = page.get_by_role("region", name="Input messages")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
         await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
-        await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+        await expect(page.locator('.agentplane-user-bubble[data-message-phase="local"]')).to_have_count(1)
 
         # Reload abandons the held Electric response. The new document delivers the same local
         # Command again, and the app answers from its archive while replay is still held.
@@ -1390,7 +1407,8 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         assert source.commands.empty(), "reload must not manufacture a second command"
 
         app.release_replay()
-        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+        await expect_pending_message_bubble(page, command.submit_input.text)
+        await expect(pending).to_have_count(0)
         await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_have_count(0)
         await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
         source.append(
@@ -1408,8 +1426,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         )
         await expect(pending).to_have_count(0)
         assert source.commands.empty(), "the runner must receive the Command once"
-        archived = await thread_browser.event_logs.events(thread.id, limit=100)
-        assert archived == source.entries
+        archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
         assert [entry for entry in archived if entry.event.HasField("command_admitted")] == [admission]
     finally:
         drop_reply.set()
@@ -1438,13 +1455,12 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     assert admission.event.command_admitted.command == command
     assert admission == source.entries[6]
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
+    await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
 
-    pending = page.get_by_role("region", name="Pending commands")
+    pending = page.get_by_role("region", name="Input messages")
     await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
     await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
 
     app.release_replay()
     await expect(
@@ -1464,7 +1480,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
     await expect(pending).to_have_count(0)
     assert source.commands.empty()
-    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
+    await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
 
 
 @pytest.mark.parametrize("replay_after", [4])
@@ -1503,7 +1519,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         assert admission.event.command_admitted.command == command
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
-        pending = page.get_by_role("region", name="Pending commands")
+        pending = page.get_by_role("region", name="Input messages")
         await expect(pending.get_by_text("Saved locally · awaiting admission", exact=True)).to_be_visible()
 
         # Interrupt real shape delivery. The published Electric client must retry its own
@@ -1546,7 +1562,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         assert len(submissions) == 1
         assert source.commands.empty()
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-        assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
+        await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
     finally:
         drop_reply.set()
         await page.unroute_all(behavior="wait")
@@ -1564,7 +1580,7 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
     await composer.press("Enter")
     async with asyncio.timeout(15):
         command = await source.commands.get()
-    pending = page.get_by_role("region", name="Pending commands")
+    pending = page.get_by_role("region", name="Input messages")
     await expect_pending_message_bubble(page, command.submit_input.text)
 
     async def terminal_shape_error(route: Route) -> None:

@@ -37,6 +37,15 @@
   max-width: min(34rem, 80%);
 }
 
+.agentplane-user-message-row {
+  min-width: 0;
+}
+
+/* Keep room for actions and the evidence toggle in the gutter before an input message. */
+.agentplane-user-bubble[data-has-action="true"] {
+  max-width: min(34rem, calc(100% - 6rem));
+}
+
 .agentplane-reasoning-row {
   display: flex;
   min-width: 0;
