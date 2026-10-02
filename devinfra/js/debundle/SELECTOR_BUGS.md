@@ -20,13 +20,3 @@ falls inside and that real chunk identifiers do not (an all-caps rule would
 catch globals such as `JSON` and `URL`). A reserved name the binary does not
 implement is then `invalid` with "unsupported selector hole", on every command.
 
-## Solver Domain Encoding Ignores Id Gaps
-
-Status: unreproduced (code review 2026-09-30, not verified).
-`selectors/resolution/selector_constraint_backend.rs` `ensure_full_domain_contains` returns silently
-when `usize::try_from` fails or when `index > values.len()`, and appends only when
-`index == values.len()`. A gap in encoded ids drops the value from the full
-domain instead of raising. Reachability is unverified: first trace
-`DomainValueDictionary` interning and callers `add_allowed_tuples` /
-`intern_encoded_allowed_binary_row_set`. If contiguous allocation is an invariant,
-assert it; do not report a reachable dropped-candidate bug without that evidence.

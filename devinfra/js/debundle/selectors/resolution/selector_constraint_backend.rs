@@ -1251,7 +1251,8 @@ impl CompiledSelectorProblemBuilder {
 
     fn ensure_full_domain_contains(&mut self, domain: VariableDomain, value: BackendValueId) {
         let values = self.full_domains.get_mut(domain);
-        // The compiler preloads dense domains, but the public builder also
+        // compile_selector_problem preloads every fact/constant domain before
+        // lowering; no CLI candidate loss was established. The public builder also
         // permits interning values before adding tuples. An ID is not then an
         // index into this subset. Preserve the dense O(1) path without silently
         // dropping valid IDs in sparse or out-of-order domains.
@@ -1588,18 +1589,21 @@ mod tests {
             .into_iter()
             .map(|value| model.intern_string(value).unwrap())
             .collect();
-        model.add_full_domain_values(
-            VariableDomain::String,
-            ["a", "c"].map(|value| ConstraintValue::String(value.to_string())),
-        ).unwrap();
+        model
+            .add_full_domain_values(
+                VariableDomain::String,
+                ["a", "c"].map(|value| ConstraintValue::String(value.to_string())),
+            )
+            .unwrap();
         let left = model.add_variable(VariableDomain::String, None);
         let right = model.add_variable(VariableDomain::String, None);
-        model.intern_encoded_allowed_binary_row_set(
-            [left, right],
-            [VariableDomain::String; 2],
-            vec![(ids[1], ids[2]), (ids[1], ids[0])],
-        ).unwrap();
+        model
+            .intern_encoded_allowed_binary_row_set(
+                [left, right],
+                [VariableDomain::String; 2],
+                vec![(ids[1], ids[2]), (ids[1], ids[0])],
+            )
+            .unwrap();
         assert_eq!(model.variable_domain_values(left).unwrap(), ids);
     }
-
 }
