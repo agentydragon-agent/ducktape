@@ -1,14 +1,14 @@
 //! YAML helpers for spec-editing CLI commands.
 //!
-//! These commands preserve author formatting and comments when the requested
-//! edit does not change the parsed YAML structure. Once the structure changes,
-//! we still serialize with `serde_yaml`, matching the existing CLI behavior.
+//! Edits are compared semantically; changed documents are reserialized in full.
+//! Each replacement is atomic, but a multi-file command is not a transaction.
 
 use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde_yaml::{Mapping, Value};
+use tempfile::NamedTempFile;
 
 pub fn read_yaml(path: &Path) -> Result<Value> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
@@ -28,35 +28,19 @@ fn yaml_semantically_changed(path: &Path, doc: &Value) -> Result<bool> {
 /// semantics, including in dry-run mode. No-op edits preserve the original text.
 pub fn apply_yaml_edit(path: &Path, doc: &Value, dry_run: bool) -> Result<bool> {
     let changed = yaml_semantically_changed(path, doc)?;
-    if changed && !dry_run {
-        let body = serde_yaml::to_string(doc)
-            .with_context(|| format!("serializing {}", path.display()))?;
-        write_yaml_body(path, body)?;
+    if !changed || dry_run {
+        return Ok(changed);
     }
-    Ok(changed)
-}
-
-pub fn write_yaml_body_if_semantic_changed(path: &Path, doc: &Value, body: String) -> Result<bool> {
-    if !yaml_semantically_changed(path, doc)? {
-        return Ok(false);
-    }
-    write_yaml_body(path, body)?;
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    // A unique sibling stays on the same filesystem, never clobbers another
+    // writer's scratch file, and is cleaned up automatically on failure.
+    let mut temp = NamedTempFile::new_in(parent)
+        .with_context(|| format!("creating temporary YAML beside {}", path.display()))?;
+    serde_yaml::to_writer(temp.as_file_mut(), doc)
+        .with_context(|| format!("serializing {}", path.display()))?;
+    temp.persist(path).with_context(|| format!("replacing {}", path.display()))?;
     Ok(true)
-}
-
-fn write_yaml_body(path: &Path, body: String) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    }
-    // Write-temp-then-rename so a crash mid-write can never leave a
-    // truncated module YAML behind. The sibling `.yaml.tmp` name keeps
-    // the temp file on the same filesystem (rename stays atomic) and
-    // outside `collect_module_files`' `*.yaml` filter.
-    let tmp = path.with_extension("yaml.tmp");
-    fs::write(&tmp, body).with_context(|| format!("writing {}", tmp.display()))?;
-    fs::rename(&tmp, path)
-        .with_context(|| format!("renaming {} -> {}", tmp.display(), path.display()))?;
-    Ok(())
 }
 
 fn empty_yaml_to_mapping(value: Value) -> Value {

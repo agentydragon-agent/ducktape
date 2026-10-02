@@ -29,7 +29,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use peel::OutputFormat;
 use spec::LogicalModule;
-use yaml_edit::write_yaml_body_if_semantic_changed;
+use yaml_edit::apply_yaml_edit;
 
 use crate::edit_gate::{Gate, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
@@ -277,13 +277,11 @@ impl MergePlan {
 
     fn apply(self) -> Result<MergeSummary> {
         let target = &self.summary.target;
-        let body = serde_yaml::to_string(&self.document)
-            .with_context(|| format!("serializing merged {}", target.display()))?;
         let doc = serde_yaml::to_value(&self.document)
             .with_context(|| format!("re-encoding merged {}", target.display()))?;
         // Retain write-before-delete and the shared atomic per-file writer.
         // This does not promise a crash-atomic multi-file transaction.
-        write_yaml_body_if_semantic_changed(target, &doc, body)?;
+        apply_yaml_edit(target, &doc, false)?;
         for src in &self.summary.merged_sources {
             fs::remove_file(src)
                 .with_context(|| format!("deleting merged source {}", src.display()))?;
