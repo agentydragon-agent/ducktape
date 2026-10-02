@@ -29,21 +29,10 @@ pub(super) fn generate_named_from_default_wrapper(
     for item in &upstream_ast.module.body {
         match item {
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) => {
-                body.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
-                    span: DUMMY_SP,
-                    ctxt: SyntaxContext::empty(),
-                    kind: VarDeclKind::Const,
-                    declare: false,
-                    decls: vec![VarDeclarator {
-                        span: DUMMY_SP,
-                        name: Pat::Ident(BindingIdent {
-                            id: default_local.clone(),
-                            type_ann: None,
-                        }),
-                        init: Some(default_expr.expr.clone()),
-                        definite: false,
-                    }],
-                })))));
+                body.push(const_init_with_expr(
+                    &default_local_name,
+                    *default_expr.expr.clone(),
+                ));
             }
             _ => body.push(item.clone()),
         }

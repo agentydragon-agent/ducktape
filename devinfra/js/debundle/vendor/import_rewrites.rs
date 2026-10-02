@@ -86,28 +86,21 @@ impl VendorImportRewrites {
             } => {
                 // An external name need not be a legal local binding. Keep the
                 // existing, hygienic local for reserved or string export names.
-                if !is_binding_identifier(&upstream_export) {
-                    imports.push(DeferredImport::Named {
-                        source: package,
-                        local: local_id.0.to_string(),
-                        upstream_export,
-                    });
-                    *self
-                        .references_rewritten
-                        .entry((chunk, chunk_export))
-                        .or_insert(0) += 1;
-                    return imports;
-                }
+                let local = if is_binding_identifier(&upstream_export) {
+                    upstream_export.clone()
+                } else {
+                    local_id.0.to_string()
+                };
                 imports.push(DeferredImport::Named {
                     source: package,
-                    local: upstream_export.clone(),
-                    upstream_export: upstream_export.clone(),
+                    local: local.clone(),
+                    upstream_export,
                 });
-                if local_id.0.as_ref() != upstream_export {
+                if local_id.0.as_ref() != local {
                     self.body_rewrites.insert(
                         local_id,
                         IdentRewriteTarget::Rename {
-                            upstream_export,
+                            upstream_export: local,
                             chunk_id: chunk,
                             chunk_export,
                         },
