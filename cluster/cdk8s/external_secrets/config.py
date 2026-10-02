@@ -126,7 +126,6 @@ def chart(app: App) -> Chart:
         namespaces=[
             # keep-sorted start
             "activitywatch",
-            "agent-workspaces",
             "agentplane-index",
             "agentplane-staging",
             "agentplane-testing",

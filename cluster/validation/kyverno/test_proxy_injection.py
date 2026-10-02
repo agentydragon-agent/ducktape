@@ -15,9 +15,10 @@ import pytest
 import pytest_bazel
 
 from cluster.validation.kyverno.apply import apply_twice, assert_not_mutated
+from cluster.validation.kyverno.parked_proxy_policy import parked_mitmproxy_policy
 from cluster.validation.kyverno.paths import manifest, policy
 
-# Policy -> the sandbox namespace it matches.
+# Active Haku policy and preserved Claude policy -> the namespace each matches.
 POLICIES = {"inject-haku-egress-proxy": "haku-sandbox", "inject-mitmproxy": "claude-sandbox"}
 
 
@@ -49,7 +50,10 @@ def reinvoked(request: pytest.FixtureRequest, tmp_path: Path) -> dict:
     """
     resource = tmp_path / "pod.yaml"
     resource.write_text(_pod(POLICIES[request.param]))
-    _, second = apply_twice(policy(request.param, tmp_path), resource, tmp_path)
+    policy_path = (
+        parked_mitmproxy_policy(tmp_path) if request.param == "inject-mitmproxy" else policy(request.param, tmp_path)
+    )
+    _, second = apply_twice(policy_path, resource, tmp_path)
     return next(d for d in second.mutated_resources if d["kind"] == "Pod")
 
 

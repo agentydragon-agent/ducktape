@@ -19,11 +19,22 @@ spec:
     limits.cpu: "8"
     limits.memory: 16Gi
     persistentvolumeclaims: "30"
-    pods: "50"
+    pods: "0"
     requests.cpu: "8"
     requests.memory: 16Gi
     requests.storage: 50Gi
     services: "30"
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: parked-compute-egress
+  namespace: claude-sandbox
+spec:
+  egress: []
+  podSelector: {}
+  policyTypes:
+    - Egress
 ---
 apiVersion: v1
 kind: LimitRange

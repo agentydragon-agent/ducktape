@@ -680,16 +680,11 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     agents_mitmproxy_artifact = artifact("agents-mitmproxy", mitmproxy.OUTPUT_DIR)
-    mitmproxy.agents_mitmproxy(
-        flux_chart,
-        write_directory(
-            root,
-            agents_mitmproxy_artifact,
-            mitmproxy.namespace_chart,
-            mitmproxy.chart,
-            egress_fences.mitmproxy_cloud_api,
-        ),
-        cert_manager_trust_kustomization,
+    write_directory(
+        root, agents_mitmproxy_artifact, mitmproxy.namespace_chart, mitmproxy.chart, egress_fences.mitmproxy_cloud_api
+    )
+    parked_flux_kustomizations.retire(
+        root, flux_chart, name="agents-mitmproxy", directory_name="agents-mitmproxy", after=claude_rbac_kustomization
     )
     docker_ci_artifact = artifact("docker-ci", f"{PARKED_ROOT}/docker-ci")
     parked_flux_kustomizations.docker_ci(
@@ -1462,18 +1457,13 @@ def generate_manifests(root: Path) -> None:
     agent_workspaces_app_artifact = artifact(
         "agent-workspaces-app", agent_workspaces.OUTPUT_DIR, agent_workspaces.PINS_DIR
     )
-    agent_workspaces.agent_workspaces_app(
-        flux_chart,
-        write_directory(
-            root,
-            agent_workspaces_app_artifact,
-            agent_workspaces.chart,
-            components=[posixpath.relpath(agent_workspaces.PINS_DIR, agent_workspaces.OUTPUT_DIR)],
-        ),
-        external_secrets_operator_kustomization,
-        agent_sandbox_controller_kustomization,
-        kyverno_policies_kustomization,
+    write_directory(
+        root,
+        agent_workspaces_app_artifact,
+        agent_workspaces.chart,
+        components=[posixpath.relpath(agent_workspaces.PINS_DIR, agent_workspaces.OUTPUT_DIR)],
     )
+    parked_flux_kustomizations.retire(root, flux_chart, name="agent-workspaces-app", directory_name="agent-workspaces")
     parked_flux_kustomizations.haku_dispatch(flux_chart, cnpg_kustomization, external_secrets_operator_kustomization)
     haku_console_artifact = artifact("haku-console", haku_charts.PATH)
     haku_console_kustomization = haku_charts.haku_console(

@@ -355,10 +355,10 @@ spec:
       name: activitywatch
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/agents/agent-sandbox/workspaces/**"
-          to: "@artifact/cluster/generated/agents/agent-sandbox/workspaces/"
-        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces-image-pins/**"
-          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces-image-pins/"
+        - from: "@repo/cluster/parked/agent-workspaces/**"
+          to: "@artifact/cluster/parked/agent-workspaces/"
+        - from: "@repo/cluster/parked/agent-workspaces/image-pins/**"
+          to: "@artifact/cluster/parked/agent-workspaces/image-pins/"
       name: agent-workspaces-app
       originRevision: "@repo"
     - copy:
@@ -630,8 +630,8 @@ spec:
       name: metrics-server
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/agents/mitmproxy/**"
-          to: "@artifact/cluster/generated/agents/mitmproxy/"
+        - from: "@repo/cluster/parked/agents-mitmproxy/**"
+          to: "@artifact/cluster/parked/agents-mitmproxy/"
       name: agents-mitmproxy
       originRevision: "@repo"
     - copy:

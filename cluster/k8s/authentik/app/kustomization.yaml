@@ -16,7 +16,7 @@ configMapGenerator:
     files:
       - blueprints/activitywatch-sso.yaml
       - blueprints/adsb-sso.yaml
-      - blueprints/agents-mitmproxy-sso.yaml
+      - blueprints/agents-mitmproxy-sso-retire.yaml
       - blueprints/airlock-sso-retire.yaml
       - blueprints/claude-service-account.yaml
       - blueprints/embedded-outpost.yaml

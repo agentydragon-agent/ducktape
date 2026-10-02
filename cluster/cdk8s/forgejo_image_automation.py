@@ -36,7 +36,6 @@ _PULL_SECRET = "forgejo-images-creds"
 # across every directory that pins the image -- not a rename here.
 IMAGES = (
     # keep-sorted start
-    "agent-workspace",
     "agentplane-action-service",
     "agentplane-action-service-migrate",
     "agentplane-app",

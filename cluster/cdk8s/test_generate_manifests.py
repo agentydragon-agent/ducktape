@@ -111,5 +111,61 @@ def test_haku_spike_stays_unwired(generated: Path) -> None:
     assert (archived / "proxy/proxy.k8s.yaml").is_file()
 
 
+def test_legacy_sandboxes_retire_without_redeploying(generated: Path) -> None:
+    active = [
+        doc
+        for path in generated.rglob("*.k8s.yaml")
+        if "parked" not in path.parts
+        for doc in yaml.safe_load_all(path.read_text())
+        if isinstance(doc, dict)
+    ]
+    retired_namespaces = {"agents-mitmproxy", "agent-workspaces"}
+    assert not any(doc["metadata"].get("namespace") in retired_namespaces for doc in active)
+    assert not any(doc["kind"] == "Namespace" and doc["metadata"]["name"] in retired_namespaces for doc in active)
+    owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
+    for name, directory in (("agents-mitmproxy", "agents-mitmproxy"), ("agent-workspaces-app", "agent-workspaces")):
+        retirement = owners[name]["spec"]
+        assert retirement["prune"] is True
+        assert not retirement.get("suspend", False)
+        assert retirement["deletionPolicy"] == "WaitForTermination"
+        assert retirement["sourceRef"] == {"kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
+        assert retirement["path"] == f"./cluster/generated/retired/{directory}"
+        empty = yaml.safe_load((generated / retirement["path"].removeprefix("./") / "kustomization.yaml").read_text())
+        assert not empty.get("resources")
+    # A broken sandbox-controller upgrade must not prevent pruning an existing warm pool.
+    assert not owners["agent-workspaces-app"]["spec"].get("dependsOn")
+    assert owners["agents-mitmproxy"]["spec"]["dependsOn"] == [{"name": "claude-rbac", "namespace": "ducktape-flux"}]
+    # Claude's shared roles, identities and credentials survive; ad-hoc compute does not.
+    claude = [doc for doc in active if doc["metadata"].get("namespace") == "claude-sandbox"]
+    quota = next(doc for doc in claude if doc["kind"] == "ResourceQuota")
+    assert str(quota["spec"]["hard"]["pods"]) == "0"
+    fence = next(
+        doc for doc in claude if doc["kind"] == "NetworkPolicy" and doc["metadata"]["name"] == "parked-compute-egress"
+    )
+    assert fence["spec"] == {"podSelector": {}, "policyTypes": ["Egress"], "egress": []}
+    assert {"buildbuddy-api-key", "claude-forgejo-credentials"} <= {
+        doc["metadata"]["name"] for doc in claude if doc["kind"] == "ExternalSecret"
+    }
+    assert not any(doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in active)
+    assert any(
+        doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-haku-egress-proxy" for doc in active
+    )
+    assert {
+        "agent-sandbox-controller",
+        "haku-egress-proxy",
+        "public-coder-agent-app",
+        "claude-sandbox-secrets",
+    } <= owners.keys()
+    for directory, kind in (("agents-mitmproxy", "Deployment"), ("agent-workspaces", "SandboxWarmPool")):
+        archived = [
+            doc
+            for path in (generated / "cluster/parked" / directory).glob("*.k8s.yaml")
+            for doc in yaml.safe_load_all(path.read_text())
+            if isinstance(doc, dict)
+        ]
+        assert any(doc["kind"] == kind and doc["spec"]["replicas"] == 1 for doc in archived)
+    assert not any(doc["kind"] == "ImagePolicy" and doc["metadata"]["name"] == "agent-workspace" for doc in active)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

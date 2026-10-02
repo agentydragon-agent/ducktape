@@ -39,14 +39,14 @@ from cdk8s_plus_34 import k8s
 from cluster.cdk8s import agent_sandbox, forgejo_images, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 
 NAME = "agent-workspaces"
 NAMESPACE = "agent-workspaces"
-OUTPUT_DIR = f"{GENERATED_ROOT}/agents/agent-sandbox/workspaces"
-PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/agent-sandbox/workspaces-image-pins"
+OUTPUT_DIR = f"{PARKED_ROOT}/agent-workspaces"
+PINS_DIR = f"{OUTPUT_DIR}/image-pins"
 
 
 def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:

@@ -55,7 +55,8 @@ def _add_sandbox(chart: Chart) -> None:
                     "requests.memory": "16Gi",
                     "limits.cpu": "8",
                     "limits.memory": "16Gi",
-                    "pods": "50",
+                    # Park ad-hoc compute without deleting external-session identities or credentials.
+                    "pods": "0",
                     "services": "30",
                     "configmaps": "30",
                     "persistentvolumeclaims": "30",
@@ -63,6 +64,14 @@ def _add_sandbox(chart: Chart) -> None:
                 }
             )
         ),
+    )
+    # The namespace survives for external-session credentials and identities, not compute.
+    # Keep a fail-closed fence after retiring the proxy-owned clusterwide allow policy.
+    k8s.KubeNetworkPolicy(
+        chart,
+        "parked-compute-egress",
+        metadata=k8s.ObjectMeta(name="parked-compute-egress", namespace=NAMESPACE),
+        spec=k8s.NetworkPolicySpec(pod_selector=k8s.LabelSelector(), policy_types=["Egress"], egress=[]),
     )
     k8s.KubeLimitRange(
         chart,

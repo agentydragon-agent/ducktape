@@ -539,7 +539,6 @@ CHARTS = (
     default_revision_history_limit_chart,
     default_disable_service_links_chart,
     default_vpa_requests_only_chart,
-    proxy_injection.inject_mitmproxy_chart,
     proxy_injection.inject_haku_egress_proxy_chart,
     restrict_agent_gateway_routes_chart,
     require_secret_store_conditions_chart,
