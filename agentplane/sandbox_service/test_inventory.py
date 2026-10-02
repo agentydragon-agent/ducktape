@@ -5,7 +5,7 @@ from copy import deepcopy
 import pytest
 import pytest_bazel
 
-from agentplane.sandbox_service.inventory import ProvisioningState, SandboxNotFoundError
+from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOXES_PLURAL

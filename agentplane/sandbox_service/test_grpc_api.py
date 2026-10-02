@@ -19,14 +19,10 @@ from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.client import FollowLeaseExpiredError, SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.destinations import DestinationResolver, SandboxDestination
+from agentplane.sandbox_service.destinations import DestinationResolver
+from agentplane.sandbox_service.models import ProvisioningState, SandboxDestination
 from agentplane.sandbox_service.grpc_api import Resources
-from agentplane.sandbox_service.inventory import (
-    KUBERNETES_GRANTS_ANNOTATION,
-    KUBERNETES_GRANTS_READY_ANNOTATION,
-    PROVISIONING_ANNOTATION,
-    ProvisioningState,
-)
+from agentplane.sandbox_service.kubernetes_views import KUBERNETES_GRANTS_ANNOTATION, KUBERNETES_GRANTS_READY_ANNOTATION, PROVISIONING_ANNOTATION
 from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant, RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster

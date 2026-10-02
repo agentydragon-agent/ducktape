@@ -15,8 +15,7 @@ from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, wire
-from agentplane.sandbox_service.destinations import SandboxDestination
-from agentplane.sandbox_service.inventory import NewSandbox, SandboxNotFoundError, SandboxView
+from agentplane.sandbox_service.models import NewSandbox, SandboxDestination, SandboxNotFoundError, SandboxView
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio

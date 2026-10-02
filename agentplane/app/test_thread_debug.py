@@ -20,16 +20,15 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.protocol import command_pb2, event_pb2
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.app.egress_access import EgressAccess
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 
 # gazelle:include_dep @pypi//protobuf
 
 
 async def test_lazy_scoped_evidence_and_native_expansion(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
@@ -37,7 +36,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     ingestion: Ingestion,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -90,7 +89,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         live_index,
         action_policy,
         reviewer=reviewer,
-        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
+
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

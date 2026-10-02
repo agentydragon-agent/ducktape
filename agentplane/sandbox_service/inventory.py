@@ -13,207 +13,40 @@ import asyncio
 import json
 import secrets
 import string
-from collections.abc import Iterable
-from datetime import datetime
-from enum import StrEnum
-from typing import Annotated, cast
-from uuid import UUID
+from typing import cast
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant
-from agentplane.sandbox_service.session_config import LaunchGrants, SandboxBinding, ThreadDefaults
+from agentplane.sandbox_service.models import NewSandbox, OperatingMode, ProvisioningState, SandboxNotFoundError, SandboxRunningError, SandboxView
+from agentplane.sandbox_service.kubernetes_views import (MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION, PROVISIONING_ANNOTATION, KUBERNETES_GRANTS_ANNOTATION, KUBERNETES_GRANTS_READY_ANNOTATION, KUBERNETES_GRANTS_ERROR_ANNOTATION, SandboxResource, sandbox_view, sandbox_views)
+from agentplane.sandbox_service.session_config import LaunchGrants, SandboxBinding
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
 from util.kubernetes import CustomObjectsClient
-
-MANAGED_LABEL = "agentplane.allegedly.works/managed"
-SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
-PROVISIONING_ANNOTATION = "agentplane.allegedly.works/pending-launch-grants"
-KUBERNETES_GRANTS_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants"
-KUBERNETES_GRANTS_READY_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-ready"
-KUBERNETES_GRANTS_ERROR_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-error"
 
 _MERGE_PATCH = "application/merge-patch+json"
 
 # Five lowercase alphanumerics, like `generateName`; the slug bound keeps the name a DNS label.
 _SUFFIX_LENGTH = 5
 _SUFFIX_ALPHABET = string.ascii_lowercase + string.digits
-_SLUG_MAX_LENGTH = 63 - 1 - _SUFFIX_LENGTH
-
-Slug = Annotated[
-    str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=_SLUG_MAX_LENGTH)
-]
-
-
-class OperatingMode(StrEnum):
-    RUNNING = "Running"
-    SUSPENDED = "Suspended"
-
-
-class ProvisioningState(StrEnum):
-    WAITING_FOR_GRANTS = "waiting_for_grants"
-    WAITING_FOR_POD = "waiting_for_pod"
-    WAITING_FOR_POD_READY = "waiting_for_pod_ready"
-    RUNNING = "running"
-    SUSPENDED = "suspended"
-
-
-class InventoryError(Exception):
-    """Base of the errors the API maps to status codes."""
-
-
-class SandboxNotFoundError(InventoryError):
-    def __init__(self, name: str) -> None:
-        super().__init__(f"no Agentplane sandbox {name=}")
-        self.name = name
-
-
-class SandboxRunningError(InventoryError):
-    """Deletion is refused while the sandbox runs; the message is what the UI shows the operator."""
-
-    def __init__(self, name: str) -> None:
-        super().__init__(f"sandbox {name} is running; suspend it before deleting it")
-
-
-class NewSandbox(BaseModel):
-    """The concrete sandbox choices a caller makes after optionally applying a form preset."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
-    template: str = Field(min_length=1, description="SandboxTemplate whose Pod and volume shape this Sandbox copies.")
-    policies: list[str] = Field(default_factory=list, description="EgressPolicy names to grant.")
-    action_policy_sets: list[str] = Field(
-        default_factory=list,
-        description="ActionPolicySet names to bind; an explicit list, empty included, is bound as given.",
-    )
-    kubernetes_grants: list[str] = Field(
-        default_factory=list, description="Enabled Kubernetes grant names to bind to this Sandbox ServiceAccount."
-    )
-    thread_defaults: ThreadDefaults | None = Field(
-        default=None, description="Reusable Thread defaults for future sessions in this Sandbox."
-    )
-    bootstrap: str = Field(default="", max_length=65_536, description="Runner initialization script for this Sandbox.")
-
-
-class Condition(BaseModel):
-    """A Kubernetes status condition, as the Sandbox controller and the kubelet report them."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    type: str
-    status: str
-    reason: str | None = None
-    message: str | None = None
-
-
-class ContainerStatus(BaseModel):
-    """One container of the Pod: which of the kubelet's three states it is in, and why."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    state: str = Field(description="waiting, running, or terminated.")
-    reason: str | None = None
-    message: str | None = None
-    ready: bool
-    restart_count: int
-
-
-class PodStatus(BaseModel):
-    """What the kubelet says about the Sandbox's Pod; absent while no Pod exists."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    phase: str | None
-    ip: str | None
-    node_name: str | None
-    reason: str | None = None
-    message: str | None = None
-    conditions: list[Condition]
-    containers: list[ContainerStatus]
-
-
-class SandboxView(BaseModel):
-    """One inventory row: the Sandbox's identity plus what it and its Pod say."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(description="The Sandbox name, and its Pod's; the handle for every operation.")
-    uid: UUID = Field(description="The API server's identity of this Sandbox; what an owned binding references.")
-    state: ProvisioningState
-    created_at: datetime
-    operating_mode: OperatingMode
-    conditions: list[Condition] = Field(description="The Sandbox's own status conditions.")
-    node_name: str | None = Field(default=None, description="Where the Sandbox controller placed the Pod.")
-    service_account: ServiceAccountRef = Field(
-        description="The ServiceAccount its Pod runs as, read off the Sandbox: the subject every "
-        "egress and action-policy binding names it by."
-    )
-    binding: SandboxBinding | None = Field(
-        default=None, description="The stored concrete Thread defaults and bootstrap selected for this Sandbox."
-    )
-    kubernetes_grants: list[ResolvedGrant]
-    kubernetes_grants_ready: bool
-    kubernetes_grant_error: str | None
-    deleting: bool = False
-    pod: PodStatus | None = None
-
 
 # Kubernetes-boundary models: the subset of each CR the inventory reads, parsed once off the wire.
 
 
-class _ObjectMeta(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    name: str
-    namespace: str
-    uid: UUID
-    labels: dict[str, str] = Field(default_factory=dict)
-    annotations: dict[str, str] = Field(default_factory=dict)
-    creation_timestamp: datetime = Field(alias="creationTimestamp")
-    deletion_timestamp: datetime | None = Field(alias="deletionTimestamp", default=None)
-    finalizers: list[str] = Field(default_factory=list)
 
 
-class _PodSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    # Kubernetes' own default: a Pod naming no account runs as `default` in its namespace.
-    service_account_name: str = Field(alias="serviceAccountName", default="default")
 
 
-class _PodTemplate(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    spec: _PodSpec = Field(default_factory=_PodSpec)
 
 
-class _SandboxSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    # The CRD defaults `operatingMode` to Running, so a stored Sandbox without it is a running one.
-    operating_mode: OperatingMode = Field(alias="operatingMode", default=OperatingMode.RUNNING)
-    pod_template: _PodTemplate = Field(alias="podTemplate", default_factory=_PodTemplate)
 
 
-class _SandboxStatus(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    conditions: list[Condition] = Field(default_factory=list)
-    node_name: str | None = Field(alias="nodeName", default=None)
 
 
-class _Sandbox(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    metadata: _ObjectMeta
-    spec: _SandboxSpec
-    status: _SandboxStatus = Field(default_factory=_SandboxStatus)
 
 
 class _TemplateSpec(BaseModel):
@@ -330,7 +163,7 @@ class SandboxInventory:
         except Exception:
             await self._core_v1.delete_namespaced_service_account(name, self._namespace)
             raise
-        sandbox = _Sandbox.model_validate(created)
+        sandbox = SandboxResource.model_validate(created)
         await self._core_v1.patch_namespaced_service_account(
             name,
             self._namespace,
@@ -431,7 +264,7 @@ class SandboxInventory:
             if error.status == 404:
                 raise SandboxNotFoundError(name) from error
             raise
-        sandbox = _Sandbox.model_validate(raw)
+        sandbox = SandboxResource.model_validate(raw)
         if sandbox.metadata.labels.get(MANAGED_LABEL) != "true":
             raise SandboxNotFoundError(name)
         return sandbox
@@ -450,18 +283,8 @@ class SandboxInventory:
 # same row.
 
 
-def sandbox_views(sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod]) -> list[SandboxView]:
-    """One row per Sandbox, each joined to the Pod of the same name."""
-    pods_by_name = {pod.metadata.name: pod for pod in pods}
-    views = []
-    for item in sandboxes:
-        parsed = _Sandbox.model_validate(item)
-        views.append(_view(parsed, pods_by_name.get(parsed.metadata.name)))
-    return views
 
 
-def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None) -> SandboxView:
-    return _view(_Sandbox.model_validate(sandbox), pod)
 
 
 def _running_as(pod_template: dict[str, object], service_account: str) -> dict[str, object]:
@@ -475,93 +298,15 @@ def _running_as(pod_template: dict[str, object], service_account: str) -> dict[s
     return {**pod_template, "spec": spec}
 
 
-def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
-    grants = _resolved_grants(sandbox)
-    return SandboxView(
-        name=sandbox.metadata.name,
-        uid=sandbox.metadata.uid,
-        state=_state(sandbox, pod),
-        created_at=sandbox.metadata.creation_timestamp,
-        operating_mode=sandbox.spec.operating_mode,
-        service_account=ServiceAccountRef(
-            namespace=sandbox.metadata.namespace, name=sandbox.spec.pod_template.spec.service_account_name
-        ),
-        conditions=sandbox.status.conditions,
-        node_name=sandbox.status.node_name,
-        binding=_binding(sandbox),
-        kubernetes_grants=grants,
-        kubernetes_grants_ready=not grants
-        or sandbox.metadata.annotations.get(KUBERNETES_GRANTS_READY_ANNOTATION) == "true",
-        kubernetes_grant_error=sandbox.metadata.annotations.get(KUBERNETES_GRANTS_ERROR_ANNOTATION),
-        deleting=sandbox.metadata.deletion_timestamp is not None,
-        pod=_pod_status(pod) if pod is not None else None,
-    )
 
 
-def _binding(sandbox: _Sandbox) -> SandboxBinding | None:
-    raw = sandbox.metadata.annotations.get(SANDBOX_BINDING_ANNOTATION)
-    if raw is None:
-        return None
-    return SandboxBinding.model_validate_json(raw)
 
 
-def _resolved_grants(sandbox: _Sandbox) -> list[ResolvedGrant]:
-    raw = sandbox.metadata.annotations.get(KUBERNETES_GRANTS_ANNOTATION)
-    if raw is None:
-        return []
-    return [ResolvedGrant.model_validate(item) for item in json.loads(raw)]
 
 
-def _pod_status(pod: k8s_client.V1Pod) -> PodStatus:
-    status = pod.status if pod.status is not None else k8s_client.V1PodStatus()
-    return PodStatus(
-        phase=status.phase,
-        ip=status.pod_ip,
-        node_name=pod.spec.node_name if pod.spec is not None else None,
-        reason=status.reason,
-        message=status.message,
-        conditions=[
-            Condition(type=condition.type, status=condition.status, reason=condition.reason, message=condition.message)
-            for condition in status.conditions or []
-        ],
-        containers=[_container_status(container) for container in status.container_statuses or []],
-    )
 
 
-def _container_status(container: k8s_client.V1ContainerStatus) -> ContainerStatus:
-    # Exactly one of the three is set by the kubelet; a status with none is a container not yet scheduled.
-    state = container.state if container.state is not None else k8s_client.V1ContainerState()
-    if state.waiting is not None:
-        name, reason, message = "waiting", state.waiting.reason, state.waiting.message
-    elif state.terminated is not None:
-        name, reason, message = "terminated", state.terminated.reason, state.terminated.message
-    elif state.running is not None:
-        name, reason, message = "running", None, None
-    else:
-        name, reason, message = "waiting", None, None
-    return ContainerStatus(
-        name=container.name,
-        state=name,
-        reason=reason,
-        message=message,
-        ready=container.ready,
-        restart_count=container.restart_count,
-    )
 
 
-def _state(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> ProvisioningState:
-    if sandbox.spec.operating_mode == OperatingMode.SUSPENDED:
-        return ProvisioningState.SUSPENDED
-    if pod is None:
-        return ProvisioningState.WAITING_FOR_POD
-    if PROVISIONING_ANNOTATION in sandbox.metadata.annotations:
-        return ProvisioningState.WAITING_FOR_GRANTS
-    if _resolved_grants(sandbox) and sandbox.metadata.annotations.get(KUBERNETES_GRANTS_READY_ANNOTATION) != "true":
-        return ProvisioningState.WAITING_FOR_GRANTS
-    return ProvisioningState.RUNNING if _pod_ready(pod) else ProvisioningState.WAITING_FOR_POD_READY
 
 
-def _pod_ready(pod: k8s_client.V1Pod) -> bool:
-    if pod.status is None or pod.status.conditions is None:
-        return False
-    return any(condition.type == "Ready" and condition.status == "True" for condition in pod.status.conditions)

@@ -26,11 +26,12 @@ from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ThreadScopeResponse
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.session_config import Harness
 
 
@@ -61,11 +62,10 @@ def openapi_document() -> dict[str, Any]:
             ],
             harnesses={harness: ["schema-model"] for harness in Harness},
         ),
-        EgressInventory(namespace="schema", custom_objects=cast(Any, None)),
+        EgressAccess(EgressReader(namespace="schema", custom_objects=cast(Any, None)), inventory),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
         live,
         ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None)),
-        provisioner=inventory,
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

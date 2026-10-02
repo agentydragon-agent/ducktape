@@ -5,8 +5,7 @@ from typing import Protocol
 from agentplane.app.changes import Changes
 from agentplane.app.live import LiveIndex
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
-from agentplane.sandbox_service.destinations import SandboxDestination
-from agentplane.sandbox_service.inventory import ProvisioningState, SandboxNotFoundError
+from agentplane.sandbox_service.models import ProvisioningState, SandboxDestination, SandboxNotFoundError
 from agentplane.sandbox_service.session_access import Sessions
 
 

@@ -17,6 +17,7 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
     name = "command_relay",
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
     srcs = ["command_relay.py"],
     deps = [
         "//agentplane/protocol:command_pb2",
@@ -62,6 +63,7 @@ py_test(
 
 py_library(
     name = "inventory",
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
     srcs = ["inventory.py"],
     deps = [
         ":kubernetes_grants",
@@ -112,6 +114,7 @@ py_test(
 
 py_library(
     name = "destinations",
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
     srcs = ["destinations.py"],
     deps = [
         ":inventory",
@@ -191,6 +194,7 @@ py_library(
 
 py_library(
     name = "session_lifecycle",
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
     srcs = ["session_lifecycle.py"],
     deps = [
         ":destinations",
@@ -216,6 +220,7 @@ py_test(
 
 py_library(
     name = "action_policy",
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
     srcs = ["action_policy.py"],
     deps = [
         ":inventory",
@@ -231,6 +236,7 @@ py_library(
 
 py_library(
     name = "egress",
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
     srcs = ["egress.py"],
     deps = [
         ":inventory",
@@ -248,6 +254,7 @@ py_library(
 
 py_library(
     name = "kubernetes_bindings",
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
     srcs = ["kubernetes_bindings.py"],
     deps = [
         ":inventory",
@@ -259,6 +266,7 @@ py_library(
 
 py_library(
     name = "owned_binding",
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
     srcs = ["owned_binding.py"],
     deps = [
         ":inventory",
@@ -269,6 +277,7 @@ py_library(
 
 py_library(
     name = "provisioning",
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
     srcs = ["provisioning.py"],
     deps = [
         ":action_policy",
@@ -405,6 +414,7 @@ py_library(
 
 py_library(
     name = "grpc_api",
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
     srcs = ["grpc_api.py"],
     deps = [
         ":action_policy",

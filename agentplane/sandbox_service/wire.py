@@ -4,8 +4,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.destinations import SandboxDestination, SessionDestination
-from agentplane.sandbox_service.inventory import NewSandbox, SandboxView
+from agentplane.sandbox_service.models import NewSandbox, SandboxDestination, SandboxView, SessionDestination
 
 # gazelle:include_dep @pypi//protobuf
 

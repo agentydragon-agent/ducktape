@@ -2,31 +2,15 @@
 
 from dataclasses import dataclass
 from ipaddress import ip_address
-from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
-from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
-from agentplane.sandbox_service.kubernetes_grants import DnsName
+from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.models import SandboxDestination, ProvisioningState, SandboxNotFoundError
 from agentplane.sandbox_service.session_config import SandboxBinding
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
 from util.agent_sandbox import SANDBOX_API
-
-
-class SandboxDestination(BaseModel):
-    """A caller's requested resource, never proof of authority. No app Thread or supplied URL."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    owner: ServiceAccountRef
-    sandbox: DnsName
-    sandbox_uid: UUID
-
-
-class SessionDestination(SandboxDestination):
-    session_id: str = Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 
 class DestinationDeniedError(Exception):

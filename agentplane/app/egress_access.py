@@ -1,13 +1,13 @@
 """UI reads desired-state projections; all grant mutations go through Sandbox Service."""
 
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.egress import BindingView, EgressInventory, PolicyView
-from agentplane.sandbox_service.inventory import SandboxView
+from agentplane.sandbox_service.egress_views import EgressReader, BindingView, PolicyView
+from agentplane.sandbox_service.models import SandboxView
 from agentplane.subjects import ServiceAccountRef
 
 
 class EgressAccess:
-    def __init__(self, read: EgressInventory, service: SandboxServiceClient) -> None:
+    def __init__(self, read: EgressReader, service: SandboxServiceClient) -> None:
         self.read = read
         self.service = service
 

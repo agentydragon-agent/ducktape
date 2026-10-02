@@ -74,23 +74,10 @@ from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import OpenTimeoutError, RunnerError
-from agentplane.sandbox_service.action_policy import UnknownPolicySetError
+from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.egress import (
-    BindingNotFoundError,
-    BindingView,
-    EgressInventory,
-    FluxOwnedBindingError,
-    PolicyView,
-    UnknownPolicyError,
-)
-from agentplane.sandbox_service.inventory import (
-    NewSandbox,
-    SandboxInventory,
-    SandboxNotFoundError,
-    SandboxRunningError,
-    SandboxView,
-)
+from agentplane.sandbox_service.egress_views import BindingNotFoundError, BindingView, FluxOwnedBindingError, PolicyView, UnknownPolicyError
+from agentplane.sandbox_service.models import NewSandbox, SandboxNotFoundError, SandboxRunningError, SandboxView
 from agentplane.sandbox_service.kubernetes_grants import (
     DuplicateKubernetesGrantError,
     KubernetesGrant,
@@ -99,7 +86,6 @@ from agentplane.sandbox_service.kubernetes_grants import (
     grant_views,
     resolve_grants,
 )
-from agentplane.sandbox_service.provisioning import SandboxProvisioner
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.subjects import ServiceAccountRef
 
@@ -194,24 +180,24 @@ async def list_kubernetes_grants(request: Request) -> list[KubernetesGrantView]:
     return grant_views(request.app.state.kubernetes_grants)
 
 
-def _inventory(request: Request) -> SandboxInventory | SandboxServiceClient:
+def _inventory(request: Request) -> SandboxServiceClient:
     inventory = request.app.state.inventory
-    if not isinstance(inventory, (SandboxInventory, SandboxServiceClient)):
-        raise TypeError(f"app.state.inventory is {type(inventory).__name__}, not SandboxInventory")
+    if not isinstance(inventory, SandboxServiceClient):
+        raise TypeError(f"app.state.inventory is {type(inventory).__name__}, not SandboxServiceClient")
     return inventory
 
 
-Inventory = Annotated[SandboxInventory | SandboxServiceClient, Depends(_inventory)]
+Inventory = Annotated[SandboxServiceClient, Depends(_inventory)]
 
 
-def _egress(request: Request) -> EgressInventory | EgressAccess:
+def _egress(request: Request) -> EgressAccess:
     egress = request.app.state.egress
-    if not isinstance(egress, EgressInventory | EgressAccess):
-        raise TypeError(f"app.state.egress is {type(egress).__name__}, not EgressInventory")
+    if not isinstance(egress, EgressAccess):
+        raise TypeError(f"app.state.egress is {type(egress).__name__}, not EgressAccess")
     return egress
 
 
-Egress = Annotated[EgressInventory | EgressAccess, Depends(_egress)]
+Egress = Annotated[EgressAccess, Depends(_egress)]
 
 
 def _action_policy(request: Request) -> ActionPolicyInventory:
@@ -247,14 +233,13 @@ async def list_templates(inventory: Inventory) -> list[str]:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(
-    request: Request, spec: NewSandbox, caller: Annotated[CallerIdentity, Depends(require_caller)]
+    request: Request, spec: NewSandbox, inventory: Inventory, caller: Annotated[CallerIdentity, Depends(require_caller)]
 ) -> SandboxView:
     """Create exactly the fields the caller selected; browser presets have already filled them."""
     grants = resolve_grants(spec.kubernetes_grants, request.app.state.kubernetes_grants)
     if grants and caller.kind is not CallerKind.OPERATOR:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Kubernetes grant selection requires an operator session")
-    provisioner: SandboxProvisioner = request.app.state.provisioner
-    return await provisioner.create(spec)
+    return await inventory.create(spec)
 
 
 @router.get("/{name}")
@@ -939,11 +924,11 @@ async def thread_event_stream(
 
 
 def create_app(
-    inventory: SandboxInventory | SandboxServiceClient,
+    inventory: SandboxServiceClient,
     bridge: runner_bridge.RunnerBridge,
     store: ThreadStore,
     catalog: ModelCatalog,
-    egress: EgressInventory | EgressAccess,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -954,7 +939,6 @@ def create_app(
     electric: ElectricProxy | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
     *,
-    provisioner: SandboxProvisioner,
     event_logs: EventLogStore,
     content: ContentStore,
     database_updates: DatabaseUpdates,
@@ -1005,7 +989,6 @@ def create_app(
     async def sandbox_service_deadline(request: Request, error: TimeoutError) -> JSONResponse:
         return JSONResponse({"detail": "Upstream deadline expired; mutation outcome may be uncertain"}, status_code=504)
 
-    app.state.provisioner = provisioner
     app.state.inventory = inventory
     app.state.bridge = bridge
     app.state.store = store

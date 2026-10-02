@@ -45,12 +45,14 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.native_runners import Runners
+from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.sandbox_service.testing.backend import backend, seed_runner
+from agentplane.sandbox_service.egress_views import EgressReader
+from tempfile import TemporaryDirectory
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.protocol import event_log_pb2
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory
-from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.app.egress_access import EgressAccess
+from agentplane.sandbox_service.models import ProvisioningState
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -264,92 +266,90 @@ async def _serve(
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
     if sandbox_state is not None:
-        raw = sandbox(
-            SANDBOX, operating_mode="Suspended" if sandbox_state is ProvisioningState.SUSPENDED else "Running"
-        )
-        custom.objects[("sandboxes", SANDBOX)] = raw
+        raw, running = seed_runner(custom, core, SANDBOX)
+        if sandbox_state is ProvisioningState.SUSPENDED:
+            raw["spec"]["operatingMode"] = "Suspended"
+        if sandbox_state is ProvisioningState.WAITING_FOR_POD_READY:
+            running.status.conditions[0].status = "False"
         index.sandboxes[SANDBOX] = raw
-        if sandbox_state in (ProvisioningState.RUNNING, ProvisioningState.WAITING_FOR_POD_READY):
-            # Where `ReplicationSource.serve` listens: the bridge dials this address at `runner_port`.
-            running = pod(SANDBOX, phase="Running", ready=sandbox_state is ProvisioningState.RUNNING, ip="127.0.0.1")
-            core.pods[SANDBOX] = running
-            index.pods[SANDBOX] = running
-    runners = Runners(index, runner_port)
-    ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
-    bridge = RunnerBridge(
-        runners=runners,
-        event_logs=event_logs,
-        content=content,
-        ingester=ingester,
-        thread_changes=database_updates.changes[Channel.THREADS],
-    )
-    async with (
-        httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
-        httpx.AsyncClient(base_url=electric_url or "http://test-unused-electric.invalid", timeout=65) as electric_http,
-    ):
-        inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core)
-        egress = EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=[])
-        action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
-        app = create_app(
-            inventory,
-            bridge,
-            store,
-            ModelCatalog(
-                models=[
-                    ModelOption(
-                        model="test-model-before",
-                        display_name="Test Model Before",
-                        reasoning_efforts=list(TEST_REASONING_EFFORTS),
-                    ),
-                    ModelOption(
-                        model="test-model-after",
-                        display_name="Test Model After",
-                        reasoning_efforts=list(TEST_REASONING_EFFORTS),
-                    ),
-                ],
-                harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
-            ),
-            egress,
-            DecisionsClient(decisions_http),
-            index,
-            action_policy,
-            electric=(
-                ElectricProxy(
-                    electric_http,
-                    content,
-                    event_logs=event_logs,
-                    thread_changes=database_updates.changes[Channel.THREADS],
-                )
-                if electric_url is not None
-                else None
-            ),
-            provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
+        index.pods[SANDBOX] = running
+    with TemporaryDirectory() as directory, backend(custom, core, Path(directory) / "token", runner_port=runner_port) as endpoint:
+        inventory = endpoint.client()
+        runners = Runners(index, inventory)
+        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+        bridge = RunnerBridge(
+            runners=runners,
             event_logs=event_logs,
             content=content,
-            database_updates=database_updates,
-            operator_sessions=OperatorSessionStore(engine),
+            ingester=ingester,
+            thread_changes=database_updates.changes[Channel.THREADS],
         )
-        # Authentication is tested separately; the production routes, HTTP transport, ingestion,
-        # PostgreSQL notifications, and SSE generator all run here unchanged.
-        app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
-        if replay_after is not None:
-            app.add_middleware(
-                GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
+        async with (
+            httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
+            httpx.AsyncClient(base_url=electric_url or "http://test-unused-electric.invalid", timeout=65) as electric_http,
+        ):
+            egress = EgressAccess(EgressReader(namespace=NAMESPACE, custom_objects=custom), inventory)
+            action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
+            app = create_app(
+                inventory,
+                bridge,
+                store,
+                ModelCatalog(
+                    models=[
+                        ModelOption(
+                            model="test-model-before",
+                            display_name="Test Model Before",
+                            reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                        ),
+                        ModelOption(
+                            model="test-model-after",
+                            display_name="Test Model After",
+                            reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                        ),
+                    ],
+                    harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
+                ),
+                egress,
+                DecisionsClient(decisions_http),
+                index,
+                action_policy,
+                electric=(
+                    ElectricProxy(
+                        electric_http,
+                        content,
+                        event_logs=event_logs,
+                        thread_changes=database_updates.changes[Channel.THREADS],
+                    )
+                    if electric_url is not None
+                    else None
+                ),
+
+                event_logs=event_logs,
+                content=content,
+                database_updates=database_updates,
+                operator_sessions=OperatorSessionStore(engine),
             )
-        if frontend_directory is not None:
-            app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
-        await database_updates.start()
-        await ingester.start()
-        try:
-            with socket.socket() as listener:
-                listener.bind(("127.0.0.1", 0))
-                url = f"http://127.0.0.1:{listener.getsockname()[1]}"
-                await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(sockets=[listener])
-        finally:
-            await ingester.close()
-            await runners.close()
-            await database_updates.close()
-            await engine.dispose()
+            # Authentication is tested separately; the production routes, HTTP transport, ingestion,
+            # PostgreSQL notifications, and SSE generator all run here unchanged.
+            app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
+            if replay_after is not None:
+                app.add_middleware(
+                    GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
+                )
+            if frontend_directory is not None:
+                app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
+            await database_updates.start()
+            await ingester.start()
+            try:
+                with socket.socket() as listener:
+                    listener.bind(("127.0.0.1", 0))
+                    url = f"http://127.0.0.1:{listener.getsockname()[1]}"
+                    await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(sockets=[listener])
+            finally:
+                await ingester.close()
+                await runners.close()
+                await database_updates.close()
+                await engine.dispose()
 
 
 async def receive(connection: Connection) -> object:

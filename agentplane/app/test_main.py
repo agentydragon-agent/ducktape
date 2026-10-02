@@ -36,10 +36,9 @@ from agentplane.app.main import AppServer, Settings, SpaFiles, serve_then_close
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.shutdown import drain_of
-from agentplane.app.testing.native_runners import Runners
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.egress_access import EgressAccess
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import pod, sandbox
 from util.net import pick_free_port
@@ -182,13 +181,13 @@ async def _other_connections(database: AsyncEngine) -> int:
 
 @pytest.mark.usefixtures("sigterm_is_survivable")
 async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester_and_database(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
     engine: AsyncEngine,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -215,7 +214,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
         live_index,
         action_policy,
         reviewer=reviewer,
-        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
+
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

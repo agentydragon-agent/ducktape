@@ -48,7 +48,7 @@ from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
@@ -282,7 +282,7 @@ async def async_main(settings: Settings) -> None:
             namespace=settings.sandbox_namespace,
             token_file=settings.sandbox_service_token_file,
         )
-        egress = EgressAccess(EgressInventory(namespace=settings.namespace, custom_objects=custom_objects), inventory)
+        egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.
         action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
@@ -341,7 +341,6 @@ async def async_main(settings: Settings) -> None:
             ),
             presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
             kubernetes_grants=settings.kubernetes_grants,
-            provisioner=inventory,
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,

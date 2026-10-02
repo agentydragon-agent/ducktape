@@ -28,8 +28,7 @@ admission before model completion, receipt replay, and refusing to create/resume
 
 `inventory.py` now owns the existing Kubernetes-backed inventory and low-level
 Sandbox lifecycle operations. `session_config.py` owns the concrete, serialized
-launch fields; `kubernetes_grants.py` owns the selected grant shapes. The app imports
-these implementations. UI preset catalogs remain app-owned and are not interpreted
+launch fields; `kubernetes_grants.py` owns the selected grant shapes. Consumers import public models and read-only projections, not these mutation implementations. UI preset catalogs remain app-owned and are not interpreted
 by this package. Existing annotation keys, field/class names, defaults, ServiceAccount
 creation, PVC policy, and provisioning behavior are unchanged.
 
@@ -52,8 +51,8 @@ a Sandbox. Read/follow availability is limited to the surviving runner log.
 The production app requires `sandbox_service_target` and a projected workload token. Its directory,
 bridge, and ingester use the service client with no direct-runner fallback. UI preset selection,
 read-only Kubernetes projections, PostgreSQL archive, and ingestion checkpoints remain app-owned.
-Native transport doubles are confined to `app/testing`; app/service integration acceptance uses
-real authenticated gRPC, native harnesses, and the existing app database archive.
+App tests use the service-owned gRPC fixtures; there is no alternate direct-runner app directory.
+App/service integration acceptance uses native harnesses and the existing app database archive.
 
 The deployment source adds a separately built service image, Deployment/Service/ServiceAccount,
 TokenReview and lifecycle/grant RBAC, and network isolation. The app has read-only resource RBAC;

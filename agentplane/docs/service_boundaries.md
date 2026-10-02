@@ -101,3 +101,15 @@ general staging-disposability guidance is not permission to bypass this task-spe
 
 Dependency enforcement and those acceptance tests are implementation gates. Source changes and unit
 tests do not themselves prove the live handoff complete or staging data preservation.
+
+## Sandbox Service callers
+
+Sandbox provisioning, grant mutations, and runner RPCs are service-owned operations. Consumers
+must call the authenticated Sandbox Service API, not instantiate its inventory, provisioner,
+reconciler, destination resolver, command relay, or lifecycle implementation. Do not introduce
+local-or-remote unions, in-process fallbacks, or a second provisioning dependency in the app.
+Backend implementation targets have Bazel visibility limited to the service and its testing package.
+
+Public protobuf/client models and read-only Kubernetes projections can be shared. The projection
+modules carry no create/delete/grant/session authority. Consumer acceptance tests use the real gRPC
+boundary through service-owned test fixtures; tests of backend mutations live with the service.

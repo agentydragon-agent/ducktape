@@ -7,6 +7,7 @@ import secrets
 from collections.abc import AsyncIterator, Generator, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, cast
 
 import httpx
@@ -32,7 +33,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
-from agentplane.app.testing.native_runners import Runners
+from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -41,8 +42,12 @@ from agentplane.runner import protocol_pb2
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
 from agentplane.runner.conftest import config, endpoint, harness, model, runner, spec, workspace
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.app.egress_access import EgressAccess
+from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.egress_views import EgressReader
+from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
+from agentplane.sandbox_service.testing.backend import Endpoint, backend
+from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
@@ -213,9 +218,9 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-async def runners(live_index: LiveIndex) -> AsyncIterator[Runners]:
+async def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> AsyncIterator[Runners]:
     """The runners `live_index` shows, dialled on a port nothing listens on."""
-    runners = Runners(live_index, port=1)
+    runners = Runners(live_index, inventory)
     yield runners
     await runners.close()
 
@@ -245,8 +250,37 @@ def bridge(
 
 
 @pytest.fixture
-def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> SandboxInventory:
-    return SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), core_v1=cast(Any, core_v1))
+def sandbox_grants() -> dict[str, KubernetesGrant]:
+    return {}
+
+
+@pytest.fixture
+def sandbox_rbac() -> FakeRbac:
+    return FakeRbac()
+
+
+@pytest.fixture
+def sandbox_runner_port() -> int:
+    return 1
+
+
+@pytest.fixture
+def sandbox_endpoint(
+    custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, default_policies: list[str],
+    sandbox_grants: dict[str, KubernetesGrant], sandbox_rbac: FakeRbac, tmp_path: Path, sandbox_runner_port: int,
+) -> Iterator[Endpoint]:
+    with backend(custom_objects, core_v1, tmp_path / "sandbox-token", default_policies=default_policies,
+                 grants=sandbox_grants, rbac=sandbox_rbac, runner_port=sandbox_runner_port) as endpoint:
+        yield endpoint
+
+
+@pytest.fixture
+async def inventory(sandbox_endpoint: Endpoint) -> AsyncIterator[SandboxServiceClient]:
+    client = sandbox_endpoint.client()
+    try:
+        yield client
+    finally:
+        await client.close()
 
 
 # The agent's credential, and what a test client carries: the app's other one is an OIDC session
@@ -290,10 +324,8 @@ def default_policies() -> list[str]:
 
 
 @pytest.fixture
-def egress(custom_objects: FakeCustomObjectsApi, default_policies: list[str]) -> EgressInventory:
-    return EgressInventory(
-        namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), default_policies=default_policies
-    )
+def egress(custom_objects: FakeCustomObjectsApi, inventory: SandboxServiceClient) -> EgressAccess:
+    return EgressAccess(EgressReader(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects)), inventory)
 
 
 @pytest.fixture

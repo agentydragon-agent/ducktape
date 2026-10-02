@@ -23,7 +23,7 @@ from agentplane.app.database_updates import Channel, notify
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerError, StreamClosedError
-from agentplane.sandbox_service.inventory import SandboxNotFoundError
+from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.session_access import SessionAttachment, SessionReader
 
 # gazelle:include_dep @pypi//protobuf

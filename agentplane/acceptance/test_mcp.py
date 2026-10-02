@@ -45,7 +45,7 @@ from agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from agentplane.app.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.inventory import SandboxView
+from agentplane.sandbox_service.models import SandboxView
 
 # `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

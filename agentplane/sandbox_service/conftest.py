@@ -7,6 +7,8 @@ import pytest
 
 from agentplane.runner.conftest import client, config, endpoint, harness, model, runner, spec, workspace
 from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.inventory import SandboxInventory
+from kubernetes_asyncio import client as k8s_client
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
 from util.kubernetes import CustomObjectsClient
@@ -31,3 +33,9 @@ def core_v1() -> FakeCoreV1Api:
 @pytest.fixture
 def egress(custom_objects: FakeCustomObjectsApi) -> EgressInventory:
     return EgressInventory(namespace=NAMESPACE, custom_objects=cast(CustomObjectsClient, custom_objects))
+
+
+@pytest.fixture
+def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> SandboxInventory:
+    return SandboxInventory(namespace=NAMESPACE, custom_objects=cast(CustomObjectsClient, custom_objects),
+                            core_v1=cast(k8s_client.CoreV1Api, core_v1))

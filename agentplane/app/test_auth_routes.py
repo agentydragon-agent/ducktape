@@ -34,9 +34,8 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.app.egress_access import EgressAccess
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api
 from util.net import bind_free_port
@@ -69,12 +68,12 @@ class ServeApp(Protocol):
 
 @pytest.fixture
 def serve(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     authentication: FakeAuthenticationV1Api,
     live_index: LiveIndex,
@@ -137,7 +136,7 @@ def serve(
             action_policy,
             oidc,
             reviewer,
-            provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
+
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,

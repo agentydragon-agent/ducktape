@@ -8,25 +8,15 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from typing import Protocol
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.inventory import (
-    KUBERNETES_GRANTS_ANNOTATION,
-    PROVISIONING_ANNOTATION,
-    SANDBOX_BINDING_ANNOTATION,
-    NewSandbox,
-    SandboxInventory,
-    SandboxView,
-)
+from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.kubernetes_views import KUBERNETES_GRANTS_ANNOTATION, PROVISIONING_ANNOTATION, SANDBOX_BINDING_ANNOTATION
+from agentplane.sandbox_service.models import NewSandbox, SandboxView
 from agentplane.sandbox_service.kubernetes_bindings import KUBERNETES_BINDINGS_FINALIZER, KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, resolve_grants
 from agentplane.sandbox_service.session_config import LaunchGrants, SandboxBinding
-
-
-class SandboxProvisioner(Protocol):
-    async def create(self, spec: NewSandbox) -> SandboxView: ...
 
 
 @dataclass(frozen=True)

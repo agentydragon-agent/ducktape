@@ -25,7 +25,7 @@ import pytest_bazel
 from agentplane.acceptance.agent import Agent
 from agentplane.app.client import Client
 from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.inventory import SandboxView
+from agentplane.sandbox_service.models import SandboxView
 
 # `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

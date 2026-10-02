@@ -6,13 +6,8 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.sandbox_service.destinations import (
-    DestinationDeniedError,
-    DestinationResolver,
-    DestinationUnavailableError,
-    SessionDestination,
-)
-from agentplane.sandbox_service.inventory import SandboxNotFoundError
+from agentplane.sandbox_service.destinations import DestinationDeniedError, DestinationResolver, DestinationUnavailableError
+from agentplane.sandbox_service.models import SandboxNotFoundError, SessionDestination
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE

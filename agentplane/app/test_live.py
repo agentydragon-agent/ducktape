@@ -51,11 +51,11 @@ from agentplane.app.operator_sessions import (
     SessionRow,
 )
 from agentplane.app.shutdown import Drain
-from agentplane.app.testing.native_runners import Runners
+from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory
-from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.app.egress_access import EgressAccess
+from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.models import ProvisioningState
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -131,14 +131,14 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
 
 
 async def test_the_index_projects_the_rows_a_listing_would_return(
-    seeded: LiveIndex, inventory: SandboxInventory
+    seeded: LiveIndex, inventory: SandboxServiceClient
 ) -> None:
     """The push and the fetch share their projection; this is what says they still do."""
     assert seeded.sandbox_views() == await inventory.list_sandboxes()
     assert seeded.sandbox_view("runner-1") == await inventory.get("runner-1")
 
 
-async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex, egress: EgressInventory) -> None:
+async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex, egress: EgressAccess) -> None:
     runner = ServiceAccountRef(namespace=NAMESPACE, name="runner-1")
     assert seeded.bindings_for(runner) == await egress.bindings_for(runner)
     assert [binding.name for binding in seeded.bindings_for(runner)] == ["runner-1-picked"]
@@ -294,8 +294,8 @@ async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded:
 
 @pytest.fixture
 def app(
-    inventory: SandboxInventory,
-    egress: EgressInventory,
+    inventory: SandboxServiceClient,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -306,7 +306,7 @@ def app(
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
     event_logs, content = EventLogStore(engine), ContentStore(engine)
     database_updates = DatabaseUpdates(engine.url)
-    runners = Runners(live_index, port=1)
+    runners = Runners(live_index, inventory)
     bridge = RunnerBridge(
         runners=runners,
         event_logs=event_logs,
@@ -324,7 +324,7 @@ def app(
         live_index,
         action_policy,
         reviewer=reviewer,
-        provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
+
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

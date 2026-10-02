@@ -31,9 +31,8 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, request_session
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.app.egress_access import EgressAccess
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 
 APP_URL = "http://test-app.invalid"
@@ -160,10 +159,10 @@ ServeApp = Callable[[OperatorSessionStore, DatabaseUpdates], FastAPI]
 
 @pytest.fixture
 def serve(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -188,7 +187,7 @@ def serve(
             live_index,
             action_policy,
             OIDC,
-            provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
+
             event_logs=event_logs,
             content=content,
             database_updates=updates,

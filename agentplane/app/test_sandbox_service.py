@@ -21,13 +21,8 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.grpc_api import Resources
-from agentplane.sandbox_service.testing.grpc_service import service
-from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, kubernetes
-from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
+from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
@@ -40,37 +35,14 @@ async def cluster() -> AsyncIterator[Cluster]:
         yield started
 
 
-@pytest.fixture
-async def resources(cluster: Cluster, runner: RunnerHandle, tmp_path: Path, live_index: LiveIndex) -> Resources:
-    manager = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-app")
-    token = "test-app-service-token"
-    audience = "test-app-sandbox-service"
-    (tmp_path / "service-token").write_text(token)
-    cluster.fake.tokens[token] = TokenVerdict(
-        username=f"system:serviceaccount:{manager.namespace}:{manager.name}",
-        pod_name="test-app-pod",
-        pod_uid="test-app-pod-uid",
-        audiences=(audience,),
-    )
+@pytest.fixture(autouse=True)
+async def discover(cluster: Cluster, live_index: LiveIndex) -> None:
     live_index.sandboxes[SANDBOX] = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
     live_index.pods[SANDBOX] = await k8s_client.CoreV1Api(cluster.api).read_namespaced_pod(SANDBOX, SANDBOX_NAMESPACE)
-    return Resources(
-        principals=WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(cluster.api),
-            audience=audience,
-            allowed_service_account_namespaces={SANDBOX_NAMESPACE},
-        ),
-        destinations=DestinationResolver(
-            cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port, frozenset({manager})
-        ),
-        manager_accounts=frozenset({manager}),
-        platform_instructions="Backend guidance for app-launched sessions.",
-        follow_lease_s=1,
-    )
 
 
 async def test_production_bridge_archives_native_evidence_across_service_leases(
-    resources: Resources,
+    cluster: Cluster,
     live_index: LiveIndex,
     tmp_path: Path,
     event_logs: EventLogStore,
@@ -81,8 +53,7 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
     spec: protocol_pb2.SessionSpec,
     model: ScriptedModel,
 ) -> None:
-    async with service(resources) as target:
-        remote = SandboxServiceClient(target, namespace=SANDBOX_NAMESPACE, token_file=tmp_path / "service-token")
+    async with authenticated_service(cluster, runner.port, tmp_path / "service-token") as remote:
         directory = Runners(live_index, remote)
         ingester = Ingester(runners=directory, event_logs=event_logs, ingestion=ingestion)
         bridge = RunnerBridge(
@@ -138,10 +109,9 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
 
 
 async def test_stopped_service_never_falls_back_to_reachable_runner(
-    resources: Resources, live_index: LiveIndex, tmp_path: Path, runner: RunnerHandle
+    cluster: Cluster, live_index: LiveIndex, tmp_path: Path, runner: RunnerHandle
 ) -> None:
-    async with service(resources) as target:
-        remote = SandboxServiceClient(target, namespace=SANDBOX_NAMESPACE, token_file=tmp_path / "service-token")
+    async with authenticated_service(cluster, runner.port, tmp_path / "service-token") as remote:
         directory = Runners(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
     try:

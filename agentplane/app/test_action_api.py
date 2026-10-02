@@ -69,10 +69,9 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
-from agentplane.sandbox_service.action_policy import MANAGED_BY_APP, MANAGED_BY_LABEL
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
+from agentplane.app.egress_access import EgressAccess
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, sandbox
 from agentplane.subjects import ServiceAccountRef
@@ -129,12 +128,12 @@ def direct_federation() -> bool:
 @pytest.fixture
 async def review(
     db_url: str,
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -336,7 +335,7 @@ async def review(
             oidc,
             reviewer,
             operator_actions=operator_client,
-            provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
+
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,
@@ -371,7 +370,7 @@ async def review(
             operator_actions=None
             if operator_connection == "disabled"
             else FederatedOperatorActions(federation, oidc, downstream_http),
-            provisioner=Provisioning(inventory, egress, action_policy, grants={}, bindings=None),
+
             event_logs=EventLogStore(replica_engine),
             content=ContentStore(replica_engine),
             # Never started: nothing served here listens; the replica shares only the operator sessions.

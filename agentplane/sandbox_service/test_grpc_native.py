@@ -20,9 +20,10 @@ from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.destinations import DestinationResolver, SandboxDestination
+from agentplane.sandbox_service.destinations import DestinationResolver
+from agentplane.sandbox_service.models import SandboxDestination
 from agentplane.sandbox_service.grpc_api import Resources
-from agentplane.sandbox_service.inventory import SANDBOX_BINDING_ANNOTATION
+from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.session_config import Harness, SandboxBinding, ThreadDefaults
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -244,7 +245,8 @@ async def test_invalid_launch_and_failed_bootstrap_never_create(
     remote: SandboxServiceClient, cluster: Cluster, spec: runner_pb2.SessionSpec
 ) -> None:
     runner = remote.runner(DESTINATION)
-    for invalid in ({}, {"harness": "HARNESS_CODEX", "model": "m"}):
+    invalid_specs: list[dict[str, object]] = [{}, {"harness": "HARNESS_CODEX", "model": "m"}]
+    for invalid in invalid_specs:
         with pytest.raises(ServiceError) as rejected:
             await runner.open(SESSION, invalid)
         assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
