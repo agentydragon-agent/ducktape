@@ -57,8 +57,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::DUMMY_SP;
-use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 /// Stack of per-scope shadow sets. A name is "shadowed at this point in
 /// the traversal" iff it appears in any active stack entry; while shadowed

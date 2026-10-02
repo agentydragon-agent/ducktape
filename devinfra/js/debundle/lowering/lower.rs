@@ -6,31 +6,49 @@
 
 use std::sync::Mutex;
 
-use swc_common::{GLOBALS, DUMMY_SP};
-use super::module_output::{ModuleEmissionInputs, emit_module};
+use super::module_output::{LoweredModuleOutput, ModuleEmissionInputs, emit_module};
+use swc_common::{DUMMY_SP, GLOBALS};
 
 use super::chunk_renames::CHUNK_RENAMES_CONTRIBUTOR;
-use super::imports::import_emit::{disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names, relative_source};
+use super::imports::import_emit::{
+    disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
+    relative_source,
+};
 
-use super::scope_names::{collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names};
+use super::scope_names::{
+    collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names,
+};
 use super::util::remaining_item_after_selection;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use anyhow::Result;
-use swc_ecma_visit::{VisitMutWith, VisitWith};
-use analysis::{LogicalModuleIndex, ModuleId, top_level_id};
-use gate::ChunkFactorization;
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileMetadata, FileRole, JsFile, JsFileBody, SelectedModuleLowering};
-use js_ast::ParsedJsModule;
 use crate::body_facts::{ModuleBodyFacts, collect_module_body_facts};
 use crate::chunk_ast::{TopLevelDecl, top_level_declaration_names};
-use crate::exports::{ExportGrowthFacts, auto_grown_residual_exports, entry_exports_for_moved_bindings, export_named_for_bindings, trim_dead_named_specifiers};
-use crate::imports::{ArtifactSourceImportResolutionCache, RuntimeImportFacts, VendorReimportOracle, collect_entry_exports_by_original_local, collect_imported_reexports_by_module, import_decl_module_item};
+use crate::exports::{
+    ExportGrowthFacts, auto_grown_residual_exports, entry_exports_for_moved_bindings,
+    export_named_for_bindings, trim_dead_named_specifiers,
+};
+use crate::imports::{
+    ArtifactSourceImportResolutionCache, RuntimeImportFacts, VendorReimportOracle,
+    collect_entry_exports_by_original_local, collect_imported_reexports_by_module,
+    import_decl_module_item,
+};
 use crate::naturalize::{NaturalizedRenames, naturalize_module_body};
 use crate::plans::ModulePlan;
-use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation, SealedRenames};
+use crate::rename_ledger::{
+    RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
+    SealedRenames,
+};
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
-use swc_ecma_ast::*;
+use analysis::{LogicalModuleIndex, ModuleId, top_level_id};
+use anyhow::Result;
+use artifact::{
+    ArtifactIndexes, ChunkBundle, ChunkId, FileMetadata, FileRole, JsFile, JsFileBody,
+    SelectedModuleLowering,
+};
+use gate::ChunkFactorization;
+use js_ast::ParsedJsModule;
 use rayon::prelude::*;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use swc_ecma_ast::*;
+use swc_ecma_visit::{VisitMutWith, VisitWith};
 
 pub(super) const ENTRY_IMPORT_LOCAL_CONTRIBUTOR: &str = "entry import-local disambiguation";
 

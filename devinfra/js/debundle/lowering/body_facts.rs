@@ -3,10 +3,10 @@
 //! mutated AST with `RefCollector` (a `Visit` impl that respects
 //! function-level shadowing) plus pulling locals out of import specifiers.
 
-use std::collections::{BTreeSet, HashSet};
-use swc_ecma_visit::{Visit, VisitWith};
 use crate::chunk_ast::{binding_names, top_level_declaration_ids};
+use std::collections::{BTreeSet, HashSet};
 use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitWith};
 
 #[derive(Debug, Default)]
 pub(super) struct ModuleBodyFacts {

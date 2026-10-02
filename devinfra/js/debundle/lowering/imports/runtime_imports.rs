@@ -1,9 +1,9 @@
 //! Per-chunk runtime-imports table built from the source chunk
 //! plus the helpers that emit re-import specifiers in moved modules.
 
+use js_ast::str_value;
 use std::collections::HashMap;
 use swc_common::DUMMY_SP;
-use js_ast::str_value;
 use swc_ecma_ast::*;
 
 pub(crate) struct RuntimeImportFacts {

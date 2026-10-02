@@ -3,29 +3,37 @@
 
 use std::sync::Mutex;
 
-use swc_common::{BytePos, DUMMY_SP};
+use swc_common::{BytePos, DUMMY_SP, Spanned};
 
 use super::imports::import_emit::relative_source;
 use super::imports::imports_runtime::source_chunk_import_for_target;
 use super::scope_names::collect_local_binding_names;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use anyhow::{Result, bail};
-use swc_ecma_visit::VisitMutWith;
-use analysis::{ModuleId, top_level_id};
-use gate::ChunkFactorization;
-use artifact::{ChunkId, FileMetadata, FileRole, JsFile, JsFileBody, SelectedModuleLowering, join_module_path};
-use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use crate::body_facts::ModuleBodyFacts;
-use crate::chunk_ast::{binding_ids, binding_names};
 use crate::exports::export_named_for_bindings;
-use crate::imports::{ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds, PlannedVendorReimports, RuntimeImportFacts, RuntimeImportLookup, VendorReimportOracle, cross_module_imports_for_plan, final_module_exports, group_specifiers_into_import_decls, imported_binding_named_specifier, phantom_side_effect_imports, plan_module_reference_needs, plan_vendor_reimports, residual_entry_imports_for_moved_body, source_chunk_imports_for_moved_body};
+use crate::imports::{
+    ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
+    PlannedVendorReimports, RuntimeImportFacts, RuntimeImportLookup, VendorReimportOracle,
+    cross_module_imports_for_plan, final_module_exports, group_specifiers_into_import_decls,
+    imported_binding_named_specifier, phantom_side_effect_imports, plan_module_reference_needs,
+    plan_vendor_reimports, residual_entry_imports_for_moved_body,
+    source_chunk_imports_for_moved_body,
+};
 use crate::naturalize::NaturalizedRenames;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
 use crate::visitors::IdentifierRenamer;
+use analysis::{ModuleId, top_level_id};
+use anyhow::{Result, bail};
+use artifact::{
+    ChunkId, FileMetadata, FileRole, JsFile, JsFileBody, SelectedModuleLowering, join_module_path,
+};
+use gate::ChunkFactorization;
+use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
+use swc_ecma_visit::VisitMutWith;
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";

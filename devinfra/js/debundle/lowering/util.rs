@@ -1,9 +1,9 @@
-use std::collections::{BTreeSet, HashMap};
-use anyhow::Result;
-use swc_common::DUMMY_SP;
-use analysis::{AtomicUnitConflict, DepKind};
-use artifact::{join_module_path, normalize_module_path};
 use crate::chunk_ast::{binding_ids, declaration_ids};
+use analysis::{AtomicUnitConflict, DepKind};
+use anyhow::Result;
+use artifact::{join_module_path, normalize_module_path};
+use std::collections::{BTreeSet, HashMap};
+use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 
 /// True iff `s` is a usable JavaScript identifier for the emitted ESM:

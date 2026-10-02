@@ -8,7 +8,9 @@ use swc_common::GLOBALS;
 
 use analysis::{OwnerGraphOptions, RedundantPurityHint};
 
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, SelectedModuleLowering, normalize_module_path};
+use artifact::{
+    ArtifactIndexes, ChunkBundle, ChunkId, SelectedModuleLowering, normalize_module_path,
+};
 
 use output_layout::MODULES_REPORT;
 
@@ -38,11 +40,14 @@ mod visitors;
 
 pub use imports::naturalize_cross_chunk_imports;
 
-
 use imports::VendorReimportOracle;
 use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json};
 
-use materialize::{ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs, collect_materialized_logical_chunks, finish_logical_chunk, prepare_logical_chunk, resolve_prepared_chunks};
+use materialize::{
+    ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs,
+    collect_materialized_logical_chunks, finish_logical_chunk, prepare_logical_chunk,
+    resolve_prepared_chunks,
+};
 
 use util::normalize_optional_relative_dir;
 

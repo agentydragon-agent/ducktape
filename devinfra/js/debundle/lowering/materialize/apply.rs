@@ -8,7 +8,7 @@ use artifact::{
 
 use super::MaterializedLogicalChunk;
 #[cfg(test)]
-use super::{ChunkModulesCounts, ChunkModulesReport};
+use crate::{ChunkModulesCounts, ChunkModulesReport};
 #[cfg(test)]
 use artifact::{ChunkTable, ChunkValidationSummary};
 

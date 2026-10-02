@@ -3,11 +3,13 @@
 //! still resolve correctly after the body is moved from the source
 //! chunk to a per-module target file.
 
-use swc_common::{DUMMY_SP, SyntaxContext};
-use swc_ecma_visit::{VisitMut, VisitMutWith};
-use artifact::{join_module_path, module_path_dirname, normalize_module_path, relative_module_path};
+use artifact::{
+    join_module_path, module_path_dirname, normalize_module_path, relative_module_path,
+};
 use js_ast::{set_str_value, str_value};
+use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
+use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 pub(super) fn rewrite_runtime_sources_for_target(
     body: &mut [ModuleItem],

@@ -6,17 +6,17 @@
 //! (scope: that plan's `Module`, origin: `ImportInduced`) and applied
 //! from the sealed projection in `lower_single_plan`.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use anyhow::{Result, bail};
-use analysis::{LogicalModuleIndex, ModuleId, top_level_id};
-use gate::ChunkFactorization;
-use crate::chunk_ast::declaration_names;
-use crate::imports::{EntryExport, import_decl_module_item};
-use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
-use swc_ecma_ast::*;
 use super::import_emit::{
     disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
 };
+use crate::chunk_ast::declaration_names;
+use crate::imports::{EntryExport, import_decl_module_item};
+use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
+use analysis::{LogicalModuleIndex, ModuleId, top_level_id};
+use anyhow::{Result, bail};
+use gate::ChunkFactorization;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use swc_ecma_ast::*;
 
 pub(crate) const CROSS_MODULE_IMPORT_CONTRIBUTOR: &str = "cross-module import-local disambiguation";
 pub(crate) const RESIDUAL_ENTRY_IMPORT_CONTRIBUTOR: &str =

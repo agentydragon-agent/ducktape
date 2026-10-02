@@ -9,9 +9,9 @@ use binding_targets::{
 };
 use selector_outcome::{Declaration, DeclarationKind};
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use anyhow::{Context, Result, bail};
 use crate::imports::{RuntimeImportFacts, RuntimeImportInfo, record_runtime_imports};
+use anyhow::{Context, Result, bail};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use swc_ecma_ast::*;
 
 #[derive(Debug, Clone)]

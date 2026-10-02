@@ -1,10 +1,10 @@
-use std::path::{Path, PathBuf};
 use anyhow::{Result, bail};
-use serde::Serialize;
 use artifact::{ChunkBundle, ChunkId};
 use output_layout::OWNER_GRAPH_REPORT;
+use serde::Serialize;
 use std::fs;
 use std::io::BufWriter;
+use std::path::{Path, PathBuf};
 
 pub(super) fn prune_artifact_to_chunk_ids(artifact: &mut ChunkBundle, selected: &[String]) {
     let selected_ids: std::collections::HashSet<ChunkId> = selected

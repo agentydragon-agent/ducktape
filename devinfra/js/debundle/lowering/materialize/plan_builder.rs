@@ -5,21 +5,24 @@
 //! being open-coded per phase.
 
 use super::outcome_sink::OutcomeSink;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use anyhow::{Result, bail};
-use analysis::{BindingKind, LogicalModuleIndex, ModuleId, top_level_id, OwnerId};
 use crate::anonymous::ResolvedAnonymousStatement;
-use crate::chunk_ast::binding_declaration;
+use crate::chunk_ast::{TopLevelDecl, binding_declaration};
+use crate::util::target_file_for_request;
 use crate::exports::reject_duplicate_member_bindings;
-use crate::imports::{ArtifactSourceImportResolutionCache, RuntimeImportFacts, resolve_imported_binding};
+use crate::imports::{
+    ArtifactSourceImportResolutionCache, RuntimeImportFacts, resolve_imported_binding,
+};
 use crate::plans::{LogicalRequest, MemberRequest, ModulePlan};
 use crate::rebind_fold::RebindFold;
-use swc_ecma_ast::*;
+use analysis::{BindingKind, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits, OwnerId, top_level_id};
+use anyhow::{Context, Result, bail};
 use js_ast::body_index_for_statement_ordinal;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
 use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use swc_ecma_ast::*;
 
 /// The explicit requests' entities the selector resolve decides, one module
 /// per request.
