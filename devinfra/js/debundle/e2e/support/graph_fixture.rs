@@ -165,7 +165,7 @@ impl GraphFixture {
             "{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        assert_node_output(&out_root.join("app/main/main.js"), expected, "");
+        assert_node_output(&out_root.join("app/main/entry.js"), expected, "");
     }
 
     pub fn owner_graph(&self) -> OwnerGraphReport {
