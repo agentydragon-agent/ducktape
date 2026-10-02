@@ -200,13 +200,14 @@ def test_agentplane_external_delegation_has_independent_flux_ownership(k8s_dir: 
     assert flux["spec"]["dependsOn"] == [{"name": "haku-rbac", "namespace": "ducktape-flux"}]
 
 
-def test_managed_haku_read_grants_cover_declarative_namespace_opt_ins(
-    cluster: ParsedCluster, k8s_dir: Path, repo_root: Path, generated_dir: Path
+@pytest.mark.parametrize("preset", ["haku", "public-coder", "finance-agent"])
+def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
+    cluster: ParsedCluster, k8s_dir: Path, repo_root: Path, generated_dir: Path, preset: str
 ) -> None:
-    """A Haku preset launch gets the same labeled namespace readers as static Haku.
+    """Managed agents get the same labeled namespace readers as the static identities.
 
     Only active Namespace manifests participate. A new label opt-in must add
-    a Haku catalog/default entry and an independently owned delegation Kustomization.
+    shared catalog/default entries and an independently owned delegation Kustomization.
     """
     metadata_label = "rbac.ducktape.io/agent-readable-metadata"
     logs_label = "rbac.ducktape.io/agent-readable-logs"
@@ -240,11 +241,11 @@ def test_managed_haku_read_grants_cover_declarative_namespace_opt_ins(
     )
     config = yaml.safe_load(app_config["data"]["config.yaml"])
     catalog = config["kubernetes_grants"]
-    haku_grants = set(config["sandbox_presets"]["haku"]["kubernetes_grants"])
+    selected_grants = set(config["sandbox_presets"][preset]["kubernetes_grants"])
     reader_roles = {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
     actual = {
         (grant["namespace"], grant["role_ref"]["name"])
-        for name in haku_grants
+        for name in selected_grants
         if (grant := catalog[name])["role_ref"]["name"] in reader_roles
     }
     assert actual == expected
@@ -263,7 +264,7 @@ def test_managed_haku_read_grants_cover_declarative_namespace_opt_ins(
         for doc in staging_docs
     )
 
-    for name in haku_grants:
+    for name in selected_grants:
         grant = catalog[name]
         if grant["role_ref"]["name"] in reader_roles:
             assert grant["kind"] == "RoleBinding"
