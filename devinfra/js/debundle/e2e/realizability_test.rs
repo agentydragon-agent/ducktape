@@ -905,3 +905,64 @@ export { C };
         &["top-level", "await", "TLA"],
     );
 }
+
+#[test]
+fn for_await_makes_the_module_async() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            "const a = 1; for await (const x of []) {}",
+            vec![logical_module("mod_x", &[Member::new("a")])],
+        ),
+        &["top-level", "await", "TLA"],
+    );
+}
+
+#[test]
+fn await_using_makes_the_module_async() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            "const a = 1; await using resource = null;",
+            vec![logical_module("mod_x", &[Member::new("a")])],
+        ),
+        &["top-level", "await", "TLA"],
+    );
+}
+
+#[test]
+fn await_in_an_object_method_key_is_eager() {
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            "const a = { [await Promise.resolve('x')]() {} };",
+            vec![logical_module("mod_x", &[Member::new("a")])],
+        ),
+        &["top-level", "await", "TLA"],
+    );
+}
+
+#[test]
+fn extracted_initializer_cannot_read_inline_entry_binding() {
+    // No export or residual expression references b: only the emitted entry's
+    // implicit import of mod_x closes the runtime cycle.
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            "const a = 1; const b = a + 1;",
+            vec![logical_module("mod_x", &[Member::new("b")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["cycle", "mod_x"],
+    );
+}
+
+#[test]
+fn eager_class_callback_preserves_initialization_order() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const a = 1; const api = { run(f) { f(); return Object; } };\n\
+         class C extends api.run(() => console.log(a)) {}\n\
+         function back() { return C; }",
+        vec![
+            logical_module("mod_a", &[Member::new("a"), Member::new("back")]),
+            logical_module("mod_b", &[Member::new("api"), Member::new("C")]),
+        ],
+    ));
+    assert_entry_output(&fixture, "1\n");
+}

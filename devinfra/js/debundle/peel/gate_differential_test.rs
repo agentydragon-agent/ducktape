@@ -213,6 +213,10 @@ fn assert_ladder_matches_reference(
             "({c1:?}, {c2:?}): tier-1 rebind reject must be certified by a \
              clause-2 cross-rebind touching M: {reference:#?}",
         ),
+        LadderDecision::EntryDependencyReject => assert!(
+            tdz,
+            "entry dependency reject needs reference TDZ evidence: {reference:#?}",
+        ),
         LadderDecision::SimulatorReject => assert!(
             tdz,
             "({c1:?}, {c2:?}): tier-3 reject must be certified by an \
@@ -342,8 +346,8 @@ fn gate_accepts_residual_pile_cycle_merge() {
 }
 
 /// A merge that closes an asymmetric I-SCC whose constraining pair
-/// TDZs is rejected at the merge (tier 3, `EsmEvaluationTdz`); a
-/// Pass-1-only gate is blind to it.
+/// TDZs is rejected at the merge (`EsmEvaluationTdz`); a Pass-1-only
+/// gate is blind to it. Dependencies into entry are now rejected early.
 #[test]
 fn gate_rejects_pass2_tdz_merge() {
     let x = active_owner("owner:x", 1, &["BindingX"], 10, "ui/x");
@@ -370,8 +374,8 @@ fn gate_rejects_pass2_tdz_merge() {
     let ladder = compare_gate_to_reference(&report, &mut q, cx, ch).unwrap();
     assert_eq!(
         ladder,
-        LadderDecision::SimulatorReject,
-        "TDZ-closing merge must be rejected at the merge by tier 3",
+        LadderDecision::EntryDependencyReject,
+        "a merge depending on entry must reject before the SCC fast paths",
     );
 }
 

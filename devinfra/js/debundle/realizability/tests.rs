@@ -27,11 +27,12 @@ fn parse_and_build(source: &str) -> OwnerGraph {
 fn acyclic_cross_module_at_init_read_is_realizable() {
     let source = "const a = 1; const b = a + 1;";
     let owner_graph = parse_and_build(source);
-    // Owner 0: const a = 1 → module 0.
-    // Owner 1: const b = a + 1 → module 1.
+    // Owner 0: const a = 1 → module 1.
+    // Owner 1: const b = a + 1 → module 2.
     // Edge owner_1 → owner_0 (eager_use of `a`).
     let mut partition = Partition::new(&owner_graph, module_id(0));
-    partition.set(OwnerId(1), module_id(1));
+    partition.set(OwnerId(0), module_id(1));
+    partition.set(OwnerId(1), module_id(2));
     let verdict = check_realizability(&owner_graph, &partition);
     assert!(
         verdict.is_realizable(),
@@ -932,7 +933,8 @@ fn ladder_tier1_rejects_cross_rebind_move() {
 
 #[test]
 fn ladder_tier2_accepts_acyclic_cross_module_move() {
-    // The move adds one constraining edge and closes nothing — the
+    // Move the dependency out of entry, not its dependent. The resulting
+    // entry-to-module edge is valid; the reverse is an entry TDZ. The
     // I-condensation proves Pass 2 vacuous without a simulator build.
     let source = "const a = 1; const b = a + 1;";
     let owner_graph = parse_and_build(source);
@@ -940,7 +942,7 @@ fn ladder_tier2_accepts_acyclic_cross_module_move() {
         &owner_graph,
         Partition::new(&owner_graph, module_id(0)),
     );
-    let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
+    let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(0)], module_id(1));
     assert_eq!(decision, LadderDecision::NoMultiModuleISccAccept);
 }
 
@@ -976,13 +978,13 @@ fn ladder_tier3_accepts_lemma_two_rescued_move() {
 }
 
 #[test]
-fn ladder_tier3_rejects_tdz_move() {
+fn ladder_rejects_entry_tdz_before_simulation() {
     // Asymmetric I-SCC with the constraining edge pointing INTO
     // residual (the `constraining_edge_into_residual_inside_scc`
     // shape, reached via a move): residual is the DFS root and
     // evaluates last, so the moved statement's eager read of `seed`
     // TDZs. Pass 1 is clean (one constraining direction) and the
-    // I-SCC carries a constraining pair, so only tier 3 can decide.
+    // entry-last check rejects before tier 2 can skip the simulator.
     let source = "const seed = 1; const x = seed + 1; function readX() { return x; }";
     let owner_graph = parse_and_build(source);
     let index = RealizabilityIndex::from_partition(
@@ -990,7 +992,7 @@ fn ladder_tier3_rejects_tdz_move() {
         Partition::new(&owner_graph, module_id(0)),
     );
     let decision = assert_ladder_matches_verdict(&index, &owner_graph, &[OwnerId(1)], module_id(1));
-    assert_eq!(decision, LadderDecision::SimulatorReject);
+    assert_eq!(decision, LadderDecision::EntryDependencyReject);
 }
 
 /// Condensation-order maintenance: the ladder stays equal to the
@@ -1191,4 +1193,23 @@ fn move_overlay_matches_committed_and_pure_on_promoted_edge_graphs() {
             }
         }
     }
+}
+
+#[test]
+fn entry_dependency_is_rejected_by_reference_overlay_and_committed_gates() {
+    let graph = parse_and_build("const a = 1; const b = a + 1;");
+    let mut partition = Partition::new(&graph, module_id(0));
+    let mut index = RealizabilityIndex::from_partition(&graph, partition.clone());
+    let decision = assert_ladder_matches_verdict(&index, &graph, &[OwnerId(1)], module_id(1));
+    assert_eq!(decision, LadderDecision::EntryDependencyReject);
+    partition.set(OwnerId(1), module_id(1));
+    assert!(!check_realizability(&graph, &partition).is_realizable());
+    // Rebuild the committed cache from the same concrete assignment.
+    index = RealizabilityIndex::from_partition(&graph, partition);
+    assert_eq!(
+        assert_ladder_matches_verdict(&index, &graph, &[OwnerId(1)], module_id(1)),
+        LadderDecision::DeltaFreeReject
+    );
+    // Moving the dependency into the same emitted module repairs the violation.
+    assert!(assert_ladder_matches_verdict(&index, &graph, &[OwnerId(0)], module_id(1)).accepts());
 }

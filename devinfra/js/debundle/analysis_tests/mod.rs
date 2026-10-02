@@ -1013,3 +1013,43 @@ sideEffect(C, E);
         // policy-independent.
     }
 }
+
+#[test]
+fn eager_class_parts_retain_untrusted_inline_callback_fallback() {
+    for source in [
+        "class C extends api.run(() => a) {}",
+        "class C { static x = api.run(() => a); }",
+        "class C { [api.run(() => a)]() {} }",
+        "class C { static { api.run(() => a); } }",
+    ] {
+        let facts = analyze_facts(&parse(source));
+        assert!(
+            facts[0].at_init_unresolved_inline_fn,
+            "{source}: {facts:#?}"
+        );
+    }
+}
+
+#[test]
+fn lazy_class_registration_cannot_suppress_an_eager_callback_source() {
+    let hints = AnalysisHints {
+        no_sync_callback_members: BTreeMap::from([(
+            "api".to_string(),
+            BTreeSet::from(["save".to_string()]),
+        )]),
+        ..AnalysisHints::default()
+    };
+    for lazy_part in [
+        "constructor() { api.save(provider); }",
+        "x = api.save(provider);",
+    ] {
+        let source = format!("class C {{ static {{ api.run(provider); }} {lazy_part} }}");
+        let facts = analyze_facts_with_hints(&parse(&source), &hints);
+        assert!(
+            facts[0]
+                .at_init_unresolved_sources
+                .contains(&test_id("provider")),
+            "{source}: {facts:#?}"
+        );
+    }
+}

@@ -115,8 +115,11 @@ pub enum LadderDecision {
     /// Tier 1: a cross-module rebinding write touches the target
     /// (clause 2).
     CrossRebindReject,
+    /// A constraining dependency on entry cannot run before entry's body.
+    EntryDependencyReject,
     /// Tier 2: the target's post-move I-SCC is single-module — Pass 2
-    /// is vacuous (modules outside any I-cycle cannot be rejected by
+    /// is vacuous after excluding dependencies into entry (other modules
+    /// outside any I-cycle cannot be rejected by
     /// the simulator).
     NoMultiModuleISccAccept,
     /// Tier 2: the target's post-move I-SCC is multi-module but
@@ -700,6 +703,8 @@ impl IncrementalQuotient {
             }
         }
 
+        self.reject_entry_dependencies(&mut verdict, None, None);
+
         verdict
     }
 
@@ -751,6 +756,8 @@ impl IncrementalQuotient {
             }
         }
 
+        self.reject_entry_dependencies(&mut verdict, Some(module), None);
+
         verdict
     }
 
@@ -801,7 +808,37 @@ impl IncrementalQuotient {
             }
         }
 
+        self.reject_entry_dependencies(&mut verdict, Some(module), Some(overlay));
+
         verdict
+    }
+
+    fn reject_entry_dependencies(
+        &self,
+        verdict: &mut RealizabilityVerdict,
+        touching: Option<ModuleId>,
+        overlay: Option<&QuotientOverlay>,
+    ) {
+        let sources: BTreeSet<_> = self
+            .constraining_graph
+            .predecessors(self.residual)
+            .chain(overlay.into_iter().flat_map(|o| {
+                o.constraining_added
+                    .keys()
+                    .filter_map(|&(from, to)| (to == self.residual).then_some(from))
+            }))
+            .filter(|from| touching.is_none_or(|m| m == *from || m == self.residual))
+            .collect();
+        for from in sources {
+            let pair = (from, self.residual);
+            let edges = match overlay {
+                Some(o) => self
+                    .constraining_bucket_with_overlay(pair, o)
+                    .evidence_edges(),
+                None => self.constraining_buckets[&pair].evidence_edges(),
+            };
+            super::reject_entry_dependency(verdict, from, self.residual, edges);
+        }
     }
 
     /// Whether `modules` contains both endpoints of an effective
@@ -921,6 +958,33 @@ impl IncrementalQuotient {
         }
         if self.any_cross_rebind_touching_with_overlay(module, overlay) {
             return LadderDecision::CrossRebindReject;
+        }
+
+        // The source I-graph omits entry's universal imports. Its singleton
+        // SCC fast path cannot justify accepting a dependency into entry.
+        let effective = |from| {
+            self.constraining_graph.edge_count(from, self.residual) as isize
+                + overlay
+                    .constraining_delta
+                    .get(&(from, self.residual))
+                    .copied()
+                    .unwrap_or(0)
+        };
+        let entry_dependency = if module == self.residual {
+            self.constraining_graph
+                .predecessors(self.residual)
+                .chain(
+                    overlay
+                        .constraining_added
+                        .keys()
+                        .filter_map(|&(from, to)| (to == self.residual).then_some(from)),
+                )
+                .any(|from| effective(from) > 0)
+        } else {
+            effective(module) > 0
+        };
+        if entry_dependency {
+            return LadderDecision::EntryDependencyReject;
         }
 
         // Tier 2: Pass-2 vacuity on the I-condensation. Overlay
