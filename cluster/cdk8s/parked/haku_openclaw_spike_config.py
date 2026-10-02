@@ -12,16 +12,27 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpecDeletionPolicy,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
+from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecClusterRef, BucketSpecReclaimPolicy
+from seaweed_s3credentials_crds.com.seaweedfs.seaweed import (
+    S3CredentialsSpecIdentityRef,
+    S3CredentialsSpecReclaimPolicy,
+    S3CredentialsSpecSeaweedRef,
+    S3CredentialsSpecSecretRef,
+)
 
-from cluster.cdk8s import haku_egress_proxy, namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
@@ -31,10 +42,11 @@ from cluster.cdk8s.flux import (
     RenderedDirectory,
     flux_kustomization,
     flux_kustomization_depends_on_many,
+    kustomize_kustomization,
 )
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import config_map_chart, copy_source_file
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.generation import config_map_chart, copy_source_file, write_yaml
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import (
@@ -43,15 +55,16 @@ from cluster.cdk8s.openclaw_gateway import (
     session_memory_hook,
     trusted_proxy_gateway,
 )
-from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
-from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.parked import haku_openclaw_spike_proxy
+from cluster.cdk8s.providers.seaweedfs.bucket import Bucket, BucketAccess
+from cluster.cdk8s.providers.seaweedfs.s3_credentials import S3Credentials
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _NAMESPACE = "haku-openclaw-spike"
 _NAME = "haku-openclaw-spike"
-OUTPUT_DIR = f"{GENERATED_ROOT}/agents/haku-openclaw-spike/app"
-PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/app-image-pins"
+OUTPUT_DIR = f"{PARKED_ROOT}/haku-openclaw-spike/app"
+PINS_DIR = f"{PARKED_ROOT}/haku-openclaw-spike/app-image-pins"
 # Authentik's outpost reaches it by FQDN (cluster/k8s/authentik/app/blueprints/haku-openclaw-spike-sso.yaml).
 _GATEWAY = ServiceRef(
     name=_NAME,
@@ -312,11 +325,11 @@ def _openclaw_container() -> k8s.Container:
             # Keep both cases: Node honors the uppercase variables, while curl/libcurl (and
             # therefore Git over plain HTTP) require the lowercase form and intentionally
             # ignore uppercase HTTP_PROXY.
-            _env("HTTP_PROXY", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
-            _env("HTTPS_PROXY", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
+            _env("HTTP_PROXY", haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.url),
+            _env("HTTPS_PROXY", haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.url),
             _env("NO_PROXY", _NO_PROXY),
-            _env("http_proxy", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
-            _env("https_proxy", haku_egress_proxy.OPENCLAW_SPIKE_PROXY.url),
+            _env("http_proxy", haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.url),
+            _env("https_proxy", haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.url),
             _env("no_proxy", _NO_PROXY),
             _env("NODE_EXTRA_CA_CERTS", _CA_BUNDLE),
             # Python is the other runtime that ignores the mounted system bundle: pip trusts
@@ -555,17 +568,17 @@ def _network_policies(scope: Construct) -> None:
                         k8s.NetworkPolicyPeer(
                             namespace_selector=k8s.LabelSelector(
                                 match_labels={
-                                    "kubernetes.io/metadata.name": haku_egress_proxy.OPENCLAW_SPIKE_PROXY.pods.namespace
+                                    "kubernetes.io/metadata.name": haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.pods.namespace
                                 }
                             ),
                             pod_selector=k8s.LabelSelector(
-                                match_labels=haku_egress_proxy.OPENCLAW_SPIKE_PROXY.pods.selector
+                                match_labels=haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.pods.selector
                             ),
                         )
                     ],
                     ports=[
                         k8s.NetworkPolicyPort(
-                            port=k8s.IntOrString.from_number(haku_egress_proxy.OPENCLAW_SPIKE_PROXY.pod_port),
+                            port=k8s.IntOrString.from_number(haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.pod_port),
                             protocol="TCP",
                         )
                     ],
@@ -580,24 +593,37 @@ def _backup_bucket(scope: Construct) -> None:
     # No S3Identity declares this IAM identity; S3Credentials uses the existing one by name.
     identity = "haku-openclaw-spike-backups"
     # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
-    s3.bucket(
+    # Archived typed objects deliberately do not use the active tenant-checked s3 helpers.
+    # Revival must first restore this namespace's SeaweedFS ResourceReferenceGrant.
+    Bucket(
         scope,
         "backup-bucket",
-        name="haku-openclaw-spike-backups",
-        namespace=_NAMESPACE,
+        metadata=ApiObjectMetadata(
+            name="haku-openclaw-spike-backups",
+            namespace=_NAMESPACE,
+            annotations={"description": "Haku OpenClaw spike VolSync backup bucket."},
+        ),
+        cluster_ref=BucketSpecClusterRef(name="seaweedfs", namespace="seaweedfs"),
         access=[BucketAccess.read_write(identity)],
         adopt_existing=True,
-        description="Haku OpenClaw spike VolSync backup bucket.",
+        reclaim_policy=BucketSpecReclaimPolicy.RETAIN,
     )
-    s3.credentials(
+    S3Credentials(
         scope,
         "backup-credentials",
-        identity=identity,
-        namespace=_NAMESPACE,
-        # Generated directly where the VolSync SecretStore reads it.
-        secret="haku-openclaw-spike-volsync-s3-credentials",
-        key_fields=s3.AWS_ENV_KEY_FIELDS,
-        description="Haku OpenClaw spike VolSync SeaweedFS credentials.",
+        metadata=ApiObjectMetadata(
+            name=identity,
+            namespace=_NAMESPACE,
+            annotations={"description": "Haku OpenClaw spike VolSync SeaweedFS credentials."},
+        ),
+        seaweed_ref=S3CredentialsSpecSeaweedRef(name="seaweedfs", namespace="seaweedfs"),
+        identity_ref=S3CredentialsSpecIdentityRef(name=identity),
+        secret_ref=S3CredentialsSpecSecretRef(
+            name="haku-openclaw-spike-volsync-s3-credentials",
+            access_key_field="AWS_ACCESS_KEY_ID",
+            secret_key_field="AWS_SECRET_ACCESS_KEY",
+        ),
+        reclaim_policy=S3CredentialsSpecReclaimPolicy.RETAIN,
     )
 
 
@@ -623,7 +649,7 @@ def write_kubeconfig_config_map(root: Path) -> ConfigMapArgs:
     return ConfigMapArgs(
         name=_KUBECONFIG_CONFIG_MAP_NAME,
         namespace=_NAMESPACE,
-        files=[f"{_KUBECONFIG_KEY}=" + copy_source_file(root, OUTPUT_DIR, "cluster/cdk8s/kube-client-config")],
+        files=[f"{_KUBECONFIG_KEY}=" + copy_source_file(root, OUTPUT_DIR, "cluster/cdk8s/parked/kube-client-config")],
     )
 
 
@@ -643,4 +669,25 @@ def haku_openclaw_spike_app(
         description=(
             "Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy."
         ),
+    )
+
+
+def retire(root: Path, flux_chart: Chart) -> None:
+    """Prune the existing owner's inventory before removing its orphan-protected CR.
+
+    This temporary empty owner is not an archived workload deployment. Remove it only
+    after the namespace/PVCs are gone and Flux reports an empty inventory.
+    """
+    directory = f"{GENERATED_ROOT}/retired/haku-openclaw-spike"
+    (root / directory).mkdir(parents=True, exist_ok=True)
+    write_yaml(root / directory / "kustomization.yaml", kustomize_kustomization(resources=[]))
+    flux_kustomization(
+        flux_chart,
+        "haku-openclaw-spike-app",
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
+        ),
+        path=f"./{directory}",
+        deletion_policy=KustomizationSpecDeletionPolicy.WAIT_FOR_TERMINATION,
+        description="Retirement: prune the OpenClaw spike namespace and PVCs; remove after inventory is empty.",
     )

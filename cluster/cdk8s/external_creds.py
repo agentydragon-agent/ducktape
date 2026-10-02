@@ -102,7 +102,6 @@ CREDENTIALS = (
         secret_name="github-agentydragon-agent",
         consumers=(
             ApprovedConsumer("public-coder-agent", "github-agentydragon-agent-public-coder-agent-reader"),
-            ApprovedConsumer("haku-egress-proxy", "github-agentydragon-agent-haku-egress-proxy-reader"),
             ApprovedConsumer("haku-console", "github-agentydragon-agent-haku-console-reader"),
             ApprovedConsumer("monitoring", "github-agentydragon-agent-monitoring-reader"),
             ApprovedConsumer(

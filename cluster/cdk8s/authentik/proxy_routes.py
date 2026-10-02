@@ -45,10 +45,7 @@ _ROUTES = {
     "adsb": "adsb.allegedly.works",
 }
 # OpenClaw agents hold requests open for long model turns.
-_LONG_REQUEST_ROUTES = {
-    "public-coder-agent": "public-coder-agent.allegedly.works",
-    "haku-openclaw-spike": "haku-openclaw-spike.allegedly.works",
-}
+_LONG_REQUEST_ROUTES = {"public-coder-agent": "public-coder-agent.allegedly.works"}
 
 # Inject the CSP on every haku-ui response, from OUTSIDE Haku's write scope.
 # haku-ui's code is Haku-authored (adversarial under prompt injection); without this,

@@ -456,3 +456,15 @@ hasn't stabilized" — not a run-state axis; before this convention, `cluster/k8
 only decommissioned apps with nothing actually experimental in it, and didn't cover the
 flat-top-level cases (`egress-proxy-rugged/`, `inventree/`) at all. `parked` reuses the
 vocabulary the `ducktape.org/parked` annotation already had.
+
+### Haku OpenClaw spike retirement
+
+The Haku OpenClaw compatibility spike is decommissioned, including its namespace
+and PVCs. Its app, backup, and dedicated Iron proxy generators and manifests are
+retained under `cluster/cdk8s/parked/` and `cluster/parked/haku-openclaw-spike/`.
+Haku sandbox, the Haku CI mitmproxy, and public coder are not decommissioned.
+
+The old app owner used `deletionPolicy: Orphan`; retirement therefore first reconciles
+that same Flux Kustomization against an empty manifest set to prune its inventory.
+Delete the temporary empty owner only after verifying namespace/PVC deletion.
+Historical SeaweedFS/Restic backup storage retains its `Retain` policy.

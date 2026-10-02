@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - app.k8s.yaml
 components:
-  - ../../../../k8s/agents/haku-openclaw-spike/app-image-pins
+  - ../app-image-pins
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

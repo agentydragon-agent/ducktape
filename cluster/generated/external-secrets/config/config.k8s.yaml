@@ -81,7 +81,6 @@ spec:
         - claude-sandbox
         - flux-system
         - haku-console
-        - haku-egress-proxy
         - haku-sandbox
         - litellm
         - monitoring
@@ -150,7 +149,6 @@ spec:
         - haku-console
         - haku-egress-proxy
         - haku-mailbox
-        - haku-openclaw-spike
         - home-assistant
         - litellm
         - loki-read-proxy

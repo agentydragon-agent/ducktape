@@ -27,22 +27,6 @@ configMapGenerator:
             expected_group: haku
             expected_audiences:
               - kubectl-sandbox-client-credentials
-          - name: haku-k8s-openclaw
-            provider_slug: kubectl-sandbox-client-credentials
-            scopes: openid profile email groups
-            credential_mode: user_password
-            credentials_dir: /var/run/secrets/authentik/haku-k8s
-            sops_file: secrets/haku-k8s-openclaw-jwt.yaml
-            token_field: jwt
-            expected_group: haku
-            expected_audiences:
-              - kubectl-sandbox-client-credentials
-            k8s_secret:
-              path: cluster/k8s/agents/haku-egress-proxy/openclaw-spike-kube-token.sops.yaml
-              name: haku-openclaw-spike-kube-token
-              namespace: haku-egress-proxy
-            probe:
-              url: https://kubeapi.allegedly.works/apis
           - name: agent-box-codex
             provider_slug: kubectl-sandbox-client-credentials
             scopes: openid profile email groups

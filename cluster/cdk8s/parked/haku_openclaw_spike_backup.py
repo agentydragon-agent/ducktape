@@ -8,11 +8,11 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.restic_backup import ResticBackup
 
 NAME = "haku-openclaw-spike-backup"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/haku-openclaw-spike/backup"
+OUTPUT_DIR = f"{PARKED_ROOT}/haku-openclaw-spike/backup"
 
 
 def chart(app: App) -> Chart:

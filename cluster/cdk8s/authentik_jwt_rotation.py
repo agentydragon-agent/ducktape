@@ -108,35 +108,6 @@ ROTATIONS = Config(
             # cloud-agent vault no longer has a consumer for a Flux-published copy.
         ),
         Rotation(
-            # A SECOND, independent token for the same `haku` identity, minted for the
-            # experimental OpenClaw runtime's direct kubectl path. Deliberately not a second
-            # publish target for haku-k8s above: Authentik's create_client_credentials_response
-            # builds a fresh AccessToken per mint and revokes nothing (contrast the
-            # refresh_token path, which sets revoked=True explicitly), so concurrent tokens are
-            # fine -- and two tokens can be expired or deleted independently, where one shared
-            # token cannot. Its own sops_file is required, not incidental: remaining_hours()
-            # reads that file's expires_unencrypted stamp to decide whether to re-mint, so
-            # sharing one would couple the two rotation schedules.
-            name="haku-k8s-openclaw",
-            provider_slug="kubectl-sandbox-client-credentials",
-            scopes="openid profile email groups",
-            credential_mode="user_password",
-            expected_group="haku",
-            expected_audiences=["kubectl-sandbox-client-credentials"],
-            credentials_dir=_HAKU.directory,
-            sops_file=Path("secrets/haku-k8s-openclaw-jwt.yaml"),
-            token_field="jwt",
-            # Published straight into the consuming namespace. A cluster-API bearer has one
-            # consumer and should be readable from one namespace, not distributed through a
-            # cross-namespace SecretStore.
-            k8s_secret=K8sSecretOutput(
-                path=Path("cluster/k8s/agents/haku-egress-proxy/openclaw-spike-kube-token.sops.yaml"),
-                name="haku-openclaw-spike-kube-token",
-                namespace="haku-egress-proxy",
-            ),
-            probe=Probe(url="https://kubeapi.allegedly.works/apis"),
-        ),
-        Rotation(
             # Source JWT for the self-hosted Codex user on the agent-box VM. Issued by the shared
             # kubectl-sandbox-client-credentials provider using the agent-box-codex Authentik
             # service account, whose machine-principal mapping emits only the agent-box-codex

@@ -180,25 +180,6 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: haku-openclaw-spike
-  namespace: authentik
-spec:
-  hostnames:
-    - haku-openclaw-spike.allegedly.works
-  parentRefs:
-    - name: cluster-gateway
-      namespace: gateway-system
-  rules:
-    - backendRefs:
-        - name: authentik-server
-          port: 80
-      timeouts:
-        backendRequest: 600s
-        request: 600s
----
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
   name: haku-ui
   namespace: authentik
 spec:

@@ -1,4 +1,35 @@
-# Haku OpenClaw spike
+# Haku OpenClaw spike (decommissioned)
+
+## Retirement and revival
+
+This directory is an archive, not a live Flux source. Generators live under
+`cluster/cdk8s/parked/haku_openclaw_spike_*.py` and still render these snapshots.
+The Nix image source remains in `haku/openclaw_spike/`; its disabled CI workflow is
+archived there as `image-workflow.yaml.disabled`. The old Authentik blueprint is
+`haku-openclaw-spike-sso.yaml.disabled`: it is a revival input, not a Kubernetes
+manifest or an active Authentik blueprint.
+
+The existing `haku-openclaw-spike-app` Flux object temporarily targets an empty
+GitRepository directory to prune its inventory, including the namespace and PVCs.
+Its former `deletionPolicy: Orphan` means deleting that Flux object outright would
+not retire the app. Remove the empty retirement owner only after Flux is Ready,
+its inventory is empty, and the namespace/PVCs are absent. Check any remaining PV
+reclaim policy separately. Then revoke the temporary SeaweedFS tenant grant.
+PVC data loss is intentional; no unrelated namespace
+is part of this retirement.
+
+The backup bucket uses `Retain`: historical Restic data is not intentionally
+deleted. The repository password and published token are archived as unchanged
+SOPS ciphertext; do not reuse the old token when reviving the app.
+
+Revival requires deliberately restoring the Flux/artifact wiring, image workflow
+and automation, Authentik provider/outpost/route (removing the retirement blueprint),
+namespace credential-store admission, SeaweedFS tenant grant, shared-CA distribution,
+GitHub credential grant, and token rotation. The archived proxy expects the shared
+Haku proxy namespace, CA, OAuth and Forgejo credentials to exist. Do not apply this
+archive as-is and assume that its old credential references are still valid.
+
+## Historical deployment notes
 
 An isolated compatibility deployment at
 <https://haku-openclaw-spike.allegedly.works> proving that OpenClaw can use
