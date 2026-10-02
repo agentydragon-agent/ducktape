@@ -5,6 +5,8 @@
 
 mod ast_assertions;
 mod fixture_spec;
+mod graph_fixture;
+pub use graph_fixture::GraphFixture;
 
 pub use ast_assertions::{
     VariableDeclarationKind, VariableInitializerKind, assert_export_named_specifiers,
