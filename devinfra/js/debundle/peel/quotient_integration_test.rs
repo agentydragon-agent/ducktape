@@ -5,7 +5,7 @@
 use analysis::{AtomicUnitEdgeReport, DepKind, OwnerGraphReport};
 use report_fixtures::{
     active_owner, atomic_edge, atomic_unit_for, claims, graph_of, no_claims, owner_edge,
-    residual_owner,
+    residual_owner, singleton_graph,
 };
 
 use crate::propose::{ModuleProposal, propose};
@@ -16,6 +16,13 @@ use crate::quotient::{
     ClassId, CycleClassSet, CycleEvidence, OwnerIdx, QuotientGraph, SeedContractionRejected,
     SpecModuleGroup, build_seed_quotient, greedy_merge_to_convergence,
 };
+
+fn spec_module(module_id: &str, owners: &[&str]) -> SpecModuleGroup {
+    SpecModuleGroup {
+        module_id: module_id.into(),
+        owner_ids: owners.iter().map(|id| (*id).into()).collect(),
+    }
+}
 
 // ---------- Tests. ----------
 
@@ -52,19 +59,8 @@ fn seed_pre_contracts_spec_modules() {
     // must share a class.
     let a = residual_owner("owner:a", 1, &["BindingA"], 5);
     let b = residual_owner("owner:b", 2, &["BindingB"], 5);
-    let report = graph_of(
-        vec![a.clone(), b.clone()],
-        vec![],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-        ],
-        vec![],
-    );
-    let spec = vec![SpecModuleGroup {
-        module_id: "mod_alpha".to_string(),
-        owner_ids: vec!["owner:a".to_string(), "owner:b".to_string()],
-    }];
+    let report = singleton_graph(vec![a.clone(), b.clone()], vec![]);
+    let spec = vec![spec_module("mod_alpha", &["owner:a", "owner:b"])];
     let (q, rejected) =
         build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
     assert!(
@@ -98,26 +94,10 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
         owner_edge("edge:0", "owner:a1", "owner:b1", DepKind::EagerUse, true),
         owner_edge("edge:1", "owner:b2", "owner:a2", DepKind::EagerUse, true),
     ];
-    let report = graph_of(
-        vec![a1.clone(), a2.clone(), b1.clone(), b2.clone()],
-        edges,
-        vec![
-            atomic_unit_for("atomic:0", &[&a1]),
-            atomic_unit_for("atomic:1", &[&a2]),
-            atomic_unit_for("atomic:2", &[&b1]),
-            atomic_unit_for("atomic:3", &[&b2]),
-        ],
-        vec![],
-    );
+    let report = singleton_graph(vec![a1.clone(), a2.clone(), b1.clone(), b2.clone()], edges);
     let spec = vec![
-        SpecModuleGroup {
-            module_id: "mod_alpha".to_string(),
-            owner_ids: vec!["owner:a1".to_string(), "owner:a2".to_string()],
-        },
-        SpecModuleGroup {
-            module_id: "mod_beta".to_string(),
-            owner_ids: vec!["owner:b1".to_string(), "owner:b2".to_string()],
-        },
+        spec_module("mod_alpha", &["owner:a1", "owner:a2"]),
+        spec_module("mod_beta", &["owner:b1", "owner:b2"]),
     ];
     let (q, rejected) =
         build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
@@ -243,16 +223,7 @@ fn merge_closing_asymmetric_i_cycle_is_rejected_at_the_merge() {
         owner_edge("edge:0", "owner:x", "owner:r", DepKind::EagerUse, true),
         owner_edge("edge:1", "owner:r", "owner:h", DepKind::LazyUse, false),
     ];
-    let report = graph_of(
-        vec![x.clone(), r.clone(), h.clone()],
-        edges,
-        vec![
-            atomic_unit_for("atomic:0", &[&x]),
-            atomic_unit_for("atomic:1", &[&r]),
-            atomic_unit_for("atomic:2", &[&h]),
-        ],
-        vec![],
-    );
+    let report = singleton_graph(vec![x.clone(), r.clone(), h.clone()], edges);
     let groups = vec![module_group(vec![0])];
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
@@ -317,15 +288,7 @@ fn fixture_singletons() -> (&'static str, OwnerGraphReport) {
     let b = residual_owner("owner:b", 2, &["BindingB"], 5);
     (
         "singletons",
-        graph_of(
-            vec![a.clone(), b.clone()],
-            vec![],
-            vec![
-                atomic_unit_for("atomic:0", &[&a]),
-                atomic_unit_for("atomic:1", &[&b]),
-            ],
-            vec![],
-        ),
+        singleton_graph(vec![a.clone(), b.clone()], vec![]),
     )
 }
 
@@ -390,27 +353,11 @@ fn seed_rejection_diagnostic_is_canonical() {
             owner_edge("edge:0", "owner:a1", "owner:b1", DepKind::EagerUse, true),
             owner_edge("edge:1", "owner:b2", "owner:a2", DepKind::EagerUse, true),
         ];
-        graph_of(
-            vec![a1.clone(), a2.clone(), b1.clone(), b2.clone()],
-            edges,
-            vec![
-                atomic_unit_for("atomic:0", &[&a1]),
-                atomic_unit_for("atomic:1", &[&a2]),
-                atomic_unit_for("atomic:2", &[&b1]),
-                atomic_unit_for("atomic:3", &[&b2]),
-            ],
-            vec![],
-        )
+        singleton_graph(vec![a1.clone(), a2.clone(), b1.clone(), b2.clone()], edges)
     };
     let spec = vec![
-        SpecModuleGroup {
-            module_id: "mod_alpha".to_string(),
-            owner_ids: vec!["owner:a1".to_string(), "owner:a2".to_string()],
-        },
-        SpecModuleGroup {
-            module_id: "mod_beta".to_string(),
-            owner_ids: vec!["owner:b1".to_string(), "owner:b2".to_string()],
-        },
+        spec_module("mod_alpha", &["owner:a1", "owner:a2"]),
+        spec_module("mod_beta", &["owner:b1", "owner:b2"]),
     ];
 
     let report_a = make_report();
@@ -501,17 +448,7 @@ fn contract_never_un_contracts() {
     let b = residual_owner("owner:b", 2, &["BindingB"], 5);
     let c = residual_owner("owner:c", 3, &["BindingC"], 5);
     let d = residual_owner("owner:d", 4, &["BindingD"], 5);
-    let report = graph_of(
-        vec![a.clone(), b.clone(), c.clone(), d.clone()],
-        vec![],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-            atomic_unit_for("atomic:2", &[&c]),
-            atomic_unit_for("atomic:3", &[&d]),
-        ],
-        vec![],
-    );
+    let report = singleton_graph(vec![a.clone(), b.clone(), c.clone(), d.clone()], vec![]);
     let mut q = QuotientGraph::from_report(&report, 10_000).unwrap();
     let a_idx = q.owner_idx_of("owner:a").unwrap();
     let b_idx = q.owner_idx_of("owner:b").unwrap();
@@ -553,7 +490,7 @@ fn partition_constructor_contracts_each_group() {
     let c = residual_owner("owner:c", 3, &["BindingC"], 5);
     let d = residual_owner("owner:d", 4, &["BindingD"], 5);
     let e = residual_owner("owner:e", 5, &["BindingE"], 5);
-    let report = graph_of(
+    let report = singleton_graph(
         vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
         vec![owner_edge(
             "edge:0",
@@ -562,14 +499,6 @@ fn partition_constructor_contracts_each_group() {
             DepKind::EagerUse,
             true,
         )],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-            atomic_unit_for("atomic:2", &[&c]),
-            atomic_unit_for("atomic:3", &[&d]),
-            atomic_unit_for("atomic:4", &[&e]),
-        ],
-        vec![],
     );
 
     // Group 1: {a, b}; group 2: {c, d}; e stays singleton.
@@ -674,15 +603,7 @@ fn factorize_golden_output_unchanged() {
 fn golden_residual_singletons() -> OwnerGraphReport {
     let a = residual_owner("owner:a", 1, &["BindingA"], 10);
     let b = residual_owner("owner:b", 2, &["BindingB"], 10);
-    graph_of(
-        vec![a.clone(), b.clone()],
-        vec![],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-        ],
-        vec![],
-    )
+    singleton_graph(vec![a.clone(), b.clone()], vec![])
 }
 
 fn golden_closed_residual_unit() -> OwnerGraphReport {
@@ -824,20 +745,13 @@ fn greedy_terminates_at_convergence() {
     let h1 = residual_owner("owner:h1", 2, &["BindingH1"], 5);
     let h2 = residual_owner("owner:h2", 3, &["BindingH2"], 5);
     let h3 = residual_owner("owner:h3", 4, &["BindingH3"], 5);
-    let report = graph_of(
+    let report = singleton_graph(
         vec![a.clone(), h1.clone(), h2.clone(), h3.clone()],
         vec![
             owner_edge("edge:0", "owner:a", "owner:h1", DepKind::EagerUse, true),
             owner_edge("edge:1", "owner:a", "owner:h2", DepKind::EagerUse, true),
             owner_edge("edge:2", "owner:a", "owner:h3", DepKind::EagerUse, true),
         ],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&h1]),
-            atomic_unit_for("atomic:2", &[&h2]),
-            atomic_unit_for("atomic:3", &[&h3]),
-        ],
-        vec![],
     );
 
     let groups = vec![module_group(vec![0])];
@@ -863,7 +777,7 @@ fn greedy_never_splits_existing_spec_module() {
     let a1 = active_owner("owner:a1", 1, &["BindingA1"], 10, "ui/x");
     let a2 = active_owner("owner:a2", 2, &["BindingA2"], 10, "ui/x");
     let h = residual_owner("owner:h", 3, &["BindingH"], 5);
-    let report = graph_of(
+    let report = singleton_graph(
         vec![a1.clone(), a2.clone(), h.clone()],
         vec![owner_edge(
             "edge:0",
@@ -872,12 +786,6 @@ fn greedy_never_splits_existing_spec_module() {
             DepKind::EagerUse,
             true,
         )],
-        vec![
-            atomic_unit_for("atomic:0", &[&a1]),
-            atomic_unit_for("atomic:1", &[&a2]),
-            atomic_unit_for("atomic:2", &[&h]),
-        ],
-        vec![],
     );
 
     let groups = vec![module_group(vec![0, 1])];
@@ -903,18 +811,12 @@ fn boolean_merge_gate_matches_diagnostic_cycle_gate() {
     let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
     let h = active_owner("owner:h", 2, &["BindingH"], 10, "ui/h");
     let b = active_owner("owner:b", 3, &["BindingB"], 10, "ui/b");
-    let report = graph_of(
+    let report = singleton_graph(
         vec![a.clone(), h.clone(), b.clone()],
         vec![
             owner_edge("edge:0", "owner:a", "owner:h", DepKind::EagerUse, true),
             owner_edge("edge:1", "owner:h", "owner:b", DepKind::EagerUse, true),
         ],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&h]),
-            atomic_unit_for("atomic:2", &[&b]),
-        ],
-        vec![],
     );
     let groups = vec![
         module_group(vec![0]),
@@ -1455,10 +1357,7 @@ fn pass3_diagnostic_walk_never_commits_a_merge() {
             atomic_edge("atomic_edge:c", "atomic:helper", "atomic:bar"),
         ],
     );
-    let spec = vec![SpecModuleGroup {
-        module_id: "mod_alpha".to_string(),
-        owner_ids: vec!["owner:foo".to_string()],
-    }];
+    let spec = vec![spec_module("mod_alpha", &["owner:foo"])];
     let (q, rejected) =
         build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000).unwrap();
 
@@ -1644,7 +1543,7 @@ fn planner_seed_rejection_matches_materializer_verdict_on_asymmetric_cycle() {
             false,
         ),
     ];
-    let report = graph_of(
+    let report = singleton_graph(
         vec![
             entry.clone(),
             dep_value.clone(),
@@ -1654,35 +1553,14 @@ fn planner_seed_rejection_matches_materializer_verdict_on_asymmetric_cycle() {
             mediator_init.clone(),
         ],
         edges,
-        vec![
-            atomic_unit_for("atomic:0", &[&entry]),
-            atomic_unit_for("atomic:1", &[&dep_value]),
-            atomic_unit_for("atomic:2", &[&lazy_reader]),
-            atomic_unit_for("atomic:3", &[&cross_value]),
-            atomic_unit_for("atomic:4", &[&mediator_helper]),
-            atomic_unit_for("atomic:5", &[&mediator_init]),
-        ],
-        vec![],
     );
     let spec = vec![
-        SpecModuleGroup {
-            module_id: "mod_dep".to_string(),
-            owner_ids: vec![
-                "owner:dep_value".to_string(),
-                "owner:lazy_reader".to_string(),
-            ],
-        },
-        SpecModuleGroup {
-            module_id: "mod_dependent".to_string(),
-            owner_ids: vec!["owner:cross_value".to_string()],
-        },
-        SpecModuleGroup {
-            module_id: "mod_mediator".to_string(),
-            owner_ids: vec![
-                "owner:mediator_helper".to_string(),
-                "owner:mediator_init".to_string(),
-            ],
-        },
+        spec_module("mod_dep", &["owner:dep_value", "owner:lazy_reader"]),
+        spec_module("mod_dependent", &["owner:cross_value"]),
+        spec_module(
+            "mod_mediator",
+            &["owner:mediator_helper", "owner:mediator_init"],
+        ),
     ];
 
     // Materializer-side verdict.
@@ -1743,7 +1621,7 @@ fn planner_and_materializer_agree_on_corpus() {
     // Case 1: empty graph.
     cases.push(Case {
         label: "empty",
-        report: graph_of(vec![], vec![], vec![], vec![]),
+        report: singleton_graph(vec![], vec![]),
         spec: vec![],
     });
 
@@ -1753,7 +1631,7 @@ fn planner_and_materializer_agree_on_corpus() {
         let b = active_owner("owner:b", 2, &["BindingB"], 5, "mod_solo");
         cases.push(Case {
             label: "single_module_intra_edges",
-            report: graph_of(
+            report: singleton_graph(
                 vec![a.clone(), b.clone()],
                 vec![owner_edge(
                     "edge:0",
@@ -1762,16 +1640,8 @@ fn planner_and_materializer_agree_on_corpus() {
                     analysis::DepKind::EagerUse,
                     true,
                 )],
-                vec![
-                    atomic_unit_for("atomic:0", &[&a]),
-                    atomic_unit_for("atomic:1", &[&b]),
-                ],
-                vec![],
             ),
-            spec: vec![SpecModuleGroup {
-                module_id: "mod_solo".to_string(),
-                owner_ids: vec!["owner:a".to_string(), "owner:b".to_string()],
-            }],
+            spec: vec![spec_module("mod_solo", &["owner:a", "owner:b"])],
         });
     }
 
@@ -1808,7 +1678,7 @@ fn planner_and_materializer_agree_on_corpus() {
         );
         cases.push(Case {
             label: "asymmetric_i_cycle_via_mediator",
-            report: graph_of(
+            report: singleton_graph(
                 vec![
                     entry.clone(),
                     dep_value.clone(),
@@ -1854,35 +1724,14 @@ fn planner_and_materializer_agree_on_corpus() {
                         false,
                     ),
                 ],
-                vec![
-                    atomic_unit_for("atomic:0", &[&entry]),
-                    atomic_unit_for("atomic:1", &[&dep_value]),
-                    atomic_unit_for("atomic:2", &[&lazy_reader]),
-                    atomic_unit_for("atomic:3", &[&cross_value]),
-                    atomic_unit_for("atomic:4", &[&mediator_helper]),
-                    atomic_unit_for("atomic:5", &[&mediator_init]),
-                ],
-                vec![],
             ),
             spec: vec![
-                SpecModuleGroup {
-                    module_id: "mod_dep".to_string(),
-                    owner_ids: vec![
-                        "owner:dep_value".to_string(),
-                        "owner:lazy_reader".to_string(),
-                    ],
-                },
-                SpecModuleGroup {
-                    module_id: "mod_dependent".to_string(),
-                    owner_ids: vec!["owner:cross_value".to_string()],
-                },
-                SpecModuleGroup {
-                    module_id: "mod_mediator".to_string(),
-                    owner_ids: vec![
-                        "owner:mediator_helper".to_string(),
-                        "owner:mediator_init".to_string(),
-                    ],
-                },
+                spec_module("mod_dep", &["owner:dep_value", "owner:lazy_reader"]),
+                spec_module("mod_dependent", &["owner:cross_value"]),
+                spec_module(
+                    "mod_mediator",
+                    &["owner:mediator_helper", "owner:mediator_init"],
+                ),
             ],
         });
     }
@@ -1893,7 +1742,7 @@ fn planner_and_materializer_agree_on_corpus() {
         let b1 = residual_owner("owner:b1", 2, &["BindingB1"], 5);
         cases.push(Case {
             label: "mutual_constraining_cycle",
-            report: graph_of(
+            report: singleton_graph(
                 vec![a1.clone(), b1.clone()],
                 vec![
                     owner_edge(
@@ -1911,11 +1760,6 @@ fn planner_and_materializer_agree_on_corpus() {
                         true,
                     ),
                 ],
-                vec![
-                    atomic_unit_for("atomic:0", &[&a1]),
-                    atomic_unit_for("atomic:1", &[&b1]),
-                ],
-                vec![],
             ),
             // Note: residual destinations — no spec modules. The
             // planner's seed pass merges atomic units only; since
@@ -1933,7 +1777,7 @@ fn planner_and_materializer_agree_on_corpus() {
         let beta = active_owner("owner:beta", 2, &["BindingBeta"], 5, "mod_beta");
         cases.push(Case {
             label: "lazy_only_cross_module",
-            report: graph_of(
+            report: singleton_graph(
                 vec![alpha.clone(), beta.clone()],
                 vec![
                     owner_edge(
@@ -1951,21 +1795,10 @@ fn planner_and_materializer_agree_on_corpus() {
                         false,
                     ),
                 ],
-                vec![
-                    atomic_unit_for("atomic:0", &[&alpha]),
-                    atomic_unit_for("atomic:1", &[&beta]),
-                ],
-                vec![],
             ),
             spec: vec![
-                SpecModuleGroup {
-                    module_id: "mod_alpha".to_string(),
-                    owner_ids: vec!["owner:alpha".to_string()],
-                },
-                SpecModuleGroup {
-                    module_id: "mod_beta".to_string(),
-                    owner_ids: vec!["owner:beta".to_string()],
-                },
+                spec_module("mod_alpha", &["owner:alpha"]),
+                spec_module("mod_beta", &["owner:beta"]),
             ],
         });
     }
@@ -2035,17 +1868,9 @@ fn fixture_chain() -> (OwnerGraphReport, Vec<PartitionGroup>) {
         owner_edge("edge:2", "owner:d", "owner:c", DepKind::EagerUse, true),
         owner_edge("edge:3", "owner:e", "owner:d", DepKind::EagerUse, true),
     ];
-    let report = graph_of(
+    let report = singleton_graph(
         vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
         edges,
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-            atomic_unit_for("atomic:2", &[&c]),
-            atomic_unit_for("atomic:3", &[&d]),
-            atomic_unit_for("atomic:4", &[&e]),
-        ],
-        vec![],
     );
     let groups = vec![module_group(vec![0])];
     (report, groups)
@@ -2066,17 +1891,9 @@ fn fixture_star() -> (OwnerGraphReport, Vec<PartitionGroup>) {
         owner_edge("edge:2", "owner:d", "owner:a", DepKind::EagerUse, true),
         owner_edge("edge:3", "owner:e", "owner:a", DepKind::EagerUse, true),
     ];
-    let report = graph_of(
+    let report = singleton_graph(
         vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
         edges,
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-            atomic_unit_for("atomic:2", &[&c]),
-            atomic_unit_for("atomic:3", &[&d]),
-            atomic_unit_for("atomic:4", &[&e]),
-        ],
-        vec![],
     );
     let groups = vec![module_group(vec![0])];
     (report, groups)
@@ -2100,17 +1917,7 @@ fn fixture_mutual_eager() -> (OwnerGraphReport, Vec<PartitionGroup>) {
         owner_edge("edge:2", "owner:a", "owner:b", DepKind::LazyUse, false),
         owner_edge("edge:3", "owner:b", "owner:a", DepKind::LazyUse, false),
     ];
-    let report = graph_of(
-        vec![a.clone(), b.clone(), h1.clone(), h2.clone()],
-        edges,
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-            atomic_unit_for("atomic:2", &[&h1]),
-            atomic_unit_for("atomic:3", &[&h2]),
-        ],
-        vec![],
-    );
+    let report = singleton_graph(vec![a.clone(), b.clone(), h1.clone(), h2.clone()], edges);
     let groups = vec![module_group(vec![0]), module_group(vec![1])];
     (report, groups)
 }
@@ -2129,16 +1936,7 @@ fn fixture_asymmetric_cycle() -> (OwnerGraphReport, Vec<PartitionGroup>) {
         owner_edge("edge:0", "owner:a", "owner:h", DepKind::EagerUse, true),
         owner_edge("edge:1", "owner:h", "owner:b", DepKind::EagerUse, true),
     ];
-    let report = graph_of(
-        vec![a.clone(), b.clone(), h.clone()],
-        edges,
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-            atomic_unit_for("atomic:2", &[&h]),
-        ],
-        vec![],
-    );
+    let report = singleton_graph(vec![a.clone(), b.clone(), h.clone()], edges);
     let groups = vec![module_group(vec![0]), module_group(vec![1])];
     (report, groups)
 }
@@ -2161,7 +1959,7 @@ fn fixture_fully_connected_small() -> (OwnerGraphReport, Vec<PartitionGroup>) {
         owner_edge("edge:1", "owner:ob", "owner:b", DepKind::EagerUse, true),
         owner_edge("edge:2", "owner:oc", "owner:c", DepKind::EagerUse, true),
     ];
-    let report = graph_of(
+    let report = singleton_graph(
         vec![
             a.clone(),
             b.clone(),
@@ -2171,15 +1969,6 @@ fn fixture_fully_connected_small() -> (OwnerGraphReport, Vec<PartitionGroup>) {
             oc.clone(),
         ],
         edges,
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-            atomic_unit_for("atomic:2", &[&c]),
-            atomic_unit_for("atomic:3", &[&oa]),
-            atomic_unit_for("atomic:4", &[&ob]),
-            atomic_unit_for("atomic:5", &[&oc]),
-        ],
-        vec![],
     );
     let groups = vec![
         module_group(vec![0]),
@@ -2229,18 +2018,12 @@ fn gate_bypassing_partition_cycle_surfaces_and_recovers() {
     let a = active_owner("owner:a", 1, &["BindingA"], 5, "ui/a");
     let b = active_owner("owner:b", 2, &["BindingB"], 5, "ui/b");
     let c = active_owner("owner:c", 3, &["BindingC"], 5, "ui/c");
-    let report = graph_of(
+    let report = singleton_graph(
         vec![a.clone(), b.clone(), c.clone()],
         vec![
             owner_edge("edge:0", "owner:a", "owner:b", DepKind::EagerUse, true),
             owner_edge("edge:1", "owner:b", "owner:c", DepKind::EagerUse, true),
         ],
-        vec![
-            atomic_unit_for("atomic:0", &[&a]),
-            atomic_unit_for("atomic:1", &[&b]),
-            atomic_unit_for("atomic:2", &[&c]),
-        ],
-        vec![],
     );
     let (mut q, group_classes) = QuotientGraph::from_report_with_partition(
         &report,
