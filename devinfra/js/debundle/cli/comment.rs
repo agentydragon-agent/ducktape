@@ -41,7 +41,7 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 use serde_yaml::Value;
 use spec::ModulePath;
-use yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
+use yaml_edit::{apply_yaml_edit, read_yaml};
 
 use crate::binding::{BindingLocation, resolve_unambiguous};
 
@@ -287,7 +287,7 @@ pub fn apply_binding_comment(
         }
     };
 
-    let changed = dirty && yaml_semantically_changed(&file, &doc)?;
+    let changed = dirty && apply_yaml_edit(&file, &doc, dry_run)?;
     let action = if dirty && !changed {
         "unchanged"
     } else if changed && dry_run {
@@ -295,9 +295,6 @@ pub fn apply_binding_comment(
     } else {
         new_action
     };
-    if changed && !dry_run {
-        write_yaml_if_semantic_changed(&file, &doc)?;
-    }
 
     Ok(CommentOutcome {
         locator: sym.to_string(),
@@ -403,7 +400,7 @@ pub fn apply_module_comment(
         }
     };
 
-    let changed = dirty && yaml_semantically_changed(&file, &doc)?;
+    let changed = dirty && apply_yaml_edit(&file, &doc, dry_run)?;
     let action = if dirty && !changed {
         "unchanged"
     } else if changed && dry_run {
@@ -411,9 +408,6 @@ pub fn apply_module_comment(
     } else {
         new_action
     };
-    if changed && !dry_run {
-        write_yaml_if_semantic_changed(&file, &doc)?;
-    }
 
     Ok(CommentOutcome {
         locator: module.to_string(),

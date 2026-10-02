@@ -5,20 +5,7 @@ use crate::facts::{compute_shadowed_globals, top_level_item_views};
 use swc_common::{FileName, sync::Lrc};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
-fn parse(source: &str) -> Module {
-    let cm: Lrc<swc_common::SourceMap> = Default::default();
-    let fm = cm.new_source_file(
-        FileName::Custom("test.js".into()).into(),
-        source.to_string(),
-    );
-    let lexer = Lexer::new(
-        Syntax::Es(Default::default()),
-        Default::default(),
-        StringInput::from(&*fm),
-        None,
-    );
-    Parser::new_from(lexer).parse_module().unwrap()
-}
+use raw_js_test_support::parse;
 
 fn classify(src: &str) -> Purity {
     // Wrap the expression in a const so we can parse a module.

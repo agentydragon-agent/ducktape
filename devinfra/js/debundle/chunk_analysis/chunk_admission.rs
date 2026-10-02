@@ -435,25 +435,8 @@ fn visit_computed_prop_name(scan: &mut AdmissionScan<'_>, name: &PropName) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swc_common::{FileName, SourceMap, sync::Lrc};
-    use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
-    fn parse(source: &str) -> Module {
-        let cm: Lrc<SourceMap> = Default::default();
-        let fm = cm.new_source_file(
-            FileName::Custom("test.js".into()).into(),
-            source.to_string(),
-        );
-        let lexer = Lexer::new(
-            Syntax::Es(Default::default()),
-            Default::default(),
-            StringInput::from(&*fm),
-            None,
-        );
-        Parser::new_from(lexer)
-            .parse_module()
-            .expect("parse module")
-    }
+    use raw_js_test_support::parse;
 
     fn scan(source: &str) -> Vec<(AdmissionCheck, usize)> {
         scan_with_resolver(source, &|_| DynamicImportTarget::External)

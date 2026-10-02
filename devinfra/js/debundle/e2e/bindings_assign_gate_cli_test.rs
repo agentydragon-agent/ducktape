@@ -208,3 +208,37 @@ fn bindings_assign_requires_graph_or_no_verify() {
         "expected refusal mentioning --graph / --no-verify; got: {stderr}",
     );
 }
+
+#[test]
+fn assign_rejects_readable_name_claimed_by_source_match_before_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let modules = dir.path().join("modules");
+    let graph = dir.path().join("owner_graph.json");
+    let member = "members: [{selector: {binding: {name: alpha}}}]\n";
+    let claim = "source_matches: [{match: 'const beta = alpha;', bindings: [{local: beta, name: Existing}]}]\n";
+    write_text_file(&graph, &graph_with_acyclic_cross_module_read());
+    write_text_file(&modules.join("a.yaml"), member);
+    write_text_file(&modules.join("b.yaml"), claim);
+    for dry_run in [false, true] {
+        let mut args = vec![
+            "bindings",
+            "assign",
+            "--modules",
+            modules.to_str().unwrap(),
+            "--graph",
+            graph.to_str().unwrap(),
+            "alpha:c:Existing",
+        ];
+        if dry_run {
+            args.push("--dry-run");
+        }
+        let out = run_debundle(&args);
+        assert!(!out.status.success());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("name collision"), "{stderr}");
+        assert!(stderr.contains("source_matches[0].bindings[0]"), "{stderr}");
+        assert_eq!(fs::read_to_string(modules.join("a.yaml")).unwrap(), member);
+        assert_eq!(fs::read_to_string(modules.join("b.yaml")).unwrap(), claim);
+        assert!(!modules.join("c.yaml").exists());
+    }
+}
