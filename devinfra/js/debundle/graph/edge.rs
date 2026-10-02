@@ -219,36 +219,38 @@ impl EdgeReason {
     Deserialize,
     strum::IntoStaticStr,
     strum::Display,
+    strum::EnumMessage,
 )]
+#[cfg_attr(test, derive(strum::EnumIter))]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum DepKind {
+    #[strum(message = "at-init")]
     EagerUse,
+    #[strum(message = "lazy")]
     LazyUse,
+    #[strum(message = "at-init rebind")]
     EagerRebind,
+    #[strum(message = "lazy rebind")]
     LazyRebind,
     /// Rebinding write that only fires after module init (nested ≥2
     /// closures deep, or past an `await` in an async body). Rejected
     /// across destinations like the other rebinds (ESM imports are
     /// read-only whenever the write fires), but excluded from
     /// init-order constraints and the I-graph.
+    #[strum(message = "deferred rebind")]
     DeferredRebind,
+    #[strum(message = "side-effect")]
     Sequenced,
+    #[strum(message = "local-effect")]
     LocalEffect,
 }
 
 impl DepKind {
     /// Short human-readable label used in cycle and gate diagnostics.
     pub fn diagnostic_label(self) -> &'static str {
-        match self {
-            DepKind::EagerUse => "at-init",
-            DepKind::LazyUse => "lazy",
-            DepKind::EagerRebind => "at-init rebind",
-            DepKind::LazyRebind => "lazy rebind",
-            DepKind::DeferredRebind => "deferred rebind",
-            DepKind::Sequenced => "side-effect",
-            DepKind::LocalEffect => "local-effect",
-        }
+        strum::EnumMessage::get_message(&self)
+            .expect("every dependency kind has a diagnostic message")
     }
 }
 
@@ -278,4 +280,20 @@ pub struct OwnerEdge {
     pub from: OwnerId,
     pub to: OwnerId,
     pub reason: EdgeReason,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DepKind;
+    use strum::IntoEnumIterator;
+
+    #[test]
+    fn every_dependency_kind_has_a_diagnostic_message() {
+        for kind in DepKind::iter() {
+            assert!(!kind.diagnostic_label().is_empty());
+        }
+        // Diagnostic messages must not replace the machine-readable spelling.
+        assert_eq!(DepKind::EagerUse.to_string(), "eager_use");
+        assert_eq!(DepKind::EagerUse.diagnostic_label(), "at-init");
+    }
 }
