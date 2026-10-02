@@ -359,3 +359,66 @@ fn seq_exprs_outside_a_sequence_is_an_invalid_probe() {
         "{report:#}"
     );
 }
+
+fn assert_class_members_differ(left: &str, right: &str) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("app.js");
+    write_text_file(&source, &format!("class C {{ {left} }}"));
+    for (member, expected) in [(left, "resolved"), (right, "no_match")] {
+        let report = run_match_selector(
+            &source,
+            &format!("class C {{ {member} }}"),
+            &["--target-binding", "C", "--no-slack"],
+        );
+        assert_eq!(outcome(&report)["kind"], expected, "{left} vs {member}: {report:#}");
+    }
+}
+
+#[test]
+fn class_fields_preserve_staticness() {
+    assert_class_members_differ("static x = 1", "x = 1");
+    assert_class_members_differ("static #x = 1", "#x = 1");
+}
+
+#[test]
+fn class_methods_preserve_staticness() {
+    assert_class_members_differ("static x() {}", "x() {}");
+    assert_class_members_differ("static #x() {}", "#x() {}");
+}
+
+#[test]
+fn class_methods_preserve_accessor_kind() {
+    assert_class_members_differ("get x() {}", "x() {}");
+    assert_class_members_differ("set x(v) {}", "x(v) {}");
+    assert_class_members_differ("get #x() {}", "#x() {}");
+    assert_class_members_differ("set #x(v) {}", "#x(v) {}");
+}
+
+#[test]
+fn unprojected_decorators_are_invalid_selectors() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("app.js");
+    write_text_file(&source, "class C { x = 1; m() {} }");
+    for selector in [
+        "@dec class C { x = 1; m() {} }",
+        "class C { @dec x = 1; m() {} }",
+        "class C { x = 1; @dec m() {} }",
+    ] {
+        let report = run_match_selector(
+            &source, selector, &["--target-binding", "C", "--no-slack"],
+        );
+        assert_eq!(outcome(&report)["kind"], "invalid", "{selector}: {report:#}");
+    }
+}
+
+#[test]
+fn invalid_regex_predicate_is_not_a_no_match() {
+    let (_dir, source) = fixture();
+    let report = run_match_selector(
+        &source,
+        "const w = STR_LITERAL_MATCHING_RE(\"[\");",
+        &["--target-binding", "w", "--no-slack"],
+    );
+    assert_eq!(outcome(&report)["kind"], "invalid", "{report:#}");
+    assert!(outcome(&report)["error"].as_str().unwrap().contains("regex"), "{report:#}");
+}
