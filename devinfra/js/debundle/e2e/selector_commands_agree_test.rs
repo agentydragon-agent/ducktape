@@ -23,7 +23,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use debundle_e2e_support::{
-    BindingGroup, FixtureOpts, Member, assert_entry_output, assert_module_exports, debundler_path, logical_module,
+    BindingGroup, FixtureOpts, Member, assert_entry_output,
+    assert_generated_module_after_entry_script, debundler_path, logical_module,
     logical_module_with_binding_groups, outcomes, owner_graph, parse_stdout_json,
     read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture,
     run_match_selector, run_source_only_validate, run_spec_validate, run_synthesize_selectors,
@@ -241,11 +242,17 @@ fn assert_all_commands_resolve(case: &Case, expected_output: &str) {
 fn assert_selector_runs(case: &Case, expected_output: &str) {
     let fixture = run_fixture(fixture(case));
     assert_entry_output(&fixture, expected_output);
-    assert_module_exports(
-        &fixture.out_root,
-        &format!("static/app/modules/{MODULE}.js"),
-        &[EXPORT],
-        &[],
+    // Runtime identity pins which binding was selected, not merely that the
+    // whole entry still runs with an arbitrary export renamed to `target`.
+    assert_generated_module_after_entry_script(
+        &fixture,
+        &format!(
+            "const entry = await import('./static/app/entry.js');\n\
+             const selected = await import('./static/app/modules/{MODULE}.js');\n\
+             console.log(typeof selected.{EXPORT} === 'function' && selected.{EXPORT} === entry[{}]);",
+            serde_json::to_string(case.subject).unwrap(),
+        ),
+        "true\n",
     );
 }
 

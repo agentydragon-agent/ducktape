@@ -425,10 +425,16 @@ fn invalid_regex_predicate_is_not_a_no_match() {
         ("const w = STR_LITERAL_MATCHING_RE(\"[\");", "regex"),
         ("const w = STR_LITERAL_MATCHING_RE();", "malformed"),
     ] {
-        let report = run_match_selector(
-            &source, selector, &["--target-binding", "w", "--no-slack"],
+        let report =
+            run_match_selector(&source, selector, &["--target-binding", "w", "--no-slack"]);
+        assert_eq!(
+            outcome(&report)["kind"],
+            "invalid",
+            "{selector}: {report:#}"
         );
-        assert_eq!(outcome(&report)["kind"], "invalid", "{selector}: {report:#}");
-        assert!(outcome(&report)["error"].as_str().unwrap().contains(error), "{report:#}");
+        assert!(
+            outcome(&report)["error"].as_str().unwrap().contains(error),
+            "{report:#}"
+        );
     }
 }

@@ -50,12 +50,23 @@ struct Case {
 
 fn assert_cases(cases: impl IntoIterator<Item = Case>) {
     for case in cases {
-        let mode = if case.alpha { Mode::AlphaAll } else { Mode::Exact };
+        let mode = if case.alpha {
+            Mode::AlphaAll
+        } else {
+            Mode::Exact
+        };
         let got = selector_match::matches(
-            &facts(case.selector), &facts(case.subject), mode, &free(case.selector),
-        ).unwrap_or_else(|e| panic!("unsupported selector {:?}: {}", case.selector, e.reason));
-        assert_eq!(got, case.expected,
-            "{:?} vs {:?} (alpha={})", case.selector, case.subject, case.alpha);
+            &facts(case.selector),
+            &facts(case.subject),
+            mode,
+            &free(case.selector),
+        )
+        .unwrap_or_else(|e| panic!("unsupported selector {:?}: {}", case.selector, e.reason));
+        assert_eq!(
+            got, case.expected,
+            "{:?} vs {:?} (alpha={})",
+            case.selector, case.subject, case.alpha
+        );
     }
 }
 

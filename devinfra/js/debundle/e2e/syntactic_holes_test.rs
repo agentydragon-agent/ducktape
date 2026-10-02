@@ -763,10 +763,15 @@ fn member_source_match_comma_list_siblings_disambiguated_by_nested_value() {
 #[test]
 fn comma_list_siblings_without_the_nested_anchor_are_ambiguous() {
     expect_rejection_containing_all(
-        member_fixture(HANDLER_SIBLINGS, "routes", Member::source_alpha_target(
-            "handler", "readable",
-            "const readable = makeHandler({ route: { method: EXPR } });",
-        )),
+        member_fixture(
+            HANDLER_SIBLINGS,
+            "routes",
+            Member::source_alpha_target(
+                "handler",
+                "readable",
+                "const readable = makeHandler({ route: { method: EXPR } });",
+            ),
+        ),
         &["ambiguous", "handlerA", "handlerB"],
     );
 }
