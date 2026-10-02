@@ -1024,6 +1024,18 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "selector_test_fixtures",
+    testonly = True,
+    srcs = ["selectors/resolution/selector_test_fixtures.rs"],
+    crate_root = "selectors/resolution/selector_test_fixtures.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":selector_ir",
+    ],
+)
+
 rust_test(
     name = "selector_constraint_model_builder_test",
     size = "small",
@@ -1033,6 +1045,7 @@ rust_test(
         ":analysis",
         ":selector_constraint_backend",
         ":selector_ir",
+        ":selector_test_fixtures",
     ],
 )
 
@@ -1143,6 +1156,7 @@ rust_test(
         ":analysis",
         ":selector_backend_solver",
         ":selector_ir",
+        ":selector_test_fixtures",
     ],
 )
 

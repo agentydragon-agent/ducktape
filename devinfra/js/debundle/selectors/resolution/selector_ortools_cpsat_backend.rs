@@ -381,6 +381,10 @@ impl SupportSearch<'_> {
 
 #[cfg(test)]
 mod tests {
+    use selector_test_fixtures::{
+        broad_specific_targets, call_argument_use, declared_binding, member_read,
+        module_member_use, owner_fact,
+    };
     use std::collections::BTreeSet;
     use std::sync::Mutex;
     use std::thread;
@@ -951,21 +955,6 @@ mod tests {
         );
     }
 
-    fn owner_fact(owner: usize, ordinal: usize, kind: &str) -> SelectorFact {
-        SelectorFact::Owner {
-            owner: OwnerId(owner),
-            statement_ordinal: StatementOrdinal(ordinal),
-            statement_kind: kind.to_string(),
-        }
-    }
-
-    fn declared_binding(owner: usize, binding: &str) -> SelectorFact {
-        SelectorFact::DeclaredBinding {
-            owner: OwnerId(owner),
-            binding: binding.to_string(),
-        }
-    }
-
     fn owner_references_binding(owner: usize, binding: &str) -> SelectorFact {
         SelectorFact::OwnerReferencesBinding {
             owner: OwnerId(owner),
@@ -974,75 +963,9 @@ mod tests {
         }
     }
 
-    fn member_read(ordinal: usize, object: Option<&str>, member: &str) -> SelectorFact {
-        SelectorFact::MemberRead {
-            statement_ordinal: StatementOrdinal(ordinal),
-            object: object.map(str::to_string),
-            member: member.to_string(),
-        }
-    }
-
-    fn module_member_use(ordinal: usize, module: &str, member: &str) -> SelectorFact {
-        SelectorFact::ModuleMemberUse {
-            statement_ordinal: StatementOrdinal(ordinal),
-            module: module.to_string(),
-            member: member.to_string(),
-        }
-    }
-
-    fn call_argument_use(
-        argument: &str,
-        callee_object: Option<&str>,
-        callee_member: &str,
-        arg_index: usize,
-    ) -> SelectorFact {
-        SelectorFact::CallArgumentUse {
-            argument: argument.to_string(),
-            callee_object: callee_object.map(str::to_string),
-            callee_member: callee_member.to_string(),
-            arg_index,
-        }
-    }
-
     #[test]
     fn cpsat_resolves_broad_specific_target_injectivity() {
-        let mut program = SelectorProgram::default();
-        let broad_owner = program.add_variable(VariableDomain::Owner, Some("broad".to_string()));
-        let strict_owner = program.add_variable(VariableDomain::Owner, Some("strict".to_string()));
-        let broad_target = program.add_target(
-            broad_owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("Broad".to_string()),
-            },
-        );
-        let strict_target = program.add_target(
-            strict_owner,
-            "module",
-            ClaimKind::Binding {
-                export_name: Some("Strict".to_string()),
-            },
-        );
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: broad_owner },
-            binding: StringTerm::Const {
-                value: "shared".to_string(),
-            },
-        });
-        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
-            owner: OwnerTerm::Var { id: strict_owner },
-            binding: StringTerm::Const {
-                value: "specific".to_string(),
-            },
-        });
-        program.require_all_different(vec![broad_target, strict_target]);
-
-        let mut facts = SelectorFactStore::default();
-        facts.push(owner_fact(10, 0, "var"));
-        facts.push(owner_fact(20, 1, "var"));
-        facts.push(declared_binding(10, "shared"));
-        facts.push(declared_binding(20, "shared"));
-        facts.push(declared_binding(20, "specific"));
+        let (program, facts, broad_target, strict_target) = broad_specific_targets();
 
         let backend = OrToolsCpSatBackend::default();
         let result = solve_with_backend(&program, &facts, &backend).unwrap();
