@@ -21,7 +21,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::{ChunkId, ChunkTable, list_chunk_file_paths};
-use binding_targets::{declaration_ids, module_export_name};
+use binding_targets::declaration_ids;
 pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
 use export_surface::collect_local_idents_by_export_name;
 pub use import_rewrites::{
@@ -382,16 +382,8 @@ pub fn validate_partial_swap_consumers(
                 let ModuleItem::ModuleDecl(decl) = item else {
                     continue;
                 };
-                let source = match decl {
-                    ModuleDecl::Import(import) => str_value(&import.src),
-                    ModuleDecl::ExportNamed(named) => {
-                        let Some(src) = named.src.as_deref() else {
-                            continue;
-                        };
-                        str_value(src)
-                    }
-                    ModuleDecl::ExportAll(export_all) => str_value(&export_all.src),
-                    _ => continue,
+                let Some(source) = crate::validate::consumer_directive_source(decl) else {
+                    continue;
                 };
                 let Some(target_chunk_id) = resolve_partial_swap_import_target(
                     &source,
@@ -425,75 +417,22 @@ fn check_partial_swap_consumer_decl(
     consumer: &str,
     target_chunk_name: &str,
 ) -> Result<()> {
-    let swapped_list = || swapped.iter().cloned().collect::<Vec<_>>().join(",");
-    match decl {
-        ModuleDecl::Import(import) => {
-            for specifier in &import.specifiers {
-                match specifier {
-                    ImportSpecifier::Named(named) => {
-                        let imported = named
-                            .imported
-                            .as_ref()
-                            .map(module_export_name)
-                            .unwrap_or_else(|| named.local.sym.to_string());
-                        if swapped.contains(&imported) {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; the rewrite did not cover this consumer and the stripped chunk no longer exports it",
-                            );
-                        }
-                    }
-                    ImportSpecifier::Namespace(_) => {
-                        bail!(
-                            "partial-swap consumer gate: {consumer} namespace-imports partially-swapped vendor chunk {target_chunk_name}; swapped members [{}] would read as `undefined` on the namespace object — namespace consumers of partially-swapped chunks are unsupported, restructure the spec",
-                            swapped_list(),
-                        );
-                    }
-                    ImportSpecifier::Default(_) => {
-                        if swapped.contains("default") {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} default-imports partially-swapped vendor chunk {target_chunk_name} whose `default` export was swapped",
-                            );
-                        }
-                    }
-                }
+    validate::check_consumer_directive(
+        decl, consumer, target_chunk_name, swapped.contains("default"),
+        || swapped.iter().cloned().collect::<Vec<_>>().join(","),
+        |imported| {
+            if swapped.contains(imported) {
+                bail!("partial-swap consumer gate: {consumer} imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; the rewrite did not cover this consumer and the stripped chunk no longer exports it");
             }
-        }
-        ModuleDecl::ExportNamed(named) => {
-            for specifier in &named.specifiers {
-                match specifier {
-                    ExportSpecifier::Named(named_spec) => {
-                        let orig = module_export_name(&named_spec.orig);
-                        if swapped.contains(&orig) {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
-                            );
-                        }
-                    }
-                    ExportSpecifier::Namespace(_) => {
-                        bail!(
-                            "partial-swap consumer gate: {consumer} re-exports the namespace of partially-swapped vendor chunk {target_chunk_name} (`export * as …`); swapped members [{}] would read as `undefined`",
-                            swapped_list(),
-                        );
-                    }
-                    ExportSpecifier::Default(_) => {
-                        if swapped.contains("default") {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} re-exports the swapped `default` of partially-swapped vendor chunk {target_chunk_name}",
-                            );
-                        }
-                    }
-                }
+            Ok(())
+        },
+        |orig| {
+            if swapped.contains(orig) {
+                bail!("partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it");
             }
-        }
-        ModuleDecl::ExportAll(_) => {
-            bail!(
-                "partial-swap consumer gate: {consumer} uses `export *` from partially-swapped vendor chunk {target_chunk_name}; swapped names [{}] would silently vanish from the re-exporter's surface",
-                swapped_list(),
-            );
-        }
-        _ => {}
-    }
-    Ok(())
+            Ok(())
+        },
+    )
 }
 
 #[cfg(test)]
