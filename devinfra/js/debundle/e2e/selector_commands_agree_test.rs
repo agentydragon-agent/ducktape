@@ -10,7 +10,8 @@
 //! statements, so one unique only by a relational member's claim is ambiguous
 //! to them.
 //!
-//! Each resolving case also pins a matching rule the commands must share:
+//! Routing is checked once per outcome; other matching rules use a real
+//! pipeline run and Node output instead of repeating the command cross-product:
 //! same-spelled locals in sibling blocks, loop heads, `switch` bodies, named
 //! function/class expressions and shadowing arrow params are independent
 //! bindings; `var` hoists to the enclosing function out of blocks, `catch` and
@@ -22,7 +23,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use debundle_e2e_support::{
-    BindingGroup, FixtureOpts, Member, assert_module_exports, debundler_path, logical_module,
+    BindingGroup, FixtureOpts, Member, assert_entry_output,
+    assert_generated_module_after_entry_script, debundler_path, logical_module,
     logical_module_with_binding_groups, outcomes, owner_graph, parse_stdout_json,
     read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture,
     run_match_selector, run_source_only_validate, run_spec_validate, run_synthesize_selectors,
@@ -222,7 +224,7 @@ fn without(record: &Value, fields: &[&str]) -> Value {
     record
 }
 
-fn assert_all_commands_resolve(case: &Case) {
+fn assert_all_commands_resolve(case: &Case, expected_output: &str) {
     assert_eq!(
         source_only_validate(case),
         None,
@@ -234,20 +236,27 @@ fn assert_all_commands_resolve(case: &Case) {
     assert_eq!(matched["outcome"]["kind"], "resolved", "{matched:#}");
     assert_eq!(matched["outcome"]["binding"], case.subject, "{matched:#}");
 
+    assert_selector_runs(case, expected_output);
+}
+
+fn assert_selector_runs(case: &Case, expected_output: &str) {
     let fixture = run_fixture(fixture(case));
-    assert_module_exports(
-        &fixture.out_root,
-        &format!("static/app/modules/{MODULE}.js"),
-        &[EXPORT],
-        &[],
+    assert_entry_output(&fixture, expected_output);
+    // Runtime identity pins which binding was selected, not merely that the
+    // whole entry still runs with an arbitrary export renamed to `target`.
+    assert_generated_module_after_entry_script(
+        &fixture,
+        &format!(
+            "const entry = await import('./static/app/entry.js');\n\
+             const selected = await import('./static/app/modules/{MODULE}.js');\n\
+             console.log(typeof selected.{EXPORT} === 'function' && selected.{EXPORT} === entry[{}]);",
+            serde_json::to_string(case.subject).unwrap(),
+        ),
+        "true\n",
     );
 }
 
-/// Every command reports the same outcome record for the case's target,
-/// modulo the fields it legitimately lacks: the chunk is a path for the
-/// source-only commands, and `match-selector`'s probe has no spec placement.
-/// Returns the agreed outcome.
-fn assert_all_commands_agree(case: &Case) -> Value {
+fn rejected_outcome(case: &Case) -> Value {
     let rejected = run_dry_run_rejection_fixture(fixture(case));
     let run = export_record(&read_selector_outcomes(&rejected.report_root), EXPORT)
         .unwrap_or_else(|| panic!("run lists no outcome for the target:\n{}", rejected.stderr));
@@ -262,6 +271,15 @@ fn assert_all_commands_agree(case: &Case) -> Value {
         "{run:#}"
     );
 
+    run
+}
+
+/// Every command reports the same outcome record for the case's target,
+/// modulo the fields it legitimately lacks: the chunk is a path for the
+/// source-only commands, and `match-selector`'s probe has no spec placement.
+/// Returns the agreed outcome.
+fn assert_all_commands_agree(case: &Case) -> Value {
+    let run = rejected_outcome(case);
     assert_eq!(
         spec_validate(case).as_ref(),
         Some(&run),
@@ -283,32 +301,32 @@ fn assert_all_commands_agree(case: &Case) -> Value {
 
 #[test]
 fn sibling_block_consts_are_independent() {
-    assert_all_commands_resolve(&SIBLING_BLOCKS);
+    assert_all_commands_resolve(&SIBLING_BLOCKS, "L|R\n");
 }
 
 #[test]
 fn sibling_loop_heads_are_independent() {
-    assert_all_commands_resolve(&SIBLING_LOOPS);
+    assert_selector_runs(&SIBLING_LOOPS, "-6\n");
 }
 
 #[test]
 fn switch_body_is_its_own_scope() {
-    assert_all_commands_resolve(&SWITCH_SCOPE);
+    assert_selector_runs(&SWITCH_SCOPE, "L outer\n");
 }
 
 #[test]
 fn named_function_expression_name_is_local() {
-    assert_all_commands_resolve(&NAMED_FUNCTION_EXPRESSION);
+    assert_selector_runs(&NAMED_FUNCTION_EXPRESSION, "outer inner\n");
 }
 
 #[test]
 fn var_hoists_out_of_its_block() {
-    assert_all_commands_resolve(&VAR_HOISTED_OUT_OF_BLOCK);
+    assert_selector_runs(&VAR_HOISTED_OUT_OF_BLOCK, "4\n");
 }
 
 /// Hoisting is a constraint, not only a permission: the `var` bound inside the
 /// block is the one returned after it, so a chunk returning something else
-/// matches in no command.
+/// must not match.
 #[test]
 fn hoisted_var_must_stay_consistent() {
     let case = Case {
@@ -320,7 +338,7 @@ export { actual };
 "#,
         ..VAR_HOISTED_OUT_OF_BLOCK
     };
-    assert_no_match_nearest_actual(&assert_all_commands_agree(&case));
+    assert_no_match_nearest_actual(&rejected_outcome(&case)["outcome"]);
 }
 
 const VAR_HOISTED_OUT_OF_CATCH: Case = Case {
@@ -411,22 +429,22 @@ export { actual };
 
 #[test]
 fn var_hoists_out_of_catch() {
-    assert_all_commands_resolve(&VAR_HOISTED_OUT_OF_CATCH);
+    assert_selector_runs(&VAR_HOISTED_OUT_OF_CATCH, "boom\n");
 }
 
 #[test]
 fn var_hoists_out_of_switch() {
-    assert_all_commands_resolve(&VAR_HOISTED_OUT_OF_SWITCH);
+    assert_selector_runs(&VAR_HOISTED_OUT_OF_SWITCH, "1 2\n");
 }
 
 #[test]
 fn named_class_expression_name_is_local() {
-    assert_all_commands_resolve(&NAMED_CLASS_EXPRESSION);
+    assert_selector_runs(&NAMED_CLASS_EXPRESSION, "outer true\n");
 }
 
 #[test]
 fn arrow_param_shadows_outer_binding() {
-    assert_all_commands_resolve(&ARROW_PARAM_SHADOWS_OUTER);
+    assert_selector_runs(&ARROW_PARAM_SHADOWS_OUTER, "1,0\n");
 }
 
 /// Alpha renaming covers identifiers, never property names: `.id` in the
@@ -554,12 +572,12 @@ export { a, c };
 
 #[test]
 fn anything_declarator_keeps_its_initializer() {
-    assert_all_commands_resolve(&ANYTHING_DECLARATOR_KEEPS_INITIALIZER);
+    assert_selector_runs(&ANYTHING_DECLARATOR_KEEPS_INITIALIZER, "x 2\n");
 }
 
 #[test]
 fn anything_declarator_floats_among_others() {
-    assert_all_commands_resolve(&ANYTHING_DECLARATOR_AMONG_OTHERS);
+    assert_selector_runs(&ANYTHING_DECLARATOR_AMONG_OTHERS, "x1 y2\n");
 }
 
 /// `Either` matches `first` and `second`; `Other` matches only `second`, so

@@ -421,17 +421,20 @@ fn unprojected_decorators_are_invalid_selectors() {
 #[test]
 fn invalid_regex_predicate_is_not_a_no_match() {
     let (_dir, source) = fixture();
-    let report = run_match_selector(
-        &source,
-        "const w = STR_LITERAL_MATCHING_RE(\"[\");",
-        &["--target-binding", "w", "--no-slack"],
-    );
-    assert_eq!(outcome(&report)["kind"], "invalid", "{report:#}");
-    assert!(
-        outcome(&report)["error"]
-            .as_str()
-            .unwrap()
-            .contains("regex"),
-        "{report:#}"
-    );
+    for (selector, error) in [
+        ("const w = STR_LITERAL_MATCHING_RE(\"[\");", "regex"),
+        ("const w = STR_LITERAL_MATCHING_RE();", "malformed"),
+    ] {
+        let report =
+            run_match_selector(&source, selector, &["--target-binding", "w", "--no-slack"]);
+        assert_eq!(
+            outcome(&report)["kind"],
+            "invalid",
+            "{selector}: {report:#}"
+        );
+        assert!(
+            outcome(&report)["error"].as_str().unwrap().contains(error),
+            "{report:#}"
+        );
+    }
 }

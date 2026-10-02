@@ -515,6 +515,16 @@ function loadLabel(cache, label) {
     : (memo = cache[1])),
     memo;
 }
+// Same callback, but no assignment to memo: it must not match the selector.
+function otherLabel(cache, label) {
+  let memo;
+  return (cache[0] !== label
+    ? (async (id) => {
+        const base = `load:${label}`;
+        return `${base}:${id}`;
+      }, cache[0] = label, cache[1] = memo)
+    : (memo = cache[1])), memo;
+}
 loadLabel(slots, "first")("a").then((value) => console.log(value));
 export { loadLabel };
 "#,
@@ -537,7 +547,7 @@ export { loadLabel };
         &fixture.out_root,
         "static/app/modules/resource.js",
         &["label_resource"],
-        &["loadLabel"],
+        &["loadLabel", "otherLabel"],
     );
     assert_module_source(
         &fixture.out_root,
@@ -682,6 +692,15 @@ fn source_match_lone_seq_exprs_in_parens_reports_the_misplaced_hole() {
     );
 }
 
+const HANDLER_SIBLINGS: &str = r#"const handlerA = makeHandler({ route: { method: "GET" } }),
+  handlerB = makeHandler({ route: { method: "POST" } });
+function makeHandler(config) {
+  return () => config.route.method;
+}
+console.log(handlerA(), handlerB());
+export { handlerA, handlerB };
+"#;
+
 // Two same-arity declarators in one `const a = …, b = …` comma-list that differ
 // only in a deeply-nested value are each pinned, uniquely, by a single-declarator
 // `source_match` asserting that nested anchor — the resolver matches the
@@ -691,14 +710,7 @@ fn source_match_lone_seq_exprs_in_parens_reports_the_misplaced_hole() {
 #[test]
 fn member_source_match_comma_list_siblings_disambiguated_by_nested_value() {
     let fixture = run_fixture(FixtureOpts::new(
-        r#"const handlerA = makeHandler({ route: { method: "GET" } }),
-  handlerB = makeHandler({ route: { method: "POST" } });
-function makeHandler(config) {
-  return () => config.route.method;
-}
-console.log(handlerA(), handlerB());
-export { handlerA, handlerB };
-"#,
+        HANDLER_SIBLINGS,
         vec![
             logical_module(
                 "get_route",
@@ -745,6 +757,22 @@ export { handlerA, handlerB };
         "static/app/modules/post_route.js",
         &["const post_handler", r#"method: "POST""#],
         &[r#"method: "GET""#, "readable"],
+    );
+}
+
+#[test]
+fn comma_list_siblings_without_the_nested_anchor_are_ambiguous() {
+    expect_rejection_containing_all(
+        member_fixture(
+            HANDLER_SIBLINGS,
+            "routes",
+            Member::source_alpha_target(
+                "handler",
+                "readable",
+                "const readable = makeHandler({ route: { method: EXPR } });",
+            ),
+        ),
+        &["ambiguous", "handlerA", "handlerB"],
     );
 }
 
