@@ -413,7 +413,7 @@ it.each([
   const container = await render();
   const dot = container.querySelector(".agentplane-thread-status-dot");
   expect(dot?.closest(".agentplane-composer-controls")).toBeNull();
-  expect(mounted.at(-1)?.topbarTitle.contains(dot ?? null)).toBe(true);
+  expect(mounted.at(-1)?.topbarTitle?.contains(dot ?? null)).toBe(true);
   expect(dot?.getAttribute("aria-label")).toBe(label);
   expect(dot?.getAttribute("style")).toContain(`--mantine-color-${color}-6`);
   expect(dot?.classList.contains("agentplane-thread-status-dot-pulsing")).toBe(pulse);
