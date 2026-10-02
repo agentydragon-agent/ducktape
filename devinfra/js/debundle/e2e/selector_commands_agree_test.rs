@@ -1101,11 +1101,19 @@ fn candidate_limit_counts_places_not_wildcard_alignments() {
     // Module-level gaps belong to source_matches binding groups, not the
     // single-member match-selector command's contiguous-range syntax.
     let modules = dir.path().join("modules");
-    write_text_file(&modules.join("selected.yaml"),
-        "source_matches:\n  - match: |\n      anchor(); STMT_LIST; const target = 1;\n    bindings: [target]\n");
+    write_text_file(
+        &modules.join("selected.yaml"),
+        "source_matches:\n  - match: |\n      anchor(); STMT_LIST; const target = 1;\n    bindings: [target]\n",
+    );
     let output = run_source_only_validate(&modules, &source, &["--format", "json"]);
-    assert!(output.status.success(), "{}\n{}", output.stdout, output.stderr);
-
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        output.stdout,
+        output.stderr
+    );
+    let report: Value = serde_json::from_str(&output.stdout).unwrap();
+    assert_eq!(export_record(outcomes(&report), "target"), None, "{report:#}");
 }
 
 #[test]
