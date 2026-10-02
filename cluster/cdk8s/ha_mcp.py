@@ -297,11 +297,7 @@ class HaMcp(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         namespaces.namespace(
-            self,
-            "namespace",
-            name=_NAMESPACE,
-            vpa=Vpa.DISABLED,
-            labels={"app.kubernetes.io/name": _NAMESPACE},
+            self, "namespace", name=_NAMESPACE, vpa=Vpa.DISABLED, labels={"app.kubernetes.io/name": _NAMESPACE}
         )
         _home_assistant_token(self)
         HaMcpApp(self, "app")

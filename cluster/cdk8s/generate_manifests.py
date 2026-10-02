@@ -8,9 +8,9 @@ from cdk8s import App
 
 from cluster.cdk8s import (
     agent_machine_access,
+    agent_namespace_rbac,
     agent_rbac_base,
     agent_sandbox,
-    agent_namespace_rbac,
     agent_shared_rbac,
     agent_workspaces,
     agentplane_crds,
@@ -1564,7 +1564,9 @@ def generate_manifests(root: Path) -> None:
     binding_delegation.add_flux_kustomizations(flux_chart, staging.ENV, namespace_dependencies)
     agent_namespace_rbac.write_manifests(root)
     agent_namespace_rbac.add_flux_kustomizations(
-        flux_chart, {**namespace_dependencies, "agentplane-staging": agentplane_staging_kustomization}, claude_rbac_kustomization
+        flux_chart,
+        {**namespace_dependencies, "agentplane-staging": agentplane_staging_kustomization},
+        claude_rbac_kustomization,
     )
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.
     write_artifact_generators(

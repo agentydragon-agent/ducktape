@@ -72,7 +72,6 @@ class NamespaceQuota(Construct):
             vpa=Vpa.DISABLED,
             # Standing agent access to metadata and logs (Kyverno-generated bindings);
             # write access lives in the operator Role below.
-
             labels={"name": env.namespace},
             annotations={"description": env.description},
         )

@@ -50,7 +50,9 @@ def add_flux_kustomizations(
     if missing := NAMESPACE_DIAGNOSTICS.keys() - target_dependencies.keys():
         raise ValueError(f"static diagnostics lack namespace dependencies: {sorted(missing)}")
     # Only flux-system is a bootstrap namespace in this policy.
-    if missing := {name for name in NAMESPACE_DIAGNOSTICS if name != "flux-system" and target_dependencies[name] is None}:
+    if missing := {
+        name for name in NAMESPACE_DIAGNOSTICS if name != "flux-system" and target_dependencies[name] is None
+    }:
         raise ValueError(f"static diagnostics lack namespace dependencies: {sorted(missing)}")
     source = KustomizationSpecSourceRef(
         kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"

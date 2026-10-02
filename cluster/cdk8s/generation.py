@@ -180,7 +180,5 @@ def namespace_chart(
     """A chart holding only `namespaces.namespace`'s Namespace, for the writer of the directory
     whose Kustomization owns it."""
     chart = Chart(app, "namespace", disable_resource_name_hashes=True)
-    namespaces.namespace(
-        chart, "namespace", name=name, vpa=vpa, labels=labels, annotations=annotations
-    )
+    namespaces.namespace(chart, "namespace", name=name, vpa=vpa, labels=labels, annotations=annotations)
     return chart

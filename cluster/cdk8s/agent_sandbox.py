@@ -34,13 +34,7 @@ def controller_patches(app: App) -> Chart:
     """Strategic-merge patches of the release: the namespace's labels, and the controller's
     placement, security context and health probes."""
     chart = Chart(app, "patches", disable_resource_name_hashes=True)
-    namespaces.namespace_patch(
-        chart,
-        "namespace",
-        name=_NAMESPACE,
-        vpa=Vpa.DISABLED,
-        labels={"name": _NAMESPACE},
-    )
+    namespaces.namespace_patch(chart, "namespace", name=_NAMESPACE, vpa=Vpa.DISABLED, labels={"name": _NAMESPACE})
     labels = {"app": _CONTROLLER}
     healthz = k8s.IntOrString.from_string("healthz")
     k8s.KubeDeployment(

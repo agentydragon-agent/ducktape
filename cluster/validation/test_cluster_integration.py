@@ -43,8 +43,7 @@ from cluster.validation.image_automation import (
     check_image_policy_markers,
     check_no_flow_mappings_where_flux_writes,
 )
-from cluster.validation.k8s import RoleBindingResource
-from cluster.validation.k8s import RbacRoleRef
+from cluster.validation.k8s import RbacRoleRef, RoleBindingResource
 from cluster.validation.kustomize import (
     KustomizeBuildResult,
     flux_generated_kustomization,

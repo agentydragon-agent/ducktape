@@ -43,9 +43,7 @@ def _reader_binding(chart: Chart, name: str, *, description: str, subjects: list
 def chart(app: App) -> Chart:
     chart = Chart(app, NAMESPACE, disable_resource_name_hashes=True)
     # A control-plane boundary only: managed workloads retain their own namespaces.
-    namespaces.namespace(
-        chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"name": NAMESPACE}
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"name": NAMESPACE})
     # Intentionally sparse, like flux-system's public-repository source: the source roots
     # the ArtifactGenerator consumes, and the paths public Kustomizations read directly,
     # including the suspended ones' under the parked tree.

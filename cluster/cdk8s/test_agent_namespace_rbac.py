@@ -28,7 +28,9 @@ def test_static_readers_and_managed_grants_share_scope(name: str) -> None:
         assert grant.role_ref.kind == "ClusterRole"
         assert grant.role_ref.name == f"agent-readable-namespace-{level}"
         assert doc["roleRef"] == {
-            "apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": grant.role_ref.name
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "ClusterRole",
+            "name": grant.role_ref.name,
         }
         for preset in ("haku", "public-coder", "finance-agent"):
             assert grant_name in access.MANAGED_GRANTS[preset]
@@ -48,7 +50,6 @@ def test_unapproved_namespaces_fail_closed() -> None:
     namespace(scope, "namespace", name="private-unreviewed", vpa=Vpa.AUTO)
     labels = Cdk8sTesting.synth(scope)[0]["metadata"]["labels"]
     assert not set(labels) & set(AgentReadable)
-
 
 
 if __name__ == "__main__":

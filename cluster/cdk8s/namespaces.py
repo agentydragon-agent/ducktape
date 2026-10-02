@@ -9,8 +9,7 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Namespace, k8s
 from constructs import Construct
 
-from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS
-from cluster.cdk8s.namespace_access import AgentReadable as AgentReadable
+from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 
 _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
 VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
@@ -30,9 +29,7 @@ class Vpa(StrEnum):
 _POLICY_LABELS = frozenset({_GOLDILOCKS_ENABLED_LABEL, VPA_UPDATE_MODE_LABEL, *AgentReadable})
 
 
-def _labels(
-    name: str, vpa: Vpa, labels: Mapping[str, str] | None
-) -> dict[str, str]:
+def _labels(name: str, vpa: Vpa, labels: Mapping[str, str] | None) -> dict[str, str]:
     policy: dict[str, str] = (
         {_GOLDILOCKS_ENABLED_LABEL: "false"} if vpa is Vpa.DISABLED else {VPA_UPDATE_MODE_LABEL: vpa}
     )
@@ -58,23 +55,14 @@ def namespace(
         scope,
         id,
         metadata=ApiObjectMetadata(
-            name=name,
-            labels=_labels(name, vpa, labels),
-            annotations=None if annotations is None else dict(annotations),
+            name=name, labels=_labels(name, vpa, labels), annotations=None if annotations is None else dict(annotations)
         ),
     )
 
 
 def namespace_patch(
-    scope: Construct,
-    id: str,
-    *,
-    name: str,
-    vpa: Vpa,
-    labels: Mapping[str, str] | None = None,
+    scope: Construct, id: str, *, name: str, vpa: Vpa, labels: Mapping[str, str] | None = None
 ) -> k8s.KubeNamespace:
     """A strategic-merge patch labeling an upstream release's Namespace `name` as `namespace`
     would. Tier 2, since `Namespace` renders `spec: {}`, which the patch would add to the object."""
-    return k8s.KubeNamespace(
-        scope, id, metadata=k8s.ObjectMeta(name=name, labels=_labels(name, vpa, labels))
-    )
+    return k8s.KubeNamespace(scope, id, metadata=k8s.ObjectMeta(name=name, labels=_labels(name, vpa, labels)))

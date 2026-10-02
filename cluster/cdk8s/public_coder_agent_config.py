@@ -1057,12 +1057,7 @@ def namespace_chart(app: App) -> Chart:
     """
     chart = Chart(app, "namespace", disable_resource_name_hashes=True)
     namespace = namespaces.namespace(
-        chart,
-        "namespace",
-        name=NAMESPACE,
-        vpa=Vpa.AUTO,
-        labels={"name": NAMESPACE},
-        annotations=_NAMESPACE_ANNOTATIONS,
+        chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO, labels={"name": NAMESPACE}, annotations=_NAMESPACE_ANNOTATIONS
     )
     k8s.KubeServiceAccount(
         chart,

@@ -268,6 +268,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":namespace_access",
         ":namespaces",
         "@pypi//cdk8s",
         "@pypi//pytest",
@@ -1867,7 +1868,9 @@ py_binary(
     main_module = "cluster.cdk8s.generate_manifests",
     visibility = ["//visibility:public"],
     deps = [
-        ":agent_namespace_rbac",":generate_manifests_lib"],
+        ":agent_namespace_rbac",
+        ":generate_manifests_lib",
+    ],
 )
 
 py_library(
@@ -1952,6 +1955,7 @@ py_library(
 py_library(
     name = "namespace_access",
     srcs = ["namespace_access.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(

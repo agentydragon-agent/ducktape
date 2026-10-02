@@ -254,7 +254,10 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     assert len(selected) == len(set(selected))
     haku = config["sandbox_presets"]["haku"]["kubernetes_grants"]
     assert len(haku) == len(set(haku))
-    assert set(haku) - set(selected) == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
+    assert (
+        set(haku) - set(selected)
+        == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
+    )
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"}
     assert {
         "agentplane-staging-metadata",

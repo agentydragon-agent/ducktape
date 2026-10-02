@@ -16,9 +16,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm"
 
 
 def write_manifests(root: Path) -> None:
-    namespace = write_charts(
-        root, OUTPUT_DIR, partial(namespace_chart, name="litellm", vpa=Vpa.AUTO)
-    )
+    namespace = write_charts(root, OUTPUT_DIR, partial(namespace_chart, name="litellm", vpa=Vpa.AUTO))
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",
         kustomize_kustomization(resources=[namespace, "secrets", f"db/{manifest_file(database.OUTPUT_DIR)}", "app"]),

@@ -20,7 +20,6 @@ from agentplane.app.kubernetes_grants import (
     RoleBindingGrant,
     RoleRef,
 )
-
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 
 RBAC_GROUP = "rbac.authorization.k8s.io"
@@ -191,4 +190,6 @@ def role_ref(grant: str) -> k8s.RoleRef:
 
 def cleanup_namespaces() -> list[str]:
     # Retained cleanup scopes are intentionally independent of current selections.
-    return sorted({"haku-sandbox", "haku-console", "ducktape-flux", *(NAMESPACE_DIAGNOSTICS.keys() - {"agentplane-staging"})})
+    return sorted(
+        {"haku-sandbox", "haku-console", "ducktape-flux", *(NAMESPACE_DIAGNOSTICS.keys() - {"agentplane-staging"})}
+    )

@@ -219,7 +219,6 @@ def chart(app: App) -> Chart:
         vpa=Vpa.RECOMMEND,
         # Events are included in namespace-diagnostics-reader and are safe for the
         # public-coder diagnostics surface.
-
         labels={
             "name": NAME,
             # The Job needs hostPath /dev/kvm + privileged for nix's `kvm` system feature
