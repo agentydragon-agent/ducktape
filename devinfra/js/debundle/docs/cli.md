@@ -425,7 +425,9 @@ generated JS vs. stays YAML-only, the no-`#`-comments rule, and the
 `modules merge` composition) is documented once in <../README.md> →
 "Comments"; the editing workflow in `spec_editing.md` → "Workflow:
 authoring `comment:` fields". The CLI surface is `bindings comment` /
-`modules comment` — they edit emitting `comment:` fields; non-emitting
+`modules comment` — binding edits address `annotations.<name>.comment` for
+both member and source-match bindings; module edits address the top-level
+`comment:`. Non-emitting
 `note:` fields are YAML-authored metadata that the rewriters preserve.
 
 ## Out of scope

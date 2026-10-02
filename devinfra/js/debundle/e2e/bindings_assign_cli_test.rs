@@ -1,620 +1,197 @@
-//! E2e for `debundle bindings list`, `bindings rename`, and the
-//! large `bindings assign` (positional + --batch). Calls the library
-//! entry point directly so no debundle binary is required.
+//! JS + YAML → editing CLI → edited YAML + emitted Node behavior.
 
 use std::fs;
-use std::path::Path;
 
-use debundle_cli::binding::{
-    BindingsListFilters, Move, parse_batch_json, parse_move_triple, rename_binding,
-    run_bindings_assign, run_bindings_list, run_bindings_unassign,
-};
-use debundle_cli::edit_gate::Gate;
+use debundle_e2e_support::{GraphFixture, write_text_file};
 use serde_yaml::Value;
-use tempfile::TempDir;
 
-fn write(root: &Path, rel: &str, body: &str) {
-    let p = root.join(rel);
-    fs::create_dir_all(p.parent().unwrap()).unwrap();
-    fs::write(p, body).unwrap();
-}
-
-fn read(root: &Path, rel: &str) -> String {
-    fs::read_to_string(root.join(rel)).unwrap()
+fn module(fixture: &GraphFixture, path: &str) -> Value {
+    serde_yaml::from_slice(&fs::read(fixture.modules.join(path)).unwrap()).unwrap()
 }
 
 #[test]
-fn list_filters_unrenamed_and_orphan() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "a.yaml",
-        "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n",
+fn list_filters_cover_members_and_source_match_bindings() {
+    let fixture = GraphFixture::new(
+        "const a = 1; const b = 2; const c = 3; console.log(a + b + c);",
+        &[
+            (
+                "pair.yaml",
+                "source_matches: [{match: 'const a = 1; const b = 2;', bindings: [a, {local: b, name: Beta}]}]",
+            ),
+            (
+                "solo.yaml",
+                "members: [{name: Solo, selector: {binding: {name: c}}}]",
+            ),
+        ],
     );
-    write(
-        root,
-        "solo.yaml",
-        "members:\n  - name: Solo\n    selector: { binding: { name: c } }\n",
-    );
-    let all = run_bindings_list(root, &BindingsListFilters::default()).unwrap();
-    assert_eq!(all.bindings.len(), 3);
-    let orphans = run_bindings_list(
-        root,
-        &BindingsListFilters {
-            orphan: true,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    assert_eq!(orphans.bindings.len(), 1);
-    assert_eq!(orphans.bindings[0].name.minified(), "c");
-    let unrenamed = run_bindings_list(
-        root,
-        &BindingsListFilters {
-            unrenamed: true,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    assert_eq!(unrenamed.bindings.len(), 2);
-}
-
-#[test]
-fn list_includes_canonical_source_match_bindings() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "m.yaml",
-        r#"source_matches:
-  - match: "const XOe = makePluginSettings();"
-    bindings:
-      - XOe
-      - local: YOe
-        name: PluginSettings
-annotations:
-  PluginSettings:
-    comment: emitted comment
-"#,
-    );
-
-    let all = run_bindings_list(root, &BindingsListFilters::default()).unwrap();
-    assert_eq!(all.bindings.len(), 2);
-    assert_eq!(all.bindings[0].name.minified(), "XOe");
-    assert_eq!(all.bindings[1].name.minified(), "YOe");
-    assert_eq!(all.bindings[1].name.readable(), Some("PluginSettings"));
-
-    let unrenamed = run_bindings_list(
-        root,
-        &BindingsListFilters {
-            unrenamed: true,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    assert_eq!(unrenamed.bindings.len(), 1);
-    assert_eq!(unrenamed.bindings[0].name.minified(), "XOe");
-}
-
-#[test]
-fn rename_round_trip_validates_then_writes() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "m.yaml",
-        "members:\n  - selector: { binding: { name: XOe } }\n",
-    );
-    let out = rename_binding(root, "XOe", "PluginSettings", false, false).unwrap();
-    assert_eq!(out.outcome.action, "applied");
-    let body = read(root, "m.yaml");
-    let doc: Value = serde_yaml::from_str(&body).unwrap();
-    assert_eq!(doc["members"][0]["name"].as_str(), Some("PluginSettings"));
-}
-
-#[test]
-fn rename_source_match_binding_rekeys_annotation_and_expands_shorthand() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "m.yaml",
-        r#"source_matches:
-  - match: "const XOe = makePluginSettings();"
-    bindings:
-      - XOe
-annotations:
-  XOe:
-    note: stable selector debt
-"#,
-    );
-
-    let out = rename_binding(root, "XOe", "PluginSettings", false, false).unwrap();
-    assert_eq!(out.new_readable, "PluginSettings");
-    let doc: Value = serde_yaml::from_str(&read(root, "m.yaml")).unwrap();
+    let all = fixture.json(&["bindings", "list"]);
+    assert_eq!(all["bindings"].as_array().unwrap().len(), 3);
+    assert_eq!(all["bindings"][0]["minified"], "a");
+    assert_eq!(all["bindings"][1]["name"], "Beta");
+    let orphan = fixture.json(&["bindings", "list", "--orphan"]);
+    assert_eq!(orphan["bindings"].as_array().unwrap().len(), 1);
+    assert_eq!(orphan["bindings"][0]["minified"], "c");
+    let unrenamed = fixture.json(&["bindings", "list", "--unrenamed"]);
+    assert_eq!(unrenamed["bindings"].as_array().unwrap().len(), 1);
+    assert_eq!(unrenamed["bindings"][0]["minified"], "a");
     assert_eq!(
-        doc["source_matches"][0]["bindings"][0]["local"].as_str(),
-        Some("XOe")
-    );
-    assert_eq!(
-        doc["source_matches"][0]["bindings"][0]["name"].as_str(),
-        Some("PluginSettings")
-    );
-    assert!(doc["annotations"]["XOe"].is_null(), "{doc:?}");
-    assert_eq!(
-        doc["annotations"]["PluginSettings"]["note"].as_str(),
-        Some("stable selector debt")
+        fixture.json(&["bindings", "list", "--in", "pair"])["bindings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
     );
 }
 
 #[test]
-fn rename_rejects_collision_with_canonical_source_match_binding() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "a.yaml",
-        r#"source_matches:
-  - match: "const AOe = makeExisting();"
-    bindings:
-      - local: AOe
-        name: Existing
-"#,
-    );
-    write(
-        root,
-        "b.yaml",
-        "members:\n  - selector: { binding: { name: XOe } }\n",
-    );
-
-    let err = rename_binding(root, "XOe", "Existing", false, false).unwrap_err();
-    let msg = format!("{err}");
-    assert!(msg.contains("name collision"), "got {msg}");
-    assert!(msg.contains("source_matches[0].bindings[0]"), "got {msg}");
+fn rename_members_and_source_match_shorthand_rekeys_annotations() {
+    for selector in [
+        "members: [{selector: {binding: {name: a}}}]",
+        "source_matches: [{match: 'const a = 1;', bindings: [a]}]",
+    ] {
+        let yaml = format!("{selector}\nannotations: {{a: {{note: stable selector debt}}}}\n");
+        let fixture = GraphFixture::new("const a = 1; console.log(a);", &[("m.yaml", &yaml)]);
+        let file = fixture.modules.join("m.yaml");
+        let before = fs::read(&file).unwrap();
+        let dry = fixture.json(&["bindings", "rename", "a", "Readable", "--dry-run"]);
+        assert_eq!(dry["action"], "dry-run");
+        assert_eq!(fs::read(&file).unwrap(), before);
+        let applied = fixture.json(&["bindings", "rename", "a", "Readable"]);
+        assert_eq!(applied["action"], "applied");
+        assert_eq!(applied["new_readable"], "Readable");
+        let doc = module(&fixture, "m.yaml");
+        if selector.starts_with("members") {
+            assert_eq!(doc["members"][0]["name"], "Readable");
+        } else {
+            assert_eq!(doc["source_matches"][0]["bindings"][0]["local"], "a");
+            assert_eq!(doc["source_matches"][0]["bindings"][0]["name"], "Readable");
+        }
+        assert!(doc["annotations"]["a"].is_null());
+        assert_eq!(
+            doc["annotations"]["Readable"]["note"],
+            "stable selector debt"
+        );
+        fixture.assert_runs("1\n");
+    }
 }
 
 #[test]
-fn rename_rekeys_matching_annotation() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "m.yaml",
-        r#"members:
-  - selector: { binding: { name: XOe } }
-annotations:
-  XOe:
-    note: stable selector debt
-"#,
+fn source_match_groups_cannot_be_split_by_assign_or_unassign() {
+    let fixture = GraphFixture::new(
+        "const a = 1; console.log(a);",
+        &[(
+            "m.yaml",
+            "source_matches: [{match: 'const a = 1;', bindings: [a]}]",
+        )],
     );
-    rename_binding(root, "XOe", "PluginSettings", false, false).unwrap();
-    let doc: Value = serde_yaml::from_str(&read(root, "m.yaml")).unwrap();
-    assert!(doc["annotations"]["XOe"].is_null(), "{doc:?}");
-    assert_eq!(
-        doc["annotations"]["PluginSettings"]["note"].as_str(),
-        Some("stable selector debt")
-    );
+    for (verb, operand) in [("assign", "a:dest"), ("unassign", "a")] {
+        fixture.assert_rejected_unchanged(
+            &["bindings", verb, operand],
+            &["does not yet support", "source_matches[0].bindings[0]"],
+        );
+    }
 }
 
 #[test]
-fn assign_and_unassign_reject_canonical_source_match_bindings() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "m.yaml",
-        r#"source_matches:
-  - match: "const XOe = makePluginSettings();"
-    bindings:
-      - XOe
-"#,
-    );
-
-    let assign_err = run_bindings_assign(
-        root,
-        vec![Move {
-            sym: "XOe".into(),
-            module: "dest".into(),
-            readable: None,
-        }],
-        false,
-        Gate::NamesOnly,
-    )
-    .unwrap_err();
-    let assign_msg = format!("{assign_err}");
-    assert!(
-        assign_msg.contains("does not yet support"),
-        "got {assign_msg}"
-    );
-    assert!(
-        assign_msg.contains("source_matches[0].bindings[0]"),
-        "got {assign_msg}"
-    );
-    assert!(!root.join("dest.yaml").exists(), "assign must not write");
-
-    let unassign_err =
-        run_bindings_unassign(root, vec!["XOe".into()], false, Gate::Skip).unwrap_err();
-    let unassign_msg = format!("{unassign_err}");
-    assert!(
-        unassign_msg.contains("does not yet support"),
-        "got {unassign_msg}"
-    );
-    assert!(
-        unassign_msg.contains("source_matches[0].bindings[0]"),
-        "got {unassign_msg}"
-    );
+fn rename_and_assign_refuse_collisions_with_all_binding_forms() {
+    for occupied in [
+        "members: [{selector: {binding: {name: b}}}]",
+        "members: [{name: b, selector: {binding: {name: c}}}]",
+        "source_matches: [{match: 'const c = 2;', bindings: [{local: c, name: b}]}]",
+    ] {
+        let source = if occupied.contains("name: c") || occupied.contains("local: c") {
+            "const a = 1; const c = 2; console.log(a + c);"
+        } else {
+            "const a = 1; const b = 2; console.log(a + b);"
+        };
+        let fixture = GraphFixture::new(
+            source,
+            &[
+                ("src.yaml", "members: [{selector: {binding: {name: a}}}]"),
+                ("occupied.yaml", occupied),
+            ],
+        );
+        for args in [
+            vec!["bindings", "rename", "a", "b"],
+            vec!["bindings", "assign", "a:dest:b"],
+        ] {
+            fixture.assert_rejected_unchanged(&args, &["name collision"]);
+        }
+    }
 }
 
 #[test]
-fn rename_dry_run_skips_write() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    let body0 = "members:\n  - selector: { binding: { name: XOe } }\n";
-    write(root, "m.yaml", body0);
-    let out = rename_binding(root, "XOe", "PluginSettings", true, false).unwrap();
-    assert_eq!(out.outcome.action, "dry-run");
-    assert_eq!(read(root, "m.yaml"), body0);
+fn positional_and_json_batches_create_one_canonical_destination() {
+    for batch_json in [false, true] {
+        let fixture = GraphFixture::new(
+            "const a = 1; const b = 2; console.log(a + b);",
+            &[
+                ("src/a.yaml", "members: [{selector: {binding: {name: a}}}]"),
+                ("src/b.yaml", "members: [{selector: {binding: {name: b}}}]"),
+            ],
+        );
+        let batch = fixture.graph.with_file_name("moves.json");
+        write_text_file(
+            &batch,
+            r#"[{"sym":"a","module":"UI/Widgets","readable":"Alpha"},{"sym":"b","module":"ui/widgets"}]"#,
+        );
+        let args = if batch_json {
+            vec!["bindings", "assign", "--batch", batch.to_str().unwrap()]
+        } else {
+            vec!["bindings", "assign", "a:UI/Widgets:Alpha", "b:ui/widgets"]
+        };
+        assert_eq!(fixture.json(&args)["moves_applied"], 2);
+        for path in ["src/a.yaml", "src/b.yaml", "UI"] {
+            assert!(!fixture.modules.join(path).exists());
+        }
+        let doc = module(&fixture, "ui/widgets.yaml");
+        let members = doc["members"].as_sequence().unwrap();
+        assert_eq!(members.len(), 2);
+        assert!(
+            members
+                .iter()
+                .any(|m| m["selector"]["binding"]["name"] == "a" && m["name"] == "Alpha")
+        );
+        assert!(
+            members
+                .iter()
+                .any(|m| m["selector"]["binding"]["name"] == "b")
+        );
+        fixture.assert_runs("3\n");
+    }
 }
 
 #[test]
-fn parse_move_triple_matches_doc_examples() {
-    let two = parse_move_triple("XOe:runtime/plugins").unwrap();
-    assert_eq!(two.module, "runtime/plugins");
-    assert_eq!(two.readable, None);
-    let three = parse_move_triple("XOe:runtime/plugins:PluginSettings").unwrap();
-    assert_eq!(three.readable.as_deref(), Some("PluginSettings"));
+fn move_and_unassign_annotations_preserve_only_intentionally_retained_modules() {
+    for comment in ["", "comment: keepalive\n"] {
+        let yaml = format!(
+            "{comment}members: [{{selector: {{binding: {{name: a}}}}}}]\nannotations: {{a: {{note: selector debt}}}}\n"
+        );
+        let fixture = GraphFixture::new(
+            "const a = 1; console.log(a);",
+            &[("src.yaml", &yaml), ("unrelated.yaml", "members: []")],
+        );
+        fixture.json(&["bindings", "assign", "a:dest:Readable"]);
+        assert_eq!(
+            fixture.modules.join("src.yaml").exists(),
+            !comment.is_empty()
+        );
+        assert!(fixture.modules.join("unrelated.yaml").exists());
+        let doc = module(&fixture, "dest.yaml");
+        assert!(doc["annotations"]["a"].is_null());
+        assert_eq!(doc["annotations"]["Readable"]["note"], "selector debt");
+        fixture.json(&["bindings", "unassign", "Readable"]);
+        assert!(
+            !fixture.modules.join("dest.yaml").exists(),
+            "removed annotation must not keep drained module alive"
+        );
+        assert!(fixture.modules.join("unrelated.yaml").exists());
+        fixture.assert_runs("1\n");
+    }
 }
 
 #[test]
-fn parse_batch_json_round_trip() {
-    let moves =
-        parse_batch_json(r#"[{"sym":"a","module":"x"},{"sym":"b","module":"y","readable":"B"}]"#)
-            .unwrap();
-    assert_eq!(moves.len(), 2);
-    assert_eq!(moves[1].readable.as_deref(), Some("B"));
-}
-
-#[test]
-fn assign_atomic_batch_creates_destinations_and_drains_sources() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "src/old1.yaml",
-        "members:\n  - selector: { binding: { name: AOe } }\n",
-    );
-    write(
-        root,
-        "src/old2.yaml",
-        "members:\n  - selector: { binding: { name: BOe } }\n",
-    );
-    let moves = vec![
-        Move {
-            sym: "AOe".into(),
-            module: "ui/widgets".into(),
-            readable: Some("ButtonRegistry".into()),
-        },
-        Move {
-            sym: "BOe".into(),
-            module: "ui/widgets".into(),
-            readable: None,
-        },
-    ];
-    let out = run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap();
-    assert_eq!(out.moves_applied, 2);
-    assert!(root.join("ui/widgets.yaml").exists());
-    assert!(!root.join("src/old1.yaml").exists());
-    assert!(!root.join("src/old2.yaml").exists());
-    let dest = read(root, "ui/widgets.yaml");
-    let doc: Value = serde_yaml::from_str(&dest).unwrap();
-    let names: Vec<&str> = doc["members"]
-        .as_sequence()
-        .unwrap()
-        .iter()
-        .map(|m| m["selector"]["binding"]["name"].as_str().unwrap())
-        .collect();
-    assert!(names.contains(&"AOe") && names.contains(&"BOe"));
-    let readables: Vec<Option<&str>> = doc["members"]
-        .as_sequence()
-        .unwrap()
-        .iter()
-        .map(|m| m["name"].as_str())
-        .collect();
-    assert!(readables.contains(&Some("ButtonRegistry")));
-}
-
-#[test]
-fn assign_moves_matching_annotation_to_destination_name() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "src.yaml",
-        r#"members:
-  - selector: { binding: { name: XOe } }
-annotations:
-  XOe:
-    note: stable selector debt
-"#,
-    );
-    let moves = vec![Move {
-        sym: "XOe".into(),
-        module: "dest".into(),
-        readable: Some("PluginSettings".into()),
-    }];
-    run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap();
-    assert!(!root.join("src.yaml").exists(), "drained source is deleted");
-    let doc: Value = serde_yaml::from_str(&read(root, "dest.yaml")).unwrap();
-    assert_eq!(
-        doc["annotations"]["PluginSettings"]["note"].as_str(),
-        Some("stable selector debt")
-    );
-    assert!(doc["annotations"]["XOe"].is_null(), "{doc:?}");
-}
-
-#[test]
-fn assign_keeps_source_with_module_comment() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "kept.yaml",
-        "comment: keepalive\nmembers:\n  - selector: { binding: { name: XOe } }\n",
-    );
-    let moves = vec![Move {
-        sym: "XOe".into(),
-        module: "elsewhere".into(),
-        readable: None,
-    }];
-    run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap();
-    assert!(
-        root.join("kept.yaml").exists(),
-        "module-level comment should preserve drained source"
-    );
-}
-
-#[test]
-fn assign_rename_collision_rejects() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "src.yaml",
-        "members:\n  - selector: { binding: { name: XOe } }\n",
-    );
-    write(
-        root,
-        "dest.yaml",
-        "members:\n  - name: Existing\n    selector: { binding: { name: YOe } }\n",
-    );
-    let moves = vec![Move {
-        sym: "XOe".into(),
-        module: "dest".into(),
-        readable: Some("Existing".into()),
-    }];
-    let err = run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap_err();
-    assert!(
-        format!("{err}").contains("name collision"),
-        "expected collision error: {err}"
-    );
-    // No files written.
-    let src_body = read(root, "src.yaml");
-    assert!(src_body.contains("XOe"));
-}
-
-#[test]
-fn assign_rename_collision_with_unrenamed_minified_name_rejects() {
-    // A member without an explicit `name:` keeps its minified
-    // binding name as its public identity — `bindings rename`
-    // already treats that as a collision target; `bindings assign`
-    // must use the same predicate.
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "src.yaml",
-        "members:\n  - selector: { binding: { name: a } }\n",
-    );
-    write(
-        root,
-        "other.yaml",
-        "members:\n  - selector: { binding: { name: XOe } }\n",
-    );
-    let moves = vec![Move {
-        sym: "a".into(),
-        module: "dest".into(),
-        readable: Some("XOe".into()),
-    }];
-    let err = run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap_err();
-    assert!(
-        format!("{err}").contains("name collision"),
-        "expected collision with unrenamed minified XOe: {err}"
-    );
-    assert!(!root.join("dest.yaml").exists(), "no files written");
-}
-
-#[test]
-fn assign_batch_with_both_spellings_of_one_member_moves_it_once() {
-    // `<sym>` accepts the minified OR readable spelling. A batch
-    // carrying both spellings of the SAME member must collapse to a
-    // single move — not produce two plan entries for one
-    // (file, index), where the second extraction pushes the null
-    // sentinel into the destination as a literal `- null` member.
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "src.yaml",
-        "members:\n  - name: PluginSettings\n    selector: { binding: { name: XOe } }\n",
-    );
-    let moves = vec![
-        Move {
-            sym: "XOe".into(),
-            module: "dest".into(),
-            readable: None,
-        },
-        Move {
-            sym: "PluginSettings".into(),
-            module: "dest".into(),
-            readable: None,
-        },
-    ];
-    let out = run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap();
-    assert_eq!(out.moves_applied, 1, "one member, one move");
-    let dest = read(root, "dest.yaml");
-    let doc: Value = serde_yaml::from_str(&dest).unwrap();
-    let members = doc["members"].as_sequence().unwrap();
-    assert_eq!(members.len(), 1, "exactly one member in dest: {dest}");
-    assert!(
-        members.iter().all(|m| !m.is_null()),
-        "no null members may be spliced into the spec: {dest}"
-    );
-}
-
-#[test]
-fn assign_batch_with_contradictory_destinations_for_one_member_rejects() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "src.yaml",
-        "members:\n  - name: PluginSettings\n    selector: { binding: { name: XOe } }\n",
-    );
-    let pre = read(root, "src.yaml");
-    let moves = vec![
-        Move {
-            sym: "XOe".into(),
-            module: "dest_one".into(),
-            readable: None,
-        },
-        Move {
-            sym: "PluginSettings".into(),
-            module: "dest_two".into(),
-            readable: None,
-        },
-    ];
-    let err = run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap_err();
-    let msg = format!("{err}");
-    assert!(
-        msg.contains("same member"),
-        "expected contradictory-destination rejection: {msg}"
-    );
-    assert_eq!(read(root, "src.yaml"), pre, "spec untouched on rejection");
-    assert!(!root.join("dest_one.yaml").exists());
-    assert!(!root.join("dest_two.yaml").exists());
-}
-
-#[test]
-fn assign_preserves_unrelated_empty_module() {
-    // The drained-module sweep must only delete modules that were
-    // sources of a move in THIS operation — a pre-existing empty
-    // module shell is not this command's business.
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "src.yaml",
-        "members:\n  - selector: { binding: { name: XOe } }\n",
-    );
-    write(root, "unrelated_empty.yaml", "members: []\n");
-    let moves = vec![Move {
-        sym: "XOe".into(),
-        module: "dest".into(),
-        readable: None,
-    }];
-    run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap();
-    assert!(
-        root.join("unrelated_empty.yaml").exists(),
-        "unrelated pre-existing empty module must survive an assign"
-    );
-    assert!(!root.join("src.yaml").exists(), "drained source is deleted");
-}
-
-#[test]
-fn unassign_preserves_unrelated_empty_module() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "src.yaml",
-        "members:\n  - selector: { binding: { name: XOe } }\n",
-    );
-    write(root, "unrelated_empty.yaml", "members: []\n");
-    run_bindings_unassign(root, vec!["XOe".into()], false, Gate::Skip).unwrap();
-    assert!(
-        root.join("unrelated_empty.yaml").exists(),
-        "unrelated pre-existing empty module must survive an unassign"
-    );
-    assert!(!root.join("src.yaml").exists(), "drained source is deleted");
-}
-
-#[test]
-fn unassign_removes_matching_annotation_with_member() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "src.yaml",
-        r#"members:
-  - selector: { binding: { name: XOe } }
-annotations:
-  XOe:
-    note: stable selector debt
-"#,
-    );
-    run_bindings_unassign(root, vec!["XOe".into()], false, Gate::Skip).unwrap();
-    assert!(
-        !root.join("src.yaml").exists(),
-        "annotation moved with the removed member, so the drained module can be deleted"
-    );
-}
-
-#[test]
-fn assign_canonicalizes_destination_module_path_case() {
-    // `ModulePath::parse` lowercases module identities; the assign
-    // writer must resolve destinations through the same
-    // canonicalization so `UI/Widgets` and `ui/widgets` cannot
-    // become two distinct files.
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write(
-        root,
-        "src.yaml",
-        "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n",
-    );
-    let moves = vec![
-        Move {
-            sym: "a".into(),
-            module: "UI/Widgets".into(),
-            readable: None,
-        },
-        Move {
-            sym: "b".into(),
-            module: "ui/widgets".into(),
-            readable: None,
-        },
-    ];
-    run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap();
-    assert!(
-        root.join("ui/widgets.yaml").exists(),
-        "canonical lowercase destination must exist"
-    );
-    assert!(
-        !root.join("UI").exists(),
-        "no separate case-variant directory may be created"
-    );
-    let doc: Value = serde_yaml::from_str(&read(root, "ui/widgets.yaml")).unwrap();
-    assert_eq!(
-        doc["members"].as_sequence().unwrap().len(),
-        2,
-        "both members land in the one canonical file"
-    );
-}
-
-#[test]
-fn parse_move_triple_rejects_colon_in_readable() {
-    // `bindings rename` rejects `:` in names; the positional triple
-    // parser must not silently accept it via splitn(3).
-    assert!(parse_move_triple("XOe:runtime/plugins:Bad:Name").is_err());
+fn positional_readable_name_cannot_contain_a_colon() {
+    let fixture = GraphFixture::acyclic_pair();
+    fixture.assert_rejected_unchanged(&["bindings", "assign", "alpha:dest:Bad:Name"], &[":"]);
 }
