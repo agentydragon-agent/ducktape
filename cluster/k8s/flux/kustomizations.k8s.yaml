@@ -3597,7 +3597,7 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-testing-dex
+      name: dex
       namespace: agentplane-testing
     - apiVersion: cert-manager.io/v1
       kind: Certificate
@@ -3741,11 +3741,11 @@ spec:
       namespace: public-coder-agent
     - apiVersion: apps/v1
       kind: Deployment
-      name: public-coder-agent-proxy
+      name: proxy
       namespace: public-coder-agent
     - apiVersion: apps/v1
       kind: Deployment
-      name: public-coder-agent-sshpiper
+      name: sshpiper
       namespace: public-coder-agent
     - apiVersion: cert-manager.io/v1
       kind: Certificate
@@ -4590,8 +4590,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: activitywatch
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/activitywatch
   prune: true
@@ -4612,8 +4610,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: agent-sandbox-controller
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/agent-sandbox-system
@@ -4636,8 +4632,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: agentplane-index
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/agentplane-index
   prune: true
@@ -4658,8 +4652,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: agentplane-staging
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/agentplane-staging
@@ -4682,8 +4674,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: agentplane-testing
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/agentplane-testing
   prune: true
@@ -4704,8 +4694,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: airlock
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/airlock
@@ -4728,8 +4716,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: authentik
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/authentik
   prune: true
@@ -4750,8 +4736,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: cert-manager
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/cert-manager
@@ -4774,8 +4758,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: cli-proxy-api
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/cli-proxy-api
   prune: true
@@ -4797,8 +4779,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: clickhouse
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/clickhouse
   prune: true
@@ -4819,8 +4799,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: cnpg
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/cnpg-system
@@ -4864,8 +4842,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: gatus
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/gatus
   prune: true
@@ -4886,8 +4862,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: grocy-sf
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/grocy-sf
@@ -4910,8 +4884,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: grocy-vallejo
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/grocy-vallejo
   prune: true
@@ -4932,8 +4904,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: haku-ci
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/haku-ci
@@ -4956,8 +4926,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: litellm
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/litellm
   prune: true
@@ -4978,8 +4946,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: local-path-provisioner
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/local-path-storage
@@ -5002,8 +4968,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: loki
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/loki
   prune: true
@@ -5024,8 +4988,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: monitoring-namespace
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/monitoring
@@ -5048,8 +5010,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: nix-cache
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/nix-cache
   prune: true
@@ -5070,8 +5030,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: node-feature-discovery
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/node-feature-discovery
@@ -5094,8 +5052,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: nvidia-device-plugin
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/nvidia-device-plugin
   prune: true
@@ -5116,8 +5072,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: oci-cache
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/oci-cache
@@ -5140,8 +5094,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: openebs-lvm
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/openebs
   prune: true
@@ -5162,8 +5114,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: plaid-mcp
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/plaid-mcp
@@ -5186,8 +5136,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: proxmox-proxy
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/proxmox-proxy
   prune: true
@@ -5208,8 +5156,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: public-coder-agent-app
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/public-coder-agent
@@ -5232,8 +5178,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: study-casino
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/study-casino
   prune: true
@@ -5255,8 +5199,6 @@ spec:
   dependsOn:
     - name: claude-rbac
       namespace: ducktape-flux
-    - name: tana-mcp
-      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/tana-mcp
   prune: true
@@ -5277,8 +5219,6 @@ metadata:
 spec:
   dependsOn:
     - name: claude-rbac
-      namespace: ducktape-flux
-    - name: vm-images-publisher
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/vm-images-publisher

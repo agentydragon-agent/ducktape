@@ -40,7 +40,7 @@ NAMESPACE = "authentik"
 HOSTNAME = "auth.allegedly.works"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/app"
 HOSTNAME = "auth.allegedly.works"
-_HOST_CONFIG_MAP = "authentik-host"
+_HOST_CONFIG_MAP = "host"
 _BLUEPRINTS_CONFIG_MAP = "authentik-sso-blueprints"
 _SOPS_SECRETS = (
     "admin-password",
@@ -259,7 +259,7 @@ def _network_policy(chart: Chart) -> None:
     NetworkPolicy(
         chart,
         "server-ingress",
-        metadata=ApiObjectMetadata(name="authentik-server-ingress", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="server-ingress", namespace=NAMESPACE),
         endpoint_selector=_SERVER_LABELS,
         ingress=[
             IngressRule.from_gateway(_HTTP, _HTTPS),
@@ -290,7 +290,7 @@ def _pod_monitor(chart: Chart) -> None:
     PodMonitor(
         chart,
         "server-podmonitor",
-        metadata=ApiObjectMetadata(name="authentik-server", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="server", namespace=NAMESPACE),
         selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
         # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
         pod_metrics_endpoints=[Endpoint.plain(port="metrics")],

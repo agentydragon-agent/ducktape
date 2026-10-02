@@ -36,7 +36,7 @@ automountServiceAccountToken: false
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: haku-console-haku-console-agent-api-reader
+  name: haku-console-agent-api-reader
   namespace: forgejo
 rules:
   - apiGroups:
@@ -51,12 +51,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: haku-console-haku-console-agent-api-reader
+  name: haku-console-agent-api-reader
   namespace: forgejo
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: haku-console-haku-console-agent-api-reader
+  name: haku-console-agent-api-reader
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -66,7 +66,7 @@ subjects:
 apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
 metadata:
-  name: kubernetes-haku-console-haku-console-agent-api-secret-store
+  name: kubernetes-haku-console-agent-api-secret-store
 spec:
   conditions:
     - namespaces:
@@ -96,7 +96,7 @@ spec:
   refreshInterval: 1h
   secretStoreRef:
     kind: ClusterSecretStore
-    name: kubernetes-haku-console-haku-console-agent-api-secret-store
+    name: kubernetes-haku-console-agent-api-secret-store
   target:
     creationPolicy: Owner
     name: haku-console-agent-api
@@ -140,6 +140,9 @@ spec:
         DATABASE_URL: postgresql+asyncpg://haku_indexer:{{ .password }}@haku-console-db-rw.haku-console.svc:5432/approval_store
         password: "{{ .password }}"
         username: haku_indexer
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: postgresql.cnpg.io/v1
@@ -197,7 +200,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: haku-console-migration
+  name: migration
   namespace: haku-console
 automountServiceAccountToken: false
 ---
@@ -206,7 +209,7 @@ kind: Job
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
-  name: haku-console-migration
+  name: migration
   namespace: haku-console
 spec:
   activeDeadlineSeconds: 1200
@@ -282,7 +285,7 @@ spec:
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: haku-console-migration
+      serviceAccountName: migration
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
@@ -401,7 +404,7 @@ automountServiceAccountToken: false
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: haku-console-config
+  name: config
   namespace: haku-console
 data:
   config.yaml: |
@@ -495,7 +498,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    configmap.reloader.stakater.com/reload: haku-console-config
+    configmap.reloader.stakater.com/reload: config
     secret.reloader.stakater.com/reload: aiquota-api-bearer-haku-console,haku-console-agent-api,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
@@ -527,7 +530,7 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   key: image-tag
-                  name: haku-console-image-metadata
+                  name: image-metadata
             - name: HAKU_CONSOLE__AIQUOTA_URL
               value: http://aiquota-api.cli-proxy-api.svc.cluster.local:8080
             - name: HAKU_CONSOLE__AIQUOTA_BEARER_TOKEN
@@ -702,10 +705,10 @@ spec:
             - mountPath: /tmp
               name: tmp
             - mountPath: /etc/haku-console/config
-              name: configmap-haku-console-config
+              name: configmap-config
               readOnly: true
             - mountPath: /etc/haku-console/static-metadata
-              name: configmap-haku-console-static-metadata
+              name: configmap-static-metadata
               readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
@@ -730,11 +733,11 @@ spec:
         - emptyDir: {}
           name: tmp
         - configMap:
-            name: haku-console-config
-          name: configmap-haku-console-config
+            name: config
+          name: configmap-config
         - configMap:
-            name: haku-console-static-metadata
-          name: configmap-haku-console-static-metadata
+            name: static-metadata
+          name: configmap-static-metadata
 ---
 apiVersion: v1
 kind: Service
@@ -776,7 +779,7 @@ kind: Deployment
 metadata:
   labels:
     app.kubernetes.io/name: haku-console-static
-  name: haku-console-static
+  name: static
   namespace: haku-console
 spec:
   minReadySeconds: 0
@@ -872,7 +875,7 @@ kind: Service
 metadata:
   labels:
     app.kubernetes.io/name: haku-console-static
-  name: haku-console-static
+  name: static
   namespace: haku-console
 spec:
   externalIPs: []
@@ -899,7 +902,7 @@ spec:
       sectionName: https-wildcard
   rules:
     - backendRefs:
-        - name: haku-console-static
+        - name: static
           port: 8080
       filters:
         - responseHeaderModifier:
@@ -917,7 +920,7 @@ metadata:
   annotations:
     description: Applies the object GRANTs for haku_indexer (indexer-role.sql). The role itself is managed declaratively by CNPG (haku-console-db managed.roles); this runs in the app layer because the recall_index schema exists only after the migration Job.
     kustomize.toolkit.fluxcd.io/force: enabled
-  name: haku-console-db-indexer-provisioner
+  name: db-indexer-provisioner
   namespace: haku-console
 spec:
   activeDeadlineSeconds: 1200

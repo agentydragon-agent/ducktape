@@ -77,6 +77,15 @@ After cutover, Sandbox Service is the sole normal production client of runner co
 This boundary does not proxy runner outbound model, Actions, or egress traffic. Administrative/test
 exceptions must be explicit; there is no production direct-runner fallback in the app or notifications.
 
+## Existing staging data
+
+Backend independence is not a reason to discard the current staging instance. For this extraction,
+default to preserving existing data and identities, with an inventory, tested migration/restore path,
+and controlled ownership handoff. One-time migration of app-owned records is distinct from a
+steady-state dependency on app tables. See [staging data preservation](../plans/sandbox_service.md#staging-data-preservation).
+Any necessary loss/reset must be described and explicitly approved before execution; the repository's
+general staging-disposability guidance is not permission to bypass this task-specific requirement.
+
 ## Review and acceptance gates
 
 - Reject new reverse imports, app API clients, app-table reads, or app-only bootstrap dependencies in

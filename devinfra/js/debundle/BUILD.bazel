@@ -249,9 +249,12 @@ rust_library(
     name = "vendor",
     srcs = [
         "vendor/emission.rs",
+        "vendor/export_surface.rs",
         "vendor/import_rewrites.rs",
         "vendor/manifests.rs",
         "vendor/mod.rs",
+        "vendor/output_imports.rs",
+        "vendor/packages.rs",
         "vendor/passthrough.rs",
         "vendor/plan.rs",
         "vendor/strip.rs",
@@ -625,6 +628,7 @@ rust_library(
     deps = [
         "@crates//:anyhow",
         "@crates//:serde_yaml",
+        "@crates//:tempfile",
     ],
 )
 
@@ -848,6 +852,16 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:swc_common",
+    ],
+)
+
+rust_test(
+    name = "prepare_chunks_test",
+    crate = ":prepare_chunks",
+    edition = "2024",
+    deps = [
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
     ],
 )
 

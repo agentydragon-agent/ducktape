@@ -13,7 +13,7 @@ spec: {}
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: agentplane-testing-quota
+  name: quota
   namespace: agentplane-testing
 spec:
   hard:
@@ -26,7 +26,7 @@ spec:
 apiVersion: v1
 kind: LimitRange
 metadata:
-  name: agentplane-testing-limits
+  name: limits
   namespace: agentplane-testing
 spec:
   limits:
@@ -83,6 +83,9 @@ spec:
         port: "5432"
         uri: postgresql://actions:{{ .password }}@postgres-rw.agentplane-testing.svc:5432/actions
         username: actions
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
@@ -120,6 +123,9 @@ spec:
         port: "5432"
         uri: postgresql://egress:{{ .password }}@postgres-rw.agentplane-testing.svc:5432/egress
         username: egress
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
@@ -157,6 +163,9 @@ spec:
         port: "5432"
         uri: postgresql://electric:{{ .password }}@postgres-rw.agentplane-testing.svc:5432/app
         username: electric
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
       type: kubernetes.io/basic-auth
 ---
 apiVersion: postgresql.cnpg.io/v1
@@ -3067,7 +3076,7 @@ spec:
             - name: OAUTH_FIXTURE_AUTHORIZATION_SERVER
               value: https://agentplane-dex-testing.allegedly.works/dex
             - name: OAUTH_FIXTURE_JWKS_URI
-              value: http://agentplane-testing-dex.agentplane-testing.svc.cluster.local:5556/dex/keys
+              value: http://dex.agentplane-testing.svc.cluster.local:5556/dex/keys
             - name: OAUTH_FIXTURE_AUDIENCE
               value: agentplane-testing-mcp
           image: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:unset
@@ -3365,7 +3374,7 @@ metadata:
     secret.reloader.stakater.com/reload: agentplane-testing-acceptance-operator,agentplane-oidc,agentplane-mcp-oauth
   labels:
     app.kubernetes.io/name: agentplane-testing-dex
-  name: agentplane-testing-dex
+  name: dex
   namespace: agentplane-testing
 spec:
   minReadySeconds: 0
@@ -3475,7 +3484,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: agentplane-testing-dex
+  name: dex
   namespace: agentplane-testing
 spec:
   externalIPs: []
@@ -3491,7 +3500,7 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: agentplane-testing-dex
+  name: dex
   namespace: agentplane-testing
 spec:
   hostnames:
@@ -3502,7 +3511,7 @@ spec:
       sectionName: https-wildcard
   rules:
     - backendRefs:
-        - name: agentplane-testing-dex
+        - name: dex
           port: 5556
       filters:
         - responseHeaderModifier:
@@ -3514,7 +3523,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-testing-dex
+  name: dex
   namespace: agentplane-testing
 spec:
   egress:

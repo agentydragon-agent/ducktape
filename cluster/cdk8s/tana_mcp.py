@@ -36,6 +36,7 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/tana-mcp"
 _NAMESPACE = "tana-mcp"
+_FACADE_CONFIG_MAP = "facade-config"
 _NAME = "tana-mcp"
 _FACADE = "tana-mcp-facade"
 _RESIGNER = "tana-firebase-resigner"
@@ -56,7 +57,7 @@ MCP_PROXY = ServiceRef(
 )
 _NOVNC = ServiceRef(name=MCP_PROXY.name, port=Port(name="novnc", number=6080), pods=MCP_PROXY.pods)
 _FACADE_HTTP = ServiceRef(
-    name=_FACADE,
+    name="facade",
     port=Port(name="http", number=8765),
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _FACADE),)),
 )
@@ -232,7 +233,7 @@ def _facade(chart: Chart) -> None:
     k8s.KubeConfigMap(
         chart,
         "facade-config",
-        metadata=k8s.ObjectMeta(name="tana-mcp-facade-config", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_FACADE_CONFIG_MAP, namespace=_NAMESPACE),
         data={
             "MCP_FACADE_AUTH__OIDC_ISSUER": "https://auth.allegedly.works/application/o/tana-mcp-facade/",
             "MCP_FACADE_AUTH__PUBLIC_BASE_URL": "https://tana-mcp-facade.allegedly.works",
@@ -255,7 +256,7 @@ def _facade(chart: Chart) -> None:
         chart,
         "facade-deployment",
         metadata=k8s.ObjectMeta(
-            name=_FACADE,
+            name=_FACADE_HTTP.name,
             namespace=_NAMESPACE,
             labels=_FACADE_HTTP.pods.selector,
             annotations={
@@ -297,7 +298,7 @@ def _facade(chart: Chart) -> None:
                                 _FACADE_METRICS.port.k8s_container_port(),
                             ],
                             env_from=[
-                                k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name="tana-mcp-facade-config"))
+                                k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_FACADE_CONFIG_MAP))
                             ],
                             env=[
                                 _FACADE_OIDC.key("client_id").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID"),
@@ -342,7 +343,7 @@ def _facade(chart: Chart) -> None:
     https_route(
         chart,
         "facade-httproute",
-        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_FACADE_HTTP.name, namespace=_NAMESPACE),
         hostnames=["tana-mcp-facade.allegedly.works"],
         backend=_FACADE_HTTP,
         timeout="60s",
@@ -362,14 +363,14 @@ def _facade(chart: Chart) -> None:
     ServiceMonitor(
         chart,
         "facade-servicemonitor",
-        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_FACADE_HTTP.name, namespace=_NAMESPACE),
         selector=ServiceMonitorSpecSelector(match_labels=_FACADE_HTTP.labels),
         endpoints=[Endpoint.plain(port=_FACADE_METRICS.port.name, scrape_timeout="10s")],
     )
     PrometheusRule(
         chart,
         "facade-prometheusrule",
-        metadata=ApiObjectMetadata(name=_FACADE, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_FACADE_HTTP.name, namespace=_NAMESPACE),
         groups=[
             group(
                 _FACADE,

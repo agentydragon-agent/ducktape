@@ -349,3 +349,45 @@ fn gate_cycles_override_picks_up_custom_path() {
     ]);
     assert_eq!(parsed["blocking_sccs"].as_array().unwrap().len(), 0);
 }
+
+#[test]
+fn gate_list_and_cut_accept_cycles_without_graph() {
+    let fixture = rejected_cycle_fixture();
+    let cycles = fixture.report_root.join("static/app/cycles.json");
+    let graph = graph_path(&fixture);
+    for command in [vec!["list"], vec!["cut", "0"]] {
+        let mut args = vec!["gate"];
+        args.extend(command);
+        args.extend(["--format", "json"]);
+        let mut from_graph = args.clone();
+        from_graph.extend(["--graph", graph.to_str().unwrap()]);
+        args.extend(["--cycles", cycles.to_str().unwrap()]);
+        assert_eq!(gate_json(&args), gate_json(&from_graph));
+    }
+}
+
+#[test]
+fn gate_describe_still_requires_graph_with_explicit_cycles() {
+    let output = run_debundle(&["gate", "describe", "0", "--cycles", "missing.json"]);
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--graph"), "{stderr}");
+}
+
+#[test]
+fn scc_rejects_conflicting_size_filters_before_reading_files() {
+    let output = run_debundle(&[
+        "scc",
+        "--graph",
+        "missing.json",
+        "--modules",
+        "missing",
+        "--cycles-only",
+        "--singletons-only",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
+    assert!(stderr.contains("--cycles-only"), "{stderr}");
+    assert!(stderr.contains("--singletons-only"), "{stderr}");
+}

@@ -14,10 +14,11 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "atuin-user-provisioner"
+_JOB = "user-provisioner"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 # Reflector's copy of user-agentydragon's SOPS-managed Secret.
 _USER_PASSWORD = SecretRef(namespace=NAMESPACE, name="atuin-user-password").key("user_password")
-_SCRIPT_CONFIG_MAP = f"{NAME}-script"
+_SCRIPT_CONFIG_MAP = "user-provisioner-script"
 _SCRIPT_DIR = "/scripts"
 _SCRIPT = textwrap.dedent(
     '''\
@@ -103,7 +104,7 @@ def chart(app: App) -> Chart:
         chart,
         "job",
         metadata=k8s.ObjectMeta(
-            name=NAME, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
+            name=_JOB, namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"}
         ),
         spec=k8s.JobSpec(
             # The script is idempotent (creates if missing, updates the password only when

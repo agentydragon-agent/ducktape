@@ -1979,8 +1979,12 @@ py_test(
     deps = [
         ":agent_access_profiles",
         ":agent_namespace_rbac",
+        ":flux",
         ":namespace_access",
         ":namespaces",
+        "//cluster/cdk8s/kyverno:app",
+        "//cluster/cdk8s/kyverno:policies",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

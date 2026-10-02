@@ -1,6 +1,6 @@
 """The Haku Console API and its public shell: the API Deployment (reviewed FastAPI code) with
 its ServiceAccount, RBAC, config ConfigMap, Service and ServiceMonitor; the separate
-`haku-console-static` nginx Deployment/Service the public HTTPRoute reaches, which proxies
+`static` nginx Deployment/Service the public HTTPRoute reaches, which proxies
 backend paths to the API; and the Job granting the indexer role its object privileges.
 
 Trust boundary: the console runs in its OWN `haku-console` namespace, not haku-sandbox. As
@@ -88,25 +88,25 @@ _API = service_ref.ServiceRef(
 _METRICS = service_ref.ServiceRef(
     name=_API.name, port=service_ref.Port(name="metrics", number=9090), pods=_API.pods, target_port=_API.pod_port
 )
-STATIC_NAME = "haku-console-static"
 _STATIC = service_ref.ServiceRef(
-    name=STATIC_NAME,
+    name="static",
     port=service_ref.Port(name="http", number=8080),
-    pods=service_ref.Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", STATIC_NAME),)),
+    pods=service_ref.Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", "haku-console-static"),)),
     target_port=8081,
 )
 # Hand-written siblings carrying Flux image-automation markers: the static image's tag,
 # projected as a file so /api/deployment reports the frontend revision without a
 # frontend-only release rolling the API, and the API image's own tag as an env var.
-STATIC_METADATA_CONFIG_MAP = "haku-console-static-metadata"
-IMAGE_METADATA_CONFIG_MAP = "haku-console-image-metadata"
+STATIC_METADATA_CONFIG_MAP = "static-metadata"
+IMAGE_METADATA_CONFIG_MAP = "image-metadata"
 _IMAGE_TAG_KEY = "image-tag"
 _STATIC_METADATA_DIR = "/etc/haku-console/static-metadata"
 # kustomize builds it from indexer-role.sql; a changed script re-hashes the name, and the
 # Job's `force` annotation recreates it.
 INDEXER_SQL_CONFIG_MAP = "haku-console-db-indexer-sql"
 _INDEXER_SQL_DIR = "/sql"
-_INDEXER_PROVISIONER_NAME = "haku-console-db-indexer-provisioner"
+_INDEXER_PROVISIONER_NAME = "db-indexer-provisioner"
+_INDEXER_PROVISIONER_LABEL = "haku-console-db-indexer-provisioner"
 _AUTHENTIK = "https://auth.allegedly.works"
 
 _DB_ENV = {
@@ -156,7 +156,7 @@ class Console(Construct):
         config = SettingsFile(
             self,
             "config",
-            metadata=ApiObjectMetadata(name="haku-console-config", namespace=NAMESPACE),
+            metadata=ApiObjectMetadata(name="config", namespace=NAMESPACE),
             model=ConsoleConfigFile,
             content=console_config.config(),
             path="/etc/haku-console/config/config.yaml",
@@ -465,7 +465,7 @@ class Console(Construct):
         deployment = Deployment(
             self,
             "static-deployment",
-            metadata=ApiObjectMetadata(name=STATIC_NAME, namespace=NAMESPACE, labels=_STATIC.pods.selector),
+            metadata=ApiObjectMetadata(name=_STATIC.name, namespace=NAMESPACE, labels=_STATIC.pods.selector),
             pod_metadata=ApiObjectMetadata(labels=_STATIC.pods.selector),
             select=False,
             replicas=2,
@@ -553,7 +553,7 @@ class Console(Construct):
                     "kustomize.toolkit.fluxcd.io/force": "enabled",
                 },
             ),
-            pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": _INDEXER_PROVISIONER_NAME}),
+            pod_metadata=ApiObjectMetadata(labels={"app.kubernetes.io/name": _INDEXER_PROVISIONER_LABEL}),
             select=False,
             backoff_limit=10,
             active_deadline=Duration.minutes(20),

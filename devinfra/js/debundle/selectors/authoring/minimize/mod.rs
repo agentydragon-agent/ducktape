@@ -349,3 +349,33 @@ fn render_var_slots(
     holed_var.decls = decls;
     emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
 }
+
+/// Greedily extend a retention set using caller-specific proof and scoring.
+/// Exhaustion returns partial progress: object callers must prove the result,
+/// while groups can combine partial slot covers before proving the whole tuple.
+fn extend_anchor_cover(
+    mut kept: BTreeSet<AnchorSpan>,
+    ranked: &[AnchorSpan],
+    resolves: impl Fn(&BTreeSet<AnchorSpan>) -> Result<bool>,
+    score: impl Fn(&BTreeSet<AnchorSpan>) -> Result<(bool, usize)>,
+) -> Result<BTreeSet<AnchorSpan>> {
+    while !resolves(&kept)? {
+        let mut best = None;
+        for &anchor in ranked.iter().take(crate::render::MAX_MINIMIZER_ANCHORS) {
+            if kept.contains(&anchor) {
+                continue;
+            }
+            let mut trial = kept.clone();
+            trial.insert(anchor);
+            let candidate_score = score(&trial)?;
+            if best.is_none_or(|(best_score, _)| candidate_score < best_score) {
+                best = Some((candidate_score, anchor));
+            }
+        }
+        let Some((_, anchor)) = best else {
+            break;
+        };
+        kept.insert(anchor);
+    }
+    Ok(kept)
+}

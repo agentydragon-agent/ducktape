@@ -6,32 +6,6 @@ use std::collections::{BTreeSet, HashMap};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 
-/// True iff `s` is a usable JavaScript identifier for the emitted ESM:
-/// the start char is `[A-Za-z_$]`, the rest is `[A-Za-z0-9_$]`, and `s`
-/// is not a reserved word in any ECMAScript context. Reserved words are
-/// rejected because emitted modules are ESM (always strict mode) and a
-/// base like `default` / `class` / `await` used directly in an
-/// `import {...}` / `export {...}` clause would produce un-parseable JS
-/// with no diagnostic. Reserved-word detection uses SWC's
-/// `EsReserved::is_reserved_in_any` (from `swc_ecma_ast`), which covers
-/// the union of sloppy-mode, strict-mode, and ES3 reserved sets. The
-/// intent is also to filter typos (`with-dash`, `0digit`, empty string)
-/// from spec authors.
-pub(super) fn is_valid_js_identifier(s: &str) -> bool {
-    let mut chars = s.chars();
-    let first = match chars.next() {
-        Some(c) => c,
-        None => return false,
-    };
-    if !(first.is_ascii_alphabetic() || first == '_' || first == '$') {
-        return false;
-    }
-    if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') {
-        return false;
-    }
-    !s.is_reserved_in_any()
-}
-
 pub(super) fn target_file_for_request(target_dir: &str, target_path: &str) -> Result<String> {
     let normalized = normalize_module_path(target_path)?;
     let with_ext = if normalized.ends_with(".js") {

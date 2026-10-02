@@ -11,7 +11,6 @@ use spec::{
     PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel, VendorMark,
     WrapperShape,
 };
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -346,6 +345,13 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
     }
 }
 
+fn assert_wrapper_output(fixture: &VendorSwapFixture, script: &str, expected: &str) {
+    assert_success(&fixture.result);
+    let probe = fixture.wrapper_path.with_file_name("probe.mjs");
+    write_text_file(&probe, script);
+    assert_node_output(&probe, expected, "");
+}
+
 #[test]
 fn named_from_default_handles_object_literal_with_keyvalue_props() {
     // Canonical accepted shape: upstream's `export default` is an
@@ -363,22 +369,10 @@ fn named_from_default_handles_object_literal_with_keyvalue_props() {
         chunk_source: "export { ping, pong } from \"lib\";\n",
     });
 
-    assert_success(&fixture.result);
-
-    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
-    // The wrapper hoists upstream's default into a `const _d = { ... }`
-    // and re-emits each named export as `export const ping = _d.ping;`.
-    assert!(
-        wrapper_source.contains("export const ping = _d.ping"),
-        "wrapper should emit a named-export pull for `ping`:\n{wrapper_source}",
-    );
-    assert!(
-        wrapper_source.contains("export const pong = _d.pong"),
-        "wrapper should emit a named-export pull for `pong`:\n{wrapper_source}",
-    );
-    assert!(
-        wrapper_source.contains("export default _d"),
-        "wrapper should preserve the default export:\n{wrapper_source}",
+    assert_wrapper_output(
+        &fixture,
+        "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
+        "pong ping true true\n",
     );
 }
 
@@ -386,10 +380,8 @@ fn named_from_default_handles_object_literal_with_keyvalue_props() {
 fn named_from_default_accepts_shorthand_props() {
     // Shorthand object-literal props (`{ ping, pong }` — local
     // binding names used directly as both key and value) produce
-    // the same wrapper shape as `KeyValue` props: each shorthand
-    // key reflects a data property on the default export whose
-    // value is the local binding, so `export const K = _d.K;`
-    // re-exports the right value. Real-world vendor `index.mjs`
+    // the same values as `KeyValue` props. Generated export locals must
+    // avoid the upstream bindings rather than redeclaring them. Real-world `index.mjs`
     // files use shorthand commonly; accepting it removes an
     // otherwise-unmotivated authoring requirement.
     let upstream_source = r#"const ping = () => "pong";
@@ -402,20 +394,10 @@ export default { ping, pong };
         chunk_source: "export { ping, pong } from \"lib\";\n",
     });
 
-    assert_success(&fixture.result);
-
-    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
-    assert!(
-        wrapper_source.contains("export const ping = _d.ping"),
-        "wrapper should emit a named-export pull for `ping`:\n{wrapper_source}",
-    );
-    assert!(
-        wrapper_source.contains("export const pong = _d.pong"),
-        "wrapper should emit a named-export pull for `pong`:\n{wrapper_source}",
-    );
-    assert!(
-        wrapper_source.contains("export default _d"),
-        "wrapper should preserve the default export:\n{wrapper_source}",
+    assert_wrapper_output(
+        &fixture,
+        "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
+        "pong ping true true\n",
     );
 }
 
@@ -433,10 +415,11 @@ export default { ping, "pong": () => "ping" };
         chunk_source: "export { ping, pong } from \"lib\";\n",
     });
 
-    assert_success(&fixture.result);
-    let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
-    assert!(wrapper_source.contains("export const ping = _d.ping"));
-    assert!(wrapper_source.contains("export const pong = _d.pong"));
+    assert_wrapper_output(
+        &fixture,
+        "import d, { ping, pong } from './entry.js'; console.log(ping(), pong(), ping === d.ping, pong === d.pong);",
+        "pong ping true true\n",
+    );
 }
 
 #[test]
@@ -820,47 +803,36 @@ fn run_partial_swap_with_mark(
 fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixture {
     const PACKAGE_NAME: &str = "zod";
     const SUBPATH: &str = "lib/index.mjs";
-    const MEGACHUNK_PATH: &str = "static/megachunk.js";
-    const CALLER_PATH: &str = "static/app.js";
 
-    let ws = VendorTestWorkspace::new("vendor-partial-swap-");
-    ws.write_chunk(MEGACHUNK_PATH, args.chunk_source);
-    ws.write_chunk(CALLER_PATH, args.caller_source);
-    ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
-    // Pin the on-disk upstream to 3.23.8 regardless of what the spec
-    // requests — the version-mismatch test relies on this so the spec
-    // can declare a different version and trigger the strict check.
-    let package_root = ws.write_upstream_package(
-        &format!("upstream/{PACKAGE_NAME}"),
+    // Keep the installed version fixed: mismatch cases deliberately request
+    // a different version in the spec.
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-",
+        args.chunk_source,
+        args.caller_source,
         PACKAGE_NAME,
         "3.23.8",
         SUBPATH,
         args.upstream_source,
     );
-
-    let mut symbols_json = serde_json::Map::new();
-    for (chunk_export, package, upstream_export) in &args.symbols {
-        symbols_json.insert(
-            (*chunk_export).to_string(),
-            json!({ "package": package, "upstream_export": upstream_export }),
-        );
-    }
-
-    let mut vendor = serde_json::Map::new();
-    vendor.insert("level".into(), json!("partial_swap"));
-    vendor.insert("identity".into(), json!("megachunk partial swap fixture"));
-    vendor.insert(
-        "packages".into(),
-        json!({
-            PACKAGE_NAME: {
-                "namespace": "z",
-                "version": args.upstream_version,
-                "subpath": SUBPATH,
-            },
-        }),
+    let symbols: Vec<_> = args
+        .symbols
+        .iter()
+        .map(|(export, package, upstream)| {
+            (
+                *export,
+                swap_symbol(package, PartialSwapKind::Member, Some(upstream), None),
+            )
+        })
+        .collect();
+    let vendor = partial_swap_vendor(
+        "megachunk partial swap fixture",
+        &[(
+            PACKAGE_NAME,
+            partial_package(args.upstream_version, SUBPATH, Some("z")),
+        )],
+        &symbols,
     );
-    vendor.insert("symbols".into(), Value::Object(symbols_json));
-
     run_partial_swap_with_mark(ws, vendor, &[(PACKAGE_NAME, &package_root)])
 }
 
@@ -1797,44 +1769,26 @@ struct PartialSwapKindFixtureArgs<'a> {
 }
 
 fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> PartialSwapFixture {
-    const MEGACHUNK_PATH: &str = "static/megachunk.js";
-    const CALLER_PATH: &str = "static/app.js";
-
-    let ws = VendorTestWorkspace::new("vendor-partial-swap-kind-");
-    ws.write_chunk(MEGACHUNK_PATH, args.chunk_source);
-    ws.write_chunk(CALLER_PATH, args.caller_source);
-    ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
-    let package_root = ws.write_upstream_package(
-        &format!("upstream/{}", args.package_name),
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-kind-",
+        args.chunk_source,
+        args.caller_source,
         args.package_name,
         args.package_version,
         args.subpath,
         args.upstream_source,
     );
-
-    let vendor = VendorMark {
-        identity: format!("megachunk {:?} swap fixture", args.kind),
-        role: Default::default(),
-        level: VendorLevel::PartialSwap(PartialSwapMark {
-            packages: BTreeMap::from([(
-                args.package_name.into(),
-                PartialSwapPackage {
-                    version: args.package_version.into(),
-                    subpath: args.subpath.into(),
-                    namespace: None,
-                },
-            )]),
-            symbols: BTreeMap::from([(
-                args.chunk_export.into(),
-                PartialSwapSymbol {
-                    package: args.package_name.into(),
-                    kind: args.kind,
-                    upstream_export: args.upstream_export.map(str::to_owned),
-                    local: None,
-                },
-            )]),
-        }),
-    };
+    let vendor = partial_swap_vendor(
+        &format!("megachunk {:?} swap fixture", args.kind),
+        &[(
+            args.package_name,
+            partial_package(args.package_version, args.subpath, None),
+        )],
+        &[(
+            args.chunk_export,
+            swap_symbol(args.package_name, args.kind, args.upstream_export, None),
+        )],
+    );
 
     run_partial_swap_with_mark(ws, vendor, &[(args.package_name, &package_root)])
 }
@@ -2466,17 +2420,11 @@ fn named_from_default_wrapper_avoids_upstream_default_local_collision() {
         upstream_source: "const _d = \"taken\";\nexport default { ping: () => _d };\n",
         chunk_source: "export { ping } from \"lib\";\n",
     });
-    assert_success(&fixture.result);
-    let probe_path = fixture
-        .wrapper_path
-        .parent()
-        .expect("wrapper has parent dir")
-        .join("__probe.mjs");
-    write_text_file(
-        &probe_path,
+    assert_wrapper_output(
+        &fixture,
         "const m = await import(\"./entry.js\");\nconsole.log(m.ping());\n",
+        "taken\n",
     );
-    assert_node_output(&probe_path, "taken\n", "");
 }
 
 #[test]
@@ -2484,17 +2432,11 @@ fn named_from_module_default_wrapper_avoids_upstream_default_local_collision() {
     let upstream_source = "const __vendor_default__ = \"taken\";\n\
                            export default function getter() { return __vendor_default__; }\n";
     let fixture = run_named_from_module_default_fixture(upstream_source);
-    assert_success(&fixture.result);
-    let probe_path = fixture
-        .wrapper_path
-        .parent()
-        .expect("wrapper has parent dir")
-        .join("__probe.mjs");
-    write_text_file(
-        &probe_path,
+    assert_wrapper_output(
+        &fixture,
         "const m = await import(\"./entry.js\");\nconsole.log(m.default());\n",
+        "taken\n",
     );
-    assert_node_output(&probe_path, "taken\n", "");
 }
 
 // ─── named_from_module_default named-export verification ────────────────
@@ -2537,17 +2479,11 @@ fn named_from_module_default_accepts_verified_default_aliases() {
         upstream_source: "export default function f() { return \"val\"; }\n",
         default_export_aliases: &[],
     });
-    assert_success(&fixture.result);
-    let probe_path = fixture
-        .wrapper_path
-        .parent()
-        .expect("wrapper has parent dir")
-        .join("__probe.mjs");
-    write_text_file(
-        &probe_path,
+    assert_wrapper_output(
+        &fixture,
         "const m = await import(\"./entry.js\");\nconsole.log(m.alias === m.default);\n",
+        "true\n",
     );
-    assert_node_output(&probe_path, "true\n", "");
 }
 
 #[test]
@@ -2590,17 +2526,11 @@ fn named_from_module_default_admits_authored_default_alias() {
         upstream_source: "export default function f() { return \"cy\"; }\n",
         default_export_aliases: &["c"],
     });
-    assert_success(&fixture.result);
-    let probe_path = fixture
-        .wrapper_path
-        .parent()
-        .expect("wrapper has parent dir")
-        .join("__probe.mjs");
-    write_text_file(
-        &probe_path,
+    assert_wrapper_output(
+        &fixture,
         "const m = await import(\"./entry.js\");\nconsole.log(m.c === m.default && m.c() === \"cy\");\n",
+        "true\n",
     );
-    assert_node_output(&probe_path, "true\n", "");
 }
 
 // ─── named_from_json_default ────────────────────────────────────────────
@@ -2709,4 +2639,208 @@ fn bundled_vendor(
                 .collect(),
         }),
     }
+}
+
+#[test]
+fn wrappers_preserve_reserved_and_string_export_names() {
+    for (shape, upstream) in [
+        (
+            WrapperShape::NamedFromDefault,
+            "export default { class: 1, 'x-y': 2 };",
+        ),
+        (
+            WrapperShape::NamedFromJsonDefault,
+            "{\"class\":1,\"x-y\":2}",
+        ),
+    ] {
+        let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+            temp_prefix: "vendor-export-names-",
+            chunk_source: "const a = 0; export { a as class, a as 'x-y' };",
+            wrapper_shape: Some(shape),
+            upstream_source: upstream,
+            default_export_aliases: &[],
+        });
+        assert_wrapper_output(
+            &fixture,
+            "import * as m from './entry.js'; console.log(m.class, m['x-y']);",
+            "1 2\n",
+        );
+    }
+}
+
+#[test]
+fn json_wrapper_preserves_proto_as_an_own_data_property() {
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-json-proto-",
+        chunk_source: "export const value = 0;",
+        wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
+        upstream_source: "{\"value\":1,\"__proto__\":{\"nested\":2}}",
+        default_export_aliases: &[],
+    });
+    assert_wrapper_output(
+        &fixture,
+        "import data from './entry.js'; console.log(Object.hasOwn(data, '__proto__'), Object.getPrototypeOf(data) === Object.prototype);",
+        "true true\n",
+    );
+}
+
+#[test]
+fn vendor_namespaces_reject_reserved_binding_names() {
+    let (ws, root) = setup_partial_swap_consumer_fixture(
+        "vendor-invalid-namespace-",
+        "export const a = 1;",
+        "import { a } from '../megachunk/entry.js'; console.log(a);",
+        "lib",
+        "1.0.0",
+        "index.js",
+        "export const value = 1;",
+    );
+    let vendor = partial_swap_vendor(
+        "reserved namespace",
+        &[("lib", partial_package("1.0.0", "index.js", Some("class")))],
+        &[(
+            "a",
+            swap_symbol("lib", PartialSwapKind::Member, Some("value"), None),
+        )],
+    );
+    let fixture = run_partial_swap_with_mark(ws, vendor, &[("lib", &root)]);
+    assert!(!fixture.result.status.success());
+    assert!(
+        fixture.result.stderr.contains("not a valid JS identifier"),
+        "{}",
+        fixture.result.stderr
+    );
+}
+
+#[test]
+fn module_default_wrapper_aliases_reserved_string_and_colliding_names() {
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-module-default-names-",
+        chunk_source: "const x = {}; export { x as class, x as 'x-y', x as existing };",
+        wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
+        upstream_source: "const existing = { value: 7 }; export default existing;",
+        default_export_aliases: &["class", "x-y", "existing"],
+    });
+    assert_wrapper_output(
+        &fixture,
+        "import d, * as m from './entry.js'; console.log(m.class === d, m['x-y'] === d, m.existing.value);",
+        "true true 7\n",
+    );
+}
+
+#[test]
+fn partial_swap_preserves_external_names_for_imports_and_reexports() {
+    for upstream_export in ["class", "x-y", "quote'and\"slash\\"] {
+        let name = serde_json::to_string(upstream_export).unwrap();
+        let upstream = format!("const value = 7; export {{ value as {name} }};");
+        let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
+            kind: PartialSwapKind::Named,
+            package_name: "lib",
+            package_version: "1.0.0",
+            subpath: "index.js",
+            chunk_source: "export const a = 7;",
+            caller_source: "import { a as local } from '../megachunk/entry.js'; export { a as 'public-name' } from '../megachunk/entry.js'; console.log(local);",
+            upstream_source: &upstream,
+            chunk_export: "a",
+            upstream_export: Some(upstream_export),
+        });
+        assert_success(&fixture.result);
+        let app = emitted_app_root(&fixture);
+        install_node_module(&app, "lib", "1.0.0", &upstream);
+        let probe = app.join("probe.mjs");
+        write_text_file(
+            &probe,
+            "import * as m from './static/app/entry.js'; console.log(m['public-name']);",
+        );
+        assert_node_output(&probe, "7\n7\n", "");
+    }
+}
+
+#[test]
+fn json_wrapper_export_names_do_not_shadow_json_or_payload_local() {
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-json-collision-",
+        chunk_source: "export const JSON = 0, _d = 0;",
+        wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
+        upstream_source: "{\"JSON\":1,\"_d\":2}",
+        default_export_aliases: &[],
+    });
+    assert_wrapper_output(
+        &fixture,
+        "import * as m from './entry.js'; console.log(m.JSON, m._d);",
+        "1 2\n",
+    );
+}
+
+#[test]
+fn bundled_facades_preserve_default_reserved_and_string_export_names() {
+    for bundle_export in ["default", "class", "x-y"] {
+        let name = serde_json::to_string(bundle_export).unwrap();
+        let bundle = format!("const value = {{ answer: 7 }}; export {{ value as {name} }};");
+        let (ws, bundle_path) = setup_bundled_partial_swap(
+            "vendor-bundle-export-name-",
+            "lib.js",
+            &bundle,
+            &[
+                ("static/megachunk.js", "export const a = { answer: 7 };"),
+                (
+                    "static/app.js",
+                    "import { a } from '../megachunk/entry.js'; console.log(a.answer);",
+                ),
+            ],
+        );
+        let package_root = ws.write_upstream_package(
+            "upstream/lib",
+            "lib",
+            "1.0.0",
+            "index.js",
+            "exports.answer = 7;",
+        );
+        let vendor = bundled_vendor(
+            "external facade name",
+            &bundle_path,
+            &[(
+                "lib",
+                bundled_package("1.0.0", "index.js", bundle_export, None),
+            )],
+            &[(
+                "a",
+                swap_symbol("lib", PartialSwapKind::Namespace, None, None),
+            )],
+        );
+        let spec =
+            build_bundled_partial_swap_spec(&ws, json!({"static/megachunk.js": vendor}), None);
+        let path = ws.root.path().join("spec.yaml");
+        write_yaml_file(&path, &spec);
+        assert_success(&run_debundler(&path, &[("lib", &package_root)]));
+        assert_node_output(&ws.out_root.join("app/static/app/entry.js"), "7\n", "");
+    }
+}
+
+#[test]
+fn partial_swap_preserves_residual_dependency_without_its_ast() {
+    let ws = VendorTestWorkspace::new("vendor-residual-dependency-");
+    ws.write_chunk("helper.js", "export const helper = () => 'helper';\n");
+    ws.write_chunk("vendor.js", "import { helper } from './helper.js';\nexport const old = () => 'bundled';\nexport const residual = () => helper();\n");
+    ws.write_chunk(
+        "app.js",
+        "import { old, residual } from './vendor.js';\nconsole.log(old() + ':' + residual());\n",
+    );
+    ws.write_js_list("helper.js\nvendor.js\napp.js\n");
+    let upstream = "export const replacement = () => 'upstream';\n";
+    let package = ws.write_upstream_package("upstream/lib", "lib", "1.0.0", "index.js", upstream);
+    let vendor = partial_swap_vendor(
+        "residual dependency",
+        &[("lib", partial_package("1.0.0", "index.js", None))],
+        &[(
+            "old",
+            swap_symbol("lib", PartialSwapKind::Named, Some("replacement"), None),
+        )],
+    );
+    let spec = ws.root.path().join("transform.yaml");
+    write_yaml_file(&spec, &ws.transform_spec(json!({"vendor.js": vendor})));
+    assert_success(&run_debundler(&spec, &[("lib", &package)]));
+    let app = ws.out_root.join("app");
+    install_node_module(&app, "lib", "1.0.0", upstream);
+    assert_node_output(&app.join("app/entry.js"), "upstream:helper\n", "");
 }

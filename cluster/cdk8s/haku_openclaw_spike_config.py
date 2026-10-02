@@ -58,7 +58,7 @@ _GATEWAY = ServiceRef(
     port=Port(name="gateway", number=18789),
     pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
-_CONFIG_MAP_NAME = "haku-openclaw-spike-config"
+_CONFIG_MAP_NAME = "config"
 _KUBECONFIG_CONFIG_MAP_NAME = "haku-openclaw-spike-kubeconfig"
 _KUBECONFIG_KEY = "config"
 _GATEWAY_PASSWORD = SecretRef(namespace=_NAMESPACE, name="haku-openclaw-spike-gateway-password").key("password")
@@ -502,7 +502,7 @@ def _network_policies(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "ingress",
-        metadata=k8s.ObjectMeta(name="haku-openclaw-spike-ingress", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="ingress", namespace=_NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=_GATEWAY.pods.selector),
             policy_types=["Ingress"],
@@ -531,7 +531,7 @@ def _network_policies(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "egress",
-        metadata=k8s.ObjectMeta(name="haku-openclaw-spike-egress", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="egress", namespace=_NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=_GATEWAY.pods.selector),
             policy_types=["Egress"],

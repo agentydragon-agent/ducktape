@@ -238,7 +238,7 @@ use swc_atoms::Atom;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
-use super::util::is_valid_js_identifier;
+use js_ast::is_binding_identifier;
 
 /// Identity of one function-like deriving scope (function / arrow /
 /// constructor): the node's source span in the chunk AST. The per-scope
@@ -457,7 +457,7 @@ impl RenameLedger {
     /// parseable name.
     pub fn mint(&mut self, scope: RenameScope, base: &str) -> String {
         let taken = self.taken.entry(scope).or_default();
-        if is_valid_js_identifier(base) && taken.insert(base.to_string()) {
+        if is_binding_identifier(base) && taken.insert(base.to_string()) {
             return base.to_string();
         }
         let mut suffix = 1usize;
@@ -666,7 +666,7 @@ fn validate_body_scope(
         }
         let from = from.0.as_ref();
         let to = to.as_ref();
-        if chunk_style && !is_valid_js_identifier(to) {
+        if chunk_style && !is_binding_identifier(to) {
             errors.push(format!(
                 "chunk_renames target {to} for binding {from} is not a valid JS identifier",
             ));

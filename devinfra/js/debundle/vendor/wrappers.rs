@@ -9,7 +9,11 @@ use swc_ecma_ast::*;
 
 use artifact::path_from_module_path;
 use binding_targets::module_export_name;
-use js_ast::{ParsedJsModule, emit_js_module};
+use js_ast::{
+    ParsedJsModule, emit_js_module, import_decl_module_item, is_binding_identifier,
+    member_property, module_export_name_node, named_export_module_item, named_export_specifier,
+    named_import_specifier, parse_js_module,
+};
 use spec::BundledPartialSwapPackage;
 
 pub(super) fn generate_named_from_default_wrapper(
@@ -26,28 +30,26 @@ pub(super) fn generate_named_from_default_wrapper(
     for item in &upstream_ast.module.body {
         match item {
             ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) => {
-                body.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
-                    span: DUMMY_SP,
-                    ctxt: SyntaxContext::empty(),
-                    kind: VarDeclKind::Const,
-                    declare: false,
-                    decls: vec![VarDeclarator {
-                        span: DUMMY_SP,
-                        name: Pat::Ident(BindingIdent {
-                            id: default_local.clone(),
-                            type_ann: None,
-                        }),
-                        init: Some(default_expr.expr.clone()),
-                        definite: false,
-                    }],
-                })))));
+                body.push(const_init_with_expr(
+                    &default_local_name,
+                    *default_expr.expr.clone(),
+                ));
             }
             _ => body.push(item.clone()),
         }
     }
     body.push(export_default_ident(&default_local_name));
     for name in named_exports {
-        body.push(export_const_member(name, &default_local_name, name));
+        append_value_export(
+            &mut body,
+            name,
+            Expr::Member(MemberExpr {
+                span: DUMMY_SP,
+                obj: Box::new(Expr::Ident(default_local.clone())),
+                prop: member_property(name),
+            }),
+            &mut used_idents,
+        );
     }
     emit_js_module(
         &ParsedJsModule {
@@ -68,15 +70,46 @@ pub(super) fn generate_named_from_json_default_wrapper(
     upstream_json: &Value,
     named_exports: &BTreeSet<String>,
 ) -> Result<String> {
-    // `_d` cannot collide here: the wrapper body is pure JSON data, so
-    // no upstream identifier exists to clash with.
-    let body = serde_json::to_string_pretty(upstream_json)?;
-    let named = named_exports
-        .iter()
-        .map(|name| format!("export const {name} = _d.{name};"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    Ok(format!("const _d = {body};\nexport default _d;\n{named}\n"))
+    let mut wrapper = parse_js_module("vendor-json-wrapper.js", "")?;
+    // JSON.parse preserves JSON semantics, including own __proto__ data keys.
+    // Serializing the payload as an AST string literal avoids JS interpolation.
+    let json = serde_json::to_string(upstream_json)?;
+    wrapper.module.body.push(const_init_with_expr(
+        "_d",
+        Expr::Call(CallExpr {
+            span: DUMMY_SP,
+            ctxt: SyntaxContext::empty(),
+            callee: Callee::Expr(Box::new(Expr::Member(MemberExpr {
+                span: DUMMY_SP,
+                obj: Box::new(Expr::Ident(Ident::new_no_ctxt("JSON".into(), DUMMY_SP))),
+                prop: member_property("parse"),
+            }))),
+            args: vec![ExprOrSpread {
+                spread: None,
+                expr: Box::new(Expr::Lit(Lit::Str(Str {
+                    span: DUMMY_SP,
+                    value: json.into(),
+                    raw: None,
+                }))),
+            }],
+            type_args: None,
+        }),
+    ));
+    wrapper.module.body.push(export_default_ident("_d"));
+    let mut used = BTreeSet::from(["_d".to_string(), "JSON".to_string()]);
+    for name in named_exports {
+        append_value_export(
+            &mut wrapper.module.body,
+            name,
+            Expr::Member(MemberExpr {
+                span: DUMMY_SP,
+                obj: Box::new(Expr::Ident(Ident::new_no_ctxt("_d".into(), DUMMY_SP))),
+                prop: member_property(name),
+            }),
+            &mut used,
+        );
+    }
+    emit_js_module(&wrapper, &[])
 }
 
 pub(super) fn generate_named_from_module_default_wrapper(
@@ -217,7 +250,15 @@ pub(super) fn generate_named_from_module_default_wrapper(
         if name == "default" {
             continue;
         }
-        body.push(export_const_ident(name, default_local_name));
+        append_value_export(
+            &mut body,
+            name,
+            Expr::Ident(Ident::new_no_ctxt(
+                default_local_name.as_str().into(),
+                DUMMY_SP,
+            )),
+            &mut used_idents,
+        );
     }
     emit_js_module(
         &ParsedJsModule {
@@ -302,7 +343,7 @@ pub(super) fn plan_bundled_partial_swap_assets(
             PlannedFacade {
                 abs_path: abs_dir.join(&file_name),
                 app_path: path_to_module_string(&app_dir.join(&file_name)),
-                source: generate_bundled_partial_swap_facade(&package.bundle_export),
+                source: generate_bundled_partial_swap_facade(&package.bundle_export)?,
             },
         );
     }
@@ -336,14 +377,17 @@ pub(super) fn write_planned_bundled_assets(assets: &PlannedBundledAssets) -> Res
     Ok(())
 }
 
-fn generate_bundled_partial_swap_facade(bundle_export: &str) -> String {
-    if bundle_export == "default" {
-        return "import __debundle_bundle_export__ from \"./bundle.js\";\nexport default __debundle_bundle_export__;\n"
-            .to_string();
-    }
-    format!(
-        "import {{ {bundle_export} as __debundle_bundle_export__ }} from \"./bundle.js\";\nexport default __debundle_bundle_export__;\n"
-    )
+fn generate_bundled_partial_swap_facade(bundle_export: &str) -> Result<String> {
+    let mut facade = parse_js_module("vendor-facade.js", "")?;
+    let local = Ident::new_no_ctxt("__debundle_bundle_export__".into(), DUMMY_SP);
+    facade.module.body = vec![
+        import_decl_module_item(
+            vec![named_import_specifier(local, bundle_export)],
+            "./bundle.js",
+        ),
+        export_default_ident("__debundle_bundle_export__"),
+    ];
+    emit_js_module(&facade, &[])
 }
 
 fn package_slug(package_name: &str) -> String {
@@ -377,56 +421,30 @@ fn export_default_ident(name: &str) -> ModuleItem {
     }))
 }
 
-fn export_const_member(export_name: &str, object_name: &str, property_name: &str) -> ModuleItem {
-    ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-        span: DUMMY_SP,
-        decl: Decl::Var(Box::new(VarDecl {
+/// Export names and property names need not be legal local bindings. Allocate
+/// an alias when necessary (also avoiding collisions with upstream locals).
+fn append_value_export(
+    body: &mut Vec<ModuleItem>,
+    name: &str,
+    value: Expr,
+    used: &mut BTreeSet<String>,
+) {
+    if is_binding_identifier(name) && used.insert(name.to_string()) {
+        body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
             span: DUMMY_SP,
-            ctxt: SyntaxContext::empty(),
-            kind: VarDeclKind::Const,
-            declare: false,
-            decls: vec![VarDeclarator {
-                span: DUMMY_SP,
-                name: Pat::Ident(BindingIdent {
-                    id: Ident::new_no_ctxt(export_name.into(), DUMMY_SP),
-                    type_ann: None,
-                }),
-                init: Some(Box::new(Expr::Member(MemberExpr {
-                    span: DUMMY_SP,
-                    obj: Box::new(Expr::Ident(Ident::new_no_ctxt(
-                        object_name.into(),
-                        DUMMY_SP,
-                    ))),
-                    prop: MemberProp::Ident(IdentName::new(property_name.into(), DUMMY_SP)),
-                }))),
-                definite: false,
-            }],
-        })),
-    }))
-}
-
-fn export_const_ident(export_name: &str, local_name: &str) -> ModuleItem {
-    ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-        span: DUMMY_SP,
-        decl: Decl::Var(Box::new(VarDecl {
-            span: DUMMY_SP,
-            ctxt: SyntaxContext::empty(),
-            kind: VarDeclKind::Const,
-            declare: false,
-            decls: vec![VarDeclarator {
-                span: DUMMY_SP,
-                name: Pat::Ident(BindingIdent {
-                    id: Ident::new_no_ctxt(export_name.into(), DUMMY_SP),
-                    type_ann: None,
-                }),
-                init: Some(Box::new(Expr::Ident(Ident::new_no_ctxt(
-                    local_name.into(),
-                    DUMMY_SP,
-                )))),
-                definite: false,
-            }],
-        })),
-    }))
+            decl: Decl::Var(const_binding(name, value)),
+        })));
+    } else {
+        let alias = super::unique_synthetic_ident("__vendor_export__", used);
+        body.push(const_init_with_expr(&alias, value));
+        body.push(named_export_module_item(
+            vec![named_export_specifier(
+                module_export_name_node(&alias),
+                Some(module_export_name_node(name)),
+            )],
+            None,
+        ));
+    }
 }
 
 fn const_alias(alias: &str, target: &str) -> ModuleItem {
@@ -437,7 +455,11 @@ fn const_alias(alias: &str, target: &str) -> ModuleItem {
 }
 
 fn const_init_with_expr(alias: &str, init: Expr) -> ModuleItem {
-    ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
+    ModuleItem::Stmt(Stmt::Decl(Decl::Var(const_binding(alias, init))))
+}
+
+fn const_binding(alias: &str, init: Expr) -> Box<VarDecl> {
+    Box::new(VarDecl {
         span: DUMMY_SP,
         ctxt: SyntaxContext::empty(),
         kind: VarDeclKind::Const,
@@ -451,5 +473,5 @@ fn const_init_with_expr(alias: &str, init: Expr) -> ModuleItem {
             init: Some(Box::new(init)),
             definite: false,
         }],
-    }))))
+    })
 }

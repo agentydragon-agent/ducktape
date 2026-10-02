@@ -233,7 +233,7 @@ def _routes(scope: Construct) -> None:
     https_route(
         scope,
         "admin-route",
-        metadata=ApiObjectMetadata(name="cli-proxy-api-admin", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="admin", namespace=NAMESPACE),
         hostnames=["cli-proxy-api-admin.allegedly.works"],
         backend=SERVICE,
         hsts=False,
@@ -246,7 +246,7 @@ def _network_policy(scope: Construct) -> None:
     NetworkPolicy(
         scope,
         "network-policy",
-        metadata=ApiObjectMetadata(name="cli-proxy-api-ingress", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="ingress", namespace=NAMESPACE),
         endpoint_selector=SERVICE.pods.selector,
         ingress=[
             # cilium-envoy hostNetwork traffic carries reserved:ingress identity. Preserves the

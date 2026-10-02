@@ -75,7 +75,8 @@ _BACKUP = "home-assistant-config-restic"
 _BACKUP_LABELS = {"app.kubernetes.io/name": _BACKUP}
 _STORAGE_CLASS = "local-path-home-ssd"
 _ONBOARDING = "home-assistant-onboarding"
-_TOKEN_PROVISIONER = "home-assistant-token-provisioner"
+_ONBOARDING_JOB = "onboarding"
+_TOKEN_PROVISIONER = "token-provisioner"
 _COMPONENT_INSTALLER_IMAGE = "git.allegedly.works/ducktape-ci/homeassistant-component-installer:unset"
 _ONBOARDING_IMAGE = "git.allegedly.works/ducktape-ci/homeassistant-onboarding:unset"
 _TOKEN_PROVISIONER_IMAGE = "git.allegedly.works/ducktape-ci/homeassistant-token-provisioner:unset"
@@ -203,7 +204,7 @@ def _backend_probe(*, initial_delay_seconds: int, period_seconds: int) -> k8s.Pr
 def _deployment(scope: Construct) -> None:
     installer_settings = _settings_config_map(
         scope,
-        "home-assistant-component-installer",
+        "component-installer",
         components.Settings,
         {
             "config_dir": _CONFIG_DIR,
@@ -349,7 +350,7 @@ def _onboarding_job(scope: Construct) -> None:
         scope,
         "onboarding",
         metadata=k8s.ObjectMeta(
-            name=_ONBOARDING,
+            name=_ONBOARDING_JOB,
             namespace=_NAMESPACE,
             # Flux re-runs this Job, replacing it whenever its template changes.
             annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"},
@@ -402,7 +403,9 @@ def _token_provisioner(scope: Construct) -> None:
     each token that is missing, the first ones after a bootstrap included, and replaces one Home
     Assistant refuses after expiry, revocation or a restore."""
     k8s.KubeServiceAccount(
-        scope, "token-provisioner", metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE)
+        scope,
+        "token-provisioner-service-account",
+        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE),
     )
     k8s.KubeRole(
         scope,
@@ -436,7 +439,7 @@ def _token_provisioner(scope: Construct) -> None:
         role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_TOKEN_PROVISIONER),
         subjects=[k8s.Subject(kind="ServiceAccount", name=_TOKEN_PROVISIONER, namespace=_NAMESPACE)],
     )
-    labels = {"app.kubernetes.io/name": _TOKEN_PROVISIONER}
+    labels = {"app.kubernetes.io/name": "home-assistant-token-provisioner"}
     k8s.KubeCronJob(
         scope,
         "token-provisioner-cronjob",
@@ -595,7 +598,7 @@ def _backup(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "backup-egress",
-        metadata=k8s.ObjectMeta(name=f"{_BACKUP}-egress", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="config-restic-egress", namespace=_NAMESPACE),
         spec=k8s.NetworkPolicySpec(
             pod_selector=k8s.LabelSelector(match_labels=_BACKUP_LABELS),
             policy_types=["Egress"],

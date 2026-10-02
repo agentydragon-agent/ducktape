@@ -1,10 +1,9 @@
 """GitOps-owned diagnostics bindings from the same policy as managed grants.
 
 Distinct names permit a two-stage migration from Kyverno without adopting its
-synchronized objects. Remove the old generator only after these bindings deploy.
+synchronized objects. The old generator is retired; labels alone grant no access.
 """
 
-from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
 
@@ -44,29 +43,20 @@ def write_manifests(root: Path) -> None:
         write_yaml(root / output / "kustomization.yaml", kustomize_kustomization(resources=[manifest]))
 
 
-def add_flux_kustomizations(
-    flux_chart: Chart, target_dependencies: Mapping[str, Kustomization | None], roles: Kustomization
-) -> None:
-    if missing := NAMESPACE_DIAGNOSTICS.keys() - target_dependencies.keys():
-        raise ValueError(f"static diagnostics lack namespace dependencies: {sorted(missing)}")
-    # Only flux-system is a bootstrap namespace in this policy.
-    if missing := {
-        name for name in NAMESPACE_DIAGNOSTICS if name != "flux-system" and target_dependencies[name] is None
-    }:
-        raise ValueError(f"static diagnostics lack namespace dependencies: {sorted(missing)}")
+def add_flux_kustomizations(flux_chart: Chart, roles: Kustomization) -> None:
+    # Namespace existence is enforced by the API when the RoleBindings are applied.
+    # On bootstrap Flux retries until the namespace exists; application readiness
+    # must never gate the diagnostic access needed to investigate an unhealthy app.
+    # Do not emit Namespaces here: their existing owners retain lifecycle control.
     source = KustomizationSpecSourceRef(
         kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
     )
     for namespace in NAMESPACE_DIAGNOSTICS:
-        dependency = target_dependencies[namespace]
         flux_kustomization(
             flux_chart,
             f"agent-namespace-rbac-{namespace}",
             source,
             path=f"./{directory(namespace)}",
-            depends_on=[
-                flux_kustomization_depends_on(roles),
-                *([flux_kustomization_depends_on(dependency)] if dependency is not None else []),
-            ],
+            depends_on=[flux_kustomization_depends_on(roles)],
             description=f"Static agent diagnostics in {namespace}; policy shared with managed agents.",
         )

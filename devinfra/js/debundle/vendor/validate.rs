@@ -12,11 +12,11 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use artifact::{ChunkBundle, ChunkId};
-use js_ast::ParsedJsModule;
+use js_ast::{ParsedJsModule, is_binding_identifier};
 use spec::{BundledPartialSwapPackage, PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};
 
 use crate::manifests::PartialSwapSymbolResolution;
-use crate::{is_valid_identifier, read_installed_package_metadata, resolve_package_subpath};
+use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
 
 /// Parse the vendor map key `<chunk_name>.js` into the chunk name.
 pub(crate) fn vendor_chunk_name(chunk_path: &str, stage: &str) -> Result<String> {
@@ -117,7 +117,7 @@ fn validate_optional_local_symbol(
     let Some(local) = local else {
         return Ok(());
     };
-    if !is_valid_identifier(local) {
+    if !is_binding_identifier(local) {
         bail!(
             "{stage} vendor entry {chunk_path}: symbol `{chunk_export}` local `{local}` is not a valid JS identifier",
         );
@@ -181,7 +181,7 @@ pub(crate) fn resolve_partial_swap_package(
         let namespace = package.namespace.with_context(|| format!(
             "{stage} vendor entry {chunk_path}: package `{package_name}` is referenced by a {requirer} symbol but is missing `namespace`",
         ))?;
-        if !is_valid_identifier(namespace) {
+        if !is_binding_identifier(namespace) {
             bail!(
                 "{stage} vendor entry {chunk_path}: package `{package_name}` namespace `{namespace}` is not a valid JS identifier",
             );

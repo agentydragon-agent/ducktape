@@ -37,11 +37,16 @@ use spec::{
     PartialSwapKind, PartialSwapPackage, PartialSwapSymbol, VendorLevel, VendorMark, WrapperShape,
 };
 
+use crate::export_surface::{
+    collect_and_validate_boundary_mapping, collect_default_export_object_keys,
+    collect_exported_names, module_has_export_star, verified_default_alias_export_names,
+};
 use crate::manifests::{
     BundledPartialSwapBundleResolution, BundledPartialSwapPackageResolution,
     ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, PartialSwapPackageResolution,
     VendorResolution,
 };
+use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
 use crate::validate::{
     PartialSwapPackageCoords, ResolvePartialSwapPackageOptions, ResolvedVendorChunk,
     build_partial_swap_symbol_resolutions, resolve_partial_swap_package,
@@ -52,12 +57,7 @@ use crate::wrappers::{
     generate_named_from_json_default_wrapper, generate_named_from_module_default_wrapper,
     plan_bundled_partial_swap_assets, set_diff, wrapper_output_path,
 };
-use crate::{
-    MaterializedOutputChunkIndex, collect_and_validate_boundary_mapping,
-    collect_default_export_object_keys, collect_exported_names, is_valid_identifier,
-    module_has_export_star, read_installed_package_metadata, resolve_package_subpath,
-    resolve_partial_swap_import_target, verified_default_alias_export_names,
-};
+use crate::{MaterializedOutputChunkIndex, resolve_partial_swap_import_target};
 
 #[derive(Debug, Clone)]
 pub struct VendorPlanOptions<'a> {
@@ -585,11 +585,6 @@ fn check_consumer_shape_has_live_rewrite(
                         let Some(symbol) = symbols.get(&orig) else {
                             continue;
                         };
-                        let exported = named_spec
-                            .exported
-                            .as_ref()
-                            .map(module_export_name)
-                            .unwrap_or_else(|| orig.clone());
                         if caller_suppressed {
                             bail!(
                                 "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
@@ -598,11 +593,6 @@ fn check_consumer_shape_has_live_rewrite(
                         if bundled || matches!(symbol.kind, PartialSwapKind::Member) {
                             bail!(
                                 "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
-                            );
-                        }
-                        if !is_valid_identifier(&exported) {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name} under non-identifier alias `{exported}`; the re-export rewrite has no live form for that alias and the stripped chunk no longer exports it",
                             );
                         }
                     }
@@ -1030,12 +1020,6 @@ fn plan_bundled_partial_swaps(
         let bundle_ast = parse_js_module(&bundled.bundle.path.display().to_string(), &bundle_code)?;
         let bundle_exports = collect_exported_names(&bundle_ast.module);
         for (package_name, package) in &bundled.packages {
-            if package.bundle_export != "default" && !is_valid_identifier(&package.bundle_export) {
-                bail!(
-                    "apply_bundled_partial_vendor_swaps vendor entry {chunk_path}: package `{package_name}` bundle_export `{}` is not a valid JS identifier",
-                    package.bundle_export
-                );
-            }
             if !bundle_exports.contains(&package.bundle_export) {
                 bail!(
                     "apply_bundled_partial_vendor_swaps vendor entry {chunk_path}: package `{package_name}` targets bundle export `{}` but bundle exports only [{}]",

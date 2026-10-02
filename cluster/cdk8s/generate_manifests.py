@@ -368,10 +368,7 @@ def generate_manifests(root: Path) -> None:
         ),
     )
     kyverno_artifact = artifact("kyverno", kyverno_app.OUTPUT_DIR)
-    kyverno_kustomization = kyverno_app.kyverno(
-        flux_chart,
-        write_directory(root, kyverno_artifact, kyverno_app.chart, kyverno_app.background_controller_rbac_chart),
-    )
+    kyverno_kustomization = kyverno_app.kyverno(flux_chart, write_directory(root, kyverno_artifact, kyverno_app.chart))
     local_path_provisioner_artifact = artifact("local-path-provisioner", local_path_provisioner.OUTPUT_DIR)
     local_path_provisioner_kustomization = local_path_provisioner.local_path_provisioner(
         flux_chart, write_directory(root, local_path_provisioner_artifact, local_path_provisioner.chart)
@@ -1515,7 +1512,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, public_coder_agent_devbox_artifact, kubevirt_kustomization, external_secrets_operator_kustomization
     )
     agentplane_staging_artifact = artifact("agentplane-staging", staging.ENV.output_dir)
-    agentplane_staging_kustomization = staging.agentplane_staging(
+    staging.agentplane_staging(
         flux_chart,
         agentplane_staging_artifact,
         agentplane_staging_health_checks,
@@ -1563,11 +1560,7 @@ def generate_manifests(root: Path) -> None:
     }
     binding_delegation.add_flux_kustomizations(flux_chart, staging.ENV, namespace_dependencies)
     agent_namespace_rbac.write_manifests(root)
-    agent_namespace_rbac.add_flux_kustomizations(
-        flux_chart,
-        {**namespace_dependencies, "agentplane-staging": agentplane_staging_kustomization},
-        claude_rbac_kustomization,
-    )
+    agent_namespace_rbac.add_flux_kustomizations(flux_chart, claude_rbac_kustomization)
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.
     write_artifact_generators(
         root,

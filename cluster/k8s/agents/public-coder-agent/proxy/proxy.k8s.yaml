@@ -96,7 +96,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: public-coder-agent-proxy-config
+  name: proxy-config
   namespace: public-coder-agent
 data:
   iron.yaml: |
@@ -189,7 +189,7 @@ kind: Deployment
 metadata:
   labels:
     app.kubernetes.io/name: public-coder-agent-proxy
-  name: public-coder-agent-proxy
+  name: proxy
   namespace: public-coder-agent
 spec:
   replicas: 1
@@ -275,11 +275,29 @@ spec:
           type: RuntimeDefault
       volumes:
         - configMap:
-            name: public-coder-agent-proxy-config
+            name: proxy-config
           name: config
         - name: ca
           secret:
             secretName: public-coder-agent-proxy-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxy
+  namespace: public-coder-agent
+spec:
+  ports:
+    - name: proxy
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      protocol: TCP
+      targetPort: 9090
+  selector:
+    app.kubernetes.io/name: public-coder-agent-proxy
 ---
 apiVersion: v1
 kind: Service

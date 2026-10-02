@@ -31,8 +31,8 @@ from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp"
 _NAME = "plaid-mcp"
-_CONFIG_MAP = "plaid-mcp-config"
-_SECRET_MANAGER = "plaid-mcp-secret-manager"
+_CONFIG_MAP = "config"
+_SECRET_MANAGER = "secret-manager"
 _CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-client-credentials")
 _OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name="plaid-link-oidc-config")
 # The link web UI authenticates browser sessions with Authentik OIDC.
@@ -200,7 +200,7 @@ def _sync_cronjob(chart: Chart) -> None:
         chart,
         "sync",
         metadata=k8s.ObjectMeta(
-            name="plaid-mcp-sync",
+            name="sync",
             namespace=NAMESPACE,
             annotations={
                 "description": (
@@ -275,7 +275,7 @@ def chart(app: App) -> Chart:
         chart,
         "ingress-policy",
         metadata=ApiObjectMetadata(
-            name="plaid-mcp-ingress",
+            name="ingress",
             namespace=NAMESPACE,
             annotations={
                 "description": (

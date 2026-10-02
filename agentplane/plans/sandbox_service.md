@@ -154,10 +154,50 @@ foundations; deferring runner RPC authentication does not make this new API unau
 for all legitimate runner clients. No JWT issuer, app-issued ticket, or fine-grained runner RBAC is a
 v1 prerequisite. Network reachability control must not be described as cryptographic RPC auth.
 
+## Staging data preservation
+
+**Migration default:** preserve existing staging data where feasible. Do not treat the current
+instance as disposable for this extraction or use drop/recreate as the easy ownership cut. This
+requirement is specific to the Sandbox Service/notification work, not a claim that all staging
+resources can retain their identities through every possible topology change.
+
+Before changing staging:
+
+1. **Inventory state and owners.** Include sandbox/workspace volumes, runner session storage and
+   native harness history, command journals/receipts, archived Events and cursors, Thread IDs/names/
+   archive state, and relevant identity/configuration/grant records. Identify any Action records or
+   other service data affected by the move; do not reset unrelated services. Separate irreplaceable
+   source/user-authored data from projections that can actually be regenerated.
+2. **Define migration and rollback.** Prefer adopting existing resources and explicit schema/data
+   migrations. Preserve session/Thread IDs, causal command/Event identities, checkpoints, and access
+   associations wherever possible. If a resource cannot retain its UID or location, define and test
+   the mapping rather than silently treating a replacement as the same destination. Record expected
+   downtime/disruption and ask before a destructive or identity-breaking exception.
+3. **Back up and prove restore.** Use approved infrastructure backup paths and verify recovery in an
+   isolated environment. Define a consistency boundary for PostgreSQL and retained runner volumes;
+   unrelated snapshots taken while writers advance are not automatically a recoverable cut. Keep
+   credentials/private content out of logs and PR artifacts. Backups alone do not prove rollback.
+4. **Rehearse the ownership handoff.** Arrange a controlled cutover of writers/ingesters so both old
+   and new owners do not act concurrently. A one-time migration may read/copy existing app-owned
+   state; that is not permission for a steady-state backend dependency on app tables or APIs. The
+   resulting Sandbox Service must own its required data and recover with the app stopped.
+5. **Validate before retiring old state.** Check retained histories, identities/correlations, cursors,
+   Thread metadata, workspace content, and supported session resume. Preserve original Events rather
+   than replaying completed commands, tool side effects, or Actions to reconstruct history. Verify
+   migrated checkpoint/deduplication behavior, authorization, and app-independent recovery, not only
+   aggregate row counts. Define how rollback handles writes made after cutover; do not blindly restore
+   an old backup over new work. Retire old copies only after validation and the agreed rollback window.
+
+If preserving some data proves infeasible, report exactly what would be lost, which alternatives were
+considered, and the operational impact. **Do not delete/reset it without explicit operator approval.**
+This plan records requirements; no backups, restore rehearsal, migration, or preservation guarantee
+has been performed by the documentation change.
+
 ## Extraction sequence
 
 1. Identify the minimal ownership cut in app inventory/provisioning, session/command bridge, prompt
    construction, and event following. Keep app archive ownership and preserve its existing checkpoints.
+   Inventory state and validate a data-preserving staging migration/rollback plan before changing staging.
 2. Extract the Sandbox Service with independent configuration, persistence where needed, and API
    authorization. No imports of app implementation, app-table reads, or app process/bootstrap dependency.
 3. Migrate the app to consume the extracted APIs for those paths. Avoid competing provisioning/control
@@ -165,7 +205,8 @@ v1 prerequisite. Network reachability control must not be described as cryptogra
 4. Implement notification v1 against Sandbox Service and Action Service. Keep no-wake behavior,
    persisted payloads, explicit inbox HWM, no reminders, and existing runner evidence semantics.
 5. Prove the extracted paths and notification flow with the app stopped, including backend restart,
-   destination setup without UI bootstrap, replay/recovery, and authorization denial.
+   destination setup without UI bootstrap, replay/recovery, authorization denial, and preservation of
+   the pre-existing staging state identified in the migration inventory.
 
 The minimum extraction gates notification v1. Further provisioning/UI refactors can be staged by
 operation, but a newly extracted backend operation may never depend on an app-owned fallback.

@@ -33,6 +33,9 @@ spec:
         password: "{{ .password }}"
         port: "5432"
         username: plaid_ro
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -69,6 +72,9 @@ spec:
         password: "{{ .password }}"
         port: "5432"
         username: plaid_spend
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -194,7 +200,7 @@ kind: CiliumNetworkPolicy
 metadata:
   annotations:
     description: Allow the one-shot readonly-role provisioner to resolve and connect to the Plaid CNPG primary.
-  name: plaid-mcp-db-readonly-provisioner-egress
+  name: db-readonly-provisioner-egress
   namespace: plaid-mcp
 spec:
   egress:
@@ -225,7 +231,7 @@ metadata:
   annotations:
     description: Grants the minimal Plaid source reads needed by plaid_ro and plaid_spend.
     kustomize.toolkit.fluxcd.io/force: enabled
-  name: plaid-mcp-db-readonly-provisioner
+  name: db-readonly-provisioner
   namespace: plaid-mcp
 spec:
   backoffLimit: 0

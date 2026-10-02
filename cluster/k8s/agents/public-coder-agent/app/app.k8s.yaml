@@ -21,7 +21,7 @@ imagePullSecrets:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: public-coder-agent-config
+  name: config
   namespace: public-coder-agent
 data:
   openclaw.json5: |
@@ -87,7 +87,7 @@ data:
         "matrix": {
           "enabled": true,
           "homeserver": "https://matrix.allegedly.works",
-          "proxy": "http://public-coder-agent-proxy.public-coder-agent.svc:8080",
+          "proxy": "http://proxy.public-coder-agent.svc:8080",
           "userId": "@public-coder-agent:allegedly.works",
           "dm": {
             "policy": "allowlist",
@@ -411,7 +411,7 @@ immutable: false
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: public-coder-agent-kubeconfig
+  name: kubeconfig
   namespace: public-coder-agent
 data:
   config: |
@@ -421,7 +421,7 @@ data:
       - name: in-cluster
         cluster:
           server: https://haku-kubeapi.allegedly.works
-          proxy-url: http://public-coder-agent-proxy.public-coder-agent.svc:8080
+          proxy-url: http://proxy.public-coder-agent.svc:8080
           certificate-authority: /etc/ssl/certs/ca-certificates.crt
     contexts:
       - name: in-cluster
@@ -600,9 +600,9 @@ spec:
             - name: NODE_USE_ENV_PROXY
               value: "1"
             - name: HTTP_PROXY
-              value: http://public-coder-agent-proxy.public-coder-agent.svc:8080
+              value: http://proxy.public-coder-agent.svc:8080
             - name: HTTPS_PROXY
-              value: http://public-coder-agent-proxy.public-coder-agent.svc:8080
+              value: http://proxy.public-coder-agent.svc:8080
             - name: NO_PROXY
               value: 127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local
             - name: NODE_EXTRA_CA_CERTS
@@ -674,10 +674,10 @@ spec:
           persistentVolumeClaim:
             claimName: public-coder-agent-state-v2
         - configMap:
-            name: public-coder-agent-kubeconfig
+            name: kubeconfig
           name: kubeconfig
         - configMap:
-            name: public-coder-agent-config
+            name: config
           name: cfg
         - configMap:
             name: public-coder-agent-proxy-ca-cert
@@ -713,7 +713,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: public-coder-agent-egress
+  name: egress
   namespace: public-coder-agent
 spec:
   egress:
@@ -762,7 +762,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: public-coder-agent-ingress
+  name: ingress
   namespace: public-coder-agent
 spec:
   ingress:

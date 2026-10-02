@@ -79,7 +79,7 @@ spec:
               name: authentik-db-app
       envFrom:
         - configMapRef:
-            name: authentik-host
+            name: host
         - secretRef:
             name: authentik-bootstrap
         - secretRef:
@@ -140,7 +140,7 @@ spec:
               name: authentik-db-app
       envFrom:
         - configMapRef:
-            name: authentik-host
+            name: host
         - secretRef:
             name: authentik-bootstrap
         - secretRef:
@@ -163,7 +163,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: authentik-host
+  name: host
   namespace: authentik
 data:
   AUTHENTIK_HOST: https://auth.allegedly.works
@@ -196,7 +196,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: authentik-server-ingress
+  name: server-ingress
   namespace: authentik
 spec:
   endpointSelector:
@@ -273,7 +273,7 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: authentik-server
+  name: server
   namespace: authentik
 spec:
   podMetricsEndpoints:

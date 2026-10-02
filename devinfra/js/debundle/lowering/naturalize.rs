@@ -6,8 +6,9 @@
 //! (return-object aliases, destructure unpacks, constructor
 //! `this.x = param` mappings).
 //!
-//! `naturalize_module_body` is the public entry. Heuristic renames are
-//! split by what their source name resolves to:
+//! `NaturalizedModuleBody::prepare` is the phase entry: it returns the body,
+//! rename maps and post-rename facts together. Heuristic renames are split by
+//! what their source name resolves to:
 //!
 //! - **Free sources** (return-object aliases of names the deriving
 //!   function does not bind — typically source-chunk import aliases)
@@ -45,7 +46,6 @@
 use swc_common::{Span, SyntaxContext};
 
 use super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
-use super::util::is_valid_js_identifier;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{
     RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
@@ -54,6 +54,7 @@ use crate::rename_ledger::{
 use crate::visitors::{RenameAndShorthandNaturalizer, ShorthandNaturalizer};
 use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
+use js_ast::is_binding_identifier;
 use js_ast::str_value;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::*;
@@ -79,6 +80,33 @@ pub(super) struct NaturalizedRenames {
     pub(super) explicit: BTreeMap<String, String>,
 }
 
+/// One naturalization result: facts are collected from this exact post-rename
+/// body, and move with its rename maps into emission (not parallel vectors).
+pub(super) struct NaturalizedModuleBody {
+    pub(super) body: Vec<ModuleItem>,
+    pub(super) renames: NaturalizedRenames,
+    pub(super) facts: crate::body_facts::ModuleBodyFacts,
+}
+
+impl NaturalizedModuleBody {
+    pub(super) fn prepare(
+        mut body: Vec<ModuleItem>,
+        plan: &ModulePlan,
+        module: ModuleId,
+        plan_driven: BTreeMap<String, String>,
+        chunk_top_level_mark: swc_common::Mark,
+    ) -> Result<Self> {
+        let renames =
+            naturalize_module_body(&mut body, plan, module, plan_driven, chunk_top_level_mark)?;
+        let facts = crate::body_facts::collect_module_body_facts(&body);
+        Ok(Self {
+            body,
+            renames,
+            facts,
+        })
+    }
+}
+
 /// Collect each plan's spec-driven `export_name` renames into the ledger
 /// (scope: that plan's [`ModuleId`], origin: `Explicit`). Applies the same
 /// filter the pre-ledger `plan_driven` map applied: self-renames and
@@ -94,7 +122,7 @@ pub(super) fn collect_plan_export_rename_intents(
         let mut sorted_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
         sorted_bindings.sort_by(|a, b| a.0.cmp(b.0));
         for (local, exported) in sorted_bindings {
-            if local != exported && is_valid_js_identifier(exported) {
+            if local != exported && is_binding_identifier(exported) {
                 ledger.submit(RenameIntent {
                     scope: RenameScope::Module(ModuleId::logical(index)),
                     from: top_level_id(local, chunk_top_level_mark),
@@ -118,7 +146,7 @@ pub(super) const SCOPED_HEURISTIC_CONTRIBUTOR: &str = "scope-local heuristic nat
 /// occupancy-validated against this body at seal; sorted (`BTreeMap`)
 /// iteration keeps the rename-precedence the visitor applies when two
 /// locals compete for the same target independent of hash seed.
-pub(super) fn naturalize_module_body(
+fn naturalize_module_body(
     body: &mut [ModuleItem],
     plan: &ModulePlan,
     module: ModuleId,
@@ -806,7 +834,7 @@ pub(super) fn collect_naturalization_renames_from_pattern(
                         {
                             let from = value.id.sym.to_string();
                             let to = key.sym.to_string();
-                            if from != to && is_valid_js_identifier(&to) {
+                            if from != to && is_binding_identifier(&to) {
                                 renames.insert(from, to);
                             }
                         }
@@ -847,7 +875,7 @@ pub(super) fn collect_return_object_alias_renames(
                         {
                             let from = value.sym.to_string();
                             let to = key.sym.to_string();
-                            if from != to && is_valid_js_identifier(&to) {
+                            if from != to && is_binding_identifier(&to) {
                                 renames.insert(from, to);
                             }
                         }
@@ -881,7 +909,7 @@ pub(super) fn collect_constructor_assignment_renames(
         return;
     };
     let from = value.sym.to_string();
-    if param_names.contains(&from) && from != target_name && is_valid_js_identifier(&target_name) {
+    if param_names.contains(&from) && from != target_name && is_binding_identifier(&target_name) {
         renames.insert(from, target_name);
     }
 }
@@ -896,7 +924,7 @@ pub(super) fn this_property_name(target: &AssignTarget) -> Option<String> {
     match &member.prop {
         MemberProp::Ident(ident) => Some(ident.sym.to_string()),
         MemberProp::Computed(computed) => match &*computed.expr {
-            Expr::Lit(Lit::Str(value)) if is_valid_js_identifier(&str_value(value)) => {
+            Expr::Lit(Lit::Str(value)) if is_binding_identifier(&str_value(value)) => {
                 Some(str_value(value))
             }
             _ => None,
