@@ -126,6 +126,29 @@ pub(crate) fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -
     }
 }
 
+/// The only candidate binding a call's argument could exempt from the escape
+/// scan. This is a prefilter, not admission: the caller must still run the full
+/// IIFE recognizer, including agreement of nested short-circuit/assignment names.
+/// A bare `{}` contains no candidate reference and needs no exemption.
+pub(crate) fn ts_enum_iife_argument_binding(call: &CallExpr) -> Option<&str> {
+    if call.args.len() != 1 || call.args[0].spread.is_some() {
+        return None;
+    }
+    match strip_parens(&call.args[0].expr) {
+        Expr::Bin(bin) if bin.op == BinaryOp::LogicalOr => {
+            match strip_parens(&bin.left) {
+                Expr::Ident(ident) => Some(ident.sym.as_ref()),
+                _ => None,
+            }
+        }
+        Expr::Assign(assign) if assign.op == AssignOp::Assign => match &assign.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(ident)) => Some(ident.id.sym.as_ref()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// IIFE argument must be a plain object literal, a self-assigning
 /// short-circuit (`X || (X = {})`), or a plain short-circuit
 /// (`X || {}`). Walks through `Paren` wrappers and accepts the

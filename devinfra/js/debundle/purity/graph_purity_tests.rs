@@ -1557,3 +1557,27 @@ fn plain_data_enum_survives_import_specifier_name_collision() {
 "#;
     assert!(is_plain_data(src, "j"));
 }
+
+#[test]
+fn enum_escape_exemption_checks_only_the_named_unshadowed_candidate() {
+    for argument in ["X || (X = {})", "X || (X || {})", "(X = {})"] {
+        let source = format!(
+            "var X = {{}}, Y = {{}}, Z = {{}}; ((p) => (p.A = 1, p))({argument});"
+        );
+        for binding in ["X", "Y", "Z"] {
+            assert!(is_plain_data(&source, binding), "{binding}: {source}");
+        }
+    }
+    // Matching the outer candidate is insufficient: the full recognizer must
+    // reject a different binding nested on the right, and scan both escapes.
+    let mixed = "var X = {}, Y = {}; ((p) => (p.A = 1, p))(X || (Y = {}));";
+    assert!(!is_plain_data(mixed, "X"));
+    assert!(!is_plain_data(mixed, "Y"));
+    // The callee must still be a vetted IIFE, not an arbitrary escaping call.
+    assert!(!is_plain_data("var X = {}; unknown(X || (X = {}));", "X"));
+    // Local parameter writes must not disqualify the outer plain-data binding.
+    assert!(is_plain_data(
+        "var X = {}; function f(X) { ((p) => (p.A = 1, p))(X || (X = {})); }",
+        "X",
+    ));
+}
