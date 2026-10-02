@@ -43,7 +43,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use binding_targets::{callee_base_expr, strip_parens};
+use binding_targets::{callee_base_expr};
 use spec::{AdmissionCheck, AdmissionOverrides};
 
 use analysis::facts::top_level_item_views;
@@ -209,7 +209,7 @@ impl AdmissionScan<'_> {
         // Module code is strict, and strict mode forbids `eval` as a
         // binding name — so an `eval` ident here is the global eval.
         if matches!(callee_base_expr(callee), Expr::Ident(ident) if ident.sym.as_ref() == "eval") {
-            let shape = if matches!(strip_parens(callee), Expr::Seq(_)) {
+            let shape = if matches!(callee.unwrap_parens(), Expr::Seq(_)) {
                 "indirect `(…, eval)(...)` call"
             } else {
                 "direct `eval(...)` call"
@@ -272,7 +272,7 @@ impl Visit for AdmissionScan<'_> {
     }
 
     fn visit_member_expr(&mut self, node: &MemberExpr) {
-        if let Expr::MetaProp(meta) = strip_parens(&node.obj)
+        if let Expr::MetaProp(meta) = node.obj.unwrap_parens()
             && meta.kind == MetaPropKind::ImportMeta
         {
             if self.lazy_depth == 0 {

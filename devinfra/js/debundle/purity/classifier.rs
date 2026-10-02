@@ -553,7 +553,7 @@ pub(crate) fn classify_fluent_chain(
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Option<Purity> {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Ident(ident)
             if graph.is_fluent_binding(ident.sym.as_ref())
                 && !local_shadowed.contains(ident.sym.as_ref()) =>

@@ -262,24 +262,13 @@ fn opt_chain_base_id(opt_chain: &OptChainExpr) -> Option<Id> {
     }
 }
 
-/// Unwrap nested `Expr::Paren` layers and return the innermost
-/// expression — used by `facts/` and `purity/` to peel parens before
-/// pattern matching against `Expr::Ident` / `Expr::Member` / etc.
-pub fn strip_parens(expr: &Expr) -> &Expr {
-    let mut cur = expr;
-    while let Expr::Paren(paren) = cur {
-        cur = &paren.expr;
-    }
-    cur
-}
-
 /// Look through parens and comma sequences to a callee's final
 /// operand: `(0, eval)(...)` is an indirect eval call with the same
 /// arbitrary-cell-write power as a direct one.
 pub fn callee_base_expr(expr: &Expr) -> &Expr {
-    let mut cur = strip_parens(expr);
+    let mut cur = expr.unwrap_parens();
     while let Expr::Seq(seq) = cur {
-        cur = strip_parens(seq.exprs.last().expect("SeqExpr is non-empty"));
+        cur = seq.exprs.last().expect("SeqExpr is non-empty").unwrap_parens();
     }
     cur
 }

@@ -33,7 +33,7 @@ fn object_from_entries_plain_array_chain_root(
     shadowed: &BTreeSet<&'static str>,
     graph: &ChunkCodeGraph,
 ) -> Option<Id> {
-    let Expr::Call(call) = strip_parens(expr) else {
+    let Expr::Call(call) = expr.unwrap_parens() else {
         return None;
     };
     if call.args.len() != 1 || call.args[0].spread.is_some() || shadowed.contains("Object") {
@@ -42,7 +42,7 @@ fn object_from_entries_plain_array_chain_root(
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
-    let Expr::Member(member) = strip_parens(callee) else {
+    let Expr::Member(member) = callee.unwrap_parens() else {
         return None;
     };
     if !matches!(
@@ -60,7 +60,7 @@ fn collect_array_literal_plain_array_spread_roots(
     graph: &ChunkCodeGraph,
     out: &mut BTreeSet<Id>,
 ) {
-    let Expr::Array(array) = strip_parens(expr) else {
+    let Expr::Array(array) = expr.unwrap_parens() else {
         return;
     };
     for elem in array.elems.iter().flatten() {
@@ -73,7 +73,7 @@ fn collect_array_literal_plain_array_spread_roots(
 }
 
 fn plain_array_for_each_root(expr: &Expr, graph: &ChunkCodeGraph) -> Option<Id> {
-    let Expr::Call(call) = strip_parens(expr) else {
+    let Expr::Call(call) = expr.unwrap_parens() else {
         return None;
     };
     if call.args.len() != 1 || call.args[0].spread.is_some() {
@@ -82,7 +82,7 @@ fn plain_array_for_each_root(expr: &Expr, graph: &ChunkCodeGraph) -> Option<Id> 
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
-    let Expr::Member(member) = strip_parens(callee) else {
+    let Expr::Member(member) = callee.unwrap_parens() else {
         return None;
     };
     if !matches!(&member.prop, MemberProp::Ident(prop) if prop.sym.as_ref() == "forEach")
@@ -90,14 +90,14 @@ fn plain_array_for_each_root(expr: &Expr, graph: &ChunkCodeGraph) -> Option<Id> 
     {
         return None;
     }
-    match strip_parens(member.obj.as_ref()) {
+    match member.obj.as_ref().unwrap_parens() {
         Expr::Ident(recv) if graph.is_plain_array(recv.sym.as_ref()) => Some(recv.to_id()),
         _ => None,
     }
 }
 
 fn plain_array_map_filter_chain_root(expr: &Expr, graph: &ChunkCodeGraph) -> Option<Id> {
-    let Expr::Call(call) = strip_parens(expr) else {
+    let Expr::Call(call) = expr.unwrap_parens() else {
         return None;
     };
     if call.args.len() != 1 || call.args[0].spread.is_some() {
@@ -106,7 +106,7 @@ fn plain_array_map_filter_chain_root(expr: &Expr, graph: &ChunkCodeGraph) -> Opt
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
-    let Expr::Member(member) = strip_parens(callee) else {
+    let Expr::Member(member) = callee.unwrap_parens() else {
         return None;
     };
     if !matches!(
@@ -116,7 +116,7 @@ fn plain_array_map_filter_chain_root(expr: &Expr, graph: &ChunkCodeGraph) -> Opt
     {
         return None;
     }
-    match strip_parens(member.obj.as_ref()) {
+    match member.obj.as_ref().unwrap_parens() {
         Expr::Ident(recv) if graph.is_plain_array(recv.sym.as_ref()) => Some(recv.to_id()),
         other => plain_array_map_filter_chain_root(other, graph),
     }
@@ -124,7 +124,7 @@ fn plain_array_map_filter_chain_root(expr: &Expr, graph: &ChunkCodeGraph) -> Opt
 
 fn callback_has_no_sync_invocation(expr: &Expr) -> bool {
     let mut finder = SyncInvocationFinder::default();
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Arrow(arrow) => arrow.body.visit_with(&mut finder),
         Expr::Fn(function) => {
             if let Some(body) = &function.function.body {
@@ -289,7 +289,7 @@ pub(crate) fn is_static_event_listener_registration(callee: &Expr, args: &[ExprO
 }
 
 fn is_static_event_name(expr: &Expr) -> bool {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Lit(Lit::Str(_)) => true,
         Expr::Tpl(Tpl { exprs, .. }) => exprs.is_empty(),
         _ => false,
@@ -297,7 +297,7 @@ fn is_static_event_name(expr: &Expr) -> bool {
 }
 
 fn expr_is_add_event_listener_member(expr: &Expr) -> bool {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Member(member) => member_is_add_event_listener(member),
         Expr::OptChain(opt) => match opt.base.as_ref() {
             OptChainBase::Member(member) => member_is_add_event_listener(member),
@@ -318,7 +318,7 @@ fn is_no_sync_callback_member_call(
     callee: &Expr,
     no_sync_callback_members: &BTreeMap<String, BTreeSet<String>>,
 ) -> bool {
-    match strip_parens(callee) {
+    match callee.unwrap_parens() {
         Expr::Member(member) => member_matches_no_sync_callback(member, no_sync_callback_members),
         Expr::OptChain(opt) => match opt.base.as_ref() {
             OptChainBase::Member(member) => {
@@ -334,7 +334,7 @@ fn member_matches_no_sync_callback(
     member: &MemberExpr,
     no_sync_callback_members: &BTreeMap<String, BTreeSet<String>>,
 ) -> bool {
-    let Expr::Ident(receiver) = strip_parens(member.obj.as_ref()) else {
+    let Expr::Ident(receiver) = member.obj.as_ref().unwrap_parens() else {
         return false;
     };
     let MemberProp::Ident(prop) = &member.prop else {
@@ -445,7 +445,7 @@ impl Visit for UntrustedAtInitInlineFnFallbackFinder<'_> {
             return;
         }
         match &node.callee {
-            Callee::Expr(callee) => match strip_parens(callee) {
+            Callee::Expr(callee) => match callee.unwrap_parens() {
                 Expr::Ident(_) => {}
                 _ if self.node_has_inline_fn(node)
                     && !is_static_event_listener_registration(callee, &node.args)

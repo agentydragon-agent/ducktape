@@ -23,8 +23,9 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as a `pub(cra
 | `member_root_id`/`member_root_sym`          | None                                                                       | No SWC utility for extracting root of member expression chains                                           |
 | Import declaration construction             | `ExprFactory` trait (partial) — individual node construction only          | Debundle-specific relative-path logic has no SWC equivalent                                              |
 
-## Replaceable, not yet migrated
+## Adopted expression unwrapping
 
-`binding_targets::strip_parens` duplicates `swc_ecma_ast::Expr::unwrap_parens`
-(same semantics, verified in `swc_ecma_ast` 29.0.1). `swc_ecma_utils` itself has
-no equivalent.
+Expression classifiers use `swc_ecma_ast::Expr::unwrap_parens` directly
+(same semantics as the removed local walker, verified in SWC 29.0.1).
+The separate `js_ast::strip_parens` transform mutates a whole module and is not
+interchangeable with this borrowed-expression accessor.

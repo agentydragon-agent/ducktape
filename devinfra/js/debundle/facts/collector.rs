@@ -126,7 +126,7 @@ impl StatementFactsCollector {
         let Callee::Expr(callee) = &node.callee else {
             return false;
         };
-        let Expr::Member(member) = strip_parens(callee) else {
+        let Expr::Member(member) = callee.unwrap_parens() else {
             return false;
         };
         if !matches!(
@@ -140,13 +140,13 @@ impl StatementFactsCollector {
     }
 
     fn is_known_promise_expr(&self, expr: &Expr) -> bool {
-        match strip_parens(expr) {
+        match expr.unwrap_parens() {
             Expr::Call(call) => {
                 self.is_async_direct_function_call(call) || self.is_promise_static_call(call)
             }
             Expr::New(new_expr) => {
                 self.promise_global_unshadowed
-                    && matches!(strip_parens(&new_expr.callee), Expr::Ident(ident) if ident.sym.as_ref() == "Promise")
+                    && matches!(new_expr.callee.unwrap_parens(), Expr::Ident(ident) if ident.sym.as_ref() == "Promise")
             }
             _ => false,
         }
@@ -167,7 +167,7 @@ impl StatementFactsCollector {
         let Callee::Expr(callee) = &call.callee else {
             return false;
         };
-        let Expr::Ident(ident) = strip_parens(callee) else {
+        let Expr::Ident(ident) = callee.unwrap_parens() else {
             return false;
         };
         self.async_direct_function_bindings.contains(&ident.to_id())
@@ -180,10 +180,10 @@ impl StatementFactsCollector {
         let Callee::Expr(callee) = &call.callee else {
             return false;
         };
-        let Expr::Member(member) = strip_parens(callee) else {
+        let Expr::Member(member) = callee.unwrap_parens() else {
             return false;
         };
-        matches!(strip_parens(member.obj.as_ref()), Expr::Ident(obj) if obj.sym.as_ref() == "Promise")
+        matches!(member.obj.as_ref().unwrap_parens(), Expr::Ident(obj) if obj.sym.as_ref() == "Promise")
             && matches!(
                 &member.prop,
                 MemberProp::Ident(prop)
@@ -210,7 +210,7 @@ impl StatementFactsCollector {
     }
 
     fn is_global_object_expr(&self, expr: &Expr) -> bool {
-        matches!(strip_parens(expr), Expr::Ident(i) if self.global_object_names.contains(i.sym.as_ref()))
+        matches!(expr.unwrap_parens(), Expr::Ident(i) if self.global_object_names.contains(i.sym.as_ref()))
     }
 
     fn record_global_prop(&mut self, member: &MemberExpr, is_write: bool) {
@@ -219,7 +219,7 @@ impl StatementFactsCollector {
         }
         let key = match &member.prop {
             MemberProp::Ident(ident) => Some(ident.sym.to_string()),
-            MemberProp::Computed(ComputedPropName { expr, .. }) => match strip_parens(expr) {
+            MemberProp::Computed(ComputedPropName { expr, .. }) => match expr.unwrap_parens() {
                 Expr::Lit(Lit::Str(s)) => Some(s.value.to_string_lossy().into_owned()),
                 _ => {
                     self.bail_cell_writes();
@@ -416,7 +416,7 @@ impl Visit for SyncInlineEffectCollector {
         }
         if self.active() {
             match &node.callee {
-                Callee::Expr(callee) => match strip_parens(callee) {
+                Callee::Expr(callee) => match callee.unwrap_parens() {
                     Expr::Ident(ident) => self.record_call(&ident.to_id()),
                     _ => self.record_unresolved_call(node),
                 },
@@ -593,7 +593,7 @@ impl Visit for StatementFactsCollector {
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
         record_update_target(&node.arg, self);
         if self.lazy_depth == 0 {
-            match strip_parens(&node.arg) {
+            match node.arg.unwrap_parens() {
                 // `count++`: binding read+write, handled by
                 // `record_update_target` + the child visit.
                 Expr::Ident(_) => {}
@@ -646,7 +646,7 @@ impl Visit for StatementFactsCollector {
             arg.visit_with(self);
         }
         match &node.callee {
-            Callee::Expr(callee) => match strip_parens(callee) {
+            Callee::Expr(callee) => match callee.unwrap_parens() {
                 Expr::Ident(ident) => self.record_call(&ident.to_id()),
                 _ if !self.is_known_promise_reaction_call(node)
                     && !self.is_known_event_listener_registration_call(node) =>
@@ -668,11 +668,11 @@ impl Visit for StatementFactsCollector {
                 self.bail_cell_writes();
             }
             if let Callee::Expr(expr) = &node.callee
-                && let Expr::Member(member) = strip_parens(expr)
+                && let Expr::Member(member) = expr.unwrap_parens()
                 && let MemberProp::Ident(prop) = &member.prop
                 && prop.sym.as_ref() == "defineProperty"
                 && matches!(
-                    strip_parens(&member.obj),
+                    member.obj.unwrap_parens(),
                     Expr::Ident(i) if matches!(i.sym.as_ref(), "Object" | "Reflect")
                 )
                 && node
@@ -693,7 +693,7 @@ impl Visit for StatementFactsCollector {
             }
         }
         if self.lazy_depth == 0
-            && let Expr::Ident(ident) = strip_parens(&node.callee)
+            && let Expr::Ident(ident) = node.callee.unwrap_parens()
         {
             match ident.sym.as_ref() {
                 "Function" => self.bail_cell_writes(),
@@ -777,7 +777,7 @@ fn simple_assign_member_target(target: &AssignTarget) -> Option<&MemberExpr> {
     };
     match simple {
         SimpleAssignTarget::Member(member) => Some(member),
-        SimpleAssignTarget::Paren(paren) => match strip_parens(&paren.expr) {
+        SimpleAssignTarget::Paren(paren) => match paren.expr.unwrap_parens() {
             Expr::Member(member) => Some(member),
             _ => None,
         },

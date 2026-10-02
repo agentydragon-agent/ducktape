@@ -15,7 +15,7 @@ pub(super) use imports_cross::{
     final_module_exports, phantom_side_effect_imports, residual_entry_imports_for_moved_body,
 };
 pub(super) use imports_runtime::{
-    group_specifiers_into_import_decls, import_decl_module_item, resolve_imported_binding,
+    group_specifiers_into_import_decls, resolve_imported_binding,
     source_chunk_imports_for_moved_body,
 };
 pub(super) use plan_references::{

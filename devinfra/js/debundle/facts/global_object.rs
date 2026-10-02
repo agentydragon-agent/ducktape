@@ -126,7 +126,7 @@ impl Visit for GlobalObjectEscapeFinder<'_> {
     }
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
     fn visit_member_expr(&mut self, node: &MemberExpr) {
-        match strip_parens(&node.obj) {
+        match node.obj.unwrap_parens() {
             Expr::Ident(ident) if self.names.contains(ident.sym.as_ref()) => {}
             other => other.visit_with(self),
         }

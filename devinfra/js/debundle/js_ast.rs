@@ -8,7 +8,7 @@ use swc_common::sync::Lrc;
 use swc_common::{
     BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
 };
-use swc_ecma_ast::{Decl, Expr, Module, ModuleDecl, ModuleItem, Stmt, Str, VarDecl, VarDeclKind};
+use swc_ecma_ast::{Decl, Expr, Ident, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Module, ModuleDecl, ModuleExportName, ModuleItem, Stmt, Str, VarDecl, VarDeclKind};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
@@ -898,4 +898,20 @@ mod tests {
             "the redundant outer sequence paren must be dropped: {stripped}",
         );
     }
+}
+
+/// Construct an evaluation import. Resolution and ordering belong to the caller.
+pub fn import_decl_module_item(specifiers: Vec<ImportSpecifier>, src: &str) -> ModuleItem {
+    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+        span: DUMMY_SP, specifiers,
+        src: Box::new(Str { span: DUMMY_SP, value: src.into(), raw: None }),
+        type_only: false, with: None, phase: ImportPhase::Evaluation,
+    }))
+}
+
+/// Preserve the local binding's hygiene; the imported name is an external export name.
+pub fn named_import_specifier(local: Ident, imported: &str) -> ImportSpecifier {
+    let imported = (imported != local.sym.as_ref()).then(||
+        ModuleExportName::Ident(Ident::new_no_ctxt(imported.into(), DUMMY_SP)));
+    ImportSpecifier::Named(ImportNamedSpecifier { span: DUMMY_SP, local, imported, is_type_only: false })
 }

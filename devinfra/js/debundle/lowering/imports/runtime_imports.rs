@@ -96,19 +96,7 @@ fn ident_from_id(id: &Id) -> Ident {
 
 pub(crate) fn runtime_reimport_specifier(local: &Id, info: &RuntimeImportInfo) -> ImportSpecifier {
     match &info.kind {
-        RuntimeImportKind::Named { imported } => ImportSpecifier::Named(ImportNamedSpecifier {
-            span: DUMMY_SP,
-            local: ident_from_id(local),
-            imported: if imported == local.0.as_ref() {
-                None
-            } else {
-                Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                    imported.clone().into(),
-                    DUMMY_SP,
-                )))
-            },
-            is_type_only: false,
-        }),
+        RuntimeImportKind::Named { imported } => js_ast::named_import_specifier(ident_from_id(local), imported),
         RuntimeImportKind::Default => ImportSpecifier::Default(ImportDefaultSpecifier {
             span: DUMMY_SP,
             local: ident_from_id(local),
@@ -124,31 +112,13 @@ pub(crate) fn runtime_reimport_specifier(local: &Id, info: &RuntimeImportInfo) -
 /// the vendor plan's boundary mapping overrides the recorded source
 /// name.
 pub(crate) fn runtime_reimport_named_specifier(local: &Id, imported: &str) -> ImportSpecifier {
-    ImportSpecifier::Named(ImportNamedSpecifier {
-        span: DUMMY_SP,
-        local: ident_from_id(local),
-        imported: (imported != local.0.as_ref())
-            .then(|| ModuleExportName::Ident(Ident::new_no_ctxt(imported.into(), DUMMY_SP))),
-        is_type_only: false,
-    })
+    js_ast::named_import_specifier(ident_from_id(local), imported)
 }
 
 /// Build a single Named specifier (`{ <imported> as <local> }`, or just
 /// `{ <local> }` when local == imported) for an ImportSpecifier-bound
 /// reexport. Callers group same-source specifiers and wrap the list in
-/// one `ImportDecl` via [`import_decl_module_item`].
+/// one `ImportDecl` via [`js_ast::import_decl_module_item`].
 pub(crate) fn imported_binding_named_specifier(local: &str, imported: &str) -> ImportSpecifier {
-    ImportSpecifier::Named(ImportNamedSpecifier {
-        span: DUMMY_SP,
-        local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
-        imported: if local == imported {
-            None
-        } else {
-            Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                imported.into(),
-                DUMMY_SP,
-            )))
-        },
-        is_type_only: false,
-    })
+    js_ast::named_import_specifier(Ident::new_no_ctxt(local.into(), DUMMY_SP), imported)
 }

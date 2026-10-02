@@ -3,6 +3,7 @@
 //! emitting cross-module imports, and naturalizing object shorthand. The chunk-
 //! level planning and gate checks that wrap this live in `materialize/`.
 
+use js_ast::import_decl_module_item;
 use std::sync::Mutex;
 
 use super::module_output::{LoweredModuleOutput, ModuleEmissionInputs, emit_module};
@@ -27,7 +28,6 @@ use crate::exports::{
 use crate::imports::{
     ArtifactSourceImportResolutionCache, RuntimeImportFacts, VendorReimportOracle,
     collect_entry_exports_by_original_local, collect_imported_reexports_by_module,
-    import_decl_module_item,
 };
 use crate::naturalize::{NaturalizedRenames, naturalize_module_body};
 use crate::plans::ModulePlan;

@@ -3,9 +3,9 @@
 //! introduce destructure siblings, etc. `ChunkAstAnalysis` is the
 //! input to `materialize_logical_chunk`s spec-driven plan resolution.
 
+pub(super) use binding_targets::{binding_name_strings as binding_names, declaration_ids, declaration_name_strings as declaration_names};
 use binding_targets::{
-    binding_name_strings, binding_names as bt_binding_names, declaration_ids as bt_declaration_ids,
-    declaration_name_strings,
+    binding_names as bt_binding_names,
 };
 use selector_outcome::{Declaration, DeclarationKind};
 
@@ -273,18 +273,6 @@ pub(super) fn top_level_declaration_ids(item: &ModuleItem) -> Vec<Id> {
         ModuleItem::Stmt(stmt) => binding_targets::hoisted_var_ids(stmt),
         _ => Vec::new(),
     }
-}
-
-pub(super) fn declaration_names(decl: &Decl) -> Vec<String> {
-    declaration_name_strings(decl)
-}
-
-pub(super) fn declaration_ids(decl: &Decl) -> Vec<Id> {
-    bt_declaration_ids(decl)
-}
-
-pub(super) fn binding_names(pattern: &Pat) -> Vec<String> {
-    binding_name_strings(pattern)
 }
 
 pub(super) fn binding_ids(pattern: &Pat) -> Vec<Id> {

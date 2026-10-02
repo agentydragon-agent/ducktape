@@ -1,8 +1,7 @@
 use std::collections::BTreeSet;
 
 use binding_targets::{
-    TargetAccessRecorder, binding_names, record_assign_target, record_update_target, strip_parens,
-};
+    TargetAccessRecorder, binding_names, record_assign_target, record_update_target, };
 use swc_ecma_ast::*;
 
 use super::{TopLevelItemView, collect_declared_names, var_decl_of_item};
@@ -108,7 +107,7 @@ impl LocalEffectContext {
         graph: &ChunkCodeGraph,
         targets: &mut BTreeSet<Id>,
     ) -> bool {
-        match strip_parens(expr) {
+        match expr.unwrap_parens() {
             Expr::Seq(seq) => seq.exprs.iter().all(|expr| {
                 self.collect_local_property_writes(expr, shadowed, declared_pure, graph, targets)
             }),
@@ -156,7 +155,7 @@ fn static_member_write_root(member: &MemberExpr) -> Option<Id> {
     {
         return None;
     }
-    match strip_parens(&member.obj) {
+    match member.obj.unwrap_parens() {
         Expr::Ident(root) => Some(root.to_id()),
         Expr::Member(inner) => static_member_write_root(inner),
         _ => None,
@@ -184,10 +183,10 @@ fn vendor_prune_intrinsic_local_effect_aliases(item: &ModuleItem) -> BTreeSet<Id
 }
 
 fn vendor_prune_intrinsic_local_effect_member(expr: &Expr) -> bool {
-    let Expr::Member(member) = strip_parens(expr) else {
+    let Expr::Member(member) = expr.unwrap_parens() else {
         return false;
     };
-    let Expr::Ident(object) = strip_parens(&member.obj) else {
+    let Expr::Ident(object) = member.obj.unwrap_parens() else {
         return false;
     };
     object.sym.as_ref() == "Object"
@@ -217,7 +216,7 @@ fn vendor_prune_commonjs_module_bindings(item: &ModuleItem) -> BTreeSet<Id> {
 }
 
 fn vendor_prune_commonjs_module_init(expr: &Expr) -> bool {
-    let Expr::Object(obj) = strip_parens(expr) else {
+    let Expr::Object(obj) = expr.unwrap_parens() else {
         return false;
     };
     obj.props.iter().any(|prop| {
@@ -229,7 +228,7 @@ fn vendor_prune_commonjs_module_init(expr: &Expr) -> bool {
         };
         static_prop_name(&kv.key).as_deref() == Some("exports")
             && matches!(
-                strip_parens(&kv.value),
+                kv.value.unwrap_parens(),
                 Expr::Object(exports) if exports.props.is_empty()
             )
     })
@@ -277,7 +276,7 @@ fn vendor_prune_target_first_wrapper_expr(
     expr: &Expr,
     local_effect_context: &LocalEffectContext,
 ) -> bool {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Fn(function) => {
             vendor_prune_target_first_wrapper_function(&function.function, local_effect_context)
         }
@@ -363,7 +362,7 @@ fn vendor_prune_target_first_wrapper_effect_expr(
     local_effect_context: &LocalEffectContext,
     saw_effect: &mut bool,
 ) -> bool {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Assign(_) | Expr::Update(_) => {
             let targets = vendor_prune_expr_local_effect_targets(expr, local_effect_context);
             if !targets.is_empty() && targets.iter().all(|target| target == target_param) {
@@ -473,7 +472,7 @@ fn vendor_prune_expr_local_effect_targets(
     expr: &Expr,
     local_effect_context: &LocalEffectContext,
 ) -> BTreeSet<Id> {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Assign(assign) => {
             let mut recorder = LocalEffectRecorder::new(&local_effect_context.declared_bindings);
             record_assign_target(&assign.left, &mut recorder);
@@ -555,7 +554,7 @@ fn vendor_prune_inline_namespace_iife_target(
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
-    let Expr::Fn(function) = strip_parens(callee) else {
+    let Expr::Fn(function) = callee.unwrap_parens() else {
         return None;
     };
     if function.function.params.len() == 1 {
@@ -572,7 +571,7 @@ fn vendor_prune_direct_call_local_effect_target(
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
-    if let Expr::Ident(callee) = strip_parens(callee)
+    if let Expr::Ident(callee) = callee.unwrap_parens()
         && local_effect_context
             .vendor_prune_intrinsic_local_effect_callees
             .contains(&callee.to_id())
@@ -580,10 +579,10 @@ fn vendor_prune_direct_call_local_effect_target(
         let first_arg = call.args.first()?;
         return local_member_owner(&first_arg.expr);
     }
-    let Expr::Member(member) = strip_parens(callee) else {
+    let Expr::Member(member) = callee.unwrap_parens() else {
         return None;
     };
-    let Expr::Ident(object) = strip_parens(&member.obj) else {
+    let Expr::Ident(object) = member.obj.unwrap_parens() else {
         return None;
     };
     if object.sym.as_ref() != "Object" {
@@ -607,7 +606,7 @@ fn vendor_prune_for_each_local_effect_target(
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
-    let Expr::Member(member) = strip_parens(callee) else {
+    let Expr::Member(member) = callee.unwrap_parens() else {
         return None;
     };
     if static_member_name(&member.prop).as_deref() != Some("forEach") {
@@ -623,7 +622,7 @@ fn vendor_prune_for_each_local_effect_target(
 }
 
 fn vendor_prune_static_object_iteration(expr: &Expr) -> bool {
-    let Expr::Call(call) = strip_parens(expr) else {
+    let Expr::Call(call) = expr.unwrap_parens() else {
         return false;
     };
     if call
@@ -636,10 +635,10 @@ fn vendor_prune_static_object_iteration(expr: &Expr) -> bool {
     let Callee::Expr(callee) = &call.callee else {
         return false;
     };
-    let Expr::Member(member) = strip_parens(callee) else {
+    let Expr::Member(member) = callee.unwrap_parens() else {
         return false;
     };
-    let Expr::Ident(object) = strip_parens(&member.obj) else {
+    let Expr::Ident(object) = member.obj.unwrap_parens() else {
         return false;
     };
     object.sym.as_ref() == "Object"
@@ -653,7 +652,7 @@ fn vendor_prune_for_each_callback_targets(
     expr: &Expr,
     local_effect_context: &LocalEffectContext,
 ) -> Option<BTreeSet<Id>> {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Fn(function) => vendor_prune_for_each_callback_block_targets(
             function.function.body.as_ref()?,
             local_effect_context,
@@ -712,7 +711,7 @@ fn vendor_prune_for_each_callback_expr_targets(
     expr: &Expr,
     local_effect_context: &LocalEffectContext,
 ) -> Option<BTreeSet<Id>> {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Assign(_) | Expr::Update(_) => {
             let targets = vendor_prune_expr_local_effect_targets(expr, local_effect_context);
             if targets.is_empty() {
@@ -785,7 +784,7 @@ pub fn local_namespace_iife_target(call: &CallExpr) -> Option<Id> {
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
-    let Expr::Fn(function) = strip_parens(callee) else {
+    let Expr::Fn(function) = callee.unwrap_parens() else {
         return None;
     };
     if function.function.params.len() != 1 {
@@ -803,14 +802,14 @@ pub fn local_namespace_iife_target(call: &CallExpr) -> Option<Id> {
 }
 
 fn local_namespace_iife_arg_target(expr: &Expr) -> Option<Id> {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Ident(ident) => Some(ident.to_id()),
         Expr::Assign(assign) if assign.op == AssignOp::Assign => {
             let AssignTarget::Simple(SimpleAssignTarget::Ident(target)) = &assign.left else {
                 return None;
             };
             if matches!(
-                strip_parens(&assign.right),
+                assign.right.unwrap_parens(),
                 Expr::Object(obj) if obj.props.is_empty()
             ) {
                 Some(target.to_id())
@@ -819,7 +818,7 @@ fn local_namespace_iife_arg_target(expr: &Expr) -> Option<Id> {
             }
         }
         Expr::Bin(bin) if bin.op == BinaryOp::LogicalOr => {
-            let Expr::Ident(target) = strip_parens(&bin.left) else {
+            let Expr::Ident(target) = bin.left.unwrap_parens() else {
                 return None;
             };
             if is_namespace_iife_arg_fallback_for(&bin.right, &target.to_id()) {
@@ -833,20 +832,20 @@ fn local_namespace_iife_arg_target(expr: &Expr) -> Option<Id> {
 }
 
 fn is_namespace_iife_arg_fallback_for(expr: &Expr, target: &Id) -> bool {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Object(obj) => obj.props.is_empty(),
         Expr::Assign(assign) if assign.op == AssignOp::Assign => {
             matches!(
                 &assign.left,
                 AssignTarget::Simple(SimpleAssignTarget::Ident(ident)) if ident.to_id() == *target
             ) && matches!(
-                strip_parens(&assign.right),
+                assign.right.unwrap_parens(),
                 Expr::Object(obj) if obj.props.is_empty()
             )
         }
         Expr::Bin(bin) if bin.op == BinaryOp::LogicalOr => {
             matches!(
-                strip_parens(&bin.left),
+                bin.left.unwrap_parens(),
                 Expr::Ident(ident) if ident.to_id() == *target
             ) && is_namespace_iife_arg_fallback_for(&bin.right, target)
         }
@@ -871,7 +870,7 @@ fn local_commonjs_module_iife_target(
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
-    let Expr::Fn(function) = strip_parens(callee) else {
+    let Expr::Fn(function) = callee.unwrap_parens() else {
         return None;
     };
     if function.function.params.len() != 1 {
@@ -902,7 +901,7 @@ fn commonjs_iife_body_mutates_only_module_param(block: &FunctionBody, param: &st
                         .is_none_or(namespace_iife_local_init_is_pure)
             }),
             Stmt::Expr(expr) => commonjs_iife_param_effect_expr(
-                strip_parens(&expr.expr),
+                expr.expr.unwrap_parens(),
                 param,
                 &local_bindings,
                 &mut saw_write,
@@ -991,7 +990,7 @@ fn commonjs_nested_iife_mutates_param(call: &CallExpr, param: &str) -> Option<bo
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
-    let Expr::Fn(function) = strip_parens(callee) else {
+    let Expr::Fn(function) = callee.unwrap_parens() else {
         return None;
     };
     if !function.function.params.is_empty() {
@@ -1004,11 +1003,11 @@ fn commonjs_nested_iife_mutates_param(call: &CallExpr, param: &str) -> Option<bo
 }
 
 fn commonjs_truthy_exports_test(expr: &Expr, param: &str) -> bool {
-    let Expr::Member(member) = strip_parens(expr) else {
+    let Expr::Member(member) = expr.unwrap_parens() else {
         return false;
     };
     matches!(
-        strip_parens(&member.obj),
+        member.obj.unwrap_parens(),
         Expr::Ident(ident) if ident.sym.as_ref() == param
     ) && static_member_name(&member.prop).as_deref() == Some("exports")
 }
@@ -1026,7 +1025,7 @@ fn namespace_iife_body_mutates_only_param(block: &FunctionBody, param: &str) -> 
                         .is_none_or(namespace_iife_local_init_is_pure)
             }),
             Stmt::Expr(expr) => {
-                namespace_iife_param_write_expr(strip_parens(&expr.expr), param, &mut saw_write)
+                namespace_iife_param_write_expr(expr.expr.unwrap_parens(), param, &mut saw_write)
             }
             _ => false,
         };
@@ -1038,7 +1037,7 @@ fn namespace_iife_body_mutates_only_param(block: &FunctionBody, param: &str) -> 
 }
 
 fn namespace_iife_local_init_is_pure(expr: &Expr) -> bool {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Lit(_)
         | Expr::Ident(_)
         | Expr::This(_)
@@ -1099,7 +1098,7 @@ fn namespace_iife_param_write_expr(expr: &Expr, param: &str, saw_write: &mut boo
                 return false;
             };
             if !matches!(
-                strip_parens(&member.obj),
+                member.obj.unwrap_parens(),
                 Expr::Ident(ident) if ident.sym.as_ref() == param
             ) {
                 return false;
@@ -1115,7 +1114,7 @@ fn namespace_iife_param_write_expr(expr: &Expr, param: &str, saw_write: &mut boo
 }
 
 fn local_member_owner(expr: &Expr) -> Option<Id> {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Ident(ident) => Some(ident.to_id()),
         Expr::Member(member) => local_member_owner(&member.obj),
         _ => None,
@@ -1126,7 +1125,7 @@ fn static_member_name(prop: &MemberProp) -> Option<String> {
     match prop {
         MemberProp::Ident(ident) => Some(ident.sym.to_string()),
         MemberProp::PrivateName(name) => Some(name.name.to_string()),
-        MemberProp::Computed(computed) => match strip_parens(&computed.expr) {
+        MemberProp::Computed(computed) => match computed.expr.unwrap_parens() {
             Expr::Lit(Lit::Str(value)) => Some(value.value.to_string_lossy().into_owned()),
             _ => None,
         },
@@ -1139,7 +1138,7 @@ fn static_prop_name(prop: &PropName) -> Option<String> {
         PropName::Str(value) => Some(value.value.to_string_lossy().into_owned()),
         PropName::Num(value) => Some(value.value.to_string()),
         PropName::BigInt(value) => Some(value.value.to_string()),
-        PropName::Computed(computed) => match strip_parens(&computed.expr) {
+        PropName::Computed(computed) => match computed.expr.unwrap_parens() {
             Expr::Lit(Lit::Str(value)) => Some(value.value.to_string_lossy().into_owned()),
             _ => None,
         },

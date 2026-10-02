@@ -35,7 +35,7 @@ fn recognized_local_effect_target(
     let ModuleItem::Stmt(Stmt::Expr(expr_stmt)) = item else {
         return None;
     };
-    let Expr::Call(call) = strip_parens(&expr_stmt.expr) else {
+    let Expr::Call(call) = expr_stmt.expr.unwrap_parens() else {
         return None;
     };
     let callee = call_callee_ident(call)?;
@@ -49,7 +49,7 @@ fn call_callee_ident(call: &CallExpr) -> Option<&Ident> {
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
-    match strip_parens(callee) {
+    match callee.unwrap_parens() {
         Expr::Ident(ident) => Some(ident),
         _ => None,
     }
@@ -79,7 +79,7 @@ fn typescript_decorate_helper_target(call: &CallExpr) -> Option<Id> {
     }
 }
 fn decorator_array_is_static_reference_list(expr: &Expr) -> bool {
-    let Expr::Array(array) = strip_parens(expr) else {
+    let Expr::Array(array) = expr.unwrap_parens() else {
         return false;
     };
     array.elems.iter().all(|elem| {
@@ -91,7 +91,7 @@ fn decorator_array_is_static_reference_list(expr: &Expr) -> bool {
 }
 
 fn static_reference_expr(expr: &Expr) -> bool {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Ident(_) => true,
         Expr::Member(member) => {
             matches!(&member.prop, MemberProp::Ident(_))
@@ -102,7 +102,7 @@ fn static_reference_expr(expr: &Expr) -> bool {
 }
 
 fn class_or_prototype_target_binding(expr: &Expr) -> Option<Id> {
-    match strip_parens(expr) {
+    match expr.unwrap_parens() {
         Expr::Ident(ident) => Some(ident.to_id()),
         Expr::Member(member) => {
             let MemberProp::Ident(prop) = &member.prop else {
@@ -111,7 +111,7 @@ fn class_or_prototype_target_binding(expr: &Expr) -> Option<Id> {
             if prop.sym.as_ref() != "prototype" {
                 return None;
             }
-            match strip_parens(member.obj.as_ref()) {
+            match member.obj.as_ref().unwrap_parens() {
                 Expr::Ident(ident) => Some(ident.to_id()),
                 _ => None,
             }
@@ -122,11 +122,11 @@ fn class_or_prototype_target_binding(expr: &Expr) -> Option<Id> {
 
 fn decorate_property_key_is_static(expr: &Expr) -> bool {
     matches!(
-        strip_parens(expr),
+        expr.unwrap_parens(),
         Expr::Lit(Lit::Str(_)) | Expr::Lit(Lit::Num(_))
     )
 }
 
 fn decorate_flags_are_static(expr: &Expr) -> bool {
-    matches!(strip_parens(expr), Expr::Lit(Lit::Num(_)))
+    matches!(expr.unwrap_parens(), Expr::Lit(Lit::Num(_)))
 }

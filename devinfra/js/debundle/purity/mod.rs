@@ -29,7 +29,6 @@
 
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
-pub(crate) use binding_targets::strip_parens;
 pub(crate) use petgraph::algo::tarjan_scc;
 pub(crate) use petgraph::graphmap::DiGraphMap;
 pub(crate) use serde::{Deserialize, Serialize};
