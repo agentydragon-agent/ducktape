@@ -110,13 +110,13 @@ contracts: <docs/purity_soundness.md> — read it before touching
 ## Testing Philosophy
 
 **Default to end-to-end tests that drive the real pipeline** through the `debundle`
-CLI (`e2e/` + `support.rs`) — a debundler bug almost always manifests in the
+CLI (`e2e/` + `e2e/support/`) — a debundler bug almost always manifests in the
 emitted output: exports, runtime behavior, file layout, source shape. This applies
 even when the bug lives in one internal stage. Assertions state the external
 contract ("module `foo/bar.js` exports `abc` and not `xyz`", "the emitted entry
 prints `expected output` under Node") and survive internal refactors.
 
-`e2e/support.rs` holds the assertion primitives (`assert_module_exports`,
+`e2e/support/mod.rs` re-exports the assertion primitives (`assert_module_exports`,
 `assert_module_source`, `assert_entry_output`,
 `assert_generated_module_after_entry_script`, …) — add a helper when you repeat an
 assertion shape; a test should be one or two helper calls, not a wall of

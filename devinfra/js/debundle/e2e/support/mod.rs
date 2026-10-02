@@ -6,10 +6,19 @@
 mod ast_assertions;
 mod fixture_spec;
 
-pub use ast_assertions::{VariableDeclarationKind, VariableInitializerKind, assert_module_variable_declarators, parse_module, assert_export_named_specifiers};
-pub use fixture_spec::{Member, BindingGroup, LogicalModuleEntry, logical_module, logical_module_with_binding_groups, logical_module_with_comment, logical_module_with_anon, logical_module_with_anon_alpha, logical_module_with_anon_comment, FixtureOpts, unassigned_mode_inline, unassigned_mode_catchall_file, unassigned_mode_mini_factors, ChunkExportPurityBuilder};
+pub use ast_assertions::{
+    VariableDeclarationKind, VariableInitializerKind, assert_export_named_specifiers,
+    assert_module_variable_declarators, parse_module,
+};
 use fixture_spec::build_spec;
-pub use fixture_spec::{chunk_rename, ChunkRenameEntry, chunk_renames, chunk_rename_with_purity};
+pub use fixture_spec::{
+    BindingGroup, ChunkExportPurityBuilder, FixtureOpts, LogicalModuleEntry, Member,
+    logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
+    logical_module_with_anon_comment, logical_module_with_binding_groups,
+    logical_module_with_comment, unassigned_mode_catchall_file, unassigned_mode_inline,
+    unassigned_mode_mini_factors,
+};
+pub use fixture_spec::{ChunkRenameEntry, chunk_rename, chunk_rename_with_purity, chunk_renames};
 
 use analysis::OwnerGraphReport;
 use artifact::PackageManifest;
@@ -732,7 +741,6 @@ pub fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process:
     );
     out
 }
-
 
 /// Owner-graph node id that declares `binding`, panicking (with the node dump)
 /// if none does.
