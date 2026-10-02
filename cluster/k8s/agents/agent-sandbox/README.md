@@ -1,5 +1,10 @@
 # agent-sandbox — disposable agent workspaces
 
+> The standalone `agent-workspaces` lane is retired. The controller remains active
+> for Agentplane. Historical usage below requires revival first; see
+> [the parked workspace](../../../parked/agent-workspaces/README.md).
+
+
 [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
 controller plus a Codex LLM-lane template in `agent-workspaces`: click-a-command
 disposable dev workspaces for agents — the agent-box workflow (a machine you go

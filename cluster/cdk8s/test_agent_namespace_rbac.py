@@ -95,7 +95,6 @@ def test_kyverno_no_longer_generates_agent_bindings() -> None:
         "default-revision-history-limit",
         "default-disable-service-links",
         "default-vpa-requests-only",
-        "inject-mitmproxy",
         "inject-haku-egress-proxy",
         "restrict-agent-gateway-routes",
         "require-secret-store-conditions",

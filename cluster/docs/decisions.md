@@ -471,3 +471,20 @@ the namespace, PVCs, backup Flux owner, and dedicated proxy Deployment. The foll
 removes the temporary empty owner/directory and the SeaweedFS tenant grant.
 Historical SeaweedFS/Restic backup storage retains its `Retain` policy; physical
 backing storage was not audited as part of these checks.
+
+
+## Retire standalone agent workspaces and Claude compute (2026-10-02)
+
+Park the standalone Codex namespace and Claude's shared mitmproxy, preserving
+rendered manifests, image pins and revival instructions under
+`cluster/parked/{agent-workspaces,agents-mitmproxy}` and retaining their generators.
+Existing Flux owners first reconcile empty directories to prune live resources;
+remove those temporary owners only after verifying deletion and empty inventories.
+The unclaimed Codex warm workspace's PVC data loss is explicitly operator-approved.
+
+Keep `claude-sandbox` as an identity/credential home for external sessions, with a
+zero Pod quota and deny-all egress instead of an active compute lane. Shared agent
+roles and credential delivery remain active. Disable only Claude's proxy injection
+and retire its traffic-viewer SSO. Haku's proxy/CI/apps, public coder's workloads and
+proxy, and the shared sandbox controller used by Agentplane remain unchanged.
+Public coder's Iron-to-Agentplane migration is a separate change.

@@ -14,13 +14,13 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from cluster.cdk8s import cilium, egress_fences, namespaces
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "mitmproxy"
 NAMESPACE = egress_fences.MITMPROXY_NAMESPACE
-OUTPUT_DIR = f"{GENERATED_ROOT}/agents/mitmproxy"
+OUTPUT_DIR = f"{PARKED_ROOT}/agents-mitmproxy"
 
 # The namespaces whose external egress is forced through this proxy: the clusterwide policy
 # selects them, the trust bundle lands in them, and the ingress policy admits them. A new one

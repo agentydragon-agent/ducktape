@@ -1,5 +1,10 @@
 # `ws` — disposable agent workspaces
 
+> The standalone `agent-workspaces` namespace is retired. This client is retained
+> for revival; use Agentplane for new work. See
+> [the parked workspace](../../cluster/parked/agent-workspaces/README.md).
+
+
 CLI for the agent workspaces in <../../cluster/k8s/agents/agent-sandbox/>: claim a
 pre-warmed sandbox, shell in, extend, dispose. Thin wrapper over `kubectl`
 against `SandboxClaim`s in `agent-workspaces` — auth is whatever kubeconfig

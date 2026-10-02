@@ -163,3 +163,6 @@ cluster/k8s/x/agents/haku-zones-mitmproxy-namespace/** cluster-manifest-ignored=
 cluster/parked/haku-openclaw-spike/app/kustomization.yaml linguist-generated=true
 cluster/parked/haku-openclaw-spike/app/kube-client-config linguist-generated=true
 cluster/parked/haku-openclaw-spike/proxy/kustomization.yaml linguist-generated=true
+
+cluster/parked/agents-mitmproxy/kustomization.yaml linguist-generated=true
+cluster/parked/agent-workspaces/kustomization.yaml linguist-generated=true

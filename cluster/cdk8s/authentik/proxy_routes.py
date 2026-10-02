@@ -35,7 +35,6 @@ _ROUTES = {
     # ActivityWatch's read-only proxy.
     "activitywatch": "activitywatch.allegedly.works",
     # The OpenClaw mitmproxy traffic viewer (admin-only).
-    "agents-mitmproxy": "agents-mitmproxy.allegedly.works",
     # proxmox-proxy nginx -> atlas:8006.
     "proxmox": "atlas.allegedly.works",
     "goldilocks-dashboard": "goldilocks.allegedly.works",
