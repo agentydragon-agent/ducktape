@@ -7,13 +7,24 @@ use debundle_e2e_support::{
 };
 use serde_json::{Value, json};
 use spec::{
-    PartialSwapKind, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel,
-    VendorMark, WrapperShape,
+    BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, PartialSwapKind,
+    PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel, VendorMark,
+    WrapperShape,
 };
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
+
+fn assert_success(result: &CommandResult) {
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr
+    );
+}
 
 #[test]
 fn named_from_module_default_handles_export_named_as_default_re_export() {
@@ -72,13 +83,7 @@ fn named_from_module_default_handles_anonymous_default_class() {
 }
 
 fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
 
     let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
     assert!(
@@ -160,6 +165,15 @@ impl VendorTestWorkspace {
             manifest_path,
             js_list_path,
         }
+    }
+
+    fn transform_spec(&self, vendor: impl serde::Serialize) -> Value {
+        json!({
+            "vendor": vendor,
+            "inputs": { "input_root": self.snapshot_root, "js_list_path": self.js_list_path },
+            "swap_vendor_chunks": { "output_manifest_path": self.manifest_path, "output_wrapper_dir": self.wrapper_root, "write": true },
+            "write_js_tree": { "out_dir": self.out_root },
+        })
     }
 
     fn write_chunk(&self, chunk_path: &str, source: &str) {
@@ -253,16 +267,7 @@ fn build_bundled_partial_swap_spec(
     vendor: Value,
     extra: Option<Value>,
 ) -> Value {
-    let mut spec = json!({
-        "vendor": vendor,
-        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": &ws.manifest_path,
-            "output_wrapper_dir": &ws.wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": &ws.out_root },
-    });
+    let mut spec = ws.transform_spec(vendor);
     if let Some(Value::Object(extras)) = extra {
         let object = spec.as_object_mut().expect("spec is JSON object");
         for (k, v) in extras {
@@ -326,18 +331,9 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
         }),
     };
     let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
-            CHUNK_PATH: vendor_mark,
-        },
-        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": &ws.manifest_path,
-            "output_wrapper_dir": &ws.wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": &ws.out_root },
-    });
+    let spec = ws.transform_spec(json!({
+        CHUNK_PATH: vendor_mark,
+    }));
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
@@ -367,13 +363,7 @@ fn named_from_default_handles_object_literal_with_keyvalue_props() {
         chunk_source: "export { ping, pong } from \"lib\";\n",
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
 
     let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
     // The wrapper hoists upstream's default into a `const _d = { ... }`
@@ -412,13 +402,7 @@ export default { ping, pong };
         chunk_source: "export { ping, pong } from \"lib\";\n",
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
 
     let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
     assert!(
@@ -449,13 +433,7 @@ export default { ping, "pong": () => "ping" };
         chunk_source: "export { ping, pong } from \"lib\";\n",
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
     assert!(wrapper_source.contains("export const ping = _d.ping"));
     assert!(wrapper_source.contains("export const pong = _d.pong"));
@@ -535,13 +513,7 @@ fn partial_swap_basic_rewrites_to_namespace_member() {
         upstream_version: "3.23.8",
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
 
     let caller_emitted = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     assert!(
@@ -580,13 +552,7 @@ fn partial_swap_keeps_megachunk_on_disk() {
         upstream_version: "3.23.8",
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     assert!(
         fixture.megachunk_emitted_path.exists(),
         "megachunk should still be emitted: {:?}",
@@ -634,13 +600,7 @@ fn partial_swap_strips_swapped_names_from_export_block() {
         upstream_version: "3.23.8",
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
     assert!(
         !emitted.contains("e6Impl as e6"),
@@ -665,13 +625,7 @@ fn partial_swap_strips_implementation_when_unreferenced() {
         upstream_version: "3.23.8",
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
     assert!(
         !emitted.contains(" e6 "),
@@ -719,13 +673,7 @@ fn partial_swap_keeps_side_effect_init() {
         upstream_version: "3.23.8",
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
     assert!(
         emitted.contains("console.log"),
@@ -781,13 +729,7 @@ fn partial_swap_drops_original_package_island_with_local_mutations() {
         upstream_version: "3.23.8",
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
     assert!(
         !emitted.contains("ZodBoolean"),
@@ -855,18 +797,9 @@ fn run_partial_swap_with_mark(
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
 
     let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
-            MEGACHUNK_PATH: vendor_spec,
-        },
-        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": &ws.manifest_path,
-            "output_wrapper_dir": &ws.wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": &ws.out_root },
-    });
+    let spec = ws.transform_spec(json!({
+        MEGACHUNK_PATH: vendor_spec,
+    }));
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, packages);
@@ -1013,13 +946,7 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     let entry_path = ws.out_root.join("app/static/app/entry.js");
     let entry = fs::read_to_string(&entry_path).expect("app entry emitted");
@@ -1121,13 +1048,7 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     let module_path = ws.out_root.join("app/static/app/modules/flags.js");
     let module = fs::read_to_string(&module_path).expect("materialized module emitted");
@@ -1200,13 +1121,7 @@ fn partial_swap_namespace_kind_replaces_whole_import() {
         upstream_export: None,
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     assert!(
         caller.contains("import * as React from \"react\""),
@@ -1241,13 +1156,7 @@ fn partial_swap_default_kind_replaces_whole_import() {
         upstream_export: None,
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     assert!(
         caller.contains("import z from \"clsx\""),
@@ -1284,13 +1193,7 @@ fn partial_swap_named_kind_auto_renames_local_binding() {
         upstream_export: Some("observer"),
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     assert!(
         caller.contains("import { observer } from \"mobx-react-lite\""),
@@ -1327,13 +1230,7 @@ fn partial_swap_named_kind_no_rewrite_when_local_already_matches() {
         upstream_export: Some("observer"),
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     assert!(
         caller.contains("import { observer } from \"mobx-react-lite\""),
@@ -1402,29 +1299,7 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
 
     let spec = build_bundled_partial_swap_spec(
         &ws,
-        json!({
-            MEGACHUNK_PATH: {
-                "level": "bundled_partial_swap",
-                "identity": "React CJS family bundled partial swap fixture",
-                "bundle": { "path": &bundle_path },
-                "packages": {
-                    PACKAGE_NAME: {
-                        "version": PACKAGE_VERSION,
-                        "subpath": "index.js",
-                        "bundle_export": "React",
-                    },
-                    JSX_RUNTIME_NAME: {
-                        "version": PACKAGE_VERSION,
-                        "subpath": "jsx-runtime.js",
-                        "bundle_export": "jsxRuntime",
-                    },
-                },
-                "symbols": {
-                    "a": { "package": PACKAGE_NAME, "kind": "namespace" },
-                    "j": { "package": JSX_RUNTIME_NAME, "kind": "namespace" },
-                },
-            },
-        }),
+        json!({MEGACHUNK_PATH: bundled_vendor("React CJS family bundled partial swap fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "React", None)), (JSX_RUNTIME_NAME, bundled_package(PACKAGE_VERSION, "jsx-runtime.js", "jsxRuntime", None))], &[("a", swap_symbol(PACKAGE_NAME, PartialSwapKind::Namespace, None, None)), ("j", swap_symbol(JSX_RUNTIME_NAME, PartialSwapKind::Namespace, None, None))])}),
         None,
     );
     let spec_path = ws.root.path().join("transform_spec.yaml");
@@ -1437,13 +1312,7 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
             (JSX_RUNTIME_NAME, &package_root),
         ],
     );
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     let caller_path = ws.out_root.join("app/static/app").join("entry.js");
     let caller = fs::read_to_string(&caller_path).expect("caller emitted");
@@ -1545,29 +1414,7 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
 
     let spec = build_bundled_partial_swap_spec(
         &ws,
-        json!({
-            VENDOR_PATH: {
-                "level": "bundled_partial_swap",
-                "identity": "singleton runtime mixed-copy fixture",
-                "bundle": { "path": &bundle_path },
-                "packages": {
-                    PACKAGE_NAME: {
-                        "version": PACKAGE_VERSION,
-                        "subpath": "index.js",
-                        "bundle_export": "Hooks",
-                    },
-                    CLIENT_NAME: {
-                        "version": PACKAGE_VERSION,
-                        "subpath": "client.js",
-                        "bundle_export": "Client",
-                    },
-                },
-                "symbols": {
-                    "a": { "package": PACKAGE_NAME, "kind": "namespace" },
-                    "h": { "package": CLIENT_NAME, "kind": "namespace" },
-                },
-            },
-        }),
+        json!({VENDOR_PATH: bundled_vendor("singleton runtime mixed-copy fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "Hooks", None)), (CLIENT_NAME, bundled_package(PACKAGE_VERSION, "client.js", "Client", None))], &[("a", swap_symbol(PACKAGE_NAME, PartialSwapKind::Namespace, None, None)), ("h", swap_symbol(CLIENT_NAME, PartialSwapKind::Namespace, None, None))])}),
         None,
     );
     let spec_path = ws.root.path().join("transform_spec.yaml");
@@ -1577,13 +1424,7 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
         &spec_path,
         &[(PACKAGE_NAME, &package_root), (CLIENT_NAME, &package_root)],
     );
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     let probe_path = ws.out_root.join("__run_entry.mjs");
     write_text_file(
@@ -1640,23 +1481,7 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
 
     let spec = build_bundled_partial_swap_spec(
         &ws,
-        json!({
-            VENDOR_PATH: {
-                "level": "bundled_partial_swap",
-                "identity": "materialized import bundled partial swap fixture",
-                "bundle": { "path": &bundle_path },
-                "packages": {
-                    PACKAGE_NAME: {
-                        "version": PACKAGE_VERSION,
-                        "subpath": "observer.js",
-                        "bundle_export": "observe",
-                    },
-                },
-                "symbols": {
-                    "o": { "package": PACKAGE_NAME, "kind": "default" },
-                },
-            },
-        }),
+        json!({VENDOR_PATH: bundled_vendor("materialized import bundled partial swap fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "observer.js", "observe", None))], &[("o", swap_symbol(PACKAGE_NAME, PartialSwapKind::Default, None, None))])}),
         Some(json!({
             "logical_modules": {
                 "static/app": {
@@ -1684,13 +1509,7 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     let materialized_path = ws
         .out_root
@@ -1763,33 +1582,7 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
 
     let spec = build_bundled_partial_swap_spec(
         &ws,
-        json!({
-            VENDOR_PATH: {
-                "level": "bundled_partial_swap",
-                "identity": "materialized named alias bundled partial swap fixture",
-                "bundle": { "path": &bundle_path },
-                "packages": {
-                    PACKAGE_NAME: {
-                        "version": PACKAGE_VERSION,
-                        "subpath": "index.js",
-                        "bundle_export": "Toolkit",
-                        "namespace": "Toolkit",
-                    },
-                },
-                "symbols": {
-                    "m": {
-                        "package": PACKAGE_NAME,
-                        "kind": "named",
-                        "upstream_export": "map",
-                    },
-                    "k": {
-                        "package": PACKAGE_NAME,
-                        "kind": "named",
-                        "upstream_export": "make",
-                    },
-                },
-            },
-        }),
+        json!({VENDOR_PATH: bundled_vendor("materialized named alias bundled partial swap fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "Toolkit", Some("Toolkit")))], &[("m", swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("map"), None)), ("k", swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("make"), None))])}),
         Some(json!({
             "logical_modules": {
                 "static/app": {
@@ -1825,13 +1618,7 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     let materialized_path = ws
         .out_root
@@ -1904,42 +1691,14 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
 
     let spec = build_bundled_partial_swap_spec(
         &ws,
-        json!({
-            VENDOR_PATH: {
-                "level": "bundled_partial_swap",
-                "identity": "local helper bundled partial swap fixture",
-                "bundle": { "path": &bundle_path },
-                "packages": {
-                    PACKAGE_NAME: {
-                        "version": PACKAGE_VERSION,
-                        "subpath": "index.js",
-                        "bundle_export": "Zod",
-                        "namespace": "Zod",
-                    },
-                },
-                "symbols": {
-                    "zodInstanceof": {
-                        "package": PACKAGE_NAME,
-                        "kind": "named",
-                        "upstream_export": "instanceof",
-                        "local": "nY",
-                    },
-                },
-            },
-        }),
+        json!({VENDOR_PATH: bundled_vendor("local helper bundled partial swap fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "Zod", Some("Zod")))], &[("zodInstanceof", swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("instanceof"), Some("nY")))])}),
         None,
     );
     let spec_path = ws.root.path().join("transform_spec.yaml");
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
         .expect("vendor chunk emitted");
@@ -1983,13 +1742,7 @@ fn partial_swap_does_not_rewrite_shadowing_inner_binding() {
         upstream_version: "3.23.8",
     });
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
 
     let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     // The top-level import-local use is rewritten to the facade member.
@@ -2127,15 +1880,31 @@ fn setup_partial_swap_consumer_fixture(
 
 fn partial_swap_vendor(
     identity: &str,
-    packages: Value,
-    symbols: Value,
-) -> serde_json::Map<String, Value> {
-    let mut vendor = serde_json::Map::new();
-    vendor.insert("level".into(), json!("partial_swap"));
-    vendor.insert("identity".into(), json!(identity));
-    vendor.insert("packages".into(), packages);
-    vendor.insert("symbols".into(), symbols);
-    vendor
+    packages: &[(&str, PartialSwapPackage)],
+    symbols: &[(&str, PartialSwapSymbol)],
+) -> VendorMark {
+    VendorMark {
+        identity: identity.into(),
+        role: Default::default(),
+        level: VendorLevel::PartialSwap(PartialSwapMark {
+            packages: packages
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+            symbols: symbols
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+        }),
+    }
+}
+
+fn partial_package(version: &str, subpath: &str, namespace: Option<&str>) -> PartialSwapPackage {
+    PartialSwapPackage {
+        version: version.into(),
+        subpath: subpath.into(),
+        namespace: namespace.map(str::to_owned),
+    }
 }
 
 fn emitted_app_root(fixture: &PartialSwapFixture) -> PathBuf {
@@ -2180,18 +1949,15 @@ fn partial_swap_rewrites_named_kind_reexport_from_consumer() {
     );
     let vendor = partial_swap_vendor(
         "named re-export consumer fixture",
-        json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs" } }),
-        json!({ "e6": { "package": "zod", "kind": "named", "upstream_export": "boolean" } }),
+        &[("zod", partial_package("3.23.8", "lib/index.mjs", None))],
+        &[(
+            "e6",
+            swap_symbol("zod", PartialSwapKind::Named, Some("boolean"), None),
+        )],
     );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     assert!(
         caller.contains("export { boolean as zodBoolean } from \"zod\""),
@@ -2235,18 +2001,15 @@ fn partial_swap_rewrites_default_kind_reexport_from_consumer() {
     );
     let vendor = partial_swap_vendor(
         "default re-export consumer fixture",
-        json!({ "clsx": { "version": "2.1.1", "subpath": "dist/clsx.mjs" } }),
-        json!({ "aQ": { "package": "clsx", "kind": "default" } }),
+        &[("clsx", partial_package("2.1.1", "dist/clsx.mjs", None))],
+        &[(
+            "aQ",
+            swap_symbol("clsx", PartialSwapKind::Default, None, None),
+        )],
     );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("clsx", &package_root)]);
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     assert!(
         caller.contains("export { default as z } from \"clsx\""),
@@ -2282,18 +2045,15 @@ fn partial_swap_rewrites_namespace_kind_reexport_from_consumer() {
     );
     let vendor = partial_swap_vendor(
         "namespace re-export consumer fixture",
-        json!({ "react": { "version": "18.3.1", "subpath": "index.js" } }),
-        json!({ "a": { "package": "react", "kind": "namespace" } }),
+        &[("react", partial_package("18.3.1", "index.js", None))],
+        &[(
+            "a",
+            swap_symbol("react", PartialSwapKind::Namespace, None, None),
+        )],
     );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("react", &package_root)]);
 
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
     assert!(
         caller.contains("export * as React from \"react\""),
@@ -2333,8 +2093,11 @@ fn partial_swap_bails_on_namespace_import_of_partially_swapped_chunk() {
     );
     let vendor = partial_swap_vendor(
         "namespace consumer fixture",
-        json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs", "namespace": "z" } }),
-        json!({ "e6": { "package": "zod", "upstream_export": "boolean" } }),
+        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
+        &[(
+            "e6",
+            swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None),
+        )],
     );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
@@ -2369,8 +2132,11 @@ fn partial_swap_bails_on_member_kind_reexport_from_consumer() {
     );
     let vendor = partial_swap_vendor(
         "member re-export consumer fixture",
-        json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs", "namespace": "z" } }),
-        json!({ "e6": { "package": "zod", "upstream_export": "boolean" } }),
+        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
+        &[(
+            "e6",
+            swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None),
+        )],
     );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
@@ -2402,8 +2168,11 @@ fn partial_swap_bails_on_export_star_from_partially_swapped_chunk() {
     );
     let vendor = partial_swap_vendor(
         "export-star consumer fixture",
-        json!({ "zod": { "version": "3.23.8", "subpath": "lib/index.mjs", "namespace": "z" } }),
-        json!({ "e6": { "package": "zod", "upstream_export": "boolean" } }),
+        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
+        &[(
+            "e6",
+            swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None),
+        )],
     );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
@@ -2445,13 +2214,7 @@ fn boundary_rename_rewrites_caller_imports_end_to_end() {
     });
     write_yaml_file(&spec_path, &spec);
     let result = run_debundler(&spec_path, &[]);
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     let caller =
         fs::read_to_string(ws.out_root.join("app/static/app/entry.js")).expect("caller emitted");
@@ -2535,13 +2298,7 @@ fn suppress_vendor_chunk_passes_through_unchanged() {
     });
     write_yaml_file(&spec_path, &spec);
     let result = run_debundler(&spec_path, &[]);
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
         .expect("vendor chunk emitted");
@@ -2592,13 +2349,7 @@ fn suppress_vendor_chunk_skips_specifier_canonicalization() {
     });
     write_yaml_file(&spec_path, &spec);
     let result = run_debundler(&spec_path, &[]);
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
         .expect("vendor chunk emitted");
@@ -2640,33 +2391,18 @@ fn full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy() {
     );
 
     let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
-            CHUNK_PATH: {
-                "level": "swap",
-                "identity": "lib/dist/index.mjs",
-                "package": PACKAGE_NAME,
-                "version": "1.0.0",
-                "subpath": "dist/index.mjs",
-            },
+    let spec = ws.transform_spec(json!({
+        CHUNK_PATH: {
+            "level": "swap",
+            "identity": "lib/dist/index.mjs",
+            "package": PACKAGE_NAME,
+            "version": "1.0.0",
+            "subpath": "dist/index.mjs",
         },
-        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": &ws.manifest_path,
-            "output_wrapper_dir": &ws.wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": &ws.out_root },
-    });
+    }));
     write_yaml_file(&spec_path, &spec);
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
-    assert!(
-        result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        result.status.code(),
-        result.stdout,
-        result.stderr,
-    );
+    assert_success(&result);
 
     assert!(
         !ws.out_root.join("app/static/lib-X").exists(),
@@ -2717,13 +2453,7 @@ fn full_swap_without_wrapper_accepts_named_default_alias_when_upstream_has_defau
         upstream_source: "const d = 1;\nexport default d;\n",
         default_export_aliases: &[],
     });
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
 }
 
 // ─── wrapper synthetic-local collisions ─────────────────────────────────
@@ -2737,13 +2467,7 @@ fn named_from_default_wrapper_avoids_upstream_default_local_collision() {
         upstream_source: "const _d = \"taken\";\nexport default { ping: () => _d };\n",
         chunk_source: "export { ping } from \"lib\";\n",
     });
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let probe_path = fixture
         .wrapper_path
         .parent()
@@ -2761,13 +2485,7 @@ fn named_from_module_default_wrapper_avoids_upstream_default_local_collision() {
     let upstream_source = "const __vendor_default__ = \"taken\";\n\
                            export default function getter() { return __vendor_default__; }\n";
     let fixture = run_named_from_module_default_fixture(upstream_source);
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let probe_path = fixture
         .wrapper_path
         .parent()
@@ -2820,13 +2538,7 @@ fn named_from_module_default_accepts_verified_default_aliases() {
         upstream_source: "export default function f() { return \"val\"; }\n",
         default_export_aliases: &[],
     });
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let probe_path = fixture
         .wrapper_path
         .parent()
@@ -2879,13 +2591,7 @@ fn named_from_module_default_admits_authored_default_alias() {
         upstream_source: "export default function f() { return \"cy\"; }\n",
         default_export_aliases: &["c"],
     });
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let probe_path = fixture
         .wrapper_path
         .parent()
@@ -2909,13 +2615,7 @@ fn named_from_json_default_generates_named_pulls_from_json_keys() {
         upstream_source: "{ \"version\": \"1.2.3\", \"flag\": true }\n",
         default_export_aliases: &[],
     });
-    assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
-        fixture.result.stderr,
-    );
+    assert_success(&fixture.result);
     let wrapper_source = fs::read_to_string(&fixture.wrapper_path).expect("wrapper exists");
     assert!(
         wrapper_source.contains("export const version = _d.version;")
@@ -2957,4 +2657,57 @@ fn named_from_json_default_rejects_names_missing_from_json() {
         "expected JSON wrapper shape mismatch in stderr:\n{}",
         fixture.result.stderr,
     );
+}
+
+fn bundled_package(
+    version: &str,
+    subpath: &str,
+    bundle_export: &str,
+    namespace: Option<&str>,
+) -> BundledPartialSwapPackage {
+    BundledPartialSwapPackage {
+        version: version.into(),
+        subpath: subpath.into(),
+        bundle_export: bundle_export.into(),
+        namespace: namespace.map(str::to_owned),
+    }
+}
+
+fn swap_symbol(
+    package: &str,
+    kind: PartialSwapKind,
+    upstream_export: Option<&str>,
+    local: Option<&str>,
+) -> PartialSwapSymbol {
+    PartialSwapSymbol {
+        package: package.into(),
+        kind,
+        upstream_export: upstream_export.map(str::to_owned),
+        local: local.map(str::to_owned),
+    }
+}
+
+fn bundled_vendor(
+    identity: &str,
+    bundle: &Path,
+    packages: &[(&str, BundledPartialSwapPackage)],
+    symbols: &[(&str, PartialSwapSymbol)],
+) -> VendorMark {
+    VendorMark {
+        identity: identity.into(),
+        role: Default::default(),
+        level: VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
+            bundle: BundledPartialSwapBundle {
+                path: bundle.into(),
+            },
+            packages: packages
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+            symbols: symbols
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+        }),
+    }
 }
