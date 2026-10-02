@@ -42,24 +42,13 @@ impl Default for CpSatSettings {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+#[error("{name} must be {expected}, got `{value}`")]
 pub struct InvalidSetting {
     name: &'static str,
     value: String,
     expected: &'static str,
 }
-
-impl fmt::Display for InvalidSetting {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} must be {}, got `{}`",
-            self.name, self.expected, self.value
-        )
-    }
-}
-
-impl Error for InvalidSetting {}
 
 impl CpSatSettings {
     /// The settings the process environment asks for; an unset or empty

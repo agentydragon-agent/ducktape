@@ -956,7 +956,8 @@ rust_library(
     srcs = ["selectors/resolution/selector_ir.rs"],
     crate_root = "selectors/resolution/selector_ir.rs",
     edition = "2024",
-    deps = [":analysis"],
+    deps = [
+        "@crates//:thiserror",":analysis"],
 )
 
 rust_test(
@@ -971,6 +972,7 @@ rust_library(
     crate_root = "selectors/resolution/selector_constraint_backend.rs",
     edition = "2024",
     deps = [
+        "@crates//:thiserror",
         ":analysis",
         ":selector_ir",
         ":selector_outcome",
@@ -1078,6 +1080,7 @@ rust_library(
     crate_root = "selectors/resolution/selector_ortools_cpsat_model.rs",
     edition = "2024",
     deps = [
+        "@crates//:thiserror",
         ":cp_model_rust_proto",
         ":selector_constraint_backend",
     ],
@@ -1089,6 +1092,7 @@ rust_library(
     crate_root = "selectors/resolution/selector_ortools_cpsat_backend.rs",
     edition = "2024",
     deps = [
+        "@crates//:thiserror",
         ":cp_model_rust_proto",
         ":ortools_cpsat_ffi",
         ":sat_parameters_rust_proto",
@@ -1152,6 +1156,7 @@ rust_library(
     crate_root = "selectors/resolution/selector_ir_lowering.rs",
     edition = "2024",
     deps = [
+        "@crates//:thiserror",
         ":analysis",
         ":selector_ir",
         ":spec",

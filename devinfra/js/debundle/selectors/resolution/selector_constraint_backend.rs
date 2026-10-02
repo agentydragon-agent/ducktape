@@ -5,7 +5,6 @@
 //! or sparse candidate sets, and allowed tuples are stored as interned ids.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::error::Error;
 use std::hash::{Hash, Hasher};
 
 use analysis::OwnerId;
