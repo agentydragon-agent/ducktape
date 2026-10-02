@@ -511,7 +511,7 @@ def test_static_managed_agent_permission_parity(
 ) -> None:
     rbac, config = agent_permissions
     static = rbac.identity(kind, name, namespace)
-    managed = rbac.managed(config, preset)
+    managed = rbac.managed(config, preset, namespace="agentplane-staging")
     # The sole known profile drift. Literal scope/resource/name/verb on purpose:
     # referencing the Coinbase Role here would silently accept its expansion.
     managed_only = (
@@ -525,9 +525,9 @@ def test_static_managed_agent_permission_parity(
 
 def test_agent_permission_superset_and_finance_parity(agent_permissions: tuple[Rbac, dict]) -> None:
     rbac, config = agent_permissions
-    public = rbac.managed(config, "public-coder")
-    haku = rbac.managed(config, "haku")
-    finance = rbac.managed(config, "finance-agent")
+    public = rbac.managed(config, "public-coder", namespace="agentplane-staging")
+    haku = rbac.managed(config, "haku", namespace="agentplane-staging")
+    finance = rbac.managed(config, "finance-agent", namespace="agentplane-staging")
     assert not uncovered(public, haku)
     assert not uncovered(public, finance)
     assert not uncovered(finance, public)
@@ -570,7 +570,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
 
 def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
     rbac, config = agent_permissions
-    profiles = {name: rbac.managed(config, name) for name in ("public-coder", "finance-agent", "haku")}
+    profiles = {name: rbac.managed(config, name, namespace="agentplane-staging") for name in ("public-coder", "finance-agent", "haku")}
     profiles.update(
         {
             "public-static": rbac.identity("Group", "haku:access-profile:public-coder"),

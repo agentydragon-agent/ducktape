@@ -89,9 +89,7 @@ class Rbac:
                 names: tuple[str | None, ...] = tuple(rule.resource_names) or (None,)
                 permissions.update(
                     Permission(namespace, group, resource, verb, name)
-                    for group, resource, verb, name in product(
-                        rule.api_groups, rule.resources, rule.verbs, names
-                    )
+                    for group, resource, verb, name in product(rule.api_groups, rule.resources, rule.verbs, names)
                 )
         return permissions
 
@@ -99,8 +97,15 @@ class Rbac:
         subjects = {(kind, name, namespace), ("Group", "system:authenticated", "")}
         if kind == "ServiceAccount":
             subjects.update(
-                {("Group", "system:serviceaccounts", ""), ("Group", f"system:serviceaccounts:{namespace}", "")}
+                {
+                    ("Group", "system:serviceaccounts", ""),
+                    ("Group", f"system:serviceaccounts:{namespace}", ""),
+                    ("User", f"system:serviceaccount:{namespace}:{name}", ""),
+                }
             )
+        return self._subjects(subjects)
+
+    def _subjects(self, subjects: set[tuple[str, str, str]]) -> set[Permission]:
         permissions: set[Permission] = set()
         for binding in self.bindings:
             if any((s.kind, s.name, s.namespace) in subjects for s in binding.subjects):
@@ -110,8 +115,16 @@ class Rbac:
                 )
         return permissions
 
-    def managed(self, config: dict[str, Any], preset: str) -> set[Permission]:
-        permissions: set[Permission] = set()
+    def managed(self, config: dict[str, Any], preset: str, *, namespace: str) -> set[Permission]:
+        # Fresh sandbox SAs also inherit standing group bindings. Do not mistake
+        # the selectable catalog for their entire declarative authority.
+        permissions = self._subjects(
+            {
+                ("Group", "system:authenticated", ""),
+                ("Group", "system:serviceaccounts", ""),
+                ("Group", f"system:serviceaccounts:{namespace}", ""),
+            }
+        )
         names = config["sandbox_presets"][preset]["kubernetes_grants"]
         assert len(names) == len(set(names)), names
         for name in names:

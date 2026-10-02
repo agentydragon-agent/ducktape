@@ -72,6 +72,29 @@ def test_binding_scope_and_subjects_are_resolved_separately() -> None:
         rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name="reader"), "testing")
 
 
+def test_managed_profiles_include_standing_serviceaccount_group_bindings() -> None:
+    rbac = Rbac(
+        parse_k8s_resources(
+            [
+                {
+                    "kind": "Role",
+                    "metadata": {"name": "reader", "namespace": "testing"},
+                    "rules": [{"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]}],
+                },
+                {
+                    "kind": "RoleBinding",
+                    "metadata": {"name": "group-read", "namespace": "testing"},
+                    "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "reader"},
+                    "subjects": [{"kind": "Group", "name": "system:serviceaccounts:testing"}],
+                },
+            ]
+        )
+    )
+    config = {"sandbox_presets": {"public": {"kubernetes_grants": []}}, "kubernetes_grants": {}}
+    assert rbac.managed(config, "public", namespace="testing") == {Permission("testing", "", "pods", "get")}
+    assert not rbac.managed(config, "public", namespace="staging")
+
+
 def test_aggregation_is_not_silently_ignored() -> None:
     rbac = Rbac(
         parse_k8s_resources(
