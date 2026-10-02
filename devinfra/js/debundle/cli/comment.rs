@@ -4,7 +4,6 @@
 //! modes share one transition function. Changed YAML is reserialized; textual
 //! layout and YAML comments are not an editing contract.
 
-
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
