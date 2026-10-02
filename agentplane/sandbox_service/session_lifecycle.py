@@ -6,8 +6,8 @@ from google.protobuf.json_format import ParseDict
 
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient, RunnerError
-from agentplane.sandbox_service.models import SessionDestination
 from agentplane.sandbox_service.instructions import combine_instructions
+from agentplane.sandbox_service.models import SessionDestination
 from agentplane.sandbox_service.session_config import SandboxBinding
 
 # gazelle:include_dep @pypi//protobuf

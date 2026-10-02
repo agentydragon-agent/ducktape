@@ -1,12 +1,22 @@
 """Read-only projections of persisted Sandbox/Pod resources, shared with UI informers."""
+
+import json
 from collections.abc import Iterable
 from datetime import datetime
 from uuid import UUID
-import json
+
 from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field
+
 from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant
-from agentplane.sandbox_service.models import Condition, ContainerStatus, OperatingMode, PodStatus, ProvisioningState, SandboxView
+from agentplane.sandbox_service.models import (
+    Condition,
+    ContainerStatus,
+    OperatingMode,
+    PodStatus,
+    ProvisioningState,
+    SandboxView,
+)
 from agentplane.sandbox_service.session_config import SandboxBinding
 from agentplane.subjects import ServiceAccountRef
 
@@ -16,6 +26,7 @@ PROVISIONING_ANNOTATION = "agentplane.allegedly.works/pending-launch-grants"
 KUBERNETES_GRANTS_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants"
 KUBERNETES_GRANTS_READY_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-ready"
 KUBERNETES_GRANTS_ERROR_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-error"
+
 
 class _ObjectMeta(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -170,5 +181,3 @@ def _pod_ready(pod: k8s_client.V1Pod) -> bool:
     if pod.status is None or pod.status.conditions is None:
         return False
     return any(condition.type == "Ready" and condition.status == "True" for condition in pod.status.conditions)
-
-

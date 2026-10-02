@@ -22,13 +22,19 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
+from agentplane.sandbox_service.testing.fake_inventory import (
+    NAMESPACE,
+    FakeCoreV1Api,
+    FakeCustomObjectsApi,
+    pod,
+    sandbox,
+)
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.grpc_service import service
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
-from util.kubernetes import CustomObjectsClient
 from util.agent_sandbox import SANDBOX_API
+from util.kubernetes import CustomObjectsClient
 
 TOKEN = "test-consumer-sandbox-service-token"
 AUDIENCE = "test-consumer-sandbox-service"
@@ -37,14 +43,16 @@ MANAGER = ServiceAccountRef(namespace=NAMESPACE, name="test-integration-app")
 
 class Authentication:
     async def create_token_review(self, body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
-        return k8s_client.V1TokenReview(status=k8s_client.V1TokenReviewStatus(
-            authenticated=body.spec.token == TOKEN,
-            audiences=[AUDIENCE],
-            user=k8s_client.V1UserInfo(
-                username=f"system:serviceaccount:{MANAGER.namespace}:{MANAGER.name}",
-                extra={POD_NAME_CLAIM: ["test-app-pod"], POD_UID_CLAIM: ["test-app-pod-uid"]},
-            ),
-        ))
+        return k8s_client.V1TokenReview(
+            status=k8s_client.V1TokenReviewStatus(
+                authenticated=body.spec.token == TOKEN,
+                audiences=[AUDIENCE],
+                user=k8s_client.V1UserInfo(
+                    username=f"system:serviceaccount:{MANAGER.namespace}:{MANAGER.name}",
+                    extra={POD_NAME_CLAIM: ["test-app-pod"], POD_UID_CLAIM: ["test-app-pod-uid"]},
+                ),
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -94,16 +102,19 @@ def backend(
         yield Endpoint(target, token_file)
 
 
-
-def seed_runner(custom: FakeCustomObjectsApi, core: FakeCoreV1Api, name: str) -> tuple[dict[str, Any], k8s_client.V1Pod]:
+def seed_runner(
+    custom: FakeCustomObjectsApi, core: FakeCoreV1Api, name: str
+) -> tuple[dict[str, Any], k8s_client.V1Pod]:
     """Controller-shaped Sandbox and Pod, suitable for real destination authorization."""
     raw = sandbox(name)
     running = pod(name, phase="Running", ready=True, ip="127.0.0.1")
     running.metadata.namespace = NAMESPACE
     running.metadata.uid = f"test-pod-{name}"
-    running.metadata.owner_references = [k8s_client.V1OwnerReference(
-        api_version=SANDBOX_API.api_version, kind="Sandbox", name=name, uid=raw["metadata"]["uid"], controller=True,
-    )]
+    running.metadata.owner_references = [
+        k8s_client.V1OwnerReference(
+            api_version=SANDBOX_API.api_version, kind="Sandbox", name=name, uid=raw["metadata"]["uid"], controller=True
+        )
+    ]
     running.spec.service_account_name = name
     custom.objects[("sandboxes", name)] = raw
     core.pods[name] = running

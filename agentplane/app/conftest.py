@@ -23,17 +23,18 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
-from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -42,12 +43,10 @@ from agentplane.runner import protocol_pb2
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
 from agentplane.runner.conftest import config, endpoint, harness, model, runner, spec, workspace
-from agentplane.app.egress_access import EgressAccess
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.testing.backend import Endpoint, backend
-from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
@@ -55,6 +54,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
 )
+from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 
@@ -266,11 +266,23 @@ def sandbox_runner_port() -> int:
 
 @pytest.fixture
 def sandbox_endpoint(
-    custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, default_policies: list[str],
-    sandbox_grants: dict[str, KubernetesGrant], sandbox_rbac: FakeRbac, tmp_path: Path, sandbox_runner_port: int,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    default_policies: list[str],
+    sandbox_grants: dict[str, KubernetesGrant],
+    sandbox_rbac: FakeRbac,
+    tmp_path: Path,
+    sandbox_runner_port: int,
 ) -> Iterator[Endpoint]:
-    with backend(custom_objects, core_v1, tmp_path / "sandbox-token", default_policies=default_policies,
-                 grants=sandbox_grants, rbac=sandbox_rbac, runner_port=sandbox_runner_port) as endpoint:
+    with backend(
+        custom_objects,
+        core_v1,
+        tmp_path / "sandbox-token",
+        default_policies=default_policies,
+        grants=sandbox_grants,
+        rbac=sandbox_rbac,
+        runner_port=sandbox_runner_port,
+    ) as endpoint:
         yield endpoint
 
 

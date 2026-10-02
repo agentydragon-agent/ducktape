@@ -23,11 +23,7 @@ from agentplane.app.action_policy import ActionPolicyInventory, BindingProvenanc
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
 from agentplane.sandbox_service.kubernetes_views import sandbox_view
-from agentplane.sandbox_service.testing.fake_inventory import (
-    NAMESPACE,
-    FakeCustomObjectsApi,
-    sandbox,
-)
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, sandbox
 
 LIVE = sandbox_view(sandbox("live"), None)
 

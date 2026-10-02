@@ -1,5 +1,6 @@
 """Real Kubernetes clients against a local API server, with no integration-app fixtures."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -9,15 +10,15 @@ from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
+from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
+from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 
@@ -72,21 +73,29 @@ async def kubernetes() -> AsyncIterator[Cluster]:
 
 
 @asynccontextmanager
-async def authenticated_service(cluster: Cluster, runner_port: int, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
+async def authenticated_service(
+    cluster: Cluster, runner_port: int, token_file: Path
+) -> AsyncIterator[SandboxServiceClient]:
     manager = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-app")
     token, audience = "test-app-service-token", "test-app-sandbox-service"
-    token_file.write_text(token)
+    await asyncio.to_thread(token_file.write_text, token)
     cluster.fake.tokens[token] = TokenVerdict(
         username=f"system:serviceaccount:{manager.namespace}:{manager.name}",
-        pod_name="test-app-pod", pod_uid="test-app-pod-uid", audiences=(audience,),
+        pod_name="test-app-pod",
+        pod_uid="test-app-pod-uid",
+        audiences=(audience,),
     )
     resources = Resources(
         principals=WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(cluster.api), audience=audience,
+            authentication=k8s_client.AuthenticationV1Api(cluster.api),
+            audience=audience,
             allowed_service_account_namespaces={SANDBOX_NAMESPACE},
         ),
-        destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port, frozenset({manager})),
-        manager_accounts=frozenset({manager}), platform_instructions="Backend guidance for app-launched sessions.",
+        destinations=DestinationResolver(
+            cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port, frozenset({manager})
+        ),
+        manager_accounts=frozenset({manager}),
+        platform_instructions="Backend guidance for app-launched sessions.",
         follow_lease_s=1,
     )
     async with service_client(resources, token_file) as client:

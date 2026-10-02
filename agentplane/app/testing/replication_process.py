@@ -19,6 +19,7 @@ from enum import StrEnum
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
@@ -34,6 +35,7 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
@@ -41,26 +43,18 @@ from agentplane.app.conftest import TEST_REASONING_EFFORTS
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.sandbox_service.testing.backend import backend, seed_runner
-from agentplane.sandbox_service.egress_views import EgressReader
-from tempfile import TemporaryDirectory
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.protocol import event_log_pb2
-from agentplane.app.egress_access import EgressAccess
+from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.models import ProvisioningState
 from agentplane.sandbox_service.session_config import Harness
-from agentplane.sandbox_service.testing.fake_inventory import (
-    NAMESPACE,
-    FakeCoreV1Api,
-    FakeCustomObjectsApi,
-    pod,
-    sandbox,
-)
+from agentplane.sandbox_service.testing.backend import backend, seed_runner
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
@@ -273,7 +267,10 @@ async def _serve(
             running.status.conditions[0].status = "False"
         index.sandboxes[SANDBOX] = raw
         index.pods[SANDBOX] = running
-    with TemporaryDirectory() as directory, backend(custom, core, Path(directory) / "token", runner_port=runner_port) as endpoint:
+    with (
+        TemporaryDirectory() as directory,
+        backend(custom, core, Path(directory) / "token", runner_port=runner_port) as endpoint,
+    ):
         inventory = endpoint.client()
         runners = Runners(index, inventory)
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
@@ -286,7 +283,9 @@ async def _serve(
         )
         async with (
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
-            httpx.AsyncClient(base_url=electric_url or "http://test-unused-electric.invalid", timeout=65) as electric_http,
+            httpx.AsyncClient(
+                base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
+            ) as electric_http,
         ):
             egress = EgressAccess(EgressReader(namespace=NAMESPACE, custom_objects=custom), inventory)
             action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
@@ -323,7 +322,6 @@ async def _serve(
                     if electric_url is not None
                     else None
                 ),
-
                 event_logs=event_logs,
                 content=content,
                 database_updates=database_updates,
@@ -344,7 +342,9 @@ async def _serve(
                 with socket.socket() as listener:
                     listener.bind(("127.0.0.1", 0))
                     url = f"http://127.0.0.1:{listener.getsockname()[1]}"
-                    await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(sockets=[listener])
+                    await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(
+                        sockets=[listener]
+                    )
             finally:
                 await ingester.close()
                 await runners.close()

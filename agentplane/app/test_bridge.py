@@ -32,6 +32,7 @@ from agentplane.app.agent_runtime.events.stream import follow
 from agentplane.app.agent_runtime.ingestion import Feed, Ingester, Ingestion
 from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.app.agent_runtime.runner.bridge import RunnerAdmissionTimeoutError, RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadOperationalState
@@ -41,21 +42,20 @@ from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH, TEST_REASONING_EFF
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
-from agentplane.app.egress_access import EgressAccess
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
-from agentplane.sandbox_service.testing.fake_inventory import FakeCustomObjectsApi, FakeCoreV1Api, pod, sandbox
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
+from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -144,7 +144,9 @@ def sandbox_runner_port(runner: RunnerHandle) -> int:
 
 
 @pytest.fixture
-async def local_runners(live_index: LiveIndex, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> AsyncIterator[Runners]:
+async def local_runners(
+    live_index: LiveIndex, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> AsyncIterator[Runners]:
     """`SANDBOX` running, its Pod at the local runner's address."""
     live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
     runners = Runners(live_index, sandbox_endpoint.client())
@@ -196,7 +198,6 @@ async def app_url(
         live_index,
         action_policy,
         reviewer=reviewer,
-
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -1336,7 +1337,9 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
 
 
 async def test_inventory_change_discovers_existing_runner_session_without_browser_open(
-    sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api,
+    sandbox_endpoint: Endpoint,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
     runner: RunnerHandle,
     store: ThreadStore,
     event_logs: EventLogStore,

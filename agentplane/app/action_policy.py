@@ -1,14 +1,7 @@
-"""What the Action Service auto-decides for a Sandbox, as the app writes and shows it: the
-ActionPolicyBinding it writes at launch, and the service's own answer for the Sandbox's UID.
+"""Read-only UI composition of Action Service policy views.
 
-The Action Service (agentplane/action_service) enforces these resources; the app writes one
-binding per Sandbox it creates, from the preset's set list, and asks the service what it would
-resolve at admission -- the same resolution a Decision uses, read through the operator surface.
-The one thing the app adds is who wrote each binding, decided from labels the service reports and
-does not interpret. Nothing here is in the decision path, and nothing edits a binding at runtime.
-
-The kinds themselves are `agentplane.action_service.policies.resources`, shared with the service
-that enforces them, so a set the app refuses to bind is one the service would not find either.
+Sandbox Service owns launch-time policy binding mutations. The app adds provenance to the
+Action Service's answer; the historical integration-app ownership label is retained in staging.
 """
 
 from __future__ import annotations
@@ -28,7 +21,7 @@ from agentplane.action_service.policy_view import (
     SubjectBindingView,
 )
 from agentplane.app.action_federation import UpstreamFailure
-from agentplane.sandbox_service.action_policy_views import ActionPolicyReader, MANAGED_BY_APP, MANAGED_BY_LABEL
+from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL, ActionPolicyReader
 from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
 from agentplane.subjects import ServiceAccountRef
 

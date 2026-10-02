@@ -12,8 +12,6 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.kubernetes_views import KUBERNETES_GRANTS_ANNOTATION, sandbox_view
-from agentplane.sandbox_service.models import NewSandbox, ProvisioningState
 from agentplane.sandbox_service.kubernetes_bindings import (
     KUBERNETES_BINDINGS_FINALIZER,
     KubernetesBindings,
@@ -31,6 +29,8 @@ from agentplane.sandbox_service.kubernetes_grants import (
     UnknownKubernetesGrantError,
     resolve_grants,
 )
+from agentplane.sandbox_service.kubernetes_views import KUBERNETES_GRANTS_ANNOTATION, sandbox_view
+from agentplane.sandbox_service.models import NewSandbox, ProvisioningState
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,

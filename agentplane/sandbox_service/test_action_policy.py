@@ -1,19 +1,29 @@
 """Service-owned policy binding mutation tests."""
+
 from typing import cast
+
 import pytest
 import pytest_bazel
+
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL, UnknownPolicySetError
 from agentplane.sandbox_service.kubernetes_views import sandbox_view
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, action_policy_set, sandbox
+from agentplane.sandbox_service.testing.fake_inventory import (
+    NAMESPACE,
+    FakeCustomObjectsApi,
+    action_policy_set,
+    sandbox,
+)
 from util.kubernetes import CustomObjectsClient
 
 LIVE = sandbox_view(sandbox("live"), None)
 READS = {"type": "exact_actions", "actions": {"github": ["search_code", "get_file_contents"]}}
 
+
 @pytest.fixture
 def inventory(custom_objects: FakeCustomObjectsApi) -> ActionPolicyBindings:
     return ActionPolicyBindings(namespace=NAMESPACE, custom_objects=cast(CustomObjectsClient, custom_objects))
+
 
 def _seed(custom_objects: FakeCustomObjectsApi) -> None:
     custom_objects.objects[("actionpolicysets", "reads")] = action_policy_set(
@@ -69,7 +79,6 @@ async def test_a_binding_naming_a_set_the_namespace_lacks_writes_nothing(
     with pytest.raises(UnknownPolicySetError):
         await inventory.require_policy_sets(["vanished"])
     await inventory.require_policy_sets(["reads", "broken"])
-
 
 
 if __name__ == "__main__":

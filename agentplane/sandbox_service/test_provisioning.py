@@ -16,12 +16,12 @@ from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.models import NewSandbox, ProvisioningState, SandboxDestination
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
+from agentplane.sandbox_service.models import NewSandbox, ProvisioningState, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,

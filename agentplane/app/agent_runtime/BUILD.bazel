@@ -26,7 +26,7 @@ py_library(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",
         "//agentplane/runner:protocol_pb2",
-        "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:session_access",
         "@pypi//grpcio",
         "@pypi//protobuf",

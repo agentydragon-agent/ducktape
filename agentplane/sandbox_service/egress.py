@@ -1,9 +1,23 @@
 """Service-owned egress grant provisioning."""
+
 from collections.abc import Sequence
+
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import unique_everseen
+
 from agentplane.egress.resources import EgressBinding
-from agentplane.sandbox_service.egress_views import (BINDINGS_PLURAL, EGRESS_API, FLUX_KUSTOMIZATION_LABEL, BindingNotFoundError, BindingView, EgressReader, FluxOwnedBindingError, PolicyView, UnknownPolicyError, binding_view)
+from agentplane.sandbox_service.egress_views import (
+    BINDINGS_PLURAL,
+    EGRESS_API,
+    FLUX_KUSTOMIZATION_LABEL,
+    BindingNotFoundError,
+    BindingView,
+    EgressReader,
+    FluxOwnedBindingError,
+    PolicyView,
+    UnknownPolicyError,
+    binding_view,
+)
 from agentplane.sandbox_service.models import SandboxView
 from agentplane.sandbox_service.owned_binding import create_binding
 from util.agent_sandbox import SANDBOX_API
@@ -13,7 +27,9 @@ from util.kubernetes import CustomObjectsClient
 class EgressInventory(EgressReader):
     """Service-owned mutations of Kubernetes policy bindings."""
 
-    def __init__(self, *, namespace: str, custom_objects: CustomObjectsClient, default_policies: Sequence[str] = ()) -> None:
+    def __init__(
+        self, *, namespace: str, custom_objects: CustomObjectsClient, default_policies: Sequence[str] = ()
+    ) -> None:
         super().__init__(namespace=namespace, custom_objects=custom_objects)
         self._default_policies = default_policies
 
@@ -22,11 +38,9 @@ class EgressInventory(EgressReader):
         picked. Picking a default again is not an error and does not name it twice."""
         return list(unique_everseen([*self._default_policies, *picked]))
 
-
     async def require_policies(self, names: list[str]) -> None:
         """Every name must resolve to a policy the namespace holds, or nothing is written."""
         _require_known(names, await self._policies_by_name())
-
 
     async def revoke(self, name: str) -> None:
         """Delete a runtime binding, which is how a grant is taken back; a Flux-applied one is
@@ -36,7 +50,6 @@ class EgressInventory(EgressReader):
         await self._custom_objects.delete_namespaced_custom_object(
             *EGRESS_API, self._namespace, BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
-
 
     async def grant(self, sandbox: SandboxView, policies: list[str], *, initial: bool = False) -> BindingView:
         """One binding of the ServiceAccount the sandbox runs as to the policies, owned by the
@@ -79,7 +92,6 @@ class EgressInventory(EgressReader):
         )
         return binding_view(EgressBinding.model_validate(created), known)
 
-
     async def _binding(self, name: str) -> EgressBinding:
         try:
             raw = await self._custom_objects.get_namespaced_custom_object(
@@ -92,8 +104,6 @@ class EgressInventory(EgressReader):
         return EgressBinding.model_validate(raw)
 
 
-
 def _require_known(names: list[str], policies: dict[str, PolicyView]) -> None:
     if unknown := [name for name in names if name not in policies]:
         raise UnknownPolicyError(unknown)
-

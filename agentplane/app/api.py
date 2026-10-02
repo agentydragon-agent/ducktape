@@ -76,8 +76,13 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.client import OpenTimeoutError, RunnerError
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.egress_views import BindingNotFoundError, BindingView, FluxOwnedBindingError, PolicyView, UnknownPolicyError
-from agentplane.sandbox_service.models import NewSandbox, SandboxNotFoundError, SandboxRunningError, SandboxView
+from agentplane.sandbox_service.egress_views import (
+    BindingNotFoundError,
+    BindingView,
+    FluxOwnedBindingError,
+    PolicyView,
+    UnknownPolicyError,
+)
 from agentplane.sandbox_service.kubernetes_grants import (
     DuplicateKubernetesGrantError,
     KubernetesGrant,
@@ -86,6 +91,7 @@ from agentplane.sandbox_service.kubernetes_grants import (
     grant_views,
     resolve_grants,
 )
+from agentplane.sandbox_service.models import NewSandbox, SandboxNotFoundError, SandboxRunningError, SandboxView
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.subjects import ServiceAccountRef
 
@@ -691,9 +697,7 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
 
 
 @threads.post("/{thread_id}/resume")
-async def resume_thread(
-    store: Store, bridge: runner_bridge.Bridge, thread_id: UUID
-) -> dict[str, object]:
+async def resume_thread(store: Store, bridge: runner_bridge.Bridge, thread_id: UUID) -> dict[str, object]:
     thread = await store.get_thread(thread_id)
     if thread is None:
         raise ThreadNotFoundError(thread_id)
@@ -1120,17 +1124,6 @@ def create_app(
         _request: Request, error: runner_bridge.RunnerAdmissionTimeoutError | OpenTimeoutError
     ) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_504_GATEWAY_TIMEOUT, content={"detail": str(error)})
-
-    @app.exception_handler(grpc.aio.AioRpcError)
-    async def _runner_unavailable(_request: Request, error: grpc.aio.AioRpcError) -> JSONResponse:
-        # The Pod has an address but nothing answers on it yet: a runner still starting after a
-        # resume, or one that just died. Any other gRPC failure is a bug and stays a 500.
-        if error.code() != grpc.StatusCode.UNAVAILABLE:
-            raise error
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"detail": f"the sandbox's runner is not answering: {error.details()}"},
-        )
 
     @app.exception_handler(RunnerError)
     async def _runner_refused(_request: Request, error: RunnerError) -> JSONResponse:

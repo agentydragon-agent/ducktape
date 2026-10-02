@@ -27,7 +27,9 @@ async def service(resources: Resources) -> AsyncIterator[str]:
 @asynccontextmanager
 async def service_client(resources: Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
     async with service(resources) as target:
-        client = SandboxServiceClient(target, namespace=resources.destinations.inventory.namespace, token_file=token_file)
+        client = SandboxServiceClient(
+            target, namespace=resources.destinations.inventory.namespace, token_file=token_file
+        )
         try:
             yield client
         finally:

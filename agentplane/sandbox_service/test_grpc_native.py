@@ -21,9 +21,9 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.models import SandboxDestination
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
+from agentplane.sandbox_service.models import SandboxDestination
 from agentplane.sandbox_service.session_config import Harness, SandboxBinding, ThreadDefaults
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -199,7 +199,9 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
             stopped.cancel()
     # Stop the service, change its configuration and stored defaults, and recover solely from the runner.
     set_binding(cluster, SandboxBinding(bootstrap="exit 42", thread_defaults=ThreadDefaults(model="changed")))
-    async with service_client(replace(resources, platform_instructions="New platform guidance."), token_file) as restarted:
+    async with service_client(
+        replace(resources, platform_instructions="New platform guidance."), token_file
+    ) as restarted:
         runner = restarted.runner(DESTINATION)
         resumed = await runner.resume(SESSION)
         assert resumed.spec == opened.spec

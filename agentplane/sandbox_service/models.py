@@ -11,9 +11,7 @@ from agentplane.sandbox_service.kubernetes_grants import DnsName, ResolvedGrant
 from agentplane.sandbox_service.session_config import SandboxBinding, ThreadDefaults
 from agentplane.subjects import ServiceAccountRef
 
-Slug = Annotated[
-    str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)
-]
+Slug = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)]
 
 
 class OperatingMode(StrEnum):
@@ -143,5 +141,3 @@ class SandboxDestination(BaseModel):
 
 class SessionDestination(SandboxDestination):
     session_id: str = Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
-
-

@@ -6,21 +6,21 @@ import asyncio
 import socket
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock
 from uuid import UUID
 
 import httpx
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
-from kubernetes_asyncio import client as k8s_client
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
@@ -28,23 +28,20 @@ from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_h
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.sandbox_service.testing.backend import backend, seed_runner
-from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
-from pathlib import Path
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.unanswering_runner import UnansweringRunner
-from agentplane.app.egress_access import EgressAccess
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.session_config import Harness
+from agentplane.sandbox_service.testing.backend import backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
@@ -56,6 +53,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     pod,
     sandbox,
 )
+from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -192,7 +190,6 @@ def client(
         reviewer=reviewer,
         presets=TEST_PRESETS,
         electric=electric,
-
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -340,7 +337,7 @@ def test_kubernetes_grant_picker_requires_an_approved_name_and_operator(
 
 
 def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_account(
-    client: TestClient, sandbox_grants: dict[str, KubernetesGrant], sandbox_rbac: FakeRbac
+    client: TestClient, sandbox_grants: dict[str, KubernetesGrant], sandbox_rbac: FakeRbac, custom_objects: FakeCustomObjectsApi
 ) -> None:
     app = cast(Any, client.app)
     app.state.kubernetes_grants = {
@@ -613,7 +610,9 @@ def test_service_launch_failure_preserves_uncertainty(
 
 
 def test_a_runner_that_does_not_answer_is_a_503(
-    tmp_path: Path, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api,
+    tmp_path: Path,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
     inventory: SandboxServiceClient,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
@@ -633,7 +632,9 @@ def test_a_runner_that_does_not_answer_is_a_503(
     # A bound but never listening port refuses every connection for as long as the socket is open.
     with socket.socket() as closed_port:
         closed_port.bind(("127.0.0.1", 0))
-        with backend(custom_objects, core_v1, tmp_path / "failure-token", runner_port=closed_port.getsockname()[1]) as endpoint:
+        with backend(
+            custom_objects, core_v1, tmp_path / "failure-token", runner_port=closed_port.getsockname()[1]
+        ) as endpoint:
             runners = Runners(live_index, endpoint.client())
             app = create_app(
                 inventory,
@@ -651,7 +652,6 @@ def test_a_runner_that_does_not_answer_is_a_503(
                 live_index,
                 action_policy,
                 reviewer=reviewer,
-
                 event_logs=event_logs,
                 content=content,
                 database_updates=database_updates,
@@ -664,7 +664,9 @@ def test_a_runner_that_does_not_answer_is_a_503(
 
 
 async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
-    tmp_path: Path, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api,
+    tmp_path: Path,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
     monkeypatch: pytest.MonkeyPatch,
     inventory: SandboxServiceClient,
     store: ThreadStore,
@@ -706,7 +708,6 @@ async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
                 live_index,
                 action_policy,
                 reviewer=reviewer,
-
                 event_logs=event_logs,
                 content=content,
                 database_updates=database_updates,
@@ -932,7 +933,6 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         live_index,
         action_policy,
         reviewer=reviewer,
-
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -1010,7 +1010,6 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
         live_index,
         action_policy,
         reviewer=reviewer,
-
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -1068,7 +1067,6 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
         live_index,
         action_policy,
         reviewer=reviewer,
-
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -1129,7 +1127,6 @@ async def test_a_running_thread_cannot_be_archived(
         live_index,
         action_policy,
         reviewer=reviewer,
-
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,
@@ -1183,7 +1180,6 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
         live_index,
         action_policy,
         reviewer=reviewer,
-
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

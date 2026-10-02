@@ -23,6 +23,7 @@ from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnav
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
@@ -30,6 +31,7 @@ from agentplane.app.conftest import TEST_REASONING_EFFORTS, Replica, stored_logi
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
 from agentplane.app.live import (
     PODS_PLURAL,
@@ -51,9 +53,7 @@ from agentplane.app.operator_sessions import (
     SessionRow,
 )
 from agentplane.app.shutdown import Drain
-from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.runner import protocol_pb2
-from agentplane.app.egress_access import EgressAccess
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.models import ProvisioningState
 from agentplane.sandbox_service.session_config import Harness
@@ -324,7 +324,6 @@ def app(
         live_index,
         action_policy,
         reviewer=reviewer,
-
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

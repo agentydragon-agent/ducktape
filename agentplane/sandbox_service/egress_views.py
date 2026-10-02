@@ -144,7 +144,6 @@ class EgressReader:
             _ResourceList.model_validate(policies).items, _ResourceList.model_validate(credentials).items
         )
 
-
     async def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         """Every binding naming this subject, in name order."""
         policies, bindings, credentials = await asyncio.gather(
@@ -157,17 +156,11 @@ class EgressReader:
             subject=subject,
         )
 
-
     async def _policies_by_name(self) -> dict[str, PolicyView]:
         return {view.name: view for view in await self.list_policies()}
 
-
     async def _list(self, plural: str) -> dict[str, object]:
         return await self._custom_objects.list_namespaced_custom_object(*EGRESS_API, self._namespace, plural)
-
-
-
-
 
 
 # The projections, over objects however they were obtained: one request's list, or the copy

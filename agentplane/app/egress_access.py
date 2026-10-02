@@ -1,7 +1,7 @@
 """UI reads desired-state projections; all grant mutations go through Sandbox Service."""
 
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.egress_views import EgressReader, BindingView, PolicyView
+from agentplane.sandbox_service.egress_views import BindingView, EgressReader, PolicyView
 from agentplane.sandbox_service.models import SandboxView
 from agentplane.subjects import ServiceAccountRef
 

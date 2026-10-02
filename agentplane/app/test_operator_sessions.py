@@ -29,10 +29,10 @@ from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, request_session
-from agentplane.app.egress_access import EgressAccess
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 
@@ -127,7 +127,6 @@ async def app(
         live_index,
         action_policy,
         OIDC,
-
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

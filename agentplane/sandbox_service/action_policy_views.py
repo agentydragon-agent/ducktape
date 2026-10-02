@@ -52,7 +52,6 @@ class ActionPolicyReader:
         """Every set in the namespace, refused ones included, in name order."""
         return [set_view(policy_set) for name, policy_set in sorted((await self._policy_sets_by_name()).items())]
 
-
     async def _policy_sets_by_name(self) -> dict[str, ActionPolicySet | InvalidResource]:
         listed = await self._custom_objects.list_namespaced_custom_object(
             *ACTION_POLICY_API, self._namespace, POLICY_SETS_PLURAL
@@ -60,7 +59,3 @@ class ActionPolicyReader:
         return {
             parsed.metadata.name: parsed for parsed in map(parse_policy_set, _ResourceList.model_validate(listed).items)
         }
-
-
-
-

@@ -20,7 +20,7 @@ from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
+from agentplane.sandbox_service.client import ServiceError
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOXES_PLURAL

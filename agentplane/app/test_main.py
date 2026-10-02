@@ -24,20 +24,20 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester
 from agentplane.app.agent_runtime.models import SandboxIngestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
+from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.main import AppServer, Settings, SpaFiles, serve_then_close
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.shutdown import drain_of
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.egress_access import EgressAccess
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import pod, sandbox
@@ -214,7 +214,6 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
         live_index,
         action_policy,
         reviewer=reviewer,
-
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

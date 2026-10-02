@@ -1,7 +1,15 @@
 """Service-owned Action-policy grant provisioning."""
+
 from collections.abc import Sequence
+
 from agentplane.action_service.policies.resources import BINDINGS_PLURAL, ActionPolicySet, InvalidResource
-from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API, MANAGED_BY_APP, MANAGED_BY_LABEL, ActionPolicyReader, UnknownPolicySetError
+from agentplane.sandbox_service.action_policy_views import (
+    ACTION_POLICY_API,
+    MANAGED_BY_APP,
+    MANAGED_BY_LABEL,
+    ActionPolicyReader,
+    UnknownPolicySetError,
+)
 from agentplane.sandbox_service.models import SandboxView
 from agentplane.sandbox_service.owned_binding import create_binding
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
@@ -13,7 +21,6 @@ class ActionPolicyBindings(ActionPolicyReader):
     async def require_policy_sets(self, names: Sequence[str]) -> None:
         """Every name must resolve to a set the namespace holds, or nothing is written."""
         _require_known(names, await self._policy_sets_by_name())
-
 
     async def bind(self, sandbox: SandboxView, policy_sets: Sequence[str], *, initial: bool = False) -> None:
         """One binding of the ServiceAccount the sandbox runs as to the sets, owned by the Sandbox
@@ -54,8 +61,6 @@ class ActionPolicyBindings(ActionPolicyReader):
         )
 
 
-
 def _require_known(names: Sequence[str], policy_sets: dict[str, ActionPolicySet | InvalidResource]) -> None:
     if unknown := [name for name in names if name not in policy_sets]:
         raise UnknownPolicySetError(unknown)
-

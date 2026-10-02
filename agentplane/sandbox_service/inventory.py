@@ -10,21 +10,34 @@ place the runner Pod is defined, and no claim or warm pool sits in between.
 from __future__ import annotations
 
 import asyncio
-import json
 import secrets
 import string
 from typing import cast
+from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
-from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant
-from agentplane.sandbox_service.models import NewSandbox, OperatingMode, ProvisioningState, SandboxNotFoundError, SandboxRunningError, SandboxView
-from agentplane.sandbox_service.kubernetes_views import (MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION, PROVISIONING_ANNOTATION, KUBERNETES_GRANTS_ANNOTATION, KUBERNETES_GRANTS_READY_ANNOTATION, KUBERNETES_GRANTS_ERROR_ANNOTATION, SandboxResource, sandbox_view, sandbox_views)
+from agentplane.sandbox_service.kubernetes_views import (
+    KUBERNETES_GRANTS_ERROR_ANNOTATION,
+    KUBERNETES_GRANTS_READY_ANNOTATION,
+    MANAGED_LABEL,
+    PROVISIONING_ANNOTATION,
+    SANDBOX_BINDING_ANNOTATION,
+    SandboxResource,
+    sandbox_view,
+    sandbox_views,
+)
+from agentplane.sandbox_service.models import (
+    NewSandbox,
+    OperatingMode,
+    SandboxNotFoundError,
+    SandboxRunningError,
+    SandboxView,
+)
 from agentplane.sandbox_service.session_config import LaunchGrants, SandboxBinding
-from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
 from util.kubernetes import CustomObjectsClient
 
@@ -35,18 +48,6 @@ _SUFFIX_LENGTH = 5
 _SUFFIX_ALPHABET = string.ascii_lowercase + string.digits
 
 # Kubernetes-boundary models: the subset of each CR the inventory reads, parsed once off the wire.
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 class _TemplateSpec(BaseModel):
@@ -112,7 +113,7 @@ class SandboxInventory:
 
     async def get(self, name: str) -> SandboxView:
         sandbox = await self._sandbox(name)
-        return _view(sandbox, await self._pod(name))
+        return sandbox_view(sandbox, await self._pod(name))
 
     async def create(
         self, spec: NewSandbox, *, annotations: dict[str, str] | None = None, finalizers: list[str] | None = None
@@ -182,7 +183,7 @@ class SandboxInventory:
                 }
             },
         )
-        return _view(sandbox, None)
+        return sandbox_view(sandbox, None)
 
     async def pending_grants(self, name: str) -> LaunchGrants | None:
         raw = (await self._sandbox(name)).metadata.annotations.get(PROVISIONING_ANNOTATION)
@@ -254,7 +255,7 @@ class SandboxInventory:
             *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name, patch, _content_type=_MERGE_PATCH
         )
 
-    async def _sandbox(self, name: str) -> _Sandbox:
+    async def _sandbox(self, name: str) -> SandboxResource:
         """The named Sandbox, only if it is Agentplane's: an unmanaged one is not in this inventory."""
         try:
             raw = await self._custom_objects.get_namespaced_custom_object(
@@ -283,10 +284,6 @@ class SandboxInventory:
 # same row.
 
 
-
-
-
-
 def _running_as(pod_template: dict[str, object], service_account: str) -> dict[str, object]:
     """The template's Pod, running as this sandbox's own ServiceAccount rather than the shared one.
 
@@ -296,17 +293,3 @@ def _running_as(pod_template: dict[str, object], service_account: str) -> dict[s
     """
     spec = {**cast(dict[str, object], pod_template.get("spec", {})), "serviceAccountName": service_account}
     return {**pod_template, "spec": spec}
-
-
-
-
-
-
-
-
-
-
-
-
-
-

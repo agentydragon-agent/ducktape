@@ -47,11 +47,18 @@ from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.identity import CallerIdentity, require_caller
 from agentplane.app.shutdown import Shutdown
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
-from agentplane.sandbox_service.egress_views import BINDINGS_PLURAL, CREDENTIALS_PLURAL, EGRESS_API, POLICIES_PLURAL, BindingView, matching_bindings
+from agentplane.sandbox_service.egress_views import (
+    BINDINGS_PLURAL,
+    CREDENTIALS_PLURAL,
+    EGRESS_API,
+    POLICIES_PLURAL,
+    BindingView,
+    matching_bindings,
+)
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, sandbox_view, sandbox_views
-from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from agentplane.sandbox_service.models import SandboxView
 from agentplane.subjects import ServiceAccountRef
+from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
