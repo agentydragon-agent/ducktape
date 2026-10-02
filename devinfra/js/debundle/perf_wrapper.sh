@@ -156,6 +156,7 @@ run_perf_command() {
   local tmp_stderr="${output}.stderr.tmp"
 
   rm -f "${tmp_output}" "${tmp_stderr}" "${output}.failed.txt" "${output}.partial"
+  local status
   if timeout --foreground "${timeout_value}" \
     "${perf_cmd}" "$@" >"${tmp_output}" 2>"${tmp_stderr}"; then
     mv "${tmp_output}" "${output}"
@@ -165,9 +166,9 @@ run_perf_command() {
       rm -f "${tmp_stderr}" "${output}.stderr"
     fi
     return 0
+  else
+    status=$?
   fi
-
-  local status=$?
   {
     echo "${failure_message}"
     echo "status=${status}"

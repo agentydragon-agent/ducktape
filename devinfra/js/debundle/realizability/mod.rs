@@ -94,7 +94,8 @@ pub enum SccRejection {
     /// the full I-graph (constraining ∪ lazy back-edges) is cyclic
     /// and the ESM evaluation simulator proved a TDZ: some
     /// constraining edge's target evaluates at or after its source
-    /// under the materializer's actual import-order choices.
+    /// under the materializer's actual import-order choices. This also includes
+    /// the implicit entry-to-module edge: entry always evaluates last.
     EsmEvaluationTdz,
 }
 
@@ -132,6 +133,34 @@ impl RealizabilityVerdict {
         }
         out
     }
+}
+
+/// Entry imports every emitted module and evaluates last. A constraining edge
+/// into entry is therefore a TDZ/order violation even if the source I-graph has
+/// no return edge. Diagnose that two-node runtime cycle directly, without
+/// inflating the maintained I-condensation with universal entry fan-out.
+fn reject_entry_dependency(
+    verdict: &mut RealizabilityVerdict,
+    from: ModuleId,
+    residual: ModuleId,
+    mut owner_edges: Vec<OwnerEdgeId>,
+) {
+    if owner_edges.is_empty()
+        || verdict
+            .unrealizable_sccs
+            .iter()
+            .any(|scc| scc.core.modules.contains(&from) && scc.core.modules.contains(&residual))
+    {
+        return;
+    }
+    owner_edges.sort();
+    verdict.unrealizable_sccs.push(SccDiagnosis {
+        core: SccCore {
+            modules: BTreeSet::from([from, residual]),
+            constraining_owner_edges: owner_edges,
+        },
+        rejection: SccRejection::EsmEvaluationTdz,
+    });
 }
 
 /// Pure-function form. Builds the canonical constraining edge set,
@@ -277,6 +306,12 @@ pub fn check_realizability(
                 },
                 rejection: SccRejection::EsmEvaluationTdz,
             });
+        }
+    }
+
+    for (&(from, to), edges) in &canonical.edges {
+        if to == partition.residual() {
+            reject_entry_dependency(&mut verdict, from, to, edges.clone());
         }
     }
 
