@@ -117,5 +117,20 @@ def test_namespace_labels_do_not_create_bindings() -> None:
     assert docs[0]["metadata"]["labels"][AgentReadable.LOGS] == "true"
 
 
+def test_claude_ai_narrow_profile_selection() -> None:
+    assert {
+        grant for grant in access.catalog() if access.CLAUDE_AI in access.profile_subjects(grant)
+    } == {
+        "agentplane-testing-operator",
+        "agentplane-testing-login",
+        "haku-console-metadata",
+        "clickhouse-diagnostics",
+        "public-coder-agent-reader",
+        "public-coder-volsync-status",
+    }
+    assert access.CLAUDE_AI in access.TESTING_OPERATOR_SUBJECTS
+    assert "claude-ai" not in access.MANAGED_GRANTS
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

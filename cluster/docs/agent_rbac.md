@@ -140,25 +140,34 @@ Claude web or Haku: it is co-subjected only onto the secret-free
 `cluster-diagnostics-reader` binding. It does not receive a writable sandbox
 namespace or the separate `logs-configmaps-reader` class.
 
-### 6. claude-ai (OAuth Connections in agentplane-staging) — diagnostics, agent-readable namespaces, Coinbase key, testing app token
+### 6. claude-ai (OAuth Connections in agentplane-staging) — diagnostics, Coinbase key, testing operator
 
 The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections
 enrolled from the Claude.ai MCP connector (`cluster/cdk8s/agentplane/actions_staging_policies.py`);
 every sandbox it stamps through the sandbox Action group runs as it
-(`agentplane/action_service/sandbox/README.md`). Its access is the secret-free
-`cluster-diagnostics-reader` binding plus the metadata and pod-log readers of the
-`agent-readable-*` namespaces (section 4), and `get` on exactly one Secret,
-`agentplane-staging/coinbase-api-credentials`: the view-only Coinbase CDP key, which its
-OAuth-connected sandboxes sign Coinbase requests with because the egress proxy cannot.
-Agentplane-managed Haku runner Pods use per-Sandbox ServiceAccounts. Their Haku preset
-now selects the same single-Secret reader Role plus Coinbase egress; an operator may
-replace the preset selection. The static OAuth grant remains separate. This account may also `create` the
-`agentplane-testing/agentplane-agent` token, which identifies its sandboxes to the testing app
-and nothing else, for the acceptance suite's harness scenarios
-(`cluster/cdk8s/agentplane/rbac.py`'s `AcceptanceToken`). No writable namespace, no
-`logs-configmaps-reader` class. Distinct from Haku's own identities (`oidc-ksbx-groups:haku` et
-al.) even though a claude-ai sandbox may separately carry Haku's own Forgejo credential via
-`EgressBinding` — that authority is unrelated to this Kubernetes RBAC grant.
+(`agentplane/action_service/sandbox/README.md`). Its Kubernetes access includes:
+
+- The secret-free `cluster-diagnostics-reader` binding and metadata/pod-log readers of
+  the `agent-readable-*` namespaces (section 4).
+- The same narrow console metadata, ClickHouse diagnostics, public-coder diagnostics,
+  and public-coder VolSync status Roles used by public coder and Haku.
+- `agentplane-testing-operator` in **agentplane-testing**, including Sandbox lifecycle,
+  pod exec, ActionPolicy writes, and testing app-token minting.
+- `get` on two explicitly named Secrets: `agentplane-staging/coinbase-api-credentials`
+  (the view-only Coinbase CDP key) and
+  `public-coder-agent/agentplane-testing-acceptance-operator` (the testing login).
+  No general Secret enumeration or staging login access.
+
+These additions are explicit static profile selections in
+`cluster/cdk8s/agent_access_profiles.py`; they do not make `claude-ai` an alias for Haku.
+It has no Haku sandbox write authority or staging operator access. Its existing
+`AcceptanceToken` binding remains; the separate `haku-agent` ServiceAccount retains
+only that testing-token grant and does not receive these additions.
+
+Agentplane-managed Haku runner Pods use per-Sandbox ServiceAccounts and their own
+preset selections, which an operator may replace. Kubernetes access is also distinct
+from Forgejo credentials, egress policies, and Actions approvals; this profile does not
+change those authorities.
 
 ### Agentplane-managed Sandbox grants
 

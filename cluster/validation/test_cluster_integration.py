@@ -583,7 +583,16 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
     if account == "claude-ai":
         catalog = config["kubernetes_grants"]
         for key, grant in catalog.items():
-            if key in {"cluster-diagnostics", "coinbase-credentials"} or grant["role_ref"]["name"] in {
+            if key in {
+                "cluster-diagnostics",
+                "coinbase-credentials",
+                "agentplane-testing-operator",
+                "agentplane-testing-login",
+                "haku-console-metadata",
+                "clickhouse-diagnostics",
+                "public-coder-agent-reader",
+                "public-coder-volsync-status",
+            } or grant["role_ref"]["name"] in {
                 "agent-readable-namespace-metadata",
                 "agent-readable-namespace-logs",
             }:
@@ -605,6 +614,7 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
     }
     profiles.update(
         {
+            "claude-ai": rbac.identity("ServiceAccount", "claude-ai", "agentplane-staging"),
             "public-static": rbac.identity("Group", "haku:access-profile:public-coder"),
             "haku-console": rbac.identity("Group", "haku:access-profile:haku"),
             "haku-oidc": rbac.identity("Group", "oidc-ksbx-groups:haku"),
@@ -630,6 +640,13 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
         assert bool(uncovered({coinbase}, permissions)) == (name in {"public-coder", "public-static"}), name
         assert uncovered(denied, permissions) == denied, name
         assert not uncovered({testing_login}, permissions), name
+        if name == "claude-ai":
+            sandbox_writes = {
+                Permission("haku-sandbox", "", resource, verb)
+                for resource in ("pods", "pods/exec", "secrets", "configmaps")
+                for verb in ("create", "update", "patch", "delete")
+            }
+            assert uncovered(sandbox_writes, permissions) == sandbox_writes
         if name in {"public-coder", "finance-agent", "public-static"}:
             node_proxy = Permission(None, "", "nodes/proxy", "get")
             assert uncovered({node_proxy}, permissions), name
