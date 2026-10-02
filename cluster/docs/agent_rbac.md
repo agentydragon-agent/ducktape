@@ -45,12 +45,20 @@ independent Flux kustomization.
 
 `namespace_access.py` is the single reviewed namespace classification.
 `agent_namespace_rbac.py` generates namespaced RoleBindings to the metadata and log
-ClusterRoles. Each namespace has an independent Flux Kustomization depending on
-its namespace owner and `claude-rbac`. Agentplane consumes the same classification
-for managed grants; Kyverno does not generate agent bindings.
+ClusterRoles. Each namespace has an independent Flux Kustomization depending only on
+`claude-rbac`, which supplies the shared Roles. Application health and namespace-owner
+Kustomization readiness do not gate diagnostic access. Agentplane consumes the same
+classification for managed grants; Kyverno does not generate agent bindings.
 
-This isolation ensures that missing/suspended service namespaces don't block unrelated RBAC
-from applying.
+These Kustomizations emit only RoleBindings, never Namespaces. Existing namespace owners
+retain creation, labels and deletion. On a fresh bootstrap, the Kubernetes API rejects
+bindings to a namespace that does not exist yet; Flux retries every minute until it exists.
+No namespace is created merely to grant diagnostics, and a missing/suspended namespace does
+not block bindings in other namespaces. An unhealthy application in an existing namespace
+does not block its diagnostic bindings either.
+
+This does not change Agentplane's separate binding-delegation dependencies or exceptional
+per-service RBAC.
 
 ## Permissions Granted
 
