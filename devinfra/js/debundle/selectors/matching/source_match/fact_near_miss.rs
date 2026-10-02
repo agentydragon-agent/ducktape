@@ -46,9 +46,11 @@ fn fact_exact_groups(
 
 /// Rootless indices fail closed, as in the matcher, when projection is unsupported.
 fn item_indices(body: &[ModuleItem]) -> Vec<Index> {
-    body.iter().map(|item| item_index(item).unwrap_or_else(|| {
-        Index::build(&chunk_facts::ChunkFacts::default())
-    })).collect()
+    body.iter()
+        .map(|item| {
+            item_index(item).unwrap_or_else(|| Index::build(&chunk_facts::ChunkFacts::default()))
+        })
+        .collect()
 }
 
 /// A scored "first structural divergence" between a non-matching candidate and the
@@ -287,7 +289,10 @@ pub fn fact_source_match_body_debt(
         &parsed.body,
         &needle_indices,
         mode,
-        subject_indices.iter().enumerate().filter(|(idx, _)| !exact_body_indices.contains(idx)),
+        subject_indices
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| !exact_body_indices.contains(idx)),
         min_score,
         limit,
     )?;
@@ -310,9 +315,9 @@ pub fn fact_near_misses(
         return Ok(Vec::new());
     }
     let needle_indices = item_indices(parsed.body());
-    let candidates = candidates.into_iter().filter_map(|idx| {
-        item_index(&runtime_module.body[idx]).map(|index| (idx, index))
-    });
+    let candidates = candidates
+        .into_iter()
+        .filter_map(|idx| item_index(&runtime_module.body[idx]).map(|index| (idx, index)));
     near_misses_among(
         runtime_module,
         parsed.body(),
@@ -352,7 +357,14 @@ fn near_misses_among<I: std::borrow::Borrow<Index>>(
     for (body_idx, candidate_index) in candidates {
         let candidate_index = candidate_index.borrow();
         let candidate = &runtime_module.body[body_idx];
-        let Some(reason) = fact_first_mismatch_reason(needle, needle_index, candidate, candidate_index, mode, &free)?
+        let Some(reason) = fact_first_mismatch_reason(
+            needle,
+            needle_index,
+            candidate,
+            candidate_index,
+            mode,
+            &free,
+        )?
         else {
             continue;
         };
@@ -399,14 +411,9 @@ pub(crate) fn fact_first_mismatch_reason(
         return Ok(None);
     };
     // The fact matcher is the non-match oracle; a match means no near-miss row.
-    if selector_match::matches_indexed(
-        needle_index,
-        candidate_index,
-        mode,
-        free,
-    )
-    .map_err(unsupported_error("fact near-miss"))?
-    .is_some()
+    if selector_match::matches_indexed(needle_index, candidate_index, mode, free)
+        .map_err(unsupported_error("fact near-miss"))?
+        .is_some()
     {
         return Ok(None);
     }
@@ -414,7 +421,13 @@ pub(crate) fn fact_first_mismatch_reason(
     let ckind = candidate_index.kind(croot);
     let reason = match (is_module_decl_kind(nkind), is_module_decl_kind(ckind)) {
         (false, false) | (true, true) => first_item_divergence(
-            needle, needle_index, nroot, candidate, candidate_index, croot, mode,
+            needle,
+            needle_index,
+            nroot,
+            candidate,
+            candidate_index,
+            croot,
+            mode,
         )?,
         _ => MismatchReason {
             score: 1,
@@ -525,13 +538,32 @@ fn first_item_divergence(
     let nkind = needle_index.kind(nroot);
     let ckind = candidate_index.kind(croot);
     let declarations = if nkind == "ExportDecl" && ckind == "ExportDecl" {
-        Some((export_decl_inner(needle), needle_index.children(nroot)[0],
-              export_decl_inner(candidate), candidate_index.children(croot)[0]))
+        Some((
+            export_decl_inner(needle),
+            needle_index.children(nroot)[0],
+            export_decl_inner(candidate),
+            candidate_index.children(croot)[0],
+        ))
     } else if is_decl_kind(nkind) && is_decl_kind(ckind) {
-        Some((stmt_decl_inner(needle), nroot, stmt_decl_inner(candidate), croot))
-    } else { None };
+        Some((
+            stmt_decl_inner(needle),
+            nroot,
+            stmt_decl_inner(candidate),
+            croot,
+        ))
+    } else {
+        None
+    };
     if let Some((ndecl, nroot, cdecl, croot)) = declarations {
-        return first_decl_divergence(ndecl, needle_index, nroot, cdecl, candidate_index, croot, mode);
+        return first_decl_divergence(
+            ndecl,
+            needle_index,
+            nroot,
+            cdecl,
+            candidate_index,
+            croot,
+            mode,
+        );
     }
     let (category, label): (&str, fn(&str) -> &'static str) = if is_module_decl_kind(nkind) {
         ("module declaration", module_decl_kind_label)
@@ -541,10 +573,17 @@ fn first_item_divergence(
     Ok(if nkind != ckind {
         MismatchReason {
             score: 10,
-            reason: format!("{category} kind differs: selector is {}, candidate is {}", label(nkind), label(ckind)),
+            reason: format!(
+                "{category} kind differs: selector is {}, candidate is {}",
+                label(nkind),
+                label(ckind)
+            ),
         }
     } else {
-        MismatchReason { score: 20, reason: format!("{category} shape differs") }
+        MismatchReason {
+            score: 20,
+            reason: format!("{category} shape differs"),
+        }
     })
 }
 
@@ -571,14 +610,26 @@ fn first_decl_divergence(
             if !alpha && nname != cname {
                 MismatchReason {
                     score: 40,
-                    reason: format!("{} name differs: selector `{}`, candidate `{}`",
-                        decl_kind_label(nkind), nname.unwrap_or_default(), cname.unwrap_or_default()),
+                    reason: format!(
+                        "{} name differs: selector `{}`, candidate `{}`",
+                        decl_kind_label(nkind),
+                        nname.unwrap_or_default(),
+                        cname.unwrap_or_default()
+                    ),
                 }
             } else if nkind == "ClassDecl" {
-                first_class_divergence(needle_index, needle_index.children(nroot)[1],
-                    candidate_index, candidate_index.children(croot)[1], mode)?
+                first_class_divergence(
+                    needle_index,
+                    needle_index.children(nroot)[1],
+                    candidate_index,
+                    candidate_index.children(croot)[1],
+                    mode,
+                )?
             } else {
-                MismatchReason { score: 35, reason: "function signature or body differs".to_string() }
+                MismatchReason {
+                    score: 35,
+                    reason: "function signature or body differs".to_string(),
+                }
             }
         }
         ("VarDecl", "VarDecl") => first_var_decl_divergence(
@@ -906,15 +957,21 @@ mod tests {
         let candidate = parse_one(case.candidate_src);
 
         let needle_index = item_index(&needle).expect("test needle projects to facts");
-        let fact_reason =
-            fact_first_mismatch_reason(&needle, &needle_index, &candidate, &item_index(&candidate).unwrap(), selector_mode(&sel), &free_identifiers([&needle_index]))
-                .expect("fact near-miss does not error on supported needle")
-                .unwrap_or_else(|| {
-                    panic!(
-                        "[{}] fact path produced no mismatch (matched?): needle {:?} vs {:?}",
-                        case.variant, case.needle_src, case.candidate_src,
-                    )
-                });
+        let fact_reason = fact_first_mismatch_reason(
+            &needle,
+            &needle_index,
+            &candidate,
+            &item_index(&candidate).unwrap(),
+            selector_mode(&sel),
+            &free_identifiers([&needle_index]),
+        )
+        .expect("fact near-miss does not error on supported needle")
+        .unwrap_or_else(|| {
+            panic!(
+                "[{}] fact path produced no mismatch (matched?): needle {:?} vs {:?}",
+                case.variant, case.needle_src, case.candidate_src,
+            )
+        });
 
         assert_eq!(
             fact_reason.reason, case.expected_reason,
