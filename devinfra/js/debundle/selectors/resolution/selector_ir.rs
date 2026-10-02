@@ -5,8 +5,6 @@
 //! [`ClaimOutcome`] per target in a [`SolverResult`].
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error;
-use std::fmt;
 
 use analysis::{OwnerId, StatementOrdinal};
 
@@ -728,35 +726,44 @@ impl SelectorProgram {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum SelectorProgramError {
+    #[error("selector variable ids must be dense: expected {expected:?}, found {actual:?}")]
     NonDenseVariable {
         expected: SelectorVariableId,
         actual: SelectorVariableId,
     },
+    #[error("selector target ids must be dense: expected {expected:?}, found {actual:?}")]
     NonDenseTarget {
         expected: SelectorTargetId,
         actual: SelectorTargetId,
     },
+    #[error("{context} references unknown selector variable {id:?}")]
     UnknownVariable {
         context: &'static str,
         id: SelectorVariableId,
     },
-    UnknownTarget {
-        id: SelectorTargetId,
-    },
+    #[error("all_different references unknown selector target {id:?}")]
+    UnknownTarget { id: SelectorTargetId },
+    #[error("{context} expected {expected:?} variable, found {actual:?}")]
     DomainMismatch {
         context: &'static str,
         expected: VariableDomain,
         actual: VariableDomain,
     },
+    #[error("all_different requires at least two entries")]
     DegenerateAllDifferent,
+    #[error("projected_allowed_tuples requires at least one variable")]
     EmptyProjectedAllowedTuples,
+    #[error("projected_allowed_tuples row {row_index} has arity {actual}, expected {expected}")]
     ProjectedAllowedTupleArity {
         row_index: usize,
         expected: usize,
         actual: usize,
     },
+    #[error(
+        "projected_allowed_tuples row {row_index} column {column} has domain {actual:?}, expected {expected:?}"
+    )]
     ProjectedAllowedTupleDomain {
         row_index: usize,
         column: usize,
@@ -764,66 +771,6 @@ pub enum SelectorProgramError {
         actual: VariableDomain,
     },
 }
-
-impl fmt::Display for SelectorProgramError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NonDenseVariable { expected, actual } => {
-                write!(
-                    f,
-                    "selector variable ids must be dense: expected {expected:?}, found {actual:?}"
-                )
-            }
-            Self::NonDenseTarget { expected, actual } => {
-                write!(
-                    f,
-                    "selector target ids must be dense: expected {expected:?}, found {actual:?}"
-                )
-            }
-            Self::UnknownVariable { context, id } => {
-                write!(f, "{context} references unknown selector variable {id:?}")
-            }
-            Self::UnknownTarget { id } => {
-                write!(f, "all_different references unknown selector target {id:?}")
-            }
-            Self::DomainMismatch {
-                context,
-                expected,
-                actual,
-            } => {
-                write!(
-                    f,
-                    "{context} expected {expected:?} variable, found {actual:?}"
-                )
-            }
-            Self::DegenerateAllDifferent => {
-                write!(f, "all_different requires at least two entries")
-            }
-            Self::EmptyProjectedAllowedTuples => {
-                write!(f, "projected_allowed_tuples requires at least one variable")
-            }
-            Self::ProjectedAllowedTupleArity {
-                row_index,
-                expected,
-                actual,
-            } => write!(
-                f,
-                "projected_allowed_tuples row {row_index} has arity {actual}, expected {expected}"
-            ),
-            Self::ProjectedAllowedTupleDomain {
-                row_index,
-                column,
-                expected,
-                actual,
-            } => write!(
-                f,
-                "projected_allowed_tuples row {row_index} column {column} has domain {actual:?}, expected {expected:?}"
-            ),
-        }
-    }
-}
-
-impl Error for SelectorProgramError {}
 
 /// One chunk fact the program's relation tables are built from.
 #[derive(Debug, Clone, PartialEq, Eq)]
