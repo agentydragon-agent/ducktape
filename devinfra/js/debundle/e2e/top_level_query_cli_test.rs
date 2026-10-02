@@ -147,9 +147,16 @@ fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
     // Real sequencing edges may group both statements into one proposal.
     // Whichever partition the heuristic chooses, neither ambiguous owner is
     // addressable by a unique selector, and no containing proposal is landable.
-    let mut unaddressable: Vec<_> = proposals.iter().flat_map(|p| {
-        p["unaddressable_anonymous_owner_ids"].as_array().unwrap().iter().map(|id| id.as_str().unwrap())
-    }).collect();
+    let mut unaddressable: Vec<_> = proposals
+        .iter()
+        .flat_map(|p| {
+            p["unaddressable_anonymous_owner_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|id| id.as_str().unwrap())
+        })
+        .collect();
     unaddressable.sort_unstable();
     assert_eq!(unaddressable, ["owner:0", "owner:1"]);
     assert!(proposals.iter().all(|p| {
