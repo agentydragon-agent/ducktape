@@ -566,9 +566,11 @@ const ACTIONS: ActionRequestView[] = [
     arguments: {
       host: "test-archive-host",
       user: "test-user",
-      command: scenario.hiddenCodepoints
-        ? 'printf "review \u202Ereversed\u202C zero\u200Bwidth control\u001B"'
-        : 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
+      command: scenario.longPendingAction
+        ? Array.from({ length: 55 }, (_, index) => `echo review-step-${index + 1}`).join("\n")
+        : scenario.hiddenCodepoints
+          ? 'printf "review \u202Ereversed\u202C zero\u200Bwidth control\u001B"'
+          : 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
       timeout_seconds: 60,
     },
     title: "restart the test backup service",
@@ -2195,6 +2197,46 @@ if (scenario.openActionPolicySets) {
     control.click();
   });
   openSets.observe(document, { childList: true, subtree: true });
+}
+if (scenario.checkComposerControls) {
+  const checkControls = new MutationObserver(() => {
+    const send = document.querySelector<HTMLElement>('.agentplane-composer-send button[aria-label="Send"]');
+    const effort = document.querySelector<HTMLElement>(".agentplane-composer-effort");
+    const model = document.querySelector<HTMLElement>(".agentplane-composer-model");
+    const controls = document.querySelector<HTMLElement>(".agentplane-composer-controls");
+    const dot = document.querySelector(".agentplane-topbar-title .agentplane-thread-status-dot");
+    if (!send || !effort || !model || !controls || !dot) return;
+    requestAnimationFrame(() => {
+      const box = send.getBoundingClientRect();
+      const modelBox = model.getBoundingClientRect();
+      const effortBox = effort.getBoundingClientRect();
+      if (
+        box.width > 0 &&
+        box.left >= 0 &&
+        box.right <= window.innerWidth &&
+        modelBox.width > 0 &&
+        effortBox.width > 0 &&
+        Math.abs(modelBox.top - box.top) < 8 &&
+        Math.abs(effortBox.top - box.top) < 8
+      ) {
+        controls.dataset.composerLayoutReady = "true";
+        checkControls.disconnect();
+      }
+    });
+  });
+  checkControls.observe(document, { childList: true, subtree: true });
+}
+if (scenario.scrollActionReview) {
+  const scrollReview = new MutationObserver(() => {
+    const details = document.querySelector<HTMLElement>(".action-affordance-details:not([hidden])");
+    if (!details?.querySelector("button")) return;
+    scrollReview.disconnect();
+    requestAnimationFrame(() => {
+      details.scrollTop = details.scrollHeight;
+      if (details.scrollTop > 0) details.dataset.scrollReady = "true";
+    });
+  });
+  scrollReview.observe(document, { childList: true, subtree: true, attributes: true });
 }
 if (scenario.openActionReview) {
   const openActionReview = new MutationObserver(() => {

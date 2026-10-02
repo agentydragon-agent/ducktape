@@ -75,7 +75,6 @@ def settings(
     action_federation: ActionFederationSettings | None = None,
     action_policy_sets: list[str] | None = None,
     haku_preset_model: str | None = None,
-    haku_extra_kubernetes_grants: list[str] | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
     kubernetes_binding_cleanup_namespaces: list[str] | None = None,
     kubernetes_cluster_binding_cleanup: bool = False,
@@ -191,15 +190,6 @@ def settings(
                             GITHUB_ACTIONS_LOGS_POLICY,
                         ],
                         action_policy_sets=[GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
-                        kubernetes_grants=[
-                            "cluster-diagnostics",
-                            "haku-sandbox-write",
-                            "agentplane-testing-operator",
-                            "agentplane-staging-metadata",
-                            "agentplane-staging-logs",
-                            *(haku_extra_kubernetes_grants or []),
-                            "coinbase-credentials",
-                        ],
                         thread_preset=_THREAD_PRESET_HAKU_CLAUDE,
                         # Each new Thread gets its own haku-state and ducktape checkout.
                     )

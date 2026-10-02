@@ -1445,6 +1445,22 @@ rules:
       - bind
   - apiGroups:
       - rbac.authorization.k8s.io
+    resourceNames:
+      - public-coder-agent-cluster-metadata-reader
+    resources:
+      - clusterroles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - public-coder-agent-node-reader
+    resources:
+      - clusterroles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
     resources:
       - clusterroles
     verbs:
@@ -1894,38 +1910,7 @@ data:
           - public-gaffer-private-reads
           - github-identity-reads
           - ssh-reads
-        thread_preset: public-coder-codex
-        bootstrap: |
-          marker=/state/workspaces/.agentplane-public-coder-ready
-          mkdir -p /state/workspaces
-          if [ ! -f "$marker" ]; then
-            printf '%s\n' 'public-coder workspace initialized' > "$marker"
-          fi
-      haku:
-        title: Haku
-        template: agentplane-runner
-        policies:
-          - basic
-          - forgejo-haku
-          - packages
-          - google-readonly
-          - grocy-sf-readonly
-          - home-assistant-readonly
-          - activitywatch-read
-          - aiquota-read
-          - coinbase
-          - haku-mailbox
-          - plaid-pgweb
-          - github-clone
-          - github-agentydragon-agent
-          - github-actions-logs
-        action_policy_sets:
-          - github-identity-reads
-          - ssh-reads
         kubernetes_grants:
-          - cluster-diagnostics
-          - haku-sandbox-write
-          - agentplane-testing-operator
           - agentplane-staging-metadata
           - agentplane-staging-logs
           - activitywatch-metadata
@@ -1984,12 +1969,109 @@ data:
           - tana-mcp-metadata
           - tana-mcp-logs
           - vm-images-publisher-metadata
-          - coinbase-credentials
           - haku-console-metadata
           - clickhouse-diagnostics
           - ducktape-flux-read
           - public-coder-volsync-status
           - public-coder-agent-reader
+          - public-coder-node-read
+          - public-coder-cluster-metadata-read
+        thread_preset: public-coder-codex
+        bootstrap: |
+          marker=/state/workspaces/.agentplane-public-coder-ready
+          mkdir -p /state/workspaces
+          if [ ! -f "$marker" ]; then
+            printf '%s\n' 'public-coder workspace initialized' > "$marker"
+          fi
+      haku:
+        title: Haku
+        template: agentplane-runner
+        policies:
+          - basic
+          - forgejo-haku
+          - packages
+          - google-readonly
+          - grocy-sf-readonly
+          - home-assistant-readonly
+          - activitywatch-read
+          - aiquota-read
+          - coinbase
+          - haku-mailbox
+          - plaid-pgweb
+          - github-clone
+          - github-agentydragon-agent
+          - github-actions-logs
+        action_policy_sets:
+          - github-identity-reads
+          - ssh-reads
+        kubernetes_grants:
+          - agentplane-staging-metadata
+          - agentplane-staging-logs
+          - activitywatch-metadata
+          - activitywatch-logs
+          - agent-sandbox-system-metadata
+          - agentplane-index-metadata
+          - agentplane-index-logs
+          - agentplane-testing-metadata
+          - agentplane-testing-logs
+          - airlock-metadata
+          - airlock-logs
+          - authentik-metadata
+          - authentik-logs
+          - cert-manager-metadata
+          - cert-manager-logs
+          - cli-proxy-api-metadata
+          - cli-proxy-api-logs
+          - clickhouse-metadata
+          - clickhouse-logs
+          - cnpg-system-metadata
+          - cnpg-system-logs
+          - flux-system-metadata
+          - flux-system-logs
+          - gatus-metadata
+          - gatus-logs
+          - grocy-sf-metadata
+          - grocy-sf-logs
+          - grocy-vallejo-metadata
+          - grocy-vallejo-logs
+          - haku-ci-metadata
+          - haku-ci-logs
+          - litellm-metadata
+          - litellm-logs
+          - local-path-storage-metadata
+          - local-path-storage-logs
+          - loki-metadata
+          - loki-logs
+          - monitoring-metadata
+          - monitoring-logs
+          - nix-cache-metadata
+          - node-feature-discovery-metadata
+          - node-feature-discovery-logs
+          - nvidia-device-plugin-metadata
+          - nvidia-device-plugin-logs
+          - oci-cache-metadata
+          - oci-cache-logs
+          - openebs-metadata
+          - openebs-logs
+          - plaid-mcp-metadata
+          - plaid-mcp-logs
+          - proxmox-proxy-metadata
+          - proxmox-proxy-logs
+          - public-coder-agent-metadata
+          - study-casino-metadata
+          - study-casino-logs
+          - tana-mcp-metadata
+          - tana-mcp-logs
+          - vm-images-publisher-metadata
+          - haku-console-metadata
+          - clickhouse-diagnostics
+          - ducktape-flux-read
+          - public-coder-volsync-status
+          - public-coder-agent-reader
+          - cluster-diagnostics
+          - haku-sandbox-write
+          - agentplane-testing-operator
+          - coinbase-credentials
           - public-coder-agent-devbox-vmi-restart
         thread_preset: haku-claude
       finance-agent:
@@ -2013,6 +2095,72 @@ data:
           - public-gaffer-private-reads
           - github-identity-reads
           - ssh-reads
+        kubernetes_grants:
+          - agentplane-staging-metadata
+          - agentplane-staging-logs
+          - activitywatch-metadata
+          - activitywatch-logs
+          - agent-sandbox-system-metadata
+          - agentplane-index-metadata
+          - agentplane-index-logs
+          - agentplane-testing-metadata
+          - agentplane-testing-logs
+          - airlock-metadata
+          - airlock-logs
+          - authentik-metadata
+          - authentik-logs
+          - cert-manager-metadata
+          - cert-manager-logs
+          - cli-proxy-api-metadata
+          - cli-proxy-api-logs
+          - clickhouse-metadata
+          - clickhouse-logs
+          - cnpg-system-metadata
+          - cnpg-system-logs
+          - flux-system-metadata
+          - flux-system-logs
+          - gatus-metadata
+          - gatus-logs
+          - grocy-sf-metadata
+          - grocy-sf-logs
+          - grocy-vallejo-metadata
+          - grocy-vallejo-logs
+          - haku-ci-metadata
+          - haku-ci-logs
+          - litellm-metadata
+          - litellm-logs
+          - local-path-storage-metadata
+          - local-path-storage-logs
+          - loki-metadata
+          - loki-logs
+          - monitoring-metadata
+          - monitoring-logs
+          - nix-cache-metadata
+          - node-feature-discovery-metadata
+          - node-feature-discovery-logs
+          - nvidia-device-plugin-metadata
+          - nvidia-device-plugin-logs
+          - oci-cache-metadata
+          - oci-cache-logs
+          - openebs-metadata
+          - openebs-logs
+          - plaid-mcp-metadata
+          - plaid-mcp-logs
+          - proxmox-proxy-metadata
+          - proxmox-proxy-logs
+          - public-coder-agent-metadata
+          - study-casino-metadata
+          - study-casino-logs
+          - tana-mcp-metadata
+          - tana-mcp-logs
+          - vm-images-publisher-metadata
+          - haku-console-metadata
+          - clickhouse-diagnostics
+          - ducktape-flux-read
+          - public-coder-volsync-status
+          - public-coder-agent-reader
+          - public-coder-node-read
+          - public-coder-cluster-metadata-read
         thread_preset: finance-agent-codex
     kubernetes_grants:
       sandbox-tool-config:
@@ -2021,6 +2169,16 @@ data:
         role_ref:
           kind: Role
           name: agentplane-sandbox-tool-config-reader
+      public-coder-node-read:
+        kind: ClusterRoleBinding
+        role_ref:
+          kind: ClusterRole
+          name: public-coder-agent-node-reader
+      public-coder-cluster-metadata-read:
+        kind: ClusterRoleBinding
+        role_ref:
+          kind: ClusterRole
+          name: public-coder-agent-cluster-metadata-reader
       cluster-diagnostics:
         kind: ClusterRoleBinding
         role_ref:

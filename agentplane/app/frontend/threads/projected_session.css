@@ -116,3 +116,38 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* On narrow viewports, shrink the Model selector instead of pushing Send out of
+   view. Reasoning effort and the two action buttons retain usable widths. */
+.agentplane-composer-settings {
+  min-width: 0;
+}
+
+.agentplane-composer-model {
+  width: 200px;
+}
+
+.agentplane-composer-effort {
+  width: 120px;
+}
+
+.agentplane-composer-send {
+  flex-shrink: 0;
+}
+
+@media (max-width: 760px) {
+  .agentplane-composer-settings {
+    flex: 1 1 0;
+  }
+
+  .agentplane-composer-model {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+  }
+
+  .agentplane-composer-effort {
+    flex: 0 0 96px;
+    min-width: 0;
+  }
+}

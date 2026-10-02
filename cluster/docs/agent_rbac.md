@@ -178,6 +178,41 @@ metadata and logs ClusterRoles cluster-wide too. The catalog and reconciler
 enforce the configured binding kind during ordinary operation; this remains a
 delegation limit of the app ServiceAccount's Kubernetes permissions.
 
+### Shared managed-agent diagnostics
+
+The staging `public-coder`, `finance-agent`, and `haku` presets compose the same
+namespace-scoped diagnostics bundle in `cluster/cdk8s/agentplane/staging_config.py`:
+
+- Metadata in every active `agent-readable-*` namespace; pod logs only in the
+  log-approved namespaces, including `agentplane-staging`.
+- The existing Ducktape Flux, Haku Console metadata, ClickHouse diagnostics,
+  public-coder VolSync status, and public-coder reader Roles. The last Role is an
+  explicit service-specific exception allowing logs in `public-coder-agent`, whose
+  common namespace classification is metadata-only.
+
+Public coder and finance agent select exactly the same Kubernetes grants. Both
+also select the existing `public-coder-agent-node-reader` and
+`public-coder-agent-cluster-metadata-reader` ClusterRoles, bound cluster-wide:
+node inventory, CRD schemas, and node metrics. They do **not** select Haku's broader
+`cluster-diagnostics-reader`, credentials, sandbox writes, testing operator
+capability, or named VMI restart. Their egress and Action policies remain separate
+from these Kubernetes grants.
+
+These bundles are plain deployment-side grant lists, not a new API or a broad
+cluster-wide role. Metadata and log readers retain their separate namespaced
+RoleBindings; service-specific Roles retain their existing rules and ownership.
+Haku composes the shared reads with its existing additional authority below.
+The testing environment's public-coder preset does not select these staging grants.
+
+Preset changes affect **new Sandboxes only**. After deployment, launch a new Sandbox
+(or explicitly migrate through the operator workflow), then check its effective
+access with `kubectl auth can-i` and exercise the intended reads. In particular,
+verify Ducktape Flux access and approved logs, and verify that Secrets, exec, writes,
+node proxy access, and logs outside the approved scopes remain denied. Do not treat
+a configured catalog or preset as proof that existing Sandboxes received bindings.
+
+### Managed Haku additional authority
+
 The Haku preset currently selects `cluster-diagnostics-reader` cluster-wide,
 `haku-sandbox-admin` within `haku-sandbox`, the common metadata and pod-log readers
 within `agentplane-staging`, and `get` on exactly
@@ -219,17 +254,17 @@ Secret read. Pod exec can expose data mounted in testing Pods, and a holder can
 operate every Sandbox in the testing namespace and use that environment's
 credentialless MCP fixtures. Treat it as operator authority, not a diagnostics reader.
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
-read selection. Other Kyverno `agent-readable-*` namespaces still grant the static
-Haku identities; managed Haku SAs require explicit catalog entries before they receive
+read selection. Kyverno's `agent-readable-*` labels grant the static identities access; managed
+Sandbox SAs require explicit catalog entries and preset selections before they receive
 those namespaced readers. No namespace label silently widens them.
 
-The Haku preset's explicit catalog now mirrors the metadata/log labels on every active
+The shared diagnostics bundle's explicit catalog mirrors the metadata/log labels on every active
 cluster-managed Namespace. Log-labeled namespaces receive both metadata and pod-log
 grants; metadata-only labels receive only the metadata grant. Props stays excluded
 because its Namespace is absent from the live cluster and its Flux source is parked.
 The `flux-system` and `ducktape-flux` delegation Kustomizations have no `dependsOn`:
 they are bootstrap roots without generated owner Kustomizations. The cluster integration
-test derives active label opt-ins and checks their catalog grants, preset defaults, and
+test derives active label opt-ins and checks their catalog grants, all three preset defaults, and
 target-owned delegation dependencies together.
 
 ### Staging acceptance for managed Haku grants
