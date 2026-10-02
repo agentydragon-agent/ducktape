@@ -3,9 +3,10 @@
 //! introduce destructure siblings, etc. `ChunkAstAnalysis` is the
 //! input to `materialize_logical_chunk`s spec-driven plan resolution.
 
-pub(super) use binding_targets::{binding_name_strings as binding_names, declaration_ids, declaration_name_strings as declaration_names};
-use binding_targets::{
-    binding_names as bt_binding_names,
+use binding_targets::binding_names as bt_binding_names;
+pub(super) use binding_targets::{
+    binding_name_strings as binding_names, declaration_ids,
+    declaration_name_strings as declaration_names,
 };
 use selector_outcome::{Declaration, DeclarationKind};
 
@@ -128,7 +129,7 @@ pub(super) fn record_destructure_sibling_groups(
         return;
     };
     for declarator in &var.decls {
-        let names = binding_name_strings(&declarator.name);
+        let names = binding_names(&declarator.name);
         if names.len() < 2 {
             continue;
         }

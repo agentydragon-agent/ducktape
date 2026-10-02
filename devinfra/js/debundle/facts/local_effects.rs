@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
 use binding_targets::{
-    TargetAccessRecorder, binding_names, record_assign_target, record_update_target, };
+    TargetAccessRecorder, binding_names, record_assign_target, record_update_target,
+};
 use swc_ecma_ast::*;
 
 use super::{TopLevelItemView, collect_declared_names, var_decl_of_item};

@@ -839,14 +839,31 @@ pub enum DeferredImport {
 impl DeferredImport {
     pub fn into_module_item(self) -> ModuleItem {
         let (source, specifier) = match self {
-            DeferredImport::Namespace { source, local } => (source, ImportSpecifier::Namespace(ImportStarAsSpecifier {
-                span: DUMMY_SP, local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
-            })),
-            DeferredImport::Default { source, local } => (source, ImportSpecifier::Default(ImportDefaultSpecifier {
-                span: DUMMY_SP, local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
-            })),
-            DeferredImport::Named { source, local, upstream_export } => (source,
-                js_ast::named_import_specifier(Ident::new_no_ctxt(local.into(), DUMMY_SP), &upstream_export)),
+            DeferredImport::Namespace { source, local } => (
+                source,
+                ImportSpecifier::Namespace(ImportStarAsSpecifier {
+                    span: DUMMY_SP,
+                    local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                }),
+            ),
+            DeferredImport::Default { source, local } => (
+                source,
+                ImportSpecifier::Default(ImportDefaultSpecifier {
+                    span: DUMMY_SP,
+                    local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                }),
+            ),
+            DeferredImport::Named {
+                source,
+                local,
+                upstream_export,
+            } => (
+                source,
+                js_ast::named_import_specifier(
+                    Ident::new_no_ctxt(local.into(), DUMMY_SP),
+                    &upstream_export,
+                ),
+            ),
         };
         js_ast::import_decl_module_item(vec![specifier], &source)
     }

@@ -268,7 +268,11 @@ fn opt_chain_base_id(opt_chain: &OptChainExpr) -> Option<Id> {
 pub fn callee_base_expr(expr: &Expr) -> &Expr {
     let mut cur = expr.unwrap_parens();
     while let Expr::Seq(seq) = cur {
-        cur = seq.exprs.last().expect("SeqExpr is non-empty").unwrap_parens();
+        cur = seq
+            .exprs
+            .last()
+            .expect("SeqExpr is non-empty")
+            .unwrap_parens();
     }
     cur
 }

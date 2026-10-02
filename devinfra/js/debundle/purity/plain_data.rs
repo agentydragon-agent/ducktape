@@ -821,7 +821,8 @@ impl Visit for PlainDataWriteScanner<'_> {
             // `() => X` return position — non-escaping by the same
             // scope decision as `return X`.
             match node.body.as_ref() {
-                ArrowFunctionBody::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(_)) => {}
+                ArrowFunctionBody::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(_)) => {
+                }
                 body => body.visit_with(s),
             }
         });

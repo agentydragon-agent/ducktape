@@ -43,7 +43,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use binding_targets::{callee_base_expr};
+use binding_targets::callee_base_expr;
 use spec::{AdmissionCheck, AdmissionOverrides};
 
 use analysis::facts::top_level_item_views;

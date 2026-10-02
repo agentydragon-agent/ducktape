@@ -1,7 +1,7 @@
-use js_ast::import_decl_module_item;
-use crate::imports::{EntryExport};
+use crate::imports::EntryExport;
 use crate::rename_ledger::{RenameLedger, RenameScope};
 use artifact::relative_module_path;
+use js_ast::import_decl_module_item;
 use std::collections::BTreeMap;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;

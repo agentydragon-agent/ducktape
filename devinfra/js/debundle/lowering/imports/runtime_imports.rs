@@ -96,7 +96,9 @@ fn ident_from_id(id: &Id) -> Ident {
 
 pub(crate) fn runtime_reimport_specifier(local: &Id, info: &RuntimeImportInfo) -> ImportSpecifier {
     match &info.kind {
-        RuntimeImportKind::Named { imported } => js_ast::named_import_specifier(ident_from_id(local), imported),
+        RuntimeImportKind::Named { imported } => {
+            js_ast::named_import_specifier(ident_from_id(local), imported)
+        }
         RuntimeImportKind::Default => ImportSpecifier::Default(ImportDefaultSpecifier {
             span: DUMMY_SP,
             local: ident_from_id(local),

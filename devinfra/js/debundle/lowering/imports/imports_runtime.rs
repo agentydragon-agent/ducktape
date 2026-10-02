@@ -14,8 +14,8 @@ use artifact::{
     join_module_path, module_path_dirname, normalize_relative_module_specifier,
     relative_module_path,
 };
-use std::collections::BTreeMap;
 use js_ast::import_decl_module_item;
+use std::collections::BTreeMap;
 use swc_ecma_ast::*;
 
 pub(crate) fn resolve_imported_binding(

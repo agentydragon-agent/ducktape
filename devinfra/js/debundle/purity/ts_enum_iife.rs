@@ -196,7 +196,9 @@ fn is_ts_enum_iife_body_block(block: &FunctionBody, param: &str) -> bool {
         return false;
     };
     if !rest.iter().all(|stmt| match stmt {
-        Stmt::Expr(expr) => is_ts_enum_iife_property_write(expr.expr.as_ref().unwrap_parens(), param),
+        Stmt::Expr(expr) => {
+            is_ts_enum_iife_property_write(expr.expr.as_ref().unwrap_parens(), param)
+        }
         _ => false,
     }) {
         return false;

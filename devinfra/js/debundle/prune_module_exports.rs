@@ -220,10 +220,17 @@ mod tests {
 
     #[test]
     fn string_export_names_do_not_collapse_to_empty() {
-        let parsed = parse_js_module("surrogate.js", r#"const a = 1; export { a as "\ud800" };"#).unwrap();
-        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = &parsed.module.body[1] else { panic!("named export"); };
-        let ExportSpecifier::Named(specifier) = &export.specifiers[0] else { panic!("named specifier"); };
-        assert!(!module_export_name(specifier.exported.as_ref().unwrap()).is_empty());
+        js_ast::with_swc_globals(|| {
+            let parsed =
+                parse_js_module("surrogate.js", r#"const a = 1; export { a as "\ud800" };"#).unwrap();
+            let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = &parsed.module.body[1] else {
+                panic!("named export");
+            };
+            let ExportSpecifier::Named(specifier) = &export.specifiers[0] else {
+                panic!("named specifier");
+            };
+            assert!(!module_export_name(specifier.exported.as_ref().unwrap()).is_empty());
+        });
     }
 
     /// One chunk `c` (source path `c.js`), files laid out flat so a sibling's
