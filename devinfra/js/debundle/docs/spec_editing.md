@@ -351,3 +351,11 @@ mv $DEBUNDLE_MODULES/runtime/plugins.yaml $DEBUNDLE_MODULES/runtime/plugins.yaml
 
 The next mutating command (or `debundle run`) re-validates and
 surfaces any resulting atom split as a gate diagnostic.
+
+## YAML text preservation
+
+Edit commands may reserialize a whole YAML document, change unrelated formatting
+and drop comments. Preserving untouched text is not an authoring requirement.
+Semantic correctness, validation before writes, atomic replacement and accurate
+dry-run reporting remain requirements. Persist important annotations in supported
+spec fields such as `note:`, not comments that a serializer may discard.

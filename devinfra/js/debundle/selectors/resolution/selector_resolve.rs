@@ -1856,9 +1856,15 @@ impl Rejection {
         Self::Invalid(format!("{category}: {first_line}"))
     }
 
-    /// `rows`, unless there are none or more than the cap.
-    fn check_count<T>(rows: Vec<T>) -> Result<Vec<T>, Self> {
-        match rows.len() {
+    /// Cap distinct placements, not alternative free-name bindings for a place.
+    /// Keep all rows: reference columns can still distinguish their bindings.
+    fn check_count(rows: Vec<CollectedRow>) -> Result<Vec<CollectedRow>, Self> {
+        let count = rows
+            .iter()
+            .map(|row| &row.places)
+            .collect::<BTreeSet<_>>()
+            .len();
+        match count {
             0 => Err(Self::NoCandidates),
             count if count > MAX_CANDIDATES_PER_SELECTOR => Err(Self::TooBroad(count)),
             _ => Ok(rows),

@@ -49,8 +49,8 @@ An efficient agent loop should look like this:
 3. Ask debundle to synthesize a patch plan for a whole bucket, preferring
    minimized, forward-compatible selectors, with dry-run JSON/NDJSON explaining
    every applied and skipped candidate.
-4. Apply the safe subset, preserving YAML comments and producing small
-   deterministic diffs.
+4. Apply the safe subset after validation, with atomic writes and accurate
+   dry-run reporting. Whole-document YAML reserialization is acceptable.
 5. Run the keep-going validation report, not just the first failing selector.
 6. Repeat until the residual report is small enough for manual review.
 
@@ -144,14 +144,16 @@ Bulk tools should produce a machine-readable plan before mutating YAML:
 - target module path and member/group/anonymous-statement location;
 - current selector summary and proposed selector summary;
 - edit kind: replace selector, create binding group, merge members, add hole,
-  add target binding, add diagnostic comment, or leave unchanged;
+  add target binding, add a diagnostic `note:`, or leave unchanged;
 - proof: uniqueness result, body indices, target binding, grouped exports, and
   source-inventory anchors used;
 - skip reason with the next useful action.
 
-Apply mode should preserve comments and ordering where possible. If a rewrite
-needs to delete repeated member-form selectors and create one group, comments
-from the deleted members must be retained or moved into the group/export rows.
+Apply mode need not preserve YAML comments, formatting, or untouched text.
+Whole-document reserialization and comment loss are acceptable; preserve semantic
+fields (including supported `note:` annotations), not the original layout.
+Validation before writes, atomic replacement and accurate dry-run reports remain
+required (<../docs/spec_editing.md> § YAML text preservation).
 
 ## High-Level CLI Shape
 
@@ -173,8 +175,8 @@ orthogonal:
   emits a patch plan repairing a copied spec against the next version's chunks,
   plus residual semantic tasks.
 - `debundle spec apply-plan --plan <plan.json> --modules ...`
-  applies a reviewed plan, preserving comments/order where the edit type
-  supports it and refusing stale plans whose inputs no longer match.
+  applies a reviewed plan after validation, refusing stale plans whose inputs
+  no longer match. YAML text preservation is not required.
 - Existing focused commands such as `selector-debt` and `synthesize-selectors` can
   remain as aliases or transitional frontends, but new work should converge on
   the inventory/plan/apply/validate model.
