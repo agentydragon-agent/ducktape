@@ -418,17 +418,24 @@ fn check_partial_swap_consumer_decl(
     target_chunk_name: &str,
 ) -> Result<()> {
     validate::check_consumer_directive(
-        decl, consumer, target_chunk_name, swapped.contains("default"),
+        decl,
+        consumer,
+        target_chunk_name,
+        swapped.contains("default"),
         || swapped.iter().cloned().collect::<Vec<_>>().join(","),
         |imported| {
             if swapped.contains(imported) {
-                bail!("partial-swap consumer gate: {consumer} imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; the rewrite did not cover this consumer and the stripped chunk no longer exports it");
+                bail!(
+                    "partial-swap consumer gate: {consumer} imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; the rewrite did not cover this consumer and the stripped chunk no longer exports it"
+                );
             }
             Ok(())
         },
         |orig| {
             if swapped.contains(orig) {
-                bail!("partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it");
+                bail!(
+                    "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it"
+                );
             }
             Ok(())
         },

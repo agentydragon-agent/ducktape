@@ -13,9 +13,9 @@ use serde_json::Value;
 
 use artifact::{ChunkBundle, ChunkId};
 use binding_targets::module_export_name;
-use swc_ecma_ast::{ModuleDecl, ImportSpecifier, ExportSpecifier};
 use js_ast::{ParsedJsModule, is_binding_identifier};
 use spec::{BundledPartialSwapPackage, PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};
+use swc_ecma_ast::{ExportSpecifier, ImportSpecifier, ModuleDecl};
 
 use crate::manifests::PartialSwapSymbolResolution;
 use crate::packages::{read_installed_package_metadata, resolve_package_subpath};

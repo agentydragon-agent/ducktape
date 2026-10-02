@@ -531,36 +531,39 @@ fn check_consumer_shape_has_live_rewrite(
     target_chunk_name: &str,
 ) -> Result<()> {
     crate::validate::check_consumer_directive(
-        decl, consumer, target_chunk_name, symbols.contains_key("default"),
+        decl,
+        consumer,
+        target_chunk_name,
+        symbols.contains_key("default"),
         || symbols.keys().cloned().collect::<Vec<_>>().join(","),
         |imported| {
-                        if !symbols.contains_key(imported) {
-                            return Ok(());
-                        }
-                        // Named imports of swapped names have a live
-                        // rewrite at both application sites — unless the
-                        // consumer file is hands-off (suppress chunk).
-                        if caller_suppressed {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
-                            );
-                        }
+            if !symbols.contains_key(imported) {
+                return Ok(());
+            }
+            // Named imports of swapped names have a live
+            // rewrite at both application sites — unless the
+            // consumer file is hands-off (suppress chunk).
+            if caller_suppressed {
+                bail!(
+                    "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and imports swapped name `{imported}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
+                );
+            }
             Ok(())
         },
         |orig| {
-                        let Some(symbol) = symbols.get(orig) else {
-                            return Ok(());
-                        };
-                        if caller_suppressed {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
-                            );
-                        }
-                        if bundled || matches!(symbol.kind, PartialSwapKind::Member) {
-                            bail!(
-                                "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
-                            );
-                        }
+            let Some(symbol) = symbols.get(orig) else {
+                return Ok(());
+            };
+            if caller_suppressed {
+                bail!(
+                    "partial-swap consumer gate: {consumer} is in a suppress-marked chunk and re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; suppress files are not rewritten and the stripped chunk no longer exports it",
+                );
+            }
+            if bundled || matches!(symbol.kind, PartialSwapKind::Member) {
+                bail!(
+                    "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
+                );
+            }
             Ok(())
         },
     )
