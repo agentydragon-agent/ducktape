@@ -625,6 +625,7 @@ rust_library(
     deps = [
         "@crates//:anyhow",
         "@crates//:serde_yaml",
+        "@crates//:tempfile",
     ],
 )
 
