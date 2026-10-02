@@ -300,7 +300,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
             "config.yaml"
         ]
     )
-    assert testing_config["sandbox_presets"]["public-coder"]["kubernetes_grants"] == []
+    assert "kubernetes_grants" not in testing_config["sandbox_presets"]["public-coder"]
 
 
 def test_managed_haku_public_coder_reader_and_restart_have_named_bind_delegation(
