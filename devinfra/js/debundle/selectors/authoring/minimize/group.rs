@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
-use readoff_render::kept_spans_for_anchor_set;
+use readoff_render::{kept_spans_for_anchor_set, unindexed_literal_spans};
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
@@ -122,6 +122,7 @@ fn try_var_group_read_off(
             }
         }
     }
+    ranked_spans.extend(unindexed_literal_spans(item));
     let chunk_kept = index
         .shape_index
         .minimal_anchor_set(decl.body_idx)
@@ -151,6 +152,12 @@ fn try_var_group_read_off(
         )?);
         tuple_ranked.extend(ranked.into_iter().take(MAX_MINIMIZER_ANCHORS));
     }
+
+    // The object slot policy prefers direct values/keys, but a joint tuple may
+    // need a deeper anchor that cannot distinguish either slot on its own.
+    tuple_ranked.extend(ranked_spans.into_iter().filter(|anchor| {
+        target_slots.iter().any(|&slot| node_holds_anchor(var.decls[slot].span(), *anchor))
+    }).take(MAX_MINIMIZER_ANCHORS));
 
     let no_regex = BTreeMap::new();
     let render_with = |kept: &BTreeSet<AnchorSpan>,
