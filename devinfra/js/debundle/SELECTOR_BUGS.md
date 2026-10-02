@@ -29,25 +29,6 @@ makes the predicate match nothing with no diagnostic (a silent fallback, STYLE.m
 § General, Exceptions). Not checked: whether `selectors/matching/source_match/parse_validate.rs`
 rejects an invalid pattern earlier. If it does not, reject it there as `invalid`.
 
-## Hole Keyword Sets Can Drift
-
-Status: unreproduced (code review 2026-09-30). Hole-ness is implemented three
-times: AST-level in `selectors/matching/source_match/holes.rs`, fact-level in `selectors/matching/selector_match.rs`,
-and a local `is_hole_keyword` in `selectors/authoring/match_selector.rs`, kept in sync by "mirrors"
-comments. The `selectors/authoring/match_selector.rs` copy omits `ARRAY_ELEMENTS`,
-unlike `selectors/matching/selector_match.rs`. No input was found where this changes output. Fix: one
-`is_hole_keyword` in `selectors/matching/source_match_holes.rs`.
-
-## Synthesized-Selector Replacement Count Can Under-Report
-
-Status: unreproduced (code review 2026-09-30; `holes_present` was read, the
-renderer's `ARGS`/`CASE_REST` output was not re-checked). `selectors/authoring/render.rs`
-`holes_present` tests for only `ANYTHING`, `STMT_LIST` and `DECLARATORS`, while
-the renderer also emits `ARGS` and `CASE_REST`. `rewritten_holes`, and the
-`replacement_count` that `selectors/authoring/selector_codemod.rs` derives from
-`rewritten_holes.len()`, would then omit them. Fix: one keyword list shared with
-the renderer, and a test that a selector holing each keyword reports it.
-
 ## Solver Domain Encoding Ignores Id Gaps
 
 Status: unreproduced (code review 2026-09-30, not verified).

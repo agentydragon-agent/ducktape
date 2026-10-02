@@ -51,7 +51,7 @@ pub fn free_identifiers<'a>(template: impl IntoIterator<Item = &'a Index>) -> BT
                 continue;
             };
             if consumed.contains(&node)
-                || selector_match::is_hole_keyword(name)
+                || source_match_holes::is_hole_keyword(name)
                 || name == STRING_LITERAL_REGEX_PREDICATE
             {
                 continue;

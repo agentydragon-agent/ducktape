@@ -352,7 +352,7 @@ fn try_var_group_read_off(
     )?;
 
     let source = render_with(&union, &regex_anchors)?;
-    let rewritten_holes = holes_present(&source);
+    let rewritten_holes = holes_present(&source)?;
     Ok(Some(SpecializedSelector {
         match_source: source,
         rewritten_holes,
@@ -616,7 +616,7 @@ fn keep_shallow_group_selector(
         accepted_regex_anchors(index, decl, targets, &regex_candidates, &kept, &render_with)?;
 
     let source = render_with(&kept, &regex_anchors)?;
-    let rewritten_holes = holes_present(&source);
+    let rewritten_holes = holes_present(&source)?;
     Ok(Some(SpecializedSelector {
         match_source: source,
         rewritten_holes,
