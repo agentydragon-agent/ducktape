@@ -26,14 +26,60 @@ Planning hygiene: keep active dispatch order here. When a plan's core work is
 complete, summarize only its remaining tail here instead of leaving the plan as
 a second priority queue.
 
-### P0 — porting to the next bundle version
+### Dispatch order after the cleanup audit
+
+Safety evidence outranks speculative deletion counts. Source inspection is not
+an end-to-end reproduction; performance candidates below are not measured wins.
+The sections below hold details, not competing priority queues.
+
+1. **Fail-closed class selector facts.** `chunk_facts::class_member` omits
+   method kind and static flags. Pin static/instance and getter/method pairs
+   through the CLI, then preserve or explicitly reject unsupported semantics.
+   Audit decorators alongside them; do not broaden matching to simplify code.
+2. **Eager/lazy class traversal and async-module admission.** Reproduce the
+   fallback/no-sync collector gaps and top-level `for await` / `await using`
+   cases listed under suspected bugs. Share traversal policy only where eager
+   execution semantics agree, with TDZ/runtime and rejection fixtures.
+3. **Entry-file SCC completeness.** Reproduce the inline-mode universal-edge
+   concern in <ARCHITECTURE_BACKLOG.md> before changing candidate enumeration;
+   measure incremental-planner cost and preserve the two-pass gate.
+4. **Strict, text-preserving spec automation.** Keep next-version porting the
+   product target. Prioritize reviewable selector patches, unknown-field/default
+   consistency and explicit skipped-candidate reasons over broader automation.
+   Semantic no-op writes are avoided already; changed YAML still loses comments.
+5. **Context-aware JavaScript names and vendor emission.** Distinguish binding
+   identifiers from exported property names before deduplicating validators;
+   replace unsafe wrapper interpolation with AST construction and parser/Node
+   regressions. A blanket reserved-word ban would reject valid export names.
+6. **Anonymous uniqueness indexing.** The per-item whole-body `eq_ignore_span`
+   scan is quadratic by inspection. Benchmark proposal generation; use shape
+   hash buckets with exact equality fallback, preserving span/context-insensitive
+   equality, duplicate handling and statement ordinals.
+7. **Selector and owner diagnostics.** Reject invalid regex predicates, verify
+   distinct-place counts and refuse ambiguous CLI owner resolution. Follow
+   <SELECTOR_BUGS.md>; keep near-miss ranking heuristics distinct from boolean
+   backtracking. Solver-domain gap reachability still needs investigation.
+8. **Public browser smoke.** Build <plans/excalidraw_live_smoke.md> and cover
+   bundled vendor singleton/importmap behavior. Node probes already run; browser
+   loading is the missing contract, not a missing vendor schema.
+9. **Profile-backed AST and lookup trims.** Measure retained-statement clones,
+   file-name lookup and alpha-binding snapshots before move-based splits,
+   indexes or undo logs. Preserve ordering/hygiene and the independent Node
+   differential oracle; do not promise speedups from source inspection alone.
+10. **Reliable measurement and remaining boundaries.** Fix the reproduced perf
+    exit-status loss and honor `PROPTEST_CASES`; then extract only demonstrated
+    responsibility seams in vendor/lowering. CLI-family splitting, raw ES test
+    parsing and per-module output context already exist. Prefer deleting
+    redundant setup over deleting behavioral assertions or adding frameworks.
+
+### Porting to the next bundle version
 
 Each spec is for one version's bundles; a new version's spec starts as a copy of
 the previous one. Make repairing that copy cheap:
 <plans/automated_spec_workflows.md> § Flow 3, with the held-out
 `debundle_stabilize` evaluation built on it.
 
-### P1 — automation product flows over the solver
+### Automation product flows over the solver
 
 Design and milestones: <plans/automated_spec_workflows.md> — patch-plan bulk
 codemods that explain every skipped candidate and prove through the one
@@ -69,7 +115,7 @@ in <docs/selector_resolution.md> § Interactive budget.
    variant: `conflict` is produced by reference narrowing before the solve, so
    explaining an infeasible group adds a solver-level variant and its match arms.
 
-### P1 — test infrastructure
+### Test infrastructure
 
 1. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke
    (<plans/excalidraw_live_smoke.md>) so private-corpus debundler issues can be
@@ -78,7 +124,7 @@ in <docs/selector_resolution.md> § Interactive budget.
    fixtures for the common anchor-choice cases of the `debundle_stabilize`
    playbook so its guidance is executable rather than only prose.
 
-### P2 — pipeline performance and architecture cleanup
+### Pipeline performance and architecture cleanup
 
 Proposer-gate, `debundle run` (report opt-out, chunk-level incremental
 rebuilds, codegen cache), and materialize-stage performance work lives in
@@ -93,7 +139,7 @@ rebuilds, codegen cache), and materialize-stage performance work lives in
    Move it to a draining/move-based split if fresh profiles show
    retained-statement cloning hot.
 
-### P3 — read-off minimizer polish
+### Read-off minimizer polish
 
 1. **Dogfood-apply on the private downstream repo.** Run `synthesize-selectors --apply` on
    the real spec to convert the large set of fragile name-pins into robust
@@ -164,6 +210,13 @@ Only when a multi-chunk bump needs them:
 Statement-level overrides, the redundant-hint guardrail and compositional proof:
 <plans/purity_analysis.md>.
 
+The ignored `inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle`
+fixture is a deferred **RegExp admission feature**, not a contradictory classifier
+bug. `purity/whitelists.rs` explicitly requires static ECMA-262 pattern validation
+before admitting literal `RegExp` construction; the active classifier test
+correctly expects Unknown today. Keep the future test ignored until that
+precondition is implemented; do not whitelist constructors that can throw.
+
 ## Rename pipeline
 
 `lowering/rename_ledger.rs`'s module doc is the architecture reference for
@@ -200,7 +253,10 @@ confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
   in bash. `local status=$?` follows an `if timeout ...; then ...; return 0; fi`
   with no `else`, so it reads the `if` compound's status (0 on fall-through) and
   `*.failed.txt` loses the real exit code, including the timeout's 124. Capture
-  the status in an `else` branch.
+  the status in an `else` branch. Isolated shell check:
+  `if bash -c "exit 7"; then :; fi; echo "$?"` prints 0; capturing `$?`
+  inside `else` prints 7.
+  This reproduces the shell idiom, not a full perf invocation.
 - **Vendor name validation accepts reserved words.** Status: function read,
   reachability not checked. `vendor/mod.rs` `is_valid_identifier` accepts
   `class`, `default` and `await`; it gates namespace, local and facade names that
@@ -209,13 +265,16 @@ confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
   words. Related, reported: `vendor/wrappers.rs` builds `export const {name} =
 _d.{name};` by string interpolation, so a string-literal export name in a vendor
   chunk yields invalid JS (and bypasses the AST-only rule). Use one identifier
-  check from `js_ast`.
+  policy with separate binding-identifier and IdentifierName contexts; do not
+  reject valid string-literal exports merely to reuse a binding check.
 - **Top-level `for await` and `await using` are not treated as top-level await.**
-  Status: reported. `facts/analyze.rs` `TopLevelAwaitFinder` overrides only
-  `visit_await_expr`, so a module made async by either form is not bailed as A2,
-  and `chunk_analysis/chunk_admission.rs` does not cover it. Confirm with a two-line
-  fixture beside `e2e/realizability_test.rs::top_level_await_is_rejected`.
-- **The at-init fallback finder does not scan class bodies.** Status: reported.
+  Status: visitor omission confirmed by inspection; CLI reproduction pending.
+  `facts/analyze.rs` `TopLevelAwaitFinder` overrides only
+  `visit_await_expr`; neither it nor `chunk_analysis/chunk_admission.rs`
+  explicitly handles these forms. Verify parser support and A2 rejection with
+  a minimal CLI fixture beside `e2e/realizability_test.rs::top_level_await_is_rejected`.
+- **The at-init fallback finder does not scan class bodies.** Status: no-op
+  visitor confirmed by inspection; runtime reachability unverified.
   `facts/at_init_fallback.rs` `UntrustedAtInitInlineFnFallbackFinder::visit_class`
   is a no-op, so inline functions in `extends` clauses, static blocks, computed
   keys and decorators, which run at init, are never seen. `facts/analyze.rs` ANDs
@@ -224,14 +283,16 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
   synchronously there would get no at-init promotion. Soundness-relevant. Confirm
   with a fixture whose callback reads a binding that is still in its TDZ.
 - **`NoSyncMemberArgumentSourceCollector` has no `visit_class_member`.** Status:
-  reported. Unlike `StatementFactsCollector` and `OpaqueAtInitCallFinder`, it
+  missing override confirmed by inspection; runtime reachability unverified.
+  Unlike `StatementFactsCollector` and `OpaqueAtInitCallFinder`, it
   walks constructor bodies and instance field initializers at depth 0, so their
   no-sync call arguments are recorded as eager and then removed from
   `at_init_unresolved_sources`. Needs a `no_sync_callback_members` hint and the
   same identifier in a genuine at-init unresolved call in one statement, so it is
   contrived.
 - **Class member facts drop method kind, `static` and decorators.** Status:
-  reported, not re-checked. `selectors/matching/chunk_facts.rs` extraction projects `static x = 1`
+  static/method-kind projection omissions confirmed by inspection; decorator
+  and matcher reachability audit pending. `selectors/matching/chunk_facts.rs` projects `static x = 1`
   and `x = 1`, and `get a(){}` and `a(){}`, to identical facts despite the
   "faithful, fail-closed" claim. A `static` needle could match a non-static
   subject. Confirm with a selector-matcher test case pairing the two.
@@ -276,18 +337,12 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
   `scc --cycles-only --singletons-only` silently returns nothing (no
   `conflicts_with`).
 - **Anonymous-statement uniqueness scan is quadratic.** Status: reported, not
-  measured. `selectors/resolution/anonymous_resolution.rs`
+  measured (quadratic scan confirmed by inspection). `selectors/resolution/anonymous_resolution.rs`
   `addressable_anonymous_statement_owner_ids_in_globals` compares each item
   against the whole body with `eq_ignore_span` (`.take(2)` only short-circuits
   after two matches), which is O(N²) for `modules propose --source-root` on a large
-  chunk. A hash of a span-free shape would avoid it.
-- **An ignored purity test contradicts the classifier.** Status: reported.
-  `e2e/purity_test.rs` `inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle`
-  (`#[ignore]`) asserts `new RegExp("a+")` is pure, while `purity/whitelists.rs`
-  deliberately omits `RegExp` (it throws `SyntaxError` at construction) and
-  `purity/classifier_tests.rs` `regexp_constructor_stays_unknown_even_with_literal_args`
-  asserts the opposite. Both cannot hold; the RegExp half of the ignored test is
-  the wrong one.
+  chunk. Shape hashing needs exact-equality fallback and the same ignored-context
+  semantics; retain duplicate/ordinal regression coverage.
 - **`selectors/authoring/selector_minimizer_proptest.rs` ignores `PROPTEST_CASES`.** Status: reported.
   The config hard-codes `cases: 96`; `condensation_order_proptest.rs` `ci_config`
   is the pattern that honours the variable.
