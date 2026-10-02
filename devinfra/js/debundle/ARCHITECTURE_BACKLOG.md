@@ -19,10 +19,9 @@ are deleted, not struck through.
    rename that changes spec, report, or CLI wire formats.
 3. **Graph and lowering boundaries are permissive.** The owner graph,
    incremental quotient, realizability index, and emitted schedule have
-   related but separately maintained state. Broad `pub(crate)` and
-   `lowering/`'s sibling `use super::*` make cross-phase dependencies hard
-   to audit. Prefer explicit phase inputs and checked constructors over a
-   bulk visibility or collection-type rewrite.
+   related but separately maintained state. Broad crate-internal visibility
+   makes cross-phase invariants hard to audit. Prefer explicit phase inputs
+   and checked constructors over a bulk visibility or collection-type rewrite.
 
 ## Open backlog
 
@@ -128,74 +127,36 @@ changes that might admit non-constraining members". If the filter shape
 changes, either turn this into a tested invariant or delete the defensive
 branch.
 
-## Code refactor / dedup opportunities
+## Remaining refactor opportunities
 
-Production-code dedup/cleanup options, calibrated by (LOC saved × safety).
+- **Shallow versus full fact extraction.** `program_analysis.rs` builds manifests
+  and rewrite facts for every chunk; `facts/` performs owner/graph analysis only
+  where needed. Share classifications, not necessarily traversals: preserve the
+  cheap pass-through path and source-order/unsplit-declaration semantics.
+- **Entry lowering orchestration.** `lowering/lower.rs` still combines entry
+  import disambiguation, rename sealing and entry export planning. Extract only
+  where a narrow interface simplifies callers; per-module output already has
+  its own boundary. Production lowering imports are explicit; wildcard imports
+  remain only inside test modules, not as cross-phase dependency plumbing.
+- **Graph representation boundaries.** Clarify the domain graph → counted graph
+  → realizability index contract and constraining versus non-constraining edges.
+  Collection changes need profiles and an explicit determinism contract, not a
+  blanket BTree-to-hash rewrite.
 
-**Structural findings (full-package review):**
+Large-file moves alone save no code. Stable seams worth evaluating remain in
+`selectors/authoring/selector_codemod.rs`, `selectors/resolution/selector_resolve.rs`,
+`selectors/matching/chunk_facts.rs`, `peel/quotient.rs`,
+`lowering/rename_ledger.rs`, and `artifacts/artifact.rs`. Define the seam's API
+before moving files: Bazel target plumbing can otherwise outweigh the benefit.
 
-1. `vendor/mod.rs` further split (~1.6k lines including tests after the
-   emission/manifests/passthrough/plan/strip/validate/wrappers extraction):
-   package/subpath resolution helpers, export-surface collection,
-   `MaterializedOutputChunkIndex`, identifier rewriting
-   (`IdentRewriteTarget` / `PartialSwapIdentRewriter`), and the post-strip
-   consumer scan are distinct responsibilities. `DeferredImport` already uses
-   the shared `js_ast` import constructors; named/namespace re-export
-   construction remains separate. Preserve the scan retirement condition above.
-2. Two top-level fact traversals remain: `program_analysis.rs::analyze_program_shallow`
-   scans every chunk during prepare to build the manifest and determine AST
-   retention; `facts/` performs the more expensive owner/graph analysis only
-   for chunks that need it. Declaration shape classification is shared via
-   `binding_targets::decl_shape`, but the traversals still have separate
-   responsibilities. Before folding shallow extraction into facts, preserve
-   the cheap prepare path for pass-through chunks and the manifest's
-   source-order/unsplit-var-declaration semantics.
-3. `lowering/lower.rs` — extract the remaining inline phases of `lower_chunk`
-   (naturalization, disambiguation, import/entry planning). Per-module output
-   already lives in `module_output.rs`; its `ModuleOutputContext` carries
-   runtime AST, chunk/path information, and the top-level mark. Narrow any
-   further context extraction to remaining outer orchestration. Related:
-   `lowering/mod.rs` centralizes imports consumed through wildcard
-   `use super::*` in sibling modules.
-4. `artifacts/output_layout.rs` has repetitive `self.root.join(CONSTANT)`
-   accessors; a data-driven path helper is possible but low priority. Keep
-   named accessors if they make call sites and output contracts clearer.
-5. Encapsulation/type design: BTree collections in hot-path graph structures
-   (`counted_digraph.rs`, `artifacts/artifact.rs`, `realizability/`) where hash-based
-   would be measurably faster — document determinism where it is required;
-   make `DepKind`'s constraining vs non-constraining axis
-   (`constrains_init_order()`) a first-class type distinction; the three-layer
-   edge representation (domain graph → counted graph → realizability index)
-   has fragile bridging; `pub(super)` blankets `lowering/` field and function
-   visibility.
-6. `ChunkBundle` ownership ping-pong through every stage
-   (`artifact = result.artifact`) — cosmetic now that each stage is a pure
-   function.
+Keep semantic test cases and assertions; share setup rather than introducing a
+new test framework. Invalid-input tests must still be able to construct invalid
+inputs. Selector renderers share omitted-run collapsing, but their AST retention,
+hole kinds and empty-list policies intentionally remain form-specific.
 
-SWC-reuse evaluations (what to adopt, what was rejected and why):
-<docs/swc_reuse.md>.
-
-**Real value but needs design work / behavior-risk:**
-
-1. Parameterize the per-form AST holing visitors (`selectors/authoring/render.rs`
-   `hole_expr` / `hole_stmt`, `selectors/authoring/minimize/class.rs`
-   `hole_class_member`, etc.) behind a `Holer`
-   trait or table to collapse repeated per-variant match clusters. ~150 LOC,
-   medium risk (over-abstraction hazard; the per-form holing strategies differ
-   for good reasons).
-2. The bundled/partial vendor fixtures in `e2e/vendor_swap_test.rs` now use
-   typed builders and shared transform construction, including package-root
-   partial-swap setup. Keep deliberately malformed raw JSON in
-   validation tests: making invalid inputs impossible to construct would remove
-   their coverage, not improve it.
-
-**Organization only (≈0 LOC removed, navigability win):** split giant
-files at existing responsibility seams — <selectors/authoring/selector_codemod.rs>,
-<selectors/resolution/selector_resolve.rs>, <selectors/matching/chunk_facts.rs>,
-<peel/quotient.rs>, <lowering/rename_ledger.rs>,
-<artifacts/artifact.rs>. Before moving code, document the exported API of
-that seam; Bazel already treats many files as separate crates, so file moves
-can otherwise multiply dependency plumbing.
+SWC-reuse decisions and rejected replacements: <docs/swc_reuse.md>.
+Measured performance work and profiling prerequisites: <TODO.md> § Pipeline
+performance and architecture cleanup and `perf/`.
 
 ## Concerns to discuss before deciding
 

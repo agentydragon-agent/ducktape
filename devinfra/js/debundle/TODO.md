@@ -213,20 +213,11 @@ confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
   likely benign. The post-seed reporting in `peel/quotient.rs` keeps an SCC
   whose owners collapse into one class, while the `translate_*` helpers drop it
   and `would_be_cycles_after_contract` fabricates a two-class evidence.
-- **`needs_ast_for_chunk` tests the opposite direction to its comment.** Status:
-  reported. In `prepare_chunks.rs` the block commented "Chunk that imports a
-  vendor target needs AST" checks whether a vendor target imports this chunk;
-  the following block is the "imports" direction. The effect is over-retaining
-  ASTs, not unsoundness.
 - **Two definitions of "residual".** Status: reported. `reports/schema.rs`
   `ModuleEntry.residual` is documented as authoritative, not derivable from
   `path`, while `spec::is_residual_module_path`, `spec_stats` and the CLI derive
   it from the `residual/` prefix. Possibly intentional (authoring tree versus
   materialized), but undocumented.
-- **CLI papercuts.** Status: reported. `gate list` and `gate cut` require
-  `--graph` even with `--cycles`, which only needs it to derive a default path;
-  `scc --cycles-only --singletons-only` silently returns nothing (no
-  `conflicts_with`).
 
 ## CLI usability
 
