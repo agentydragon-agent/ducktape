@@ -381,7 +381,10 @@ impl SupportSearch<'_> {
 
 #[cfg(test)]
 mod tests {
-    use selector_test_fixtures::{owner_fact, declared_binding, member_read, module_member_use, call_argument_use, broad_specific_targets};
+    use selector_test_fixtures::{
+        broad_specific_targets, call_argument_use, declared_binding, member_read,
+        module_member_use, owner_fact,
+    };
     use std::collections::BTreeSet;
     use std::sync::Mutex;
     use std::thread;
@@ -952,7 +955,6 @@ mod tests {
         );
     }
 
-
     fn owner_references_binding(owner: usize, binding: &str) -> SelectorFact {
         SelectorFact::OwnerReferencesBinding {
             owner: OwnerId(owner),
@@ -960,8 +962,6 @@ mod tests {
             edge_kind: "eager_use".to_string(),
         }
     }
-
-
 
     #[test]
     fn cpsat_resolves_broad_specific_target_injectivity() {

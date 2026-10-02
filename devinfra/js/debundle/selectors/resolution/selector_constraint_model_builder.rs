@@ -1572,11 +1572,14 @@ impl FactDomains {
 
 #[cfg(test)]
 mod tests {
-    use selector_test_fixtures::{owner_fact, declared_binding, member_read, module_member_use, call_argument_use, broad_specific_targets};
     use super::*;
     use analysis::{OwnerId, StatementOrdinal};
     use selector_constraint_backend::{AllowedTupleConstraintId, BackendValueId, ConstraintValue};
     use selector_ir::ClaimKind;
+    use selector_test_fixtures::{
+        broad_specific_targets, call_argument_use, declared_binding, member_read,
+        module_member_use, owner_fact,
+    };
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct AllowedTupleConstraint {
@@ -1593,7 +1596,6 @@ mod tests {
         ConstraintValue::String(value.to_string())
     }
 
-
     fn owner_reference(owner: usize, binding: &str, edge_kind: &str) -> SelectorFact {
         SelectorFact::OwnerReferencesBinding {
             owner: OwnerId(owner),
@@ -1601,8 +1603,6 @@ mod tests {
             edge_kind: edge_kind.to_string(),
         }
     }
-
-
 
     fn decorate_call(callee: &str, class_anchor: &str, member: Option<&str>) -> SelectorFact {
         SelectorFact::DecorateCallUse {

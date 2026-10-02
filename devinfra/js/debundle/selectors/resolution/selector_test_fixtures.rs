@@ -1,7 +1,10 @@
 //! Declarative inputs shared by compiler and solver tests; no expected outcomes.
 
 use analysis::{OwnerId, StatementOrdinal};
-use selector_ir::{ClaimKind, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram, SelectorTargetId, StringTerm, VariableDomain};
+use selector_ir::{
+    ClaimKind, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
+    SelectorTargetId, StringTerm, VariableDomain,
+};
 
 pub fn owner_fact(owner: usize, ordinal: usize, statement_kind: &str) -> SelectorFact {
     SelectorFact::Owner {
@@ -48,7 +51,12 @@ pub fn call_argument_use(
     }
 }
 
-pub fn broad_specific_targets() -> (SelectorProgram, SelectorFactStore, SelectorTargetId, SelectorTargetId) {
+pub fn broad_specific_targets() -> (
+    SelectorProgram,
+    SelectorFactStore,
+    SelectorTargetId,
+    SelectorTargetId,
+) {
     let mut program = SelectorProgram::default();
     let broad_owner = program.add_variable(VariableDomain::Owner, Some("broad".to_string()));
     let strict_owner = program.add_variable(VariableDomain::Owner, Some("strict".to_string()));
@@ -56,37 +64,39 @@ pub fn broad_specific_targets() -> (SelectorProgram, SelectorFactStore, Selector
         broad_owner,
         "module",
         ClaimKind::Binding {
-        export_name: Some("Broad".to_string()),
+            export_name: Some("Broad".to_string()),
         },
     );
     let strict_target = program.add_target(
         strict_owner,
         "module",
         ClaimKind::Binding {
-        export_name: Some("Strict".to_string()),
+            export_name: Some("Strict".to_string()),
         },
     );
     program.add_atom(SelectorAtom::OwnerDeclaresBinding {
         owner: OwnerTerm::Var { id: broad_owner },
         binding: StringTerm::Const {
-        value: "shared".to_string(),
+            value: "shared".to_string(),
         },
     });
     program.add_atom(SelectorAtom::OwnerDeclaresBinding {
         owner: OwnerTerm::Var { id: strict_owner },
         binding: StringTerm::Const {
-        value: "specific".to_string(),
+            value: "specific".to_string(),
         },
     });
     program.require_all_different(vec![broad_target, strict_target]);
 
-    let facts = SelectorFactStore { facts: vec![
-        owner_fact(10, 0, "var"),
-        owner_fact(20, 1, "var"),
-        declared_binding(10, "shared"),
-        declared_binding(20, "shared"),
-        declared_binding(20, "specific"),
-    ] };
+    let facts = SelectorFactStore {
+        facts: vec![
+            owner_fact(10, 0, "var"),
+            owner_fact(20, 1, "var"),
+            declared_binding(10, "shared"),
+            declared_binding(20, "shared"),
+            declared_binding(20, "specific"),
+        ],
+    };
 
     (program, facts, broad_target, strict_target)
 }
