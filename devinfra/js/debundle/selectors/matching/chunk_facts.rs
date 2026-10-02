@@ -25,10 +25,10 @@ use js_ast::statement_ordinal_for_body_index;
 use swc_ecma_ast::{
     ArrayPat, ArrowFunctionBody, AssignTarget, AssignTargetPat, BlockStmt, Callee, Class,
     ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, FunctionBody,
-    ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropKind, Module, ModuleDecl, ModuleItem,
-    ObjectPat, ObjectPatProp, OptChainBase, ParamOrTsParamProp, Pat, PrivateName, Prop, PropName,
-    PropOrSpread, SimpleAssignTarget, Stmt, SuperProp, Tpl, UsingDecl, VarDecl, VarDeclOrExpr,
-    VarDeclarator,
+    ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropKind, MethodKind, Module, ModuleDecl,
+    ModuleItem, ObjectPat, ObjectPatProp, OptChainBase, ParamOrTsParamProp, Pat, PrivateName, Prop,
+    PropName, PropOrSpread, SimpleAssignTarget, Stmt, SuperProp, Tpl, UsingDecl, VarDecl,
+    VarDeclOrExpr, VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -170,7 +170,8 @@ pub struct ChunkFacts {
     pub prop_name: Vec<(NodeId, String)>,
     /// distinguishing keyword/operator token: the operator for `Bin` / `Unary`
     /// / `Update` / `Assign`, and the declaration keyword (`var`/`let`/`const`)
-    /// for `VarDecl` — both are exact labels the matcher compares.
+    /// for `VarDecl`, plus class-member static/accessor modifiers. All are exact
+    /// labels the matcher compares, including in alpha mode.
     pub operator: Vec<(NodeId, String)>,
     /// regex literal -> (pattern, flags), both T-invariant labels.
     pub regex: Vec<(NodeId, String, String)>,
@@ -553,6 +554,11 @@ impl Extractor {
     }
 
     fn function(&mut self, function: &Function) -> Result<NodeId, Unsupported> {
+        if !function.decorators.is_empty()
+            || function.params.iter().any(|p| !p.decorators.is_empty())
+        {
+            return unsupported("function decorators");
+        }
         // async/generator are part of the function's identity (production compares
         // them via `eq_ignore_span`), so they must distinguish the node — fold them
         // into the kind tag the matcher compares exactly, not drop them.
@@ -595,6 +601,9 @@ impl Extractor {
     }
 
     fn class_node(&mut self, class: &Class) -> Result<NodeId, Unsupported> {
+        if !class.decorators.is_empty() {
+            return unsupported("class decorators");
+        }
         let id = self.node(NodeKind::Class);
         if let Some(super_class) = &class.super_class {
             let super_node = self.expr(super_class)?;
@@ -607,10 +616,32 @@ impl Extractor {
         Ok(id)
     }
 
+    fn class_method_node(&mut self, is_static: bool, kind: MethodKind) -> NodeId {
+        let modifier = match (is_static, kind) {
+            (false, MethodKind::Method) => "method",
+            (false, MethodKind::Getter) => "get",
+            (false, MethodKind::Setter) => "set",
+            (true, MethodKind::Method) => "static method",
+            (true, MethodKind::Getter) => "static get",
+            (true, MethodKind::Setter) => "static set",
+        };
+        let id = self.node(NodeKind::Method);
+        self.facts.operator.push((id, modifier.into()));
+        id
+    }
+
+    fn class_property_node(&mut self, is_static: bool) -> NodeId {
+        let id = self.node(NodeKind::ClassProp);
+        self.facts
+            .operator
+            .push((id, if is_static { "static" } else { "instance" }.into()));
+        id
+    }
+
     fn class_member(&mut self, member: &ClassMember) -> Result<NodeId, Unsupported> {
         match member {
             ClassMember::Method(method) => {
-                let id = self.node(NodeKind::Method);
+                let id = self.class_method_node(method.is_static, method.kind);
                 let key = self.prop_key(&method.key)?;
                 self.facts.child.push((id, 0, key));
                 let function = self.function(&method.function)?;
@@ -625,6 +656,9 @@ impl Extractor {
                 for param in &constructor.params {
                     match param {
                         ParamOrTsParamProp::Param(param) => {
+                            if !param.decorators.is_empty() {
+                                return unsupported("constructor parameter decorators");
+                            }
                             let pat = self.pat(&param.pat)?;
                             self.facts.child.push((id, next, pat));
                             next += 1;
@@ -641,7 +675,10 @@ impl Extractor {
                 Ok(id)
             }
             ClassMember::ClassProp(prop) => {
-                let id = self.node(NodeKind::ClassProp);
+                if !prop.decorators.is_empty() {
+                    return unsupported("class property decorators");
+                }
+                let id = self.class_property_node(prop.is_static);
                 let key = self.prop_key(&prop.key)?;
                 self.facts.child.push((id, 0, key));
                 if let Some(value) = &prop.value {
@@ -658,7 +695,7 @@ impl Extractor {
             }
             ClassMember::Empty(_) => Ok(self.node(NodeKind::ClassMemberEmpty)),
             ClassMember::PrivateMethod(method) => {
-                let id = self.node(NodeKind::Method);
+                let id = self.class_method_node(method.is_static, method.kind);
                 let key = self.private_name_key(&method.key);
                 self.facts.child.push((id, 0, key));
                 let function = self.function(&method.function)?;
@@ -666,7 +703,10 @@ impl Extractor {
                 Ok(id)
             }
             ClassMember::PrivateProp(prop) => {
-                let id = self.node(NodeKind::ClassProp);
+                if !prop.decorators.is_empty() {
+                    return unsupported("class property decorators");
+                }
+                let id = self.class_property_node(prop.is_static);
                 let key = self.private_name_key(&prop.key);
                 self.facts.child.push((id, 0, key));
                 if let Some(value) = &prop.value {
