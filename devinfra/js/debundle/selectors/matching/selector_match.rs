@@ -1117,41 +1117,7 @@ fn match_list_with_holes(
         0,
         mode,
         bindings,
-    )
-}
-
-/// Run-hole-gap placement for plain node lists (object props / args / class
-/// members / …): [`place_declarator_segments`] without alignment recording.
-/// Delegates with a throwaway alignment buffer — the two are identical bar that
-/// recording (both leftmost-first, both roll `Bindings` back on a failed attempt).
-#[allow(clippy::too_many_arguments)]
-fn place_segments(
-    needle: &Index,
-    nlist: &[NodeId],
-    subject: &Index,
-    slist: &[NodeId],
-    segments: &[(usize, usize)],
-    anchored_left: bool,
-    anchored_right: bool,
-    seg_idx: usize,
-    cand_min: usize,
-    mode: Mode,
-    bindings: &mut Bindings,
-) -> Result<bool, Unsupported> {
-    let mut scratch = vec![None; nlist.len()];
-    place_declarator_segments(
-        needle,
-        nlist,
-        subject,
-        slist,
-        segments,
-        anchored_left,
-        anchored_right,
-        seg_idx,
-        cand_min,
-        mode,
-        bindings,
-        &mut scratch,
+        None,
     )
 }
 
@@ -1209,7 +1175,7 @@ fn align_var_declarators(
     if segments.is_empty() {
         return Ok(Some(alignment));
     }
-    let placed = place_declarator_segments(
+    let placed = place_segments(
         needle,
         ndecls,
         subject,
@@ -1221,15 +1187,16 @@ fn align_var_declarators(
         0,
         mode,
         bindings,
-        &mut alignment,
+        Some(&mut alignment),
     )?;
     Ok(placed.then_some(alignment))
 }
 
-/// `place_segments` for declarator lists, additionally recording the chosen
-/// alignment (and rolling it back alongside `Bindings` on a failed placement).
+/// Shared run-hole placement for ordinary lists and declarator diagnostics.
+/// Record alignment only when requested; boolean matches allocate no throwaway
+/// alignment buffer or alignment snapshots. Binding rollback is unconditional.
 #[allow(clippy::too_many_arguments)]
-fn place_declarator_segments(
+fn place_segments(
     needle: &Index,
     ndecls: &[NodeId],
     subject: &Index,
@@ -1241,7 +1208,7 @@ fn place_declarator_segments(
     cand_min: usize,
     mode: Mode,
     bindings: &mut Bindings,
-    alignment: &mut [Option<usize>],
+    mut alignment: Option<&mut [Option<usize>]>,
 ) -> Result<bool, Unsupported> {
     let Some(&(needle_start, seg_len)) = segments.get(seg_idx) else {
         return Ok(true);
@@ -1260,7 +1227,7 @@ fn place_declarator_segments(
     }
     for start in lo..=hi {
         let bindings_snapshot = bindings.clone();
-        let alignment_snapshot = alignment.to_vec();
+        let alignment_snapshot = alignment.as_deref().map(<[_]>::to_vec);
         let mut segment_ok = true;
         for offset in 0..seg_len {
             if !homo(
@@ -1274,10 +1241,12 @@ fn place_declarator_segments(
                 segment_ok = false;
                 break;
             }
-            alignment[needle_start + offset] = Some(start + offset);
+            if let Some(alignment) = alignment.as_deref_mut() {
+                alignment[needle_start + offset] = Some(start + offset);
+            }
         }
         if segment_ok
-            && place_declarator_segments(
+            && place_segments(
                 needle,
                 ndecls,
                 subject,
@@ -1289,13 +1258,15 @@ fn place_declarator_segments(
                 start + seg_len,
                 mode,
                 bindings,
-                alignment,
+                alignment.as_deref_mut(),
             )?
         {
             return Ok(true);
         }
         *bindings = bindings_snapshot;
-        alignment.copy_from_slice(&alignment_snapshot);
+        if let (Some(alignment), Some(snapshot)) = (alignment.as_deref_mut(), alignment_snapshot) {
+            alignment.copy_from_slice(&snapshot);
+        }
     }
     Ok(false)
 }
