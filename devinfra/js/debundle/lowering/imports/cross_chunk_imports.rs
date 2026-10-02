@@ -11,6 +11,7 @@ use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::top_level_id;
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ChunkBundle, SelectedModuleLowering};
+use binding_targets::module_export_name;
 use js_ast::is_binding_identifier;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::DUMMY_SP;
@@ -97,7 +98,7 @@ pub fn naturalize_cross_chunk_imports(
                     let imported = named
                         .imported
                         .as_ref()
-                        .map(module_export_name_string)
+                        .map(module_export_name)
                         .unwrap_or_else(|| named.local.sym.to_string());
                     let Some(readable) = target_exports.get(&imported) else {
                         continue;
@@ -270,11 +271,4 @@ struct PendingImportRename {
     imported: String,
     readable: String,
     already_readable: bool,
-}
-
-fn module_export_name_string(name: &ModuleExportName) -> String {
-    match name {
-        ModuleExportName::Ident(ident) => ident.sym.to_string(),
-        ModuleExportName::Str(string) => string.value.to_string_lossy().to_string(),
-    }
 }

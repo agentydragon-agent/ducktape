@@ -62,6 +62,40 @@ use spec_modules::{
     module_path_from_file, read_module_claims,
 };
 
+/// Shared CLI contract for edits that may need graph validation.
+#[derive(Debug, clap::Args)]
+pub struct GraphEditArgs {
+    /// Root directory containing the per-module YAML tree.
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+    /// Validate and report the edit without modifying spec files.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Skip validation. Can permit name collisions or unrealizable specs.
+    #[arg(long)]
+    pub no_verify: bool,
+    /// Owner graph for validation; required unless --no-verify or the edit
+    /// cannot change ownership (such as deleting a structurally empty module).
+    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
+    pub owner_graph_path: Option<PathBuf>,
+    /// Root for relative source paths used to resolve source-backed claims.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
+    /// Output format. Default text on tty, JSON on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<peel::OutputFormat>,
+}
+
+impl GraphEditArgs {
+    pub fn gate(&self) -> Result<Gate<'_>> {
+        Gate::from_cli(
+            self.no_verify,
+            self.owner_graph_path.as_deref(),
+            self.source_root.as_deref(),
+        )
+    }
+}
+
 /// How a spec-mutating CLI verb validates its edit. Replaces the
 /// `(no_verify: bool, owner_graph_path: Option<&Path>)` pair whose
 /// `(false, None)` combination used to silently skip the

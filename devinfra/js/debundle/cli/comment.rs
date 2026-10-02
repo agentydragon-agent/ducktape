@@ -15,7 +15,7 @@
 //!   path argument is filesystem-relative (no `.yaml` suffix), same
 //!   shape `spec_modules::module_path_from_file` emits.
 //!
-//! Three modes are shared by both verbs:
+//! Read and edit modes are shared by both verbs:
 //!
 //! * Positional `"text"` — replace the existing comment with the
 //!   literal arg.
@@ -26,9 +26,9 @@
 //! * No arg — read the current comment and print (text or JSON
 //!   depending on `--format` / tty).
 //!
-//! Writes preserve key order by mutating the `serde_yaml::Mapping`
-//! in place and re-serializing the same `Value`. `--dry-run` skips
-//! the write but still prints the verdict. Comments don't participate in
+//! Changed documents are reserialized through the shared YAML writer;
+//! textual layout and YAML comments are not an editing contract.
+//! `--dry-run` skips the write but still prints the verdict. Comments don't participate in
 //! factorization, so there is no `--no-verify`.
 
 use std::fs;
