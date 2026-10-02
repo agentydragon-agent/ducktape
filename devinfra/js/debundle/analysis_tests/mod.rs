@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::*;
-use swc_common::SyntaxContext;
 use raw_js_test_support::{parse, parse_with_source_map};
+use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
 
 mod factorization_validation;
