@@ -272,7 +272,8 @@ hooks off, so the runner's own handling of it is read off the harnesses' schemas
 - Log compaction or retention; a session log grows for the session's lifetime.
 - Application-level caller authentication and transport security. The listener is plaintext (loopback
   by default; hosted deployments bind on the Pod network and use Cilium policy).
-  **TODO:** add proper authentication/transport security for app and notification clients together;
+  **TODO:** add proper authentication/transport security for all legitimate runner clients,
+  primarily the planned Sandbox Service after backend extraction;
   see the [deferred follow-up](../plans/runner_discovery.md#todo-proper-runner-authentication-and-transport-security).
 - Determining whether an incomplete tool call caused side effects outside the harness process group.
 - Duplicate-free recovery when native execution precedes durable runner evidence.
