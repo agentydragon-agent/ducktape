@@ -265,12 +265,7 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
   `ArtifactIndexes::resolve_source_path_reference` reads only `entry_files`, with
   no fallback. They disagree for a chunk whose `entry_file` is empty or missing
   from `files`. Compare the fallbacks before unifying them.
-- **`bindings assign --batch` checks `:readable` collisions against `members[]`
-  only.** Status: reported; later lowering may catch some cases. `bindings rename`
-  (`find_readable_collisions`) and `modules merge` (`claim_names`) also check
-  `source_matches[].bindings[]` names, and the e2e collision test covers rename
-  only. Confirm by assigning a readable name equal to a canonical source-match
-  binding name.
+
 - **`cluster` and `scc --binding` take the first owner.** Status: reported.
   `cli/scc_cluster.rs` calls `resolve_binding_owners(..)` and takes the first
   result, though `docs/cli.md` promises a refusal with a list when the minified and
@@ -279,12 +274,7 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
 - **CLI papercuts.** Status: reported. `gate list` and `gate cut` require
   `--graph` even with `--cycles`, which only needs it to derive a default path;
   `scc --cycles-only --singletons-only` silently returns nothing (no
-  `conflicts_with`); `write_yaml_if_semantic_changed` re-reads and re-parses a file
-  its caller just compared (three call sites).
-- **Non-UTF-8 export names collapse to the empty string.** Status: reported.
-  `prune_module_exports.rs` `export_name_string` uses `unwrap_or_default()`, so
-  distinct non-UTF-8 string export names can collide; `binding_targets`
-  `module_export_name` does not do this (STYLE.md § General, no silent fallbacks).
+  `conflicts_with`).
 - **Anonymous-statement uniqueness scan is quadratic.** Status: reported, not
   measured. `selectors/resolution/anonymous_resolution.rs`
   `addressable_anonymous_statement_owner_ids_in_globals` compares each item
