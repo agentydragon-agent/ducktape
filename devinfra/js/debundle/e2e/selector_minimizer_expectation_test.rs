@@ -668,3 +668,16 @@ minimizer_expectation_case!(
     bindings = [("SelectedHelper", "selectedHelper")],
     expected = "expected_match.js",
 );
+
+minimizer_expectation_case!(
+    minimizes_binding_group_unindexed_literals,
+    fixture = "binding_group_unindexed_literals",
+    name = "tuple read-off retains null, regex and template literal coverage",
+    module = "app/literals",
+    bindings = [
+        ("SelectedNull", "selectedNull"),
+        ("SelectedRegex", "selectedRegex"),
+        ("SelectedTemplate", "selectedTemplate"),
+    ],
+    expected = "expected_match.js",
+);
