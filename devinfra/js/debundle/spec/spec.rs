@@ -1792,4 +1792,13 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn omitted_and_empty_vendor_swap_configs_have_the_same_defaults() {
+        let empty: SwapVendorChunksConfig = serde_json::from_str("{}").unwrap();
+        let omitted = SwapVendorChunksConfig::default();
+        assert!(empty.write);
+        assert_eq!(omitted.write, empty.write);
+    }
+
 }
