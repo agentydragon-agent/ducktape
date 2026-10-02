@@ -450,7 +450,10 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "binding_name_resolution_cli_test",
-    deps = ["//devinfra/js/debundle:peel"],
+    deps = [
+        "//devinfra/js/debundle:peel",
+        "@crates//:serde_json",
+    ],
 )
 
 # The tests below do not build on `:support`.
