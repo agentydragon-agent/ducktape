@@ -222,11 +222,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         "public-coder-volsync-status",
         "public-coder-agent-reader",
     ]
-    public_diagnostics = [
-        *shared_diagnostics,
-        "public-coder-node-read",
-        "public-coder-cluster-metadata-read",
-    ]
+    public_diagnostics = [*shared_diagnostics, "public-coder-node-read", "public-coder-cluster-metadata-read"]
     cfg.sandbox_presets["public-coder"].kubernetes_grants = public_diagnostics.copy()
     cfg.sandbox_presets["haku"].kubernetes_grants = [
         *shared_diagnostics,

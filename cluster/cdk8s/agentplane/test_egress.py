@@ -296,7 +296,9 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         ("public-coder-agent", "public-coder-agent-reader"),
     }
     testing_config = yaml.safe_load(
-        _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "agentplane-app-config")["data"]["config.yaml"]
+        _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "agentplane-app-config")["data"][
+            "config.yaml"
+        ]
     )
     assert testing_config["sandbox_presets"]["public-coder"]["kubernetes_grants"] == []
 
