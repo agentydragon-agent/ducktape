@@ -1573,7 +1573,7 @@ impl FactDomains {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::{OwnerId, StatementOrdinal};
+    use analysis::OwnerId;
     use selector_constraint_backend::{AllowedTupleConstraintId, BackendValueId, ConstraintValue};
     use selector_ir::ClaimKind;
     use selector_test_fixtures::{
