@@ -2710,3 +2710,56 @@ fn bundled_vendor(
         }),
     }
 }
+
+#[test]
+fn wrappers_preserve_reserved_and_string_export_names() {
+    for (shape, upstream) in [
+        (WrapperShape::NamedFromDefault, "export default { class: 1, 'x-y': 2 };"),
+        (WrapperShape::NamedFromJsonDefault, "{\"class\":1,\"x-y\":2}"),
+    ] {
+        let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+            temp_prefix: "vendor-export-names-",
+            chunk_source: "const a = 0; export { a as class, a as 'x-y' };",
+            wrapper_shape: Some(shape),
+            upstream_source: upstream,
+            default_export_aliases: &[],
+        });
+        assert_success(&fixture.result);
+        let probe = fixture.wrapper_path.with_file_name("probe.mjs");
+        write_text_file(&probe, "import * as m from './entry.js'; console.log(m.class, m['x-y']);");
+        assert_node_output(&probe, "1 2\n", "");
+    }
+}
+
+#[test]
+fn json_wrapper_preserves_proto_as_an_own_data_property() {
+    let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-json-proto-",
+        chunk_source: "export const value = 0;",
+        wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
+        upstream_source: "{\"value\":1,\"__proto__\":{\"nested\":2}}",
+        default_export_aliases: &[],
+    });
+    assert_success(&fixture.result);
+    let probe = fixture.wrapper_path.with_file_name("probe.mjs");
+    write_text_file(&probe, "import data from './entry.js'; console.log(Object.hasOwn(data, '__proto__'), Object.getPrototypeOf(data) === Object.prototype);");
+    assert_node_output(&probe, "true true\n", "");
+}
+
+#[test]
+fn vendor_namespaces_reject_reserved_binding_names() {
+    let (ws, root) = setup_partial_swap_consumer_fixture(
+        "vendor-invalid-namespace-",
+        "export const a = 1;",
+        "import { a } from '../megachunk/entry.js'; console.log(a);",
+        "lib", "1.0.0", "index.js", "export const value = 1;",
+    );
+    let vendor = partial_swap_vendor(
+        "reserved namespace",
+        &[("lib", partial_package("1.0.0", "index.js", Some("class")))],
+        &[("a", swap_symbol("lib", PartialSwapKind::Member, Some("value"), None))],
+    );
+    let fixture = run_partial_swap_with_mark(ws, vendor, &[("lib", &root)]);
+    assert!(!fixture.result.status.success());
+    assert!(fixture.result.stderr.contains("not a valid JS identifier"), "{}", fixture.result.stderr);
+}
