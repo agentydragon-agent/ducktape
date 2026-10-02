@@ -90,7 +90,7 @@ def test_managed_profiles_include_standing_serviceaccount_group_bindings() -> No
             ]
         )
     )
-    config = {"sandbox_presets": {"public": {"kubernetes_grants": []}}, "kubernetes_grants": {}}
+    config: dict[str, Any] = {"sandbox_presets": {"public": {"kubernetes_grants": []}}, "kubernetes_grants": {}}
     assert rbac.managed(config, "public", namespace="testing") == {Permission("testing", "", "pods", "get")}
     assert not rbac.managed(config, "public", namespace="staging")
 
