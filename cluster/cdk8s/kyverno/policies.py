@@ -17,7 +17,6 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesExcludeAny,
     ClusterPolicySpecRulesExcludeAnyResources,
     ClusterPolicySpecRulesExcludeAnySubjects,
-    ClusterPolicySpecRulesGenerate,
     ClusterPolicySpecRulesMatch,
     ClusterPolicySpecRulesMatchAny,
     ClusterPolicySpecRulesMatchAnyResources,
@@ -29,11 +28,9 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecValidationFailureAction,
 )
 
-from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.kyverno import proxy_injection
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespace_access import AgentReadable
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
 
@@ -565,73 +562,6 @@ def require_secret_store_conditions_chart(app: App) -> Chart:
     return chart
 
 
-def generate_agent_diagnostics_readers_chart(app: App) -> Chart:
-    """Grants approved agent identities access in explicitly opted-in namespaces. The
-    namespace labels are GitOps-owned data classifications and access grants, not
-    merely descriptive metadata."""
-    chart = _chart(app, "generate-agent-diagnostics-readers")
-    subjects = [subject.json() for subject in access.NAMESPACE_READER_SUBJECTS]
-
-    def namespaces_labeled(label: AgentReadable) -> ClusterPolicySpecRulesMatchAny:
-        return ClusterPolicySpecRulesMatchAny(
-            resources=ClusterPolicySpecRulesMatchAnyResources(
-                kinds=["Namespace"],
-                selector=ClusterPolicySpecRulesMatchAnyResourcesSelector(match_labels={label: "true"}),
-            )
-        )
-
-    def role_binding(access: str, cluster_role: str) -> ClusterPolicySpecRulesGenerate:
-        return ClusterPolicySpecRulesGenerate(
-            generate_existing=True,
-            synchronize=True,
-            api_version="rbac.authorization.k8s.io/v1",
-            kind="RoleBinding",
-            name=access,
-            namespace="{{request.object.metadata.name}}",
-            data={
-                "metadata": {"labels": {"rbac.ducktape.io/managed-by": "kyverno", "rbac.ducktape.io/access": access}},
-                "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": cluster_role},
-                "subjects": subjects,
-            },
-        )
-
-    ClusterPolicy(
-        chart,
-        "policy",
-        metadata=ApiObjectMetadata(
-            name="generate-agent-diagnostics-readers",
-            annotations=_annotations(
-                title="Generate agent diagnostics readers",
-                category="Access Control",
-                severity="high",
-                subject="Namespace, RoleBinding",
-                description=(
-                    "Generates namespaced, read-only metadata and optional pod-log RoleBindings when a "
-                    "GitOps-managed Namespace opts in."
-                ),
-            ),
-        ),
-        background=True,
-        rules=[
-            # Either label grants the common metadata baseline. The logs label means
-            # metadata plus logs, so a namespace needs only one classification label.
-            ClusterPolicySpecRules(
-                name="generate-agent-readable-metadata",
-                match=ClusterPolicySpecRulesMatch(
-                    any=[namespaces_labeled(AgentReadable.METADATA), namespaces_labeled(AgentReadable.LOGS)]
-                ),
-                generate=role_binding("agent-readable-metadata", "agent-readable-namespace-metadata"),
-            ),
-            ClusterPolicySpecRules(
-                name="generate-agent-readable-logs",
-                match=ClusterPolicySpecRulesMatch(any=[namespaces_labeled(AgentReadable.LOGS)]),
-                generate=role_binding("agent-readable-logs", "agent-readable-namespace-logs"),
-            ),
-        ],
-    )
-    return chart
-
-
 def cleanup_controller_jobs_chart(app: App) -> Chart:
     chart = _chart(app, "clusterrole-cleanup-controller-jobs")
     k8s.KubeClusterRole(
@@ -696,7 +626,6 @@ CHARTS = (
     restrict_agent_kustomization_patch_chart,
     restrict_agent_gateway_routes_chart,
     require_secret_store_conditions_chart,
-    generate_agent_diagnostics_readers_chart,
     cleanup_controller_jobs_chart,
     cleanup_controller_workloads_chart,
     cleanup_controller_sandboxes_chart,

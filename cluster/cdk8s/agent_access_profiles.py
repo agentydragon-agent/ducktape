@@ -41,12 +41,6 @@ class Subject:
             api_group=RBAC_GROUP if self.kind == "Group" else None,
         )
 
-    def json(self) -> dict[str, str]:
-        if self.kind == "Group":
-            return {"kind": self.kind, "name": self.name, "apiGroup": RBAC_GROUP}
-        assert self.namespace is not None
-        return {"kind": self.kind, "name": self.name, "namespace": self.namespace}
-
     def imported(self, scope: Construct, id: str) -> ISubject:
         if self.kind == "Group":
             return Group.from_name(scope, id, self.name)

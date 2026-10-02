@@ -5,6 +5,7 @@ import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting
 
 from cluster.cdk8s import agent_access_profiles as access, agent_namespace_rbac
+from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 from cluster.cdk8s.namespaces import Vpa, namespace
 
@@ -50,6 +51,42 @@ def test_unapproved_namespaces_fail_closed() -> None:
     namespace(scope, "namespace", name="private-unreviewed", vpa=Vpa.AUTO)
     labels = Cdk8sTesting.synth(scope)[0]["metadata"]["labels"]
     assert not set(labels) & set(AgentReadable)
+
+
+def test_kyverno_no_longer_generates_agent_bindings() -> None:
+    docs = Cdk8sTesting.synth(kyverno_app.chart(Cdk8sTesting.app()))
+    for build in kyverno_policies.CHARTS:
+        docs.extend(Cdk8sTesting.synth(build(Cdk8sTesting.app())))
+    assert not any(
+        doc["kind"] == "ClusterRole" and doc["metadata"]["name"] == "kyverno-background-controller-rolebindings"
+        for doc in docs
+    )
+    policies = [doc for doc in docs if doc["kind"] == "ClusterPolicy"]
+    assert {doc["metadata"]["name"] for doc in policies} == {
+        "require-gitops",
+        "default-revision-history-limit",
+        "default-disable-service-links",
+        "default-vpa-requests-only",
+        "inject-mitmproxy",
+        "inject-haku-egress-proxy",
+        "restrict-agent-kustomization-patch",
+        "restrict-agent-gateway-routes",
+        "require-secret-store-conditions",
+    }
+    assert not any(
+        rule.get("generate", {}).get("kind") == "RoleBinding" for doc in policies for rule in doc["spec"]["rules"]
+    )
+    release = next(doc for doc in docs if doc["kind"] == "HelmRelease")
+    for controller in ("backgroundController", "cleanupController", "reportsController"):
+        assert release["spec"]["values"][controller]["enabled"] is True
+
+
+def test_namespace_labels_do_not_create_bindings() -> None:
+    scope = Cdk8sTesting.chart()
+    namespace(scope, "namespace", name="monitoring", vpa=Vpa.AUTO)
+    docs = Cdk8sTesting.synth(scope)
+    assert [doc["kind"] for doc in docs] == ["Namespace"]
+    assert docs[0]["metadata"]["labels"][AgentReadable.LOGS] == "true"
 
 
 if __name__ == "__main__":
