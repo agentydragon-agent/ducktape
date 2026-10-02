@@ -44,10 +44,8 @@ from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.sandbox_service.session_config import Harness
 from agentplane.app.testing.kubernetes import pod, sandbox
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
@@ -55,6 +53,8 @@ from agentplane.runner.client import Attachment, RunnerClient, RunnerError, Stre
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
+from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.session_config import Harness
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 from util.testing.undeclared_outputs import undeclared_outputs_dir

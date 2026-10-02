@@ -15,9 +15,9 @@ from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
 from agentplane.app.agent_runtime.ingestion import Ingestion
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.conftest import SPEC, event_entry
-from agentplane.sandbox_service.session_config import Harness
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.sandbox_service.session_config import Harness
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

@@ -32,12 +32,12 @@ from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
-from agentplane.sandbox_service.session_config import Harness
 from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
+from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.session_config import Harness
 from util.net import bind_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair

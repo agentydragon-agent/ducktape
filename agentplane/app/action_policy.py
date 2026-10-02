@@ -38,8 +38,8 @@ from agentplane.action_service.policy_view import (
 )
 from agentplane.app.action_federation import UpstreamFailure
 from agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
-from agentplane.sandbox_service.inventory import InventoryError, SandboxView
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.sandbox_service.inventory import InventoryError, SandboxView
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
 from util.kubernetes import CustomObjectsClient

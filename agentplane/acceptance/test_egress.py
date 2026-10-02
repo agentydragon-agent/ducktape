@@ -34,8 +34,8 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from agentplane.acceptance.agent import Agent
 from agentplane.app.client import Client
 from agentplane.app.decisions import Decision, Outcome
-from agentplane.sandbox_service.inventory import SandboxView
 from agentplane.runner import protocol_pb2
+from agentplane.sandbox_service.inventory import SandboxView
 
 # `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

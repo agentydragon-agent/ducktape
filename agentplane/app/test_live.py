@@ -33,7 +33,6 @@ from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
-from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import (
     PODS_PLURAL,
     ActionPolicyFrames,
@@ -53,7 +52,6 @@ from agentplane.app.operator_sessions import (
     RequestSession,
     SessionRow,
 )
-from agentplane.sandbox_service.session_config import Harness
 from agentplane.app.shutdown import Drain
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
@@ -67,6 +65,8 @@ from agentplane.app.testing.kubernetes import (
     sandbox,
 )
 from agentplane.runner import protocol_pb2
+from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory
+from agentplane.sandbox_service.session_config import Harness
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOXES_PLURAL
 from util.net import pick_free_port

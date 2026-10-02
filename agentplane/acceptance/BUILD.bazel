@@ -152,14 +152,14 @@ py_test(
         "no-remote-exec",
     ],
     deps = [
-        "//agentplane/sandbox_service:session_config",
         ":agent",
         ":conftest",
         "//:conftest",
         "//agentplane/app:client",
-        "//agentplane/sandbox_service:inventory",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:session_config",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest_bazel",
         "@pypi//tenacity",

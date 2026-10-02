@@ -69,12 +69,12 @@ from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
-from agentplane.sandbox_service.session_config import Harness
 from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
+from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.session_config import Harness
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,

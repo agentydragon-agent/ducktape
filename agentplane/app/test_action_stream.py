@@ -29,10 +29,10 @@ from agentplane.app.conftest import TEST_REASONING_EFFORTS, Replica
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, request_session
+from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.session_config import Harness
 
 APP_URL = "http://test-app.invalid"
