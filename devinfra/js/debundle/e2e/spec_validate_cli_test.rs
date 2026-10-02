@@ -7,8 +7,8 @@ use std::process::Command;
 
 use debundle_e2e_support::{
     CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module,
-    mixed_selector_failure_fixture, outcomes, run_source_only_validate, run_spec_validate, validate_json,
-    write_text_file, write_validate_fixture_spec,
+    mixed_selector_failure_fixture, outcomes, run_source_only_validate, run_spec_validate,
+    validate_json, write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -223,14 +223,15 @@ fn validate_source_only_clean_modules_report_no_problems() {
     let fixture = SourceOnlyValidateFixture::new(
         r#"const widget = makeWidget("ok");
 "#,
-        &[
-            ("ui/widget.yaml", r#"source_matches:
+        &[(
+            "ui/widget.yaml",
+            r#"source_matches:
   - match: 'const w = makeWidget("ok");'
     bindings:
       - local: w
         name: Widget
-"#),
-        ],
+"#,
+        )],
     );
     let report = fixture.json();
     assert!(outcomes(&report).is_empty(), "{report:#}");
@@ -253,8 +254,9 @@ function loadLabel(cache, label) {
 }
 loadLabel(slots, "first")("a").then((value) => console.log(value));
 "#,
-        &[
-            ("resource/label.yaml", r#"source_matches:
+        &[(
+            "resource/label.yaml",
+            r#"source_matches:
   - match: |
       function readable(cache, label) {
         let memo;
@@ -266,8 +268,8 @@ loadLabel(slots, "first")("a").then((value) => console.log(value));
     bindings:
       - local: readable
         name: LabelResource
-"#),
-        ],
+"#,
+        )],
     );
     let report = fixture.json();
     assert!(outcomes(&report).is_empty(), "{report:#}");
@@ -281,8 +283,9 @@ fn validate_source_only_reports_a_misplaced_seq_exprs_hole() {
 }
 console.log(actual(" ok "));
 "#,
-        &[
-            ("hooks/lone_hole.yaml", r#"source_matches:
+        &[(
+            "hooks/lone_hole.yaml",
+            r#"source_matches:
   - match: |
       function readable(value) {
         return (SEQ_EXPRS);
@@ -290,8 +293,8 @@ console.log(actual(" ok "));
     bindings:
       - local: readable
         name: LoneHole
-"#),
-        ],
+"#,
+        )],
     );
     let report = fixture.json();
     let record = find_module_outcome(outcomes(&report), "hooks/lone_hole");
@@ -310,8 +313,9 @@ fn validate_source_only_reports_stale_annotations() {
     let fixture = SourceOnlyValidateFixture::new(
         r#"const claimed = makeWidget("ok");
 "#,
-        &[
-            ("ui/widget.yaml", r#"source_matches:
+        &[(
+            "ui/widget.yaml",
+            r#"source_matches:
   - match: 'const selected = makeWidget("ok");'
     bindings:
       - local: selected
@@ -319,8 +323,8 @@ fn validate_source_only_reports_stale_annotations() {
 annotations:
   StaleWidget:
     note: no matching claim
-"#),
-        ],
+"#,
+        )],
     );
     let report = fixture.json();
     let outcomes = outcomes(&report);
@@ -347,14 +351,20 @@ fn validate_source_only_reports_anonymous_statement_failures() {
 sideEffect("shared");
 "#,
         &[
-            ("effects/ambiguous.yaml", r#"anonymous_statements:
+            (
+                "effects/ambiguous.yaml",
+                r#"anonymous_statements:
   - source_match:
       match: 'sideEffect("shared");'
-"#),
-            ("effects/missing.yaml", r#"anonymous_statements:
+"#,
+            ),
+            (
+                "effects/missing.yaml",
+                r#"anonymous_statements:
   - source_match:
       match: 'sideEffect("missing");'
-"#),
+"#,
+            ),
         ],
     );
     let report = fixture.json();
@@ -397,14 +407,15 @@ fn validate_source_only_reports_multi_statement_anonymous_selector_as_invalid() 
         r#"setup();
 start();
 "#,
-        &[
-            ("effects/startup.yaml", r#"anonymous_statements:
+        &[(
+            "effects/startup.yaml",
+            r#"anonymous_statements:
   - source_match:
       match: |
         setup();
         start();
-"#),
-        ],
+"#,
+        )],
     );
     let report = fixture.json();
     let outcomes = outcomes(&report);
@@ -427,16 +438,17 @@ fn validate_source_only_reports_source_match_failures_per_export() {
         r#"const leftOne = renderPanel("shared"), rightOne = renderPanel("shared");
 const leftTwo = renderPanel("shared"), rightTwo = renderPanel("shared");
 "#,
-        &[
-            ("ui/panels.yaml", r#"source_matches:
+        &[(
+            "ui/panels.yaml",
+            r#"source_matches:
   - match: 'const left = renderPanel("shared"), right = renderPanel("shared");'
     bindings:
       - local: left
         name: LeftPanel
       - local: right
         name: RightPanel
-"#),
-        ],
+"#,
+        )],
     );
     let report = fixture.json();
     assert_eq!(report["counts"], json!({"ambiguous": 2}), "{report:#}");
@@ -474,12 +486,22 @@ impl SourceOnlyValidateFixture {
         for (path, yaml) in modules {
             write_text_file(&modules_root.join(path), yaml);
         }
-        Self { _root: root, source_file, modules_root }
+        Self {
+            _root: root,
+            source_file,
+            modules_root,
+        }
     }
 
     fn run(&self, format: &str) -> CommandResult {
-        let out = run_source_only_validate(&self.modules_root, &self.source_file, &["--format", format]);
-        assert!(out.status.success(), "source-only validate failed\nstdout:\n{}\nstderr:\n{}", out.stdout, out.stderr);
+        let out =
+            run_source_only_validate(&self.modules_root, &self.source_file, &["--format", format]);
+        assert!(
+            out.status.success(),
+            "source-only validate failed\nstdout:\n{}\nstderr:\n{}",
+            out.stdout,
+            out.stderr
+        );
         out
     }
 
@@ -497,24 +519,33 @@ const rightPanel = renderPanel("shared");
 const widget = makeWidget("ok");
 "#,
         &[
-            ("ui/ok.yaml", r#"source_matches:
+            (
+                "ui/ok.yaml",
+                r#"source_matches:
   - match: 'const w = makeWidget("ok");'
     bindings:
       - local: w
         name: Widget
-"#),
-            ("ui/missing.yaml", r#"source_matches:
+"#,
+            ),
+            (
+                "ui/missing.yaml",
+                r#"source_matches:
   - match: 'const w = makeWidget("missing");'
     bindings:
       - local: w
         name: MissingWidget
-"#),
-            ("ui/ambiguous.yaml", r#"source_matches:
+"#,
+            ),
+            (
+                "ui/ambiguous.yaml",
+                r#"source_matches:
   - match: 'const panel = renderPanel("shared");'
     bindings:
       - local: panel
         name: AmbiguousPanel
-"#),
+"#,
+            ),
         ],
     )
 }
