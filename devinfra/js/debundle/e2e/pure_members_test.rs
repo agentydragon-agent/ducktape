@@ -25,11 +25,16 @@ const VENDOR_FILE: &[(&str, &str)] = &[(
 )];
 
 fn namespace_rename(name: &str, pure_members: &[&str]) -> ChunkRenames {
-    let mut renames = chunk_renames(&[
-        ChunkRenameEntry::new(name, "ns").with_kind("import_specifier"),
-    ]);
-    renames.annotations.entry(name.to_string()).or_default().pure_members =
-        pure_members.iter().map(|name| (*name).to_string()).collect();
+    let mut renames =
+        chunk_renames(&[ChunkRenameEntry::new(name, "ns").with_kind("import_specifier")]);
+    renames
+        .annotations
+        .entry(name.to_string())
+        .or_default()
+        .pure_members = pure_members
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect();
     renames
 }
 
