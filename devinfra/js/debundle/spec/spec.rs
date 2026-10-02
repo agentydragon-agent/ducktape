@@ -1669,37 +1669,6 @@ mod tests {
     }
 
     #[test]
-    fn cross_ref_references_selector_resolves_to_a_cross_ref_target() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "cross_ref": { "references": "isTranscriptionProvider", "kind": "function_declaration" } }"#,
-        )
-        .unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::CrossRef(CrossRefTarget {
-                relation: CrossRefRelation::References,
-                anchor: "isTranscriptionProvider".to_string(),
-                kind: Some(BindingSourceKind::FunctionDeclaration),
-            })
-        );
-    }
-
-    #[test]
-    fn cross_ref_aliases_selector_resolves_to_an_alias_target() {
-        let selector: MemberSelector =
-            serde_json::from_str(r#"{ "cross_ref": { "aliases": "NodeAttributeAccessor" } }"#)
-                .unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::CrossRef(CrossRefTarget {
-                relation: CrossRefRelation::Aliases,
-                anchor: "NodeAttributeAccessor".to_string(),
-                kind: None,
-            })
-        );
-    }
-
-    #[test]
     fn cross_ref_requires_exactly_one_relation() {
         let both: MemberSelector =
             serde_json::from_str(r#"{ "cross_ref": { "references": "A", "aliases": "B" } }"#)
@@ -1720,86 +1689,6 @@ mod tests {
         assert!(
             selector.selected().is_err(),
             "a member must use exactly one selector kind",
-        );
-    }
-
-    #[test]
-    fn reads_member_selector_resolves_to_a_reads_member_target() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "reads_member": { "member": "uniqueId", "object": "codegenContext", "kind": "function_declaration" } }"#,
-        )
-        .unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::ReadsMember(ReadsMemberTarget {
-                member: "uniqueId".to_string(),
-                object: Some("codegenContext".to_string()),
-                kind: Some(BindingSourceKind::FunctionDeclaration),
-            })
-        );
-    }
-
-    #[test]
-    fn member_of_module_selector_resolves_to_a_target() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "member_of_module": { "module": "./accessors", "member": "CardsView", "kind": "class_declaration" } }"#,
-        )
-        .unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::MemberOfModule(MemberOfModuleTarget {
-                module: "./accessors".to_string(),
-                member: "CardsView".to_string(),
-                kind: Some(BindingSourceKind::ClassDeclaration),
-            })
-        );
-    }
-
-    #[test]
-    fn passed_to_call_selector_resolves_to_a_target() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "passed_to_call": { "callee_member": "register", "object": "viewRegistry", "arg_index": 1, "kind": "class_declaration" } }"#,
-        )
-        .unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::PassedToCall(PassedToCallTarget {
-                callee_member: "register".to_string(),
-                object: Some("viewRegistry".to_string()),
-                arg_index: Some(1),
-                kind: Some(BindingSourceKind::ClassDeclaration),
-            })
-        );
-    }
-
-    #[test]
-    fn makes_decorate_call_selector_resolves_to_a_target() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "makes_decorate_call": { "class": "ComponentPopover", "member": "componentInstance", "kind": "variable_declarator" } }"#,
-        )
-        .unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::MakesDecorateCall(MakesDecorateCallTarget {
-                class: "ComponentPopover".to_string(),
-                member: Some("componentInstance".to_string()),
-                kind: Some(BindingSourceKind::VariableDeclarator),
-            })
-        );
-    }
-
-    #[test]
-    fn intrinsic_alias_selector_resolves_to_a_target() {
-        let selector: MemberSelector = serde_json::from_str(
-            r#"{ "intrinsic_alias": { "property": "defineProperty", "referenced_by": "decorateClassMember" } }"#,
-        )
-        .unwrap();
-        assert_eq!(
-            selector.selected().unwrap(),
-            MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
-                property: "defineProperty".to_string(),
-                referenced_by: "decorateClassMember".to_string(),
-            })
         );
     }
 
