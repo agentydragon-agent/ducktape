@@ -7,9 +7,9 @@ package(default_testonly = True)
 
 rust_library(
     name = "support",
-    srcs = ["support.rs"],
+    srcs = ["support/ast_assertions.rs", "support/fixture_spec.rs", "support/mod.rs"],
     crate_name = "debundle_e2e_support",
-    crate_root = "support.rs",
+    crate_root = "support/mod.rs",
     data = [
         "//devinfra/js/debundle",
         "@nodejs_linux_amd64//:bin/node",
@@ -52,6 +52,8 @@ debundle_e2e_test(name = "url_rebase_test")
 debundle_e2e_test(
     name = "vendor_swap_test",
     deps = [
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
@@ -169,7 +171,8 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "cross_module_emission_test",
     size = "small",
-    deps = ["@crates//:serde_json"],
+    deps = [
+        "@crates//:swc_ecma_ast","@crates//:serde_json"],
 )
 
 rust_test(

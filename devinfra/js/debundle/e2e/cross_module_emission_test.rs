@@ -3,6 +3,21 @@
 
 use debundle_e2e_support::*;
 use std::fs;
+use swc_ecma_ast::{ModuleItem, ModuleDecl, ImportSpecifier, ModuleExportName};
+
+fn has_named_import(source: &str, expected: &str) -> bool {
+    parse_module(source).body.iter().any(|item| {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else { return false; };
+        import.specifiers.iter().any(|specifier| {
+            let ImportSpecifier::Named(named) = specifier else { return false; };
+            match &named.imported {
+                Some(ModuleExportName::Ident(name)) => name.sym.as_ref() == expected,
+                Some(ModuleExportName::Str(name)) => name.value.to_string_lossy() == expected,
+                None => named.local.sym.as_ref() == expected,
+            }
+        })
+    })
+}
 
 #[test]
 fn extracted_module_imports_unowned_helper_from_residual() {
@@ -1054,7 +1069,7 @@ export { composed };
     let entry = fs::read_to_string(fixture.out_root.join("static/app/entry.js"))
         .expect("read residual entry");
     assert!(
-        !entry.contains("{ dep }") && !entry.contains("{dep}"),
+        !has_named_import(&entry, "dep"),
         "residual must drop the dead `dep` named specifier; got:\n{entry}",
     );
     assert!(
@@ -1094,7 +1109,7 @@ export { composed };
     let entry = fs::read_to_string(fixture.out_root.join("static/app/entry.js"))
         .expect("read residual entry");
     assert!(
-        entry.contains("{ dep }") || entry.contains("{dep}"),
+        has_named_import(&entry, "dep"),
         "residual must keep the live `dep` named specifier; got:\n{entry}",
     );
     assert_entry_output(&fixture, "41\n");
