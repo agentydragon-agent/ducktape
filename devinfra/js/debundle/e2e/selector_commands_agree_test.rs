@@ -1095,15 +1095,14 @@ function f() { return key + 1; }"#;
 fn candidate_limit_counts_places_not_wildcard_alignments() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("chunk.js");
-    let mut chunk: String = (0..101).map(|i| format!("f{i}();\n")).collect();
-    chunk.push_str("const result = 1;");
+    let calls: String = (0..101).map(|i| format!("f{i}();\n")).collect();
+    let chunk = format!("function result() {{ {calls} }}");
     write_text_file(&source, &chunk);
-    // Module-level gaps belong to source_matches binding groups, not the
-    // single-member match-selector command's contiguous-range syntax.
+    // One function placement, with 101 possible free-name bindings for anchor.
     let modules = dir.path().join("modules");
     write_text_file(
         &modules.join("selected.yaml"),
-        "source_matches:\n  - match: |\n      anchor(); STMT_LIST; const target = 1;\n    bindings: [target]\n",
+        "source_matches:\n  - match: |\n      function target() { STMT_LIST; anchor(); STMT_LIST; }\n    bindings: [target]\n",
     );
     let output = run_source_only_validate(&modules, &source, &["--format", "json"]);
     assert!(
@@ -1113,7 +1112,11 @@ fn candidate_limit_counts_places_not_wildcard_alignments() {
         output.stderr
     );
     let report: Value = serde_json::from_str(&output.stdout).unwrap();
-    assert_eq!(export_record(outcomes(&report), "target"), None, "{report:#}");
+    assert_eq!(
+        export_record(outcomes(&report), "target"),
+        None,
+        "{report:#}"
+    );
 }
 
 #[test]
