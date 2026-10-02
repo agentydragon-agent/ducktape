@@ -178,6 +178,53 @@ metadata and logs ClusterRoles cluster-wide too. The catalog and reconciler
 enforce the configured binding kind during ordinary operation; this remains a
 delegation limit of the app ServiceAccount's Kubernetes permissions.
 
+### Shared deployment definitions and parity contract
+
+`cluster/cdk8s/agent_access_profiles.py` holds existing Kubernetes grant references,
+static identity references, and deployment-side profile selections. Service charts
+still own their Roles and bindings; Agentplane consumes the same references for its
+catalog and presets, from which delegation is already generated. This does not add
+an Agentplane API or combine namespace-scoped readers into a cluster-wide binding.
+Role names, binding names, cleanup scopes, and Flux ownership remain unchanged.
+
+The logical profiles are distinct from the transport identities:
+
+| Access path | Logical profile / contract |
+| --- | --- |
+| `haku:access-profile:public-coder` group | Static public coder; equals managed `public-coder` |
+| `oidc-ksbx-groups:haku` group | Static Haku; checked independently |
+| `haku:access-profile:haku` group | Static Haku Console; checked independently |
+| `haku-sandbox/haku` ServiceAccount | Static Haku compute; checked independently |
+| Managed `haku` preset | Includes public coder; matches each static Haku path except the exact Coinbase grant below |
+| Managed `finance-agent` preset | Same Kubernetes permissions as managed public coder; no static finance identity is implied |
+| `agentplane-staging/claude-ai` ServiceAccount | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
+| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset |
+
+The sole allowed static/managed Haku difference is managed Haku's **`get` on
+`agentplane-staging/coinbase-api-credentials`**. The test names that scope, resource,
+verb, and object literally, not by a Role whose rules could grow. It must fail if
+the difference grows, disappears, or changes direction. Do not grant static Haku
+this credential merely to satisfy parity. Decide raw Secret access separately.
+Static Haku retains redundant narrow inventory bindings; managed Haku's broader
+cluster reader covers those rules without selecting the same Role names.
+
+`test_cluster_integration` compares the rendered, active RBAC rule coverage for
+each identity separately, with the actual Kyverno namespace-reader policy expanded
+against active Namespace labels (including the rendered Flux bootstrap overlay).
+It checks static/managed parity, Haku's public-coder superset, finance equality, and
+explicit denials for staging operator/login, devbox restart, and public node proxy.
+The separate legacy accounts have their own contracts; their permissions are not
+unioned with Haku's to mask missing access on a particular path.
+
+`cluster/validation/agent_rbac.py` compares binding scopes, API groups, resources
+and subresources, verbs, resource names, and non-resource URL prefixes. Unsupported
+Role aggregation or Kyverno selector conditions fail closed. This is a declarative
+RBAC contract, **not** proof of live deployment or complete agent capability parity:
+built-in authorization, external identity group membership, admission constraints,
+egress, Actions policies, and authority reachable through exec/node proxy need
+separate verification. The broad Haku diagnostics Role is deliberately unchanged;
+narrowing its node-proxy/Flux capabilities is a follow-up policy decision.
+
 ### Shared managed-agent diagnostics
 
 The staging `public-coder`, `finance-agent`, and `haku` presets compose the same

@@ -21,6 +21,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s import external_creds, forgejo_images, namespaces, public_coder_proxy, public_coder_sshpiper
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
@@ -84,17 +85,6 @@ _KUBECONFIG_CONFIG_MAP_NAME = "public-coder-agent-kubeconfig"
 # Rendered by the kustomization.yaml's configMapGenerator.
 _SSH_CONFIG_MAP_NAME = "public-coder-agent-ssh"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
-# Haku's static OIDC groups and Console ServiceAccount.
-_HAKU_STATIC_SUBJECTS = [
-    k8s.Subject(kind="Group", name="oidc-ksbx-groups:haku", api_group=_RBAC_GROUP),
-    k8s.Subject(kind="Group", name="haku:access-profile:haku", api_group=_RBAC_GROUP),
-    k8s.Subject(kind="ServiceAccount", name="haku", namespace="haku-sandbox"),
-]
-# Every access-profile permission public-coder gets, Haku gets too: bound to the same roles.
-_HAKU_SUPERSET_SUBJECTS = [
-    *_HAKU_STATIC_SUBJECTS,
-    k8s.Subject(kind="Group", name=console_config.PUBLIC_CODER_GROUP, api_group=_RBAC_GROUP),
-]
 _READ = ["get", "list", "watch"]
 
 
@@ -906,8 +896,8 @@ def _rbac(scope: Construct) -> None:
             namespace=NAMESPACE,
             annotations={"description": "Binds public-coder and its Haku superset to the reader Role."},
         ),
-        role_ref=_role_ref("Role", reader),
-        subjects=_HAKU_SUPERSET_SUBJECTS,
+        role_ref=access.role_ref("public-coder-agent-reader"),
+        subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-agent-reader")],
     )
 
     # Revoke agent-driven restarts: the image rollout controller owns them now.
@@ -946,8 +936,8 @@ def _rbac(scope: Construct) -> None:
             namespace=NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to VolSync status."},
         ),
-        role_ref=_role_ref("Role", diagnostics),
-        subjects=_HAKU_SUPERSET_SUBJECTS,
+        role_ref=access.role_ref("public-coder-volsync-status"),
+        subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-volsync-status")],
     )
 
     # Use a new testing-only Role name rather than expanding the old staging+testing
@@ -971,8 +961,8 @@ def _rbac(scope: Construct) -> None:
         scope,
         "agentplane-testing-login-reader-binding",
         metadata=k8s.ObjectMeta(name=acceptance, namespace=NAMESPACE),
-        role_ref=_role_ref("Role", acceptance),
-        subjects=_HAKU_SUPERSET_SUBJECTS,
+        role_ref=access.role_ref("agentplane-testing-login"),
+        subjects=[subject.k8s() for subject in access.profile_subjects("agentplane-testing-login")],
     )
 
     # Cluster-scoped node inventory for scheduling and health diagnostics.
@@ -997,8 +987,8 @@ def _rbac(scope: Construct) -> None:
             name=node_reader,
             annotations={"description": "Binds public-coder and its Haku superset to read-only node inventory."},
         ),
-        role_ref=_role_ref("ClusterRole", node_reader),
-        subjects=_HAKU_SUPERSET_SUBJECTS,
+        role_ref=access.role_ref("public-coder-node-read"),
+        subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-node-read")],
     )
 
     # Narrow cluster-scoped infrastructure metadata for public-coder.
@@ -1029,8 +1019,8 @@ def _rbac(scope: Construct) -> None:
                 "description": "Binds public-coder and its Haku superset to CRD schemas and node metrics only."
             },
         ),
-        role_ref=_role_ref("ClusterRole", metadata_reader),
-        subjects=_HAKU_SUPERSET_SUBJECTS,
+        role_ref=access.role_ref("public-coder-cluster-metadata-read"),
+        subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-cluster-metadata-read")],
     )
 
     # Static maximum execution ceiling for operator-approved Haku grants.

@@ -8,6 +8,7 @@ py_library(
     name = "rbac",
     srcs = ["rbac.py"],
     deps = [
+        "//cluster/cdk8s:agent_access_profiles",
         ":environment",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:namespaces",
@@ -393,6 +394,7 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
     deps = [
+        "//cluster/cdk8s:agent_access_profiles",
         ":app_settings",
         ":rbac",
         ":sandbox_pod",

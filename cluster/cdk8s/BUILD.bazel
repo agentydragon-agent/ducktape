@@ -394,6 +394,7 @@ py_library(
     srcs = ["public_coder_agent_config.py"],
     visibility = ["//cluster/cdk8s/litellm:__pkg__"],
     deps = [
+        ":agent_access_profiles",
         ":config_format",
         ":external_creds",
         ":forgejo_images",
@@ -632,11 +633,11 @@ py_library(
     srcs = ["ducktape_flux.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":agent_access_profiles",
         ":flux",
         ":generation",
         ":manifest_roots",
         ":namespaces",
-        "//cluster/cdk8s/haku:console_config",
         "//cluster/cdk8s/providers/flux:git_repository",
         "//cluster/cdk8s/providers/flux:gitrepository",
         "@pypi//cdk8s",
@@ -707,6 +708,7 @@ py_library(
     name = "agent_shared_rbac",
     srcs = ["agent_shared_rbac.py"],
     deps = [
+        ":agent_access_profiles",
         ":artifact_generators",
         ":flux",
         ":manifest_roots",
@@ -1930,5 +1932,16 @@ py_library(
         ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "agent_access_profiles",
+    srcs = ["agent_access_profiles.py"],
+    visibility = ["//cluster:__subpackages__"],
+    deps = [
+        "//agentplane/app:kubernetes_grants",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
     ],
 )
