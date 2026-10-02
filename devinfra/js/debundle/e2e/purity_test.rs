@@ -715,7 +715,7 @@ fn builtin_container_initializers_break_the_side_effect_cycle() {
             &source,
             vec![logical_module("b_module", &[Member::new("b")])],
             "b_module",
-            &[&declaration],
+            &[declaration.split_inclusive('(').next().unwrap()],
             &["const a"],
             output,
         );
