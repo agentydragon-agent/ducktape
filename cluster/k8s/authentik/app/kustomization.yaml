@@ -23,7 +23,7 @@ configMapGenerator:
       - blueprints/fava-sso-retire.yaml
       - blueprints/goldilocks-sso.yaml
       - blueprints/google-workspace-mcp-sso-retire.yaml
-      - blueprints/haku-openclaw-spike-sso.yaml
+      - blueprints/haku-openclaw-spike-sso-retire.yaml
       - blueprints/haku-ui-sso.yaml
       - blueprints/hubble-sso.yaml
       - blueprints/plaid-link-sso.yaml

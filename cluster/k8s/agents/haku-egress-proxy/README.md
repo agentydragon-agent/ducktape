@@ -11,14 +11,12 @@ manifests depend on.
 - cert-manager creates `Secret/haku-egress-proxy-ca` in `haku-egress-proxy`.
 - The shared proxy mounts that Secret and builds mitmproxy's CA file from
   `tls.key` and `tls.crt`.
-- `haku-openclaw-spike-proxy` is a separate, isolated iron-proxy listener using
-  the same CA, for the OpenClaw compatibility spike. It substitutes separate
-  placeholders for Claude OAuth, Haku's Forgejo password, and the Haku Console
-  bearer, each scoped to its exact destination host. Only `haku-openclaw-spike` may connect to it.
+- The spike's separate Iron listener has been retired. Its generator and revival
+  inputs live under `cluster/cdk8s/parked/` and `cluster/parked/haku-openclaw-spike/`.
 - Reflector mirrors the Secret into `cert-manager`, which is trust-manager's
   source namespace in this cluster.
-- trust-manager writes `ConfigMap/haku-egress-proxy-ca-cert` into `haku-sandbox`,
-  `haku-openclaw-spike`, `public-coder-agent`, **and `haku-ci`** (the `Bundle`
+- trust-manager writes `ConfigMap/haku-egress-proxy-ca-cert` into `haku-sandbox`
+  **and `haku-ci`** (the `Bundle`
   `namespaceSelector` in `cluster/cdk8s/haku_egress_proxy.py`).
 - Kyverno mounts that ConfigMap into haku sandbox pods and points common TLS
   clients at `/egress-proxy-ca/ca-certificates.crt`; `haku-ci` mounts it via its

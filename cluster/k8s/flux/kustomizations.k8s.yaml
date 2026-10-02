@@ -1812,34 +1812,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Restic/VolSync backup of the Haku OpenClaw spike state to its dedicated private SeaweedFS S3 bucket.
-  name: haku-openclaw-spike-backup
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: volsync
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/agents/haku-openclaw-spike/backup
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-openclaw-spike-backup
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: Creates the Authentik CNPG backup schedule and its SeaweedFS storage.
   name: authentik-db-backups
   namespace: ducktape-flux
@@ -3444,25 +3416,19 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy.
+    description: "Retirement: prune the OpenClaw spike namespace and PVCs; remove after inventory is empty."
   name: haku-openclaw-spike-app
   namespace: ducktape-flux
 spec:
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: seaweedfs-operator
-      namespace: ducktape-flux
+  deletionPolicy: WaitForTermination
   interval: 10m
-  path: ./cluster/generated/agents/haku-openclaw-spike/app
+  path: ./cluster/generated/retired/haku-openclaw-spike
   prune: true
   retryInterval: 1m
   sourceRef:
-    kind: ExternalArtifact
-    name: haku-openclaw-spike-app
+    kind: GitRepository
+    name: ducktape
     namespace: ducktape-flux
-  timeout: 10m
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
