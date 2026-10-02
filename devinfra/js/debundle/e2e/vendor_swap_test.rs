@@ -6,7 +6,10 @@ use debundle_e2e_support::{
     CommandResult, assert_node_output, run_debundler, write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
-use spec::{PartialSwapKind, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel, VendorMark, WrapperShape};
+use spec::{
+    PartialSwapKind, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel,
+    VendorMark, WrapperShape,
+};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -311,9 +314,15 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
         identity: format!("{PACKAGE_NAME}/{SUBPATH}"),
         role: Default::default(),
         level: VendorLevel::Swap(SwapMark {
-            package: PACKAGE_NAME.into(), version: PACKAGE_VERSION.into(), subpath: SUBPATH.into(),
+            package: PACKAGE_NAME.into(),
+            version: PACKAGE_VERSION.into(),
+            subpath: SUBPATH.into(),
             wrapper_shape: args.wrapper_shape,
-            default_export_aliases: args.default_export_aliases.iter().map(|s| (*s).into()).collect(),
+            default_export_aliases: args
+                .default_export_aliases
+                .iter()
+                .map(|s| (*s).into())
+                .collect(),
         }),
     };
     let spec_path = ws.root.path().join("transform_spec.yaml");
@@ -2055,13 +2064,23 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
         identity: format!("megachunk {:?} swap fixture", args.kind),
         role: Default::default(),
         level: VendorLevel::PartialSwap(PartialSwapMark {
-            packages: BTreeMap::from([(args.package_name.into(), PartialSwapPackage {
-                version: args.package_version.into(), subpath: args.subpath.into(), namespace: None,
-            })]),
-            symbols: BTreeMap::from([(args.chunk_export.into(), PartialSwapSymbol {
-                package: args.package_name.into(), kind: args.kind,
-                upstream_export: args.upstream_export.map(str::to_owned), local: None,
-            })]),
+            packages: BTreeMap::from([(
+                args.package_name.into(),
+                PartialSwapPackage {
+                    version: args.package_version.into(),
+                    subpath: args.subpath.into(),
+                    namespace: None,
+                },
+            )]),
+            symbols: BTreeMap::from([(
+                args.chunk_export.into(),
+                PartialSwapSymbol {
+                    package: args.package_name.into(),
+                    kind: args.kind,
+                    upstream_export: args.upstream_export.map(str::to_owned),
+                    local: None,
+                },
+            )]),
         }),
     };
 

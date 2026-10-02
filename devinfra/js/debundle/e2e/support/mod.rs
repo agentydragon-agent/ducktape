@@ -22,7 +22,7 @@ use serde_json::Value;
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{MemberEffect, MemberPurity};
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1155,8 +1155,3 @@ fn run_node_script(path: &Path) -> CommandResult {
             .unwrap_or_else(|e| panic!("spawn node {}: {e}", node.display())),
     )
 }
-
-/// Parse `source` as an ESM module and return the SWC AST. Tests use this
-/// when the substring-on-emit checks aren't precise enough — e.g. when
-/// they need to walk specifiers to disambiguate `aH$1 as aH` (correct)
-/// from `aH$1 as aH$1` (corrupt).

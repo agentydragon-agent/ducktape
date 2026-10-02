@@ -7,7 +7,11 @@ package(default_testonly = True)
 
 rust_library(
     name = "support",
-    srcs = ["support/ast_assertions.rs", "support/fixture_spec.rs", "support/mod.rs"],
+    srcs = [
+        "support/ast_assertions.rs",
+        "support/fixture_spec.rs",
+        "support/mod.rs",
+    ],
     crate_name = "debundle_e2e_support",
     crate_root = "support/mod.rs",
     data = [
@@ -172,7 +176,9 @@ debundle_e2e_test(
     name = "cross_module_emission_test",
     size = "small",
     deps = [
-        "@crates//:swc_ecma_ast","@crates//:serde_json"],
+        "@crates//:serde_json",
+        "@crates//:swc_ecma_ast",
+    ],
 )
 
 rust_test(

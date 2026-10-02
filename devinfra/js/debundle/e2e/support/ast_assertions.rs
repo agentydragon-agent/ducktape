@@ -99,6 +99,10 @@ fn variable_initializer_kind(expr: &Expr) -> VariableInitializerKind {
     }
 }
 
+/// Parse `source` as an ESM module and return the SWC AST. Tests use this
+/// when the substring-on-emit checks aren't precise enough — e.g. when
+/// they need to walk specifiers to disambiguate `aH$1 as aH` (correct)
+/// from `aH$1 as aH$1` (corrupt).
 pub fn parse_module(source: &str) -> Module {
     let cm: Lrc<swc_common::SourceMap> = Default::default();
     let fm = cm.new_source_file(

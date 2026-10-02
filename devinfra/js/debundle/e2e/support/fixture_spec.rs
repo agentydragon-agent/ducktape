@@ -1,6 +1,7 @@
 //! Typed fixture inputs and construction of transform specs. No process execution.
 
-use std::collections::{BTreeMap};
+use super::FixtureSetup;
+use super::ast_assertions::declared_bindings_in_source_match;
 use serde_json::Value;
 use spec::{
     AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, ChunkRenameMember,
@@ -12,8 +13,7 @@ use spec::{
     WriteJsTreeConfig,
 };
 use spec::{MemberEffect, MemberPurity};
-use super::FixtureSetup;
-use super::ast_assertions::declared_bindings_in_source_match;
+use std::collections::BTreeMap;
 
 /// One member of a [`LogicalModuleEntry`].
 ///
@@ -942,7 +942,6 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> Transf
     }
 }
 
-
 /// A single-member chunk-renames spec mapping the binding `from_binding` to the
 /// exported name `rename_to`.
 pub fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
@@ -1030,4 +1029,3 @@ pub fn chunk_rename_with_purity(
     })
     .expect("chunk renames fixture must serialize")
 }
-

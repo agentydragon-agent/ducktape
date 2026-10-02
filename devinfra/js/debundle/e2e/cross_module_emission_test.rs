@@ -3,13 +3,17 @@
 
 use debundle_e2e_support::*;
 use std::fs;
-use swc_ecma_ast::{ModuleItem, ModuleDecl, ImportSpecifier, ModuleExportName};
+use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleExportName, ModuleItem};
 
 fn has_named_import(source: &str, expected: &str) -> bool {
     parse_module(source).body.iter().any(|item| {
-        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else { return false; };
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            return false;
+        };
         import.specifiers.iter().any(|specifier| {
-            let ImportSpecifier::Named(named) = specifier else { return false; };
+            let ImportSpecifier::Named(named) = specifier else {
+                return false;
+            };
             match &named.imported {
                 Some(ModuleExportName::Ident(name)) => name.sym.as_ref() == expected,
                 Some(ModuleExportName::Str(name)) => name.value.to_string_lossy() == expected,
