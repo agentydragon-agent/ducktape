@@ -22,11 +22,11 @@ use std::fs;
 
 use debundle_e2e_support::{
     BindingGroup, Fixture, FixtureOpts, GraphFixture, Member, assert_entry_output,
-    assert_generated_module_after_entry_script, assert_module_source,
-    logical_module, logical_module_with_binding_groups, outcomes, parse_stdout_json,
-    read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture,
-    run_match_selector, run_source_only_validate, run_spec_validate, run_synthesize_selectors,
-    write_text_file, write_validate_fixture_spec,
+    assert_generated_module_after_entry_script, assert_module_source, logical_module,
+    logical_module_with_binding_groups, outcomes, parse_stdout_json, read_selector_outcomes,
+    run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture, run_match_selector,
+    run_source_only_validate, run_spec_validate, run_synthesize_selectors, write_text_file,
+    write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -648,7 +648,10 @@ fn elimination_tree() -> GraphFixture {
         "elimination/third.yaml",
         "members: [{name: Third, selector: {binding: {name: third}}}]".to_string(),
     ));
-    let modules: Vec<_> = modules.iter().map(|(path, yaml)| (*path, yaml.as_str())).collect();
+    let modules: Vec<_> = modules
+        .iter()
+        .map(|(path, yaml)| (*path, yaml.as_str()))
+        .collect();
     GraphFixture::new(ELIMINATION_CHUNK, &modules)
 }
 
@@ -789,15 +792,20 @@ fn relational_claims_eliminate_only_in_spec_wide_commands() {
         "{run:#}"
     );
 
-    let either = format!(
-        "source_matches: [{{match: {EITHER:?}, bindings: [{{local: f, name: Either}}]}}]"
-    );
+    let either =
+        format!("source_matches: [{{match: {EITHER:?}, bindings: [{{local: f, name: Either}}]}}]");
     let tree = GraphFixture::new(
         RELATIONAL_ELIMINATION_CHUNK,
         &[
             ("elimination/either.yaml", &either),
-            ("elimination/other.yaml", "members: [{name: Other, selector: {reads_member: {member: other, kind: function_declaration}}}]"),
-            ("elimination/marker.yaml", "members: [{name: Marker, selector: {binding: {name: marker}}}]"),
+            (
+                "elimination/other.yaml",
+                "members: [{name: Other, selector: {reads_member: {member: other, kind: function_declaration}}}]",
+            ),
+            (
+                "elimination/marker.yaml",
+                "members: [{name: Marker, selector: {binding: {name: marker}}}]",
+            ),
         ],
     );
     let source = tree.source_path();
