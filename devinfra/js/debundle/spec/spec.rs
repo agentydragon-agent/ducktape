@@ -331,7 +331,7 @@ pub struct LoadJsChunksArgs {
     pub js_list_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SwapVendorChunksConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -345,6 +345,16 @@ pub struct SwapVendorChunksConfig {
     #[serde(skip_serializing_if = "is_true")]
     #[serde(default = "default_true")]
     pub write: bool,
+}
+
+impl Default for SwapVendorChunksConfig {
+    fn default() -> Self {
+        Self {
+            output_manifest_path: None,
+            output_wrapper_dir: None,
+            write: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -480,7 +490,7 @@ pub enum VendorLevel {
 /// the case the standalone map used to express ("emit unclaimed
 /// code to a separate file at `target`").
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case", tag = "kind")]
+#[serde(rename_all = "snake_case", tag = "kind", deny_unknown_fields)]
 pub enum UnassignedMode {
     /// Unclaimed bindings stay inline in the chunk's entry file (the
     /// residual module); no separate residual file is emitted. Renames
