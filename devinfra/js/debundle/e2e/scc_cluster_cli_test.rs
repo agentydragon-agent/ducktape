@@ -199,3 +199,28 @@ fn cluster_accepts_binding_flag_alias() {
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(parsed["home_module"]["label"].as_str(), Some("ui/plugins"));
 }
+
+#[test]
+fn owner_queries_refuse_minified_readable_name_ambiguity() {
+    use debundle_e2e_support::{FixtureOpts, Member, logical_module, run_fixture};
+
+    let fixture = run_fixture(FixtureOpts::new(
+        "const a = 1; const b = 2;",
+        vec![
+            logical_module("first", &[Member::renamed("b", "a")]),
+            logical_module("second", &[Member::renamed("c", "b")]),
+        ],
+    ));
+    let graph = fixture.report_root.join(&fixture.chunk_id).join("owner_graph.json");
+    let modules = tempfile::tempdir().unwrap();
+    for command in ["scc", "cluster"] {
+        let out = run_debundle(&[
+            command, "--binding", "b", "--graph", graph.to_str().unwrap(),
+            "--modules", modules.path().to_str().unwrap(), "--format", "json",
+        ]);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{command} silently picked an owner: {:?}", out.stdout);
+        assert!(stderr.contains("ambiguous") && stderr.contains("owner:0") && stderr.contains("owner:1"), "{stderr}");
+        assert!(out.stdout.is_empty(), "failure must not emit a partial report");
+    }
+}
