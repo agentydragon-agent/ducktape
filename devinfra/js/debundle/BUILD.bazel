@@ -1165,10 +1165,10 @@ label_flag(
 
 rust_binary(
     name = "debundle",
-    visibility = ["//visibility:public"],
     srcs = ["main.rs"],
     crate_root = "main.rs",
     edition = "2024",
+    visibility = ["//visibility:public"],
     deps = [
         ":cli",
         ":gate",
