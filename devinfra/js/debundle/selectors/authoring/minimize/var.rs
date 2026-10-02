@@ -43,7 +43,7 @@ pub(crate) fn try_var_read_off_candidates(
 
     // Shared var-slot render: `DECLARATORS_*` holes for the non-target declarators
     // (none when the target stands alone), the target's non-object init holed via
-    // `hole_var_init_padded` (the `other` arm, i.e. `hole_expr`).
+    // shared class-member or expression holing.
     let render_with = |kept: &BTreeSet<AnchorSpan>,
                        regex_anchors: &BTreeMap<AnchorSpan, String>|
      -> Result<String> {
