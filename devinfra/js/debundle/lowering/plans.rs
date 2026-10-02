@@ -2,7 +2,12 @@
 //! convert spec entries into `LogicalRequest`s. Mini-factor plan
 //! synthesis lives on `ChunkPlanBuilder::synthesize_mini_factors`.
 
-use super::*;
+use crate::exports::{reject_duplicate_export_names, reject_duplicate_member_bindings};
+use analysis::{AnalysisHints, KnownEffect};
+use anyhow::{Result, bail};
+use selector_resolve::MemberSelector;
+use spec::{LogicalModule, MemberEffect, MemberPurity, UnassignedMode};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(Debug, Clone)]
 pub(super) struct LogicalRequest {

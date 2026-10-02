@@ -3,7 +3,10 @@
 //! disagree on one binding's target surface as a seal-time conflict
 //! naming both entries.
 
-use super::*;
+use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
+use analysis::top_level_id;
+use anyhow::Result;
+use spec::ChunkRenames;
 
 pub(super) const CHUNK_RENAMES_CONTRIBUTOR: &str = "spec chunk_renames member";
 

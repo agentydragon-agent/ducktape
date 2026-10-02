@@ -5,7 +5,14 @@
 //! pairs a body Id with the heuristic-rename pre-sym to find the
 //! runtime-import entry.
 
-use super::super::*;
+use crate::body_facts::ModuleBodyFacts;
+use crate::imports::{RuntimeImportFacts, RuntimeImportInfo};
+use analysis::{BindingKind, LogicalModuleIndex, ModuleId};
+use anyhow::{Context, Result};
+use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
+use gate::ChunkFactorization;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use swc_ecma_ast::*;
 
 #[derive(Debug)]
 pub(crate) struct ImportedReexport {

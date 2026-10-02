@@ -2,9 +2,18 @@
 //! duplicates, auto-grow residual exports for cross-module references,
 //! and convert binding maps into `export { ... }` ModuleItems.
 
-use super::*;
+use crate::body_facts::ModuleBodyFacts;
+use crate::chunk_ast::{TopLevelDecl, binding_names};
+use crate::plans::MemberRequest;
+use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
+use analysis::{BindingKind, top_level_id};
+use anyhow::{Result, bail};
 use rustc_hash::FxHashSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use swc_atoms::Atom;
+use swc_common::DUMMY_SP;
+use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitWith};
 
 pub(super) fn trim_dead_named_specifiers(
     body: &mut [ModuleItem],

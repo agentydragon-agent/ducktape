@@ -5,7 +5,18 @@
 //! `resolve_imported_binding` traces the binding to its original source;
 //! `source_chunk_imports_for_moved_body` emits the re-import declarations.
 
-use super::super::*;
+use crate::imports::{
+    ArtifactSourceImportResolutionCache, RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind,
+    runtime_reimport_named_specifier, runtime_reimport_specifier,
+};
+use anyhow::{Result, bail};
+use artifact::{
+    join_module_path, module_path_dirname, normalize_relative_module_specifier,
+    relative_module_path,
+};
+use std::collections::BTreeMap;
+use swc_common::DUMMY_SP;
+use swc_ecma_ast::*;
 
 pub(crate) fn resolve_imported_binding(
     source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,

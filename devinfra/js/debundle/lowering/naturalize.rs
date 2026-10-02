@@ -42,11 +42,22 @@
 //! module-wide walk + `SealedScopeRenameApplier`), whose application
 //! sites only `debug_assert!` seal's no-capture guarantee.
 
-use swc_common::Span;
+use swc_common::{Span, SyntaxContext};
 
 use super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
 use super::util::is_valid_js_identifier;
-use super::*;
+use crate::plans::ModulePlan;
+use crate::rename_ledger::{
+    RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
+    SealedRenames, merge_module_renames,
+};
+use crate::visitors::{RenameAndShorthandNaturalizer, ShorthandNaturalizer};
+use analysis::{ModuleId, top_level_id};
+use anyhow::Result;
+use js_ast::str_value;
+use std::collections::{BTreeMap, BTreeSet};
+use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 /// The rename maps `naturalize_module_body` applied, split by what may
 /// consume them. The split is final design, not a transition state:
