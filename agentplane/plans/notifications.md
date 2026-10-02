@@ -6,8 +6,10 @@ The first implementation follows Actions; GitHub and automatic lifecycle integra
 Endpoint/tool names below illustrate the intended operations, not an existing wire API.
 
 **Scope revision:** runner sessions, not integration-app Threads, own the destination scope under the
-authenticated ServiceAccount. The [runner directory proposal](runner_directory.md) replaces app Thread
-lookup and runner-to-notification registration; qualified runner/session IDs are the proposed address.
+authenticated ServiceAccount. The [Sandbox Service extraction](sandbox_service.md) gates notification
+v1: it owns backend provisioning and session access, using Kubernetes discovery internally. The
+[integration-app dependency rule](../docs/service_boundaries.md) forbids a temporary app API/table/process
+dependency. Runner RPC authentication remains a deferred TODO; service APIs still require authorization.
 
 ## Decisions
 
@@ -15,13 +17,14 @@ lookup and runner-to-notification registration; qualified runner/session IDs are
   It owns subscriptions, inboxes, and notification delivery bookkeeping. The app may be a client
   and provide a UI, but its process and private database tables are not the service interface.
 - **ServiceAccount-authorized, runner-session-scoped resources.** Workloads under the same SA have
-  the same authority, as with Actions/egress. Do not resolve a workload into a sandbox or require app
-  Thread identity. No per-session caller credentials or sibling-session isolation are required.
+  the same authority, as with Actions/egress. Do not replace SA authority with sandbox or app Thread
+  ownership checks. No per-session caller credentials or sibling-session isolation are required.
 - **Explicit destination IDs everywhere in v1.** Supply them in agent context; never infer "current
-  session". The proposed shape is `runner_id` plus `session_id`, qualified by the authenticated SA.
+  session". The proposed shape is a bound sandbox reference plus `session_id`, under the authenticated SA.
   A bare session ID requires an additional SA-wide uniqueness contract that does not exist today.
-- **Independent runner discovery.** Extract inventory from the app into a directory consumed by both
-  app and notifications. Registration derives from provisioning resources, not runner callbacks.
+- **Sandbox Service before notification v1.** Extract the minimum independent provisioning/session
+  backend from the app; app and notifications are its clients. No app API/table/process/bootstrap
+  dependency, no separate directory deployment, and no runner callback to notifications.
 - **Include service instructions in the agent prompt.** Explain how to subscribe/listen, retrieve,
   and explicitly acknowledge notifications, with concrete examples and the destination IDs.
 - **Provider-owned semantics.** Each notification provider defines its payloads, filter schema,
@@ -34,8 +37,9 @@ lookup and runner-to-notification registration; qualified runner/session IDs are
 - **Non-destructive reads, explicit acknowledgement high-water mark (HWM), no repeated reminders.**
   Runner confirmation, fetching content, and acknowledging it are distinct operations.
 - **Running destinations only in v1.** No notification-triggered harness resume or sandbox startup.
-- **Trust the service with the destination runner session.** Authenticate and authorize that access,
-  but do not add command-level runner RBAC or a receipt-only event stream for this feature.
+- **Reuse network-policy runner access for v1.** Sandbox Service is the runner client for extracted
+  operations. App/notifications use its authenticated API, not parallel runner-control paths. Proper
+  runner authentication/transport security is deferred; no command-level runner RBAC is required.
 - **One provider for v1: Actions.** Explicit subscriptions initially; automatic Action following is
   desirable later, but its exact submission/convenience interface remains undecided.
 
@@ -53,8 +57,9 @@ and bookkeeping: stable identity, provider/type, source reference, matching subs
 cursors/timestamps. The provider owns the content schema and rendering. Do not design a universal
 notification payload before there is a second provider.
 
-A delivery component inside the service attaches to the destination runner, submits an inbox notice,
-and follows its receipts. This is not another Action executor, Decision authority, sandbox lifecycle
+A delivery component submits the inbox notice command through the Sandbox Service and follows its
+runner receipts there. The Sandbox Service owns runner attachments and lifecycle independently of
+the integration app. Notifications is not an Action executor, Decision authority, sandbox lifecycle
 manager, or generic runner-command queue. The existing runner owns native command scheduling.
 
 The Action Service remains the authority for Decisions and execution outcomes. Consume its canonical
@@ -74,11 +79,13 @@ Every request names its runner session explicitly. Workloads under that same acc
 subscriptions and read/ack its session inboxes; another account cannot merely by knowing the IDs.
 Verify resource ownership on operations by subscription ID as well.
 
-The proposed qualified destination is `(runner_id, session_id)`, scoped under that SA. Obtain the
-runner's trusted ServiceAccount association and current endpoint from the
-[runner directory](runner_directory.md#session-scope-and-routing). Validate the association before
+The proposed qualified destination is `(destination_ref, session_id)`, scoped under that SA. Obtain
+a verified destination/ServiceAccount association through the
+[Sandbox Service](sandbox_service.md#minimum-slice-before-notification-v1). It resolves endpoints
+internally; notifications does not choose a raw runner address. Validate the association before
 binding a subscription; validate that the session exists without implicitly creating it. This does
-not require the notification service to resolve workload-to-sandbox membership or query app Threads.
+not make sandbox membership the authorization principal or require app Thread lookup. Deriving a
+self-delivery route from the authenticated Pod's provisioning association is routing, not Thread inference.
 Session IDs alone are runner-local; do not silently assume account-wide uniqueness or choose the first
 matching runner. Finalize the qualification contract before implementing storage keys.
 
@@ -92,18 +99,23 @@ reads. Recheck access as source authority or runner bindings are revoked or reti
 Cross-account delivery is out of scope for v1 and needs an explicit policy. Product Thread ownership
 and an app Thread-to-session mapping are not prerequisites for notification ownership or routing.
 
-### Service-to-runner authorization
+### Delivery access in v1
 
-Use the directory to discover the destination, then connect directly to the runner. Directory lookup
-is not permission to connect. Authenticate/authorize service-to-runner access, trusting the notification
-service with the destination's ordinary protocol and history. Not interrupting turns, changing models,
-or resuming stopped harnesses is service behavior, not a command-level security restriction.
+Notifications calls the independently owned Sandbox Service, not the integration app or a parallel
+runner-control path. Authenticate its API calls and define authorized resource-owner delegation;
+a caller-supplied owner field is not proof of identity. Sandbox Service owns destination checks,
+runner discovery, forwarding, and event following. Trust its runner client with full protocol/history;
+no new per-command runner RBAC is required.
 
-Select authenticated encrypted transport, expected runner identity, and credential renewal/revocation
-behavior before deployment. JWT remains a candidate, not a requirement; an app-issued Thread ticket
-is not needed merely because product Threads live in the app. If using expiring credentials, define
-expiry for long-lived streams. The current runner lacks this attachment-auth/transport boundary.
-Do not add command scopes, receipt filtering, or runner-to-notification registration as prerequisites.
+The runner leg uses the existing Cilium-controlled RPC path, with ingress/egress narrowed to intended
+control-plane and audited test/administrative clients. This is network access control, not bearer RPC
+authentication or TLS. After migration, remove unnecessary app/notification direct runner access.
+
+**TODO, after v1:** proper runner authentication and transport security for legitimate runner clients,
+including trust provisioning, peer verification, rotation/revocation, and long-lived streams. See the
+[explicit follow-up](runner_discovery.md#todo-proper-runner-authentication-and-transport-security).
+Do not make a JWT issuer, app-issued Thread tickets, per-command RBAC, or another directory a v1 gate.
+The Sandbox Service's own API still needs authentication/authorization from the start.
 
 ## Proposed storage: service-owned PostgreSQL
 
@@ -124,8 +136,8 @@ Persist these logical records:
   coverage. These last two positions must not be conflated.
 - **Notice deliveries:** exact text, covered range, destination binding, stable runner command ID,
   and observed admission/confirmation/failure. Include enough identity to resume after a worker crash.
-- **Runner-follow checkpoints:** last durably processed cursor, scoped to the runner event log, not
-  confused with inbox or provider cursors.
+- **Event-follow checkpoints:** last durably processed cursor, scoped to the Sandbox Service
+  serving log with runner origin preserved, not confused with inbox or provider cursors.
 
 The storage invariants matter more than the eventual table names:
 
@@ -138,7 +150,7 @@ The storage invariants matter more than the eventual table names:
    entry. Serialize allocation/insertion with a short per-inbox row lock (or an equivalent
    proven scheme), releasing it at commit. Do not hold it during network calls.
 3. Persist a notice's identity, exact input, and covered range before runner submission. Perform
-   runner I/O outside database transactions; commit observed receipts and follow-checkpoint advancement
+   delivery I/O outside database transactions; commit observed receipts and follow-checkpoint advancement
    consistently afterward. Reconcile uncertain sends with the existing runner journal.
 4. Advance acknowledgement monotonically in an explicit transaction. Reads and notice receipts do
    not acknowledge. Expiry must expose a retention gap, not silently move the agent's HWM.
@@ -162,7 +174,11 @@ Illustrative creation:
 
 ```json
 {
-  "runner_id": "runner-17",
+  "destination_ref": {
+    "namespace": "agentplane-staging",
+    "name": "sandbox-example",
+    "uid": "e03c0724-03c2-4d97-a45c-47fdc87eeb16"
+  },
   "session_id": "session-123",
   "client_key": "follow-action-456",
   "provider": "actions",
@@ -175,8 +191,8 @@ Illustrative creation:
 
 Read and acknowledge are separate operations:
 
-- `read(runner_id, session_id, after_cursor, limit)` returns an ordered, bounded page without changing the HWM.
-- `acknowledge(runner_id, session_id, through_cursor)` monotonically advances the HWM. Repetition is harmless;
+- `read(destination_ref, session_id, after_cursor, limit)` returns an ordered, bounded page without changing the HWM.
+- `acknowledge(destination_ref, session_id, through_cursor)` monotonically advances the HWM. Repetition is harmless;
   an older cursor cannot move it backwards. Reject cursors beyond the inbox's committed position.
 - Acknowledging `X` means **all entries through `X`**, not just entry `X`. Use service-assigned,
   session-inbox-local cursors, distinct from source event IDs and Action sequence numbers. Start with
@@ -187,7 +203,7 @@ Read and acknowledge are separate operations:
 ### Agent prompt instructions
 
 Ship prompt guidance with the first usable service, not only operator documentation or tool schemas.
-Provide the agent's explicit runner/session IDs, the actual service endpoint/tool names and authentication usage,
+Provide the agent's explicit sandbox/session identifiers, the actual service endpoint/tool names and authentication usage,
 how to discover accessible providers and their filters, and how to create/inspect/update/cancel its
 subscriptions under its authenticated ServiceAccount. Describe inbox notices as automated wakeups to retrieve content, not the payload itself.
 Instructions must explain that reads are non-destructive, acknowledgement advances a prefix HWM,
@@ -197,20 +213,21 @@ Include at least these two worked examples using the implemented API rather than
 invent call shapes:
 
 1. **Listen for an Action:** submit an Action and obtain its real request ID, then create an idempotent
-   subscription with the supplied `runner_id` and `session_id`, that request ID, and replay from sequence zero. Explain
+   subscription with the supplied `destination_ref` and `session_id`, that request ID, and replay from sequence zero. Explain
    that approval/completion before subscription creation is recovered from history, but creation must
    actually succeed. Continue other work and retrieve the inbox when its automated notice arrives.
 2. **Read and explicitly acknowledge:** read a page after the current acknowledged cursor, inspect/handle
    its entries, and only then acknowledge through that page's last handled contiguous cursor. For
    example, starting from HWM 180, a read returning entries 181–184 does not change HWM 180;
-   `acknowledge(runner_id, session_id, through_cursor=184)` advances it after all four are handled. If only 181–182
+   `acknowledge(destination_ref, session_id, through_cursor=184)` advances it after all four are handled. If only 181–182
    are handled, acknowledge through 182, not 184. Repeat pagination for any remaining entries.
 
 Example IDs/cursors must be clearly distinguished from the real destination IDs and tool results. Do not
 include real service credentials or imply that prompt text grants source/destination access. Explain
 how to inspect a failed subscription or delivery rather than assuming silence means nothing happened.
 
-Integrate guidance with the existing prompt/context composition; do not assume session standing
+Move backend-required prompt/context composition into the Sandbox Service for extracted launch paths;
+notifications must work without app-created session bootstrap. Do not assume session standing
 instructions can be changed in place. The [runner session contract](../runner/SPEC.md#sessions) fixes
 `SessionSpec.instructions` for a session's lifetime. Supply guidance when creating enabled sessions;
 if existing sessions are supported, choose an explicit supported context/input path rather than
@@ -239,25 +256,27 @@ HTTP request hidden inside Action submission. Its exact API and intent storage a
 
 Send a bounded service-authored notice, for example:
 
-> Agentplane notifications: 7 notifications are available through inbox cursor 184 for runner
-> runner-17, session session-123. Retrieve them using the inbox read tool. This is an automated notification.
+> Agentplane notifications: 7 notifications are available through inbox cursor 184 for the bound sandbox,
+> session session-123. Retrieve them using the inbox read tool. This is an automated notification.
 
 The count is a snapshot bounded by the cursor. Provider content is retrieved separately, retaining its
 source provenance; external content is not promoted to operator instructions. Although the transport
 is a user-message input, the notice is not represented as a human-authored message or runner observation.
 
-Use the existing [runner protocol](../runner/SPEC.md#commands-and-effects):
+Use the existing [runner protocol](../runner/SPEC.md#commands-and-effects) through Sandbox Service:
 
-1. Open an independent `Attach` stream for the existing session and follow from the last recorded
-   cursor. Multiple attachments are supported; the integration app's attachment is not required.
-2. Submit a `Command` with a stable `command_id` and `SubmitInput.text` containing the notice.
-   Persist the command identity, exact text, and covered inbox boundary before attempting delivery.
-3. `CommandAdmitted` means durable runner admission, **not** harness delivery.
+1. Follow the selected session's Events through the Sandbox Service from the last durably processed
+   serving-log cursor. It owns the runner attachment; no app attachment or archive is a dependency.
+2. Submit a `Command` with a stable `command_id` and `SubmitInput.text` containing the notice, with
+   no wake permitted. Persist the exact command and covered inbox boundary before attempting delivery.
+   The backend forwards to the existing running session; unavailable is not offline command admission.
+3. `CommandAdmitted` means durable runner admission, **not** harness delivery. A relay response alone
+   establishes neither. Preserve runner origin and correlation through forwarding/archival.
 4. `HarnessUserMessageConfirmed` is the causal delivery receipt. Match membership in
-   `origin_command_ids`: Claude can coalesce multiple commands into one confirmation. Handle
-   `CommandFailed`/`CommandNoop` without marking the notice confirmed.
-5. Reconnect with `Open.follow.after_cursor` and reconcile durable receipts. Reuse the exact command
-   and ID when retrying; do not create a fresh notice just because the response was lost.
+   `origin_command_ids`: Claude can coalesce commands. Handle failure/no-op without marking confirmed.
+5. Reconnect/replay and reconcile receipts through the backend using the same command and ID.
+   Do not create a fresh notice because a response was lost or add a Sandbox Service command queue
+   implicitly. Current native-effect crash limitations still apply.
 
 Input can be submitted while the harness is idle or a turn is active. `SubmitInput` joins running work;
 there is no common "next safe boundary"/steer mode to select. The adapters own native timing. The
@@ -286,7 +305,7 @@ is submitted, suppress unnecessary notices; an already-admitted command cannot b
 ## Lifetime and unavailable destinations
 
 Subscriptions belong to the authenticated SA and qualified runner session, not an app Thread,
-attachment, or harness process. Temporary disconnect, process restart retaining state, or runtime
+attachment, or harness process. Temporary disconnect, process restart retaining state, or sandbox
 suspension does not itself cancel them. Explicit cancellation stops future matching but does not
 acknowledge existing inbox entries or cancel the Action. Already-submitted notices may still arrive;
 cancellation is not selective runner-input withdrawal. App Thread archiving has no implicit effect;
@@ -294,15 +313,15 @@ any future archive-to-subscription behavior must be explicit integration.
 
 V1 delivers only to a running harness. `Open` without a spec observes an existing session without
 starting it; a stopped session replays and ends. Starting/resuming requires an explicit spec, which the
-notification service must not supply to wake a stopped destination in v1. Failed/running setup and
-harness launch are not successful delivery. A stop racing with submission still needs honest receipt
+Sandbox Service must not supply on behalf of a v1 notification to wake a stopped destination.
+Failed/running setup and harness launch are not successful delivery. A stop racing with submission still needs honest receipt
 reconciliation, not an offline-delivery claim.
 
-Use authoritative runner retirement from the directory, or an explicit session-retirement operation,
-for permanent-destination cleanup. The service does not discover sandbox deletion on its own. Missing
-endpoints, timeouts, failed lookups, or absence from a list are not retirement. Finalize session-retirement
+Use authoritative destination removal from Sandbox Service, or an explicit session-retirement
+operation, for permanent-destination cleanup. Missing endpoints, timeouts, failed lookups, or absence from a list are not retirement. Finalize session-retirement
 and orphan-retention rules before implementation; the runner's current API has no general session-delete
 operation to assume. Never silently retarget a replacement runner or a reused session ID.
+
 Keep accepted inbox entries and their payloads under bounded retention, making expiry/replay gaps visible rather than
 silently acknowledging them. They remain readable when the agent returns. A coalesced notice on the
 next running harness is desirable but **not a v1 acceptance requirement**; initially there is no
@@ -312,20 +331,21 @@ already-recorded receipt or reinterpret it as an acknowledgement.
 
 ## Implementation sequence and remaining choices
 
-1. **Extract runner discovery:** implement the [runner directory](runner_directory.md) from existing
-   app inventory and migrate the app client. Settle stable runner/storage identity, account bindings,
-   authenticated list/get, endpoint/retirement semantics, and qualified session IDs. Separately settle
-   authorized Action reads and direct runner authentication. No app Thread lookup or runner callbacks.
+1. **Extract Sandbox Service first:** move the minimum provisioning/session-access backend out of
+   the app, including required prompt/context and event-following dependencies. Decide archive ownership;
+   never read app tables as a shortcut. Migrate the app to be a client. Settle account/destination
+   authorization and Cilium-controlled runner access; proper runner RPC auth remains deferred.
 2. **Build the standalone service:** owned persistence/migrations, provider discovery, explicit
    SA-authorized session-scoped subscription CRUD, inbox cursor/read/HWM operations, and observable health/errors.
    Pick concrete limits, retention, idempotency/update contracts, and cancellation race semantics.
-   Wire agent prompt instructions with the actual runner/session IDs, service usage, and subscribe/read/ack examples.
+   Wire agent prompt instructions with the actual sandbox/session identifiers, service usage, and subscribe/read/ack examples.
 3. **Implement only the Action provider:** canonical replay and follow, source authorization,
    individual ordered Decisions/outcomes, and atomic cursor/matching bookkeeping.
-4. **Deliver notices through the runner:** independent attachment, persisted command identity and
-   coverage, debounce/backpressure, receipt replay, and no reminders or automatic startup.
-5. **Prove the full slice:** scripted runner tests plus a deployed agent submits an Action,
-   subscribes, receives the notice, reads the inbox, and explicitly advances its HWM.
+4. **Deliver through Sandbox Service:** persisted command identity/coverage, debounce/backpressure,
+   runner receipt replay through the backend, and no reminders, new command queue, or automatic startup.
+5. **Prove the full slice with the integration app down:** independently create/manage the required
+   session, submit an Action, subscribe, receive the notice, read the inbox, and advance its HWM. Include
+   backend restart/recovery without app bootstrap and scripted runner evidence tests.
 
 This document proposes service-owned PostgreSQL but does not select an HTTP/MCP wire surface, JWT
 issuer, exact database schema, or numeric quotas.
@@ -342,19 +362,21 @@ as a shipped API. Operator UI and generic webhook setup are not prerequisites fo
   when a harness returns; later request authorized harness/sandbox resume through the lifecycle owner.
   Wake policy and budgets are separate from notification delivery. No automatic resume in v1.
 - **Runner-hosted MCP conveniences:** a connection bound to a runner session could reliably supply
-  `runner_id`/`session_id` for "my inbox" tools. Hosting an undifferentiated sandbox-wide MCP endpoint is not enough.
+  `destination_ref`/`session_id` for "my inbox" tools. Hosting an undifferentiated sandbox-wide MCP endpoint is not enough.
   Keep the service API explicit; this provides context, not sibling-session isolation.
 - **Cross-account delivery and product Thread integration:** separate authorization/lifecycle decisions,
   including archive behavior or following a Thread across successor runner sessions. No implicit retargeting.
-- **Directory extensions:** external-runner registration and a resumable discovery change feed are
-  separate future work, not reasons for runners to depend on notifications.
+- **Proper runner authentication/transport security:** the explicit TODO in the discovery/access notes;
+  implement consistently for legitimate clients, not as a v1 prerequisite.
+- **Discovery extensions:** a separate directory API or external-runner registration needs a concrete
+  consumer. Neither is required for hosted v1 or a reason for runners to call notifications.
 
 ## Acceptance criteria
 
 - Workloads sharing an SA can access its session-scoped resources; a caller under another account
   cannot. Forged owner IDs, mismatched runner bindings, and unauthorized Action sources fail closed.
   The service never resolves a workload into an app Thread or accepts arbitrary destination URLs.
-- Enabled agent sessions receive service instructions and the correct explicit runner/session IDs in their
+- Enabled agent sessions receive service instructions and the correct explicit sandbox/session identifiers in their
   prompt/context, with working subscribe and read/ack examples using the shipped API. Verify the agent
   can follow them without relying on undocumented tools or implicit session detection.
 - Retried subscription creation produces one subscription. A decision and completion before creation
@@ -376,6 +398,9 @@ as a shipped API. Operator UI and generic webhook setup are not prerequisites fo
   notice is not repeated, including after reconnect/restart. Bursts and delivery failures stay bounded.
 - A stopped harness is not resumed; temporary absence preserves subscriptions and retained inbox
   entries. Permanent deletion cleans up via authoritative state, without retargeting another runner/session.
-- The independently deployed service works using the shared runner directory, without the integration app's
-  process, Thread API, delivery attachment, or private database tables. Runner access is authenticated
-  and destination-authorized, without new command-level RBAC. Source availability, pending/failed delivery, and acknowledgement remain distinct.
+- Notifications uses Sandbox Service and Action Service, without the app process, Thread API, private
+  tables, implementation imports, app-issued identity, or app-only prompt/bootstrap state. Test startup
+  and recovery with the app unavailable, not just a session previously created by its UI.
+- Sandbox Service has runner network access; ordinary sandbox-to-other-sandbox connections, unrelated
+  workloads, and obsolete direct app/notification paths do not. No new runner RPC credentials or command-level RBAC are required.
+  Source availability, pending/failed delivery, and acknowledgement remain distinct.

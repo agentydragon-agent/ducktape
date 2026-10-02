@@ -74,7 +74,7 @@ flowchart TB
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
-    RUNNER_DIRECTORY["Proposed extraction<br/>Runner directory<br/>shared inventory for app and notifications"]:::future
+    SANDBOX_SERVICE["Planned extraction<br/>Sandbox Service<br/>independent lifecycle, session access, event following"]:::future
     ING["Planned service<br/>Subscriptions and notifications<br/>Action inbox -> runner notice; external providers later"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
@@ -124,7 +124,7 @@ flowchart TB
     HOSTED_THREAD_SURFACES --> AG
     CROSS_IDENTITY_READ_POLICY --> AG
     CROSS_IDENTITY_READ_POLICY -. future cross-account delivery only .-> ING
-    RUNNER_DIRECTORY --> ING
+    SANDBOX_SERVICE --> ING
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
 
@@ -957,20 +957,27 @@ background work, but any such runner surface reuses the Action Service contracts
 second tool-request lifecycle; the settled harness behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
 
-### `RUNNER_DIRECTORY` — runner discovery outside the integration app
+### `SANDBOX_SERVICE` — independent sandbox lifecycle and runner-session access
 
-**Proposed extraction, not implemented:** [runner directory interface and plan](runner_directory.md).
-Extract managed-resource inventory from the app into an independent service used by both the app and
-notifications. The directory exposes authenticated, account-scoped runner list/get, stable runner
-identity, current endpoints, and explicit retirement state. Provisioning-resource reconciliation owns
-registration; runners do not dial notifications. Session inventory stays in the runner's existing
-`ListSessions`/`Attach` protocol; product Thread mapping stays in the app.
+**Planned extraction, required before notification v1:** [Sandbox Service plan](sandbox_service.md).
+The [integration-app dependency rule](../docs/service_boundaries.md) is an architecture constraint,
+not a future cleanup: no backend service may require app APIs, private tables, implementation imports,
+process/attachments, identity issuance, or app-only provisioning/prompt bootstrap. The app is a client.
 
-Settle storage-incarnation identity, account binding, endpoint replacement, and source freshness before
-implementation. A qualified `(runner_id, session_id)` is the proposed notification destination; using
-only a session ID would require SA-wide uniqueness not guaranteed by today's runner. Discovery does
-not grant runner access; direct connection authentication remains separate. A change feed and generic
-external-runner registration are deferred, not v1 prerequisites.
+Extract the minimum coherent provisioning/session-access backend, including explicit destination/SA
+bindings, command relay, event replay/following, and needed session/context setup. Use Kubernetes
+discovery internally, not another directory deployment. Decide archival/ingestion ownership when moving
+backend history out of the app; do not create a competing event authority or implicit command queue.
+The runner continues to own native execution and canonical admission/effect evidence.
+
+Migrate app consumers to the extracted API, then implement notifications against Sandbox Service and
+Actions. V1 requires running destinations and reuses Cilium-controlled runner connections through the
+Sandbox Service. Its own API still authenticates/authorizes clients. **TODO after v1:** proper runner
+RPC authentication and transport security. Read/control/wake are distinct authority decisions; automatic
+notification-triggered wake and durable offline command admission remain deferred.
+
+Acceptance must cover operation and restart with the app unavailable, including destination setup
+without UI bootstrap, notification payload read/ack and runner receipt replay, and denied access.
 
 ### `ING` — Event & Notification Hub
 
@@ -979,22 +986,25 @@ v1 decisions, implementation order, acceptance criteria, and deferred work. This
 service, not integration-app notification machinery or browser Web Push.
 
 V1 follows canonical Action events with explicit, replayable subscriptions and inboxes scoped to the
-caller ServiceAccount and runner session, not app Thread IDs. The service uses the runner directory
-for destination discovery; it neither resolves a workload into a sandbox/Thread nor accepts runner
-callbacks. Destination IDs are explicit in calls and agent prompt guidance. The inbox persists actual
+caller ServiceAccount and runner session, not app Thread IDs. The service uses Sandbox Service for verified
+destination/session access, not app Thread lookup, direct provisioning, or runner callbacks. SA is the
+ordinary agent authority; destination IDs are explicit in calls and agent prompt guidance. The inbox
+persists actual
 notification payloads, supports non-destructive reads and an explicit acknowledgement HWM, and sends
 batched automated notices through the existing runner protocol. Admission is not confirmation;
 confirmed but unacknowledged entries do not cause reminders. Providers own content, filters, and source
 verification; Action lifecycle authority stays in the Action Service.
 
-Prerequisites are runner-directory extraction, qualified session addressing, authorized Action reads,
-and authenticated direct runner access. Trust the service with the destination's ordinary protocol and
-history; do not build command-level runner RBAC or app-issued Thread tickets as a prerequisite.
+Prerequisites are the minimum Sandbox Service extraction, explicit session addressing, authorized
+Action reads, and the v1 Cilium policy changes. The Sandbox Service is the trusted runner client; app
+and notifications call its authenticated API. Proper runner RPC authentication/transport security is a
+deferred TODO, not a v1 gate. No directory service, app-issued Thread tickets, or command-level runner RBAC.
 Existing busy-turn input and receipts are usable; remaining `INPUT_DELIVERY` evidence bounds recovery
 claims rather than requiring a new common queue or every native capability experiment to finish.
 
 Deliver only to running harnesses in v1; temporary absence preserves subscriptions. Permanent cleanup
-uses directory retirement or explicit session lifecycle, not a sandbox lookup or a failed connection.
+uses authoritative destination removal or explicit session lifecycle from Sandbox Service, never a
+failed-connection heuristic.
 Automatic Action following, GitHub, return-time catch-up notices, notification-triggered resume, and
 product Thread lifecycle integration come later. Cross-account delivery needs its own future policy.
 
