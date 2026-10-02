@@ -128,7 +128,11 @@ fn source_match_comments_use_readable_annotations_and_keep_other_metadata() {
 fn comment_edit_modes_are_mutually_exclusive_in_both_namespaces() {
     let fixture = fixture();
     for (namespace, locator) in [("bindings", "a"), ("modules", "runtime/plugin")] {
-        for modes in [vec!["--edit", "--clear"], vec!["text", "--edit"], vec!["text", "--clear"]] {
+        for modes in [
+            vec!["--edit", "--clear"],
+            vec!["text", "--edit"],
+            vec!["text", "--clear"],
+        ] {
             let mut args = vec![namespace, "comment", locator];
             args.extend(modes);
             fixture.assert_rejected_unchanged(&args, &["cannot be used with"]);

@@ -62,7 +62,7 @@ struct CommentArgs {
     /// Validate (or simulate) but do not modify any file.
     #[arg(long)]
     dry_run: bool,
- }
+}
 
 /// Mode dispatched by `apply_*_command`.
 #[derive(Debug, Clone)]
@@ -91,7 +91,12 @@ impl CommentMode {
 
 pub fn run_binding_comment_cmd(args: BindingCommentArgs) -> Result<()> {
     let mode = CommentMode::from_flags(args.comment.text, args.comment.edit, args.comment.clear)?;
-    let outcome = apply_binding_comment(&args.comment.modules_root, &args.sym, mode, args.comment.dry_run)?;
+    let outcome = apply_binding_comment(
+        &args.comment.modules_root,
+        &args.sym,
+        mode,
+        args.comment.dry_run,
+    )?;
     let format = peel::OutputFormat::resolve(args.comment.format);
     print_outcome(&outcome, format);
     Ok(())
@@ -209,7 +214,12 @@ pub fn apply_binding_comment(
 
 pub fn run_module_comment_cmd(args: ModuleCommentArgs) -> Result<()> {
     let mode = CommentMode::from_flags(args.comment.text, args.comment.edit, args.comment.clear)?;
-    let outcome = apply_module_comment(&args.comment.modules_root, &args.module, mode, args.comment.dry_run)?;
+    let outcome = apply_module_comment(
+        &args.comment.modules_root,
+        &args.module,
+        mode,
+        args.comment.dry_run,
+    )?;
     let format = peel::OutputFormat::resolve(args.comment.format);
     print_outcome(&outcome, format);
     Ok(())

@@ -7,11 +7,10 @@ use serde::Deserialize;
 
 use output_layout::DebundleOutputLayout;
 use spec::{
-    BundledPartialSwapBundle, BundledPartialSwapMark,
-    BundledPartialSwapPackage, ChunkExportPurity, ChunkRenameMember, ChunkRenameSelector,
-    ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule,
-    MaterializeLogicalModulesConfig, Member, OwnerGraphOptions, PartialSwapMark,
-    PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig,
+    BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, ChunkExportPurity,
+    ChunkRenameMember, ChunkRenameSelector, ChunkRenames, EmitBrowserHarnessConfig,
+    LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, Member, OwnerGraphOptions,
+    PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig,
     TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape,
     WriteJsTreeConfig,
 };
