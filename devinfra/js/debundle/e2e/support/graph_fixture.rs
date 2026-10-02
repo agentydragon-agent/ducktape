@@ -145,6 +145,7 @@ impl GraphFixture {
     /// Re-run the edited spec, then execute its emitted entry under Node.
     pub fn assert_runs(&self, expected: &str) {
         let root = self.run._root.path();
+        let out_root = root.join("rerun");
         let out = Command::new(debundler_path())
             .arg("run")
             .arg("--tree-config")
@@ -156,7 +157,7 @@ impl GraphFixture {
             .arg("--tree-source-root")
             .arg(root)
             .arg("--out-root")
-            .arg(&self.run.out_root)
+            .arg(&out_root)
             .output()
             .unwrap();
         assert!(
@@ -164,7 +165,7 @@ impl GraphFixture {
             "{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        assert_node_output(&self.run.out_root.join("app/main/main.js"), expected, "");
+        assert_node_output(&out_root.join("app/main/main.js"), expected, "");
     }
 
     pub fn owner_graph(&self) -> OwnerGraphReport {

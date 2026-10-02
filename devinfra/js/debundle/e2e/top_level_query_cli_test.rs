@@ -144,14 +144,16 @@ fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
     let fixture = GraphFixture::new("console.log(\"task\");\nconsole.log(\"task\");\n", &[]);
     let report = fixture.json(&["modules", "propose", "--size-cap-lines", "10000"]);
     let proposals = report["proposals"].as_array().unwrap();
-    assert_eq!(proposals.len(), 2);
+    // Real sequencing edges may group both statements into one proposal.
+    // Whichever partition the heuristic chooses, neither ambiguous owner is
+    // addressable by a unique selector, and no containing proposal is landable.
+    let mut unaddressable: Vec<_> = proposals.iter().flat_map(|p| {
+        p["unaddressable_anonymous_owner_ids"].as_array().unwrap().iter().map(|id| id.as_str().unwrap())
+    }).collect();
+    unaddressable.sort_unstable();
+    assert_eq!(unaddressable, ["owner:0", "owner:1"]);
     assert!(proposals.iter().all(|p| {
         p["landable_today"] == false
-            && p["unaddressable_anonymous_owner_ids"]
-                .as_array()
-                .unwrap()
-                .len()
-                == 1
             && p["landability_notes"]
                 .as_array()
                 .unwrap()
