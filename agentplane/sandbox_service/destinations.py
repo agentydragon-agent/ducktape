@@ -9,12 +9,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from agentplane.sandbox_service.kubernetes_grants import DnsName
+from agentplane.sandbox_service.session_config import SandboxBinding
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
 from util.agent_sandbox import SANDBOX_API
 
 
-class SessionDestination(BaseModel):
+class SandboxDestination(BaseModel):
     """A caller's requested resource, never proof of authority. No app Thread or supplied URL."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -22,6 +23,9 @@ class SessionDestination(BaseModel):
     owner: ServiceAccountRef
     sandbox: DnsName
     sandbox_uid: UUID
+
+
+class SessionDestination(SandboxDestination):
     session_id: str = Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 
@@ -37,6 +41,7 @@ class DestinationUnavailableError(Exception):
 class RunnerEndpoint:
     target: str
     pod_uid: str
+    binding: SandboxBinding | None
 
 
 @dataclass(frozen=True)
@@ -46,7 +51,7 @@ class DestinationResolver:
     runner_port: int
     trusted_accounts: frozenset[ServiceAccountRef] = frozenset()
 
-    async def resolve(self, principal: WorkloadPrincipal, destination: SessionDestination) -> RunnerEndpoint:
+    async def resolve(self, principal: WorkloadPrincipal, destination: SandboxDestination) -> RunnerEndpoint:
         # A trusted service names the resource owner explicitly. A forwarded header or request body
         # cannot make an ordinary caller a trusted service or grant cross-account access.
         if principal.account != destination.owner and principal.account not in self.trusted_accounts:
@@ -95,4 +100,4 @@ class DestinationResolver:
         except ValueError as error:
             raise DestinationUnavailableError from error
         host = f"[{address}]" if address.version == 6 else str(address)
-        return RunnerEndpoint(target=f"{host}:{self.runner_port}", pod_uid=metadata.uid)
+        return RunnerEndpoint(target=f"{host}:{self.runner_port}", pod_uid=metadata.uid, binding=view.binding)

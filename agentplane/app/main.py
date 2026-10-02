@@ -15,7 +15,6 @@ import httpx
 import uvicorn
 from fastapi import Response
 from fastapi.staticfiles import StaticFiles
-from jinja2 import StrictUndefined, Template
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import (
     ApiClient,
@@ -55,6 +54,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
+from agentplane.sandbox_service.instructions import resolved_agent_instructions
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, RoleBindingGrant
 from util.bazel.runfiles import get_required_path
@@ -66,7 +66,6 @@ from util.kubernetes import CustomObjectsClient
 # The built frontend, a runfiles data dependency of this module's library.
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/agentplane/app/frontend/dist/index.html"
-DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE = "_main/agentplane/app/agent_instructions.j2"
 SERVICE_WORKER = "_main/agentplane/app/frontend/sw.js"
 
 
@@ -253,20 +252,6 @@ class Settings(AppSettingsConfig):
             sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
         sources.append(file_secret_settings)
         return tuple(sources)
-
-
-def resolved_agent_instructions(
-    configured: str | None, *, egress_api_url: str | None, actions_service_url: str | None
-) -> str:
-    """Use the image-owned instructions unless deployment configuration explicitly replaces them."""
-    if configured is not None:
-        return configured
-    if egress_api_url is None or actions_service_url is None:
-        raise ValueError("image-owned agent instructions require agent_egress_api_url and agent_actions_service_url")
-    template = Template(
-        get_required_path(DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE).read_text(encoding="utf-8"), undefined=StrictUndefined
-    )
-    return str(template.render(egress_api_url=egress_api_url, actions_service_url=actions_service_url))
 
 
 def main() -> None:

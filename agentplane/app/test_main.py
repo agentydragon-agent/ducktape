@@ -34,11 +34,12 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
-from agentplane.app.main import AppServer, Settings, SpaFiles, resolved_agent_instructions, serve_then_close
+from agentplane.app.main import AppServer, Settings, SpaFiles, serve_then_close
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.kubernetes import pod, sandbox
+from agentplane.sandbox_service.instructions import resolved_agent_instructions
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.session_config import Harness
 from util.net import pick_free_port

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from agentplane.sandbox_service.instructions import combine_instructions
 from agentplane.sandbox_service.session_config import Harness, ThreadDefaults
 
 
@@ -94,5 +95,4 @@ class PresetCatalog(BaseModel):
 
     def instructions_for(self, task_instructions: str) -> str:
         """Combine platform operation guidance with the caller's task-specific instructions."""
-        parts = [part.strip() for part in (self.agent_instructions, task_instructions) if part.strip()]
-        return "\n\n".join(parts)
+        return combine_instructions(self.agent_instructions, task_instructions)

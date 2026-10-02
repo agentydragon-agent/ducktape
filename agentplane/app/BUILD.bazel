@@ -100,7 +100,6 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     data = [
-        "agent_instructions.j2",
         "//agentplane/app/frontend:bundle",
         "//agentplane/app/frontend:service_worker",
     ],  # keep: the SPA and service worker the server mounts

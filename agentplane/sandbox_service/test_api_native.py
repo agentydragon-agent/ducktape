@@ -1,6 +1,10 @@
 """Headless authenticated session access: HTTP → Kubernetes identity/discovery → native runner."""
 
+import asyncio
 import json
+import shlex
+from dataclasses import replace
+from pathlib import Path
 from collections.abc import AsyncIterator
 
 import httpx
@@ -17,11 +21,14 @@ from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.api import SessionResources, create_app
 from agentplane.sandbox_service.destinations import DestinationResolver, SessionDestination
+from agentplane.sandbox_service.inventory import SANDBOX_BINDING_ANNOTATION
+from agentplane.sandbox_service.session_config import Harness, SandboxBinding, ThreadDefaults
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -40,15 +47,14 @@ def destination() -> dict[str, object]:
 
 
 @pytest.fixture
-async def api(cluster: Cluster, runner: RunnerHandle) -> AsyncIterator[httpx.AsyncClient]:
+def resources(cluster: Cluster, runner: RunnerHandle) -> SessionResources:
     cluster.fake.tokens[TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{ACCOUNT}",
         pod_name="test-caller-pod",
         pod_uid="test-caller-pod-uid",
         audiences=(AUDIENCE,),
     )
-    app = create_app(
-        SessionResources(
+    return SessionResources(
             authenticate=WorkloadPrincipalAuthenticator(
                 WorkloadPrincipalResolver(
                     authentication=k8s_client.AuthenticationV1Api(cluster.api),
@@ -58,10 +64,32 @@ async def api(cluster: Cluster, runner: RunnerHandle) -> AsyncIterator[httpx.Asy
             ),
             destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
             follow_lease_s=0.2,
-        )
     )
+
+
+@pytest.fixture
+async def api(resources: SessionResources) -> AsyncIterator[httpx.AsyncClient]:
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),
+        transport=httpx.ASGITransport(app=create_app(resources)),
+        base_url="http://test-sandbox-service",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    ) as client:
+        yield client
+
+
+@pytest.fixture
+def managed_resources(resources: SessionResources) -> SessionResources:
+    return replace(
+        resources,
+        manager_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)}),
+        platform_instructions="Test platform guidance.",
+    )
+
+
+@pytest.fixture
+async def manager_api(managed_resources: SessionResources) -> AsyncIterator[httpx.AsyncClient]:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_app(managed_resources)),
         base_url="http://test-sandbox-service",
         headers={"Authorization": f"Bearer {TOKEN}"},
     ) as client:
@@ -165,6 +193,138 @@ async def test_invalid_command_is_not_submitted(
         await observer.detach()
         await observer.drain_until_end()
         assert not events.of_kind(observer.seen, "command_admitted")
+
+
+def set_binding(cluster: Cluster, binding: SandboxBinding) -> None:
+    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})[
+        SANDBOX_BINDING_ANNOTATION
+    ] = binding.model_dump_json()
+
+
+async def test_http_only_launch_and_resume_preserve_retained_configuration(
+    manager_api: httpx.AsyncClient,
+    managed_resources: SessionResources,
+    cluster: Cluster,
+    spec: protocol_pb2.SessionSpec,
+    destination: dict[str, object],
+    workspace: Path,
+) -> None:
+    bootstrap_marker = workspace / "bootstrap-runs"
+    setup_marker = workspace / "setup-runs"
+    binding = SandboxBinding(
+        bootstrap=f"printf B >> {shlex.quote(str(bootstrap_marker))}",
+        thread_defaults=ThreadDefaults(
+            harness=Harness(protocol_pb2.Harness.Name(spec.harness)),
+            model=spec.model,
+            cwd=spec.cwd,
+            instructions="Test task guidance.",
+            setup_script=f"printf S >> {shlex.quote(str(setup_marker))}",
+        ),
+    )
+    set_binding(cluster, binding)
+    sandbox_destination = {key: value for key, value in destination.items() if key != "session_id"}
+    for _ in range(2):
+        initialized = await manager_api.post("/v1/sandboxes/initialize", json={"destination": sandbox_destination})
+        assert initialized.status_code == 200, initialized.text
+        assert ParseDict(initialized.json(), protocol_pb2.InitializeResult()).exit_code == 0
+    assert bootstrap_marker.read_text() == "B"
+    opened = await manager_api.post("/v1/sessions/open", json={"destination": destination})
+    assert opened.status_code == 200, opened.text
+    attached = ParseDict(opened.json(), protocol_pb2.Attached())
+    async with asyncio.timeout(15):
+        while attached.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
+            assert attached.setup_state not in (protocol_pb2.SETUP_STATE_FAILED, protocol_pb2.SETUP_STATE_INTERRUPTED)
+            await asyncio.sleep(0.05)
+            inspected = await manager_api.post("/v1/sessions/inspect", json={"destination": destination})
+            assert inspected.status_code == 200, inspected.text
+            attached = ParseDict(inspected.json(), protocol_pb2.Attached())
+    assert attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
+    assert attached.setup_state == protocol_pb2.SETUP_STATE_SUCCEEDED
+    assert "Test platform guidance." in attached.spec.instructions
+    assert "Test task guidance." in attached.spec.instructions
+    assert str(destination["session_id"]) in attached.spec.instructions
+    assert str(SANDBOX_UID) in attached.spec.instructions
+    repeated = await manager_api.post("/v1/sessions/open", json={"destination": destination})
+    assert repeated.status_code == 200, repeated.text
+    assert ParseDict(repeated.json(), protocol_pb2.Attached()).spec == attached.spec
+    assert bootstrap_marker.read_text() == "B"
+    assert setup_marker.read_text() == "S"
+    conflicting = await manager_api.post(
+        "/v1/sessions/open", json={"destination": destination, "spec": {"instructions": "Different task"}}
+    )
+    assert conflicting.status_code == 409
+    stopped = await manager_api.post(
+        "/v1/sessions/commands",
+        json={"destination": destination, "command": {"commandId": "test-http-stop", "stopRunnerSession": {}}},
+    )
+    assert stopped.status_code == 200, stopped.text
+    inspected = await manager_api.post("/v1/sessions/inspect", json={"destination": destination})
+    # The command receipt proves admission, not completion. Poll only the runner's state.
+    async with asyncio.timeout(15):
+        while inspected.json()["harnessState"] != "HARNESS_STATE_STOPPED":
+            await asyncio.sleep(0.05)
+            inspected = await manager_api.post("/v1/sessions/inspect", json={"destination": destination})
+    set_binding(cluster, SandboxBinding(bootstrap="exit 42", thread_defaults=ThreadDefaults(model="changed")))
+    # A restarted service with different configuration must not rewrite the retained native spec,
+    # rerun bootstrap/setup, or need an app record to recover this session.
+    changed = replace(managed_resources, platform_instructions="New platform guidance.")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_app(changed)),
+        base_url="http://test-sandbox-service",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    ) as restarted:
+        resumed = await restarted.post("/v1/sessions/resume", json={"destination": destination})
+        assert resumed.status_code == 200, resumed.text
+        recovered = ParseDict(resumed.json(), protocol_pb2.Attached())
+        assert recovered.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
+        assert recovered.spec == attached.spec
+        listed = await restarted.post("/v1/sessions/list", json={"destination": sandbox_destination})
+        assert listed.status_code == 200
+        rows = listed.json()["sessions"]
+        assert len(rows) == 1
+        assert ParseDict(rows[0], protocol_pb2.SessionSummary()).spec == attached.spec
+    assert bootstrap_marker.read_text() == "B"
+    assert setup_marker.read_text() == "S"
+
+
+async def test_explicit_resume_never_creates(
+    manager_api: httpx.AsyncClient, destination: dict[str, object], client: RunnerClient
+) -> None:
+    response = await manager_api.post("/v1/sessions/resume", json={"destination": destination})
+    assert response.status_code == 409
+    assert not await client.list_sessions()
+
+
+async def test_delivery_authority_does_not_grant_management(
+    api: httpx.AsyncClient, destination: dict[str, object], cluster: Cluster
+) -> None:
+    sandbox_destination = {key: value for key, value in destination.items() if key != "session_id"}
+    for route, target in (
+        ("/v1/sessions/open", destination),
+        ("/v1/sessions/resume", destination),
+        ("/v1/sandboxes/initialize", sandbox_destination),
+    ):
+        response = await api.post(route, json={"destination": target})
+        assert response.status_code == 403, response.text
+    assert cluster.fake.pod_reads == 0
+
+
+async def test_invalid_launch_and_failed_bootstrap_never_create(
+    manager_api: httpx.AsyncClient,
+    destination: dict[str, object],
+    cluster: Cluster,
+    client: RunnerClient,
+    spec: protocol_pb2.SessionSpec,
+) -> None:
+    for invalid in ({}, {"unknownField": True}, {"harness": "HARNESS_CODEX", "model": "m"}):
+        response = await manager_api.post("/v1/sessions/open", json={"destination": destination, "spec": invalid})
+        assert response.status_code == 422, response.text
+    set_binding(cluster, SandboxBinding(bootstrap="exit 42"))
+    failed = await manager_api.post(
+        "/v1/sessions/open", json={"destination": destination, "spec": MessageToDict(spec)}
+    )
+    assert failed.status_code == 409, failed.text
+    assert not await client.list_sessions()
 
 
 if __name__ == "__main__":

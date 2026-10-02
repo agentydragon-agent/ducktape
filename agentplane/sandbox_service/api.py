@@ -1,4 +1,4 @@
-"""Authenticated access to existing runner sessions; no app, private archive, queue, or implicit wake."""
+"""Authenticated runner session access and explicit management; no app, private archive, queue, or implicit wake."""
 
 import asyncio
 import json
@@ -15,24 +15,39 @@ from starlette.types import Receive, Scope, Send
 
 from agentplane.protocol import command_pb2
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
+from agentplane.sandbox_service import session_lifecycle
 from agentplane.sandbox_service.command_relay import admit_running_command
 from agentplane.sandbox_service.destinations import (
     DestinationDeniedError,
     DestinationResolver,
     DestinationUnavailableError,
+    RunnerEndpoint,
+    SandboxDestination,
     SessionDestination,
 )
 from agentplane.sandbox_service.inventory import SandboxNotFoundError
+from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
 
+class SandboxRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    destination: SandboxDestination
+
+
 class SessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     destination: SessionDestination
+
+
+class OpenRequest(SessionRequest):
+    spec: dict[str, object] = Field(default_factory=dict)
+    setup_script: str | None = Field(default=None, max_length=65_536)
 
 
 class FollowRequest(SessionRequest):
@@ -49,14 +64,26 @@ class SessionResources:
     destinations: DestinationResolver
     admission_timeout_s: float = 15
     follow_lease_s: float = 30
+    manager_accounts: frozenset[ServiceAccountRef] = frozenset()
+    platform_instructions: str | None = None
+    lifecycle_timeout_s: float = 300
 
     def __post_init__(self) -> None:
-        if self.admission_timeout_s <= 0 or self.follow_lease_s <= 0:
+        if min(self.admission_timeout_s, self.follow_lease_s, self.lifecycle_timeout_s) <= 0:
             raise ValueError("timeouts must be positive")
+        if self.manager_accounts and self.platform_instructions is None:
+            raise ValueError("session management requires configured platform instructions")
 
-    async def client(self, request: Request, destination: SessionDestination) -> RunnerClient:
+    async def endpoint(
+        self, request: Request, destination: SandboxDestination, *, manage: bool = False
+    ) -> RunnerEndpoint:
         principal = await self.authenticate(request)
-        endpoint = await self.destinations.resolve(principal, destination)
+        if manage and principal.account not in self.manager_accounts:
+            raise DestinationDeniedError
+        return await self.destinations.resolve(principal, destination)
+
+    async def client(self, request: Request, destination: SandboxDestination, *, manage: bool = False) -> RunnerClient:
+        endpoint = await self.endpoint(request, destination, manage=manage)
         # TODO: authenticate/TLS-protect the runner RPC. V1 relies on network isolation;
         # Kubernetes association checks are not cryptographic authentication of the peer.
         return RunnerClient(endpoint.target)
@@ -109,10 +136,18 @@ def create_app(resources: SessionResources) -> FastAPI:
         return JSONResponse({"detail": "sandbox incarnation not found"}, status_code=404)
 
     @app.exception_handler(DestinationUnavailableError)
-    @app.exception_handler(grpc.RpcError)
     @app.exception_handler(k8s_client.ApiException)
     async def unavailable(request: Request, error: Exception) -> JSONResponse:
         return JSONResponse({"detail": "destination unavailable; no offline admission"}, status_code=503)
+
+    @app.exception_handler(grpc.RpcError)
+    async def rpc_failure(request: Request, error: grpc.RpcError) -> JSONResponse:
+        if isinstance(error, grpc.aio.AioRpcError):
+            if error.code() == grpc.StatusCode.INVALID_ARGUMENT:
+                return JSONResponse({"detail": "runner rejected invalid request"}, status_code=422)
+            if error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND):
+                return JSONResponse({"detail": "runner rejected session or bootstrap state"}, status_code=409)
+        return JSONResponse({"detail": "destination unavailable; outcome uncertain"}, status_code=503)
 
     @app.exception_handler(RunnerError)
     @app.exception_handler(StreamClosedError)
@@ -122,12 +157,60 @@ def create_app(resources: SessionResources) -> FastAPI:
     @app.exception_handler(TimeoutError)
     async def timeout(request: Request, error: TimeoutError) -> JSONResponse:
         return JSONResponse(
-            {"detail": "runner receipt timed out; reconcile with the unchanged command"}, status_code=504
+            {"detail": "runner request timed out; outcome uncertain, reconcile using unchanged identifiers and payload"}, status_code=504
         )
 
     @app.get("/healthz")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.post("/v1/sessions/list")
+    async def list_sessions(body: SandboxRequest, request: Request) -> dict[str, object]:
+        client = await resources.client(request, body.destination)
+        try:
+            async with asyncio.timeout(resources.admission_timeout_s):
+                return {"sessions": [MessageToDict(row) for row in await client.list_sessions()]}
+        finally:
+            await client.close()
+
+    @app.post("/v1/sandboxes/initialize")
+    async def initialize(body: SandboxRequest, request: Request) -> dict[str, object]:
+        endpoint = await resources.endpoint(request, body.destination, manage=True)
+        client = RunnerClient(endpoint.target)
+        try:
+            async with asyncio.timeout(resources.lifecycle_timeout_s):
+                return MessageToDict(await session_lifecycle.initialize(client, endpoint.binding))
+        finally:
+            await client.close()
+
+    @app.post("/v1/sessions/open")
+    async def open_session(body: OpenRequest, request: Request) -> dict[str, object]:
+        endpoint = await resources.endpoint(request, body.destination, manage=True)
+        assert resources.platform_instructions is not None
+        try:
+            spec = session_lifecycle.launch_spec(
+                body.destination, body.spec, binding=endpoint.binding,
+                platform_instructions=resources.platform_instructions,
+            )
+        except (ParseError, ValueError) as error:
+            raise HTTPException(422, "invalid runner SessionSpec") from error
+        client = RunnerClient(endpoint.target)
+        try:
+            async with asyncio.timeout(resources.lifecycle_timeout_s):
+                return MessageToDict(await session_lifecycle.open_session(
+                    client, body.destination, spec, binding=endpoint.binding, setup_script=body.setup_script
+                ))
+        finally:
+            await client.close()
+
+    @app.post("/v1/sessions/resume")
+    async def resume_session(body: SessionRequest, request: Request) -> dict[str, object]:
+        client = await resources.client(request, body.destination, manage=True)
+        try:
+            async with asyncio.timeout(resources.lifecycle_timeout_s):
+                return MessageToDict(await session_lifecycle.resume_session(client, body.destination.session_id))
+        finally:
+            await client.close()
 
     @app.post("/v1/sessions/inspect")
     async def inspect(body: SessionRequest, request: Request) -> dict[str, object]:

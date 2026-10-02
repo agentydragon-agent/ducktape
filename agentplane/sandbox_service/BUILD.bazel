@@ -240,3 +240,9 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "instructions",
+    srcs = ["instructions.py"],
+    data = ["agent_instructions.j2"],  # keep: backend-owned operational prompt template
+)

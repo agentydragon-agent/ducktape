@@ -1,14 +1,16 @@
-# Existing-session access API
+# Sandbox Service session API
 
-This is the first standalone Sandbox Service API slice. It can inspect, command, and
-follow an **existing** runner session. It does not yet expose provisioning or session
-creation, migrate app callers to HTTP, or start a second provisioning/ingestion process.
+The standalone API exposes existing-session access and explicit bootstrap/open/resume.
+It does not yet expose Sandbox provisioning, migrate app callers to HTTP, or start a
+second provisioning/ingestion process. All operations require a currently running runner;
+none provision or wake a Sandbox.
 
 ## Identity and destinations
 
 Every operation uses the shared Pod-bound workload Bearer authenticator. Each request
 performs TokenReview for the configured audience and accepted SA namespaces. A destination
-always names its owner, Sandbox name **and UID**, and runner session ID:
+always names its owner and Sandbox name **and UID**. Session operations also require a
+runner session ID (omit it for listing sessions and initializing a Sandbox):
 
 ```json
 {
@@ -58,7 +60,7 @@ For example, add these fields to the destination body to submit a notice:
 }
 ```
 
-All attachments omit `SessionSpec`: none of these operations creates a session, resumes
+Read/follow/command attachments omit `SessionSpec`: none of these operations creates a session, resumes
 a harness, or wakes a sandbox. Command submission additionally requires a running harness.
 Admission is neither harness confirmation nor inbox acknowledgement. On uncertain delivery,
 reconcile using the unchanged ID/payload and a cursor before its possible admission; do not
@@ -77,6 +79,41 @@ incarnation, `409` runner refusal (including unknown or stopped session for comm
 A connection failure can happen after commitment: neither 5xx nor disconnect proves that a
 command was rejected. Reconcile from runner evidence.
 
+## Explicit session management
+
+- `POST /v1/sessions/list`: Sandbox destination without `session_id`; returns
+  `{"sessions": [...]}` with native `SessionSummary` protobuf JSON. This is read-only.
+- `POST /v1/sandboxes/initialize`: Sandbox destination; executes/replays **only** its stored
+  binding's bootstrap and returns native `InitializeResult` protobuf JSON. A nonzero
+  `exitCode` is a completed failed bootstrap, not success. No configured bootstrap is 409.
+- `POST /v1/sessions/open`: session destination, optional `spec` (native `SessionSpec`
+  protobuf JSON overrides), optional `setup_script`. Resolves stored concrete launch
+  defaults without an app preset catalog, prepends backend-owned operational guidance and
+  explicit destination context, runs the stored bootstrap, then sends native Open. A failed
+  bootstrap prevents Open. Returns native `Attached`; setup can still be running, so this
+  snapshot does not promise a ready harness. Follow/inspect for actual progress.
+- `POST /v1/sessions/resume`: session destination only. Finds the runner's retained session
+  and uses its exact stored spec. No current defaults, platform prompt, bootstrap, or setup
+  script are reapplied. Missing sessions and failed/interrupted setup are refused (409).
+
+Initialize/open/resume additionally require `manager_accounts`, an explicit allowlist that
+is empty by default. Cross-owner management also requires `trusted_accounts`; neither list
+implies the other. Delivery-only services do not gain launch authority from cross-owner
+access. This is an HTTP lifecycle boundary, not command-level RBAC on the runner protocol.
+
+When management is enabled, configure `agent_egress_api_url` and `agent_actions_service_url`
+for the bundled platform instructions, or explicitly set `agent_instructions` (including
+an intentional empty string). Stored session specs are never rewritten after a deployment.
+Open retries must use the same destination and launch inputs. Changed defaults/instructions
+can cause an Open retry to conflict: inspect/list retained state and explicitly resume,
+never silently adopt a different spec or allocate another session ID. The runner owns
+idempotence for bootstrap, session identity, and setup. There is no service-side queue.
+
+Management requests are bounded by `lifecycle_timeout_s` (default 300). A timeout or client
+loss does not prove that bootstrap, setup, or launch did not happen. Reconcile via the same
+runner identity and retained state; an exact bootstrap retry replays its terminal result.
+List requests use `admission_timeout_s`. Read/command/follow still never start a harness.
+
 ## State and deployment boundary
 
 The first API follows only the surviving runner log. It has no database and never falls
@@ -92,7 +129,6 @@ access is in-cluster unless `kubeconfig` is supplied. `/healthz` is unauthentica
 not a claim that Kubernetes or a destination is ready.
 
 This PR adds no deployment, network policy, egress credential rules, staging resources, or
-app HTTP cutover. Before cutover: finish lifecycle/grant orchestration and backend session
-configuration/prompt extraction; configure narrow Kubernetes read/TokenReview permissions;
+app HTTP cutover. Before cutover: finish Sandbox lifecycle/grant orchestration; configure narrow Kubernetes read/TokenReview permissions;
 audit both sides of runner network access; inventory/back up retained staging state; and
 switch each migrated app path without leaving a permanent direct-runner bypass.

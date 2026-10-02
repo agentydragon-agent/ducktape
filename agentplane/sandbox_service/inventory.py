@@ -154,7 +154,7 @@ class SandboxView(BaseModel):
         "egress and action-policy binding names it by."
     )
     binding: SandboxBinding | None = Field(
-        default=None, description="The app-owned concrete Thread defaults and bootstrap selected for this Sandbox."
+        default=None, description="The stored concrete Thread defaults and bootstrap selected for this Sandbox."
     )
     kubernetes_grants: list[ResolvedGrant]
     kubernetes_grants_ready: bool

@@ -12,6 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from agentplane.sandbox_service.api import SessionResources, create_app
 from agentplane.sandbox_service.destinations import DestinationResolver
+from agentplane.sandbox_service.instructions import resolved_agent_instructions
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
@@ -27,6 +28,11 @@ class Settings(BaseSettings):
     sandbox_namespace: str = Field(min_length=1)
     allowed_service_account_namespaces: frozenset[str] = Field(min_length=1)
     trusted_accounts: frozenset[ServiceAccountRef] = Field(default_factory=frozenset)
+    manager_accounts: frozenset[ServiceAccountRef] = Field(default_factory=frozenset)
+    agent_instructions: str | None = None
+    agent_egress_api_url: str | None = None
+    agent_actions_service_url: str | None = None
+    lifecycle_timeout_s: float = Field(default=300, gt=0)
     token_audience: str = "agentplane-egress"
     runner_port: int = Field(default=7000, ge=1, le=65535)
     admission_timeout_s: float = Field(default=15, gt=0, le=60)
@@ -40,6 +46,14 @@ class Settings(BaseSettings):
 
 
 async def serve(settings: Settings) -> None:
+    platform_instructions = (
+        resolved_agent_instructions(
+            settings.agent_instructions,
+            egress_api_url=settings.agent_egress_api_url,
+            actions_service_url=settings.agent_actions_service_url,
+        )
+        if settings.manager_accounts else None
+    )
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
@@ -65,6 +79,9 @@ async def serve(settings: Settings) -> None:
                 destinations=DestinationResolver(inventory, core, settings.runner_port, settings.trusted_accounts),
                 admission_timeout_s=settings.admission_timeout_s,
                 follow_lease_s=settings.follow_lease_s,
+                manager_accounts=settings.manager_accounts,
+                platform_instructions=platform_instructions,
+                lifecycle_timeout_s=settings.lifecycle_timeout_s,
             )
         )
         await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, access_log=False)).serve()
