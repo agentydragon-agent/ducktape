@@ -179,12 +179,6 @@ export { actual };
     );
 }
 
-
-
-
-
-
-
 #[test]
 fn member_source_match_treats_object_shorthand_as_explicit_same_name_property() {
     let fixture = run_fixture(member_fixture(
@@ -819,55 +813,84 @@ export { actual };
 #[test]
 fn literal_regex_holes_select_and_emit_the_matching_value() {
     for (source, selector, output, declaration) in [
-        (r#"const runtimeStyle = "WidgetShell-42";
+        (
+            r#"const runtimeStyle = "WidgetShell-42";
 console.log(runtimeStyle);
 export { runtimeStyle };
-"#, r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#, "WidgetShell-42\n", r#"const shellStyle = "WidgetShell-42""#),
-        (r#"const decoyStyle = "f";
+"#,
+            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+            "WidgetShell-42\n",
+            r#"const shellStyle = "WidgetShell-42""#,
+        ),
+        (
+            r#"const decoyStyle = "f";
 const runtimeStyle = "fo";
 console.log(runtimeStyle);
 export { runtimeStyle };
-"#, r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#, "fo\n", r#"const shellStyle = "fo""#),
+"#,
+            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
+            "fo\n",
+            r#"const shellStyle = "fo""#,
+        ),
     ] {
-        let fixture = run_fixture(member_fixture(source, "styles/shell", Member::source_alpha("shellStyle", selector)));
+        let fixture = run_fixture(member_fixture(
+            source,
+            "styles/shell",
+            Member::source_alpha("shellStyle", selector),
+        ));
         assert_entry_output(&fixture, output);
-        assert_module_source(&fixture.out_root, "static/app/modules/styles/shell.js", &[declaration], &["STR_LITERAL_MATCHING_RE"]);
+        assert_module_source(
+            &fixture.out_root,
+            "static/app/modules/styles/shell.js",
+            &[declaration],
+            &["STR_LITERAL_MATCHING_RE"],
+        );
     }
 }
 
 #[test]
 fn literal_regex_holes_preserve_no_match_and_ambiguity_diagnostics() {
     for (source, selector, outcome, anchor) in [
-        (r#"const decoyStyle = "foo";
+        (
+            r#"const decoyStyle = "foo";
 const runtimeStyle = "fo";
 console.log(runtimeStyle);
 export { decoyStyle, runtimeStyle };
-"#, r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#, "ambiguous", "foo"),
-        (r#"const runtimeStyle = "PanelShell-42";
+"#,
+            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
+            "ambiguous",
+            "foo",
+        ),
+        (
+            r#"const runtimeStyle = "PanelShell-42";
 console.log(runtimeStyle);
 export { runtimeStyle };
-"#, r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#, "did not match any top-level declaration", "WidgetShell"),
-        (r#"const runtimePrimaryStyle = "WidgetShell-1";
+"#,
+            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+            "did not match any top-level declaration",
+            "WidgetShell",
+        ),
+        (
+            r#"const runtimePrimaryStyle = "WidgetShell-1";
 const runtimeSecondaryStyle = "WidgetShell-2";
 console.log(runtimePrimaryStyle, runtimeSecondaryStyle);
 export { runtimePrimaryStyle, runtimeSecondaryStyle };
-"#, r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#, "ambiguous", "WidgetShell"),
+"#,
+            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+            "ambiguous",
+            "WidgetShell",
+        ),
     ] {
         expect_rejection_containing_all(
-            member_fixture(source, "styles/shell", Member::source_alpha("shellStyle", selector)),
+            member_fixture(
+                source,
+                "styles/shell",
+                Member::source_alpha("shellStyle", selector),
+            ),
             &["styles/shell", outcome, "STR_LITERAL_MATCHING_RE", anchor],
         );
     }
 }
-
-
-
-
-
-
-
-
-
 
 #[test]
 fn member_source_match_many_expr_holes_match_positionally() {
@@ -1695,12 +1718,15 @@ export { selectedA, selectedB, laterC };
 #[test]
 fn binding_group_declarator_holes_extract_adjacent_arrows_at_start_middle_and_end() {
     for (module, source, group, output, exports, excluded_exports, excluded_source) in [
-        ("leading", r#"const runtimeBuild = (value) => `build:${value}`,
+        (
+            "leading",
+            r#"const runtimeBuild = (value) => `build:${value}`,
   runtimeRead = (value) => runtimeBuild(value).toUpperCase(),
   runtimeTrailingHelper = () => "tail";
 console.log(runtimeRead("one"), runtimeTrailingHelper());
 export { runtimeBuild, runtimeRead, runtimeTrailingHelper };
-"#, BindingGroup::source_alpha(
+"#,
+            BindingGroup::source_alpha(
                 r#"const buildSelected = (value) => `build:${value}`,
   readSelected = (value) => buildSelected(value).toUpperCase(),
   DECLARATORS_AFTER = null;"#,
@@ -1708,42 +1734,66 @@ export { runtimeBuild, runtimeRead, runtimeTrailingHelper };
                     ("buildSelected", "buildValue"),
                     ("readSelected", "readValue"),
                 ],
-            ), "BUILD:ONE tail\n", &["buildValue", "readValue"][..], &["runtimeBuild", "runtimeRead", "runtimeTrailingHelper"][..], &["runtimeTrailingHelper", "DECLARATORS_AFTER"][..]),
-        ("middle", r#"const runtimeLeadingHelper = () => "head",
+            ),
+            "BUILD:ONE tail\n",
+            &["buildValue", "readValue"][..],
+            &["runtimeBuild", "runtimeRead", "runtimeTrailingHelper"][..],
+            &["runtimeTrailingHelper", "DECLARATORS_AFTER"][..],
+        ),
+        (
+            "middle",
+            r#"const runtimeLeadingHelper = () => "head",
   runtimeBuild = (value) => `build:${value}`,
   runtimeRead = (value) => runtimeBuild(value).toUpperCase(),
   runtimeTrailingHelper = () => "tail";
 console.log(runtimeLeadingHelper(), runtimeRead("two"), runtimeTrailingHelper());
 export { runtimeLeadingHelper, runtimeBuild, runtimeRead, runtimeTrailingHelper };
-"#, BindingGroup::source_alpha_adopt_all(
+"#,
+            BindingGroup::source_alpha_adopt_all(
                 r#"const DECLARATORS_BEFORE = null,
   buildSelected = (value) => `build:${value}`,
   readSelected = (value) => buildSelected(value).toUpperCase(),
   DECLARATORS_AFTER = null;"#,
-            ), "head BUILD:TWO tail\n", &["buildSelected", "readSelected"][..], &[
-            "runtimeLeadingHelper",
-            "runtimeBuild",
-            "runtimeRead",
-            "runtimeTrailingHelper",
-        ][..], &[
-            "runtimeLeadingHelper",
-            "runtimeTrailingHelper",
-            "DECLARATORS_BEFORE",
-            "DECLARATORS_AFTER",
-        ][..]),
-        ("trailing", r#"const runtimeLeadingHelper = () => "head",
+            ),
+            "head BUILD:TWO tail\n",
+            &["buildSelected", "readSelected"][..],
+            &[
+                "runtimeLeadingHelper",
+                "runtimeBuild",
+                "runtimeRead",
+                "runtimeTrailingHelper",
+            ][..],
+            &[
+                "runtimeLeadingHelper",
+                "runtimeTrailingHelper",
+                "DECLARATORS_BEFORE",
+                "DECLARATORS_AFTER",
+            ][..],
+        ),
+        (
+            "trailing",
+            r#"const runtimeLeadingHelper = () => "head",
   runtimeBuild = (value) => `build:${value}`,
   runtimeRead = (value) => runtimeBuild(value).toUpperCase();
 console.log(runtimeLeadingHelper(), runtimeRead("three"));
 export { runtimeLeadingHelper, runtimeBuild, runtimeRead };
-"#, BindingGroup::source_alpha_adopt_names(
+"#,
+            BindingGroup::source_alpha_adopt_names(
                 r#"const DECLARATORS_BEFORE = null,
   buildSelected = (value) => `build:${value}`,
   readSelected = (value) => buildSelected(value).toUpperCase();"#,
                 &["buildSelected", "readSelected"],
-            ), "head BUILD:THREE\n", &["buildSelected", "readSelected"][..], &["runtimeLeadingHelper", "runtimeBuild", "runtimeRead"][..], &["runtimeLeadingHelper", "DECLARATORS_BEFORE"][..]),
+            ),
+            "head BUILD:THREE\n",
+            &["buildSelected", "readSelected"][..],
+            &["runtimeLeadingHelper", "runtimeBuild", "runtimeRead"][..],
+            &["runtimeLeadingHelper", "DECLARATORS_BEFORE"][..],
+        ),
     ] {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![logical_module_with_binding_groups(module, &[], &[group])]));
+        let fixture = run_fixture(FixtureOpts::new(
+            source,
+            vec![logical_module_with_binding_groups(module, &[], &[group])],
+        ));
         let path = format!("static/app/modules/{module}.js");
         assert_entry_output(&fixture, output);
         assert_module_exports(&fixture.out_root, &path, exports, excluded_exports);

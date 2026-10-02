@@ -25,14 +25,6 @@ fn assert_success(result: &CommandResult) {
     );
 }
 
-
-
-
-
-
-
-
-
 #[test]
 fn named_from_module_default_accepts_all_upstream_export_forms() {
     // Named exports before/after their declaration and anonymous function/class
@@ -2010,31 +2002,57 @@ fn partial_swap_rejects_consumers_that_would_lose_swapped_exports() {
     // Namespace reads would become undefined; member-kind re-exports have no
     // live namespace-member equivalent; export-star would silently lose names.
     for (label, vendor_source, consumer, diagnostics) in [
-        ("vendor-partial-swap-namespace-consumer-", "export const e6 = () => true;\nexport const keepMe = () => 7;\n", "import * as M from \"../megachunk/entry.js\";\nexport const r = M.e6();\n", ["namespace", "static/megachunk"]),
-        ("vendor-partial-swap-member-reexport-", "export const e6 = () => true;\n", "export { e6 as zodBoolean } from \"../megachunk/entry.js\";\n", ["e6", "re-export"]),
-        ("vendor-partial-swap-export-star-", "export const e6 = () => true;\nexport const keepMe = () => 7;\n", "export * from \"../megachunk/entry.js\";\n", ["export *", "static/megachunk"]),
+        (
+            "vendor-partial-swap-namespace-consumer-",
+            "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
+            "import * as M from \"../megachunk/entry.js\";\nexport const r = M.e6();\n",
+            ["namespace", "static/megachunk"],
+        ),
+        (
+            "vendor-partial-swap-member-reexport-",
+            "export const e6 = () => true;\n",
+            "export { e6 as zodBoolean } from \"../megachunk/entry.js\";\n",
+            ["e6", "re-export"],
+        ),
+        (
+            "vendor-partial-swap-export-star-",
+            "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
+            "export * from \"../megachunk/entry.js\";\n",
+            ["export *", "static/megachunk"],
+        ),
     ] {
         let (ws, package_root) = setup_partial_swap_consumer_fixture(
-            label, vendor_source, consumer, "zod", "3.23.8", "lib/index.mjs",
+            label,
+            vendor_source,
+            consumer,
+            "zod",
+            "3.23.8",
+            "lib/index.mjs",
             "export const boolean = () => true;\n",
         );
         let vendor = partial_swap_vendor(
             label,
             &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
-            &[("e6", swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None))],
+            &[(
+                "e6",
+                swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None),
+            )],
         );
         let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
-        assert!(!fixture.result.status.success(), "{label}: {}", fixture.result.stdout);
+        assert!(
+            !fixture.result.status.success(),
+            "{label}: {}",
+            fixture.result.stdout
+        );
         for diagnostic in diagnostics {
-            assert!(fixture.result.stderr.contains(diagnostic), "{label}: {}", fixture.result.stderr);
+            assert!(
+                fixture.result.stderr.contains(diagnostic),
+                "{label}: {}",
+                fixture.result.stderr
+            );
         }
     }
 }
-
-
-
-
-
 
 #[test]
 fn boundary_rename_rewrites_caller_imports_end_to_end() {

@@ -23,9 +23,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use debundle_e2e_support::{
-    BindingGroup, Fixture, FixtureOpts, Member, assert_entry_output, assert_module_source,
-    assert_generated_module_after_entry_script, debundler_path, logical_module,
-    logical_module_with_binding_groups, outcomes, owner_graph, parse_stdout_json,
+    BindingGroup, Fixture, FixtureOpts, Member, assert_entry_output,
+    assert_generated_module_after_entry_script, assert_module_source, debundler_path,
+    logical_module, logical_module_with_binding_groups, outcomes, owner_graph, parse_stdout_json,
     read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture,
     run_match_selector, run_source_only_validate, run_spec_validate, run_synthesize_selectors,
     write_text_file, write_validate_fixture_spec,
@@ -303,7 +303,12 @@ fn assert_all_commands_agree(case: &Case) -> Value {
 #[test]
 fn sibling_block_consts_are_independent() {
     let fixture = assert_all_commands_resolve(&SIBLING_BLOCKS, "L|R\n");
-    assert_module_source(&fixture.out_root, "static/app/modules/format.js", &["function target", "out.push(a)", "out.push(b)"], &["function actual", "function readable"]);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/format.js",
+        &["function target", "out.push(a)", "out.push(b)"],
+        &["function actual", "function readable"],
+    );
 }
 
 #[test]
@@ -314,13 +319,27 @@ fn sibling_loop_heads_are_independent() {
 #[test]
 fn switch_body_is_its_own_scope() {
     let fixture = assert_selector_runs(&SWITCH_SCOPE, "L outer\n");
-    assert_module_source(&fixture.out_root, "static/app/modules/format.js", &["function target", r#"const a = "outer""#, "const b = input.left"], &["function actual", "function readable"]);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/format.js",
+        &[
+            "function target",
+            r#"const a = "outer""#,
+            "const b = input.left",
+        ],
+        &["function actual", "function readable"],
+    );
 }
 
 #[test]
 fn named_function_expression_name_is_local() {
     let fixture = assert_selector_runs(&NAMED_FUNCTION_EXPRESSION, "outer inner\n");
-    assert_module_source(&fixture.out_root, "static/app/modules/format.js", &["const target", "function c", "c(n - 1)"], &["function outer"]);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/format.js",
+        &["const target", "function c", "c(n - 1)"],
+        &["function outer"],
+    );
 }
 
 #[test]
