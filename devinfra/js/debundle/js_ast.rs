@@ -9,9 +9,9 @@ use swc_common::{
     BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
 };
 use swc_ecma_ast::{
-    ComputedPropName, Decl, EsReserved, Expr, Ident, IdentName, ImportDecl, ImportNamedSpecifier,
-    ImportPhase, ImportSpecifier, Lit, MemberProp, Module, ModuleDecl, ModuleExportName,
-    ModuleItem, Stmt, Str, VarDecl, VarDeclKind,
+    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Ident,
+    IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit, MemberProp,
+    Module, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Stmt, Str, VarDecl, VarDeclKind,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -743,10 +743,63 @@ pub fn named_import_specifier(local: Ident, imported: &str) -> ImportSpecifier {
     })
 }
 
+/// Build a named export without recreating its origin identifier (and hygiene).
+/// Callers choose external-name encoding and whether an alias is necessary.
+pub fn named_export_specifier(
+    orig: ModuleExportName,
+    exported: Option<ModuleExportName>,
+) -> ExportSpecifier {
+    ExportSpecifier::Named(ExportNamedSpecifier {
+        span: DUMMY_SP,
+        orig,
+        exported,
+        is_type_only: false,
+    })
+}
+
+/// Construct a value export, optionally forwarding from another module.
+pub fn named_export_module_item(
+    specifiers: Vec<ExportSpecifier>,
+    source: Option<&str>,
+) -> ModuleItem {
+    ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
+        span: DUMMY_SP,
+        specifiers,
+        src: source.map(|source| {
+            Box::new(Str {
+                span: DUMMY_SP,
+                value: source.into(),
+                raw: None,
+            })
+        }),
+        type_only: false,
+        with: None,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use swc_common::{DUMMY_SP, Spanned};
+
+    #[test]
+    fn named_export_constructor_preserves_local_hygiene() {
+        with_swc_globals(|| {
+            let ctxt = swc_common::SyntaxContext::empty().apply_mark(swc_common::Mark::new());
+            let local = Ident::new("local".into(), DUMMY_SP, ctxt);
+            let ExportSpecifier::Named(specifier) = named_export_specifier(
+                ModuleExportName::Ident(local.clone()),
+                Some(module_export_name_node("external-name")),
+            ) else {
+                panic!("expected named specifier")
+            };
+            let ModuleExportName::Ident(orig) = specifier.orig else {
+                panic!("expected local identifier")
+            };
+            assert_eq!(orig.to_id(), local.to_id());
+            assert!(matches!(specifier.exported, Some(ModuleExportName::Str(_))));
+        });
+    }
 
     #[test]
     fn source_line_index_matches_source_map_line_numbers() {

@@ -8,6 +8,7 @@ use crate::plans::MemberRequest;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
 use anyhow::{Result, bail};
+use js_ast::{named_export_module_item, named_export_specifier};
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use swc_atoms::Atom;
@@ -266,33 +267,23 @@ fn reject_duplicate_field(
 }
 
 pub(super) fn export_named_for_bindings(bindings: &BTreeMap<String, String>) -> ModuleItem {
-    ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
-        span: DUMMY_SP,
-        specifiers: bindings
+    named_export_module_item(
+        bindings
             .iter()
             .map(|(local, exported)| {
-                ExportSpecifier::Named(ExportNamedSpecifier {
-                    span: DUMMY_SP,
-                    orig: ModuleExportName::Ident(Ident::new_no_ctxt(
-                        local.clone().into(),
-                        DUMMY_SP,
-                    )),
-                    exported: if local == exported {
-                        None
-                    } else {
-                        Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                named_export_specifier(
+                    ModuleExportName::Ident(Ident::new_no_ctxt(local.clone().into(), DUMMY_SP)),
+                    (local != exported).then(|| {
+                        ModuleExportName::Ident(Ident::new_no_ctxt(
                             exported.clone().into(),
                             DUMMY_SP,
-                        )))
-                    },
-                    is_type_only: false,
-                })
+                        ))
+                    }),
+                )
             })
             .collect(),
-        src: None,
-        type_only: false,
-        with: None,
-    }))
+        None,
+    )
 }
 
 pub(super) fn entry_exports_for_moved_bindings(

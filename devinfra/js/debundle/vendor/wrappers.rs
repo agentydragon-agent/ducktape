@@ -11,7 +11,8 @@ use artifact::path_from_module_path;
 use binding_targets::module_export_name;
 use js_ast::{
     ParsedJsModule, emit_js_module, import_decl_module_item, is_binding_identifier,
-    member_property, module_export_name_node, named_import_specifier, parse_js_module,
+    member_property, module_export_name_node, named_export_module_item, named_export_specifier,
+    named_import_specifier, parse_js_module,
 };
 use spec::BundledPartialSwapPackage;
 
@@ -436,20 +437,13 @@ fn append_value_export(
     } else {
         let alias = super::unique_synthetic_ident("__vendor_export__", used);
         body.push(const_init_with_expr(&alias, value));
-        body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(
-            NamedExport {
-                span: DUMMY_SP,
-                specifiers: vec![ExportSpecifier::Named(ExportNamedSpecifier {
-                    span: DUMMY_SP,
-                    orig: module_export_name_node(&alias),
-                    exported: Some(module_export_name_node(name)),
-                    is_type_only: false,
-                })],
-                src: None,
-                type_only: false,
-                with: None,
-            },
-        )));
+        body.push(named_export_module_item(
+            vec![named_export_specifier(
+                module_export_name_node(&alias),
+                Some(module_export_name_node(name)),
+            )],
+            None,
+        ));
     }
 }
 

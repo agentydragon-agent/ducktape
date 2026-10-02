@@ -41,7 +41,7 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
 
     split_top_level_var_decls(module);
     let stripped = strip_export_specifiers(module, symbols, chunk_path)?;
-    let post_strip_exports = super::collect_exported_names(module);
+    let post_strip_exports = super::export_surface::collect_exported_names(module);
 
     sweep_unreachable_top_level(
         module,
@@ -52,7 +52,7 @@ pub(crate) fn strip_one_chunk_with_replacement_imports(
     )?;
 
     // Phase 2 must not change the export surface relative to Phase 1.
-    let post_dce_exports = super::collect_exported_names(module);
+    let post_dce_exports = super::export_surface::collect_exported_names(module);
     if post_dce_exports != post_strip_exports {
         let removed: Vec<_> = post_strip_exports
             .difference(&post_dce_exports)
