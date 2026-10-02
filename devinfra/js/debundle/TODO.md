@@ -253,8 +253,9 @@ confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
   in bash. `local status=$?` follows an `if timeout ...; then ...; return 0; fi`
   with no `else`, so it reads the `if` compound's status (0 on fall-through) and
   `*.failed.txt` loses the real exit code, including the timeout's 124. Capture
-  the status in an `else` branch. Isolated shell check: `if bash -c "exit 7";
-  then :; fi; echo "$?"` prints 0; capturing `$?` inside `else` prints 7.
+  the status in an `else` branch. Isolated shell check:
+  `if bash -c "exit 7"; then :; fi; echo "$?"` prints 0; capturing `$?`
+  inside `else` prints 7.
   This reproduces the shell idiom, not a full perf invocation.
 - **Vendor name validation accepts reserved words.** Status: function read,
   reachability not checked. `vendor/mod.rs` `is_valid_identifier` accepts
