@@ -289,6 +289,7 @@ py_library(
     deps = [
         ":app",
         ":app_settings",
+        ":dex",
         ":egress",
         ":staging_config",
         ":testing",

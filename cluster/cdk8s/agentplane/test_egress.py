@@ -482,7 +482,7 @@ def test_shared_agentplane_operator_access_is_testing_only(
     selected = config["sandbox_presets"][preset]
     assert {"agentplane-testing-operator", "agentplane-testing-login"} <= set(selected["kubernetes_grants"])
     assert "public-coder-agent-devbox-vmi-restart" not in selected["kubernetes_grants"]
-    assert AGENTPLANE_TESTING_POLICY in selected["policies"]
+    assert selected["policies"].count(AGENTPLANE_TESTING_POLICY) == 1
     assert config["kubernetes_grants"]["agentplane-testing-login"] == {
         "kind": "RoleBinding",
         "namespace": "public-coder-agent",
@@ -495,6 +495,24 @@ def test_shared_agentplane_operator_access_is_testing_only(
         "agentplane-dex-testing.allegedly.works",
     }
     assert all("credential" not in rule for rule in policy["spec"]["rules"])
+    network = _by_name(docs, "CiliumNetworkPolicy", "agentplane-egress-to-testing-app")
+    dex_backend = one(
+        rule
+        for rule in network["spec"]["egress"]
+        if any(
+            endpoint.get("matchLabels", {}).get("app.kubernetes.io/name") == "agentplane-testing-dex"
+            for endpoint in rule.get("toEndpoints", [])
+        )
+    )
+    assert dex_backend["toEndpoints"] == [
+        {"matchLabels": {
+            "k8s:io.kubernetes.pod.namespace": "agentplane-testing",
+            "app.kubernetes.io/name": "agentplane-testing-dex",
+        }}
+    ]
+    assert dex_backend["toPorts"] == [
+        {"ports": [{"port": "5556", "protocol": "TCP"}], "serverNames": ["agentplane-dex-testing.allegedly.works"]}
+    ]
 
 
 if __name__ == "__main__":

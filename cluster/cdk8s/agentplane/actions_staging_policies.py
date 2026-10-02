@@ -30,7 +30,7 @@ from external_secrets_crds.io.external_secrets import (
 from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
 from cluster.cdk8s import cilium, external_creds
-from cluster.cdk8s.agentplane import app as app_component, egress, testing
+from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AGENTPLANE_TESTING_POLICY,
@@ -60,7 +60,7 @@ from cluster.cdk8s.agentplane.staging_config import (
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
 from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 _NAMESPACE = "agentplane-staging"
@@ -499,7 +499,17 @@ def add_staging_action_policies(scope: Construct) -> None:
         "networkpolicy-egress-to-testing-app",
         metadata=ApiObjectMetadata(name=f"{proxy.name}-to-testing-app", namespace=_NAMESPACE),
         endpoint_selector=proxy.pods.selector,
-        egress=[testing_app.egress(), cilium.egress_via_gateway(*testing_login_hosts)],
+        egress=[
+            testing_app.egress(),
+            cilium.egress_via_gateway(*testing_login_hosts),
+            # Gateway Service traffic is checked against the selected backend, not
+            # node:443. Keep Dex's backend permission scoped to its login SNI.
+            EgressRule.to_endpoints(
+                dex.service().pods.cilium,
+                dex.service().pod_port,
+                server_names=[urlsplit(testing.ENV.app.oidc_issuer).netloc],
+            ),
+        ],
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
     # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.

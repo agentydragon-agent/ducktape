@@ -66,6 +66,11 @@ _ACCEPTANCE_USERNAME = "test-user"
 _CONFIG_DIR = "/etc/dex"
 
 
+def service() -> ServiceRef:
+    """The testing Dex backend, including its Gateway target port."""
+    return _SERVICE
+
+
 def _dex_config_yaml() -> str:
     return yaml_config(
         {
