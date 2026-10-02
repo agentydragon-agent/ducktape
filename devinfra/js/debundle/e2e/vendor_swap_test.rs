@@ -11,7 +11,6 @@ use spec::{
     PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel, VendorMark,
     WrapperShape,
 };
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -1781,8 +1780,14 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     );
     let vendor = partial_swap_vendor(
         &format!("megachunk {:?} swap fixture", args.kind),
-        &[(args.package_name, partial_package(args.package_version, args.subpath, None))],
-        &[(args.chunk_export, swap_symbol(args.package_name, args.kind, args.upstream_export, None))],
+        &[(
+            args.package_name,
+            partial_package(args.package_version, args.subpath, None),
+        )],
+        &[(
+            args.chunk_export,
+            swap_symbol(args.package_name, args.kind, args.upstream_export, None),
+        )],
     );
 
     run_partial_swap_with_mark(ws, vendor, &[(args.package_name, &package_root)])
