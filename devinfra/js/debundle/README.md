@@ -43,6 +43,14 @@ How selectors actually resolve: `docs/selector_resolution.md`.
 Import planning and emission helpers are grouped under `lowering/imports/`.
 They remain separate modules and passes, composed by the lowering crate.
 
+Vendor internals separate package lookup/containment (`vendor/packages.rs`),
+export-surface inspection (`vendor/export_surface.rs`), emitted-output import
+resolution (`vendor/output_imports.rs`), and import/identifier rewrites
+(`vendor/import_rewrites.rs`). The post-strip consumer gate remains mandatory.
+Export AST constructors live in `js_ast.rs`; callers choose name encoding and
+alias policy. Lowering carries each naturalized body, its rename maps and its
+post-rename facts together as `NaturalizedModuleBody` before module emission.
+
 Selector implementation is grouped under `selectors/`: AST matching and
 `source_match` live in `matching/`, selector solving in `resolution/`, selector
 generation and minimization in `authoring/`, and selector-debt reporting in
