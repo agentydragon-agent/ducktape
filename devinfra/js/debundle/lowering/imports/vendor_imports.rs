@@ -9,7 +9,8 @@
 
 use vendor::{
     DeferredImport, IdentRewriteTarget, MaterializedOutputChunkIndex, VendorImportAction,
-    VendorResolutionPlan, bundled_facade_import_source, resolve_partial_swap_import_target,
+    VendorImportRewrites, VendorResolutionPlan, bundled_facade_import_source,
+    resolve_partial_swap_import_target,
 };
 
 use super::super::*;
@@ -142,9 +143,7 @@ pub(crate) fn plan_vendor_reimports<'a>(
         planned.retained = needed;
         return planned;
     };
-    // Shared-import dedupe per emitted file, mirroring the wave's
-    // per-file `emitted_member_namespace_for` / `emitted_default_namespace_for`.
-    let mut emitted_shared_import_for: BTreeSet<String> = BTreeSet::new();
+    let mut rewrites = VendorImportRewrites::default();
     for (local_id, info) in needed {
         let (chunk, chunk_export, action) =
             match oracle.classify(info, source_chunk_id, source_entry_file) {
@@ -172,136 +171,21 @@ pub(crate) fn plan_vendor_reimports<'a>(
                     continue;
                 }
             };
-        match action {
-            VendorImportAction::PackageMember {
-                package,
-                namespace,
-                upstream_export,
-            } => {
-                planned.body_rewrites.insert(
-                    local_id,
-                    IdentRewriteTarget::Member {
-                        namespace: namespace.clone(),
-                        upstream_export,
-                        chunk_id: chunk,
-                        chunk_export,
-                    },
-                );
-                if emitted_shared_import_for.insert(format!("package:{package}")) {
-                    planned.external_imports.push(
-                        DeferredImport::Namespace {
-                            source: package,
-                            local: namespace,
-                        }
-                        .into_module_item(),
-                    );
-                }
-            }
-            VendorImportAction::PackageNamespace { package } => {
-                planned.external_imports.push(
-                    DeferredImport::Namespace {
-                        source: package,
-                        local: local_id.0.to_string(),
-                    }
-                    .into_module_item(),
-                );
-                *planned
-                    .references_rewritten
-                    .entry((chunk, chunk_export))
-                    .or_insert(0) += 1;
-            }
-            VendorImportAction::PackageDefault { package } => {
-                planned.external_imports.push(
-                    DeferredImport::Default {
-                        source: package,
-                        local: local_id.0.to_string(),
-                    }
-                    .into_module_item(),
-                );
-                *planned
-                    .references_rewritten
-                    .entry((chunk, chunk_export))
-                    .or_insert(0) += 1;
-            }
-            VendorImportAction::PackageNamed {
-                package,
-                upstream_export,
-            } => {
-                planned.external_imports.push(
-                    DeferredImport::Named {
-                        source: package,
-                        local: upstream_export.clone(),
-                        upstream_export: upstream_export.clone(),
-                    }
-                    .into_module_item(),
-                );
-                if local_id.0.as_ref() != upstream_export {
-                    planned.body_rewrites.insert(
-                        local_id,
-                        IdentRewriteTarget::Rename {
-                            upstream_export,
-                            chunk_id: chunk,
-                            chunk_export,
-                        },
-                    );
-                } else {
-                    *planned
-                        .references_rewritten
-                        .entry((chunk, chunk_export))
-                        .or_insert(0) += 1;
-                }
-            }
-            VendorImportAction::FacadeMember {
-                package,
-                facade_app_path,
-                namespace,
-                upstream_export,
-            } => {
-                let source = bundled_facade_import_source(
-                    oracle.chunk_table,
-                    source_chunk_id,
-                    target_file,
-                    &facade_app_path,
-                );
-                planned.body_rewrites.insert(
-                    local_id,
-                    IdentRewriteTarget::Member {
-                        namespace: namespace.clone(),
-                        upstream_export,
-                        chunk_id: chunk,
-                        chunk_export,
-                    },
-                );
-                if emitted_shared_import_for.insert(format!("facade:{package}")) {
-                    planned.external_imports.push(
-                        DeferredImport::Default {
-                            source,
-                            local: namespace,
-                        }
-                        .into_module_item(),
-                    );
-                }
-            }
-            VendorImportAction::FacadeDefault { facade_app_path } => {
-                let source = bundled_facade_import_source(
-                    oracle.chunk_table,
-                    source_chunk_id,
-                    target_file,
-                    &facade_app_path,
-                );
-                planned.external_imports.push(
-                    DeferredImport::Default {
-                        source,
-                        local: local_id.0.to_string(),
-                    }
-                    .into_module_item(),
-                );
-                *planned
-                    .references_rewritten
-                    .entry((chunk, chunk_export))
-                    .or_insert(0) += 1;
-            }
-        }
+        planned.external_imports.extend(
+            rewrites
+                .materialize(action, local_id, chunk, chunk_export, |path| {
+                    bundled_facade_import_source(
+                        oracle.chunk_table,
+                        source_chunk_id,
+                        target_file,
+                        path,
+                    )
+                })
+                .into_iter()
+                .map(DeferredImport::into_module_item),
+        );
     }
+    planned.body_rewrites = rewrites.body_rewrites;
+    planned.references_rewritten = rewrites.references_rewritten;
     planned
 }

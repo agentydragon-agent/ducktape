@@ -241,6 +241,7 @@ rust_library(
     name = "vendor",
     srcs = [
         "vendor/emission.rs",
+        "vendor/import_rewrites.rs",
         "vendor/manifests.rs",
         "vendor/mod.rs",
         "vendor/passthrough.rs",
