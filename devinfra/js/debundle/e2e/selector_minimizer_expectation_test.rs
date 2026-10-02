@@ -659,3 +659,12 @@ minimizer_expectation_case!(
     bindings = [("SelectedLeft", "left"), ("SelectedRight", "right")],
     expected = "expected_match.js",
 );
+
+minimizer_expectation_case!(
+    minimizes_neighbor_class_context,
+    fixture = "neighbor_class_context",
+    name = "neighbor class retains only its discriminating member",
+    module = "app/helpers",
+    bindings = [("SelectedHelper", "selectedHelper")],
+    expected = "expected_match.js",
+);
