@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, cast
@@ -11,7 +12,7 @@ import uvicorn
 from fastapi import FastAPI
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.destinations import DestinationResolver
@@ -25,6 +26,9 @@ from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
+
+
+CONFIG_FILE_ENV = "AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE"
 
 
 class Settings(BaseSettings):
@@ -56,6 +60,22 @@ class Settings(BaseSettings):
 
     def __init__(self, **values: Any) -> None:
         super().__init__(**values)
+
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        sources = [init_settings, env_settings, dotenv_settings]
+        if config_file := os.environ.get(CONFIG_FILE_ENV):
+            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
+        sources.append(file_secret_settings)
+        return tuple(sources)
 
 
 async def serve(settings: Settings) -> None:

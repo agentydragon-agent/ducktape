@@ -24,7 +24,7 @@ from agentplane.sandbox_service.destinations import (
     RunnerEndpoint,
     SandboxDestination,
 )
-from agentplane.sandbox_service.egress import UnknownPolicyError
+from agentplane.sandbox_service.egress import BindingNotFoundError, UnknownPolicyError
 from agentplane.sandbox_service.inventory import InventoryError, SandboxNotFoundError, SandboxView
 from agentplane.sandbox_service.kubernetes_grants import grant_views
 from agentplane.sandbox_service.provisioning import Provisioning
@@ -91,7 +91,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
     except DestinationDeniedError:
         await context.abort(grpc.StatusCode.PERMISSION_DENIED, "destination access denied")
-    except SandboxNotFoundError:
+    except (SandboxNotFoundError, BindingNotFoundError):
         await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
@@ -102,7 +102,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
             grpc.StatusCode.DEADLINE_EXCEEDED,
             "service deadline or follow lease expired; mutation outcome may be uncertain",
         )
-    except DestinationUnavailableError, k8s_client.ApiException:
+    except DestinationUnavailableError, ConnectionError, k8s_client.ApiException:
         await context.abort(grpc.StatusCode.UNAVAILABLE, "destination unavailable; no offline admission")
     except grpc.RpcError as error:
         if isinstance(error, grpc.aio.AioRpcError):
@@ -217,6 +217,30 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     for view in grant_views(provisioning.grants)
                 ]
             )
+
+    @override
+    async def GrantEgress(
+        self, request: protocol_pb2.GrantEgressRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.GrantEgressResponse:
+        async with self.request(context) as principal:
+            provisioning, view = await self.checked_sandbox(
+                principal, protocol_pb2.SandboxRequest(destination=request.destination)
+            )
+            if not request.policies:
+                raise ValueError("at least one policy is required")
+            binding = await provisioning.egress.grant(view, list(request.policies))
+            return protocol_pb2.GrantEgressResponse(binding_name=binding.name)
+
+    @override
+    async def RevokeEgress(
+        self, request: protocol_pb2.RevokeEgressRequest, context: grpc.aio.ServicerContext
+    ) -> Empty:
+        async with self.request(context) as principal:
+            provisioning = self.resources.administrator(principal)
+            if not request.binding_name:
+                raise ValueError("binding name is required")
+            await provisioning.egress.revoke(request.binding_name)
+            return Empty()
 
     @override
     async def ListSessions(

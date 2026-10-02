@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 import socket
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
@@ -22,11 +23,12 @@ from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.testing.native_runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
-from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_http_error
+from agentplane.app.api import ModelCatalog, ModelOption, upstream_http_error
+from agentplane.app.testing.app_factory import create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -355,7 +357,7 @@ def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_acc
         read_namespaced_role_binding=AsyncMock(side_effect=k8s_client.ApiException(status=404)),
         create_namespaced_role_binding=AsyncMock(),
     )
-    app.state.kubernetes_bindings = KubernetesBindings(inventory, cast(Any, rbac))
+    app.state.provisioner = replace(app.state.provisioner, grants=app.state.kubernetes_grants, bindings=KubernetesBindings(inventory, cast(Any, rbac)))
     app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
     try:
         response = client.post(
@@ -509,7 +511,7 @@ def test_delete_removes_the_sandbox_once_it_is_suspended(
     assert client.delete("/sandboxes/live").status_code == 404
 
 
-def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fields_win(
+def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assembly(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     created = client.post(
@@ -531,18 +533,13 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     calls: list[tuple[str, object]] = []
     setup_scripts: list[str | None] = []
 
-    async def initialize(name: str, script: str) -> protocol_pb2.InitializeResult:
-        calls.append(("initialize", script))
-        return protocol_pb2.InitializeResult(executed=True)
-
     async def open_session(
-        name: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
+        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         calls.append(("open", spec))
         setup_scripts.append(setup_script)
-        return protocol_pb2.Attached(session_id=session_id, spec=spec)
+        return protocol_pb2.Attached(session_id=session_id)
 
-    monkeypatch.setattr(bridge, "initialize", initialize)
     monkeypatch.setattr(bridge, "open_session", open_session)
 
     response = client.post(
@@ -551,23 +548,13 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     )
 
     assert response.status_code == 201, response.text
-    assert calls[0] == ("initialize", "mkdir -p /state/workspaces")
-    assert calls[1][0] == "open"
-    assert setup_scripts == ["printf 'preset setup\\n'"]
-    spec = calls[1][1]
-    assert isinstance(spec, protocol_pb2.SessionSpec)
-    assert (spec.harness, spec.cwd, spec.model, spec.reasoning_effort, spec.instructions) == (
-        protocol_pb2.HARNESS_CODEX,
-        "/state/workspaces/thread-1",
-        "thread-model",
-        "medium",
-        "shared agent instructions\n\nthread instructions",
-    )
+    assert calls == [("open", {"model": "thread-model", "instructions": "thread instructions"})]
+    assert setup_scripts == [None]
     cleared = client.post(
         f"/sandboxes/{created['name']}/sessions", json={"session_id": "thread-2", "spec": {}, "setup_script": ""}
     )
     assert cleared.status_code == 201, cleared.text
-    assert setup_scripts == ["printf 'preset setup\\n'", ""]
+    assert setup_scripts == [None, ""]
 
 
 def _select_unready_kubernetes_grant(custom_objects: FakeCustomObjectsApi, sandbox_name: str = "live") -> None:
@@ -591,17 +578,12 @@ def test_session_creation_waits_for_selected_kubernetes_grants(
     _select_unready_kubernetes_grant(custom_objects)
     calls: list[tuple[str, str]] = []
 
-    async def initialize(name: str, script: str) -> protocol_pb2.InitializeResult:
-        calls.append(("initialize", name))
-        return protocol_pb2.InitializeResult(executed=True)
-
     async def open_session(
         name: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         calls.append(("open", name))
         return protocol_pb2.Attached(session_id=session_id, spec=spec)
 
-    monkeypatch.setattr(bridge, "initialize", initialize)
     monkeypatch.setattr(bridge, "open_session", open_session)
     response = client.post(
         "/sandboxes/live/sessions",
@@ -663,16 +645,16 @@ def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     assert calls == [(thread_id, Harness.CLAUDE.value, "/w")]
 
 
-def test_shared_instructions_are_also_added_to_direct_session_launches(
+def test_direct_session_launch_leaves_platform_instructions_to_service(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    captured: list[protocol_pb2.SessionSpec] = []
+    captured: list[dict[str, object]] = []
 
     async def open_session(
-        name: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
+        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         captured.append(spec)
-        return protocol_pb2.Attached(session_id=session_id, spec=spec)
+        return protocol_pb2.Attached(session_id=session_id)
 
     monkeypatch.setattr(bridge, "open_session", open_session)
     response = client.post(
@@ -681,11 +663,7 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
     )
 
     assert response.status_code == 201, response.text
-    assert captured == [
-        protocol_pb2.SessionSpec(
-            harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="plain-model", instructions="shared agent instructions"
-        )
-    ]
+    assert captured == [{"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "plain-model"}]
 
 
 def test_a_runner_that_does_not_answer_is_a_503(

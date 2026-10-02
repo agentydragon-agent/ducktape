@@ -8,6 +8,7 @@ them is published here.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, cast
 
 import httpx
@@ -29,19 +30,19 @@ from agentplane.app.electric import ThreadScopeResponse
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 
 
 def openapi_document() -> dict[str, Any]:
     # Only routes and models shape the document; the inventory's clients are never called.
-    inventory = SandboxInventory(namespace="schema", custom_objects=cast(Any, None), core_v1=cast(Any, None))
+    inventory = SandboxServiceClient("schema.invalid:8080", namespace="schema", token_file=Path("/schema-unused-token"))
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     database_updates = DatabaseUpdates(engine.url)
     event_logs, content = EventLogStore(engine), ContentStore(engine)
     live = LiveIndex(stale_after_seconds=900)
-    runners = Runners(live, port=1)
+    runners = Runners(live, inventory)
     document: dict[str, Any] = create_app(
         inventory,
         RunnerBridge(
@@ -64,6 +65,7 @@ def openapi_document() -> dict[str, Any]:
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
         live,
         ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None)),
+        provisioner=inventory,
         event_logs=event_logs,
         content=content,
         database_updates=database_updates,

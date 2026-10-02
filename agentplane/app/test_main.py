@@ -24,10 +24,11 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester
 from agentplane.app.agent_runtime.models import SandboxIngestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.testing.native_runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.api import ModelCatalog, ModelOption, create_app
+from agentplane.app.api import ModelCatalog, ModelOption
+from agentplane.app.testing.app_factory import create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -46,7 +47,7 @@ from util.net import pick_free_port
 APP_ENVIRONMENT = {
     "AGENTPLANE_NAMESPACE": "test-namespace",
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
-    "AGENTPLANE_RUNNER_PORT": "7000",
+    "AGENTPLANE_SANDBOX_SERVICE_TARGET": "sandbox-service.test:8080",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
     "AGENTPLANE_MODELS": json.dumps(
         {

@@ -151,6 +151,17 @@ class SandboxServiceClient:
     async def delete(self, name: str) -> None:
         await self._lifecycle(self.stub.DeleteSandbox, name)
 
+    async def grant_egress(self, sandbox: SandboxView, policies: list[str]) -> str:
+        destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
+        result = await self.unary(
+            self.stub.GrantEgress,
+            protocol_pb2.GrantEgressRequest(destination=wire.destination_proto(destination), policies=policies),
+        )
+        return result.binding_name
+
+    async def revoke_egress(self, name: str) -> None:
+        await self.unary(self.stub.RevokeEgress, protocol_pb2.RevokeEgressRequest(binding_name=name))
+
     def runner(self, destination: SandboxDestination) -> Runner:
         return Runner(self, destination)
 

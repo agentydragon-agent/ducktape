@@ -1235,3 +1235,18 @@ py_test(
         "@pypi//starlette",
     ],
 )
+
+py_test(
+    name = "test_sandbox_service",
+    size = "medium",
+    srcs = ["test_sandbox_service.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: native harness acceptance
+        "@claude_code_cli_linux_x64//:claude",  # keep: native harness acceptance
+    ],
+    requires_docker = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",  # keep: native harness platform
+        "@platforms//os:linux",  # keep: native harness platform
+    ],
+)

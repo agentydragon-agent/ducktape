@@ -40,7 +40,7 @@ class Provisioning:
     async def create(self, spec: NewSandbox) -> SandboxView:
         grants = resolve_grants(spec.kubernetes_grants, self.grants)
         if grants and self.bindings is None:
-            raise ValueError("Kubernetes grant provisioning is unavailable")
+            raise ConnectionError("Kubernetes grant provisioning is unavailable")
         policies = self.egress.launch_policies(spec.policies)
         await self.egress.require_policies(policies)
         await self.action_policy.require_policy_sets(spec.action_policy_sets)
@@ -83,7 +83,7 @@ class Provisioning:
             await self.action_policy.bind(sandbox, intent.action_policy_sets, initial=True)
         if sandbox.kubernetes_grants:
             if self.bindings is None:
-                raise ValueError("Kubernetes grant provisioning is unavailable")
+                raise ConnectionError("Kubernetes grant provisioning is unavailable")
             await self.bindings.ensure(sandbox)
             if not (await self.inventory.get(sandbox.name)).kubernetes_grants_ready:
                 return

@@ -32,11 +32,12 @@ from agentplane.app.agent_runtime.events.stream import follow
 from agentplane.app.agent_runtime.ingestion import Feed, Ingester, Ingestion
 from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.app.agent_runtime.runner.bridge import RunnerAdmissionTimeoutError, RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.testing.native_runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.views import ThreadOperationalState
-from agentplane.app.api import ModelCatalog, ModelOption, create_app
+from agentplane.app.api import ModelCatalog, ModelOption
+from agentplane.app.testing.app_factory import create_app
 from agentplane.app.changes import Changes
 from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database import connect

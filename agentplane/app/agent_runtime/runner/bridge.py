@@ -7,21 +7,19 @@ import contextlib
 from typing import Annotated
 from uuid import UUID
 
-import grpc
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.app.agent_runtime.events.event_log import EventLogStore, FeedError, ThreadNotFoundError
 from agentplane.app.agent_runtime.ingestion import Ingester
-from agentplane.app.agent_runtime.runner.runners import Runners
+from agentplane.app.agent_runtime.runner.runners import RunnerDirectory
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.changes import Changes
-from agentplane.app.presets import PresetCatalog
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerError
-from agentplane.sandbox_service.command_relay import admit_running_command
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.inventory import SandboxInventory, SandboxNotFoundError, SandboxView
 
 # gazelle:include_dep @pypi//protobuf
@@ -31,7 +29,7 @@ COMMAND_ADMISSION_S = 15
 ADMISSION_REREAD_S = 2
 
 
-async def ready_sandbox_for_session(inventory: SandboxInventory, name: str) -> SandboxView | None:
+async def ready_sandbox_for_session(inventory: SandboxInventory | SandboxServiceClient, name: str) -> SandboxView | None:
     """Return an existing Sandbox only after its selected Kubernetes grants are provisioned.
 
     A missing inventory row preserves the concrete-spec runner path. Sandboxes without selected
@@ -70,7 +68,7 @@ class RunnerBridge:
     def __init__(
         self,
         *,
-        runners: Runners,
+        runners: RunnerDirectory,
         event_logs: EventLogStore,
         content: ContentStore,
         ingester: Ingester,
@@ -85,34 +83,20 @@ class RunnerBridge:
     async def list_sessions(self, sandbox: str) -> list[protocol_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
 
-    async def initialize(self, sandbox: str, script: str) -> protocol_pb2.InitializeResult:
-        try:
-            result = await self._runners.client(sandbox).initialize(script)
-        except grpc.aio.AioRpcError as error:
-            if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
-                raise RunnerError(f"sandbox bootstrap refused: {error.details()}") from error
-            raise
-        if result.exit_code != 0:
-            raise RunnerError(
-                f"sandbox bootstrap failed with exit {result.exit_code}; output remains available "
-                "from the runner's initialization stream"
-            )
-        return result
-
     async def open_session(
-        self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
+        self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec | dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         existing = await self._event_logs.find(sandbox, session_id)
         if existing is not None:
             snapshot = await self._event_logs.feed_state(existing)
             if snapshot is not None and isinstance(snapshot.end, FeedError):
                 raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
-        attachment = await self._runners.client(sandbox).attach(session_id, spec=spec, setup_script=setup_script)
-        try:
-            attached = attachment.attached
-        finally:
-            # Open has completed when Attached arrives. This caller needs no history replay.
-            attachment.cancel()
+        attached = await self._runners.client(sandbox).open(
+            session_id, MessageToDict(spec) if isinstance(spec, protocol_pb2.SessionSpec) else spec, setup_script
+        )
+        return await self._archive_open(sandbox, session_id, attached)
+
+    async def _archive_open(self, sandbox: str, session_id: str, attached: protocol_pb2.Attached) -> protocol_pb2.Attached:
         thread_id = await self._event_logs.open(sandbox, session_id, attached.spec)
         await self._ingester.start()
         # In particular, do not return a resumed session while the database still says its
@@ -131,6 +115,9 @@ class RunnerBridge:
         self, thread_id: UUID, *, expected_harness: str, expected_cwd: str
     ) -> protocol_pb2.Attached:
         """Resume the native session already bound to this Thread, using its runner-owned spec."""
+        snapshot = await self._event_logs.feed_state(thread_id)
+        if snapshot is not None and isinstance(snapshot.end, FeedError):
+            raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
         runner_session = await self._event_logs.runner_session(thread_id)
         if runner_session is None:
             raise ThreadNotFoundError(thread_id)
@@ -150,7 +137,8 @@ class RunnerBridge:
             raise RunnerError(f"runner session {runner_session.session_id!r} has no recoverable session spec")
         if protocol_pb2.Harness.Name(summary.spec.harness) != expected_harness or summary.spec.cwd != expected_cwd:
             raise RunnerError("runner's retained session spec does not match this Thread's harness and workspace")
-        return await self.open_session(runner_session.sandbox, runner_session.session_id, summary.spec)
+        attached = await self._runners.client(runner_session.sandbox).resume(runner_session.session_id)
+        return await self._archive_open(runner_session.sandbox, runner_session.session_id, attached)
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Return only after this Thread's matching runner admission is in the app archive."""
@@ -177,9 +165,7 @@ class RunnerBridge:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
 
     async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> None:
-        await admit_running_command(
-            self._runners.client(sandbox), session_id, command, after_cursor=after_cursor, timeout_s=COMMAND_ADMISSION_S
-        )
+        await self._runners.client(sandbox).command(session_id, command, after_cursor=after_cursor)
 
     async def _wait_for_admission(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Wait for the ingester's committed prefix, never for a native command effect."""
@@ -234,23 +220,6 @@ async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def open_session(bridge: Bridge, name: str, body: NewSession, request: Request) -> dict[str, object]:
-    inventory = request.app.state.inventory
-    presets = request.app.state.presets
-    if not isinstance(inventory, SandboxInventory) or not isinstance(presets, PresetCatalog):
-        raise TypeError("the app's inventory or preset catalog is not configured")
-    sandbox = await ready_sandbox_for_session(inventory, name)
-    # A missing inventory row still preserves the old concrete-spec path: its runner address remains
-    # the authority that decides whether the sandbox is reachable.
-    binding = sandbox.binding if sandbox is not None else None
-    resolved = dict(body.spec)
-    if binding is not None and binding.thread_defaults is not None:
-        resolved = binding.thread_defaults.proto_json(body.session_id) | resolved
-    if binding is not None and binding.bootstrap:
-        await bridge.initialize(name, binding.bootstrap)
-    spec = _parse(protocol_pb2.SessionSpec(), resolved)
-    spec.instructions = presets.instructions_for(spec.instructions)
-    setup_script = body.setup_script
-    if setup_script is None and binding is not None and binding.thread_defaults is not None:
-        setup_script = binding.thread_defaults.setup_script
-    attached = await bridge.open_session(name, body.session_id, spec, setup_script)
+    await ready_sandbox_for_session(request.app.state.inventory, name)
+    attached = await bridge.open_session(name, body.session_id, body.spec, body.setup_script)
     return MessageToDict(attached)

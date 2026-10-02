@@ -1,14 +1,13 @@
-"""The runner in each sandbox, as the cluster index sees it: which sandboxes run one, and a client to
-reach each, cached per address."""
+"""App-side session discovery; every runner operation goes through Sandbox Service."""
 
-from __future__ import annotations
-
-import asyncio
+from typing import Protocol
 
 from agentplane.app.changes import Changes
 from agentplane.app.live import LiveIndex
-from agentplane.runner.client import RunnerClient
+from agentplane.sandbox_service.client import Runner, SandboxServiceClient
+from agentplane.sandbox_service.destinations import SandboxDestination
 from agentplane.sandbox_service.inventory import ProvisioningState, SandboxNotFoundError
+from agentplane.sandbox_service.session_access import Sessions
 
 
 class SandboxNotReachableError(Exception):
@@ -17,30 +16,37 @@ class SandboxNotReachableError(Exception):
         self.name = name
 
 
+class RunnerDirectory(Protocol):
+    @property
+    def changes(self) -> Changes: ...
+    def running(self) -> set[str]: ...
+    def client(self, sandbox: str) -> Sessions: ...
+    async def close(self) -> None: ...
+
+
 class Runners:
-    def __init__(self, index: LiveIndex, port: int) -> None:
+    def __init__(self, index: LiveIndex, service: SandboxServiceClient) -> None:
         self._index = index
-        self._port = port
-        self._clients: dict[str, RunnerClient] = {}
+        self._service = service
+        self._clients: dict[SandboxDestination, Runner] = {}
 
     @property
     def changes(self) -> Changes:
-        """Wakes when the running set may have changed; it is the index's own signal."""
         return self._index.changes
 
     def running(self) -> set[str]:
         return {view.name for view in self._index.sandbox_views() if view.state is ProvisioningState.RUNNING}
 
-    def client(self, sandbox: str) -> RunnerClient:
+    def client(self, sandbox: str) -> Runner:
         view = self._index.sandbox_view(sandbox)
         if view is None:
             raise SandboxNotFoundError(sandbox)
-        if view.state is not ProvisioningState.RUNNING or view.pod is None or view.pod.ip is None:
+        if view.state is not ProvisioningState.RUNNING:
             raise SandboxNotReachableError(sandbox, view.state)
-        address = f"{view.pod.ip}:{self._port}"
-        if address not in self._clients:
-            self._clients[address] = RunnerClient(address)
-        return self._clients[address]
+        destination = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid)
+        if destination not in self._clients:
+            self._clients[destination] = self._service.runner(destination)
+        return self._clients[destination]
 
     async def close(self) -> None:
-        await asyncio.gather(*(client.close() for client in self._clients.values()))
+        await self._service.close()

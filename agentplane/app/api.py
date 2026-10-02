@@ -64,6 +64,7 @@ from agentplane.app.consent import (
 )
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy, router as electric_router
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
 from agentplane.app.live import LiveIndex, Updates, router as live_router
@@ -98,7 +99,8 @@ from agentplane.sandbox_service.kubernetes_grants import (
     grant_views,
     resolve_grants,
 )
-from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.provisioning import SandboxProvisioner
+from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.subjects import ServiceAccountRef
 
@@ -193,24 +195,24 @@ async def list_kubernetes_grants(request: Request) -> list[KubernetesGrantView]:
     return grant_views(request.app.state.kubernetes_grants)
 
 
-def _inventory(request: Request) -> SandboxInventory:
+def _inventory(request: Request) -> SandboxInventory | SandboxServiceClient:
     inventory = request.app.state.inventory
-    if not isinstance(inventory, SandboxInventory):
+    if not isinstance(inventory, (SandboxInventory, SandboxServiceClient)):
         raise TypeError(f"app.state.inventory is {type(inventory).__name__}, not SandboxInventory")
     return inventory
 
 
-Inventory = Annotated[SandboxInventory, Depends(_inventory)]
+Inventory = Annotated[SandboxInventory | SandboxServiceClient, Depends(_inventory)]
 
 
-def _egress(request: Request) -> EgressInventory:
+def _egress(request: Request) -> EgressInventory | EgressAccess:
     egress = request.app.state.egress
-    if not isinstance(egress, EgressInventory):
+    if not isinstance(egress, EgressInventory | EgressAccess):
         raise TypeError(f"app.state.egress is {type(egress).__name__}, not EgressInventory")
     return egress
 
 
-Egress = Annotated[EgressInventory, Depends(_egress)]
+Egress = Annotated[EgressInventory | EgressAccess, Depends(_egress)]
 
 
 def _action_policy(request: Request) -> ActionPolicyInventory:
@@ -257,12 +259,8 @@ async def create_sandbox(
     grants = resolve_grants(spec.kubernetes_grants, request.app.state.kubernetes_grants)
     if grants and caller.kind is not CallerKind.OPERATOR:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Kubernetes grant selection requires an operator session")
-    bindings: KubernetesBindings | None = request.app.state.kubernetes_bindings
-    if grants and bindings is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Kubernetes grant provisioning is unavailable")
-    return await Provisioning(inventory, egress, action_policy, request.app.state.kubernetes_grants, bindings).create(
-        spec
-    )
+    provisioner: SandboxProvisioner = request.app.state.provisioner
+    return await provisioner.create(spec)
 
 
 @router.get("/{name}")
@@ -948,11 +946,11 @@ async def thread_event_stream(
 
 
 def create_app(
-    inventory: SandboxInventory,
+    inventory: SandboxInventory | SandboxServiceClient,
     bridge: runner_bridge.RunnerBridge,
     store: ThreadStore,
     catalog: ModelCatalog,
-    egress: EgressInventory,
+    egress: EgressInventory | EgressAccess,
     decisions: DecisionsClient,
     live: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -964,6 +962,7 @@ def create_app(
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
     kubernetes_bindings: KubernetesBindings | None = None,
     *,
+    provisioner: SandboxProvisioner,
     event_logs: EventLogStore,
     content: ContentStore,
     database_updates: DatabaseUpdates,
@@ -996,6 +995,21 @@ def create_app(
                 f"is not supported by {thread_preset.model!r}"
             )
     app = FastAPI(title="Agentplane", version="0")
+
+    @app.exception_handler(ServiceError)
+    async def sandbox_service_error(request: Request, error: ServiceError) -> JSONResponse:
+        code = {
+            grpc.StatusCode.NOT_FOUND: 404,
+            grpc.StatusCode.FAILED_PRECONDITION: 409,
+            grpc.StatusCode.INVALID_ARGUMENT: 422,
+        }.get(error.code, 503)
+        return JSONResponse({"detail": str(error)}, status_code=code)
+
+    @app.exception_handler(ConnectionError)
+    async def sandbox_service_unavailable(request: Request, error: ConnectionError) -> JSONResponse:
+        return JSONResponse({"detail": "Sandbox Service unavailable; outcome may be uncertain"}, status_code=503)
+
+    app.state.provisioner = provisioner
     app.state.inventory = inventory
     app.state.bridge = bridge
     app.state.store = store
