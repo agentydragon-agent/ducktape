@@ -155,9 +155,14 @@ fn try_var_group_read_off(
 
     // The object slot policy prefers direct values/keys, but a joint tuple may
     // need a deeper anchor that cannot distinguish either slot on its own.
-    let tuple_fallback: Vec<_> = ranked_spans.into_iter().filter(|anchor| {
-        target_slots.iter().any(|&slot| node_holds_anchor(var.decls[slot].span(), *anchor))
-    }).collect();
+    let tuple_fallback: Vec<_> = ranked_spans
+        .into_iter()
+        .filter(|anchor| {
+            target_slots
+                .iter()
+                .any(|&slot| node_holds_anchor(var.decls[slot].span(), *anchor))
+        })
+        .collect();
     tuple_ranked.extend(tuple_fallback.iter().copied().take(MAX_MINIMIZER_ANCHORS));
 
     let no_regex = BTreeMap::new();

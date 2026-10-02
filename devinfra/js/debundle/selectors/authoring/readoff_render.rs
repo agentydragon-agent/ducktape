@@ -139,7 +139,10 @@ pub fn unindexed_literal_spans(item: &ModuleItem) -> BTreeSet<AnchorSpan> {
 
     impl Visit for UnindexedLiterals {
         fn visit_expr(&mut self, expr: &Expr) {
-            if matches!(expr, Expr::Lit(Lit::Null(_) | Lit::Regex(_) | Lit::JSXText(_)) | Expr::Tpl(_)) {
+            if matches!(
+                expr,
+                Expr::Lit(Lit::Null(_) | Lit::Regex(_) | Lit::JSXText(_)) | Expr::Tpl(_)
+            ) {
                 let span = expr.span();
                 self.0.insert((span.lo.0, span.hi.0));
             } else {
