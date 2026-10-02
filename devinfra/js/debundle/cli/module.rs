@@ -616,20 +616,23 @@ fn display_relative(root: &Path, abs: &Path) -> String {
 fn claim_names(module: &LogicalModule, path: &Path) -> Result<ModuleClaimNames> {
     let mut names = ModuleClaimNames::default();
     for (idx, member) in module.members.iter().enumerate() {
-        if let Some(binding) = member.selector.binding.as_ref() {
-            if !names.selector_bindings.insert(binding.name.clone()) {
-                return Err(anyhow!(
-                    "duplicate member name \"{}\" within {} (entry {})",
-                    binding.name,
-                    path.display(),
-                    idx
-                ));
-            }
+        if let Some(binding) = member.selector.binding.as_ref()
+            && !names.selector_bindings.insert(binding.name.clone())
+        {
+            return Err(anyhow!(
+                "duplicate member name \"{}\" within {} (entry {})",
+                binding.name,
+                path.display(),
+                idx
+            ));
         }
         if let Some(readable_name) = member.name.as_deref().or_else(|| {
-            member.selector.binding.as_ref().map(|binding| binding.name.as_str())
-        })
-            && !names.readable_names.insert(readable_name.to_string())
+            member
+                .selector
+                .binding
+                .as_ref()
+                .map(|binding| binding.name.as_str())
+        }) && !names.readable_names.insert(readable_name.to_string())
         {
             return Err(anyhow!(
                 "duplicate member name \"{}\" within {} (entry {})",

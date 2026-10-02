@@ -29,8 +29,8 @@ fn yaml_semantically_changed(path: &Path, doc: &Value) -> Result<bool> {
 pub fn apply_yaml_edit(path: &Path, doc: &Value, dry_run: bool) -> Result<bool> {
     let changed = yaml_semantically_changed(path, doc)?;
     if changed && !dry_run {
-        let body =
-            serde_yaml::to_string(doc).with_context(|| format!("serializing {}", path.display()))?;
+        let body = serde_yaml::to_string(doc)
+            .with_context(|| format!("serializing {}", path.display()))?;
         write_yaml_body(path, body)?;
     }
     Ok(changed)
@@ -126,5 +126,4 @@ mod tests {
         assert!(!path.with_extension("yaml.tmp").exists());
         assert!(!apply_yaml_edit(&path, &doc, false).unwrap());
     }
-
 }

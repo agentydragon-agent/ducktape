@@ -736,10 +736,18 @@ pub fn run_bindings_assign(
             let mut hits = Vec::new();
             for (mp, (file, doc)) in &docs {
                 for binding in binding_matches_in_doc(file, mp, doc) {
-                    if binding.name.readable().filter(|name| !name.is_empty())
-                        .unwrap_or_else(|| binding.name.minified()) == new_readable {
+                    if binding
+                        .name
+                        .readable()
+                        .filter(|name| !name.is_empty())
+                        .unwrap_or_else(|| binding.name.minified())
+                        == new_readable
+                    {
                         hits.push(format!(
-                            "  {} ({}@{})", file.display(), mp, binding.location.describe()
+                            "  {} ({}@{})",
+                            file.display(),
+                            mp,
+                            binding.location.describe()
                         ));
                     }
                 }

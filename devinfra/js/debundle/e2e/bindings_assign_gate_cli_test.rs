@@ -221,8 +221,13 @@ fn assign_rejects_readable_name_claimed_by_source_match_before_writing() {
     write_text_file(&modules.join("b.yaml"), claim);
     for dry_run in [false, true] {
         let mut args = vec![
-            "bindings", "assign", "--modules", modules.to_str().unwrap(),
-            "--graph", graph.to_str().unwrap(), "alpha:c:Existing",
+            "bindings",
+            "assign",
+            "--modules",
+            modules.to_str().unwrap(),
+            "--graph",
+            graph.to_str().unwrap(),
+            "alpha:c:Existing",
         ];
         if dry_run {
             args.push("--dry-run");
