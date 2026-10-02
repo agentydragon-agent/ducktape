@@ -9,8 +9,8 @@ use swc_ecma_ast::*;
 
 use super::read_off_candidates;
 use crate::render::{
-    AnchorSpan, anything_expr, anything_param, collapse_omitted_runs, emit_selector, holed_function_body, ident_node,
-    node_retains_any,
+    AnchorSpan, anything_expr, anything_param, collapse_omitted_runs, emit_selector,
+    holed_function_body, ident_node, node_retains_any,
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,

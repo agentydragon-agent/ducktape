@@ -389,7 +389,10 @@ fn hole_pat(pat: &Pat, kept: &BTreeSet<AnchorSpan>) -> Pat {
 fn hole_object_pat(object: &ObjectPat, kept: &BTreeSet<AnchorSpan>) -> ObjectPat {
     let mut holed = object.clone();
     holed.props = collapse_omitted_runs(
-        object.props.iter().map(|prop| node_retains_any(prop.span(), kept).then(|| prop.clone())),
+        object
+            .props
+            .iter()
+            .map(|prop| node_retains_any(prop.span(), kept).then(|| prop.clone())),
         object_props_pat_prop,
     );
     holed
@@ -398,7 +401,10 @@ fn hole_object_pat(object: &ObjectPat, kept: &BTreeSet<AnchorSpan>) -> ObjectPat
 fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
     let mut holed = object.clone();
     holed.props = collapse_omitted_runs(
-        object.props.iter().map(|prop| node_retains_any(prop.span(), kept).then(|| hole_prop(prop, kept))),
+        object
+            .props
+            .iter()
+            .map(|prop| node_retains_any(prop.span(), kept).then(|| hole_prop(prop, kept))),
         object_props_prop,
     );
     holed
@@ -447,7 +453,9 @@ fn hole_prop(prop: &PropOrSpread, kept: &BTreeSet<AnchorSpan>) -> PropOrSpread {
 /// `STMT_LIST;` hole statement.
 fn hole_stmts(stmts: &[Stmt], kept: &BTreeSet<AnchorSpan>) -> Vec<Stmt> {
     let mut out = collapse_omitted_runs(
-        stmts.iter().map(|item| node_retains_any(item.span(), kept).then(|| hole_stmt(item, kept))),
+        stmts
+            .iter()
+            .map(|item| node_retains_any(item.span(), kept).then(|| hole_stmt(item, kept))),
         stmt_list_stmt,
     );
     if out.is_empty() {
@@ -530,7 +538,9 @@ pub(crate) fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
 /// Mirrors [`hole_class_members`].
 fn hole_switch_cases(cases: &[SwitchCase], kept: &BTreeSet<AnchorSpan>) -> Vec<SwitchCase> {
     let mut out = collapse_omitted_runs(
-        cases.iter().map(|item| node_retains_any(item.span(), kept).then(|| hole_switch_case(item, kept))),
+        cases
+            .iter()
+            .map(|item| node_retains_any(item.span(), kept).then(|| hole_switch_case(item, kept))),
         case_rest_case,
     );
     if out.is_empty() {
@@ -628,7 +638,10 @@ mod interior_holing_tests {
             (vec![], vec![]),
             (vec![None, None], vec![0]),
             (vec![Some(1), Some(2)], vec![1, 2]),
-            (vec![None, Some(1), None, None, Some(2), None], vec![0, 1, 0, 2, 0]),
+            (
+                vec![None, Some(1), None, None, Some(2), None],
+                vec![0, 1, 0, 2, 0],
+            ),
         ] {
             assert_eq!(collapse_omitted_runs(input, || 0), expected);
         }
