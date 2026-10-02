@@ -243,7 +243,7 @@ confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
   `vendor/validate.rs` emits as binding names, so a reserved word would produce
   unparseable JS. `lowering/util.rs` `is_valid_js_identifier` rejects reserved
   words. Related, reported: `vendor/wrappers.rs` builds `export const {name} =
-_d.{name};` by string interpolation, so a string-literal export name in a vendor
+  _d.{name};` by string interpolation, so a string-literal export name in a vendor
   chunk yields invalid JS (and bypasses the AST-only rule). Use one identifier
   policy with separate binding-identifier and IdentifierName contexts; do not
   reject valid string-literal exports merely to reuse a binding check.
@@ -277,11 +277,11 @@ _d.{name};` by string interpolation, so a string-literal export name in a vendor
   `ArtifactIndexes::resolve_source_path_reference` reads only `entry_files`, with
   no fallback. They disagree for a chunk whose `entry_file` is empty or missing
   from `files`. Compare the fallbacks before unifying them.
-
 - **CLI papercuts.** Status: reported. `gate list` and `gate cut` require
   `--graph` even with `--cycles`, which only needs it to derive a default path;
   `scc --cycles-only --singletons-only` silently returns nothing (no
   `conflicts_with`).
+
 ## CLI usability
 
 Open usability and scripting-safety findings from exercising the documented
