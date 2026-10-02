@@ -182,7 +182,10 @@ pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
     let members = read_binding_patches_file(&path)?.members;
     for (index, member) in members.iter().enumerate() {
         let selector = member.selector.selected().with_context(|| {
-            format!("{}: member {index} requires exactly one binding selector", path.display())
+            format!(
+                "{}: member {index} requires exactly one binding selector",
+                path.display()
+            )
         })?;
         anyhow::ensure!(
             matches!(selector, MemberSelectorSpec::Binding(_)),

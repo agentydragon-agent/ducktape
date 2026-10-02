@@ -592,7 +592,10 @@ fn chunk_renames_map(
         .map(|member| ChunkRenameMember {
             name: member.name,
             selector: ChunkRenameSelector {
-                binding: member.selector.binding.expect("validated binding patch selector"),
+                binding: member
+                    .selector
+                    .binding
+                    .expect("validated binding patch selector"),
             },
         })
         .collect::<Vec<_>>();
