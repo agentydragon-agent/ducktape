@@ -17,13 +17,13 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
 from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -234,7 +234,7 @@ def test_create_requires_an_explicit_template(client: TestClient) -> None:
     assert client.post("/sandboxes", json={"slug": "demo"}).status_code == 422
 
 
-def test_create_records_the_concrete_thread_defaults_and_bootstrap(
+def test_create_records_the_concrete_session_defaults_and_bootstrap(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
     response = client.post(
@@ -244,7 +244,7 @@ def test_create_records_the_concrete_thread_defaults_and_bootstrap(
             "template": TEMPLATE,
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
-            "thread_defaults": {
+            "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "edited-model",
                 "cwd": "/state/workspaces/{session_id}",
@@ -258,7 +258,7 @@ def test_create_records_the_concrete_thread_defaults_and_bootstrap(
     assert response.status_code == 201, response.text
     row = response.json()
     assert row["binding"] == {
-        "thread_defaults": {
+        "session_defaults": {
             "harness": "HARNESS_CODEX",
             "model": "edited-model",
             "cwd": "/state/workspaces/{session_id}",
@@ -509,7 +509,7 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
         json={
             "slug": "coder",
             "template": TEMPLATE,
-            "thread_defaults": {
+            "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "sandbox-model",
                 "cwd": "/state/workspaces/{session_id}",
@@ -638,7 +638,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
         with backend(
             custom_objects, core_v1, tmp_path / "failure-token", runner_port=closed_port.getsockname()[1]
         ) as endpoint:
-            runners = Runners(live_index, endpoint.client())
+            runners = SandboxSessions(live_index, endpoint.client())
             app = create_app(
                 inventory,
                 RunnerBridge(
@@ -693,7 +693,7 @@ async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
     wedged = UnansweringRunner()
     async with wedged.serve() as port:
         with backend(custom_objects, core_v1, tmp_path / "wedged-token", runner_port=port) as endpoint:
-            runners = Runners(live_index, endpoint.client())
+            runners = SandboxSessions(live_index, endpoint.client())
             ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
             app = create_app(
                 inventory,
@@ -866,7 +866,7 @@ def test_policies_lists_the_namespace_for_the_create_form(client: TestClient) ->
     assert {policy["name"] for policy in client.get("/egress/policies").json()} == {"github", "pypi"}
 
 
-def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient) -> None:
+def test_presets_publish_editable_sandbox_and_session_defaults(client: TestClient) -> None:
     assert client.get("/presets").json() == [
         {
             "name": "public-coder",
@@ -875,7 +875,7 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
             "kubernetes_grants": [],
-            "thread_defaults": {
+            "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "test-codex-model",
                 "cwd": "/state/workspaces/{session_id}",

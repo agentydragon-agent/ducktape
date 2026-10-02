@@ -20,12 +20,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import TEST_REASONING_EFFORTS, Replica, stored_login
 from agentplane.app.database import connect
@@ -306,7 +306,7 @@ def app(
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
     event_logs, content = EventLogStore(engine), ContentStore(engine)
     database_updates = DatabaseUpdates(engine.url)
-    runners = Runners(live_index, inventory)
+    runners = SandboxSessions(live_index, inventory)
     bridge = RunnerBridge(
         runners=runners,
         event_logs=event_logs,

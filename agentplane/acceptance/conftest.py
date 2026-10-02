@@ -18,7 +18,7 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from agentplane.app.client import Client, is_running
 from agentplane.runner import protocol_pb2
 from agentplane.sandbox_service.models import NewSandbox, SandboxView
-from agentplane.sandbox_service.session_config import Harness, ThreadDefaults
+from agentplane.sandbox_service.session_config import Harness, SessionDefaults
 
 # `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -137,7 +137,7 @@ async def sandbox(client: Client) -> AsyncIterator[Callable[..., Awaitable[Sandb
         *,
         template: str | None = None,
         policies: list[str] | None = None,
-        thread_defaults: ThreadDefaults | None = None,
+        session_defaults: SessionDefaults | None = None,
         bootstrap: str = "",
     ) -> SandboxView:
         if template is None:
@@ -145,7 +145,7 @@ async def sandbox(client: Client) -> AsyncIterator[Callable[..., Awaitable[Sandb
         values: dict[str, object] = {
             "slug": slug,
             "template": template,
-            "thread_defaults": thread_defaults,
+            "session_defaults": session_defaults,
             "bootstrap": bootstrap,
         }
         if policies is not None:

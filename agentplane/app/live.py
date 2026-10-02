@@ -40,8 +40,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentplane.action_service.policies import resources as policy_resources
 from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.views import ThreadView
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.views import ThreadView
 from agentplane.app.changes import Changes
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.identity import CallerIdentity, require_caller

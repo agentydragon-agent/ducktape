@@ -17,7 +17,7 @@ Keep three concepts separate:
   Lookup resolves its current endpoint; it does not grant permission to control it.
 
 Extract the narrow projection/lookup code from [`SandboxInventory`](../sandbox_service/inventory.py),
-[`LiveIndex`](../app/live.py), and [`Runners`](../app/agent_runtime/runner/runners.py) into the Sandbox
+[`LiveIndex`](../app/live.py), and [`Runners`](../app/threads/sessions.py) into the Sandbox
 Service, using existing neutral Kubernetes helpers. Do not import app implementation modules from the
 new service. The app may still observe provisioning for presentation, but it is not the authoritative
 endpoint/command path for other services. Product Thread annotations and UI projections stay app-owned.

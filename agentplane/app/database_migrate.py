@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Every module declaring tables on `Base`, imported only to register them on its metadata.
 from agentplane.app import operator_sessions  # noqa: F401
-from agentplane.app.agent_runtime import models  # noqa: F401
+from agentplane.app.threads import models  # noqa: F401
 from agentplane.app.database import Base
 from util.db_migrations import MigrationRunner
 

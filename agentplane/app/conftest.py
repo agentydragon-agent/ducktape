@@ -19,13 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -218,15 +218,15 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-async def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> AsyncIterator[Runners]:
+async def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> AsyncIterator[SandboxSessions]:
     """The runners `live_index` shows, dialled on a port nothing listens on."""
-    runners = Runners(live_index, inventory)
+    runners = SandboxSessions(live_index, inventory)
     yield runners
     await runners.close()
 
 
 @pytest.fixture
-async def ingester(runners: Runners, event_logs: EventLogStore, ingestion: Ingestion) -> AsyncIterator[Ingester]:
+async def ingester(runners: SandboxSessions, event_logs: EventLogStore, ingestion: Ingestion) -> AsyncIterator[Ingester]:
     ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
     yield ingester
     await ingester.close()
@@ -234,7 +234,7 @@ async def ingester(runners: Runners, event_logs: EventLogStore, ingestion: Inges
 
 @pytest.fixture
 def bridge(
-    runners: Runners,
+    runners: SandboxSessions,
     event_logs: EventLogStore,
     content: ContentStore,
     ingester: Ingester,

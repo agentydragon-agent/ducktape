@@ -27,15 +27,15 @@ from sqlalchemy import select
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore, FeedError
-from agentplane.app.agent_runtime.events.stream import follow
-from agentplane.app.agent_runtime.ingestion import Feed, Ingester, Ingestion
-from agentplane.app.agent_runtime.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
-from agentplane.app.agent_runtime.runner.bridge import RunnerAdmissionTimeoutError, RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.agent_runtime.view.views import ThreadOperationalState
+from agentplane.app.threads.events.event_log import EventLogStore, FeedError
+from agentplane.app.threads.events.stream import follow
+from agentplane.app.threads.ingestion import Feed, Ingester, Ingestion
+from agentplane.app.threads.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
+from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.threads.view.views import ThreadOperationalState
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.changes import Changes
 from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH, TEST_REASONING_EFFORTS
@@ -48,10 +48,12 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
-from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
+from agentplane.runner.client import Attachment, RunnerClient
+from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
+from agentplane.sandbox_service.client import Attachment as ServiceAttachment
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
@@ -146,17 +148,17 @@ def sandbox_runner_port(runner: RunnerHandle) -> int:
 @pytest.fixture
 async def local_runners(
     live_index: LiveIndex, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
-) -> AsyncIterator[Runners]:
+) -> AsyncIterator[SandboxSessions]:
     """`SANDBOX` running, its Pod at the local runner's address."""
     live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
-    runners = Runners(live_index, sandbox_endpoint.client())
+    runners = SandboxSessions(live_index, sandbox_endpoint.client())
     yield runners
     await runners.close()
 
 
 @pytest.fixture
 async def app_url(
-    local_runners: Runners,
+    local_runners: SandboxSessions,
     inventory: SandboxServiceClient,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
@@ -1046,8 +1048,8 @@ async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_no
         event=event_pb2.Event(at=timestamp, command_admitted=event_pb2.CommandAdmitted(command=command)),
     )
     monkeypatch.setattr(content, "admitted_command", observed_lookup)
-    monkeypatch.setattr("agentplane.app.agent_runtime.ingestion.notify", drop_notification)
-    monkeypatch.setattr("agentplane.app.agent_runtime.runner.bridge.ADMISSION_REREAD_S", 0.01)
+    monkeypatch.setattr("agentplane.app.threads.ingestion.notify", drop_notification)
+    monkeypatch.setattr("agentplane.app.threads.bridge.ADMISSION_REREAD_S", 0.01)
     admission = asyncio.create_task(bridge._wait_for_admission(thread, command))
     try:
         async with asyncio.timeout(10):
@@ -1076,7 +1078,7 @@ class Replicas:
 @pytest.fixture
 async def replicas(
     sandbox_endpoint: Endpoint,
-    local_runners: Runners,
+    local_runners: SandboxSessions,
     live_index: LiveIndex,
     runner: RunnerHandle,
     database_updates: DatabaseUpdates,
@@ -1088,7 +1090,7 @@ async def replicas(
     replica_engine = connect(db_url)
     replica_updates = DatabaseUpdates(replica_engine.url)
     await replica_updates.start()
-    survivor_runners = Runners(live_index, sandbox_endpoint.client())
+    survivor_runners = SandboxSessions(live_index, sandbox_endpoint.client())
     survivor_event_logs = EventLogStore(replica_engine)
     owner_ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
     survivor_ingester = Ingester(
@@ -1134,7 +1136,7 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
 
 
 async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
-    runner: RunnerHandle, event_logs: EventLogStore, ingestion: Ingestion, spec: protocol_pb2.SessionSpec
+    runner: RunnerHandle, local_runners: SandboxSessions, event_logs: EventLogStore, ingestion: Ingestion, spec: protocol_pb2.SessionSpec
 ) -> None:
     client = RunnerClient(runner.target, capture_history=True)
     try:
@@ -1152,7 +1154,7 @@ async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
             await ingestion.record(thread, attachment.seen, lease=lease)
             async with asyncio.timeout(10):
                 await Feed(
-                    session_id=SESSION, client=client, event_logs=event_logs, ingestion=ingestion, lease=lease
+                    session_id=SESSION, client=local_runners.client(SANDBOX), event_logs=event_logs, ingestion=ingestion, lease=lease
                 ).run()
             snapshot = await event_logs.feed_state(thread)
             assert snapshot is not None
@@ -1166,7 +1168,7 @@ async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
 
 async def test_semantic_feed_failure_survives_replica_reconcile(
     runner: RunnerHandle,
-    local_runners: Runners,
+    local_runners: SandboxSessions,
     event_logs: EventLogStore,
     ingestion: Ingestion,
     db_url: str,
@@ -1190,7 +1192,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
             lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
             assert lease is not None
             await ingestion.record(thread, attachment.seen, lease=lease)
-            await Feed(session_id=SESSION, client=client, event_logs=event_logs, ingestion=ingestion, lease=lease).run()
+            await Feed(session_id=SESSION, client=local_runners.client(SANDBOX), event_logs=event_logs, ingestion=ingestion, lease=lease).run()
             failed = await replica_event_logs.feed_state(thread)
             assert failed is not None
             assert failed.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
@@ -1262,6 +1264,7 @@ async def test_semantic_feed_failure_survives_replica_reconcile(
 
 async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
     runner: RunnerHandle,
+    local_runners: SandboxSessions,
     event_logs: EventLogStore,
     ingestion: Ingestion,
     spec: protocol_pb2.SessionSpec,
@@ -1279,13 +1282,13 @@ async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
         lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
         assert lease is not None
 
-        async def truncated_stream(attachment: Attachment) -> event_log_pb2.EventEntry:
+        async def truncated_stream(attachment: ServiceAttachment) -> event_log_pb2.EventEntry:
             assert attachment.attached.last_cursor > 0
             raise StreamClosedError
 
-        monkeypatch.setattr(Attachment, "next_entry", truncated_stream)
+        monkeypatch.setattr(ServiceAttachment, "next_entry", truncated_stream)
         async with asyncio.timeout(10):
-            await Feed(session_id=SESSION, client=client, event_logs=event_logs, ingestion=ingestion, lease=lease).run()
+            await Feed(session_id=SESSION, client=local_runners.client(SANDBOX), event_logs=event_logs, ingestion=ingestion, lease=lease).run()
         snapshot = await event_logs.feed_state(thread)
         assert snapshot is not None
         assert snapshot.end == FeedError(
@@ -1353,8 +1356,8 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     live_index: LiveIndex,
 ) -> None:
     # This must wake from the informer notification, not the periodic recovery scan.
-    monkeypatch.setattr("agentplane.app.agent_runtime.ingestion.RECONCILE_S", 3600)
-    runners = Runners(live_index, sandbox_endpoint.client())
+    monkeypatch.setattr("agentplane.app.threads.ingestion.RECONCILE_S", 3600)
+    runners = SandboxSessions(live_index, sandbox_endpoint.client())
     discovered = asyncio.Event()
     running = runners.running
 
@@ -1446,7 +1449,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
 
 async def test_stored_thread_stream_does_not_require_reachable_runner(
     replicas: Replicas,
-    local_runners: Runners,
+    local_runners: SandboxSessions,
     live_index: LiveIndex,
     event_logs: EventLogStore,
     database_updates: DatabaseUpdates,

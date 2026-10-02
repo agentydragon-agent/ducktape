@@ -10,8 +10,8 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.app.agent_runtime.events.event_log import EventReplicationError
-from agentplane.app.agent_runtime.models import (
+from agentplane.app.threads.events.event_log import EventReplicationError
+from agentplane.app.threads.models import (
     ThreadCheckpoint,
     ThreadEntity,
     ThreadEvidence,
@@ -19,10 +19,10 @@ from agentplane.app.agent_runtime.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.agent_runtime.view import fold
-from agentplane.app.agent_runtime.view.payloads import write_payloads
-from agentplane.app.agent_runtime.view.rows import command_summary, fold_item, ordered_entity_rows, payload_references
-from agentplane.app.agent_runtime.view.views import (
+from agentplane.app.threads.view import fold
+from agentplane.app.threads.view.payloads import write_payloads
+from agentplane.app.threads.view.rows import command_summary, fold_item, ordered_entity_rows, payload_references
+from agentplane.app.threads.view.views import (
     EntityKind,
     ThreadCommandEntityView,
     ThreadFeedErrorState,

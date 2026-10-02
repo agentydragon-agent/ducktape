@@ -17,16 +17,16 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from agentplane.app.agent_runtime.events.event_log import EventLogStore, EventReplicationError, FeedEnd, FeedError
-from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
-from agentplane.app.agent_runtime.ingestion import Ingestion, event_batches
-from agentplane.app.agent_runtime.models import SandboxIngestion
-from agentplane.app.agent_runtime.thread.store import ThreadStore
+from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedEnd, FeedError
+from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
+from agentplane.app.threads.ingestion import Ingestion, event_batches
+from agentplane.app.threads.models import SandboxIngestion
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.conftest import SPEC, Replica, event_entry
 from agentplane.app.database_updates import Channel, notify
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import StreamClosedError
+from agentplane.runner.errors import StreamClosedError
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -226,7 +226,7 @@ async def test_connection_loss_before_commit_keeps_events_projection_and_cursor_
 
     try:
         with monkeypatch.context() as patch:
-            patch.setattr("agentplane.app.agent_runtime.ingestion.notify", disconnect_before_commit)
+            patch.setattr("agentplane.app.threads.ingestion.notify", disconnect_before_commit)
             with pytest.raises(DBAPIError):
                 await ingestion.record(thread, [second], lease=lease)
         assert await replica.event_logs.events(thread, limit=10) == [first]

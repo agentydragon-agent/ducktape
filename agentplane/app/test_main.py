@@ -20,13 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester
-from agentplane.app.agent_runtime.models import SandboxIngestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.models import SandboxIngestion
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
@@ -195,7 +195,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     database: AsyncEngine,
     event_logs: EventLogStore,
     content: ContentStore,
-    runners: Runners,
+    runners: SandboxSessions,
     ingester: Ingester,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream

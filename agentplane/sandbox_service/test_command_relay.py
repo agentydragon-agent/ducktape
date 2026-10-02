@@ -9,7 +9,8 @@ import pytest_bazel
 
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import RunnerClient, RunnerError, StreamClosedError
+from agentplane.runner.client import RunnerClient
+from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.command_relay import admit_running_command
 
 # gazelle:include_dep @pypi//protobuf

@@ -1,12 +1,9 @@
 """App-side session discovery; every runner operation goes through Sandbox Service."""
 
-from typing import Protocol
-
 from agentplane.app.changes import Changes
 from agentplane.app.live import LiveIndex
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
 from agentplane.sandbox_service.models import ProvisioningState, SandboxDestination, SandboxNotFoundError
-from agentplane.sandbox_service.session_access import Sessions
 
 
 class SandboxNotReachableError(Exception):
@@ -15,15 +12,7 @@ class SandboxNotReachableError(Exception):
         self.name = name
 
 
-class RunnerDirectory(Protocol):
-    @property
-    def changes(self) -> Changes: ...
-    def running(self) -> set[str]: ...
-    def client(self, sandbox: str) -> Sessions: ...
-    async def close(self) -> None: ...
-
-
-class Runners:
+class SandboxSessions:
     def __init__(self, index: LiveIndex, service: SandboxServiceClient) -> None:
         self._index = index
         self._service = service

@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.sandbox_service.kubernetes_grants import DnsName, ResolvedGrant
-from agentplane.sandbox_service.session_config import SandboxBinding, ThreadDefaults
+from agentplane.sandbox_service.session_config import SandboxBinding, SessionDefaults
 from agentplane.subjects import ServiceAccountRef
 
 Slug = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)]
@@ -59,8 +59,8 @@ class NewSandbox(BaseModel):
     kubernetes_grants: list[str] = Field(
         default_factory=list, description="Enabled Kubernetes grant names to bind to this Sandbox ServiceAccount."
     )
-    thread_defaults: ThreadDefaults | None = Field(
-        default=None, description="Reusable Thread defaults for future sessions in this Sandbox."
+    session_defaults: SessionDefaults | None = Field(
+        default=None, description="Reusable session defaults for future sessions in this Sandbox."
     )
     bootstrap: str = Field(default="", max_length=65_536, description="Runner initialization script for this Sandbox.")
 
@@ -120,7 +120,7 @@ class SandboxView(BaseModel):
         "egress and action-policy binding names it by."
     )
     binding: SandboxBinding | None = Field(
-        default=None, description="The stored concrete Thread defaults and bootstrap selected for this Sandbox."
+        default=None, description="The stored concrete session defaults and bootstrap selected for this Sandbox."
     )
     kubernetes_grants: list[ResolvedGrant]
     kubernetes_grants_ready: bool

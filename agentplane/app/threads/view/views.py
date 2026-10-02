@@ -10,7 +10,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from agentplane.app.agent_runtime.view import fold
+from agentplane.app.threads.view import fold
 from agentplane.sandbox_service.session_config import Harness
 
 

@@ -39,8 +39,8 @@ from agentplane.app.action_federation import (
     upstream_failure_detail,
 )
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events import stream
-from agentplane.app.agent_runtime.events.debug import (
+from agentplane.app.threads.events import stream
+from agentplane.app.threads.events.debug import (
     ArchivedObservationEntry,
     EvidencePage,
     NativeFramePage,
@@ -48,13 +48,13 @@ from agentplane.app.agent_runtime.events.debug import (
     ThreadEvidenceNotFoundError,
     ThreadScopeChangedError,
 )
-from agentplane.app.agent_runtime.events.event_log import EventLogStore, ThreadNotFoundError
-from agentplane.app.agent_runtime.runner import bridge as runner_bridge
-from agentplane.app.agent_runtime.runner.runners import SandboxNotReachableError
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
-from agentplane.app.agent_runtime.view.fold import CommandOutcome
-from agentplane.app.agent_runtime.view.views import ThreadView
+from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
+from agentplane.app.threads.runner import bridge as runner_bridge
+from agentplane.app.threads.sessions import SandboxNotReachableError
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
+from agentplane.app.threads.view.fold import CommandOutcome
+from agentplane.app.threads.view.views import ThreadView
 from agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -73,7 +73,7 @@ from agentplane.app.operator_sessions import OperatorSessionMiddleware, Operator
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import OpenTimeoutError, RunnerError
+from agentplane.runner.errors import OpenTimeoutError, RunnerError
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.egress_views import (

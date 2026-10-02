@@ -15,13 +15,13 @@ import httpx
 from pydantic import TypeAdapter
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.agent_runtime.view.views import ThreadEntityView
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.threads.view.views import ThreadEntityView
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -43,7 +43,7 @@ def openapi_document() -> dict[str, Any]:
     database_updates = DatabaseUpdates(engine.url)
     event_logs, content = EventLogStore(engine), ContentStore(engine)
     live = LiveIndex(stale_after_seconds=900)
-    runners = Runners(live, inventory)
+    runners = SandboxSessions(live, inventory)
     document: dict[str, Any] = create_app(
         inventory,
         RunnerBridge(

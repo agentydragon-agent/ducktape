@@ -20,6 +20,7 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
+from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_ERROR_ANNOTATION,
     KUBERNETES_GRANTS_READY_ANNOTATION,
@@ -198,7 +199,7 @@ class SandboxInventory:
         raw = (await self._sandbox(name)).metadata.annotations.get(SANDBOX_BINDING_ANNOTATION)
         if raw is None:
             return None
-        return SandboxBinding.model_validate_json(raw)
+        return read_binding(raw)
 
     async def set_kubernetes_grants_status(self, name: str, *, ready: bool, error: str | None = None) -> None:
         """Record provisioning so a runner cannot start before requested bindings exist."""

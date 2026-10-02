@@ -18,8 +18,8 @@ from uuid import UUID
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
-from agentplane.app.agent_runtime.runner.bridge import NewSession
-from agentplane.app.agent_runtime.view.views import ThreadView
+from agentplane.app.threads.bridge import NewSession
+from agentplane.app.threads.view.views import ThreadView
 from agentplane.app.api import EgressGrant, ModelCatalog
 from agentplane.app.decisions import Decision
 from agentplane.app.presets import SandboxPresetView

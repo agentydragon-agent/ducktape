@@ -13,18 +13,18 @@ import grpc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.agent_runtime.events import event_log, ingestion_lease
-from agentplane.app.agent_runtime.events.event_log import EventLogStore, EventReplicationError, FeedError
-from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
-from agentplane.app.agent_runtime.runner.runners import RunnerDirectory, SandboxNotReachableError
-from agentplane.app.agent_runtime.view import fold
-from agentplane.app.agent_runtime.view.recording import ThreadFoldError, record_thread_fold, set_operational
+from agentplane.app.threads.events import event_log, ingestion_lease
+from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedError
+from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
+from agentplane.app.threads.sessions import SandboxSessions, SandboxNotReachableError
+from agentplane.app.threads.view import fold
+from agentplane.app.threads.view.recording import ThreadFoldError, record_thread_fold, set_operational
 from agentplane.app.database_updates import Channel, notify
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import RunnerError, StreamClosedError
+from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.session_access import SessionAttachment, SessionReader
+from agentplane.sandbox_service.client import Attachment, Runner
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -142,7 +142,7 @@ class Feed:
         self,
         *,
         session_id: str,
-        client: SessionReader,
+        client: Runner,
         event_logs: EventLogStore,
         ingestion: Ingestion,
         lease: IngestionLease,
@@ -155,7 +155,7 @@ class Feed:
         self.task: asyncio.Task[None] | None = None
 
     async def run(self) -> None:
-        attachment: SessionAttachment | None = None
+        attachment: Attachment | None = None
         try:
             attachment = await self.client.attach(self.session_id)
             attached = attachment.attached
@@ -213,7 +213,7 @@ class Ingester:
     """Copies the runner sessions of every running sandbox into the event log: one lease per sandbox
     across app replicas, and one `Feed` per session under it."""
 
-    def __init__(self, *, runners: RunnerDirectory, event_logs: EventLogStore, ingestion: Ingestion) -> None:
+    def __init__(self, *, runners: SandboxSessions, event_logs: EventLogStore, ingestion: Ingestion) -> None:
         self._runners = runners
         self._event_logs = event_logs
         self._ingestion = ingestion

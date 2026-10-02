@@ -9,11 +9,11 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import MalformedMessageError, RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.live import LiveIndex
 from agentplane.protocol import command_pb2
@@ -54,7 +54,7 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
     model: ScriptedModel,
 ) -> None:
     async with authenticated_service(cluster, runner.port, tmp_path / "service-token") as remote:
-        directory = Runners(live_index, remote)
+        directory = SandboxSessions(live_index, remote)
         ingester = Ingester(runners=directory, event_logs=event_logs, ingestion=ingestion)
         bridge = RunnerBridge(
             runners=directory,
@@ -112,7 +112,7 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
     cluster: Cluster, live_index: LiveIndex, tmp_path: Path, runner: RunnerHandle
 ) -> None:
     async with authenticated_service(cluster, runner.port, tmp_path / "service-token") as remote:
-        directory = Runners(live_index, remote)
+        directory = SandboxSessions(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
     try:
         with pytest.raises(ServiceError):

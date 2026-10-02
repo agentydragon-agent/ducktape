@@ -85,7 +85,7 @@ message FollowSessionResponse {
   // stream contains exactly one final ended observation; bare transport EOF is not evidence.
 }
 
-message ThreadDefaults {
+message SessionDefaults {
   optional ducktape.agentplane.runner.v1.Harness harness = 1;
   optional string model = 2;
   optional string cwd = 3;
@@ -95,7 +95,7 @@ message ThreadDefaults {
 }
 
 message SandboxBinding {
-  ThreadDefaults thread_defaults = 1;
+  SessionDefaults session_defaults = 1;
   string bootstrap = 2;
 }
 
@@ -105,7 +105,7 @@ message CreateSandboxRequest {
   repeated string policies = 3;
   repeated string action_policy_sets = 4;
   repeated string kubernetes_grants = 5;
-  ThreadDefaults thread_defaults = 6;
+  SessionDefaults session_defaults = 6;
   string bootstrap = 7;
 }
 

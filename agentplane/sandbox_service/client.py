@@ -13,7 +13,7 @@ from google.protobuf.message import Message
 
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
-from agentplane.runner.client import RunnerError, StreamClosedError
+from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, wire
 from agentplane.sandbox_service.models import NewSandbox, SandboxDestination, SandboxNotFoundError, SandboxView
 

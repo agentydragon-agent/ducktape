@@ -37,10 +37,8 @@ bbr test //agentplane/app/...
 - `presets.py`: app-owned `SandboxPreset` and `ThreadPreset` configuration and concrete launch
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
-- `inventory.py`: the sandbox inventory read from and written to Kubernetes (create, suspend,
-  resume, delete), with the parsed subset of each CR it needs. It works in
-  `--sandbox-namespace`, which is not the app's own: a sandbox is the blast radius, and it shares a
-  namespace with neither the app, its database, nor the rules below.
+- Sandbox provisioning, grants, and runner control are owned by `../sandbox_service/` and reached
+  through its authenticated gRPC client. The app retains read-only Kubernetes projections for UI updates.
 - `egress.py`: the app namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
   edits them. A binding is desired state, so creating one is the whole grant and deleting it the
   whole revocation; there is no decision recorded on the rule afterwards. A sandbox may be granted
@@ -55,21 +53,20 @@ bbr test //agentplane/app/...
   `app.agentplane.allegedly.works/managed-by: integration-app`; the Action Service evaluates
   bindings and reads `spec` only, so no preset name reaches it. The read side asks the service
   (below). Nothing edits a binding at runtime; kubectl does.
-- `agent_runtime/`: the runner in each sandbox as the app sees it, and the PostgreSQL store of
+- `threads/`: the app-owned PostgreSQL archive and presentation state for
   threads, events, feed state, leases, materialized thread entities and immutable content
-  chunks/manifests built from its events. Layered bottom-up on the tables in `models.py`: `runner/`,
-  `events/`, `view/`, and `thread/store.py` (`ThreadStore`: a thread over its event log, with the
+  chunks/manifests built from its events. Layered bottom-up on the tables in `models.py`: `events/`, `view/`, and `store.py` (`ThreadStore`: a thread over its event log, with the
   name and archive state an operator sets). `ingestion.py` copies the running sandboxes' runner
   sessions into the event log: the `Ingester` holds one lease per sandbox across replicas and runs a
   `Feed` per session, which batches the runner's events for `Ingestion` to record, the event log's
   and the fold's writes in one transaction under the lease; each transaction folds only the batch
   and its touched entities, then commits all projection writes and checkpoint.
-- `agent_runtime/runner/`: `bridge.py` (runner-first sessions and commands) and `runners.py` (the
-  runner in each sandbox as the cluster index shows it: which sandboxes run one, and a client to
-  reach each).
+- `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
+  `threads/sessions.py` selects explicit destinations from the app's live index and caches Sandbox
+  Service clients. Neither opens direct runner connections or owns lifecycle implementation.
 - `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits for the frontend's
   generated client.
-- `agent_runtime/events/`: the app's copy of each runner session's event log. `event_log.py`
+- `threads/events/`: the app's copy of each runner session's event log. `event_log.py`
   (`EventLogStore`: the copied runner events and the feed state), `ingestion_lease.py` (which
   replica ingests a sandbox), `stream.py` (a thread's stored event log as SSE from the database, so
   any replica serves it without a runner) and `debug.py` (the typed, paginated observation and
@@ -86,7 +83,7 @@ bbr test //agentplane/app/...
   `changes.py` wake-up, and waking every channel after a reconnect.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
-- `agent_runtime/view/`: the conversation view projected from a thread's events. `fold.py` (the
+- `threads/view/`: the conversation view projected from a thread's events. `fold.py` (the
   typed deterministic event fold with independent item revisions), `views.py` (the rows' client
   contract), `rows.py` (fold records to and from entity rows), `payloads.py` (insert-only bodies),
   `recording.py` (the fold write path) and `content.py` (`ContentStore`: reads of what the fold
@@ -100,7 +97,7 @@ bbr test //agentplane/app/...
 - `database.py`: the declarative `Base` every table maps onto, and the app's one connection pool;
   `main.py` builds the pool and hands it to each store and to the database update listener.
 - `database_migrate.py` and `migrations/`: the Alembic history covering the tables of
-  `operator_sessions.py` and `agent_runtime/models.py`. Migrations run separately through
+  `operator_sessions.py` and `threads/models.py`. Migrations run separately through
   `:migrate`, which fails when the migrated schema differs from the models; the server itself
   never creates or checks tables at startup. `:image` and `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual

@@ -13,7 +13,8 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
-from agentplane.runner.client import OpenTimeoutError, RunnerClient, RunnerError, StreamClosedError
+from agentplane.runner.client import RunnerClient
+from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, session_lifecycle, wire
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.command_relay import admit_running_command

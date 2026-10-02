@@ -12,7 +12,7 @@ from google.protobuf.json_format import ParseDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.app.agent_runtime.events.debug import (
+from agentplane.app.threads.events.debug import (
     EvidenceObservation,
     EvidencePage,
     NativeFrame,
@@ -20,8 +20,8 @@ from agentplane.app.agent_runtime.events.debug import (
     ThreadEvidenceNotFoundError,
     ThreadScopeChangedError,
 )
-from agentplane.app.agent_runtime.events.event_log import ThreadNotFoundError
-from agentplane.app.agent_runtime.models import (
+from agentplane.app.threads.events.event_log import ThreadNotFoundError
+from agentplane.app.threads.models import (
     Event,
     EventLog,
     ThreadCheckpoint,
@@ -29,8 +29,8 @@ from agentplane.app.agent_runtime.models import (
     ThreadEvidence,
     ThreadNativeLink,
 )
-from agentplane.app.agent_runtime.view import fold
-from agentplane.app.agent_runtime.view.views import EntityKind, ThreadCommandState
+from agentplane.app.threads.view import fold
+from agentplane.app.threads.view.views import EntityKind, ThreadCommandState
 from agentplane.protocol import command_pb2, event_log_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

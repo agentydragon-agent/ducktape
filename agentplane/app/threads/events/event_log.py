@@ -21,8 +21,8 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.app.agent_runtime.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
-from agentplane.app.agent_runtime.models import Event, EventLog, FeedState
+from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
+from agentplane.app.threads.models import Event, EventLog, FeedState
 from agentplane.app.database_updates import Channel, notify
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2

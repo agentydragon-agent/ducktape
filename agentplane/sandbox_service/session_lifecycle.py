@@ -5,7 +5,8 @@ from pathlib import PurePosixPath
 from google.protobuf.json_format import ParseDict
 
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import RunnerClient, RunnerError
+from agentplane.runner.client import RunnerClient
+from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.instructions import combine_instructions
 from agentplane.sandbox_service.models import SessionDestination
 from agentplane.sandbox_service.session_config import SandboxBinding
@@ -20,7 +21,7 @@ def launch_spec(
     binding: SandboxBinding | None,
     platform_instructions: str,
 ) -> protocol_pb2.SessionSpec:
-    defaults = binding.thread_defaults if binding is not None else None
+    defaults = binding.session_defaults if binding is not None else None
     values = defaults.proto_json(destination.session_id) if defaults is not None else {}
     spec = ParseDict(values | overrides, protocol_pb2.SessionSpec())
     validate_spec(spec)
@@ -59,8 +60,8 @@ async def open_session(
             result = await initialize(client, binding)
             if result.exit_code != 0:
                 raise RunnerError("Sandbox bootstrap failed; no session was opened")
-        if setup_script is None and binding.thread_defaults is not None:
-            setup_script = binding.thread_defaults.setup_script
+        if setup_script is None and binding.session_defaults is not None:
+            setup_script = binding.session_defaults.setup_script
     attachment = await client.attach(destination.session_id, spec=spec, setup_script=setup_script)
     try:
         return attachment.attached

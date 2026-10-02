@@ -8,6 +8,7 @@ from uuid import UUID
 from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant
 from agentplane.sandbox_service.models import (
     Condition,
@@ -118,7 +119,7 @@ def _binding(sandbox: SandboxResource) -> SandboxBinding | None:
     raw = sandbox.metadata.annotations.get(SANDBOX_BINDING_ANNOTATION)
     if raw is None:
         return None
-    return SandboxBinding.model_validate_json(raw)
+    return read_binding(raw)
 
 
 def _resolved_grants(sandbox: SandboxResource) -> list[ResolvedGrant]:

@@ -7,7 +7,7 @@ import pytest_bazel
 from google.protobuf import json_format
 from more_itertools import partitions
 
-from agentplane.app.agent_runtime.view.fold import (
+from agentplane.app.threads.view.fold import (
     AppendPayload,
     CommandOutcome,
     CommandSummary,

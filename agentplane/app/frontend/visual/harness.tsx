@@ -1580,7 +1580,7 @@ routes.push(
         policies: ["github-public"],
         action_policy_sets: ["public-coder"],
         kubernetes_grants: ["workspace-read"],
-        thread_defaults: {
+        session_defaults: {
           harness: "HARNESS_CODEX",
           model: "harness-codex-model",
           cwd: "/state/workspaces/{session_id}",

@@ -29,9 +29,9 @@ from playwright.async_api import (
 )
 from sqlalchemy import select, update
 
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingestion
-from agentplane.app.agent_runtime.models import (
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingestion
+from agentplane.app.threads.models import (
     FeedState,
     ThreadCheckpoint,
     ThreadEntity,
@@ -40,9 +40,9 @@ from agentplane.app.agent_runtime.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.agent_runtime.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.threads.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy

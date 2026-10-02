@@ -28,12 +28,12 @@ from agentplane.app.action_federation import (
     FederatedOperatorActions,
 )
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import RunnerDirectory, Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -301,7 +301,7 @@ async def async_main(settings: Settings) -> None:
         store = ThreadStore(engine)
         event_logs = EventLogStore(engine)
         content = ContentStore(engine)
-        runners = Runners(live, inventory)
+        runners = SandboxSessions(live, inventory)
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine))
         bridge = RunnerBridge(
             runners=runners,
@@ -381,7 +381,7 @@ async def serve_then_close(
     server: uvicorn.Server,
     *,
     ingester: Ingester,
-    runners: RunnerDirectory,
+    runners: SandboxSessions,
     database_updates: DatabaseUpdates,
     engine: AsyncEngine,
 ) -> None:

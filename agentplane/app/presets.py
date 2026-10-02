@@ -10,7 +10,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.sandbox_service.instructions import combine_instructions
-from agentplane.sandbox_service.session_config import Harness, ThreadDefaults
+from agentplane.sandbox_service.session_config import Harness, SessionDefaults
 
 
 class ThreadPreset(BaseModel):
@@ -24,8 +24,8 @@ class ThreadPreset(BaseModel):
     instructions: str = ""
     setup_script: str = Field(default="", max_length=65_536)
 
-    def defaults(self) -> ThreadDefaults:
-        return ThreadDefaults.model_validate(self.model_dump(exclude={"title"}))
+    def defaults(self) -> SessionDefaults:
+        return SessionDefaults.model_validate(self.model_dump(exclude={"title"}))
 
 
 class SandboxPreset(BaseModel):
@@ -54,7 +54,7 @@ class SandboxPresetView(BaseModel):
     policies: list[str]
     action_policy_sets: list[str]
     kubernetes_grants: list[str]
-    thread_defaults: ThreadDefaults
+    session_defaults: SessionDefaults
     bootstrap: str
 
 
@@ -87,7 +87,7 @@ class PresetCatalog(BaseModel):
                 policies=preset.policies,
                 action_policy_sets=preset.action_policy_sets,
                 kubernetes_grants=preset.kubernetes_grants,
-                thread_defaults=self.threads[preset.thread_preset].defaults(),
+                session_defaults=self.threads[preset.thread_preset].defaults(),
                 bootstrap=preset.bootstrap,
             )
             for name, preset in self.sandboxes.items()

@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KUBERNETES_BINDINGS_FINALIZER, KubernetesBindings
@@ -39,8 +40,8 @@ class Provisioning:
         await self.egress.require_policies(policies)
         await self.action_policy.require_policy_sets(spec.action_policy_sets)
         binding = (
-            SandboxBinding(thread_defaults=spec.thread_defaults, bootstrap=spec.bootstrap)
-            if spec.thread_defaults is not None or spec.bootstrap
+            SandboxBinding(session_defaults=spec.session_defaults, bootstrap=spec.bootstrap)
+            if spec.session_defaults is not None or spec.bootstrap
             else None
         )
         annotations = {
@@ -49,7 +50,7 @@ class Provisioning:
             ).model_dump_json()
         }
         if binding is not None:
-            annotations[SANDBOX_BINDING_ANNOTATION] = binding.model_dump_json(exclude_none=True)
+            annotations[SANDBOX_BINDING_ANNOTATION] = write_binding(binding)
         if grants:
             annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([grant.model_dump(mode="json") for grant in grants])
         view = await self.inventory.create(

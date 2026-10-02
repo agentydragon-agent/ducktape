@@ -7,7 +7,7 @@ load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
-package(default_visibility = ["//agentplane:__subpackages__"])
+package(default_visibility = ["//agentplane/app:__subpackages__"])
 
 TSCONFIG = ":tsconfig"
 

@@ -1,0 +1,152 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = [
+        "//agentplane/app:database",
+        "//agentplane/sandbox_service:session_config",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "ingestion",
+    srcs = ["ingestion.py"],
+    deps = [
+        "//agentplane/runner:errors",
+        "//agentplane/app:database_updates",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/events:ingestion_lease",
+        "//agentplane/app/threads:sessions",
+        "//agentplane/app/threads/view:fold",
+        "//agentplane/app/threads/view:recording",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:models",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_ingestion",
+    size = "medium",
+    srcs = ["test_ingestion.py"],
+    deps = [
+        "//agentplane/runner:errors",
+        ":ingestion",
+        ":models",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app:database_updates",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/events:ingestion_lease",
+        "//agentplane/app/threads:store",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_indexing",
+    # Three history sizes up to 40,000 events folded into 20,000 materialized entities: minutes of
+    # bounded work, measured at ~217s for the four cases together.
+    size = "large",
+    srcs = ["test_indexing.py"],
+    deps = [
+        ":ingestion",
+        ":models",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/events:ingestion_lease",
+        "//agentplane/app/threads:store",
+        "//agentplane/app/threads/view:content",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    deps = [
+        "//agentplane/app:database_updates",
+        "//agentplane/app/threads:models",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/view:views",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    size = "medium",
+    srcs = ["test_store.py"],
+    deps = [
+        ":store",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/events:ingestion_lease",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:session_config",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sessions",
+    srcs = ["sessions.py"],
+    deps = [
+        "//agentplane/app:changes",
+        "//agentplane/app:live",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:models",
+    ],
+)
+
+py_library(
+    name = "bridge",
+    srcs = ["bridge.py"],
+    deps = [
+        "//agentplane/runner:errors",
+        ":sessions",
+        "//agentplane/app:changes",
+        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/view:content",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//fastapi",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)

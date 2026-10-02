@@ -51,7 +51,9 @@ presentation state and projections, but those must not become hidden sources of 
 
 The backend is named **Sandbox Service**: it manages sandboxes and access to their runner
 sessions. It is not another Action executor or a service called "runtime" with unspecified ownership.
-The existing `app/agent_runtime/` package name describes current code placement, not the new boundary.
+`app/threads/` owns only the app's thread archive, metadata, projections, and browser-facing
+composition. Its session adapter uses the service client; it does not provision sandboxes or
+connect to runners. Thread identities never enter the Sandbox Service API.
 
 ## Extraction before notification v1
 
@@ -113,3 +115,16 @@ Backend implementation targets have Bazel visibility limited to the service and 
 Public protobuf/client models and read-only Kubernetes projections can be shared. The projection
 modules carry no create/delete/grant/session authority. Consumer acceptance tests use the real gRPC
 boundary through service-owned test fixtures; tests of backend mutations live with the service.
+
+
+Bazel defaults keep app implementation visible only to the app and its explicit acceptance/deployment
+consumers, and Sandbox Service implementation visible only inside that service. Public DTOs,
+client/protobufs, and read-only projections are opt-in exports. The direct runner transport and its
+generated gRPC stub are visible only to runner code, Sandbox Service, and the app's transport-fault
+test. Shared runner error types live separately so importing an error does not grant a transport
+dependency. Use concrete service clients, not protocols introduced solely to allow alternate
+in-process implementations in consumer tests.
+
+Session defaults are named `SessionDefaults` / `session_defaults` in the API. The annotation codec
+alone retains the legacy `thread_defaults` storage key, preserving staging data and old-app rollback;
+it is not an API alias. No database schema, identities, or retained logs change with package renames.

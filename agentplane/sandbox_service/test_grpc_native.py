@@ -14,17 +14,18 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
-from agentplane.runner.client import RunnerError, StreamClosedError
+from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service import protocol_pb2, wire
+from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.models import SandboxDestination
-from agentplane.sandbox_service.session_config import Harness, SandboxBinding, ThreadDefaults
+from agentplane.sandbox_service.session_config import Harness, SandboxBinding, SessionDefaults
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -78,7 +79,7 @@ async def remote(resources: Resources, token_file: Path) -> AsyncIterator[Sandbo
 def set_binding(cluster: Cluster, binding: SandboxBinding) -> None:
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})[
         SANDBOX_BINDING_ANNOTATION
-    ] = binding.model_dump_json()
+    ] = write_binding(binding)
 
 
 async def inspect(remote: SandboxServiceClient) -> runner_pb2.Attached:
@@ -134,7 +135,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         cluster,
         SandboxBinding(
             bootstrap=f"printf B >> {shlex.quote(str(bootstrap_marker))}",
-            thread_defaults=ThreadDefaults(
+            session_defaults=SessionDefaults(
                 harness=Harness(runner_pb2.Harness.Name(spec.harness)),
                 model=spec.model,
                 reasoning_effort=spec.reasoning_effort,
@@ -200,7 +201,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         finally:
             stopped.cancel()
     # Stop the service, change its configuration and stored defaults, and recover solely from the runner.
-    set_binding(cluster, SandboxBinding(bootstrap="exit 42", thread_defaults=ThreadDefaults(model="changed")))
+    set_binding(cluster, SandboxBinding(bootstrap="exit 42", session_defaults=SessionDefaults(model="changed")))
     async with service_client(
         replace(resources, platform_instructions="New platform guidance."), token_file
     ) as restarted:

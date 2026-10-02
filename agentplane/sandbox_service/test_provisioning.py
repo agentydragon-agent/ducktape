@@ -1,5 +1,6 @@
 """Headless provisioning, restart recovery, and incarnation-safe administrative APIs."""
 
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -11,7 +12,7 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.runner.client import RunnerError
+from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
@@ -21,6 +22,7 @@ from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
+from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.models import NewSandbox, ProvisioningState, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -135,15 +137,20 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
                 "action_policy_sets": ["test-actions"],
                 "kubernetes_grants": ["test-read"],
                 "bootstrap": "printf ready",
-                "thread_defaults": {"model": "test-model", "instructions": ""},
+                "session_defaults": {"model": "test-model", "instructions": ""},
             }
         )
     )
     assert view.binding is not None
     assert view.binding.bootstrap == "printf ready"
-    assert view.binding.thread_defaults is not None
-    assert view.binding.thread_defaults.instructions == ""
-    assert view.binding.thread_defaults.cwd is None
+    assert view.binding.session_defaults is not None
+    assert view.binding.session_defaults.instructions == ""
+    assert view.binding.session_defaults.cwd is None
+    stored = case.custom.objects[("sandboxes", view.name)]["metadata"]["annotations"]
+    assert json.loads(stored[SANDBOX_BINDING_ANNOTATION]) == {
+        "thread_defaults": {"model": "test-model", "instructions": ""},
+        "bootstrap": "printf ready",
+    }
     assert view.kubernetes_grants_ready
     assert len(case.rbac.bindings) == 1
     assert await case.service.inventory.pending_grants(view.name) is None

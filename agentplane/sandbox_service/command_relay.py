@@ -2,7 +2,8 @@
 
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import RunnerClient, RunnerError
+from agentplane.runner.client import RunnerClient
+from agentplane.runner.errors import RunnerError
 
 # gazelle:include_dep @pypi//protobuf
 
