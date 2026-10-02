@@ -30,6 +30,11 @@ export interface Scenario extends ScenarioOptions {
   pendingActions?: boolean;
   /** Click the inline approval prompt's Review button once it mounts. */
   openActionReview?: boolean;
+  /** Make the SSH command taller than the inline review and scroll to its decisions. */
+  longPendingAction?: boolean;
+  scrollActionReview?: boolean;
+  /** Assert phone composer controls and the topbar dot fit before capture. */
+  checkComposerControls?: boolean;
   /** Render a bounded first history page with a Load more control. */
   historyPaged?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
@@ -382,6 +387,29 @@ export const SCENARIOS: Record<string, Scenario> = {
     captureViewport: true,
     readySelectors: ['button[aria-label="Actions, 2 pending"]', ".action-affordance-notice"],
   },
+  actions_attention_composer_long_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    pendingActions: true,
+    openActionReview: true,
+    longPendingAction: true,
+    scrollActionReview: true,
+    checkComposerControls: true,
+    captureViewport: true,
+    readySelectors: ['.action-affordance-details[data-scroll-ready="true"]', '[data-composer-layout-ready="true"]'],
+  },
+  actions_attention_composer_long_desktop: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    pendingActions: true,
+    openActionReview: true,
+    longPendingAction: true,
+    scrollActionReview: true,
+    captureViewport: true,
+    readySelectors: ['.action-affordance-details[data-scroll-ready="true"]'],
+  },
   actions_attention_composer_open_desktop: {
     element: "#app",
     route: SESSION_ROUTE,
@@ -659,6 +687,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     outageAge: 90_000,
     readySelectors: ["::-p-text(may be out of date)", '[data-thread-anchor="34"]'],
     captureViewport: true,
+  },
+  session_phone_controls: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    checkComposerControls: true,
+    captureViewport: true,
+    readySelectors: ['[data-composer-layout-ready="true"]'],
   },
   session_phone: {
     element: "#app",
