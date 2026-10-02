@@ -20,7 +20,7 @@
 //!
 //! The quotient-contraction proposer (documented in
 //! `devinfra/js/debundle/docs/peel_proposer.md`) builds every proposal
-//! through a single, gated contraction protocol. The factorize
+//! through a single, gated contraction protocol. The proposal
 //! pipeline is:
 //!
 //!   1. `build_seed_quotient` — atomic-unit + spec-module +
@@ -32,7 +32,7 @@
 //!      orphan-into-module and module↔module merges where the
 //!      gate permits.
 //!   3. `emit_proposals` — walks the surviving classes and
-//!      materializes each as a `FactorizeProposal`.
+//!      materializes each as a `ModuleProposal`.
 //!
 //! The quotient is the single source of truth for "which owners are
 //! in which proposed class."
@@ -55,12 +55,12 @@ use crate::quotient::{
 };
 
 /// Default `--size-cap-lines` for every CLI verb that runs the
-/// factorizer. One named constant so the planner verbs and the
+/// proposer. One named constant so the planner verbs and the
 /// internal rebuild paths can't drift apart.
 pub const DEFAULT_SIZE_CAP_LINES: usize = 10_000;
 
 #[derive(Debug, Clone)]
-pub struct PeelFactorizeOptions {
+pub struct ProposalOptions {
     pub owner_graph_path: PathBuf,
     pub modules_root: PathBuf,
     pub source_root: Option<PathBuf>,
@@ -70,9 +70,9 @@ pub struct PeelFactorizeOptions {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct PeelFactorizeReport {
-    pub proposals: Vec<FactorizeProposal>,
-    pub diagnostics: Vec<FactorizeDiagnosticReport>,
+pub struct ProposalsReport {
+    pub proposals: Vec<ModuleProposal>,
+    pub diagnostics: Vec<ProposalDiagnostic>,
     pub size_cap_lines: usize,
     pub residual_owner_count: usize,
     pub active_claimed_binding_count: usize,
@@ -84,7 +84,7 @@ pub struct PeelFactorizeReport {
     pub diagnostic_counts: BTreeMap<String, usize>,
     /// Proposal size histograms. Each bucket includes total count
     /// plus how many proposals in the bucket are landable today.
-    pub size_distributions: FactorizeSizeDistributions,
+    pub size_distributions: ProposalSizeDistributions,
     /// Per-contraction rejection diagnostics from the seeding
     /// protocol (`peel::quotient::build_seed_quotient`). Empty on
     /// well-formed input; populated when the spec declares an
@@ -96,20 +96,20 @@ pub struct PeelFactorizeReport {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct FactorizeSizeDistributions {
-    pub by_members: Vec<FactorizeSizeBucketCount>,
-    pub by_lines: Vec<FactorizeSizeBucketCount>,
+pub struct ProposalSizeDistributions {
+    pub by_members: Vec<ProposalSizeBucketCount>,
+    pub by_lines: Vec<ProposalSizeBucketCount>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct FactorizeSizeBucketCount {
+pub struct ProposalSizeBucketCount {
     pub bucket: String,
     pub count: usize,
     pub landable_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct FactorizeProposal {
+pub struct ModuleProposal {
     pub proposed_module_id: String,
     pub owner_ids: Vec<String>,
     /// Bindings declared by the cell's owners. Excludes
@@ -213,15 +213,15 @@ pub enum PeelCandidateStatus {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FactorizeDiagnosticReason {
+pub enum ProposalDiagnosticReason {
     ExceedsSizeCap,
 }
 
-/// A class the factorizer cannot turn into a proposal. `reason` is
+/// A class the proposer cannot turn into a proposal. `reason` is
 /// the discriminator; there is deliberately no `status` field, which
 /// would be a write-only constant no reader consults.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct FactorizeDiagnosticReport {
+pub struct ProposalDiagnostic {
     pub diagnostic_id: String,
     pub owner_ids: Vec<String>,
     pub binding_ids: Vec<String>,
@@ -229,26 +229,26 @@ pub struct FactorizeDiagnosticReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_line_range: Option<[usize; 2]>,
     pub ordinal_span: usize,
-    pub reason: FactorizeDiagnosticReason,
+    pub reason: ProposalDiagnosticReason,
 }
 
-pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFactorizeReport> {
+pub fn propose_from_files(options: &ProposalOptions) -> Result<ProposalsReport> {
     let graph: OwnerGraphReport = serde_json::from_str(
         &fs::read_to_string(&options.owner_graph_path)
             .with_context(|| format!("reading {}", options.owner_graph_path.display()))?,
     )
     .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
-    analyze_peel_factorize_on_graph(&graph, options)
+    propose_from_graph(&graph, options)
 }
 
-/// [`analyze_peel_factorize`] for callers that already hold the parsed
+/// [`propose_from_files`] for callers that already hold the parsed
 /// `OwnerGraphReport`. The planner verbs load the graph once for their
 /// own report sections; re-reading `owner_graph_path` here would parse
 /// the same multi-megabyte JSON a second time per command.
-pub fn analyze_peel_factorize_on_graph(
+pub fn propose_from_graph(
     graph: &OwnerGraphReport,
-    options: &PeelFactorizeOptions,
-) -> Result<PeelFactorizeReport> {
+    options: &ProposalOptions,
+) -> Result<ProposalsReport> {
     let claims = load_active_claims(&options.modules_root)?;
     let addressable_anonymous_owner_ids = if options.source_root.is_some() {
         Some(addressable_anonymous_statement_owner_ids(
@@ -260,40 +260,40 @@ pub fn analyze_peel_factorize_on_graph(
     } else {
         None
     };
-    factorize_with_context(
+    propose_with_context(
         graph,
         &claims,
         options.size_cap_lines,
-        FactorizeContext {
+        ProposalContext {
             addressable_anonymous_owner_ids,
         },
     )
 }
 
-pub fn factorize(
+pub fn propose(
     graph: &OwnerGraphReport,
     active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
-) -> Result<PeelFactorizeReport> {
-    factorize_with_context(
+) -> Result<ProposalsReport> {
+    propose_with_context(
         graph,
         active_claims,
         size_cap_lines,
-        FactorizeContext::default(),
+        ProposalContext::default(),
     )
 }
 
 #[derive(Debug, Clone, Default)]
-struct FactorizeContext {
+struct ProposalContext {
     addressable_anonymous_owner_ids: Option<BTreeSet<String>>,
 }
 
-fn factorize_with_context(
+fn propose_with_context(
     graph: &OwnerGraphReport,
     active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
-    context: FactorizeContext,
-) -> Result<PeelFactorizeReport> {
+    context: ProposalContext,
+) -> Result<ProposalsReport> {
     let owner_index: HashMap<&str, usize> = graph
         .nodes
         .iter()
@@ -388,7 +388,7 @@ fn factorize_with_context(
     let status_counts = status_counts(&proposals);
     let diagnostic_counts = diagnostic_counts(&diagnostics);
     let size_distributions = size_distributions(&proposals);
-    Ok(PeelFactorizeReport {
+    Ok(ProposalsReport {
         proposals,
         diagnostics,
         size_cap_lines,
@@ -510,7 +510,7 @@ fn class_has_labels(class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>, c
 ///   Residual-origin owners ride as `extension_owner_ids`.
 ///
 /// Classes that fail the post-greedy size cap appear as
-/// `FactorizeDiagnosticReport`s (computed separately in
+/// `ProposalDiagnostic`s (computed separately in
 /// `collect_size_cap_diagnostics`).
 fn emit_proposals(
     quotient: &QuotientGraph,
@@ -519,8 +519,8 @@ fn emit_proposals(
     active_edges: &[(usize, ModulePath)],
     graph: &OwnerGraphReport,
     size_cap_lines: usize,
-    context: &FactorizeContext,
-) -> Vec<FactorizeProposal> {
+    context: &ProposalContext,
+) -> Vec<ModuleProposal> {
     // Candidate classes: every live class that either has owners or
     // carries module labels. We skip classes whose only members are
     // spec-module owners with no residual extensions (= pre-existing
@@ -593,7 +593,7 @@ fn emit_proposals(
         }
     }
 
-    let mut proposals: Vec<FactorizeProposal> = candidate_classes
+    let mut proposals: Vec<ModuleProposal> = candidate_classes
         .iter()
         .zip(edge_stats)
         .enumerate()
@@ -612,7 +612,7 @@ fn emit_proposals(
 
     // Residual-dependency depth sort with source-line tie-break.
     let depths = compute_topo_depths(proposals.len(), residual_edges, &owner_to_candidate);
-    let mut indexed: Vec<(usize, FactorizeProposal)> = proposals.drain(..).enumerate().collect();
+    let mut indexed: Vec<(usize, ModuleProposal)> = proposals.drain(..).enumerate().collect();
     indexed.sort_by(|(li, left), (ri, right)| {
         depths[*li].cmp(&depths[*ri]).then_with(|| {
             let lk = left
@@ -632,7 +632,7 @@ fn emit_proposals(
     // resolve cross-references — which were recorded against pre-sort
     // indices — to the targets' final `proposed_module_id`s.
     let orig_idx_of: Vec<usize> = indexed.iter().map(|(orig_idx, _)| *orig_idx).collect();
-    let mut out: Vec<FactorizeProposal> = indexed.into_iter().map(|(_, p)| p).collect();
+    let mut out: Vec<ModuleProposal> = indexed.into_iter().map(|(_, p)| p).collect();
 
     // Assign final ids for fresh-module proposals (merge/extend ids
     // were fixed at `build_proposal` time from their labels). This must
@@ -699,7 +699,7 @@ struct CandidateEdgeStats {
     active_targets: BTreeSet<ModulePath>,
 }
 
-/// Build a `FactorizeDiagnosticReport(ExceedsSizeCap)` for every
+/// Build a `ProposalDiagnostic(ExceedsSizeCap)` for every
 /// surviving class whose proposal size exceeds the cap. Uses the same
 /// `class_proposal_lines` measure as `emit_proposals`' cap filter, so
 /// a class is either a proposal or a size-cap diagnostic — never both,
@@ -710,7 +710,7 @@ fn collect_size_cap_diagnostics(
     class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>,
     graph: &OwnerGraphReport,
     size_cap_lines: usize,
-) -> Vec<FactorizeDiagnosticReport> {
+) -> Vec<ProposalDiagnostic> {
     let mut diagnostics = Vec::new();
     for c in quotient.iter_classes() {
         if class_proposal_lines(quotient, graph, c, class_has_labels(class_to_labels, c))
@@ -738,10 +738,10 @@ fn collect_size_cap_diagnostics(
         }
         owner_ids.sort();
         let idx = diagnostics.len();
-        diagnostics.push(FactorizeDiagnosticReport {
+        diagnostics.push(ProposalDiagnostic {
             diagnostic_id: format!(
                 "diagnostic:{}_{idx:04}",
-                diagnostic_reason_key(FactorizeDiagnosticReason::ExceedsSizeCap),
+                diagnostic_reason_key(ProposalDiagnosticReason::ExceedsSizeCap),
             ),
             owner_ids,
             binding_ids: binding_ids.into_iter().collect(),
@@ -753,7 +753,7 @@ fn collect_size_cap_diagnostics(
             ),
             source_line_range: line_range.into_array(),
             ordinal_span: max_ordinal.saturating_sub(min_ordinal),
-            reason: FactorizeDiagnosticReason::ExceedsSizeCap,
+            reason: ProposalDiagnosticReason::ExceedsSizeCap,
         });
     }
     diagnostics
@@ -802,8 +802,8 @@ fn build_proposal(
     quotient: &QuotientGraph,
     edges: CandidateEdgeStats,
     graph: &OwnerGraphReport,
-    context: &FactorizeContext,
-) -> FactorizeProposal {
+    context: &ProposalContext,
+) -> ModuleProposal {
     // Labels arrive sorted (BTreeSet over canonical `ModulePath`).
     // Convert to wire strings once, at this boundary; identity logic
     // above this point is type-safe.
@@ -914,7 +914,7 @@ fn build_proposal(
         );
     }
     let landable_today = addressable && status == PeelCandidateStatus::PeelableNow;
-    FactorizeProposal {
+    ModuleProposal {
         proposed_module_id,
         owner_ids,
         binding_ids: binding_ids.into_iter().collect(),
@@ -948,7 +948,7 @@ struct AnonymousAddressability {
 fn anonymous_addressability(
     owner_idxs: &[usize],
     graph: &OwnerGraphReport,
-    context: &FactorizeContext,
+    context: &ProposalContext,
 ) -> AnonymousAddressability {
     let mut unaddressable_owner_ids = Vec::new();
     let mut notes = BTreeSet::<String>::new();
@@ -985,7 +985,7 @@ fn anonymous_addressability(
     }
 }
 
-fn status_counts(proposals: &[FactorizeProposal]) -> BTreeMap<String, usize> {
+fn status_counts(proposals: &[ModuleProposal]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for proposal in proposals {
         *counts
@@ -995,7 +995,7 @@ fn status_counts(proposals: &[FactorizeProposal]) -> BTreeMap<String, usize> {
     counts
 }
 
-fn diagnostic_counts(diagnostics: &[FactorizeDiagnosticReport]) -> BTreeMap<String, usize> {
+fn diagnostic_counts(diagnostics: &[ProposalDiagnostic]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for diagnostic in diagnostics {
         *counts
@@ -1005,8 +1005,8 @@ fn diagnostic_counts(diagnostics: &[FactorizeDiagnosticReport]) -> BTreeMap<Stri
     counts
 }
 
-fn size_distributions(proposals: &[FactorizeProposal]) -> FactorizeSizeDistributions {
-    FactorizeSizeDistributions {
+fn size_distributions(proposals: &[ModuleProposal]) -> ProposalSizeDistributions {
+    ProposalSizeDistributions {
         by_members: bucket_counts(proposals, |proposal| proposal.owner_ids.len(), size_bucket),
         by_lines: bucket_counts(
             proposals,
@@ -1017,10 +1017,10 @@ fn size_distributions(proposals: &[FactorizeProposal]) -> FactorizeSizeDistribut
 }
 
 fn bucket_counts(
-    proposals: &[FactorizeProposal],
-    value: fn(&FactorizeProposal) -> usize,
+    proposals: &[ModuleProposal],
+    value: fn(&ModuleProposal) -> usize,
     bucket: fn(usize) -> &'static str,
-) -> Vec<FactorizeSizeBucketCount> {
+) -> Vec<ProposalSizeBucketCount> {
     const SIZE_BUCKETS: &[&str] = &[
         "0", "1", "2", "3-5", "6-10", "11-20", "21-50", "51-100", "101-250", "251-500", "501-1000",
         ">1000",
@@ -1038,7 +1038,7 @@ fn bucket_counts(
         .filter_map(|bucket| {
             counts
                 .get(bucket)
-                .map(|(count, landable_count)| FactorizeSizeBucketCount {
+                .map(|(count, landable_count)| ProposalSizeBucketCount {
                     bucket: (*bucket).to_string(),
                     count: *count,
                     landable_count: *landable_count,
@@ -1071,9 +1071,9 @@ fn status_key(status: PeelCandidateStatus) -> &'static str {
     }
 }
 
-fn diagnostic_reason_key(reason: FactorizeDiagnosticReason) -> &'static str {
+fn diagnostic_reason_key(reason: ProposalDiagnosticReason) -> &'static str {
     match reason {
-        FactorizeDiagnosticReason::ExceedsSizeCap => "exceeds_size_cap",
+        ProposalDiagnosticReason::ExceedsSizeCap => "exceeds_size_cap",
     }
 }
 
@@ -1099,7 +1099,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = factorize(&graph, &no_claims(), 10_000).unwrap();
+        let report = propose(&graph, &no_claims(), 10_000).unwrap();
         assert_eq!(report.residual_owner_count, 2);
         assert_eq!(report.proposals.len(), 2);
         assert!(report.proposals.iter().all(|p| p.owner_ids.len() == 1));
@@ -1110,7 +1110,7 @@ mod tests {
         );
         assert_eq!(
             report.size_distributions.by_members,
-            vec![FactorizeSizeBucketCount {
+            vec![ProposalSizeBucketCount {
                 bucket: "1".to_string(),
                 count: 2,
                 landable_count: 2,
@@ -1118,7 +1118,7 @@ mod tests {
         );
         assert_eq!(
             report.size_distributions.by_lines,
-            vec![FactorizeSizeBucketCount {
+            vec![ProposalSizeBucketCount {
                 bucket: "6-10".to_string(),
                 count: 2,
                 landable_count: 2,
@@ -1140,7 +1140,7 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let report = factorize(&graph, &no_claims(), 10_000).unwrap();
+        let report = propose(&graph, &no_claims(), 10_000).unwrap();
         assert!(
             report.proposals.iter().any(|p| p.binding_ids
                 == vec!["a".to_string(), "b".to_string()]
@@ -1170,7 +1170,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = factorize(&graph, &no_claims(), 10_000).unwrap();
+        let report = propose(&graph, &no_claims(), 10_000).unwrap();
         let blocked = report
             .proposals
             .iter()
@@ -1206,7 +1206,7 @@ mod tests {
         // Size buckets count only the landable proposal as landable.
         assert_eq!(
             report.size_distributions.by_members,
-            vec![FactorizeSizeBucketCount {
+            vec![ProposalSizeBucketCount {
                 bucket: "1".to_string(),
                 count: 2,
                 landable_count: 1,
@@ -1228,7 +1228,7 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
         );
-        let report = factorize(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap();
+        let report = propose(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap();
         let proposal = report
             .proposals
             .iter()
@@ -1294,7 +1294,7 @@ mod tests {
             // consumer and bridge into one class.
             vec![atomic_edge("atomic_edge:0", "atomic:2", "atomic:0")],
         );
-        let report = factorize(
+        let report = propose(
             &graph,
             &claims(&[("foo", "features/foo"), ("baz", "features/baz")]),
             10_000,
@@ -1381,7 +1381,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = factorize(&graph, &no_claims(), 10_000).unwrap();
+        let report = propose(&graph, &no_claims(), 10_000).unwrap();
         let proposal = report
             .proposals
             .iter()
@@ -1421,7 +1421,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = factorize(&graph, &claims(&[("a", "domains/system/ids")]), 10_000).unwrap();
+        let report = propose(&graph, &claims(&[("a", "domains/system/ids")]), 10_000).unwrap();
         assert!(
             report.proposals.iter().all(|p| p.merge_into.is_none()),
             "expected no self-merge proposal from two spellings of one module: {report:#?}",
@@ -1433,7 +1433,7 @@ mod tests {
         // A non-residual owner whose `destination` key is absent from
         // the module table (`quotient.nodes`) models a truncated /
         // version-skewed `owner_graph.json` deserialized from disk by
-        // `analyze_peel_factorize`. `is_residual` returns false for an
+        // `propose_from_files`. `is_residual` returns false for an
         // unknown key, so the owner survives the residual filter and
         // reaches `active_module_label`. The proposer must surface a
         // clean `Err` (not panic) so the CLI (`debundle modules
@@ -1453,7 +1453,7 @@ mod tests {
             .retain(|entry| entry.key != a.destination);
         assert!(graph.module(&a.destination).is_none());
 
-        let result = factorize(&graph, &no_claims(), 10_000);
+        let result = propose(&graph, &no_claims(), 10_000);
         let err = result.expect_err("missing destination must be a clean error, not a panic");
         let message = format!("{err:#}");
         assert!(
@@ -1472,7 +1472,7 @@ mod tests {
             vec![atomic_unit_for("atomic:0", &[&import])],
             vec![],
         );
-        let report = factorize(&graph, &no_claims(), 10_000).unwrap();
+        let report = propose(&graph, &no_claims(), 10_000).unwrap();
         let proposal = report.proposals.first().expect("anonymous proposal");
         assert_eq!(
             proposal.anonymous_statement_owner_ids,
@@ -1502,11 +1502,11 @@ mod tests {
             vec![atomic_unit_for("atomic:0", &[&effect])],
             vec![],
         );
-        let report = factorize_with_context(
+        let report = propose_with_context(
             &graph,
             &no_claims(),
             10_000,
-            FactorizeContext {
+            ProposalContext {
                 addressable_anonymous_owner_ids: Some(BTreeSet::from(["owner:effect".to_string()])),
             },
         )
@@ -1527,11 +1527,11 @@ mod tests {
             vec![atomic_unit_for("atomic:0", &[&effect])],
             vec![],
         );
-        let report = factorize_with_context(
+        let report = propose_with_context(
             &graph,
             &no_claims(),
             10_000,
-            FactorizeContext {
+            ProposalContext {
                 addressable_anonymous_owner_ids: Some(BTreeSet::new()),
             },
         )
@@ -1573,7 +1573,7 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let report = factorize(&graph, &no_claims(), 5).unwrap();
+        let report = propose(&graph, &no_claims(), 5).unwrap();
         assert!(
             report.proposals.is_empty(),
             "oversized owners should not appear as proposals: {report:#?}",
@@ -1592,7 +1592,7 @@ mod tests {
             report
                 .diagnostics
                 .iter()
-                .all(|diagnostic| diagnostic.reason == FactorizeDiagnosticReason::ExceedsSizeCap),
+                .all(|diagnostic| diagnostic.reason == ProposalDiagnosticReason::ExceedsSizeCap),
         );
     }
 }

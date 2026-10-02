@@ -68,6 +68,26 @@ fn run_case(case: &MinimizedSelectorCase) {
 
     let out = run_synthesize_selectors(&modules, &arg_refs);
     let parsed = parse_stdout_json(&out);
+    // These golden selectors contain actual run holes, not keyword-like text
+    // in literals. Reporting must include the holes the renderer emitted.
+    for candidate in parsed["candidates"].as_array().unwrap() {
+        let Some(source) = candidate["match_source"].as_str() else {
+            continue;
+        };
+        for keyword in ["ARGS", "CASE_REST"] {
+            if source.contains(keyword) {
+                assert!(
+                    candidate["rewritten_holes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|hole| hole.as_str() == Some(keyword)),
+                    "{}: missing {keyword} in {candidate}",
+                    case.name,
+                );
+            }
+        }
+    }
     let changed = parsed["summary"]["changed_candidates"]
         .as_u64()
         .unwrap_or(0);

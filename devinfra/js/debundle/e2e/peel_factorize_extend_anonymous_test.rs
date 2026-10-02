@@ -1,4 +1,4 @@
-//! End-to-end coverage for the peel factorizer extending a
+//! End-to-end coverage for the peel proposer extending a
 //! user-declared module with anonymous top-level statements whose
 //! only cross-module dependency is into that module.
 //!
@@ -8,7 +8,7 @@
 //! property installs, registry calls — none of which declare a new
 //! binding, all of which read `Foo` eagerly. When the spec author
 //! peeled `Foo` into `features/foo`, those anonymous statements
-//! stayed behind in residual. The factorizer should propose
+//! stayed behind in residual. The proposer should propose
 //! migrating them into the existing module as
 //! `anonymous_statements:` entries; without this routing the spec
 //! author has to spot them by hand.
@@ -21,7 +21,7 @@
 
 use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
-use peel::factorize::factorize;
+use peel::propose::propose;
 use spec::ModulePath;
 use std::collections::BTreeMap;
 
@@ -52,7 +52,7 @@ fn extend_existing_module_with_orphaned_decorator_calls() {
     // `features/foo` claims `Foo`. The three property installs
     // are anonymous side-effect statements that read `Foo`
     // eagerly. Their only cross-module constraining edge is to
-    // `Foo`'s owner — i.e., into `features/foo`. The factorizer
+    // `Foo`'s owner — i.e., into `features/foo`. The proposer
     // must propose extending `features/foo` with those three
     // owners.
     let source = r#"const anchor = "anchor";
@@ -72,7 +72,7 @@ export { anchor, Foo };
             logical_module("features/foo", &[Member::new("Foo")]),
         ],
     );
-    let report = factorize(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000).unwrap();
+    let report = propose(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000).unwrap();
 
     let extension = report
         .proposals
@@ -80,7 +80,7 @@ export { anchor, Foo };
         .find(|p| p.extends_module_id.as_deref() == Some("features/foo"))
         .unwrap_or_else(|| {
             panic!(
-                "factorizer must propose extending `features/foo` with the three orphaned anonymous statements; got: {report:#?}",
+                "proposer must propose extending `features/foo` with the three orphaned anonymous statements; got: {report:#?}",
             )
         });
     assert_eq!(
@@ -118,7 +118,7 @@ export { anchor, Foo };
 #[test]
 fn anonymous_statement_with_external_deps_is_not_promoted_to_extension() {
     // `Bar.use(Foo)` reads bindings from BOTH active modules. The
-    // extension target is ambiguous — the factorizer must NOT
+    // extension target is ambiguous — the proposer must NOT
     // route it into a single-module extension.
     let source = r#"const anchor = "anchor";
 class Foo {}
@@ -137,7 +137,7 @@ export { anchor, Foo, Bar };
             logical_module("features/bar", &[Member::new("Bar")]),
         ],
     );
-    let report = factorize(
+    let report = propose(
         &report_graph,
         &claims(&[("Foo", "features/foo"), ("Bar", "features/bar")]),
         10_000,
@@ -163,7 +163,7 @@ export { anchor, Foo, Bar };
 fn anonymous_statement_with_only_intra_residual_deps_is_not_promoted() {
     // The anonymous statement `helper.install()` reads a residual
     // binding `helper`. `Foo` exists in `features/foo` but the
-    // anon never touches it. The factorizer must NOT promote the
+    // anon never touches it. The proposer must NOT promote the
     // anon into a `features/foo` extension.
     let source = r#"const anchor = "anchor";
 class Foo {}
@@ -179,7 +179,7 @@ export { anchor, Foo };
             logical_module("features/foo", &[Member::new("Foo")]),
         ],
     );
-    let report = factorize(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000).unwrap();
+    let report = propose(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000).unwrap();
 
     // No extension of `features/foo` should be proposed for the
     // intra-residual anon.

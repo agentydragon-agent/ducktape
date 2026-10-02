@@ -96,7 +96,7 @@ impl MemberRequest {
     /// member form (logical-module member, chunk_renames member)
     /// propagate the same way — they are semantic trust assertions,
     /// not ownership claims; binding patches routed through
-    /// chunk_renames still do not force factorizer grouping.
+    /// chunk_renames still do not force proposer grouping.
     pub(super) fn has_analysis_hints(&self) -> bool {
         self.purity != MemberPurity::Default
             || self.effect != MemberEffect::Default

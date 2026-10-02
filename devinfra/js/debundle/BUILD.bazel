@@ -3,7 +3,9 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
 load(":optimized_cc_library.bzl", "optimized_cc_library")
 
-package(default_visibility = ["//visibility:public"])
+# Rust libraries are implementation details shared with the e2e subpackage.
+# Corpus integrations use the public executable / debundler flag below.
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
 
 exports_files([
     "README.md",
@@ -39,6 +41,12 @@ rust_library(
     name = "source_match_holes",
     srcs = ["selectors/matching/source_match_holes.rs"],
     crate_root = "selectors/matching/source_match_holes.rs",
+    edition = "2024",
+)
+
+rust_test(
+    name = "source_match_holes_test",
+    crate = ":source_match_holes",
     edition = "2024",
 )
 
@@ -449,8 +457,8 @@ rust_library(
         "chunk_factorization.rs",
         "counted_digraph.rs",
         "esm_import_order.rs",
+        "factorization_inputs.rs",
         "gate.rs",
-        "gate_chunk_analysis.rs",
         "realizability/condensation_order.rs",
         "realizability/condensation_order_proptest.rs",
         "realizability/esm_simulator.rs",
@@ -671,10 +679,10 @@ rust_test(
 rust_library(
     name = "peel",
     srcs = [
-        "peel/factorize.rs",
         "peel/gate_differential_test.rs",
         "peel/mod.rs",
         "peel/plan.rs",
+        "peel/propose.rs",
         "peel/quotient.rs",
         "peel/quotient_integration_test.rs",
     ],
@@ -1168,6 +1176,7 @@ rust_binary(
     srcs = ["main.rs"],
     crate_root = "main.rs",
     edition = "2024",
+    visibility = ["//visibility:public"],
     deps = [
         ":cli",
         ":gate",

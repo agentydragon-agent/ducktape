@@ -24,7 +24,7 @@ use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
 use crate::validate::{ValidateArgs, run_validate_cmd};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Parser, Subcommand};
-use peel::factorize::DEFAULT_SIZE_CAP_LINES;
+use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
     PlanWorkArgs, SelectionKind, SourceSliceArgs, UnitsArgs, print_report, run_explain_report,
@@ -669,7 +669,7 @@ pub struct DescribeArgs {
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
 
-    /// Also run the proposal factorizer to annotate matching proposals and
+    /// Also run the proposal proposer to annotate matching proposals and
     /// diagnostics. This is intentionally opt-in because it is expensive on
     /// large graphs.
     #[arg(long = "include-proposals")]

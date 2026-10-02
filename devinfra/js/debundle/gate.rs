@@ -12,14 +12,14 @@
 mod chunk_factorization;
 mod counted_digraph;
 mod esm_import_order;
-mod gate_chunk_analysis;
+mod factorization_inputs;
 mod realizability;
 mod report_builders;
 mod validation;
 
 pub use chunk_factorization::ChunkFactorization;
 pub use esm_import_order::EsmImportOrder;
-pub use gate_chunk_analysis::ChunkAnalysis;
+pub use factorization_inputs::FactorizationInputs;
 pub use realizability::{
     LadderDecision, PartitionDelta, RealizabilityIndex, RealizabilityVerdict, SccDiagnosis,
     SccRejection, check_realizability, check_realizability_touching,

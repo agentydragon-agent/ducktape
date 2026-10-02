@@ -48,7 +48,6 @@ use crate::minimize::{
     minimize_class_selector_candidates, minimize_function_selector_candidates,
     minimize_var_group_selector, minimize_var_group_selector_candidates,
 };
-use crate::render::holes_present;
 
 #[derive(Debug, Clone)]
 pub struct SelectorCodemodConfig {
@@ -1106,7 +1105,12 @@ fn merge_same_shape_run(
         synthesized: SynthesizedSelectorGroup {
             body_idx: first.synthesized.body_idx,
             target_bindings: targets,
-            rewritten_holes: holes_present(&match_source).into_iter().collect(),
+            rewritten_holes: run
+                .iter()
+                .flat_map(|group| group.synthesized.rewritten_holes.iter().cloned())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
             match_source,
             alternatives: Vec::new(),
         },

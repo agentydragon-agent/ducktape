@@ -629,7 +629,7 @@ fn apply_rebind_folds_from_chunk_analysis(
     builder.apply_rebind_folds(folds);
 }
 
-/// Build the `PlannedModule` list the factorizer
+/// Build the `PlannedModule` list the proposer
 /// consumes from the per-chunk `ModulePlan`s, then append the
 /// "anon residual" sentinel that holds the partition's default
 /// destination.
