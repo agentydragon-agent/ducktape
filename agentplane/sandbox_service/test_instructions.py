@@ -21,7 +21,9 @@ def test_explicit_instructions_do_not_require_service_urls(configured: str) -> N
     assert resolved_agent_instructions(configured, egress_api_url=None, actions_service_url=None) == configured
 
 
-@pytest.mark.parametrize("egress,actions", [(None, None), ("http://egress.test", None), (None, "http://actions.test")])
+@pytest.mark.parametrize(
+    ("egress", "actions"), [(None, None), ("http://egress.test", None), (None, "http://actions.test")]
+)
 def test_bundled_instructions_require_both_service_urls(egress: str | None, actions: str | None) -> None:
     with pytest.raises(ValueError, match="require"):
         resolved_agent_instructions(None, egress_api_url=egress, actions_service_url=actions)

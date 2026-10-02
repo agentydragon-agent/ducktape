@@ -504,7 +504,6 @@ py_test(
         "//agentplane/app/agent_runtime/thread:store",
         "//agentplane/app/agent_runtime/view:content",
         "//agentplane/app/testing:kubernetes",
-        "//agentplane/sandbox_service:instructions",
         "//agentplane/sandbox_service:inventory",
         "//agentplane/sandbox_service:session_config",
         "//util:net",

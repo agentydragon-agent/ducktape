@@ -270,3 +270,15 @@ py_library(
         "@pypi//protobuf",
     ],
 )
+
+py_test(
+    name = "test_instructions",
+    srcs = ["test_instructions.py"],
+    deps = [
+        ":conftest",
+        ":instructions",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

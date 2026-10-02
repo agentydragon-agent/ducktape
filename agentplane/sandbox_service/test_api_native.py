@@ -283,6 +283,10 @@ async def test_http_only_launch_and_resume_preserve_retained_configuration(
         rows = listed.json()["sessions"]
         assert len(rows) == 1
         assert ParseDict(rows[0], protocol_pb2.SessionSummary()).spec == attached.spec
+        # The current binding now names a different bootstrap. Explicit initialization conflicts,
+        # rather than rerunning it or pretending the original Sandbox initialization was replaced.
+        conflict = await restarted.post("/v1/sandboxes/initialize", json={"destination": sandbox_destination})
+        assert conflict.status_code == 409, conflict.text
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
 
@@ -307,6 +311,53 @@ async def test_delivery_authority_does_not_grant_management(
         response = await api.post(route, json={"destination": target})
         assert response.status_code == 403, response.text
     assert cluster.fake.pod_reads == 0
+
+
+@pytest.mark.parametrize("manager", [False, True])
+async def test_cross_owner_management_requires_both_grants(
+    resources: SessionResources, cluster: Cluster, destination: dict[str, object], manager: bool
+) -> None:
+    account = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-control-service")
+    cluster.fake.tokens[TOKEN] = TokenVerdict(
+        username=f"system:serviceaccount:{account.namespace}:{account.name}",
+        pod_name="test-control-pod",
+        pod_uid="test-control-pod-uid",
+        audiences=(AUDIENCE,),
+    )
+    configured = replace(
+        resources,
+        destinations=replace(resources.destinations, trusted_accounts=frozenset() if manager else frozenset({account})),
+        manager_accounts=frozenset({account}) if manager else frozenset(),
+        platform_instructions="Test guidance",
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_app(configured)),
+        base_url="http://test-sandbox-service",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    ) as caller:
+        response = await caller.post("/v1/sessions/open", json={"destination": destination})
+        assert response.status_code == 403, response.text
+    assert cluster.fake.pod_reads == 0
+
+
+async def test_failed_setup_cannot_be_resumed(
+    manager_api: httpx.AsyncClient, destination: dict[str, object], spec: protocol_pb2.SessionSpec
+) -> None:
+    opened = await manager_api.post(
+        "/v1/sessions/open",
+        json={"destination": destination, "spec": MessageToDict(spec), "setup_script": "exit 42"},
+    )
+    assert opened.status_code == 200, opened.text
+    attached = ParseDict(opened.json(), protocol_pb2.Attached())
+    async with asyncio.timeout(15):
+        while attached.setup_state == protocol_pb2.SETUP_STATE_RUNNING:
+            await asyncio.sleep(0.05)
+            inspected = await manager_api.post("/v1/sessions/inspect", json={"destination": destination})
+            assert inspected.status_code == 200, inspected.text
+            attached = ParseDict(inspected.json(), protocol_pb2.Attached())
+    assert attached.setup_state == protocol_pb2.SETUP_STATE_FAILED
+    resumed = await manager_api.post("/v1/sessions/resume", json={"destination": destination})
+    assert resumed.status_code == 409, resumed.text
 
 
 async def test_invalid_launch_and_failed_bootstrap_never_create(
