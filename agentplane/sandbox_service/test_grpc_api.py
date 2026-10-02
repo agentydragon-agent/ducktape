@@ -1,6 +1,7 @@
 """Real gRPC and TokenReview, with a controllable runner peer for transport failure edges."""
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
@@ -20,11 +21,19 @@ from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.client import FollowLeaseExpiredError, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver, SandboxDestination
 from agentplane.sandbox_service.grpc_api import Resources
-from agentplane.sandbox_service.testing.grpc_service import service
+from agentplane.sandbox_service.inventory import (
+    KUBERNETES_GRANTS_ANNOTATION,
+    KUBERNETES_GRANTS_READY_ANNOTATION,
+    PROVISIONING_ANNOTATION,
+    ProvisioningState,
+)
+from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant, RoleBindingGrant, RoleRef
+from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -128,15 +137,16 @@ def resources(cluster: Cluster, peer: Peer) -> Resources:
 
 
 @pytest.fixture
-async def remote(resources: Resources, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
-    token_file = tmp_path / "token"
-    token_file.write_text(TOKEN)
-    async with service(resources) as target:
-        client = SandboxServiceClient(target, namespace=SANDBOX_NAMESPACE, token_file=token_file)
-        try:
-            yield client
-        finally:
-            await client.close()
+def token_file(tmp_path: Path) -> Path:
+    path = tmp_path / "token"
+    path.write_text(TOKEN)
+    return path
+
+
+@pytest.fixture
+async def remote(resources: Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
+    async with service_client(resources, token_file) as client:
+        yield client
 
 
 def admission(command: command_pb2.Command, cursor: int) -> event_log_pb2.EventEntry:
@@ -307,7 +317,7 @@ async def test_management_requires_explicit_authority(
 
 @pytest.mark.parametrize("manager", [False, True])
 async def test_cross_owner_management_requires_both_grants(
-    resources: Resources, remote: SandboxServiceClient, cluster: Cluster, peer: Peer, manager: bool
+    resources: Resources, token_file: Path, cluster: Cluster, peer: Peer, manager: bool
 ) -> None:
     account = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-control-service")
     cluster.fake.tokens[TOKEN] = TokenVerdict(
@@ -322,22 +332,50 @@ async def test_cross_owner_management_requires_both_grants(
         manager_accounts=frozenset({account}) if manager else frozenset(),
         platform_instructions="Test guidance",
     )
-    async with service(configured) as target:
-        caller = SandboxServiceClient(target, namespace=SANDBOX_NAMESPACE, token_file=remote.token_file)
-        try:
-            with pytest.raises(ServiceError) as rejected:
-                await caller.runner(DESTINATION).open("session", {})
-            assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
-        finally:
-            await caller.close()
+    async with service_client(configured, token_file) as caller:
+        with pytest.raises(ServiceError) as rejected:
+            await caller.runner(DESTINATION).open("session", {})
+        assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
     assert cluster.fake.pod_reads == 0
+    assert peer.attachments.empty()
+
+
+@pytest.mark.parametrize("pending_launch", [False, True])
+async def test_open_and_resume_refuse_unready_grants_without_app(
+    resources: Resources, token_file: Path, cluster: Cluster, peer: Peer, pending_launch: bool
+) -> None:
+    annotations = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})
+    if pending_launch:
+        annotations[PROVISIONING_ANNOTATION] = "{}"
+    else:
+        grant = ResolvedGrant(
+            name="config",
+            grant=RoleBindingGrant(
+                kind="RoleBinding", namespace=SANDBOX_NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
+            ),
+        )
+        annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([grant.model_dump(mode="json")])
+        annotations[KUBERNETES_GRANTS_READY_ANNOTATION] = "false"
+    assert (await cluster.inventory.get(SANDBOX)).state is ProvisioningState.WAITING_FOR_GRANTS
+    configured = replace(resources, manager_accounts=frozenset({OWNER}), platform_instructions="Test guidance")
+    async with service_client(configured, token_file) as caller:
+        runner = caller.runner(DESTINATION)
+        with pytest.raises(ServiceError) as opened:
+            await runner.open("session", {"harness": "HARNESS_CODEX", "cwd": "/w", "model": "test"})
+        assert opened.value.code == grpc.StatusCode.UNAVAILABLE
+        with pytest.raises(ServiceError) as resumed:
+            await runner.resume("session")
+        assert resumed.value.code == grpc.StatusCode.UNAVAILABLE
     assert peer.attachments.empty()
 
 
 @pytest.mark.parametrize(
     "command",
-    [command_pb2.Command(), command_pb2.Command(command_id="missing-operation"),
-     command_pb2.Command(submit_input=command_pb2.SubmitInput(text="missing-id"))],
+    [
+        command_pb2.Command(),
+        command_pb2.Command(command_id="missing-operation"),
+        command_pb2.Command(submit_input=command_pb2.SubmitInput(text="missing-id")),
+    ],
 )
 async def test_invalid_command_is_not_submitted(
     remote: SandboxServiceClient, peer: Peer, cluster: Cluster, command: command_pb2.Command

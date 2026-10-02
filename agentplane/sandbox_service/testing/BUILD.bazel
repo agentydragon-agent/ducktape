@@ -38,6 +38,7 @@ py_library(
     testonly = True,
     srcs = ["grpc_service.py"],
     deps = [
+        "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:grpc_api",
         "@pypi//grpcio",
     ],

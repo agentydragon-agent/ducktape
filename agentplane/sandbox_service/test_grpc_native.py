@@ -3,7 +3,6 @@
 import asyncio
 import shlex
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -25,7 +24,7 @@ from agentplane.sandbox_service.destinations import DestinationResolver, Sandbox
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.session_config import Harness, SandboxBinding, ThreadDefaults
-from agentplane.sandbox_service.testing.grpc_service import service
+from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
@@ -69,19 +68,9 @@ def token_file(tmp_path: Path) -> Path:
     return path
 
 
-@asynccontextmanager
-async def connected(resources: Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
-    async with service(resources) as target:
-        client = SandboxServiceClient(target, namespace=SANDBOX_NAMESPACE, token_file=token_file)
-        try:
-            yield client
-        finally:
-            await client.close()
-
-
 @pytest.fixture
 async def remote(resources: Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
-    async with connected(resources, token_file) as client:
+    async with service_client(resources, token_file) as client:
         yield client
 
 
@@ -140,19 +129,22 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
 ) -> None:
     bootstrap_marker = workspace / "bootstrap-runs"
     setup_marker = workspace / "setup-runs"
-    set_binding(cluster, SandboxBinding(
-        bootstrap=f"printf B >> {shlex.quote(str(bootstrap_marker))}",
-        thread_defaults=ThreadDefaults(
-            harness=Harness(runner_pb2.Harness.Name(spec.harness)),
-            model=spec.model,
-            reasoning_effort=spec.reasoning_effort,
-            cwd=spec.cwd,
-            instructions="Test task guidance.",
-            setup_script=f"printf S >> {shlex.quote(str(setup_marker))}",
+    set_binding(
+        cluster,
+        SandboxBinding(
+            bootstrap=f"printf B >> {shlex.quote(str(bootstrap_marker))}",
+            thread_defaults=ThreadDefaults(
+                harness=Harness(runner_pb2.Harness.Name(spec.harness)),
+                model=spec.model,
+                reasoning_effort=spec.reasoning_effort,
+                cwd=spec.cwd,
+                instructions="Test task guidance.",
+                setup_script=f"printf S >> {shlex.quote(str(setup_marker))}",
+            ),
         ),
-    ))
+    )
     sandbox_request = protocol_pb2.SandboxRequest(destination=wire.destination_proto(DESTINATION))
-    async with connected(resources, token_file) as remote:
+    async with service_client(resources, token_file) as remote:
         runner = remote.runner(DESTINATION)
         for _ in range(2):
             initialized = await remote.unary(remote.stub.InitializeSandbox, sandbox_request)
@@ -206,7 +198,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
             stopped.cancel()
     # Stop the service, change its configuration and stored defaults, and recover solely from the runner.
     set_binding(cluster, SandboxBinding(bootstrap="exit 42", thread_defaults=ThreadDefaults(model="changed")))
-    async with connected(replace(resources, platform_instructions="New platform guidance."), token_file) as restarted:
+    async with service_client(replace(resources, platform_instructions="New platform guidance."), token_file) as restarted:
         runner = restarted.runner(DESTINATION)
         resumed = await runner.resume(SESSION)
         assert resumed.spec == opened.spec

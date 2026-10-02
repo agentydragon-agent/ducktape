@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import socket
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import replace
@@ -42,12 +41,10 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import (
-    KUBERNETES_GRANTS_ANNOTATION,
-    KUBERNETES_GRANTS_READY_ANNOTATION,
     SandboxInventory,
 )
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
-from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant, RoleBindingGrant, RoleRef
+from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -560,72 +557,6 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
     )
     assert cleared.status_code == 201, cleared.text
     assert setup_scripts == [None, ""]
-
-
-def _select_unready_kubernetes_grant(custom_objects: FakeCustomObjectsApi, sandbox_name: str = "live") -> None:
-    annotations = custom_objects.objects[("sandboxes", sandbox_name)]["metadata"].setdefault("annotations", {})
-    annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps(
-        [
-            ResolvedGrant(
-                name="config",
-                grant=RoleBindingGrant(
-                    kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
-                ),
-            ).model_dump(mode="json")
-        ]
-    )
-    annotations[KUBERNETES_GRANTS_READY_ANNOTATION] = "false"
-
-
-def test_session_creation_waits_for_selected_kubernetes_grants(
-    client: TestClient, bridge: RunnerBridge, custom_objects: FakeCustomObjectsApi, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _select_unready_kubernetes_grant(custom_objects)
-    calls: list[tuple[str, str]] = []
-
-    async def open_session(
-        name: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
-    ) -> protocol_pb2.Attached:
-        calls.append(("open", name))
-        return protocol_pb2.Attached(session_id=session_id, spec=spec)
-
-    monkeypatch.setattr(bridge, "open_session", open_session)
-    response = client.post(
-        "/sandboxes/live/sessions",
-        json={"session_id": "waiting", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "m"}},
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "Kubernetes grants are not ready"
-    assert calls == []
-
-
-def test_thread_resume_waits_for_selected_kubernetes_grants(
-    client: TestClient,
-    bridge: RunnerBridge,
-    store: ThreadStore,
-    custom_objects: FakeCustomObjectsApi,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    thread_id = UUID("69ab219a-3cc1-4376-9159-4b504ed7ed85")
-
-    async def get_thread(_thread_id: UUID) -> Any:
-        return SimpleNamespace(sandbox="live", archived=False, harness=Harness.CLAUDE, cwd="/w")
-
-    monkeypatch.setattr(store, "get_thread", get_thread)
-    _select_unready_kubernetes_grant(custom_objects)
-    calls: list[UUID] = []
-
-    async def resume_thread(thread: UUID, *, expected_harness: str, expected_cwd: str) -> protocol_pb2.Attached:
-        calls.append(thread)
-        return protocol_pb2.Attached(session_id="waiting-resume")
-
-    monkeypatch.setattr(bridge, "resume_thread", resume_thread)
-    response = client.post(f"/threads/{thread_id}/resume")
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "Kubernetes grants are not ready"
-    assert calls == []
 
 
 def test_thread_resume_for_regular_sandbox_reaches_the_bridge(

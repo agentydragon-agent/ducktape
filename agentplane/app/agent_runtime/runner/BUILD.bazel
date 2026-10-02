@@ -28,8 +28,6 @@ py_library(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",
         "//agentplane/runner:protocol_pb2",
-        "//agentplane/sandbox_service:client",
-        "//agentplane/sandbox_service:inventory",
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//protobuf",

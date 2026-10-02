@@ -19,32 +19,12 @@ from agentplane.app.changes import Changes
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerError
-from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.inventory import SandboxInventory, SandboxNotFoundError, SandboxView
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
 COMMAND_ADMISSION_S = 15
 ADMISSION_REREAD_S = 2
-
-
-async def ready_sandbox_for_session(
-    inventory: SandboxInventory | SandboxServiceClient, name: str
-) -> SandboxView | None:
-    """Return an existing Sandbox only after its selected Kubernetes grants are provisioned.
-
-    This is an advisory UI check. The service revalidates every pinned destination, even
-    when this read has no row; it never falls back to direct runner access. Sandboxes
-    without selected grants are unaffected.
-    """
-    try:
-        sandbox = await inventory.get(name)
-    except SandboxNotFoundError:
-        return None
-    if sandbox.kubernetes_grants and not sandbox.kubernetes_grants_ready:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Kubernetes grants are not ready")
-    return sandbox
 
 
 class MalformedMessageError(Exception):
@@ -231,8 +211,7 @@ async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def open_session(bridge: Bridge, name: str, body: NewSession, request: Request) -> dict[str, object]:
+async def open_session(bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
     _parse(protocol_pb2.SessionSpec(), body.spec)  # Validate without losing explicit empty overrides.
-    await ready_sandbox_for_session(request.app.state.inventory, name)
     attached = await bridge.open_session(name, body.session_id, body.spec, body.setup_script)
     return MessageToDict(attached)
