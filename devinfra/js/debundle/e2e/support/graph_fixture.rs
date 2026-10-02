@@ -164,10 +164,6 @@ impl GraphFixture {
             "{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        write_text_file(
-            &self.run.out_root.join("app/package.json"),
-            "{\"type\":\"module\"}\n",
-        );
         assert_node_output(&self.run.out_root.join("app/main/main.js"), expected, "");
     }
 
