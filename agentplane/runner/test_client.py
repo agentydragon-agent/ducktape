@@ -23,6 +23,7 @@ class FakeAttachmentCall:
         self.writes: list[protocol_pb2.ClientMessage] = []
         self.reads = 0
         self.cancelled = False
+        self.ended = False
         self.events: list[protocol_pb2.ServerMessage] = []
 
     async def write(self, message: protocol_pb2.ClientMessage) -> None:
@@ -30,7 +31,13 @@ class FakeAttachmentCall:
 
     async def read(self) -> object:
         self.reads += 1
-        return self.events.pop(0) if self.events else grpc.aio.EOF
+        if self.events:
+            return self.events.pop(0)
+        self.ended = True
+        return grpc.aio.EOF
+
+    def done(self) -> bool:
+        return self.cancelled or self.ended
 
     def cancel(self) -> bool:
         self.cancelled = True
@@ -54,6 +61,22 @@ async def test_normal_context_exit_detaches_once_and_drains() -> None:
     assert call.writes == [protocol_pb2.ClientMessage(detach=protocol_pb2.Detach())]
     assert call.reads == 1
     assert not call.cancelled
+
+
+@pytest.mark.parametrize("cancelled", [False, True], ids=["eof", "cancelled"])
+async def test_detach_after_call_completion_does_not_write(cancelled: bool) -> None:
+    call = FakeAttachmentCall()
+    attached = attachment(call)
+    if cancelled:
+        attached.cancel()
+    else:
+        await attached.drain_until_end()
+
+    await attached.detach()
+    await attached.detach()
+
+    assert call.done()
+    assert not call.writes
 
 
 async def test_exceptional_context_exit_cancels_without_hiding_the_caller_error() -> None:
