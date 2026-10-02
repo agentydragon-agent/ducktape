@@ -116,3 +116,21 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* On phone and narrow split panes, let settings take their own row so Interrupt/Send
+   remain at the right edge rather than overflowing past the viewport. */
+@media (max-width: 760px) {
+  .agentplane-composer-controls {
+    flex-wrap: wrap;
+  }
+
+  .agentplane-composer-settings {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .agentplane-composer-send {
+    margin-inline-start: auto;
+  }
+}

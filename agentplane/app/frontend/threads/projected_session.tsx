@@ -821,9 +821,8 @@ function ProjectedSessionBody({
           disabled={!running}
           onKeyDown={composerKey}
         />
-        <Group justify="space-between" wrap="nowrap" pb="xs">
-          <Group gap="xs" wrap="nowrap">
-            <ThreadStatusDot color={status.color} label={status.label} pulse={status.pulse} />
+        <Group className="agentplane-composer-controls" justify="space-between" wrap="nowrap" pb="xs">
+          <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
             {canResume && (
               <Button size="xs" aria-label="Resume harness" loading={resuming} onClick={() => void resume()}>
                 Resume harness
@@ -904,7 +903,7 @@ function ProjectedSessionBody({
               </Menu.Dropdown>
             </Menu>
           </TopbarActions>
-          <Group gap="xs" wrap="nowrap">
+          <Group className="agentplane-composer-send" gap="xs" wrap="nowrap">
             <ActionIcon
               size="lg"
               variant="light"
@@ -1014,6 +1013,12 @@ export function ProjectedSession({
   const sync = useThreadSync();
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [tabStatus, setTabStatus] = useState("Connecting");
+  const threadsLive = useRequiredThreadsLive();
+  const topbarStatus = threadStatusFromSnapshot(
+    threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId),
+    threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox),
+    snapshotFresh(threadsLive)
+  );
   const [error, setError] = useState<string | null>(null);
   const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
@@ -1031,6 +1036,9 @@ export function ProjectedSession({
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+          {thread && (
+            <ThreadStatusDot color={topbarStatus.color} label={topbarStatus.label} pulse={topbarStatus.pulse} />
+          )}
           <Box style={{ flex: 1, minWidth: 0 }}>
             <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
           </Box>

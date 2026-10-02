@@ -33,6 +33,8 @@ export interface Scenario extends ScenarioOptions {
   /** Make the SSH command taller than the inline review and scroll to its decisions. */
   longPendingAction?: boolean;
   scrollActionReview?: boolean;
+  /** Assert phone composer controls and the topbar dot fit before capture. */
+  checkComposerControls?: boolean;
   /** Render a bounded first history page with a Load more control. */
   historyPaged?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
@@ -393,8 +395,9 @@ export const SCENARIOS: Record<string, Scenario> = {
     openActionReview: true,
     longPendingAction: true,
     scrollActionReview: true,
+    checkComposerControls: true,
     captureViewport: true,
-    readySelectors: ['.action-affordance-details[data-scroll-ready="true"]'],
+    readySelectors: ['.action-affordance-details[data-scroll-ready="true"]', '[data-composer-layout-ready="true"]'],
   },
   actions_attention_composer_long_desktop: {
     element: "#app",
@@ -684,6 +687,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     outageAge: 90_000,
     readySelectors: ["::-p-text(may be out of date)", '[data-thread-anchor="34"]'],
     captureViewport: true,
+  },
+  session_phone_controls: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    checkComposerControls: true,
+    captureViewport: true,
+    readySelectors: ['[data-composer-layout-ready="true"]'],
   },
   session_phone: {
     element: "#app",

@@ -570,7 +570,7 @@ const ACTIONS: ActionRequestView[] = [
         ? Array.from({ length: 55 }, (_, index) => `echo review-step-${index + 1}`).join("\n")
         : scenario.hiddenCodepoints
           ? 'printf "review \u202Ereversed\u202C zero\u200Bwidth control\u001B"'
-        : 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
+          : 'systemctl --user restart test-backup.service && echo "restarted at $(date -Is)"',
       timeout_seconds: 60,
     },
     title: "restart the test backup service",
@@ -2198,10 +2198,27 @@ if (scenario.openActionPolicySets) {
   });
   openSets.observe(document, { childList: true, subtree: true });
 }
+if (scenario.checkComposerControls) {
+  const checkControls = new MutationObserver(() => {
+    const send = document.querySelector<HTMLElement>('.agentplane-composer-send button[aria-label="Send"]');
+    const effort = document.querySelector('input[aria-label="Reasoning effort"]');
+    const controls = document.querySelector<HTMLElement>('.agentplane-composer-controls');
+    const dot = document.querySelector('.agentplane-topbar-title .agentplane-thread-status-dot');
+    if (!send || !effort || !controls || !dot) return;
+    requestAnimationFrame(() => {
+      const box = send.getBoundingClientRect();
+      if (box.width > 0 && box.left >= 0 && box.right <= window.innerWidth) {
+        controls.dataset.composerLayoutReady = "true";
+        checkControls.disconnect();
+      }
+    });
+  });
+  checkControls.observe(document, { childList: true, subtree: true });
+}
 if (scenario.scrollActionReview) {
   const scrollReview = new MutationObserver(() => {
-    const details = document.querySelector<HTMLElement>('.action-affordance-details:not([hidden])');
-    if (!details?.querySelector('button')) return;
+    const details = document.querySelector<HTMLElement>(".action-affordance-details:not([hidden])");
+    if (!details?.querySelector("button")) return;
     scrollReview.disconnect();
     requestAnimationFrame(() => {
       details.scrollTop = details.scrollHeight;
