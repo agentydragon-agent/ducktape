@@ -2201,13 +2201,24 @@ if (scenario.openActionPolicySets) {
 if (scenario.checkComposerControls) {
   const checkControls = new MutationObserver(() => {
     const send = document.querySelector<HTMLElement>('.agentplane-composer-send button[aria-label="Send"]');
-    const effort = document.querySelector('input[aria-label="Reasoning effort"]');
-    const controls = document.querySelector<HTMLElement>('.agentplane-composer-controls');
-    const dot = document.querySelector('.agentplane-topbar-title .agentplane-thread-status-dot');
-    if (!send || !effort || !controls || !dot) return;
+    const effort = document.querySelector<HTMLElement>(".agentplane-composer-effort");
+    const model = document.querySelector<HTMLElement>(".agentplane-composer-model");
+    const controls = document.querySelector<HTMLElement>(".agentplane-composer-controls");
+    const dot = document.querySelector(".agentplane-topbar-title .agentplane-thread-status-dot");
+    if (!send || !effort || !model || !controls || !dot) return;
     requestAnimationFrame(() => {
       const box = send.getBoundingClientRect();
-      if (box.width > 0 && box.left >= 0 && box.right <= window.innerWidth) {
+      const modelBox = model.getBoundingClientRect();
+      const effortBox = effort.getBoundingClientRect();
+      if (
+        box.width > 0 &&
+        box.left >= 0 &&
+        box.right <= window.innerWidth &&
+        modelBox.width > 0 &&
+        effortBox.width > 0 &&
+        Math.abs(modelBox.top - box.top) < 8 &&
+        Math.abs(effortBox.top - box.top) < 8
+      ) {
         controls.dataset.composerLayoutReady = "true";
         checkControls.disconnect();
       }

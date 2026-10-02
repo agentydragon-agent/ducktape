@@ -821,7 +821,7 @@ function ProjectedSessionBody({
           disabled={!running}
           onKeyDown={composerKey}
         />
-        <Group className="agentplane-composer-controls" justify="space-between" wrap="nowrap" pb="xs">
+        <Group className="agentplane-composer-controls" justify="space-between" gap="xs" wrap="nowrap" pb="xs">
           <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
             {canResume && (
               <Button size="xs" aria-label="Resume harness" loading={resuming} onClick={() => void resume()}>
@@ -830,6 +830,7 @@ function ProjectedSessionBody({
             )}
             <Select
               aria-label="Model"
+              className="agentplane-composer-model"
               data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
               value={controls?.applied_model ?? null}
               placeholder={
@@ -840,7 +841,6 @@ function ProjectedSessionBody({
                     : "Model"
               }
               disabled={!running}
-              w={200}
               onChange={(model) =>
                 model &&
                 commands.submit(
@@ -854,11 +854,11 @@ function ProjectedSessionBody({
             {effortOptions.length > 0 && (
               <Select
                 aria-label="Reasoning effort"
+                className="agentplane-composer-effort"
                 data={effortOptions}
                 value={controls?.applied_reasoning_effort ?? thread.reasoning_effort ?? null}
                 placeholder="Effort"
                 disabled={!running}
-                w={120}
                 onChange={(effort) =>
                   effort &&
                   commands.submit(
