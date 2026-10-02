@@ -398,8 +398,14 @@ fn merge_preview_and_apply_reject_the_same_document_conflicts() {
         write_text_file(&root.join("source.yaml"), source);
         for dry_run in [true, false] {
             let mut args = vec![
-                "modules", "merge", "--modules", root.to_str().unwrap(),
-                "--target", "target", "source", "--no-verify",
+                "modules",
+                "merge",
+                "--modules",
+                root.to_str().unwrap(),
+                "--target",
+                "target",
+                "source",
+                "--no-verify",
             ];
             if dry_run {
                 args.push("--dry-run");
@@ -408,8 +414,14 @@ fn merge_preview_and_apply_reject_the_same_document_conflicts() {
             let stderr = String::from_utf8_lossy(&out.stderr);
             assert!(!out.status.success(), "dry_run={dry_run}: {stderr}");
             assert!(stderr.contains(diagnostic), "dry_run={dry_run}: {stderr}");
-            assert_eq!(fs::read_to_string(root.join("target.yaml")).unwrap(), target);
-            assert_eq!(fs::read_to_string(root.join("source.yaml")).unwrap(), source);
+            assert_eq!(
+                fs::read_to_string(root.join("target.yaml")).unwrap(),
+                target
+            );
+            assert_eq!(
+                fs::read_to_string(root.join("source.yaml")).unwrap(),
+                source
+            );
         }
     }
 }
