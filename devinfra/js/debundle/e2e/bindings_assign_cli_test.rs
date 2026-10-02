@@ -274,26 +274,34 @@ fn rename_no_verify_explicitly_bypasses_collision_checks() {
 
 #[test]
 fn automatic_cleanup_preserves_module_notes_but_explicit_delete_can_remove_them() {
-    for edit in [vec!["bindings", "assign", "a:dest"], vec!["bindings", "unassign", "a"]] {
+    for edit in [
+        vec!["bindings", "assign", "a:dest"],
+        vec!["bindings", "unassign", "a"],
+    ] {
         for note in ["keep selector investigation", ""] {
-            let yaml = format!(
-                "note: {note:?}\nmembers: [{{selector: {{binding: {{name: a}}}}}}]\n"
-            );
-            let fixture = GraphFixture::new(
-                "const a = 1; console.log(a);",
-                &[("src.yaml", &yaml)],
-            );
+            let yaml =
+                format!("note: {note:?}\nmembers: [{{selector: {{binding: {{name: a}}}}}}]\n");
+            let fixture = GraphFixture::new("const a = 1; console.log(a);", &[("src.yaml", &yaml)]);
             let mut preview = edit.clone();
             preview.push("--dry-run");
             let report = fixture.json(&preview);
-            assert_eq!(report["files_deleted"], serde_json::json!([]));
-            assert_eq!(fs::read_to_string(fixture.modules.join("src.yaml")).unwrap(), yaml);
+            assert!(report["files_deleted"].as_array().unwrap().is_empty());
+            assert_eq!(
+                fs::read_to_string(fixture.modules.join("src.yaml")).unwrap(),
+                yaml
+            );
             assert!(!fixture.modules.join("dest.yaml").exists());
             let report = fixture.json(&edit);
-            assert_eq!(report["files_deleted"], serde_json::json!([]));
+            assert!(report["files_deleted"].as_array().unwrap().is_empty());
             assert_eq!(module(&fixture, "src.yaml")["note"], note);
             let empty = fixture.json(&["modules", "list", "--empty"]);
-            assert!(empty["modules"].as_array().unwrap().iter().any(|m| m["path"] == "src"));
+            assert!(
+                empty["modules"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|m| m["path"] == "src")
+            );
             let sweep = fixture.json(&["modules", "list", "--auto-deletable"]);
             assert!(sweep["modules"].as_array().unwrap().is_empty());
             fixture.assert_runs("1\n");
