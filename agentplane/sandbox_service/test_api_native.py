@@ -201,9 +201,49 @@ def set_binding(cluster: Cluster, binding: SandboxBinding) -> None:
     ] = binding.model_dump_json()
 
 
+async def wait_http_event(
+    api: httpx.AsyncClient, destination: dict[str, object], *, after_cursor: int, kind: str
+) -> event_log_pb2.EventEntry:
+    async with asyncio.timeout(15):
+        while True:
+            response = await api.post(
+                "/v1/sessions/follow", json={"destination": destination, "after_cursor": after_cursor}
+            )
+            assert response.status_code == 200, response.text
+            for line in response.text.splitlines():
+                if line.startswith("data: "):
+                    entry = ParseDict(json.loads(line.removeprefix("data: ")), event_log_pb2.EventEntry())
+                    after_cursor = entry.cursor
+                    if entry.event.HasField(kind):
+                        return entry
+            await asyncio.sleep(0.01)
+
+
+async def complete_guided_turn(
+    api: httpx.AsyncClient, destination: dict[str, object], model: ScriptedModel, command_id: str
+) -> None:
+    response = await api.post(
+        "/v1/sessions/commands",
+        json={
+            "destination": destination,
+            "command": {"commandId": command_id, "submitInput": {"text": "Reply with exactly: GUIDANCE_OK"}},
+        },
+    )
+    assert response.status_code == 200, response.text
+    receipt = ParseDict(response.json(), event_log_pb2.EventEntry())
+    request = await model.request()
+    assert "Test platform guidance." in request.system_text
+    assert "Test task guidance." in request.system_text
+    assert "New platform guidance." not in request.system_text
+    assert str(SANDBOX_UID) in request.system_text
+    await model.reply(request, Text("GUIDANCE_OK"))
+    await wait_http_event(api, destination, after_cursor=receipt.cursor, kind="turn_completed")
+
+
 async def test_http_only_launch_and_resume_preserve_retained_configuration(
     manager_api: httpx.AsyncClient,
     managed_resources: SessionResources,
+    model: ScriptedModel,
     cluster: Cluster,
     spec: protocol_pb2.SessionSpec,
     destination: dict[str, object],
@@ -216,6 +256,7 @@ async def test_http_only_launch_and_resume_preserve_retained_configuration(
         thread_defaults=ThreadDefaults(
             harness=Harness(protocol_pb2.Harness.Name(spec.harness)),
             model=spec.model,
+            reasoning_effort=spec.reasoning_effort,
             cwd=spec.cwd,
             instructions="Test task guidance.",
             setup_script=f"printf S >> {shlex.quote(str(setup_marker))}",
@@ -253,17 +294,15 @@ async def test_http_only_launch_and_resume_preserve_retained_configuration(
         "/v1/sessions/open", json={"destination": destination, "spec": {"instructions": "Different task"}}
     )
     assert conflicting.status_code == 409
+    # Native harnesses must persist a real conversation before they can resume it.
+    await complete_guided_turn(manager_api, destination, model, "test-http-seed")
     stopped = await manager_api.post(
         "/v1/sessions/commands",
         json={"destination": destination, "command": {"commandId": "test-http-stop", "stopRunnerSession": {}}},
     )
     assert stopped.status_code == 200, stopped.text
-    inspected = await manager_api.post("/v1/sessions/inspect", json={"destination": destination})
-    # The command receipt proves admission, not completion. Poll only the runner's state.
-    async with asyncio.timeout(15):
-        while inspected.json()["harnessState"] != "HARNESS_STATE_STOPPED":
-            await asyncio.sleep(0.05)
-            inspected = await manager_api.post("/v1/sessions/inspect", json={"destination": destination})
+    stop_receipt = ParseDict(stopped.json(), event_log_pb2.EventEntry())
+    await wait_http_event(manager_api, destination, after_cursor=stop_receipt.cursor, kind="harness_exited")
     set_binding(cluster, SandboxBinding(bootstrap="exit 42", thread_defaults=ThreadDefaults(model="changed")))
     # A restarted service with different configuration must not rewrite the retained native spec,
     # rerun bootstrap/setup, or need an app record to recover this session.
@@ -278,6 +317,7 @@ async def test_http_only_launch_and_resume_preserve_retained_configuration(
         recovered = ParseDict(resumed.json(), protocol_pb2.Attached())
         assert recovered.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
         assert recovered.spec == attached.spec
+        await complete_guided_turn(restarted, destination, model, "test-http-resumed")
         listed = await restarted.post("/v1/sessions/list", json={"destination": sandbox_destination})
         assert listed.status_code == 200
         rows = listed.json()["sessions"]
