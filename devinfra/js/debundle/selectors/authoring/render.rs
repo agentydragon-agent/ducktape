@@ -16,10 +16,11 @@ use std::collections::BTreeSet;
 use anyhow::Result;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD, hole_keyword, hole_name_for,
 };
 use swc_common::{DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitWith};
 
 /// `(lo, hi)` byte offsets of a retained concrete token.
 pub(crate) type AnchorSpan = (u32, u32);
@@ -612,24 +613,69 @@ pub(crate) fn emit_selector(item: ModuleItem) -> Result<String> {
     })
 }
 
-pub(crate) fn holes_present(source: &str) -> BTreeSet<String> {
-    let mut holes = BTreeSet::new();
-    for keyword in [
-        ANYTHING_HOLE_KEYWORD,
-        STMT_LIST_HOLE_KEYWORD,
-        DECLARATORS_HOLE_KEYWORD,
-    ] {
-        if source.contains(keyword) {
-            holes.insert(keyword.to_string());
+/// Report keyword identifiers in generated selector syntax, not occurrences in
+/// strings, comments, or concrete property names. Parse only the final generated
+/// selector; input-chunk analysis still comes from the shared chunk indexes.
+pub(crate) fn holes_present(source: &str) -> Result<BTreeSet<String>> {
+    #[derive(Default)]
+    struct Holes(BTreeSet<String>);
+
+    impl Visit for Holes {
+        fn visit_ident(&mut self, ident: &Ident) {
+            if let Some(keyword) = hole_keyword(&ident.sym) {
+                self.0.insert(keyword.to_string());
+            }
+        }
+
+        fn visit_class_prop(&mut self, prop: &ClassProp) {
+            // Class-member runs use an uninitialized ANYTHING field. Its key
+            // is an IdentName, unlike the Ident in expression/pattern holes.
+            if prop.value.is_none()
+                && let PropName::Ident(key) = &prop.key
+                && hole_name_for(&key.sym, ANYTHING_HOLE_KEYWORD).is_some()
+            {
+                self.0.insert(ANYTHING_HOLE_KEYWORD.to_string());
+            }
+            prop.visit_children_with(self);
         }
     }
-    holes
+
+    let module = js_ast::parse_js_module_ast("<generated selector holes>", source)?;
+    let mut holes = Holes::default();
+    module.visit_with(&mut holes);
+    Ok(holes.0)
 }
 
 #[cfg(test)]
 mod interior_holing_tests {
     use super::*;
-    use swc_ecma_visit::{Visit, VisitWith};
+
+    #[test]
+    fn hole_inventory_uses_syntax_and_the_complete_vocabulary() {
+        js_ast::with_swc_globals(|| {
+            for (source, keyword) in [
+                ("const x = ANYTHING_value;", "ANYTHING"),
+                ("const x = EXPR_value;", "EXPR"),
+                ("function f() { STMT_value; }", "STMT"),
+                ("function f() { STMT_LIST_value; }", "STMT_LIST"),
+                ("f(ARGS_value);", "ARGS"),
+                ("const x = [ARRAY_ELEMENTS_value];", "ARRAY_ELEMENTS"),
+                ("const DECLARATORS_value = null;", "DECLARATORS"),
+                ("switch (x) { case CASE_REST_value: }", "CASE_REST"),
+                ("(x, SEQ_EXPRS_value);", "SEQ_EXPRS"),
+                ("class C { ANYTHING_members; }", "ANYTHING"),
+            ] {
+                assert_eq!(holes_present(source).unwrap(), BTreeSet::from([keyword.to_string()]));
+            }
+            assert!(holes_present(
+                r#"// ANYTHING
+const x = "STMT_LIST";
+const y = { DECLARATORS: 1 };
+x.ARGS;
+class C { CASE_REST = 1; }"#,
+            ).unwrap().is_empty());
+        });
+    }
 
     /// Round-trip `source` through swc parse + codegen so equality is on AST
     /// shape, not incidental formatting.

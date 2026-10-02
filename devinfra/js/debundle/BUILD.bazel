@@ -42,6 +42,12 @@ rust_library(
     edition = "2024",
 )
 
+rust_test(
+    name = "source_match_holes_test",
+    crate = ":source_match_holes",
+    edition = "2024",
+)
+
 rust_library(
     name = "source_match",
     srcs = glob(["selectors/matching/source_match/*.rs"]),
