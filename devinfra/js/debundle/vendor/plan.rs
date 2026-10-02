@@ -54,9 +54,9 @@ use crate::wrappers::{
 };
 use crate::{
     MaterializedOutputChunkIndex, collect_and_validate_boundary_mapping,
-    collect_default_export_object_keys, collect_exported_names,
-    module_has_export_star, read_installed_package_metadata, resolve_package_subpath,
-    resolve_partial_swap_import_target, verified_default_alias_export_names,
+    collect_default_export_object_keys, collect_exported_names, module_has_export_star,
+    read_installed_package_metadata, resolve_package_subpath, resolve_partial_swap_import_target,
+    verified_default_alias_export_names,
 };
 
 #[derive(Debug, Clone)]
@@ -595,7 +595,6 @@ fn check_consumer_shape_has_live_rewrite(
                                 "partial-swap consumer gate: {consumer} re-exports swapped name `{orig}` from partially-swapped vendor chunk {target_chunk_name}; this re-export shape has no live rewrite (kind=member symbols and bundled swaps cannot be expressed as re-exports) and the stripped chunk no longer exports it",
                             );
                         }
-
                     }
                     ExportSpecifier::Namespace(_) => {
                         bail!(

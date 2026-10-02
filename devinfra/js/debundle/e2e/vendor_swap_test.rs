@@ -824,15 +824,30 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
     // Keep the installed version fixed: mismatch cases deliberately request
     // a different version in the spec.
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-", args.chunk_source, args.caller_source,
-        PACKAGE_NAME, "3.23.8", SUBPATH, args.upstream_source,
+        "vendor-partial-swap-",
+        args.chunk_source,
+        args.caller_source,
+        PACKAGE_NAME,
+        "3.23.8",
+        SUBPATH,
+        args.upstream_source,
     );
-    let symbols: Vec<_> = args.symbols.iter().map(|(export, package, upstream)| {
-        (*export, swap_symbol(package, PartialSwapKind::Member, Some(upstream), None))
-    }).collect();
+    let symbols: Vec<_> = args
+        .symbols
+        .iter()
+        .map(|(export, package, upstream)| {
+            (
+                *export,
+                swap_symbol(package, PartialSwapKind::Member, Some(upstream), None),
+            )
+        })
+        .collect();
     let vendor = partial_swap_vendor(
         "megachunk partial swap fixture",
-        &[(PACKAGE_NAME, partial_package(args.upstream_version, SUBPATH, Some("z")))],
+        &[(
+            PACKAGE_NAME,
+            partial_package(args.upstream_version, SUBPATH, Some("z")),
+        )],
         &symbols,
     );
     run_partial_swap_with_mark(ws, vendor, &[(PACKAGE_NAME, &package_root)])
@@ -2688,8 +2703,14 @@ fn bundled_vendor(
 #[test]
 fn wrappers_preserve_reserved_and_string_export_names() {
     for (shape, upstream) in [
-        (WrapperShape::NamedFromDefault, "export default { class: 1, 'x-y': 2 };"),
-        (WrapperShape::NamedFromJsonDefault, "{\"class\":1,\"x-y\":2}"),
+        (
+            WrapperShape::NamedFromDefault,
+            "export default { class: 1, 'x-y': 2 };",
+        ),
+        (
+            WrapperShape::NamedFromJsonDefault,
+            "{\"class\":1,\"x-y\":2}",
+        ),
     ] {
         let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
             temp_prefix: "vendor-export-names-",
@@ -2700,7 +2721,10 @@ fn wrappers_preserve_reserved_and_string_export_names() {
         });
         assert_success(&fixture.result);
         let probe = fixture.wrapper_path.with_file_name("probe.mjs");
-        write_text_file(&probe, "import * as m from './entry.js'; console.log(m.class, m['x-y']);");
+        write_text_file(
+            &probe,
+            "import * as m from './entry.js'; console.log(m.class, m['x-y']);",
+        );
         assert_node_output(&probe, "1 2\n", "");
     }
 }
@@ -2716,7 +2740,10 @@ fn json_wrapper_preserves_proto_as_an_own_data_property() {
     });
     assert_success(&fixture.result);
     let probe = fixture.wrapper_path.with_file_name("probe.mjs");
-    write_text_file(&probe, "import data from './entry.js'; console.log(Object.hasOwn(data, '__proto__'), Object.getPrototypeOf(data) === Object.prototype);");
+    write_text_file(
+        &probe,
+        "import data from './entry.js'; console.log(Object.hasOwn(data, '__proto__'), Object.getPrototypeOf(data) === Object.prototype);",
+    );
     assert_node_output(&probe, "true true\n", "");
 }
 
@@ -2726,14 +2753,24 @@ fn vendor_namespaces_reject_reserved_binding_names() {
         "vendor-invalid-namespace-",
         "export const a = 1;",
         "import { a } from '../megachunk/entry.js'; console.log(a);",
-        "lib", "1.0.0", "index.js", "export const value = 1;",
+        "lib",
+        "1.0.0",
+        "index.js",
+        "export const value = 1;",
     );
     let vendor = partial_swap_vendor(
         "reserved namespace",
         &[("lib", partial_package("1.0.0", "index.js", Some("class")))],
-        &[("a", swap_symbol("lib", PartialSwapKind::Member, Some("value"), None))],
+        &[(
+            "a",
+            swap_symbol("lib", PartialSwapKind::Member, Some("value"), None),
+        )],
     );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("lib", &root)]);
     assert!(!fixture.result.status.success());
-    assert!(fixture.result.stderr.contains("not a valid JS identifier"), "{}", fixture.result.stderr);
+    assert!(
+        fixture.result.stderr.contains("not a valid JS identifier"),
+        "{}",
+        fixture.result.stderr
+    );
 }

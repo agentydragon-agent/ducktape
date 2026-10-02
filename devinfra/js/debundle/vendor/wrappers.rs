@@ -51,7 +51,8 @@ pub(super) fn generate_named_from_default_wrapper(
     body.push(export_default_ident(&default_local_name));
     for name in named_exports {
         append_value_export(
-            &mut body, name,
+            &mut body,
+            name,
             Expr::Member(MemberExpr {
                 span: DUMMY_SP,
                 obj: Box::new(Expr::Ident(default_local.clone())),
@@ -83,28 +84,40 @@ pub(super) fn generate_named_from_json_default_wrapper(
     // JSON.parse preserves JSON semantics, including own __proto__ data keys.
     // Serializing the payload as an AST string literal avoids JS interpolation.
     let json = serde_json::to_string(upstream_json)?;
-    wrapper.module.body.push(const_init_with_expr("_d", Expr::Call(CallExpr {
-        span: DUMMY_SP,
-        ctxt: SyntaxContext::empty(),
-        callee: Callee::Expr(Box::new(Expr::Member(MemberExpr {
+    wrapper.module.body.push(const_init_with_expr(
+        "_d",
+        Expr::Call(CallExpr {
             span: DUMMY_SP,
-            obj: Box::new(Expr::Ident(Ident::new_no_ctxt("JSON".into(), DUMMY_SP))),
-            prop: member_property("parse"),
-        }))),
-        args: vec![ExprOrSpread {
-            spread: None,
-            expr: Box::new(Expr::Lit(Lit::Str(Str { span: DUMMY_SP, value: json.into(), raw: None }))),
-        }],
-        type_args: None,
-    })));
+            ctxt: SyntaxContext::empty(),
+            callee: Callee::Expr(Box::new(Expr::Member(MemberExpr {
+                span: DUMMY_SP,
+                obj: Box::new(Expr::Ident(Ident::new_no_ctxt("JSON".into(), DUMMY_SP))),
+                prop: member_property("parse"),
+            }))),
+            args: vec![ExprOrSpread {
+                spread: None,
+                expr: Box::new(Expr::Lit(Lit::Str(Str {
+                    span: DUMMY_SP,
+                    value: json.into(),
+                    raw: None,
+                }))),
+            }],
+            type_args: None,
+        }),
+    ));
     wrapper.module.body.push(export_default_ident("_d"));
     let mut used = BTreeSet::from(["_d".to_string(), "JSON".to_string()]);
     for name in named_exports {
-        append_value_export(&mut wrapper.module.body, name, Expr::Member(MemberExpr {
-            span: DUMMY_SP,
-            obj: Box::new(Expr::Ident(Ident::new_no_ctxt("_d".into(), DUMMY_SP))),
-            prop: member_property(name),
-        }), &mut used);
+        append_value_export(
+            &mut wrapper.module.body,
+            name,
+            Expr::Member(MemberExpr {
+                span: DUMMY_SP,
+                obj: Box::new(Expr::Ident(Ident::new_no_ctxt("_d".into(), DUMMY_SP))),
+                prop: member_property(name),
+            }),
+            &mut used,
+        );
     }
     emit_js_module(&wrapper, &[])
 }
@@ -248,8 +261,12 @@ pub(super) fn generate_named_from_module_default_wrapper(
             continue;
         }
         append_value_export(
-            &mut body, name,
-            Expr::Ident(Ident::new_no_ctxt(default_local_name.as_str().into(), DUMMY_SP)),
+            &mut body,
+            name,
+            Expr::Ident(Ident::new_no_ctxt(
+                default_local_name.as_str().into(),
+                DUMMY_SP,
+            )),
             &mut used_idents,
         );
     }
@@ -374,7 +391,10 @@ fn generate_bundled_partial_swap_facade(bundle_export: &str) -> Result<String> {
     let mut facade = parse_js_module("vendor-facade.js", "")?;
     let local = Ident::new_no_ctxt("__debundle_bundle_export__".into(), DUMMY_SP);
     facade.module.body = vec![
-        import_decl_module_item(vec![named_import_specifier(local, bundle_export)], "./bundle.js"),
+        import_decl_module_item(
+            vec![named_import_specifier(local, bundle_export)],
+            "./bundle.js",
+        ),
         export_default_ident("__debundle_bundle_export__"),
     ];
     emit_js_module(&facade, &[])
@@ -427,18 +447,20 @@ fn append_value_export(
     } else {
         let alias = super::unique_synthetic_ident("__vendor_export__", used);
         body.push(const_init_with_expr(&alias, value));
-        body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
-            span: DUMMY_SP,
-            specifiers: vec![ExportSpecifier::Named(ExportNamedSpecifier {
+        body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(
+            NamedExport {
                 span: DUMMY_SP,
-                orig: module_export_name_node(&alias),
-                exported: Some(module_export_name_node(name)),
-                is_type_only: false,
-            })],
-            src: None,
-            type_only: false,
-            with: None,
-        })));
+                specifiers: vec![ExportSpecifier::Named(ExportNamedSpecifier {
+                    span: DUMMY_SP,
+                    orig: module_export_name_node(&alias),
+                    exported: Some(module_export_name_node(name)),
+                    is_type_only: false,
+                })],
+                src: None,
+                type_only: false,
+                with: None,
+            },
+        )));
     }
 }
 

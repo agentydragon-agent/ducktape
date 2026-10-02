@@ -92,7 +92,10 @@ impl VendorImportRewrites {
                         local: local_id.0.to_string(),
                         upstream_export,
                     });
-                    *self.references_rewritten.entry((chunk, chunk_export)).or_insert(0) += 1;
+                    *self
+                        .references_rewritten
+                        .entry((chunk, chunk_export))
+                        .or_insert(0) += 1;
                     return imports;
                 }
                 imports.push(DeferredImport::Named {

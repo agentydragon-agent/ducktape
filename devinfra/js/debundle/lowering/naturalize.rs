@@ -45,7 +45,6 @@
 use swc_common::{Span, SyntaxContext};
 
 use super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
-use js_ast::is_binding_identifier;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{
     RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
@@ -54,6 +53,7 @@ use crate::rename_ledger::{
 use crate::visitors::{RenameAndShorthandNaturalizer, ShorthandNaturalizer};
 use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
+use js_ast::is_binding_identifier;
 use js_ast::str_value;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::*;

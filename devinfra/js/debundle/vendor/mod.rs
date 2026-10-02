@@ -25,9 +25,9 @@ use artifact::{
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
 pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
 pub use import_rewrites::VendorImportRewrites;
-use js_ast::{is_binding_identifier, member_property, module_export_name_node, str_value};
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
+use js_ast::{is_binding_identifier, member_property, module_export_name_node, str_value};
 pub use manifests::*;
 use plan::ChunkBundledPartialSwapPlan;
 pub use plan::{
@@ -973,8 +973,7 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
 /// `export { <orig> as <exported> } from "<source>"` (alias omitted when
 /// the names match).
 fn make_named_reexport(source: &str, orig: &str, exported: &str) -> ModuleItem {
-    let exported_name = (orig != exported)
-        .then(|| module_export_name_node(exported));
+    let exported_name = (orig != exported).then(|| module_export_name_node(exported));
     ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
         span: DUMMY_SP,
         specifiers: vec![ExportSpecifier::Named(ExportNamedSpecifier {
