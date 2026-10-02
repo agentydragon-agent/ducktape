@@ -1353,28 +1353,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: "Retirement: prune agents-mitmproxy; remove this owner after inventory is empty."
-  name: agents-mitmproxy
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: WaitForTermination
-  dependsOn:
-    - name: claude-rbac
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/retired/agents-mitmproxy
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     ducktape.org/parked: "true"
   name: docker-ci
   namespace: ducktape-flux
@@ -3576,25 +3554,6 @@ spec:
     name: agentplane-testing
     namespace: ducktape-flux
   timeout: 10m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
-    description: "Retirement: prune agent-workspaces; remove this owner after inventory is empty."
-  name: agent-workspaces-app
-  namespace: ducktape-flux
-spec:
-  deletionPolicy: WaitForTermination
-  interval: 10m
-  path: ./cluster/generated/retired/agent-workspaces
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

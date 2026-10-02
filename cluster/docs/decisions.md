@@ -477,9 +477,12 @@ backing storage was not audited as part of these checks.
 Park the standalone Codex namespace and Claude's shared mitmproxy, preserving
 rendered manifests, image pins and revival instructions under
 `cluster/parked/{agent-workspaces,agents-mitmproxy}` and retaining their generators.
-Existing Flux owners first reconcile empty directories to prune live resources;
-remove those temporary owners only after verifying deletion and empty inventories.
-The unclaimed Codex warm workspace's PVC data loss is explicitly operator-approved.
+Existing Flux owners first reconciled empty directories to prune live resources.
+Live checks on 2026-10-02 at 21:57 UTC confirmed both owners Ready on the #8806
+merge (`93ee322b`), empty inventories, absent namespaces/Pods, and no workspace
+PVCs. The follow-up removes the verified-empty retirement owners and directories.
+The unclaimed Codex warm workspace's PVC data loss was explicitly operator-approved;
+physical backing storage was not audited or securely erased by these checks.
 
 Keep `claude-sandbox` as an identity/credential home for external sessions, with a
 zero Pod quota and deny-all egress instead of an active compute lane. Shared agent
