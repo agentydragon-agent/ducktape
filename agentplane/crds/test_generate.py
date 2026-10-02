@@ -25,7 +25,15 @@ def test_committed_files_are_generated() -> None:
 
 @pytest.mark.parametrize(
     ("host", "valid"),
-    [("*", True), ("example.com", True), ("*.example.com", True), ("*example.com", False), ("example.*", False), ("**", False), ("", False)],
+    [
+        ("*", True),
+        ("example.com", True),
+        ("*.example.com", True),
+        ("*example.com", False),
+        ("example.*", False),
+        ("**", False),
+        ("", False),
+    ],
 )
 def test_policy_host_schema_admits_only_supported_wildcards(host: str, valid: bool) -> None:
     crd = yaml.safe_load(_committed(CRDS_DIR / "crd-egresspolicies.yaml"))

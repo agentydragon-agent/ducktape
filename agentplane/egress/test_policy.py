@@ -639,7 +639,9 @@ def test_binding_resolution(
     assert (result.active, result.reason, len(result.policies)) == (status, reason, resolved)
 
 
-@pytest.mark.parametrize("host", ["example.com", "example.org", "a.b.example.net", "140.82.121.4", "2606:50c0:8000::153"])
+@pytest.mark.parametrize(
+    "host", ["example.com", "example.org", "a.b.example.net", "140.82.121.4", "2606:50c0:8000::153"]
+)
 def test_blanket_hosts_match(host: str) -> None:
     assert host_matches("*", host)
 
@@ -665,14 +667,21 @@ def test_blanket_requires_a_live_binding_and_respects_method_and_path() -> None:
     allowed = evaluate(rules, CALLER, allowed_request, NOW)
     assert allowed == Allowed("b", "public", 0)
     assert not allowed.cluster_internal
-    assert evaluate(rules, CALLER, request(host="arbitrary.example.org", path="/private"), NOW) == Denied(DenyReason.NO_RULE)
-    assert evaluate(rules, CALLER, request(method="POST", host="arbitrary.example.org", path="/public/file"), NOW) == Denied(DenyReason.NO_RULE)
+    assert evaluate(rules, CALLER, request(host="arbitrary.example.org", path="/private"), NOW) == Denied(
+        DenyReason.NO_RULE
+    )
+    assert evaluate(
+        rules, CALLER, request(method="POST", host="arbitrary.example.org", path="/public/file"), NOW
+    ) == Denied(DenyReason.NO_RULE)
     assert evaluate(rules, CALLER, allowed_request, NOW + timedelta(seconds=1)) == Denied(DenyReason.NO_BINDING)
 
 
 def test_blanket_does_not_send_a_known_credential_to_another_host_or_path() -> None:
     rules = broad_and_credentialed(binding("b", policies=["open", "github"]))
-    for outbound in [request(host="untrusted.example.org", authorization=f"Bearer {PLACEHOLDER}"), request(path="/outside-github-rule", authorization=f"Bearer {PLACEHOLDER}")]:
+    for outbound in [
+        request(host="untrusted.example.org", authorization=f"Bearer {PLACEHOLDER}"),
+        request(path="/outside-github-rule", authorization=f"Bearer {PLACEHOLDER}"),
+    ]:
         assert evaluate(rules, CALLER, outbound, NOW) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
 
 

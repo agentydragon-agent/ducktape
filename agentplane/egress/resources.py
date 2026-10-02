@@ -187,7 +187,10 @@ class CredentialRef(_Wire):
 
 
 class Rule(_Wire):
-    hosts: list[str] = Field(min_length=1, description="Exact hosts, `*.` suffix wildcards (`*.github.com`), or `*` for any public destination.")
+    hosts: list[str] = Field(
+        min_length=1,
+        description="Exact hosts, `*.` suffix wildcards (`*.github.com`), or `*` for any public destination.",
+    )
     methods: list[str] | None = Field(default=None, description="HTTP methods; absent admits any.")
     paths: list[str] | None = Field(
         default=None, description="Path globs: `*` within one segment, `**` across segments; absent admits any."
@@ -199,7 +202,6 @@ class Rule(_Wire):
         "of private addresses does not apply to them. Off by default: that refusal is what stops an "
         "admitted name from resolving into the cluster, DNS rebinding included.",
     )
-
 
     @model_validator(mode="after")
     def _blanket_is_public_and_credentialless(self) -> Rule:

@@ -109,6 +109,10 @@ credential placeholder presented to an unauthorized destination is refused even 
 rule would otherwise admit the request. Existing placeholder-directed matching means the blanket
 policy cannot shadow an authorized credentialed rule, regardless of policy/binding order.
 
+For requests with no placeholder, the existing first-match ordering still selects the rule's
+`clusterInternal` flag. Put explicit internal-host policies ahead of `public-internet` when
+those routes are needed; blanket access alone never authorizes a private address.
+
 The schema must be rolled out before applying policies using `*`; older proxies fail closed on
 public destinations until the new matcher is deployed. Roll back by removing grants first.
 
