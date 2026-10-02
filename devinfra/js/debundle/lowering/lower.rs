@@ -627,7 +627,11 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             .zip(module_plans.par_iter())
             .enumerate()
             .map(|(index, (module, plan))| {
-                let NaturalizedModuleBody { body, renames: local_renames, facts } = module;
+                let NaturalizedModuleBody {
+                    body,
+                    renames: local_renames,
+                    facts,
+                } = module;
                 GLOBALS.set(globals, || {
                     emit_module(ModuleEmissionInputs {
                         index,

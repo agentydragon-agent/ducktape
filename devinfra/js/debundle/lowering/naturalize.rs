@@ -95,9 +95,14 @@ impl NaturalizedModuleBody {
         plan_driven: BTreeMap<String, String>,
         chunk_top_level_mark: swc_common::Mark,
     ) -> Result<Self> {
-        let renames = naturalize_module_body(&mut body, plan, module, plan_driven, chunk_top_level_mark)?;
+        let renames =
+            naturalize_module_body(&mut body, plan, module, plan_driven, chunk_top_level_mark)?;
         let facts = crate::body_facts::collect_module_body_facts(&body);
-        Ok(Self { body, renames, facts })
+        Ok(Self {
+            body,
+            renames,
+            facts,
+        })
     }
 }
 
