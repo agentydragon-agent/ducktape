@@ -51,17 +51,13 @@ def secret_copy(
     namespace = reader.metadata.namespace
     if namespace is None:
         raise ValueError(f"{reader.name=} has no namespace to copy into")
+    store_name = name if name.startswith(f"{namespace}-") else f"{namespace}-{name}"
     store = single_secret_store(
-        scope,
-        f"{namespace}-{name}",
-        reader=reader,
-        source_namespace=NAMESPACE,
-        source_secret=name,
-        consumer_namespace=namespace,
+        scope, store_name, reader=reader, source_namespace=NAMESPACE, source_secret=name, consumer_namespace=namespace
     )
     return ExternalSecret(
         scope,
-        f"{namespace}-{name}",
+        store_name,
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
         refresh_interval="1h",
         secret_store_ref=SecretStoreRef.cluster(store),
