@@ -16,7 +16,6 @@ use selector_resolve::Resolution;
 use super::io::write_chunk_report_json;
 use super::util::{render_atomic_unit_cause_guidance, target_file_for_request};
 use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast};
-use crate::{ChunkModulesCounts, ChunkModulesReport, FinalModuleContent, ReportEmission, RequestedLogicalModule};
 use crate::chunk_renames::collect_chunk_renames;
 use crate::imports::{ArtifactSourceImportResolutionCache, VendorReimportOracle};
 use crate::lower::{
@@ -24,9 +23,16 @@ use crate::lower::{
     LoweredChunk, lower_chunk,
 };
 use crate::naturalize::collect_plan_export_rename_intents;
-use crate::plans::{LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect, logical_requests_for_chunk};
+use crate::plans::{
+    LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect,
+    logical_requests_for_chunk,
+};
 use crate::rebind_fold::compute_rebind_folds;
 use crate::rename_ledger::{RenameLedger, SealValidation};
+use crate::{
+    ChunkModulesCounts, ChunkModulesReport, FinalModuleContent, ReportEmission,
+    RequestedLogicalModule,
+};
 use analysis::{
     AnalysisHints, LocalEffectPolicy, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
     OwnerGraphOptions, PlannedModule, top_level_id,

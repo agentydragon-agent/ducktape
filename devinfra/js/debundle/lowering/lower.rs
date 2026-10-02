@@ -1,8 +1,7 @@
 //! Lower a single chunk: produce the per-chunk set of JS files (entry + extracted
 //! logical modules) by running every module plan through the rename pipeline,
 //! emitting cross-module imports, and naturalizing object shorthand. The chunk-
-//! level orchestration that wraps this lives in mod.rs's
-//! `materialize_logical_chunk`.
+//! level planning and gate checks that wrap this live in `materialize/`.
 
 use std::sync::Mutex;
 

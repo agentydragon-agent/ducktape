@@ -15,7 +15,7 @@ use vendor::{
 
 use crate::imports::{RuntimeImportInfo, RuntimeImportKind};
 use artifact::{ArtifactIndexes, ChunkId, ChunkTable};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use swc_ecma_ast::*;
 
 /// Planner-boundary target vocabulary for one runtime re-import. Intra-chunk import lists stay keyed by

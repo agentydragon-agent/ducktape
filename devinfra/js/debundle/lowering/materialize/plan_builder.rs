@@ -7,14 +7,16 @@
 use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
 use crate::chunk_ast::{TopLevelDecl, binding_declaration};
-use crate::util::target_file_for_request;
 use crate::exports::reject_duplicate_member_bindings;
 use crate::imports::{
     ArtifactSourceImportResolutionCache, RuntimeImportFacts, resolve_imported_binding,
 };
 use crate::plans::{LogicalRequest, MemberRequest, ModulePlan};
 use crate::rebind_fold::RebindFold;
-use analysis::{BindingKind, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits, OwnerId, top_level_id};
+use crate::util::target_file_for_request;
+use analysis::{
+    BindingKind, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits, OwnerId, top_level_id,
+};
 use anyhow::{Context, Result, bail};
 use js_ast::body_index_for_statement_ordinal;
 use selector_outcome::{
