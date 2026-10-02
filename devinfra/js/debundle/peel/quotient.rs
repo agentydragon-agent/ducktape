@@ -217,7 +217,7 @@ pub struct QuotientGraph {
     owner_graph: OwnerGraph,
     /// Owners whose `OwnerGraphNodeReport.destination.residual` is
     /// `true`. Set by `from_report` from the JSON wire flag (the
-    /// same residual identification `factorize.rs` uses). A class made
+    /// same residual identification `propose.rs` uses). A class made
     /// only of these, and not anchored to a module, projects to the
     /// partition's residual `ModuleId` for the realizability gate.
     gate_residual_owners: BTreeSet<OwnerIdx>,

@@ -19,7 +19,7 @@
 > `import` / `export` declarations. There is no init-wrapper
 > machinery, no closure pass, no implicit binding pulls — every
 > owned binding is named explicitly in the spec, and `Imported`
-> bindings flow through `ChunkAnalysis.bindings` /
+> bindings flow through `FactorizationInputs.bindings` /
 > `BindingKind::Imported`, carrying the single re-exporting module
 > and public name that claimed it. Anonymous (empty-`declared`)
 > top-level statements have no name to address as a member; a
@@ -1455,7 +1455,7 @@ dependencies:
   `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
   is `chunk_analysis::compute_chunk_analysis`, returning a
   `chunk_analysis::ChunkAnalysisOutput` — distinct from the `gate`
-  crate's `ChunkAnalysis` — that bundles `ChunkFactAnalysis` (facts +
+  crate's `FactorizationInputs` — that bundles `ChunkFactAnalysis` (facts +
   top-level-await detection + redundant-hint warnings) with the
   `OwnerGraphAndUnits` derived from those facts.
 - **Materialization** (spec-dependent): assemble the partition from the
@@ -1605,7 +1605,7 @@ Five layers, bottom-up:
    partition. Cross-module edges are the realizability evidence
    `check_realizability` operates on.
 5. **Module proposals** — DAG-derived advisory recommendations
-   computed by the factorizer (`debundle modules propose`) over
+   computed by the proposer (`debundle modules propose`) over
    `atomic_graph`. **Not** emitted by `debundle run`; they are a
    read-only planner projection.
 
@@ -2471,17 +2471,17 @@ the dep graph captures that read without special-case logic. If the spec also
 gives `mod_a` an at-init read of something in `mod_b`, the cycle is mutual and
 rejected.
 
-## ChunkAnalysis + ChunkFactorization: owner graph plus quotient
+## FactorizationInputs + ChunkFactorization: owner graph plus quotient
 
 The runtime data structures the validator and emitter both consume are a pair:
-the `gate` crate's per-chunk `ChunkAnalysis` (inputs + IR; distinct from
+the `gate` crate's per-chunk `FactorizationInputs` (inputs + IR; distinct from
 `chunk_analysis::ChunkAnalysisOutput`, the spec-independent composer output) and a
 `ChunkFactorization` wrapping it (partition + derived realizability views).
 Together they carry the chunk's statement facts, the binding catalogue, the
 explicit logical modules, the owner graph, and the module dep graph derived by
 quotienting that owner graph under the spec assignment.
 
-Statement facts feed the owner graph (stored on `ChunkAnalysis`), and the
+Statement facts feed the owner graph (stored on `FactorizationInputs`), and the
 module dep graph is a quotient of that owner graph under the current spec
 assignment (stored on `ChunkFactorization`).
 
@@ -2538,11 +2538,11 @@ re-export module).
 
 ### Rejected: one partition-optional chunk IR
 
-Folding `ChunkFactorization` into `ChunkAnalysis` as one IR with optional
+Folding `ChunkFactorization` into `FactorizationInputs` as one IR with optional
 partition state looks like it removes a layer, but the two-layer shape is
-already in place: `ChunkAnalysis` is the partition-free IR, `ChunkFactorization`
+already in place: `FactorizationInputs` is the partition-free IR, `ChunkFactorization`
 adds the applied partition, and `validate()` derives `FactorizationReport` from
-it. Removing the `Arc<ChunkAnalysis>` boundary touches the whole
+it. Removing the `Arc<FactorizationInputs>` boundary touches the whole
 materializer/emitter path for no behavior change, so the layers stay.
 
 ### Identifiers are typed, not stringly-typed
