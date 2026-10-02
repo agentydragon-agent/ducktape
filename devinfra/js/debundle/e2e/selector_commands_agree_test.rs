@@ -692,7 +692,7 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
     let tree = elimination_tree();
     let source = tree.source_path();
     let modules = &tree.modules;
-    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
+    let out = run_source_only_validate(modules, &source, &["--format", "json"]);
     assert!(out.status.success(), "stderr={}", out.stderr);
     let report: Value = serde_json::from_str(&out.stdout).unwrap();
     let [source_only] = outcomes(&report) else {
@@ -810,7 +810,7 @@ fn relational_claims_eliminate_only_in_spec_wide_commands() {
     );
     let source = tree.source_path();
     let modules = &tree.modules;
-    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
+    let out = run_source_only_validate(modules, &source, &["--format", "json"]);
     assert!(out.status.success(), "stderr={}", out.stderr);
     let report: Value = serde_json::from_str(&out.stdout).unwrap();
     let [source_only] = outcomes(&report) else {
