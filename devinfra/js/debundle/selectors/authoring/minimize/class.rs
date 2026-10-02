@@ -3,14 +3,13 @@
 use std::collections::BTreeSet;
 
 use anyhow::Result;
-use source_match_holes::ANYTHING_HOLE_KEYWORD;
-use swc_common::{DUMMY_SP, Spanned};
+use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::read_off_candidates;
 use crate::render::{
-    AnchorSpan, anything_expr, anything_param, collapse_omitted_runs, emit_selector,
-    holed_function_body, ident_node, node_retains_any,
+    AnchorSpan, anything_expr, anything_param, class_member_hole, collapse_omitted_runs,
+    emit_selector, holed_function_body, ident_node, node_retains_any,
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
@@ -72,35 +71,15 @@ pub(crate) fn minimize_class_selector_candidates(
     )
 }
 
-/// A class-member run-absorber hole, emitted as an `ANYTHING;` no-init field —
-/// the only spelling the matcher accepts in class-member position.
-fn class_rest_member() -> ClassMember {
-    ClassMember::ClassProp(ClassProp {
-        span: DUMMY_SP,
-        key: PropName::Ident(IdentName::new(ANYTHING_HOLE_KEYWORD.into(), DUMMY_SP)),
-        value: None,
-        type_ann: None,
-        is_static: false,
-        decorators: vec![],
-        accessibility: None,
-        is_abstract: false,
-        is_optional: false,
-        is_override: false,
-        readonly: false,
-        declare: false,
-        definite: false,
-    })
-}
-
 fn hole_class_members(members: &[ClassMember], kept: &BTreeSet<AnchorSpan>) -> Vec<ClassMember> {
     let mut out = collapse_omitted_runs(
         members.iter().map(|member| {
             node_retains_any(member.span(), kept).then(|| hole_class_member(member, kept))
         }),
-        class_rest_member,
+        class_member_hole,
     );
     if out.is_empty() {
-        out.push(class_rest_member());
+        out.push(class_member_hole());
     }
     out
 }

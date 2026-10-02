@@ -315,7 +315,7 @@ fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
                 n = agg.count,
                 fb = key.from_label,
                 fm = key.from,
-                k = dep_kind_short(agg.kind),
+                k = agg.kind.diagnostic_label(),
                 tb = key.to_label,
                 tm = key.to,
             ));
@@ -360,7 +360,7 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
     out.push_str(&format!(
         "    {from_b} ({fm})  --{k}-->  {to_b} ({tm})  [stmt #{ord}]\n",
         fm = edge.from,
-        k = dep_kind_short(edge.kind),
+        k = edge.kind.diagnostic_label(),
         tm = edge.to,
         ord = edge.statement_ordinal.0,
     ));
@@ -405,18 +405,6 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
                 out.push_str(&format!("        {guidance}\n"));
             }
         }
-    }
-}
-
-fn dep_kind_short(kind: DepKind) -> &'static str {
-    match kind {
-        DepKind::EagerUse => "at-init",
-        DepKind::LazyUse => "lazy",
-        DepKind::EagerRebind => "at-init rebind",
-        DepKind::LazyRebind => "lazy rebind",
-        DepKind::DeferredRebind => "deferred rebind",
-        DepKind::Sequenced => "side-effect",
-        DepKind::LocalEffect => "local-effect",
     }
 }
 

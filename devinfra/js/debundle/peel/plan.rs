@@ -5,7 +5,6 @@
 //! human-oriented "views".
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::env;
 use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -14,7 +13,9 @@ use super::propose::{
     DEFAULT_SIZE_CAP_LINES, ModuleProposal, ProposalDiagnostic, ProposalOptions, ProposalsReport,
     propose_from_files, propose_from_graph,
 };
-use anonymous_resolution::{SourceClaimSet, resolve_source_claims, resolve_source_claims_of};
+use anonymous_resolution::{
+    SourceClaimSet, resolve_source_claims, resolve_source_claims_of, resolve_source_file,
+};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
 use serde::Serialize;
@@ -1514,63 +1515,6 @@ fn source_spans(owners: &[OwnerGraphNodeReport]) -> Result<BTreeMap<String, Sour
         bail!("selected owners do not have source locations");
     }
     Ok(spans)
-}
-
-fn resolve_source_file(
-    source_path: &str,
-    source_root: Option<&Path>,
-    owner_graph_path: &Path,
-    modules_root: &Path,
-) -> Result<PathBuf> {
-    let mut candidates = Vec::new();
-    let source = PathBuf::from(source_path);
-    if source.is_absolute() {
-        candidates.push(source);
-    } else {
-        if let Some(root) = source_root {
-            candidates.push(root.join(source_path));
-        }
-        if let Ok(cwd) = env::current_dir() {
-            candidates.push(cwd.join(source_path));
-        }
-        push_relative_candidate(&mut candidates, owner_graph_path.parent(), source_path);
-        push_relative_candidate(
-            &mut candidates,
-            owner_graph_path.parent().and_then(Path::parent),
-            source_path,
-        );
-        push_relative_candidate(&mut candidates, modules_root.parent(), source_path);
-        push_relative_candidate(
-            &mut candidates,
-            modules_root.parent().and_then(Path::parent),
-            source_path,
-        );
-    }
-    dedup_paths(&mut candidates);
-    for candidate in &candidates {
-        if candidate.is_file() {
-            return Ok(candidate.clone());
-        }
-    }
-    bail!(
-        "could not resolve source path {source_path:?}; pass --source-root. Tried: {}",
-        candidates
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
-}
-
-fn push_relative_candidate(candidates: &mut Vec<PathBuf>, root: Option<&Path>, source_path: &str) {
-    if let Some(root) = root {
-        candidates.push(root.join(source_path));
-    }
-}
-
-fn dedup_paths(paths: &mut Vec<PathBuf>) {
-    let mut seen = BTreeSet::new();
-    paths.retain(|path| seen.insert(path.display().to_string()));
 }
 
 fn read_source_text(

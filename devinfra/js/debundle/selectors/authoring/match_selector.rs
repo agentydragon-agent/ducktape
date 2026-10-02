@@ -41,13 +41,12 @@ use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
     ArrowExpr, ArrowFunctionBody, AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class,
-    ClassMember, ClassProp, Constructor, Expr, ExprOrSpread, ExprStmt, Function, IdentName, Module,
-    ModuleItem, NewExpr, ObjectLit, ObjectPat, ObjectPatProp, Pat, Prop, PropName, PropOrSpread,
-    SeqExpr, Stmt,
+    ClassMember, Constructor, Expr, ExprOrSpread, ExprStmt, Function, Module, ModuleItem, NewExpr,
+    ObjectLit, ObjectPat, ObjectPatProp, Pat, Prop, PropName, PropOrSpread, SeqExpr, Stmt,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use crate::render::{anything_expr, ident_node};
+use crate::render::{anything_expr, class_member_hole, ident_node};
 
 pub struct MatchSelectorConfig {
     pub source_file: Option<PathBuf>,
@@ -562,24 +561,6 @@ fn stmt_list_hole() -> Stmt {
     Stmt::Expr(ExprStmt {
         span: DUMMY_SP,
         expr: Box::new(Expr::Ident(ident_node(STMT_LIST_HOLE_KEYWORD))),
-    })
-}
-
-fn class_member_hole() -> ClassMember {
-    ClassMember::ClassProp(ClassProp {
-        span: DUMMY_SP,
-        key: PropName::Ident(IdentName::new(ANYTHING_HOLE_KEYWORD.into(), DUMMY_SP)),
-        value: None,
-        type_ann: None,
-        is_static: false,
-        decorators: vec![],
-        accessibility: None,
-        is_abstract: false,
-        is_optional: false,
-        is_override: false,
-        readonly: false,
-        declare: false,
-        definite: false,
     })
 }
 
