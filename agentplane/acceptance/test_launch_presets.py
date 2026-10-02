@@ -9,8 +9,8 @@ import pytest_bazel
 
 from agentplane.acceptance.agent import Agent, runner_startup_retries
 from agentplane.app.client import Client
-from agentplane.app.inventory import SandboxView
-from agentplane.app.presets import Harness, ThreadDefaults
+from agentplane.sandbox_service.inventory import SandboxView
+from agentplane.sandbox_service.session_config import Harness, ThreadDefaults
 from agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

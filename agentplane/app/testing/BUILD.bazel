@@ -10,7 +10,7 @@ py_library(
     srcs = ["kubernetes.py"],
     deps = [
         "//agentplane/app:egress",
-        "//agentplane/app:inventory",
+        "//agentplane/sandbox_service:inventory",
         "@pypi//kubernetes_asyncio",
     ],
 )
@@ -36,10 +36,8 @@ py_library(
         "//agentplane/app:egress",
         "//agentplane/app:electric",
         "//agentplane/app:identity",
-        "//agentplane/app:inventory",
         "//agentplane/app:live",
         "//agentplane/app:operator_sessions",
-        "//agentplane/app:presets",
         "//agentplane/app/agent_runtime:ingestion",
         "//agentplane/app/agent_runtime/events:event_log",
         "//agentplane/app/agent_runtime/events:ingestion_lease",
@@ -48,6 +46,8 @@ py_library(
         "//agentplane/app/agent_runtime/thread:store",
         "//agentplane/app/agent_runtime/view:content",
         "//agentplane/protocol:event_log_pb2",
+        "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:session_config",
         "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//httpx",

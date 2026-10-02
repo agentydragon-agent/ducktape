@@ -49,8 +49,8 @@ from agentplane.app.agent_runtime.view.fold import PayloadField
 from agentplane.app.agent_runtime.view.views import EntityKind, ThreadItemState, ThreadPayloadReference
 from agentplane.app.client import REQUEST_SECONDS, Client
 from agentplane.app.electric import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScopeResponse
-from agentplane.app.inventory import SandboxView
-from agentplane.app.presets import Harness
+from agentplane.sandbox_service.inventory import SandboxView
+from agentplane.sandbox_service.session_config import Harness
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire
 from agentplane.protocol import event_pb2

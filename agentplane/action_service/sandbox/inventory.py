@@ -1,6 +1,6 @@
 """Sandboxes this surface stamps, reads and deletes, and the commands it runs in them.
 
-Its own inventory rather than the integration app's (<../app/inventory.py>): that one mints a
+Its own inventory rather than the integration app's (<../sandbox_service/inventory.py>): that one mints a
 ServiceAccount per Sandbox and owns it, stamps the app's `managed` label, and is read back by the
 app's fleet view and ingestion coordinator, which would then look for a runner these boxes do not
 have. What is shared is the CRD, not the code.

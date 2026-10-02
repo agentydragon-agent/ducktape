@@ -10,8 +10,8 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.acceptance.agent import Agent
 from agentplane.app.client import Client, is_running
-from agentplane.app.inventory import ProvisioningState, SandboxView
-from agentplane.app.presets import Harness
+from agentplane.sandbox_service.inventory import ProvisioningState, SandboxView
+from agentplane.sandbox_service.session_config import Harness
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 

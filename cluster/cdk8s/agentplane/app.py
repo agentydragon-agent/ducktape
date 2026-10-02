@@ -55,7 +55,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
-from agentplane.app.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
+from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy

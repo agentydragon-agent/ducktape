@@ -23,7 +23,11 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    deps = ["//agentplane/runner:conftest"],
+    deps = [
+        "//agentplane/runner:conftest",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "@pypi//pytest",
+    ],
 )
 
 py_test(
@@ -68,6 +72,56 @@ py_test(
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:scripted_model",
         "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "inventory",
+    srcs = ["inventory.py"],
+    deps = [
+        ":kubernetes_grants",
+        ":session_config",
+        "//agentplane:subjects",
+        "//agentplane/action_service/policies:resources",
+        "//util:agent_sandbox",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "kubernetes_grants",
+    srcs = ["kubernetes_grants.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "session_config",
+    srcs = ["session_config.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_inventory",
+    srcs = ["test_inventory.py"],
+    deps = [
+        ":conftest",
+        ":inventory",
+        "//:conftest",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "//util:agent_sandbox",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

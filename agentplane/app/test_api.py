@@ -33,12 +33,13 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
-from agentplane.app.inventory import KUBERNETES_GRANTS_ANNOTATION, KUBERNETES_GRANTS_READY_ANNOTATION, SandboxInventory
+from agentplane.sandbox_service.inventory import KUBERNETES_GRANTS_ANNOTATION, KUBERNETES_GRANTS_READY_ANNOTATION, SandboxInventory
 from agentplane.app.kubernetes_bindings import KubernetesBindings
-from agentplane.app.kubernetes_grants import ResolvedGrant, RoleBindingGrant, RoleRef
+from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant, RoleBindingGrant, RoleRef
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.presets import Harness, PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.sandbox_service.session_config import Harness
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,

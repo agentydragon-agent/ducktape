@@ -12,8 +12,8 @@ import pytest_bazel
 
 from agentplane.acceptance.agent import Agent
 from agentplane.app.client import Client
-from agentplane.app.inventory import SandboxView
-from agentplane.app.presets import Harness
+from agentplane.sandbox_service.inventory import SandboxView
+from agentplane.sandbox_service.session_config import Harness
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from cluster.cdk8s.agentplane.app_settings import OLLAMA_MODELS

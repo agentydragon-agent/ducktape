@@ -7,9 +7,9 @@ py_library(
     srcs = ["runners.py"],
     deps = [
         "//agentplane/app:changes",
-        "//agentplane/app:inventory",
         "//agentplane/app:live",
         "//agentplane/runner:client",
+        "//agentplane/sandbox_service:inventory",
     ],
 )
 
@@ -19,7 +19,6 @@ py_library(
     deps = [
         ":runners",
         "//agentplane/app:changes",
-        "//agentplane/app:inventory",
         "//agentplane/app:presets",
         "//agentplane/app/agent_runtime:ingestion",
         "//agentplane/app/agent_runtime/events:event_log",
@@ -29,6 +28,7 @@ py_library(
         "//agentplane/runner:client",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:command_relay",
+        "//agentplane/sandbox_service:inventory",
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//protobuf",

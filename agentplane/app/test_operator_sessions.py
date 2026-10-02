@@ -30,11 +30,11 @@ from agentplane.app.conftest import TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress import EgressInventory
-from agentplane.app.inventory import SandboxInventory
+from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, request_session
-from agentplane.app.presets import Harness
+from agentplane.sandbox_service.session_config import Harness
 
 APP_URL = "http://test-app.invalid"
 OIDC = OIDCSettings(

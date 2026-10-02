@@ -9,8 +9,8 @@ import logging
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import RbacAuthorizationV1Api
 
-from agentplane.app.inventory import SandboxInventory, SandboxNotFoundError, SandboxView
-from agentplane.app.kubernetes_grants import ResolvedGrant, RoleBindingGrant
+from agentplane.sandbox_service.inventory import SandboxInventory, SandboxNotFoundError, SandboxView
+from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant, RoleBindingGrant
 from util.agent_sandbox import SANDBOX_API
 
 logger = logging.getLogger(__name__)

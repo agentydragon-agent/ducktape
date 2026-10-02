@@ -8,10 +8,10 @@ py_library(
     deps = [
         ":debug",
         "//agentplane/app:database_updates",
-        "//agentplane/app:presets",
         "//agentplane/app/agent_runtime:models",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:session_config",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],

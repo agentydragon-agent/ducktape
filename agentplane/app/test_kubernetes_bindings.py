@@ -11,7 +11,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 
-from agentplane.app.inventory import (
+from agentplane.sandbox_service.inventory import (
     KUBERNETES_GRANTS_ANNOTATION,
     NewSandbox,
     ProvisioningState,
@@ -19,7 +19,7 @@ from agentplane.app.inventory import (
     sandbox_view,
 )
 from agentplane.app.kubernetes_bindings import KUBERNETES_BINDINGS_FINALIZER, KubernetesBindings, _binding, binding_name
-from agentplane.app.kubernetes_grants import (
+from agentplane.sandbox_service.kubernetes_grants import (
     ClusterRoleBindingGrant,
     ClusterRoleRef,
     DuplicateKubernetesGrantError,

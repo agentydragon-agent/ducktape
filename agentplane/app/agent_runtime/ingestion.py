@@ -20,7 +20,7 @@ from agentplane.app.agent_runtime.runner.runners import Runners, SandboxNotReach
 from agentplane.app.agent_runtime.view import fold
 from agentplane.app.agent_runtime.view.recording import ThreadFoldError, record_thread_fold, set_operational
 from agentplane.app.database_updates import Channel, notify
-from agentplane.app.inventory import SandboxNotFoundError
+from agentplane.sandbox_service.inventory import SandboxNotFoundError
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError

@@ -58,7 +58,7 @@ from agentplane.app.egress import (
     matching_bindings,
 )
 from agentplane.app.identity import CallerIdentity, require_caller
-from agentplane.app.inventory import (
+from agentplane.sandbox_service.inventory import (
     MANAGED_LABEL,
     SANDBOX_API,
     SANDBOXES_PLURAL,

@@ -43,7 +43,7 @@ from agentplane.action_service.models import (
 from agentplane.action_service.policies.resources import BINDINGS_PLURAL, POLICY_SETS_PLURAL, READY_CONDITION
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from agentplane.app.client import Client
-from agentplane.app.inventory import SandboxView
+from agentplane.sandbox_service.inventory import SandboxView
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.runner import protocol_pb2
 

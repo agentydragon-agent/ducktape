@@ -10,7 +10,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
-from agentplane.app.inventory import (
+from agentplane.sandbox_service.inventory import (
     MANAGED_LABEL,
     NewSandbox,
     ProvisioningState,

@@ -7,7 +7,7 @@ py_library(
     srcs = ["models.py"],
     deps = [
         "//agentplane/app:database",
-        "//agentplane/app:presets",
+        "//agentplane/sandbox_service:session_config",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
@@ -18,7 +18,6 @@ py_library(
     srcs = ["ingestion.py"],
     deps = [
         "//agentplane/app:database_updates",
-        "//agentplane/app:inventory",
         "//agentplane/app/agent_runtime/events:event_log",
         "//agentplane/app/agent_runtime/events:ingestion_lease",
         "//agentplane/app/agent_runtime/runner:runners",
@@ -27,6 +26,7 @@ py_library(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:inventory",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",

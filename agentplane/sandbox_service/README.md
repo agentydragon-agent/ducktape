@@ -24,6 +24,19 @@ Protocol-edge tests use a controllable gRPC peer. Native tests exercise both har
 with scripted model endpoints, without the integration app or its database. They cover
 admission before model completion, receipt replay, and refusing to create/resume a session.
 
+## Inventory and concrete launch configuration
+
+`inventory.py` now owns the existing Kubernetes-backed inventory and low-level
+Sandbox lifecycle operations. `session_config.py` owns the concrete, serialized
+launch fields; `kubernetes_grants.py` owns the selected grant shapes. The app imports
+these implementations. UI preset catalogs remain app-owned and are not interpreted
+by this package. Existing annotation keys, field/class names, defaults, ServiceAccount
+creation, PVC policy, and provisioning behavior are unchanged.
+
+The app still orchestrates grant reconciliation and policy binding, and still calls
+these Python components in-process. Moving that orchestration and switching callers
+to a separately deployed API are subsequent cuts, not accomplished by this move.
+
 ## Still to extract
 
 This is **not yet a deployed service or an authenticated public API**. Callers must

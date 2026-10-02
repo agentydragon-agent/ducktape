@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from agentplane.app.database import Base
-from agentplane.app.presets import Harness
+from agentplane.sandbox_service.session_config import Harness
 
 
 class EventLog(Base):

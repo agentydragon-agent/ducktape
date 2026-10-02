@@ -74,7 +74,7 @@ from agentplane.app.egress import (
 )
 from agentplane.app.electric import ElectricProxy, router as electric_router
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
-from agentplane.app.inventory import (
+from agentplane.sandbox_service.inventory import (
     KUBERNETES_GRANTS_ANNOTATION,
     SANDBOX_BINDING_ANNOTATION,
     NewSandbox,
@@ -84,7 +84,7 @@ from agentplane.app.inventory import (
     SandboxView,
 )
 from agentplane.app.kubernetes_bindings import KUBERNETES_BINDINGS_FINALIZER, KubernetesBindings
-from agentplane.app.kubernetes_grants import (
+from agentplane.sandbox_service.kubernetes_grants import (
     ClusterRoleBindingGrant,
     DuplicateKubernetesGrantError,
     KubernetesGrant,
@@ -96,7 +96,8 @@ from agentplane.app.kubernetes_grants import (
 from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
-from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
+from agentplane.app.presets import PresetCatalog, SandboxPresetView
+from agentplane.sandbox_service.session_config import Harness, SandboxBinding
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import OpenTimeoutError, RunnerError

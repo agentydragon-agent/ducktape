@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPreset, ThreadDefaults, ThreadPreset
+from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.sandbox_service.session_config import Harness, SandboxBinding, ThreadDefaults
 
 
 @pytest.fixture

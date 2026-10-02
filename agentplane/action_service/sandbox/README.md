@@ -55,7 +55,7 @@ invariant; breaking it costs the whole account's authority rather than one box's
 ## Separation from the integration app
 
 **Its own label and selector.** Not `agentplane.allegedly.works/managed`, which the app lists,
-watches and gates operations on (<../../app/inventory.py>, <../../app/live.py>). An exec target carrying
+watches and gates operations on (<../../sandbox_service/inventory.py>, <../../app/live.py>). An exec target carrying
 it joins the app's fleet view and its ingestion coordinator, which then discovers a runner the box
 does not have.
 

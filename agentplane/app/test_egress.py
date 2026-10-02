@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
-from agentplane.app.inventory import sandbox_view
+from agentplane.sandbox_service.inventory import sandbox_view
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
     FakeCustomObjectsApi,

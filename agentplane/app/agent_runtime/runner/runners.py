@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 
 from agentplane.app.changes import Changes
-from agentplane.app.inventory import ProvisioningState, SandboxNotFoundError
+from agentplane.sandbox_service.inventory import ProvisioningState, SandboxNotFoundError
 from agentplane.app.live import LiveIndex
 from agentplane.runner.client import RunnerClient
 

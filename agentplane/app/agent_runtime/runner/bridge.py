@@ -17,7 +17,7 @@ from agentplane.app.agent_runtime.ingestion import Ingester
 from agentplane.app.agent_runtime.runner.runners import Runners
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.changes import Changes
-from agentplane.app.inventory import SandboxInventory, SandboxNotFoundError, SandboxView
+from agentplane.sandbox_service.inventory import SandboxInventory, SandboxNotFoundError, SandboxView
 from agentplane.app.presets import PresetCatalog
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2

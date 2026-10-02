@@ -23,7 +23,7 @@ from agentplane.app.agent_runtime.view.views import ThreadView
 from agentplane.app.api import EgressGrant, ModelCatalog
 from agentplane.app.decisions import Decision
 from agentplane.app.egress import BindingView, PolicyView
-from agentplane.app.inventory import NewSandbox, ProvisioningState, SandboxView
+from agentplane.sandbox_service.inventory import NewSandbox, ProvisioningState, SandboxView
 from agentplane.app.presets import SandboxPresetView
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2

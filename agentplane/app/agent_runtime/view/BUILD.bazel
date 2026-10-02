@@ -79,7 +79,7 @@ py_library(
     ],
     deps = [
         ":fold",
-        "//agentplane/app:presets",
+        "//agentplane/sandbox_service:session_config",
         "@pypi//pydantic",
     ],
 )

@@ -1,8 +1,8 @@
 """Agentplane's sandbox inventory: the labelled Sandboxes in one namespace and the Pod under each.
 
-Kubernetes is the inventory in this slice — the app persists nothing of its own — so every fact the
-app knows about a sandbox is a label or annotation on its Sandbox, and the provisioning state is
-derived from the Sandbox and its Pod. The app creates standalone Sandboxes: the Pod and volume
+Kubernetes is the inventory in this slice — this component persists no private database — so every
+fact it knows about a sandbox is a label or annotation on its Sandbox, and the provisioning state is
+derived from the Sandbox and its Pod. It creates standalone Sandboxes: the Pod and volume
 shape is copied from the namespace's `SandboxTemplate` at creation, so the manifest stays the one
 place the runner Pod is defined, and no claim or warm pool sits in between.
 """
@@ -24,8 +24,8 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
-from agentplane.app.kubernetes_grants import ResolvedGrant
-from agentplane.app.presets import SandboxBinding, ThreadDefaults
+from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant
+from agentplane.sandbox_service.session_config import SandboxBinding, ThreadDefaults
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
 from util.kubernetes import CustomObjectsClient
