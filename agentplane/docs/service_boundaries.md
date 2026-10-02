@@ -71,6 +71,15 @@ consumers must move to a backend owner, preserving retained history and provenan
 independent competing archive or query app tables from the new service. Pure UI projections can remain
 in the app. Product Thread identity/annotations need not move wholesale for runner-session-scoped v1.
 
+## Existing staging data
+
+Backend independence is not a reason to discard the current staging instance. For this extraction,
+default to preserving existing data and identities, with an inventory, tested migration/restore path,
+and controlled ownership handoff. One-time migration of app-owned records is distinct from a
+steady-state dependency on app tables. See [staging data preservation](../plans/sandbox_service.md#staging-data-preservation).
+Any necessary loss/reset must be described and explicitly approved before execution; the repository's
+general staging-disposability guidance is not permission to bypass this task-specific requirement.
+
 ## Review and acceptance gates
 
 - Reject new reverse imports, app API clients, app-table reads, or app-only bootstrap dependencies in

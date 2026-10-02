@@ -17,3 +17,12 @@ See [the dependency rule](docs/service_boundaries.md) and [Sandbox Service plan]
   dependencies. Distinguish planned boundaries from what is already implemented.
 - Acceptance for an extracted backend path must exercise it with the integration app unavailable.
   Do not add another command queue, event authority, or credential issuer as an incidental refactor.
+
+## Preserve staging data during the Sandbox Service extraction
+
+For this extraction, data-preserving migration is the default despite the repository's general
+staging-disposability guidance. Inventory existing state, retain identities/history and runner
+storage where feasible, and validate backup/restore and the cutover before changing staging.
+Do not drop/recreate staging databases, sandboxes, volumes, or session state as a shortcut. If
+preservation cannot be achieved, explain the exact loss/disruption and obtain operator approval
+before proceeding. See the [migration plan](plans/sandbox_service.md#staging-data-preservation).
