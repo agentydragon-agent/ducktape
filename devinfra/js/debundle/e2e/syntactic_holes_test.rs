@@ -53,7 +53,8 @@ fn member_fixture<'a>(source: &'a str, module: &str, member: Member) -> FixtureO
 
 #[test]
 fn member_source_match_alpha_all_allows_name_reuse_in_sibling_function_scopes() {
-    let fixture = run_fixture(member_fixture(r#"function actual(items) {
+    let fixture = run_fixture(member_fixture(
+        r#"function actual(items) {
   return items
     .map((x) => {
       const y = [];
@@ -66,9 +67,11 @@ fn member_source_match_alpha_all_allows_name_reuse_in_sibling_function_scopes() 
 }
 console.log(actual([{ label: "left" }, { label: "right" }]));
 export { actual };
-"#, "format", Member::source_alpha(
-                "format_items",
-                r#"function readable(items) {
+"#,
+        "format",
+        Member::source_alpha(
+            "format_items",
+            r#"function readable(items) {
   return items
     .map((item) => {
       const lines = [];
@@ -79,7 +82,8 @@ export { actual };
     .map((line) => line.toUpperCase())
     .join(",");
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "LEFT,RIGHT\n");
     assert_module_source(
@@ -92,7 +96,8 @@ export { actual };
 
 #[test]
 fn member_source_match_alpha_all_with_holes_allows_name_reuse_in_sibling_function_scopes() {
-    let fixture = run_fixture(member_fixture(r#"function actual(items) {
+    let fixture = run_fixture(member_fixture(
+        r#"function actual(items) {
   return items
     .map((x) => x.label.trim())
     .filter((x) => x !== "")
@@ -101,16 +106,19 @@ fn member_source_match_alpha_all_with_holes_allows_name_reuse_in_sibling_functio
 }
 console.log(actual([{ label: " left " }, { label: " right " }]));
 export { actual };
-"#, "format", Member::source_alpha(
-                "format_items",
-                r#"function readable(items) {
+"#,
+        "format",
+        Member::source_alpha(
+            "format_items",
+            r#"function readable(items) {
   return items
     .map((item) => EXPR)
     .filter((line) => line !== "")
     .map((line) => line.toUpperCase())
     .join(",");
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "LEFT,RIGHT\n");
     assert_module_source(
@@ -123,7 +131,8 @@ export { actual };
 
 #[test]
 fn member_source_match_alpha_all_allows_name_reuse_in_sibling_block_scopes() {
-    let fixture = run_fixture(member_fixture(r#"function actual(input) {
+    let fixture = run_fixture(member_fixture(
+        r#"function actual(input) {
   const out = [];
   { const { value: a } = input.left; out.push(a); }
   { const { value: b } = input.right; out.push(b); }
@@ -131,15 +140,18 @@ fn member_source_match_alpha_all_allows_name_reuse_in_sibling_block_scopes() {
 }
 console.log(actual({ left: { value: "L" }, right: { value: "R" } }));
 export { actual };
-"#, "format", Member::source_alpha(
-                "format_values",
-                r#"function readable(input) {
+"#,
+        "format",
+        Member::source_alpha(
+            "format_values",
+            r#"function readable(input) {
   const out = [];
   { const { value } = input.left; out.push(value); }
   { const { value } = input.right; out.push(value); }
   return out.join("|");
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "L|R\n");
     assert_module_source(
@@ -152,7 +164,8 @@ export { actual };
 
 #[test]
 fn member_source_match_alpha_all_allows_name_reuse_in_switch_scope() {
-    let fixture = run_fixture(member_fixture(r#"function actual(input) {
+    let fixture = run_fixture(member_fixture(
+        r#"function actual(input) {
   const a = "outer";
   switch (input.kind) {
     case "left":
@@ -163,9 +176,11 @@ fn member_source_match_alpha_all_allows_name_reuse_in_switch_scope() {
 }
 console.log(actual({ kind: "left", left: "L" }), actual({ kind: "right", left: "R" }));
 export { actual };
-"#, "format", Member::source_alpha(
-                "format_value",
-                r#"function readable(input) {
+"#,
+        "format",
+        Member::source_alpha(
+            "format_value",
+            r#"function readable(input) {
   const value = "outer";
   switch (input.kind) {
     case "left":
@@ -174,7 +189,8 @@ export { actual };
   }
   return value;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "L outer\n");
     assert_module_source(
@@ -191,20 +207,24 @@ export { actual };
 
 #[test]
 fn member_source_match_alpha_all_named_function_expression_name_is_function_local() {
-    let fixture = run_fixture(member_fixture(r#"const a = () => "outer";
+    let fixture = run_fixture(member_fixture(
+        r#"const a = () => "outer";
 const b = function c(n) {
   return n <= 0 ? "inner" : c(n - 1);
 };
 console.log(a(), b(1));
 export { a, b };
-"#, "format", Member::source_alpha_target(
-                "wrapper",
-                "wrapper",
-                r#"const outer = () => "outer";
+"#,
+        "format",
+        Member::source_alpha_target(
+            "wrapper",
+            "wrapper",
+            r#"const outer = () => "outer";
 const wrapper = function outer(n) {
   return n <= 0 ? "inner" : outer(n - 1);
 };"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "outer inner\n");
     assert_module_source(
@@ -217,17 +237,21 @@ const wrapper = function outer(n) {
 
 #[test]
 fn member_source_match_treats_object_shorthand_as_explicit_same_name_property() {
-    let fixture = run_fixture(member_fixture(r#"function actual(apiMode, enabled) {
+    let fixture = run_fixture(member_fixture(
+        r#"function actual(apiMode, enabled) {
   return { apiMode, enabled };
 }
 console.log(JSON.stringify(actual("preview", true)));
 export { actual };
-"#, "config", Member::source_alpha(
-                "makeConfig",
-                r#"function readable(apiMode, enabled) {
+"#,
+        "config",
+        Member::source_alpha(
+            "makeConfig",
+            r#"function readable(apiMode, enabled) {
   return { apiMode: apiMode, enabled: enabled };
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "{\"apiMode\":\"preview\",\"enabled\":true}\n");
     assert_module_source(
@@ -240,7 +264,8 @@ export { actual };
 
 #[test]
 fn member_source_match_anything_object_property_hole_skips_arbitrary_key_values() {
-    let fixture = run_fixture(member_fixture(r#"function makeValue(label) {
+    let fixture = run_fixture(member_fixture(
+        r#"function makeValue(label) {
   return label.toUpperCase();
 }
 const actual = {
@@ -252,15 +277,18 @@ const actual = {
 };
 console.log(actual.requiredKey, actual.anotherKey, actual.spreadValue);
 export { actual };
-"#, "config", Member::source_alpha_target(
-                "config_object",
-                "readable",
-                r#"const readable = {
+"#,
+        "config",
+        Member::source_alpha_target(
+            "config_object",
+            "readable",
+            r#"const readable = {
   requiredKey: ANYTHING,
   ANYTHING,
   anotherKey: ANYTHING,
 };"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "REQUIRED ANOTHER SPREAD\n");
     assert_module_exports(
@@ -289,21 +317,25 @@ export { actual };
 // noisy generated members), end to end through the lowering pipeline.
 #[test]
 fn member_source_match_arrow_returning_object_literal_selects_factory() {
-    let fixture = run_fixture(member_fixture(r#"const makeWidget = (props) => ({
+    let fixture = run_fixture(member_fixture(
+        r#"const makeWidget = (props) => ({
   kind: "widget",
   render: () => props.label.toUpperCase(),
   dispose() {},
 });
 console.log(makeWidget({ label: "ok" }).render());
 export { makeWidget };
-"#, "factory", Member::source_alpha_target(
-                "widget_factory",
-                "readable",
-                r#"const readable = (props) => ({
+"#,
+        "factory",
+        Member::source_alpha_target(
+            "widget_factory",
+            "readable",
+            r#"const readable = (props) => ({
   kind: "widget",
   ANYTHING,
 });"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "OK\n");
     assert_module_exports(
@@ -334,7 +366,8 @@ export { makeWidget };
 // asserts the structure rather than the minified name.
 #[test]
 fn member_source_match_parenthesized_sequence_body_selects_helper() {
-    let fixture = run_fixture(member_fixture(r#"function applyDecorators(target, decorators) {
+    let fixture = run_fixture(member_fixture(
+        r#"function applyDecorators(target, decorators) {
   for (const decorate of decorators) decorate(target);
 }
 function decorate(target, decorators) {
@@ -343,12 +376,15 @@ function decorate(target, decorators) {
 const tagged = decorate({ tags: [] }, [(t) => t.tags.push("a")]);
 console.log(tagged.tags.join(","));
 export { decorate };
-"#, "helpers", Member::source_alpha(
-                "decorate_helper",
-                r#"function readable(target, decorators) {
+"#,
+        "helpers",
+        Member::source_alpha(
+            "decorate_helper",
+            r#"function readable(target, decorators) {
   return (applyDecorators(target, decorators), target);
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "a\n");
     assert_module_source(
@@ -369,7 +405,8 @@ export { decorate };
 // absorbs the noisy middle, end to end — instead of over-pinning every element.
 #[test]
 fn member_source_match_array_elements_hole_anchors_stable_endpoints() {
-    let fixture = run_fixture(member_fixture(r#"const palette = [
+    let fixture = run_fixture(member_fixture(
+        r#"const palette = [
   "black",
   "slate",
   "gray",
@@ -378,11 +415,14 @@ fn member_source_match_array_elements_hole_anchors_stable_endpoints() {
 ];
 console.log(palette[0], palette[palette.length - 1]);
 export { palette };
-"#, "theme", Member::source_alpha_target(
-                "color_palette",
-                "readable",
-                r#"const readable = ["black", ARRAY_ELEMENTS, "white"];"#,
-            )));
+"#,
+        "theme",
+        Member::source_alpha_target(
+            "color_palette",
+            "readable",
+            r#"const readable = ["black", ARRAY_ELEMENTS, "white"];"#,
+        ),
+    ));
 
     assert_entry_output(&fixture, "black white\n");
     assert_module_exports(
@@ -413,7 +453,8 @@ export { palette };
 // writes.
 #[test]
 fn member_source_match_seq_exprs_hole_anchors_a_memoized_hook() {
-    let fixture = run_fixture(member_fixture(r#"const slots = [];
+    let fixture = run_fixture(member_fixture(
+        r#"const slots = [];
 function loadLabel(cache, label) {
   let memo;
   return (cache[0] !== label
@@ -426,17 +467,20 @@ function loadLabel(cache, label) {
 }
 loadLabel(slots, "first")("a").then((value) => console.log(value));
 export { loadLabel };
-"#, "resource", Member::source_alpha_target(
-                "label_resource",
-                "readable",
-                r#"function readable(cache, label) {
+"#,
+        "resource",
+        Member::source_alpha_target(
+            "label_resource",
+            "readable",
+            r#"function readable(cache, label) {
   let memo;
   return (EXPR ? (memo = async (id) => {
     const base = `load:${label}`;
     return `${base}:${id}`;
   }, SEQ_EXPRS) : memo = EXPR), memo;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "load:first:a\n");
     assert_module_exports(
@@ -460,7 +504,8 @@ export { loadLabel };
 // uniquely — the reason `SEQ_EXPRS` exists.
 #[test]
 fn member_source_match_seq_exprs_hole_survives_a_dependency_count_change() {
-    let fixture = run_fixture(member_fixture(r#"const slots = [];
+    let fixture = run_fixture(member_fixture(
+        r#"const slots = [];
 function loadLabel(cache, label) {
   let memo;
   return (cache[0] !== label || cache[1] !== label || cache[2] !== label
@@ -474,17 +519,20 @@ function loadLabel(cache, label) {
 }
 loadLabel(slots, "first")("a").then((value) => console.log(value));
 export { loadLabel };
-"#, "resource", Member::source_alpha_target(
-                "label_resource",
-                "readable",
-                r#"function readable(cache, label) {
+"#,
+        "resource",
+        Member::source_alpha_target(
+            "label_resource",
+            "readable",
+            r#"function readable(cache, label) {
   let memo;
   return (EXPR ? (memo = async (id) => {
     const base = `load:${label}`;
     return `${base}:${id}`;
   }, SEQ_EXPRS) : memo = EXPR), memo;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "load:first:a\n");
     assert_module_exports(
@@ -506,7 +554,8 @@ export { loadLabel };
 // so the sibling sequence without that literal is not claimed.
 #[test]
 fn member_source_match_two_seq_exprs_holes_bracket_a_pinned_element() {
-    let fixture = run_fixture(member_fixture(r#"function runPipeline(flags) {
+    let fixture = run_fixture(member_fixture(
+        r#"function runPipeline(flags) {
   return (flags.on, "marker", 1, 2, flags.off);
 }
 function otherPipeline(flags) {
@@ -515,13 +564,16 @@ function otherPipeline(flags) {
 console.log(runPipeline({ on: "left", off: "right" }));
 console.log(otherPipeline({ on: "left", off: "other" }));
 export { runPipeline };
-"#, "pipeline", Member::source_alpha_target(
-                "marked_pipeline",
-                "readable",
-                r#"function readable(flags) {
+"#,
+        "pipeline",
+        Member::source_alpha_target(
+            "marked_pipeline",
+            "readable",
+            r#"function readable(flags) {
   return (SEQ_EXPRS, "marker", SEQ_EXPRS);
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "right\nother\n");
     assert_module_exports(
@@ -544,18 +596,22 @@ export { runPipeline };
 #[test]
 fn source_match_seq_exprs_outside_a_sequence_reports_the_misplaced_hole() {
     expect_rejection_containing_all(
-        member_fixture(r#"function actual(value) {
+        member_fixture(
+            r#"function actual(value) {
   return value.trim();
 }
 console.log(actual(" ok "));
 export { actual };
-"#, "hooks/misplaced", Member::source_alpha_target(
-                    "misplaced",
-                    "readable",
-                    r#"function readable(value) {
+"#,
+            "hooks/misplaced",
+            Member::source_alpha_target(
+                "misplaced",
+                "readable",
+                r#"function readable(value) {
   return SEQ_EXPRS;
 }"#,
-                )),
+            ),
+        ),
         &["SEQ_EXPRS", "run-hole keyword outside a list position"],
     );
 }
@@ -566,18 +622,22 @@ export { actual };
 #[test]
 fn source_match_lone_seq_exprs_in_parens_reports_the_misplaced_hole() {
     expect_rejection_containing_all(
-        member_fixture(r#"function actual(value) {
+        member_fixture(
+            r#"function actual(value) {
   return value.trim();
 }
 console.log(actual(" ok "));
 export { actual };
-"#, "hooks/lone_hole", Member::source_alpha_target(
-                    "lone_hole",
-                    "readable",
-                    r#"function readable(value) {
+"#,
+            "hooks/lone_hole",
+            Member::source_alpha_target(
+                "lone_hole",
+                "readable",
+                r#"function readable(value) {
   return (SEQ_EXPRS);
 }"#,
-                )),
+            ),
+        ),
         &["SEQ_EXPRS", "run-hole keyword outside a list position"],
     );
 }
@@ -651,13 +711,14 @@ export { handlerA, handlerB };
 #[test]
 fn source_match_anything_object_key_reports_unsupported_position() {
     expect_rejection_containing_all(
-        member_fixture(r#"const actual = { mode: "runtime" };
+        member_fixture(
+            r#"const actual = { mode: "runtime" };
 console.log(actual.mode);
 export { actual };
-"#, "config", Member::source_alpha(
-                    "makeConfig",
-                    r#"const readable = { ANYTHING: "runtime" };"#,
-                )),
+"#,
+            "config",
+            Member::source_alpha("makeConfig", r#"const readable = { ANYTHING: "runtime" };"#),
+        ),
         &[
             "ANYTHING",
             "unsupported",
@@ -669,17 +730,21 @@ export { actual };
 
 #[test]
 fn member_source_match_treats_destructure_shorthand_as_explicit_same_name_property() {
-    let fixture = run_fixture(member_fixture(r#"function actual({ apiMode, enabled }) {
+    let fixture = run_fixture(member_fixture(
+        r#"function actual({ apiMode, enabled }) {
   return `${apiMode}:${enabled ? "on" : "off"}`;
 }
 console.log(actual({ apiMode: "preview", enabled: true }));
 export { actual };
-"#, "config", Member::source_alpha(
-                "describeConfig",
-                r#"function readable({ apiMode: apiMode, enabled: enabled }) {
+"#,
+        "config",
+        Member::source_alpha(
+            "describeConfig",
+            r#"function readable({ apiMode: apiMode, enabled: enabled }) {
   return `${apiMode}:${enabled ? "on" : "off"}`;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "preview:on\n");
     assert_module_source(
@@ -692,17 +757,21 @@ export { actual };
 
 #[test]
 fn member_source_match_anything_pattern_skips_destructuring_shape() {
-    let fixture = run_fixture(member_fixture(r#"function actual({ value, ignored }) {
+    let fixture = run_fixture(member_fixture(
+        r#"function actual({ value, ignored }) {
   return `stable:${value}`;
 }
 console.log(actual({ value: "ok", ignored: "noise" }));
 export { actual };
-"#, "config", Member::source_alpha(
-                "readConfig",
-                r#"function readable(ANYTHING) {
+"#,
+        "config",
+        Member::source_alpha(
+            "readConfig",
+            r#"function readable(ANYTHING) {
   return `stable:${ANYTHING}`;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "stable:ok\n");
     assert_module_exports(
@@ -721,13 +790,17 @@ export { actual };
 
 #[test]
 fn member_source_match_expr_prefix_holes_match_arbitrary_expression_subtrees() {
-    let fixture = run_fixture(member_fixture(r#"const actual = Math.max(Number.parseInt("7", 10), [1, 2, 3].length);
+    let fixture = run_fixture(member_fixture(
+        r#"const actual = Math.max(Number.parseInt("7", 10), [1, 2, 3].length);
 console.log(actual);
 export { actual };
-"#, "calc", Member::source_alpha(
-                "calc_value",
-                r#"const readable = Math.max(EXPR_LEFT, EXPR_RIGHT);"#,
-            )));
+"#,
+        "calc",
+        Member::source_alpha(
+            "calc_value",
+            r#"const readable = Math.max(EXPR_LEFT, EXPR_RIGHT);"#,
+        ),
+    ));
 
     assert_entry_output(&fixture, "7\n");
     assert_module_exports(
@@ -751,13 +824,14 @@ export { actual };
 
 #[test]
 fn member_source_match_anything_matches_expression_subtrees() {
-    let fixture = run_fixture(member_fixture(r#"const actual = Number.parseInt("8", 10) + [1, 2, 3].length;
+    let fixture = run_fixture(member_fixture(
+        r#"const actual = Number.parseInt("8", 10) + [1, 2, 3].length;
 console.log(actual);
 export { actual };
-"#, "calc", Member::source_alpha(
-                "calc_value",
-                r#"const readable = ANYTHING + ANYTHING;"#,
-            )));
+"#,
+        "calc",
+        Member::source_alpha("calc_value", r#"const readable = ANYTHING + ANYTHING;"#),
+    ));
 
     assert_entry_output(&fixture, "11\n");
     assert_module_exports(
@@ -776,13 +850,17 @@ export { actual };
 
 #[test]
 fn member_source_match_string_literal_regex_predicate_matches_string_literal_value() {
-    let fixture = run_fixture(member_fixture(r#"const runtimeStyle = "WidgetShell-42";
+    let fixture = run_fixture(member_fixture(
+        r#"const runtimeStyle = "WidgetShell-42";
 console.log(runtimeStyle);
 export { runtimeStyle };
-"#, "styles/shell", Member::source_alpha(
-                "shellStyle",
-                r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
-            )));
+"#,
+        "styles/shell",
+        Member::source_alpha(
+            "shellStyle",
+            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+        ),
+    ));
 
     assert_entry_output(&fixture, "WidgetShell-42\n");
     assert_module_source(
@@ -795,14 +873,18 @@ export { runtimeStyle };
 
 #[test]
 fn member_source_match_regex_quantifier_matches_shorter_value() {
-    let fixture = run_fixture(member_fixture(r#"const decoyStyle = "f";
+    let fixture = run_fixture(member_fixture(
+        r#"const decoyStyle = "f";
 const runtimeStyle = "fo";
 console.log(runtimeStyle);
 export { runtimeStyle };
-"#, "styles/shell", Member::source_alpha(
-                "shellStyle",
-                r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
-            )));
+"#,
+        "styles/shell",
+        Member::source_alpha(
+            "shellStyle",
+            r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
+        ),
+    ));
 
     assert_entry_output(&fixture, "fo\n");
     assert_module_source(
@@ -816,14 +898,18 @@ export { runtimeStyle };
 #[test]
 fn member_source_match_regex_quantifier_does_not_hide_ambiguity() {
     expect_rejection_containing_all(
-        member_fixture(r#"const decoyStyle = "foo";
+        member_fixture(
+            r#"const decoyStyle = "foo";
 const runtimeStyle = "fo";
 console.log(runtimeStyle);
 export { decoyStyle, runtimeStyle };
-"#, "styles/shell", Member::source_alpha(
-                    "shellStyle",
-                    r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
-                )),
+"#,
+            "styles/shell",
+            Member::source_alpha(
+                "shellStyle",
+                r#"const readableStyle = STR_LITERAL_MATCHING_RE("^foo*");"#,
+            ),
+        ),
         &[
             "styles/shell",
             "ambiguous",
@@ -836,13 +922,17 @@ export { decoyStyle, runtimeStyle };
 #[test]
 fn member_source_match_string_literal_regex_predicate_rejects_non_matching_literal() {
     expect_rejection_containing_all(
-        member_fixture(r#"const runtimeStyle = "PanelShell-42";
+        member_fixture(
+            r#"const runtimeStyle = "PanelShell-42";
 console.log(runtimeStyle);
 export { runtimeStyle };
-"#, "styles/shell", Member::source_alpha(
-                    "shellStyle",
-                    r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
-                )),
+"#,
+            "styles/shell",
+            Member::source_alpha(
+                "shellStyle",
+                r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+            ),
+        ),
         &[
             "styles/shell",
             "did not match any top-level declaration",
@@ -855,14 +945,18 @@ export { runtimeStyle };
 #[test]
 fn member_source_match_string_literal_regex_predicate_rejects_ambiguous_literals() {
     expect_rejection_containing_all(
-        member_fixture(r#"const runtimePrimaryStyle = "WidgetShell-1";
+        member_fixture(
+            r#"const runtimePrimaryStyle = "WidgetShell-1";
 const runtimeSecondaryStyle = "WidgetShell-2";
 console.log(runtimePrimaryStyle, runtimeSecondaryStyle);
 export { runtimePrimaryStyle, runtimeSecondaryStyle };
-"#, "styles/shell", Member::source_alpha(
-                    "shellStyle",
-                    r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
-                )),
+"#,
+            "styles/shell",
+            Member::source_alpha(
+                "shellStyle",
+                r#"const readableStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");"#,
+            ),
+        ),
         &[
             "styles/shell",
             "ambiguous",
@@ -874,7 +968,8 @@ export { runtimePrimaryStyle, runtimeSecondaryStyle };
 
 #[test]
 fn member_source_match_many_expr_holes_match_positionally() {
-    let fixture = run_fixture(member_fixture(r#"const actual = [
+    let fixture = run_fixture(member_fixture(
+        r#"const actual = [
   1 + 2,
   Number.parseInt("4", 10),
   ({ x: 5 }).x,
@@ -884,9 +979,11 @@ fn member_source_match_many_expr_holes_match_positionally() {
 ];
 console.log(actual.length);
 export { actual };
-"#, "calc", Member::source_alpha(
-                "calc_value",
-                r#"const readable = [
+"#,
+        "calc",
+        Member::source_alpha(
+            "calc_value",
+            r#"const readable = [
   EXPR_A,
   EXPR_B,
   EXPR_C,
@@ -894,7 +991,8 @@ export { actual };
   EXPR_E,
   EXPR_F,
 ];"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "6\n");
     assert_module_source(
@@ -916,7 +1014,8 @@ export { actual };
 
 #[test]
 fn member_source_match_argument_list_holes_skip_unimportant_arguments() {
-    let fixture = run_fixture(member_fixture(r#"function joinParts(...parts) {
+    let fixture = run_fixture(member_fixture(
+        r#"function joinParts(...parts) {
   return parts.join("|");
 }
 function ignoredPart(label) {
@@ -926,10 +1025,13 @@ const importantValue = "important";
 const actual = joinParts("stable", ignoredPart("left"), importantValue, ignoredPart("right"));
 console.log(actual);
 export { actual };
-"#, "joined", Member::source_alpha(
-                "joinedValue",
-                r#"const selectedValue = joinParts("stable", ARGS_BEFORE, importantValue, ARGS_AFTER);"#,
-            )));
+"#,
+        "joined",
+        Member::source_alpha(
+            "joinedValue",
+            r#"const selectedValue = joinParts("stable", ARGS_BEFORE, importantValue, ARGS_AFTER);"#,
+        ),
+    ));
 
     assert_entry_output(&fixture, "stable|ignored:left|important|ignored:right\n");
     assert_module_exports(
@@ -1487,7 +1589,8 @@ export { primary, secondary };
 
 #[test]
 fn member_source_match_declarator_holes_select_binding_from_wider_const_list() {
-    let fixture = run_fixture(member_fixture(r#"const runtimePrefix = "prefix",
+    let fixture = run_fixture(member_fixture(
+        r#"const runtimePrefix = "prefix",
   runtimeFormat = (value) => String(value).toUpperCase(),
   runtimeLabels = new Map([
     ["left", "Left"],
@@ -1497,10 +1600,12 @@ fn member_source_match_declarator_holes_select_binding_from_wider_const_list() {
   runtimeSuffix = "suffix";
 console.log(runtimePrefix, runtimeRead("left"), runtimeSuffix);
 export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix };
-"#, "display", Member::source_alpha_target(
-                "readDisplayLabel",
-                "readDisplayLabel",
-                r#"const DECLARATORS_BEFORE = null,
+"#,
+        "display",
+        Member::source_alpha_target(
+            "readDisplayLabel",
+            "readDisplayLabel",
+            r#"const DECLARATORS_BEFORE = null,
   formatDisplayLabel = EXPR_FORMAT,
   displayLabels = new Map([
     ["left", "Left"],
@@ -1508,7 +1613,8 @@ export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix
   ]),
   readDisplayLabel = EXPR_READ,
   DECLARATORS_AFTER = null;"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "prefix Left suffix\n");
     assert_module_exports(
@@ -1527,20 +1633,24 @@ export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix
 
 #[test]
 fn member_source_match_anything_declarator_selects_binding_from_wider_const_list() {
-    let fixture = run_fixture(member_fixture(r#"const runtimePrefix = "prefix",
+    let fixture = run_fixture(member_fixture(
+        r#"const runtimePrefix = "prefix",
   runtimeBuild = (value) => `build:${value}`,
   runtimeRead = (value) => runtimeBuild(value).toUpperCase(),
   runtimeSuffix = "suffix";
 console.log(runtimePrefix, runtimeRead("one"), runtimeSuffix);
 export { runtimePrefix, runtimeBuild, runtimeRead, runtimeSuffix };
-"#, "display", Member::source_alpha_target(
-                "readDisplayValue",
-                "readDisplayValue",
-                r#"const ANYTHING = ANYTHING,
+"#,
+        "display",
+        Member::source_alpha_target(
+            "readDisplayValue",
+            "readDisplayValue",
+            r#"const ANYTHING = ANYTHING,
   buildDisplayValue = (value) => `build:${value}`,
   readDisplayValue = (value) => buildDisplayValue(value).toUpperCase(),
   ANYTHING = ANYTHING;"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "prefix BUILD:ONE suffix\n");
     assert_module_exports(
@@ -1559,7 +1669,8 @@ export { runtimePrefix, runtimeBuild, runtimeRead, runtimeSuffix };
 
 #[test]
 fn member_source_match_anything_declarator_can_bracket_capitalized_target_binding() {
-    let fixture = run_fixture(member_fixture(r#"const beforeTarget = "before",
+    let fixture = run_fixture(member_fixture(
+        r#"const beforeTarget = "before",
   runtimeTarget = makeTarget("value"),
   afterTarget = "after";
 function makeTarget(value) {
@@ -1567,13 +1678,16 @@ function makeTarget(value) {
 }
 console.log(beforeTarget, runtimeTarget, afterTarget);
 export { beforeTarget, runtimeTarget, afterTarget, makeTarget };
-"#, "target", Member::source_alpha_target(
-                "SelectedTarget",
-                "Target",
-                r#"const ANYTHING = ANYTHING,
+"#,
+        "target",
+        Member::source_alpha_target(
+            "SelectedTarget",
+            "Target",
+            r#"const ANYTHING = ANYTHING,
   Target = makeTarget("value"),
   ANYTHING = ANYTHING;"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "before target:value after\n");
     assert_module_exports(
@@ -1839,7 +1953,8 @@ export { firstSelected, secondSelected };
 
 #[test]
 fn declarator_hole_miss_between_hole_and_target_binding_reports_light_no_match() {
-    let opts = member_fixture(r#"function buildItem(label) {
+    let opts = member_fixture(
+        r#"function buildItem(label) {
   return { label };
 }
 function helperItem(label) {
@@ -1853,15 +1968,18 @@ const leadingHelper = helperItem("lead"),
   trailingHelper = helperItem("tail");
 console.log(selectedA.label, selectedB.label, selectedC.label);
 export { selectedA, selectedB, selectedC };
-"#, "selected_values", Member::source_alpha_target(
-                "selectedB",
-                "selectedB",
-                r#"const DECLARATORS_BEFORE = null,
+"#,
+        "selected_values",
+        Member::source_alpha_target(
+            "selectedB",
+            "selectedB",
+            r#"const DECLARATORS_BEFORE = null,
   selectedA = buildItem("a"),
   selectedB = buildItem("b"),
   selectedC = buildItem("c"),
   DECLARATORS_AFTER = null;"#,
-            ));
+        ),
+    );
 
     expect_rejection_containing_all(
         opts,
@@ -2017,7 +2135,8 @@ fn member_source_match_class_member_hole_selects_class_ignoring_other_members() 
     // Pin the class by its constructor (body hole) and let `ANYTHING;`
     // absorb `increment` and `reset`. The whole class still moves — the
     // hole is only in the selector, not the output.
-    let fixture = run_fixture(member_fixture(r#"class Counter {
+    let fixture = run_fixture(member_fixture(
+        r#"class Counter {
   constructor() {
     this.value = 0;
   }
@@ -2032,15 +2151,18 @@ fn member_source_match_class_member_hole_selects_class_ignoring_other_members() 
 const counter = new Counter();
 console.log(counter.increment());
 export { Counter };
-"#, "shapes", Member::source_alpha(
-                "Counter",
-                r#"class K {
+"#,
+        "shapes",
+        Member::source_alpha(
+            "Counter",
+            r#"class K {
   constructor() {
     STMT_LIST_CTOR;
   }
   ANYTHING;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "1\n");
     assert_module_exports(
@@ -2063,7 +2185,8 @@ fn member_source_match_case_rest_hole_selects_switch_ignoring_other_cases() {
     // Pin the function by one discriminating `case "go":` arm and let the
     // `case CASE_REST_*:` holes absorb the surrounding cases. The whole
     // function still moves — the holes are only in the selector.
-    let fixture = run_fixture(member_fixture(r#"function dispatch(kind) {
+    let fixture = run_fixture(member_fixture(
+        r#"function dispatch(kind) {
   switch (kind) {
     case "alpha":
       return 1;
@@ -2079,9 +2202,11 @@ fn member_source_match_case_rest_hole_selects_switch_ignoring_other_cases() {
 }
 console.log(dispatch("go"));
 export { dispatch };
-"#, "router", Member::source_alpha(
-                "dispatch",
-                r#"function readable(ANYTHING) {
+"#,
+        "router",
+        Member::source_alpha(
+            "dispatch",
+            r#"function readable(ANYTHING) {
   switch (ANYTHING) {
     case CASE_REST_BEFORE:
     case "go":
@@ -2089,7 +2214,8 @@ export { dispatch };
     case CASE_REST_AFTER:
   }
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "42\n");
     assert_module_exports(
@@ -2115,7 +2241,8 @@ export { dispatch };
 
 #[test]
 fn member_source_match_anything_class_member_selects_class_ignoring_other_members() {
-    let fixture = run_fixture(member_fixture(r#"class RuntimeCounter {
+    let fixture = run_fixture(member_fixture(
+        r#"class RuntimeCounter {
   constructor(start) {
     this.value = start;
   }
@@ -2133,16 +2260,19 @@ const counter = new RuntimeCounter(4);
 counter.increment();
 console.log(counter.label());
 export { RuntimeCounter };
-"#, "counter", Member::source_alpha(
-                "Counter",
-                r#"class Counter {
+"#,
+        "counter",
+        Member::source_alpha(
+            "Counter",
+            r#"class Counter {
   ANYTHING;
   label() {
     ANYTHING;
   }
   ANYTHING;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "count:5\n");
     assert_module_exports(
@@ -2163,7 +2293,8 @@ export { RuntimeCounter };
 fn member_source_match_class_skeleton_rejects_ambiguous_match() {
     // The skeleton `class K { run() { STMT_LIST } ANYTHING; }` matches
     // both `Alpha` and `Beta`; ambiguous matches stay hard errors.
-    let opts = member_fixture(r#"class Alpha {
+    let opts = member_fixture(
+        r#"class Alpha {
   run() {
     return 1;
   }
@@ -2175,15 +2306,18 @@ class Beta {
 }
 console.log(new Alpha().run() + new Beta().run());
 export { Alpha };
-"#, "shapes", Member::source_alpha(
-                "Selected",
-                r#"class K {
+"#,
+        "shapes",
+        Member::source_alpha(
+            "Selected",
+            r#"class K {
   run() {
     STMT_LIST_BODY;
   }
   ANYTHING;
 }"#,
-            ));
+        ),
+    );
 
     expect_rejection_containing_all(opts, &["static/app::shapes", "ambiguous"]);
 }
@@ -2194,7 +2328,8 @@ fn member_source_match_class_member_hole_pins_member_order() {
     // the candidate's leading members in the same order. Listing `b`
     // before `a` does not match a class whose first members are `a`
     // then `b`, so resolution finds no match.
-    let opts = member_fixture(r#"class Counter {
+    let opts = member_fixture(
+        r#"class Counter {
   a() {
     return 1;
   }
@@ -2204,9 +2339,11 @@ fn member_source_match_class_member_hole_pins_member_order() {
 }
 console.log(new Counter().a());
 export { Counter };
-"#, "shapes", Member::source_alpha(
-                "Selected",
-                r#"class K {
+"#,
+        "shapes",
+        Member::source_alpha(
+            "Selected",
+            r#"class K {
   b() {
     STMT_LIST_B;
   }
@@ -2215,7 +2352,8 @@ export { Counter };
   }
   ANYTHING;
 }"#,
-            ));
+        ),
+    );
 
     expect_rejection_containing_all(
         opts,
@@ -2234,7 +2372,8 @@ fn class_source_match_miss_reports_light_no_match() {
     // but one method body is too exact. Production diagnostics should stay
     // light and report the failed selector instead of running a second
     // near-miss matcher.
-    let opts = member_fixture(r#"class CatalogCache {
+    let opts = member_fixture(
+        r#"class CatalogCache {
   field = new Map();
   constructor() {
     this.ready = true;
@@ -2270,9 +2409,11 @@ class LaterCatalog {
 }
 console.log(new CatalogCache().lookupEntryByKey("a", { id: "b" }));
 export { CatalogCache };
-"#, "catalog", Member::source_alpha(
-                "CatalogCache",
-                r#"class K {
+"#,
+        "catalog",
+        Member::source_alpha(
+            "CatalogCache",
+            r#"class K {
   ANYTHING;
   refreshEntriesNow(scope, filter) {
     if (filter.active) {
@@ -2293,7 +2434,8 @@ export { CatalogCache };
   }
   ANYTHING;
 }"#,
-            ));
+        ),
+    );
 
     expect_rejection_containing_all(
         opts,
@@ -2310,13 +2452,17 @@ export { CatalogCache };
 fn anonymous_expr_holes_match_independent_subtrees() {
     // Labels are cosmetic: the two `EXPR_VALUE` occurrences match different
     // expressions, not a shared equality binding.
-    let fixture = run_fixture(member_fixture(r#"const actual = Math.max(Number.parseInt("7", 10), [1, 2, 3].length);
+    let fixture = run_fixture(member_fixture(
+        r#"const actual = Math.max(Number.parseInt("7", 10), [1, 2, 3].length);
 console.log(actual);
 export { actual };
-"#, "calc", Member::source_alpha(
-                "calc_value",
-                r#"const readable = Math.max(EXPR_VALUE, EXPR_VALUE);"#,
-            )));
+"#,
+        "calc",
+        Member::source_alpha(
+            "calc_value",
+            r#"const readable = Math.max(EXPR_VALUE, EXPR_VALUE);"#,
+        ),
+    ));
 
     assert_entry_output(&fixture, "7\n");
     assert_module_source(
@@ -2366,7 +2512,8 @@ export { marker };
 fn anonymous_stmt_list_and_class_member_holes_need_no_minted_names() {
     // A bare `STMT_LIST` and a bare `ANYTHING;` field select the class with no
     // suffixes to invent.
-    let fixture = run_fixture(member_fixture(r#"class Counter {
+    let fixture = run_fixture(member_fixture(
+        r#"class Counter {
   constructor() {
     this.value = 0;
   }
@@ -2378,15 +2525,18 @@ fn anonymous_stmt_list_and_class_member_holes_need_no_minted_names() {
 const counter = new Counter();
 console.log(counter.increment());
 export { Counter };
-"#, "shapes", Member::source_alpha(
-                "Counter",
-                r#"class K {
+"#,
+        "shapes",
+        Member::source_alpha(
+            "Counter",
+            r#"class K {
   constructor() {
     STMT_LIST;
   }
   ANYTHING;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "1\n");
     assert_module_exports(
@@ -2410,7 +2560,8 @@ fn member_source_match_class_member_holes_bracket_interior_member() {
     // leading hole absorbs `a`, the trailing hole absorbs `c`, and `b`
     // is pinned in between. (Previously a second class-member hole was a hard
     // "ambiguous, never matches"; it is now an ordered-subsequence gap.)
-    let fixture = run_fixture(member_fixture(r#"class Counter {
+    let fixture = run_fixture(member_fixture(
+        r#"class Counter {
   a() {
     return 1;
   }
@@ -2423,16 +2574,19 @@ fn member_source_match_class_member_holes_bracket_interior_member() {
 }
 console.log(new Counter().b());
 export { Counter };
-"#, "shapes", Member::source_alpha(
-                "Counter",
-                r#"class K {
+"#,
+        "shapes",
+        Member::source_alpha(
+            "Counter",
+            r#"class K {
   ANYTHING;
   b() {
     STMT_LIST_B;
   }
   ANYTHING;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "2\n");
     assert_module_exports(
@@ -2457,7 +2611,8 @@ fn member_source_match_interleaved_class_member_holes_match_ordered_members() {
     // `open` (after `setup`) then `close` (after `tick`). This is the
     // ordered-subset fingerprint — pin a few stable members, ignore the
     // rest.
-    let fixture = run_fixture(member_fixture(r#"class Widget {
+    let fixture = run_fixture(member_fixture(
+        r#"class Widget {
   setup() {
     return 0;
   }
@@ -2473,9 +2628,11 @@ fn member_source_match_interleaved_class_member_holes_match_ordered_members() {
 }
 console.log(new Widget().open() + new Widget().close());
 export { Widget };
-"#, "shapes", Member::source_alpha(
-                "Widget",
-                r#"class K {
+"#,
+        "shapes",
+        Member::source_alpha(
+            "Widget",
+            r#"class K {
   ANYTHING;
   open() {
     STMT_LIST_O;
@@ -2486,7 +2643,8 @@ export { Widget };
   }
   ANYTHING;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "4\n");
     assert_module_exports(
@@ -2509,7 +2667,8 @@ fn member_source_match_interleaved_class_member_holes_enforce_order() {
     // Ordered-subsequence matching keeps source order, so pinning them
     // in the wrong order matches nothing — it is not an unordered
     // "contains both somewhere" match.
-    let opts = member_fixture(r#"class Widget {
+    let opts = member_fixture(
+        r#"class Widget {
   setup() {
     return 0;
   }
@@ -2525,9 +2684,11 @@ fn member_source_match_interleaved_class_member_holes_enforce_order() {
 }
 console.log(new Widget().open());
 export { Widget };
-"#, "shapes", Member::source_alpha(
-                "Selected",
-                r#"class K {
+"#,
+        "shapes",
+        Member::source_alpha(
+            "Selected",
+            r#"class K {
   ANYTHING;
   close() {
     STMT_LIST_C;
@@ -2538,7 +2699,8 @@ export { Widget };
   }
   ANYTHING;
 }"#,
-            ));
+        ),
+    );
 
     expect_rejection_containing_all(opts, &["static/app::shapes", "did not match"]);
 }
@@ -2593,7 +2755,8 @@ fn non_trailing_class_member_hole_keeps_later_identifiers_aligned() {
     // desync the `run(value) { return value * 2 }` member that follows.
     // (Under the old global alpha-canonicalization the absorbed `helper`
     // identifiers shifted the numbering and this failed to match.)
-    let fixture = run_fixture(member_fixture(r#"class Counter {
+    let fixture = run_fixture(member_fixture(
+        r#"class Counter {
   helper(seed) {
     return seed + 1;
   }
@@ -2604,15 +2767,18 @@ fn non_trailing_class_member_hole_keeps_later_identifiers_aligned() {
 const counter = new Counter();
 console.log(counter.run(5));
 export { Counter };
-"#, "shapes", Member::source_alpha(
-                "Counter",
-                r#"class K {
+"#,
+        "shapes",
+        Member::source_alpha(
+            "Counter",
+            r#"class K {
   ANYTHING;
   run(value) {
     return value * 2;
   }
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "10\n");
     assert_module_exports(
@@ -2634,15 +2800,16 @@ fn single_node_hole_keeps_later_identifiers_aligned() {
     // The same bijection guard for single-node holes: `EXPR` absorbs a
     // multi-identifier subtree, and the `limit` argument after it still
     // matches by alpha-correspondence rather than by absolute position.
-    let fixture = run_fixture(member_fixture(r#"const limit = 4;
+    let fixture = run_fixture(member_fixture(
+        r#"const limit = 4;
 const alpha = 1, beta = 2, gamma = 3;
 const total = Math.max(Math.min(alpha, beta, gamma), limit);
 console.log(total);
 export { total };
-"#, "calc", Member::source_alpha(
-                "calc_total",
-                r#"const readable = Math.max(EXPR, limit);"#,
-            )));
+"#,
+        "calc",
+        Member::source_alpha("calc_total", r#"const readable = Math.max(EXPR, limit);"#),
+    ));
 
     assert_entry_output(&fixture, "4\n");
     assert_module_source(
@@ -2655,62 +2822,76 @@ export { total };
 
 #[test]
 fn suffixed_hole_labels_are_cosmetic() {
-    let universal = run_fixture(member_fixture(r#"function computeTotal(a, b) {
+    let universal = run_fixture(member_fixture(
+        r#"function computeTotal(a, b) {
   return a + b;
 }
 const actual = computeTotal(1, 2);
 console.log(actual);
 export { actual };
-"#, "calc", Member::source_alpha(
-                "total",
-                r#"const readable = ANYTHING_FUTURE;"#,
-            )));
+"#,
+        "calc",
+        Member::source_alpha("total", r#"const readable = ANYTHING_FUTURE;"#),
+    ));
     assert_entry_output(&universal, "3\n");
 
-    let object_gap = run_fixture(member_fixture(r#"const actual = { stable: 1, generated: 2, other: 3 };
+    let object_gap = run_fixture(member_fixture(
+        r#"const actual = { stable: 1, generated: 2, other: 3 };
 console.log(actual.stable + actual.other);
 export { actual };
-"#, "objects", Member::source_alpha(
-                "selected",
-                r#"const readable = { stable: EXPR, ANYTHING_FUTURE, other: EXPR };"#,
-            )));
+"#,
+        "objects",
+        Member::source_alpha(
+            "selected",
+            r#"const readable = { stable: EXPR, ANYTHING_FUTURE, other: EXPR };"#,
+        ),
+    ));
     assert_entry_output(&object_gap, "4\n");
 
-    let named_expr = run_fixture(member_fixture(r#"function computeTotal(a, b) {
+    let named_expr = run_fixture(member_fixture(
+        r#"function computeTotal(a, b) {
   return a + b;
 }
 const actual = computeTotal(1, 2);
 console.log(actual);
 export { actual };
-"#, "calc", Member::source_alpha(
-                "total",
-                r#"const readable = computeTotal(EXPR_FUTURE, EXPR);"#,
-            )));
+"#,
+        "calc",
+        Member::source_alpha(
+            "total",
+            r#"const readable = computeTotal(EXPR_FUTURE, EXPR);"#,
+        ),
+    ));
     assert_entry_output(&named_expr, "3\n");
 
-    let empty_expr_label = run_fixture(member_fixture(r#"const actual = Math.min(10, 4);
+    let empty_expr_label = run_fixture(member_fixture(
+        r#"const actual = Math.min(10, 4);
 console.log(actual);
 export { actual };
-"#, "calc_empty_label", Member::source_alpha(
-                "total",
-                r#"const readable = Math.min(EXPR_, EXPR);"#,
-            )));
+"#,
+        "calc_empty_label",
+        Member::source_alpha("total", r#"const readable = Math.min(EXPR_, EXPR);"#),
+    ));
     assert_entry_output(&empty_expr_label, "4\n");
 
-    let named_stmt = run_fixture(member_fixture(r#"function setup() {}
+    let named_stmt = run_fixture(member_fixture(
+        r#"function setup() {}
 function actual() {
   setup();
   return 1;
 }
 console.log(actual());
 export { actual };
-"#, "calc", Member::source_alpha(
-                "total",
-                r#"function readable() {
+"#,
+        "calc",
+        Member::source_alpha(
+            "total",
+            r#"function readable() {
   STMT_FUTURE;
   return 1;
 }"#,
-            )));
+        ),
+    ));
     assert_entry_output(&named_stmt, "1\n");
 }
 
@@ -2743,10 +2924,11 @@ export { actual };
 "#;
 
     // ARGS: run-absorber matches the two-arg call.
-    let with_args = run_fixture(member_fixture(subject, "joined", Member::source_alpha(
-                "joinedValue",
-                r#"const selectedValue = joinParts(ARGS);"#,
-            )));
+    let with_args = run_fixture(member_fixture(
+        subject,
+        "joined",
+        Member::source_alpha("joinedValue", r#"const selectedValue = joinParts(ARGS);"#),
+    ));
     assert_entry_output(&with_args, "alpha|beta\n");
     assert_module_exports(
         &with_args.out_root,
@@ -2757,10 +2939,14 @@ export { actual };
 
     // ANYTHING in the same position is a single EXPR: arity 1 != 2, no match.
     expect_rejection_containing_all(
-        member_fixture(subject, "joined", Member::source_alpha(
-                    "joinedValue",
-                    r#"const selectedValue = joinParts(ANYTHING);"#,
-                )),
+        member_fixture(
+            subject,
+            "joined",
+            Member::source_alpha(
+                "joinedValue",
+                r#"const selectedValue = joinParts(ANYTHING);"#,
+            ),
+        ),
         &[
             "static/app::joined",
             "did not match any top-level declaration",
@@ -2786,7 +2972,11 @@ export { actual };
         r#"const selectedValue = wrap(ARGS);"#,
         r#"const selectedValue = wrap(ANYTHING);"#,
     ] {
-        let fixture = run_fixture(member_fixture(subject, "wrapped", Member::source_alpha("wrappedValue", selector)));
+        let fixture = run_fixture(member_fixture(
+            subject,
+            "wrapped",
+            Member::source_alpha("wrappedValue", selector),
+        ));
         assert_entry_output(&fixture, "[solo]\n");
         assert_module_exports(
             &fixture.out_root,
@@ -2887,9 +3077,12 @@ console.log(dispatch("go"));
 export { dispatch };
 "#;
 
-    let with_case_rest = run_fixture(member_fixture(subject, "router", Member::source_alpha(
-                "dispatch",
-                r#"function readable(ANYTHING) {
+    let with_case_rest = run_fixture(member_fixture(
+        subject,
+        "router",
+        Member::source_alpha(
+            "dispatch",
+            r#"function readable(ANYTHING) {
   switch (ANYTHING) {
     case CASE_REST:
     case "go":
@@ -2897,7 +3090,8 @@ export { dispatch };
     case CASE_REST:
   }
 }"#,
-            )));
+        ),
+    ));
     assert_entry_output(&with_case_rest, "42\n");
     assert_module_exports(
         &with_case_rest.out_root,
@@ -2931,11 +3125,11 @@ export { runtimePrefix, runtimeTarget, runtimeSuffix, makeTarget };
   Target = makeTarget("value"),
   ANYTHING = ANYTHING;"#,
     ] {
-        let fixture = run_fixture(member_fixture(subject, "target", Member::source_alpha_target(
-                    "SelectedTarget",
-                    "Target",
-                    selector,
-                )));
+        let fixture = run_fixture(member_fixture(
+            subject,
+            "target",
+            Member::source_alpha_target("SelectedTarget", "Target", selector),
+        ));
         assert_entry_output(&fixture, "prefix target:value suffix\n");
         assert_module_exports(
             &fixture.out_root,
@@ -3000,20 +3194,24 @@ function getCached(n, e) {
 /// run binds the declarator the run leaves pinned, not the first one.
 #[test]
 fn multi_statement_member_target_after_declarators_run_binds_its_declarator() {
-    let fixture = run_fixture(member_fixture(r#"const limit = 10, cache = new WeakMap();
+    let fixture = run_fixture(member_fixture(
+        r#"const limit = 10, cache = new WeakMap();
 function lookup(n) {
   return cache.get(n) ?? limit;
 }
 console.log(lookup({}));
 export { lookup };
-"#, "cache", Member::source_alpha_target(
-                "propertyCache",
-                "propertyCache",
-                r#"const DECLARATORS, propertyCache = new WeakMap();
+"#,
+        "cache",
+        Member::source_alpha_target(
+            "propertyCache",
+            "propertyCache",
+            r#"const DECLARATORS, propertyCache = new WeakMap();
 function lookupCached(n) {
   return propertyCache.get(n) ?? ANYTHING;
 }"#,
-            )));
+        ),
+    ));
 
     assert_entry_output(&fixture, "10\n");
     assert_module_source(
@@ -3029,14 +3227,18 @@ function lookupCached(n) {
 /// binds its own declarator.
 #[test]
 fn target_after_floating_anything_declarator_binds_its_declarator() {
-    let fixture = run_fixture(member_fixture(r#"const cache = new WeakMap(), limit = 10;
+    let fixture = run_fixture(member_fixture(
+        r#"const cache = new WeakMap(), limit = 10;
 console.log(cache instanceof WeakMap, limit);
 export { cache, limit };
-"#, "limits", Member::source_alpha_target(
-                "maxEntries",
-                "maxEntries",
-                r#"const ANYTHING = new WeakMap(), maxEntries = 10;"#,
-            )));
+"#,
+        "limits",
+        Member::source_alpha_target(
+            "maxEntries",
+            "maxEntries",
+            r#"const ANYTHING = new WeakMap(), maxEntries = 10;"#,
+        ),
+    ));
 
     assert_entry_output(&fixture, "true 10\n");
     assert_module_source(

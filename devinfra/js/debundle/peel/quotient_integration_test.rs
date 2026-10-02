@@ -18,7 +18,10 @@ use crate::quotient::{
 };
 
 fn spec_module(module_id: &str, owners: &[&str]) -> SpecModuleGroup {
-    SpecModuleGroup { module_id: module_id.into(), owner_ids: owners.iter().map(|id| (*id).into()).collect() }
+    SpecModuleGroup {
+        module_id: module_id.into(),
+        owner_ids: owners.iter().map(|id| (*id).into()).collect(),
+    }
 }
 
 // ---------- Tests. ----------
@@ -487,13 +490,16 @@ fn partition_constructor_contracts_each_group() {
     let c = residual_owner("owner:c", 3, &["BindingC"], 5);
     let d = residual_owner("owner:d", 4, &["BindingD"], 5);
     let e = residual_owner("owner:e", 5, &["BindingE"], 5);
-    let report = singleton_graph(vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()], vec![owner_edge(
+    let report = singleton_graph(
+        vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
+        vec![owner_edge(
             "edge:0",
             "owner:a",
             "owner:b",
             DepKind::EagerUse,
             true,
-        )]);
+        )],
+    );
 
     // Group 1: {a, b}; group 2: {c, d}; e stays singleton.
     let groups = vec![
@@ -739,11 +745,14 @@ fn greedy_terminates_at_convergence() {
     let h1 = residual_owner("owner:h1", 2, &["BindingH1"], 5);
     let h2 = residual_owner("owner:h2", 3, &["BindingH2"], 5);
     let h3 = residual_owner("owner:h3", 4, &["BindingH3"], 5);
-    let report = singleton_graph(vec![a.clone(), h1.clone(), h2.clone(), h3.clone()], vec![
+    let report = singleton_graph(
+        vec![a.clone(), h1.clone(), h2.clone(), h3.clone()],
+        vec![
             owner_edge("edge:0", "owner:a", "owner:h1", DepKind::EagerUse, true),
             owner_edge("edge:1", "owner:a", "owner:h2", DepKind::EagerUse, true),
             owner_edge("edge:2", "owner:a", "owner:h3", DepKind::EagerUse, true),
-        ]);
+        ],
+    );
 
     let groups = vec![module_group(vec![0])];
     let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
@@ -768,13 +777,16 @@ fn greedy_never_splits_existing_spec_module() {
     let a1 = active_owner("owner:a1", 1, &["BindingA1"], 10, "ui/x");
     let a2 = active_owner("owner:a2", 2, &["BindingA2"], 10, "ui/x");
     let h = residual_owner("owner:h", 3, &["BindingH"], 5);
-    let report = singleton_graph(vec![a1.clone(), a2.clone(), h.clone()], vec![owner_edge(
+    let report = singleton_graph(
+        vec![a1.clone(), a2.clone(), h.clone()],
+        vec![owner_edge(
             "edge:0",
             "owner:a1",
             "owner:h",
             DepKind::EagerUse,
             true,
-        )]);
+        )],
+    );
 
     let groups = vec![module_group(vec![0, 1])];
     let (mut q, _) = QuotientGraph::from_report_with_partition(&report, 10_000, &groups).unwrap();
@@ -799,10 +811,13 @@ fn boolean_merge_gate_matches_diagnostic_cycle_gate() {
     let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
     let h = active_owner("owner:h", 2, &["BindingH"], 10, "ui/h");
     let b = active_owner("owner:b", 3, &["BindingB"], 10, "ui/b");
-    let report = singleton_graph(vec![a.clone(), h.clone(), b.clone()], vec![
+    let report = singleton_graph(
+        vec![a.clone(), h.clone(), b.clone()],
+        vec![
             owner_edge("edge:0", "owner:a", "owner:h", DepKind::EagerUse, true),
             owner_edge("edge:1", "owner:h", "owner:b", DepKind::EagerUse, true),
-        ]);
+        ],
+    );
     let groups = vec![
         module_group(vec![0]),
         module_group(vec![1]),
@@ -1528,18 +1543,24 @@ fn planner_seed_rejection_matches_materializer_verdict_on_asymmetric_cycle() {
             false,
         ),
     ];
-    let report = singleton_graph(vec![
+    let report = singleton_graph(
+        vec![
             entry.clone(),
             dep_value.clone(),
             lazy_reader.clone(),
             cross_value.clone(),
             mediator_helper.clone(),
             mediator_init.clone(),
-        ], edges);
+        ],
+        edges,
+    );
     let spec = vec![
         spec_module("mod_dep", &["owner:dep_value", "owner:lazy_reader"]),
         spec_module("mod_dependent", &["owner:cross_value"]),
-        spec_module("mod_mediator", &["owner:mediator_helper", "owner:mediator_init"]),
+        spec_module(
+            "mod_mediator",
+            &["owner:mediator_helper", "owner:mediator_init"],
+        ),
     ];
 
     // Materializer-side verdict.
@@ -1610,13 +1631,16 @@ fn planner_and_materializer_agree_on_corpus() {
         let b = active_owner("owner:b", 2, &["BindingB"], 5, "mod_solo");
         cases.push(Case {
             label: "single_module_intra_edges",
-            report: singleton_graph(vec![a.clone(), b.clone()], vec![owner_edge(
+            report: singleton_graph(
+                vec![a.clone(), b.clone()],
+                vec![owner_edge(
                     "edge:0",
                     "owner:a",
                     "owner:b",
                     analysis::DepKind::EagerUse,
                     true,
-                )]),
+                )],
+            ),
             spec: vec![spec_module("mod_solo", &["owner:a", "owner:b"])],
         });
     }
@@ -1654,14 +1678,16 @@ fn planner_and_materializer_agree_on_corpus() {
         );
         cases.push(Case {
             label: "asymmetric_i_cycle_via_mediator",
-            report: singleton_graph(vec![
+            report: singleton_graph(
+                vec![
                     entry.clone(),
                     dep_value.clone(),
                     lazy_reader.clone(),
                     cross_value.clone(),
                     mediator_helper.clone(),
                     mediator_init.clone(),
-                ], vec![
+                ],
+                vec![
                     owner_edge(
                         "edge:entry_mediator",
                         "owner:entry",
@@ -1697,11 +1723,15 @@ fn planner_and_materializer_agree_on_corpus() {
                         analysis::DepKind::LazyUse,
                         false,
                     ),
-                ]),
+                ],
+            ),
             spec: vec![
                 spec_module("mod_dep", &["owner:dep_value", "owner:lazy_reader"]),
                 spec_module("mod_dependent", &["owner:cross_value"]),
-                spec_module("mod_mediator", &["owner:mediator_helper", "owner:mediator_init"]),
+                spec_module(
+                    "mod_mediator",
+                    &["owner:mediator_helper", "owner:mediator_init"],
+                ),
             ],
         });
     }
@@ -1712,7 +1742,9 @@ fn planner_and_materializer_agree_on_corpus() {
         let b1 = residual_owner("owner:b1", 2, &["BindingB1"], 5);
         cases.push(Case {
             label: "mutual_constraining_cycle",
-            report: singleton_graph(vec![a1.clone(), b1.clone()], vec![
+            report: singleton_graph(
+                vec![a1.clone(), b1.clone()],
+                vec![
                     owner_edge(
                         "edge:fwd",
                         "owner:a1",
@@ -1727,7 +1759,8 @@ fn planner_and_materializer_agree_on_corpus() {
                         analysis::DepKind::EagerUse,
                         true,
                     ),
-                ]),
+                ],
+            ),
             // Note: residual destinations — no spec modules. The
             // planner's seed pass merges atomic units only; since
             // each atomic is a singleton, no contractions happen and
@@ -1744,7 +1777,9 @@ fn planner_and_materializer_agree_on_corpus() {
         let beta = active_owner("owner:beta", 2, &["BindingBeta"], 5, "mod_beta");
         cases.push(Case {
             label: "lazy_only_cross_module",
-            report: singleton_graph(vec![alpha.clone(), beta.clone()], vec![
+            report: singleton_graph(
+                vec![alpha.clone(), beta.clone()],
+                vec![
                     owner_edge(
                         "edge:0",
                         "owner:alpha",
@@ -1759,7 +1794,8 @@ fn planner_and_materializer_agree_on_corpus() {
                         analysis::DepKind::LazyUse,
                         false,
                     ),
-                ]),
+                ],
+            ),
             spec: vec![
                 spec_module("mod_alpha", &["owner:alpha"]),
                 spec_module("mod_beta", &["owner:beta"]),
@@ -1832,7 +1868,10 @@ fn fixture_chain() -> (OwnerGraphReport, Vec<PartitionGroup>) {
         owner_edge("edge:2", "owner:d", "owner:c", DepKind::EagerUse, true),
         owner_edge("edge:3", "owner:e", "owner:d", DepKind::EagerUse, true),
     ];
-    let report = singleton_graph(vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()], edges);
+    let report = singleton_graph(
+        vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
+        edges,
+    );
     let groups = vec![module_group(vec![0])];
     (report, groups)
 }
@@ -1852,7 +1891,10 @@ fn fixture_star() -> (OwnerGraphReport, Vec<PartitionGroup>) {
         owner_edge("edge:2", "owner:d", "owner:a", DepKind::EagerUse, true),
         owner_edge("edge:3", "owner:e", "owner:a", DepKind::EagerUse, true),
     ];
-    let report = singleton_graph(vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()], edges);
+    let report = singleton_graph(
+        vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
+        edges,
+    );
     let groups = vec![module_group(vec![0])];
     (report, groups)
 }
@@ -1917,14 +1959,17 @@ fn fixture_fully_connected_small() -> (OwnerGraphReport, Vec<PartitionGroup>) {
         owner_edge("edge:1", "owner:ob", "owner:b", DepKind::EagerUse, true),
         owner_edge("edge:2", "owner:oc", "owner:c", DepKind::EagerUse, true),
     ];
-    let report = singleton_graph(vec![
+    let report = singleton_graph(
+        vec![
             a.clone(),
             b.clone(),
             c.clone(),
             oa.clone(),
             ob.clone(),
             oc.clone(),
-        ], edges);
+        ],
+        edges,
+    );
     let groups = vec![
         module_group(vec![0]),
         module_group(vec![1]),
@@ -1973,10 +2018,13 @@ fn gate_bypassing_partition_cycle_surfaces_and_recovers() {
     let a = active_owner("owner:a", 1, &["BindingA"], 5, "ui/a");
     let b = active_owner("owner:b", 2, &["BindingB"], 5, "ui/b");
     let c = active_owner("owner:c", 3, &["BindingC"], 5, "ui/c");
-    let report = singleton_graph(vec![a.clone(), b.clone(), c.clone()], vec![
+    let report = singleton_graph(
+        vec![a.clone(), b.clone(), c.clone()],
+        vec![
             owner_edge("edge:0", "owner:a", "owner:b", DepKind::EagerUse, true),
             owner_edge("edge:1", "owner:b", "owner:c", DepKind::EagerUse, true),
-        ]);
+        ],
+    );
     let (mut q, group_classes) = QuotientGraph::from_report_with_partition(
         &report,
         10_000,
