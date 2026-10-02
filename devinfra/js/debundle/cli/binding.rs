@@ -27,7 +27,7 @@ use spec::{
     SourceMatchBindingDetail, is_residual_module_path,
 };
 use spec_modules::{collect_module_files, module_path_from_file};
-use yaml_edit::{apply_yaml_edit, read_yaml};
+use yaml_edit::{read_yaml, write_yaml_atomic};
 
 use crate::edit_gate::{Gate, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome};
@@ -140,7 +140,10 @@ pub(crate) fn apply_module_edit(file: &Path, doc: &LogicalModule, dry_run: bool)
     if file.exists() && serde_yaml::to_value(read_module_doc(file)?)? == value {
         return Ok(false);
     }
-    apply_yaml_edit(file, &value, dry_run)
+    if !dry_run {
+        write_yaml_atomic(file, &value)?;
+    }
+    Ok(true)
 }
 
 fn binding_matches_in_doc(

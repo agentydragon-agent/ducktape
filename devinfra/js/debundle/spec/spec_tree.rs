@@ -7,11 +7,11 @@ use serde::Deserialize;
 
 use output_layout::DebundleOutputLayout;
 use spec::{
-    AnonymousStatement, BindingAnnotation, BundledPartialSwapBundle, BundledPartialSwapMark,
+    BundledPartialSwapBundle, BundledPartialSwapMark,
     BundledPartialSwapPackage, ChunkExportPurity, ChunkRenameMember, ChunkRenameSelector,
     ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule,
     MaterializeLogicalModulesConfig, Member, OwnerGraphOptions, PartialSwapMark,
-    PartialSwapPackage, PartialSwapSymbol, SourceMatchClaim, SwapMark, SwapVendorChunksConfig,
+    PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig,
     TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape,
     WriteJsTreeConfig,
 };
@@ -143,25 +143,11 @@ struct VendorPackageSource {
     bundle_export: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ModuleSource {
     chunk_id: String,
-    #[serde(skip)]
     tree: PathBuf,
     path: String,
-    #[serde(default)]
-    members: Vec<Member>,
-    #[serde(default)]
-    source_matches: Vec<SourceMatchClaim>,
-    #[serde(default)]
-    annotations: BTreeMap<String, BindingAnnotation>,
-    #[serde(default)]
-    anonymous_statements: Vec<AnonymousStatement>,
-    #[serde(default)]
-    comment: Option<String>,
-    #[serde(default)]
-    note: Option<String>,
+    module: LogicalModule,
 }
 
 pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSpec> {
@@ -313,12 +299,7 @@ fn load_chunk_modules(
             chunk_id: chunk_id.to_string(),
             tree: tree.to_path_buf(),
             path: module_path,
-            members: data.members,
-            source_matches: data.source_matches,
-            annotations: data.annotations,
-            anonymous_statements: data.anonymous_statements,
-            comment: data.comment,
-            note: data.note,
+            module: data,
         });
     }
     active.sort_by(|left, right| left.path.cmp(&right.path));
@@ -568,17 +549,7 @@ fn logical_modules_map(
         }
         out.entry(source.chunk_id)
             .or_insert_with(BTreeMap::new)
-            .insert(
-                source.path,
-                LogicalModule {
-                    members: source.members,
-                    source_matches: source.source_matches,
-                    annotations: source.annotations,
-                    anonymous_statements: source.anonymous_statements,
-                    comment: source.comment,
-                    note: source.note,
-                },
-            );
+            .insert(source.path, source.module);
     }
     Ok(out)
 }
