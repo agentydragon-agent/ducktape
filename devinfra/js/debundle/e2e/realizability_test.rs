@@ -166,6 +166,33 @@ export { A, B, readB };
     assert_entry_output(&fixture, "a-value-postfix\n");
 }
 
+// Calling the lazy reader at initialization closes the otherwise accepted
+// mixed cycle above. The original source is valid; splitting it is not.
+#[test]
+fn at_init_call_closes_mixed_cycle() {
+    let rejected = run_rejection_fixture(FixtureOpts::new(
+        r#"const A = 1;
+const B = A + 1;
+function readB() { return B; }
+const trigger = readB();
+console.log(trigger);
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("A"), Member::new("readB"), Member::new("trigger")]),
+            logical_module("mod_b", &[Member::new("B")]),
+        ],
+    ));
+    let cycles: Vec<serde_json::Value> =
+        read_json(&rejected.report_root.join("static/app/cycles.json"));
+    assert!(!cycles.is_empty(), "the at-init call must close the cycle");
+    for cycle in cycles {
+        let cut = cycle["cut"].as_array().expect("cycle cut");
+        assert!(!cut.is_empty());
+        assert!(cut.iter().all(|edge| edge["kind"] != "lazy_use"),
+            "lazy reads must not constrain initialization: {cycle}");
+    }
+}
+
 // The mutual lazy-only cycle acceptance (Lemma 4's named pin) lives
 // in `lemma_four_lazy_read_cycle_test`.
 
@@ -604,7 +631,13 @@ export { a1, a2, b1 };
         rejected.stderr,
     );
 
+    for expected in ["cycle", "mod_a", "mod_b", "side-effect"] {
+        assert!(rejected.stderr.contains(expected), "{}", rejected.stderr);
+    }
     let graph = rejected.owner_graph();
+    assert!(graph.edges.iter().any(|edge| {
+        edge.edge_kind == DepKind::Sequenced && edge.binding.is_none()
+    }), "side-effect edges must omit the binding: {graph:#?}");
     assert!(
         !rejected
             .report_root
@@ -625,6 +658,10 @@ export { a1, a2, b1 };
         read_json(&rejected.report_root.join("static/app/cycles.json"));
     assert!(!cycles.is_empty(), "at least one blocking SCC");
     for (i, entry) in cycles.iter().enumerate() {
+        let cut = entry["cut"].as_array().expect("cycle cut");
+        assert!(!cut.is_empty(), "a blocking cycle needs a cut: {entry}");
+        assert!(cut.iter().all(|edge| edge["kind"] == "sequenced"),
+            "S-only cycle cut must contain only side-effect reasons: {entry}");
         let obj = entry.as_object().expect("blocking-SCC entry is an object");
         let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
         keys.sort();
@@ -686,53 +723,6 @@ export { a1, a2, a3, b1, b2, b3 };
     assert_entry_output(&fixture, "1 x 1 2 y 2\n");
 }
 
-#[test]
-fn s_only_cycle_is_rejected() {
-    // Three side-effecting `globalThis.tag = ...` writes
-    // interleaved across mod_a (ord 0, 2) and mod_b (ord 1). No
-    // R/I edges; S alone closes the cycle.
-    expect_rejection_containing_all(
-        FixtureOpts::new(
-            r#"const a1 = (globalThis.tag = "a1", 1);
-const b1 = (globalThis.tag = "b1", 2);
-const a2 = (globalThis.tag = "a2", 3);
-console.log(a1, a2, b1, globalThis.tag);
-export { a1, a2, b1 };
-"#,
-            vec![
-                logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
-                logical_module("mod_b", &[Member::new("b1")]),
-            ],
-        ),
-        // `side-effect` substring confirms the rejection comes
-        // from S edges, not from a misclassified R/I edge.
-        &["cycle", "mod_a", "mod_b", "side-effect"],
-    );
-}
-
-#[test]
-fn side_effect_owner_edges_do_not_use_binding_sentinels() {
-    let rejected = run_rejection_fixture(FixtureOpts::new(
-        r#"const a1 = (globalThis.tag = "a1", 1);
-const b1 = (globalThis.tag = "b1", 2);
-const a2 = (globalThis.tag = "a2", 3);
-console.log(a1, a2, b1, globalThis.tag);
-export { a1, a2, b1 };
-"#,
-        vec![
-            logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
-            logical_module("mod_b", &[Member::new("b1")]),
-        ],
-    ));
-    let graph = rejected.owner_graph();
-    assert!(
-        graph
-            .edges
-            .iter()
-            .any(|edge| edge.edge_kind == DepKind::Sequenced && edge.binding.is_none()),
-        "side-effect owner edges should omit binding rather than using a sentinel: {graph:#?}",
-    );
-}
 
 // --- Per-declarator attribution across comma-list var-decls --------------
 

@@ -1,8 +1,6 @@
-//! Factorization-validation tests: cycle detection, realizability,
-//! and purity interplay through `validate_factorization` over real
-//! parsed chunks. They exercise the analysis crate's
-//! `chunk_factorization`, `validation`, and purity machinery. Despite
-//! the name, nothing here tests `peel::propose`.
+//! Focused atomic-unit, factor-assembly, purity and source-location tests.
+//! Acceptance, rejection and runtime ordering are exercised through the CLI
+//! in e2e/realizability_test.rs and the at_init_* and lemma_* suites.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -24,7 +22,7 @@ fn residual() -> ModuleId {
     ModuleId::logical(usize::MAX)
 }
 
-/// Canonical-path renderer for `validate_factorization`: the residual
+/// Canonical-path renderer for test partitions: the residual
 /// sentinel renders as `residual`, explicit modules as `mod_<idx>`.
 fn render(id: ModuleId) -> spec::ModulePath {
     let LogicalModuleIndex(idx) = id.0;
@@ -36,233 +34,11 @@ fn render(id: ModuleId) -> spec::ModulePath {
     spec::ModulePath::parse(&raw, "").unwrap()
 }
 
-/// Each owner lands in the module of its first declared binding present
-/// in `binding_assignment`, else in `residual()`.
-fn partition_for(
-    owner_graph: &OwnerGraph,
-    binding_assignment: &HashMap<swc_ecma_ast::Id, ModuleId>,
-) -> Partition {
-    let mut partition = Partition::new(owner_graph, residual());
-    for node in owner_graph.iter_nodes() {
-        if let Some(&module) = node
-            .declared
-            .iter()
-            .find_map(|id| binding_assignment.get(id))
-        {
-            partition.set(node.id, module);
-        }
-    }
-    partition
-}
-
 fn member_bindings(members: &[BindingReport]) -> Vec<String> {
     members
         .iter()
         .map(|member| member.binding.to_string())
         .collect()
-}
-
-// --- Factorization: cycle detection & realizability ---------------------
-
-#[test]
-fn cycle_detected_between_two_modules() {
-    // mod_a owns A; A's init reads B (owned by mod_b).
-    // mod_b owns B; B's init reads A (owned by mod_a).
-    let module = parse("const A = B + 1; const B = A + 1;");
-    let facts = analyze_facts(&module);
-    let mut binding_assignment = HashMap::new();
-    binding_assignment.insert(test_id("A"), logical(0));
-    binding_assignment.insert(test_id("B"), logical(1));
-    let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition = partition_for(&owner_graph, &binding_assignment);
-    let report = validate_factorization(&owner_graph, &partition, &render);
-    assert_eq!(report.cycles.len(), 1);
-    assert_eq!(report.cycles[0].modules.len(), 2);
-}
-
-#[test]
-fn dag_has_no_cycles() {
-    let module = parse("const A = 1; const B = A + 1; const C = B + A;");
-    let facts = analyze_facts(&module);
-    let mut binding_assignment = HashMap::new();
-    binding_assignment.insert(test_id("A"), logical(0));
-    binding_assignment.insert(test_id("B"), logical(1));
-    binding_assignment.insert(test_id("C"), logical(2));
-    let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition = partition_for(&owner_graph, &binding_assignment);
-    let report = validate_factorization(&owner_graph, &partition, &render);
-    assert!(
-        report.cycles.is_empty(),
-        "expected no cycles, got {:?}",
-        report.cycles
-    );
-}
-
-/// A mixed cycle (lazy forward-edge, at-init back-edge) where
-/// the lazy direction is NOT invoked at-init is realizable per
-/// docs/design.md "Realizability primitive" clause 3 — the
-/// constraining-edge subgraph (drops LazyUse) has no
-/// multi-module SCC. The materializer's Lemma 2 steering
-/// (ChunkFactorization::source_import_position with SCC-aware reverse)
-/// gives entry an import order such that the ESM linker
-/// resolves the cycle without TDZ.
-#[test]
-fn mixed_cycle_without_at_init_call_is_realizable() {
-    // mod_0 owns A and readB; readB body returns B (lazy read,
-    // never invoked at-init). mod_1 owns B; B = A + 1
-    // (at-init read of A). Constraining subgraph: only
-    // mod_1 → mod_0 — acyclic. Relaxed clause-3 accepts.
-    let module = parse("const A = 1; function readB() { return B; } const B = A + 1;");
-    let facts = analyze_facts(&module);
-    let mut binding_assignment = HashMap::new();
-    binding_assignment.insert(test_id("A"), logical(0));
-    binding_assignment.insert(test_id("readB"), logical(0));
-    binding_assignment.insert(test_id("B"), logical(1));
-    let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition = partition_for(&owner_graph, &binding_assignment);
-    let report = validate_factorization(&owner_graph, &partition, &render);
-    assert!(
-        report.cycles.is_empty(),
-        "mixed cycle with no at-init call should be realizable; got {:?}",
-        report.cycles,
-    );
-}
-
-/// Verify that at-init call promotion materializes a promoted
-/// owner-graph edge for a top-level call to a chunk function
-/// whose body lazily reads a cross-module binding. The promoted
-/// edge appears as an EagerUse edge from the caller statement's
-/// owner to the target binding's owner.
-#[test]
-fn at_init_call_promotion_materializes_owner_edge() {
-    // owner 0: function readB { return B; } (reads.lazy = {B})
-    // owner 1: const A = 1
-    // owner 2: const triggerInit = readB(); (calls.eager = {readB})
-    // owner 3: const B = A + 1; (declared = {B}, reads.eager = {A})
-    // Promotion should add an EagerUse edge owner 2 → owner 3
-    // because triggerInit at-init-calls readB whose body reads B.
-    let module = parse(
-        "function readB() { return B; } const A = 1; const triggerInit = readB(); const B = A + 1;",
-    );
-    let facts = analyze_facts(&module);
-    assert_eq!(
-        facts[2].calls.eager,
-        BTreeSet::from([test_id("readB")]),
-        "triggerInit's calls.eager must include readB: {:?}",
-        facts[2].calls.eager,
-    );
-    let owner_graph = build_owner_graph(&facts).unwrap();
-    let promoted: Vec<_> = owner_graph
-        .iter_edges()
-        .filter(|e| e.from == OwnerId(2) && e.to == OwnerId(3))
-        .collect();
-    assert!(
-        promoted
-            .iter()
-            .any(|e| e.reason.kind() == DepKind::EagerUse),
-        "expected a promoted EagerUse edge owner 2 → owner 3 in {:?}",
-        owner_graph
-            .iter_edges()
-            .map(|e| (e.from, e.to, e.reason.kind()))
-            .collect::<Vec<_>>(),
-    );
-}
-
-#[test]
-fn at_init_call_promotion_closes_otherwise_relaxed_cycle() {
-    // mod_0 owns readB, triggerInit (which at-init-calls readB),
-    // and A. mod_1 owns B. Promotion: triggerInit's owner (mod_0)
-    // gets a promoted eager edge to B's owner (mod_1) because
-    // readB's body lazily reads B. Combined with B's eager edge
-    // back to A (mod_1 → mod_0), the constraining-edge subgraph
-    // contains a 2-cycle. The lazy `readB → B` edge is still in
-    // the full quotient as evidence but is excluded from the cut.
-    // Source order matters: B reads A (mod_1 → mod_0 eager) is
-    // the back-edge that the promoted forward-edge closes into a
-    // cycle.
-    let module = parse(
-        "function readB() { return B; } const A = 1; const triggerInit = readB(); const B = A + 1;",
-    );
-    let facts = analyze_facts(&module);
-    let mut binding_assignment = HashMap::new();
-    binding_assignment.insert(test_id("readB"), logical(0));
-    binding_assignment.insert(test_id("triggerInit"), logical(0));
-    binding_assignment.insert(test_id("A"), logical(0));
-    binding_assignment.insert(test_id("B"), logical(1));
-    let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition = partition_for(&owner_graph, &binding_assignment);
-    let report = validate_factorization(&owner_graph, &partition, &render);
-    assert_eq!(
-        report.cycles.len(),
-        1,
-        "at-init call promotion must close the cycle; got {:?}",
-        report.cycles,
-    );
-    let cycle = &report.cycles[0];
-    assert!(
-        !cycle.cut.iter().any(|e| e.kind == DepKind::LazyUse),
-        "cut must not include lazy reasons, got {:?}",
-        cycle.cut,
-    );
-}
-
-/// Pure-S cycle: cut consists of side-effect reasons; no
-/// lazy or at-init reasons should appear.
-#[test]
-fn cut_emits_side_effect_edges_for_s_only_cycle() {
-    // Three side-effecting `globalThis.tag = ...` writes
-    // interleaved across mod_0 (ord 0, 2) and mod_1 (ord 1).
-    // S-edges: mod_0 → mod_1 (ord 0 < ord 1) and
-    // mod_1 → mod_0 (ord 1 < ord 2). Cycle.
-    let module = parse(
-        r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
-    );
-    let facts = analyze_facts(&module);
-    let mut binding_assignment = HashMap::new();
-    binding_assignment.insert(test_id("a1"), logical(0));
-    binding_assignment.insert(test_id("a2"), logical(0));
-    binding_assignment.insert(test_id("b1"), logical(1));
-    let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition = partition_for(&owner_graph, &binding_assignment);
-    let report = validate_factorization(&owner_graph, &partition, &render);
-    assert_eq!(report.cycles.len(), 1);
-    let cycle = &report.cycles[0];
-    assert!(
-        !cycle.cut.is_empty(),
-        "cut should be non-empty for an unrealizable cycle, got {:?}",
-        cycle.cut,
-    );
-    assert!(
-        cycle.cut.iter().all(|e| e.kind == DepKind::Sequenced),
-        "S-only cycle cut should be all side-effect reasons, got {:?}",
-        cycle.cut,
-    );
-}
-
-/// Lazy-only cycle: realizability gate accepts it, so no
-/// CycleReport is emitted and there's no cut to compute.
-#[test]
-fn cut_is_absent_for_lazy_only_cycle() {
-    // mod_0 owns helperA, A; mod_1 owns helperB, B. Both
-    // helpers reference the other module's binding lazily;
-    // no cross-module at-init or side-effect edges.
-    let module = parse(
-        "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
-    );
-    let facts = analyze_facts(&module);
-    let mut binding_assignment = HashMap::new();
-    binding_assignment.insert(test_id("helperA"), logical(0));
-    binding_assignment.insert(test_id("A"), logical(0));
-    binding_assignment.insert(test_id("helperB"), logical(1));
-    binding_assignment.insert(test_id("B"), logical(1));
-    let owner_graph = build_owner_graph(&facts).unwrap();
-    let partition = partition_for(&owner_graph, &binding_assignment);
-    let report = validate_factorization(&owner_graph, &partition, &render);
-    assert!(
-        report.cycles.is_empty(),
-        "lazy-only cycle is realizable; the gate must accept and emit no cycle (got {:?})",
-        report.cycles,
-    );
 }
 
 // --- Lazy rebind atomic-unit constraints --------------------------------
@@ -692,36 +468,7 @@ fn non_var_decl_statements_are_not_split() {
     );
 }
 
-// --- Comma-list owner attribution in owner graph quotient ---------------
-
-#[test]
-fn split_comma_list_attributes_reads_per_declarator() {
-    // `const A = 1, B = X;` — A → mod_0, B → mod_1, X → mod_1.
-    // Pre-split, `stmt_owner` would pick A's owner (mod_0)
-    // for the whole comma-list and attribute `B`'s read of X
-    // to mod_0, creating an R-edge mod_0 → mod_1 even though
-    // the actual emitted module for B is mod_1. Post-split,
-    // each declarator is its own statement: A's row owns
-    // nothing readwise (literal init), B's row owns the read
-    // of X but its home is mod_1 — so no edge (B reads X
-    // within its own module).
-    let factorization = factorization_for(
-        "const A = 1, B = X; const X = 42;",
-        &[("A", logical(0)), ("B", logical(1)), ("X", logical(1))],
-    );
-    // No cross-module read edges should exist: A's init is
-    // pure, B reads X (same module).
-    let mod_0 = ModuleId(LogicalModuleIndex(0));
-    let mod_1 = ModuleId(LogicalModuleIndex(1));
-    assert!(
-        !factorization.dep_graph.contains_edge(mod_0, mod_1),
-        "no edge mod_0 → mod_1 expected",
-    );
-    assert!(
-        !factorization.dep_graph.contains_edge(mod_1, mod_0),
-        "no edge mod_1 → mod_0 expected",
-    );
-}
+// --- Comma-list source locations -----------------------------------------
 
 #[test]
 fn split_comma_list_assigns_per_declarator_source_ranges() {
@@ -766,38 +513,6 @@ fn split_comma_list_assigns_per_declarator_source_ranges() {
             "each declarator should report only its own line for {source:?}",
         );
     }
-}
-
-#[test]
-fn split_comma_list_surfaces_real_cross_declarator_cycle() {
-    // `const A = X, B = 1;` — A → mod_a, B → mod_b, X → mod_b.
-    // mod_a's `A` reads X from mod_b → R-edge mod_a → mod_b.
-    // Now also `const Y = A;` in mod_b reads A from mod_a:
-    // → R-edge mod_b → mod_a. Cycle.
-    //
-    // Pre-split, the comma-list `const A = X, B = 1;` would
-    // attribute the read of X to mod_a (A is declared first,
-    // owner mod_a). So the edge is mod_a → mod_b. mod_b's
-    // `Y = A` adds mod_b → mod_a. Cycle detected (correctly,
-    // by accident). Post-split, A's row attributes the read
-    // to mod_a, B's row to mod_b — same edges, same cycle.
-    // This case demonstrates the split doesn't *miss* real
-    // cycles either: the bug bit when multiple declarators
-    // had differently-owned reads on the same line.
-    let factorization = factorization_for(
-        "const A = X, B = 1; const X = 42; const Y = A;",
-        &[
-            ("A", logical(0)),
-            ("B", logical(1)),
-            ("X", logical(1)),
-            ("Y", logical(1)),
-        ],
-    );
-    let report = factorization.validate();
-    assert!(
-        !report.cycles.is_empty(),
-        "expected a real cycle to be reported"
-    );
 }
 
 // --- linker_order in FactorizationReport --------------------------------------
