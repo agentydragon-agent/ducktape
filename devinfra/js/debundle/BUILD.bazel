@@ -991,6 +991,13 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "selector_constraint_backend_test",
+    size = "small",
+    crate = ":selector_constraint_backend",
+    edition = "2024",
+)
+
 rust_library(
     name = "selector_constraint_model_builder",
     srcs = ["selectors/resolution/selector_constraint_model_builder.rs"],

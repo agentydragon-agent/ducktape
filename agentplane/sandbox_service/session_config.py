@@ -51,4 +51,3 @@ class SandboxBinding(BaseModel):
 
     thread_defaults: ThreadDefaults | None = None
     bootstrap: str = Field(max_length=65_536)
-
