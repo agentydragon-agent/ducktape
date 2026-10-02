@@ -47,7 +47,7 @@ impl GraphFixture {
     /// A real rebind forces these two declarations into one atomic unit.
     pub fn atomic_pair() -> Self {
         Self::new(
-            "let alpha = 0;\nfunction beta() { alpha = 1; }\nbeta();\nconsole.log(alpha);\n",
+            "let alpha = 0;\nfunction beta() { alpha = 1; }\nconsole.log(alpha, typeof beta);\n",
             &[(
                 "home/atom.yaml",
                 "members: [{selector: {binding: {name: alpha}}}, {selector: {binding: {name: beta}}}]\n",
@@ -168,7 +168,7 @@ impl GraphFixture {
             &self.run.out_root.join("app/package.json"),
             "{\"type\":\"module\"}\n",
         );
-        assert_node_output(&self.run.out_root.join("app/main/entry.js"), expected, "");
+        assert_node_output(&self.run.out_root.join("app/main/main.js"), expected, "");
     }
 
     pub fn owner_graph(&self) -> OwnerGraphReport {

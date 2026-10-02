@@ -18,5 +18,5 @@ fn bindings_unassign_accepts_when_whole_atom_unassigned_together() {
         !fixture.modules.join("home/atom.yaml").exists(),
         "drained source must be deleted"
     );
-    fixture.assert_runs("1\n");
+    fixture.assert_runs("0 function\n");
 }
