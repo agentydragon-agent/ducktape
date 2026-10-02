@@ -9,7 +9,8 @@
 
 use vendor::{
     DeferredImport, IdentRewriteTarget, MaterializedOutputChunkIndex, VendorImportAction,
-    VendorImportRewrites, VendorResolutionPlan, bundled_facade_import_source, resolve_partial_swap_import_target,
+    VendorImportRewrites, VendorResolutionPlan, bundled_facade_import_source,
+    resolve_partial_swap_import_target,
 };
 
 use super::super::*;
@@ -171,9 +172,17 @@ pub(crate) fn plan_vendor_reimports<'a>(
                 }
             };
         planned.external_imports.extend(
-            rewrites.materialize(action, local_id, chunk, chunk_export, |path| {
-                bundled_facade_import_source(oracle.chunk_table, source_chunk_id, target_file, path)
-            }).into_iter().map(DeferredImport::into_module_item),
+            rewrites
+                .materialize(action, local_id, chunk, chunk_export, |path| {
+                    bundled_facade_import_source(
+                        oracle.chunk_table,
+                        source_chunk_id,
+                        target_file,
+                        path,
+                    )
+                })
+                .into_iter()
+                .map(DeferredImport::into_module_item),
         );
     }
     planned.body_rewrites = rewrites.body_rewrites;

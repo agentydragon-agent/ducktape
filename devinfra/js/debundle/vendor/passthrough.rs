@@ -26,7 +26,7 @@
 //! `suppress`-marked chunks are skipped entirely — suppress means
 //! hands-off, so their directives pass through byte-identical.
 
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
@@ -41,7 +41,7 @@ use spec::PartialSwapKind;
 
 use crate::plan::VendorResolutionPlan;
 use crate::{
-    DeferredImport, VendorImportRewrites, MaterializedOutputChunkIndex, PartialSwapIdentRewriter,
+    DeferredImport, MaterializedOutputChunkIndex, PartialSwapIdentRewriter, VendorImportRewrites,
     bundled_facade_import_source, is_valid_identifier, make_named_reexport,
     make_namespace_reexport, new_url_expr, resolve_partial_swap_import_target,
 };
@@ -102,7 +102,6 @@ pub(crate) fn rewrite_passthrough_module(
         *references_by_symbol.entry(key).or_insert(0) += count;
     }
 }
-
 
 fn rewrite_directive_items(
     original_body: Vec<ModuleItem>,
@@ -276,10 +275,23 @@ fn plan_named_import_replacement(
     context: &PassthroughContext<'_>,
     state: &mut VendorImportRewrites,
 ) -> Option<Vec<DeferredImport>> {
-    let action = context.plan.swapped_named_import_action(target_chunk_id, imported_name)?;
-    Some(state.materialize(action, local.to_id(), target_chunk_id, imported_name.to_string(), |path| {
-        bundled_facade_import_source(context.chunk_table, caller_chunk_id, caller_file_path, path)
-    }))
+    let action = context
+        .plan
+        .swapped_named_import_action(target_chunk_id, imported_name)?;
+    Some(state.materialize(
+        action,
+        local.to_id(),
+        target_chunk_id,
+        imported_name.to_string(),
+        |path| {
+            bundled_facade_import_source(
+                context.chunk_table,
+                caller_chunk_id,
+                caller_file_path,
+                path,
+            )
+        },
+    ))
 }
 
 /// Rewrite `export { <chunk_export> as <name> } from "<vendor-chunk>"`
@@ -369,7 +381,7 @@ fn rewrite_export_from_decl(
         };
         replacements.push(replacement);
         *state
-            .references_by_symbol
+            .references_rewritten
             .entry((target_chunk_id, orig_name))
             .or_insert(0) += 1;
     }
