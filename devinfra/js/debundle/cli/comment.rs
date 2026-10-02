@@ -13,9 +13,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use serde::Serialize;
 use spec::{BindingAnnotation, LogicalModule, ModulePath};
-use yaml_edit::{apply_yaml_edit, read_yaml};
 
-use crate::binding::resolve_unambiguous;
+use crate::binding::{apply_module_edit, read_module_doc, resolve_unambiguous};
 
 /// Args for `debundle bindings comment <sym> [...]`.
 #[derive(Debug, ClapArgs)]
@@ -218,7 +217,7 @@ pub fn apply_binding_comment(
     // matches) as `bindings assign` / `bindings rename`.
     let hit = resolve_unambiguous(modules_root, sym)?;
     let file = hit.file;
-    let mut doc: LogicalModule = serde_yaml::from_value(read_yaml(&file)?)?;
+    let mut doc = read_module_doc(&file)?;
     let name = hit.name.readable().unwrap_or_else(|| hit.name.minified());
     let current = doc.annotations.get(name).and_then(|a| a.comment.clone());
     let (action, comment, dirty) = edit_comment(current, mode)?;
@@ -262,7 +261,7 @@ pub fn apply_module_comment(
     if !file.exists() {
         bail!("module YAML not found: {}", file.display());
     }
-    let mut doc: LogicalModule = serde_yaml::from_value(read_yaml(&file)?)?;
+    let mut doc = read_module_doc(&file)?;
     let (action, comment, dirty) = edit_comment(doc.comment.clone(), mode)?;
     doc.comment = comment.clone();
     let action = persist_comment(&file, &doc, action, dirty, dry_run)?;
@@ -311,7 +310,7 @@ fn persist_comment(
     dry_run: bool,
 ) -> Result<&'static str> {
     if dirty {
-        apply_yaml_edit(file, &serde_yaml::to_value(doc)?, dry_run)?;
+        apply_module_edit(file, doc, dry_run)?;
     }
     Ok(if dirty && dry_run { "dry-run" } else { action })
 }

@@ -9,7 +9,7 @@
 //!   members, the operation refuses with a structured list.
 //! * Mutating commands validate-by-default (atomic post-batch state)
 //!   and refuse on collision / atom-split rejection.
-//! * Changed YAML documents are reserialized; textual preservation is not required.
+//! * Edits use the canonical module schema; changed YAML is reserialized.
 //!
 //! The per-command contract lives in the clap doc-comments
 //! (`cli/bindings_commands.rs`); cross-command semantics (batch atomicity, rejection
@@ -21,9 +21,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
-use serde_yaml::{Mapping, Value};
 
-use spec::{ModulePath, is_residual_module_path};
+use spec::{BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding, SourceMatchBindingDetail, is_residual_module_path};
 use spec_modules::{collect_module_files, module_path_from_file};
 use yaml_edit::{apply_yaml_edit, read_yaml};
 
@@ -112,7 +111,7 @@ impl BindingLocation {
     }
 }
 
-type ModuleDocs = BTreeMap<String, (PathBuf, Value)>;
+type ModuleDocs = BTreeMap<String, (PathBuf, LogicalModule)>;
 
 /// Load one planning snapshot for resolution, collision checks, and edits.
 /// Persistence still compares each prospective document against disk.
@@ -120,71 +119,54 @@ pub fn load_module_docs(modules_root: &Path) -> Result<ModuleDocs> {
     let mut docs = BTreeMap::new();
     for file in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&file, modules_root);
-        let doc = read_yaml(&file)?;
+        let doc = read_module_doc(&file)?;
         docs.insert(module_path, (file, doc));
     }
     Ok(docs)
 }
 
-fn binding_matches_in_doc(file: &Path, module_path: &str, doc: &Value) -> Vec<BindingMatch> {
+/// Normalize empty YAML and parse the same schema the pipeline consumes.
+pub(crate) fn read_module_doc(file: &Path) -> Result<LogicalModule> {
+    serde_yaml::from_value(read_yaml(file)?)
+        .with_context(|| format!("parsing module {}", file.display()))
+}
+
+/// Compare typed semantics so omitted defaults do not rewrite unrelated files.
+pub(crate) fn apply_module_edit(file: &Path, doc: &LogicalModule, dry_run: bool) -> Result<bool> {
+    let value = serde_yaml::to_value(doc)?;
+    if file.exists() && serde_yaml::to_value(read_module_doc(file)?)? == value {
+        return Ok(false);
+    }
+    apply_yaml_edit(file, &value, dry_run)
+}
+
+fn binding_matches_in_doc(file: &Path, module_path: &str, doc: &LogicalModule) -> Vec<BindingMatch> {
     let mut out = Vec::new();
-
-    if let Some(seq) = doc
-        .as_mapping()
-        .and_then(|m| m.get(yk("members")))
-        .and_then(Value::as_sequence)
-    {
-        for (idx, member) in seq.iter().enumerate() {
-            let Some(map) = member.as_mapping() else {
-                continue;
-            };
-            let minified = member_minified_name(map);
-            let readable_name = map
-                .get(yk("name"))
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            if minified.is_none() && readable_name.is_none() {
-                continue;
-            }
-            out.push(BindingMatch {
-                file: file.to_path_buf(),
-                module_path: module_path.to_string(),
-                location: BindingLocation::Member { member_index: idx },
-                name: BindingName::new(minified.unwrap_or_default(), readable_name),
-            });
+    let mut add = |location, name| out.push(BindingMatch {
+        file: file.to_path_buf(),
+        module_path: module_path.to_string(),
+        location,
+        name,
+    });
+    for (member_index, member) in doc.members.iter().enumerate() {
+        let minified = member_minified_name(member);
+        if minified.is_some() || member.name.is_some() {
+            add(
+                BindingLocation::Member { member_index },
+                BindingName::new(minified.unwrap_or_default(), member.name.clone()),
+            );
         }
     }
-
-    if let Some(claims) = doc
-        .as_mapping()
-        .and_then(|m| m.get(yk("source_matches")))
-        .and_then(Value::as_sequence)
-    {
-        for (claim_index, claim) in claims.iter().enumerate() {
-            let Some(bindings) = claim
-                .as_mapping()
-                .and_then(|m| m.get(yk("bindings")))
-                .and_then(Value::as_sequence)
-            else {
-                continue;
-            };
-            for (binding_index, binding) in bindings.iter().enumerate() {
-                let Some(name) = source_match_binding_name(binding) else {
-                    continue;
-                };
-                out.push(BindingMatch {
-                    file: file.to_path_buf(),
-                    module_path: module_path.to_string(),
-                    location: BindingLocation::SourceMatch {
-                        claim_index,
-                        binding_index,
-                    },
-                    name,
-                });
+    for (claim_index, claim) in doc.source_matches.iter().enumerate() {
+        for (binding_index, binding) in claim.bindings.iter().enumerate() {
+            if !binding.local().is_empty() {
+                add(
+                    BindingLocation::SourceMatch { claim_index, binding_index },
+                    BindingName::new(binding.local().to_string(), source_match_readable(binding)),
+                );
             }
         }
     }
-
     out
 }
 
@@ -192,28 +174,14 @@ fn binding_effective_name(name: &BindingName) -> &str {
     name.readable().unwrap_or_else(|| name.minified())
 }
 
-fn source_match_binding_name(binding: &Value) -> Option<BindingName> {
+fn source_match_readable(binding: &SourceMatchBinding) -> Option<String> {
     match binding {
-        Value::String(local) if !local.is_empty() => Some(BindingName::new(local.clone(), None)),
-        Value::Mapping(map) => {
-            let local = map
-                .get(yk("local"))
-                .and_then(Value::as_str)
-                .filter(|local| !local.is_empty())?
-                .to_string();
-            let readable = map
-                .get(yk("name"))
-                .and_then(Value::as_str)
-                .filter(|name| !name.is_empty())
-                .map(str::to_string);
-            Some(BindingName::new(local, readable))
-        }
-        _ => None,
+        SourceMatchBinding::Local(_) => None,
+        SourceMatchBinding::Detailed(detail) => detail.name.clone().filter(|name| !name.is_empty()),
     }
 }
 
-/// Locate every member matching `sym` under `modules_root`. `sym`
-/// matches either the minified binding name or the readable `name:`.
+/// Find all members matching either the minified binding name or readable `name:`.
 pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>> {
     Ok(matches_in_docs(&load_module_docs(modules_root)?, sym))
 }
@@ -298,7 +266,7 @@ pub fn run_bindings_list(
     let mut entries: Vec<BindingEntry> = Vec::new();
     for file in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&file, modules_root);
-        let doc = read_yaml(&file)?;
+        let doc = read_module_doc(&file)?;
         let bindings = binding_matches_in_doc(&file, &module_path, &doc);
         let orphan = bindings.len() == 1;
         entries.extend(bindings.into_iter().map(|binding| BindingEntry {
@@ -367,14 +335,14 @@ pub fn rename_binding(
     let (_, doc) = docs
         .get_mut(&hit.module_path)
         .expect("resolved module is loaded");
-    let old_readable = current_readable_name(doc, &hit.file, &hit.location)?;
+    let old_readable = hit.name.readable().map(str::to_string);
     let old_effective = old_readable
         .clone()
         .unwrap_or_else(|| hit.name.minified().to_string());
-    let annotation = remove_annotation(doc, &old_effective)?;
-    set_readable_name(doc, &hit.file, &hit.location, new)?;
+    let annotation = doc.annotations.remove(&old_effective);
+    set_readable_name(doc, &hit.location, new);
     insert_annotation(doc, new, annotation)?;
-    let changed = apply_yaml_edit(&hit.file, doc, dry_run)?;
+    let changed = apply_module_edit(&hit.file, doc, dry_run)?;
     let action = if !changed {
         "unchanged"
     } else if dry_run {
@@ -696,32 +664,24 @@ pub fn run_bindings_assign(
         }
     }
     let plan: Vec<PlannedMove> = by_identity.into_values().collect();
-    // Step 3: pull each member out of its source doc (and rename if
-    // requested). `take_member` leaves a `Null` sentinel so indices
-    // stay stable across multiple takes from one module; collapse
-    // them once every take has run.
-    let mut pulled: BTreeMap<String, Value> = BTreeMap::new();
-    let mut pulled_annotations: BTreeMap<String, (String, Option<Value>)> = BTreeMap::new();
+    // Step 3: extract each source module's selected members in one pass,
+    // preserving original indices until every identity has been resolved.
+    let mut extracted = take_members(&mut docs, plan.iter().map(|p| (p.source_module.clone(), p.source_index)));
+    let mut pulled: BTreeMap<String, Member> = BTreeMap::new();
+    let mut pulled_annotations: BTreeMap<String, (String, Option<BindingAnnotation>)> = BTreeMap::new();
     for p in &plan {
-        let Some((file, doc)) = docs.get_mut(&p.source_module) else {
-            bail!("source module {:?} not in tree", p.source_module);
-        };
-        let mut member = take_member(doc, file, p.source_index)?;
-        let old_effective = member_effective_name_value(&member)
+        let mut member = extracted.remove(&(p.source_module.clone(), p.source_index)).expect("resolved member is loaded");
+        let old_effective = member_effective_name(&member)
             .with_context(|| format!("member {:?} has no effective binding name", p.req.sym))?;
-        let annotation = remove_annotation(doc, &old_effective)?;
-        if let Some(new_readable) = &p.req.readable
-            && let Some(map) = member.as_mapping_mut()
-        {
-            map.insert(yk("name"), Value::String(new_readable.clone()));
+        let (_, doc) = docs.get_mut(&p.source_module).expect("resolved module is loaded");
+        let annotation = doc.annotations.remove(&old_effective);
+        if let Some(new_readable) = &p.req.readable {
+            member.name = Some(new_readable.clone());
         }
-        let new_effective = member_effective_name_value(&member)
+        let new_effective = member_effective_name(&member)
             .with_context(|| format!("member {:?} has no effective binding name", p.req.sym))?;
         pulled_annotations.insert(p.req.sym.clone(), (new_effective, annotation));
         pulled.insert(p.req.sym.clone(), member);
-    }
-    for (_, doc) in docs.values_mut() {
-        collapse_null_members(doc);
     }
 
     // Step 4: collision detection for renames, sharing the same
@@ -760,10 +720,7 @@ pub fn run_bindings_assign(
                 .iter()
                 .filter(|(other_sym, _)| *other_sym != &p.req.sym)
                 .filter(|(_, member)| {
-                    member
-                        .as_mapping()
-                        .and_then(member_effective_name)
-                        .as_deref()
+                    member_effective_name(member).as_deref()
                         == Some(new_readable)
                 })
                 .count();
@@ -784,17 +741,15 @@ pub fn run_bindings_assign(
     for p in &plan {
         let dest_path = p.req.module.clone();
         if !docs.contains_key(&dest_path) {
-            let mut map = Mapping::new();
-            map.insert(yk("members"), Value::Sequence(Vec::new()));
             let dest_file = modules_root.join(format!("{dest_path}.yaml"));
-            docs.insert(dest_path.clone(), (dest_file, Value::Mapping(map)));
+            docs.insert(dest_path.clone(), (dest_file, LogicalModule::default()));
         }
         let member = pulled.remove(&p.req.sym).expect("pulled member missing");
         let (export_name, annotation) = pulled_annotations
             .remove(&p.req.sym)
             .expect("pulled annotation missing");
         let (_, doc) = docs.get_mut(&dest_path).expect("dest just created");
-        push_member(doc, member)?;
+        doc.members.push(member);
         insert_annotation(doc, &export_name, annotation)?;
     }
 
@@ -843,75 +798,24 @@ fn canonical_module_path(raw: &str) -> Result<String> {
 /// set, else the minified `selector.binding.name`. `bindings rename`
 /// and `bindings assign` share this predicate so both treat an
 /// unrenamed member's minified name as a claimed identity.
-fn member_effective_name(map: &Mapping) -> Option<String> {
-    if let Some(name) = map
-        .get(yk("name"))
-        .and_then(Value::as_str)
-        .filter(|name| !name.is_empty())
-    {
-        return Some(name.to_string());
-    }
-    member_minified_name(map)
+fn member_effective_name(member: &Member) -> Option<String> {
+    member.name.clone().filter(|name| !name.is_empty()).or_else(|| member_minified_name(member))
 }
 
-fn member_effective_name_value(member: &Value) -> Option<String> {
-    member.as_mapping().and_then(member_effective_name)
-}
-
-fn remove_annotation(doc: &mut Value, export_name: &str) -> Result<Option<Value>> {
-    let Some(root) = doc.as_mapping_mut() else {
-        return Ok(None);
-    };
-    let annotations_key = yk("annotations");
-    let Some(annotations_value) = root.get_mut(&annotations_key) else {
-        return Ok(None);
-    };
-    let annotations = annotations_value
-        .as_mapping_mut()
-        .ok_or_else(|| anyhow!("annotations exists but is not a mapping"))?;
-    let export_key = yk(export_name);
-    let removed = annotations.remove(&export_key);
-    let empty = annotations.is_empty();
-    if empty {
-        root.remove(&annotations_key);
-    }
-    Ok(removed)
-}
-
-fn insert_annotation(doc: &mut Value, export_name: &str, annotation: Option<Value>) -> Result<()> {
-    let Some(annotation) = annotation else {
-        return Ok(());
-    };
-    let root = doc
-        .as_mapping_mut()
-        .ok_or_else(|| anyhow!("module YAML is not a mapping"))?;
-    let annotations_key = yk("annotations");
-    let entry = root
-        .entry(annotations_key)
-        .or_insert_with(|| Value::Mapping(Mapping::new()));
-    let annotations = entry
-        .as_mapping_mut()
-        .ok_or_else(|| anyhow!("annotations exists but is not a mapping"))?;
-    let export_key = yk(export_name);
-    match annotations.get(&export_key) {
+fn insert_annotation(doc: &mut LogicalModule, export_name: &str, annotation: Option<BindingAnnotation>) -> Result<()> {
+    let Some(annotation) = annotation else { return Ok(()); };
+    match doc.annotations.get(export_name) {
         Some(existing) if existing == &annotation => Ok(()),
         Some(_) => bail!("annotations.{export_name} already exists with different metadata"),
         None => {
-            annotations.insert(export_key, annotation);
+            doc.annotations.insert(export_name.to_string(), annotation);
             Ok(())
         }
     }
 }
 
-fn member_minified_name(map: &Mapping) -> Option<String> {
-    map.get(yk("selector"))
-        .and_then(Value::as_mapping)
-        .and_then(|s| s.get(yk("binding")))
-        .and_then(Value::as_mapping)
-        .and_then(|b| b.get(yk("name")))
-        .and_then(Value::as_str)
-        .filter(|name| !name.is_empty())
-        .map(str::to_string)
+fn member_minified_name(member: &Member) -> Option<String> {
+    member.selector.binding.as_ref().map(|binding| binding.name.clone()).filter(|name| !name.is_empty())
 }
 
 /// Move-source modules drained to zero members that are safe to
@@ -922,7 +826,7 @@ fn member_minified_name(map: &Mapping) -> Option<String> {
 /// or `anonymous_statements:` (all of which are spec content the sweep must
 /// not destroy).
 fn drained_source_modules(
-    docs: &BTreeMap<String, (PathBuf, Value)>,
+    docs: &ModuleDocs,
     move_sources: &BTreeSet<String>,
 ) -> BTreeSet<String> {
     move_sources
@@ -934,23 +838,11 @@ fn drained_source_modules(
             let Some((_, doc)) = docs.get(*mp) else {
                 return false;
             };
-            let Some(map) = doc.as_mapping() else {
-                return false;
-            };
-            let members_empty = members_seq(doc).is_none_or(|s| s.is_empty());
-            let keeps_content = map.get(yk("comment")).is_some()
-                || map
-                    .get(yk("annotations"))
-                    .and_then(Value::as_mapping)
-                    .is_some_and(|m| !m.is_empty())
-                || [yk("source_matches"), yk("anonymous_statements")]
-                    .iter()
-                    .any(|key| {
-                        map.get(key)
-                            .and_then(Value::as_sequence)
-                            .is_some_and(|s| !s.is_empty())
-                    });
-            members_empty && !keeps_content
+            doc.members.is_empty()
+                && doc.comment.is_none()
+                && doc.annotations.is_empty()
+                && doc.source_matches.is_empty()
+                && doc.anonymous_statements.is_empty()
         })
         .cloned()
         .collect()
@@ -961,7 +853,7 @@ fn drained_source_modules(
 /// can never lose a member that was not yet spliced into its
 /// destination on disk.
 fn apply_doc_changes(
-    docs: &BTreeMap<String, (PathBuf, Value)>,
+    docs: &ModuleDocs,
     to_delete: &BTreeSet<String>,
     dry_run: bool,
 ) -> Result<(Vec<String>, Vec<String>)> {
@@ -971,7 +863,7 @@ fn apply_doc_changes(
         if to_delete.contains(mp) {
             continue;
         }
-        let changed = apply_yaml_edit(file, doc, dry_run)?;
+        let changed = apply_module_edit(file, doc, dry_run)?;
         if changed {
             files_written.push(file.display().to_string());
         }
@@ -986,53 +878,27 @@ fn apply_doc_changes(
     Ok((files_written, files_deleted))
 }
 
-fn take_member(doc: &mut Value, file: &Path, index: usize) -> Result<Value> {
-    let seq = doc
-        .as_mapping_mut()
-        .and_then(|m| m.get_mut(yk("members")))
-        .and_then(Value::as_sequence_mut)
-        .ok_or_else(|| anyhow!("module YAML {} missing members sequence", file.display()))?;
-    if index >= seq.len() {
-        bail!("member index {index} out of range in {}", file.display());
+/// Extract by snapshot identity without null sentinels or repeated Vec removals.
+fn take_members(
+    docs: &mut ModuleDocs,
+    identities: impl IntoIterator<Item = (String, usize)>,
+) -> BTreeMap<(String, usize), Member> {
+    let mut by_module: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
+    for (module, index) in identities {
+        by_module.entry(module).or_default().insert(index);
     }
-    // Replace with null so collapse_null_members can compact the
-    // sequence after every batch take has run.
-    let taken = std::mem::replace(&mut seq[index], Value::Null);
-    Ok(taken)
-}
-
-fn collapse_null_members(doc: &mut Value) {
-    let Some(seq) = doc
-        .as_mapping_mut()
-        .and_then(|m| m.get_mut(yk("members")))
-        .and_then(Value::as_sequence_mut)
-    else {
-        return;
-    };
-    seq.retain(|v| !v.is_null());
-}
-
-fn push_member(doc: &mut Value, member: Value) -> Result<()> {
-    let map = doc
-        .as_mapping_mut()
-        .ok_or_else(|| anyhow!("destination YAML is not a mapping"))?;
-    let entry = map
-        .entry(yk("members"))
-        .or_insert_with(|| Value::Sequence(Vec::new()));
-    if entry.is_null() {
-        *entry = Value::Sequence(Vec::new());
+    let mut taken = BTreeMap::new();
+    for (module, indices) in by_module {
+        let (_, doc) = docs.get_mut(&module).expect("resolved module is loaded");
+        for (index, member) in std::mem::take(&mut doc.members).into_iter().enumerate() {
+            if indices.contains(&index) {
+                taken.insert((module.clone(), index), member);
+            } else {
+                doc.members.push(member);
+            }
+        }
     }
-    entry
-        .as_sequence_mut()
-        .ok_or_else(|| anyhow!("members is not a sequence"))?
-        .push(member);
-    Ok(())
-}
-
-fn members_seq(doc: &Value) -> Option<&Vec<Value>> {
-    doc.as_mapping()
-        .and_then(|m| m.get(yk("members")))
-        .and_then(Value::as_sequence)
+    taken
 }
 
 fn bail_source_match_split<T>(verb: &str, hit: &BindingMatch) -> Result<T> {
@@ -1120,20 +986,12 @@ pub fn run_bindings_unassign(
             );
         }
     }
-    // Step 3: drop each member from its source doc. Same null-sentinel
-    // + collapse-after pattern `run_bindings_assign` uses so multiple
-    // unassigns from the same module don't shift indices mid-pass.
-    for (source_module, source_index) in plan.keys() {
-        let Some((file, doc)) = docs.get_mut(source_module) else {
-            bail!("source module {source_module:?} not in tree");
-        };
-        let member = take_member(doc, file, *source_index)?;
-        if let Some(export_name) = member_effective_name_value(&member) {
-            remove_annotation(doc, &export_name)?;
+    // Step 3: remove members and their annotations from the snapshot.
+    for ((source_module, _), member) in take_members(&mut docs, plan.keys().cloned()) {
+        let (_, doc) = docs.get_mut(&source_module).expect("resolved module is loaded");
+        if let Some(export_name) = member_effective_name(&member) {
+            doc.annotations.remove(&export_name);
         }
-    }
-    for (_, doc) in docs.values_mut() {
-        collapse_null_members(doc);
     }
 
     // Step 4: identify drained move-source modules to sweep.
@@ -1162,188 +1020,24 @@ pub fn run_bindings_unassign(
     })
 }
 
-// ---------------------------------------------------------------------
-// YAML helpers (re-declared here so this submodule remains
-// independent of `cli::comment`; both share the same shape but
-// neither imports the other).
-// ---------------------------------------------------------------------
-
-fn yk(s: &str) -> Value {
-    Value::String(s.to_string())
-}
-
-fn current_readable_name(
-    doc: &Value,
-    file: &Path,
-    location: &BindingLocation,
-) -> Result<Option<String>> {
-    match location {
-        BindingLocation::Member { member_index } => {
-            current_member_readable_name(doc, file, *member_index)
+/// Locations come from the same immutable snapshot used to resolve the edit.
+fn set_readable_name(doc: &mut LogicalModule, location: &BindingLocation, name: &str) {
+    match *location {
+        BindingLocation::Member { member_index } => doc.members[member_index].name = Some(name.to_string()),
+        BindingLocation::SourceMatch { claim_index, binding_index } => {
+            let binding = &mut doc.source_matches[claim_index].bindings[binding_index];
+            *binding = SourceMatchBinding::Detailed(SourceMatchBindingDetail {
+                local: binding.local().to_string(),
+                name: Some(name.to_string()),
+            });
         }
-        BindingLocation::SourceMatch {
-            claim_index,
-            binding_index,
-        } => current_source_match_binding_readable_name(doc, file, *claim_index, *binding_index),
     }
-}
-
-fn current_member_readable_name(doc: &Value, file: &Path, index: usize) -> Result<Option<String>> {
-    let seq = doc
-        .as_mapping()
-        .and_then(|m| m.get(yk("members")))
-        .and_then(Value::as_sequence)
-        .ok_or_else(|| anyhow!("module YAML {} missing members sequence", file.display()))?;
-    let member = seq
-        .get(index)
-        .ok_or_else(|| anyhow!("member index {index} out of range in {}", file.display()))?;
-    Ok(member
-        .as_mapping()
-        .and_then(|m| m.get(yk("name")))
-        .and_then(Value::as_str)
-        .map(str::to_string))
-}
-
-fn current_source_match_binding_readable_name(
-    doc: &Value,
-    file: &Path,
-    claim_index: usize,
-    binding_index: usize,
-) -> Result<Option<String>> {
-    let binding = source_match_binding(doc, file, claim_index, binding_index)?;
-    match binding {
-        Value::String(_) => Ok(None),
-        Value::Mapping(map) => Ok(map
-            .get(yk("name"))
-            .and_then(Value::as_str)
-            .filter(|name| !name.is_empty())
-            .map(str::to_string)),
-        _ => bail!(
-            "source_matches[{claim_index}].bindings[{binding_index}] is not a string or mapping in {}",
-            file.display()
-        ),
-    }
-}
-
-fn set_readable_name(
-    doc: &mut Value,
-    file: &Path,
-    location: &BindingLocation,
-    name: &str,
-) -> Result<()> {
-    match location {
-        BindingLocation::Member { member_index } => {
-            set_member_readable_name(doc, file, *member_index, name)
-        }
-        BindingLocation::SourceMatch {
-            claim_index,
-            binding_index,
-        } => set_source_match_binding_readable_name(doc, file, *claim_index, *binding_index, name),
-    }
-}
-
-fn set_member_readable_name(doc: &mut Value, file: &Path, index: usize, name: &str) -> Result<()> {
-    let seq = doc
-        .as_mapping_mut()
-        .and_then(|m| m.get_mut(yk("members")))
-        .and_then(Value::as_sequence_mut)
-        .ok_or_else(|| anyhow!("module YAML {} missing members sequence", file.display()))?;
-    let member = seq
-        .get_mut(index)
-        .ok_or_else(|| anyhow!("member index {index} out of range in {}", file.display()))?;
-    let map = member
-        .as_mapping_mut()
-        .ok_or_else(|| anyhow!("member entry is not a mapping in {}", file.display()))?;
-    map.insert(yk("name"), Value::String(name.to_string()));
-    Ok(())
-}
-
-fn set_source_match_binding_readable_name(
-    doc: &mut Value,
-    file: &Path,
-    claim_index: usize,
-    binding_index: usize,
-    name: &str,
-) -> Result<()> {
-    let binding = source_match_binding_mut(doc, file, claim_index, binding_index)?;
-    match binding {
-        Value::String(local) => {
-            let local = local.clone();
-            let mut map = Mapping::new();
-            map.insert(yk("local"), Value::String(local));
-            map.insert(yk("name"), Value::String(name.to_string()));
-            *binding = Value::Mapping(map);
-            Ok(())
-        }
-        Value::Mapping(map) => {
-            if map
-                .get(yk("local"))
-                .and_then(Value::as_str)
-                .filter(|local| !local.is_empty())
-                .is_none()
-            {
-                bail!(
-                    "source_matches[{claim_index}].bindings[{binding_index}] missing local in {}",
-                    file.display()
-                );
-            }
-            map.insert(yk("name"), Value::String(name.to_string()));
-            Ok(())
-        }
-        _ => bail!(
-            "source_matches[{claim_index}].bindings[{binding_index}] is not a string or mapping in {}",
-            file.display()
-        ),
-    }
-}
-
-fn source_match_binding<'a>(
-    doc: &'a Value,
-    file: &Path,
-    claim_index: usize,
-    binding_index: usize,
-) -> Result<&'a Value> {
-    doc.as_mapping()
-        .and_then(|m| m.get(yk("source_matches")))
-        .and_then(Value::as_sequence)
-        .and_then(|claims| claims.get(claim_index))
-        .and_then(Value::as_mapping)
-        .and_then(|claim| claim.get(yk("bindings")))
-        .and_then(Value::as_sequence)
-        .and_then(|bindings| bindings.get(binding_index))
-        .ok_or_else(|| {
-            anyhow!(
-                "source_match binding index {claim_index}.{binding_index} out of range in {}",
-                file.display()
-            )
-        })
-}
-
-fn source_match_binding_mut<'a>(
-    doc: &'a mut Value,
-    file: &Path,
-    claim_index: usize,
-    binding_index: usize,
-) -> Result<&'a mut Value> {
-    doc.as_mapping_mut()
-        .and_then(|m| m.get_mut(yk("source_matches")))
-        .and_then(Value::as_sequence_mut)
-        .and_then(|claims| claims.get_mut(claim_index))
-        .and_then(Value::as_mapping_mut)
-        .and_then(|claim| claim.get_mut(yk("bindings")))
-        .and_then(Value::as_sequence_mut)
-        .and_then(|bindings| bindings.get_mut(binding_index))
-        .ok_or_else(|| {
-            anyhow!(
-                "source_match binding index {claim_index}.{binding_index} out of range in {}",
-                file.display()
-            )
-        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_yaml::Value;
     use tempfile::TempDir;
 
     fn write(root: &Path, rel: &str, body: &str) {
@@ -1570,7 +1264,7 @@ mod tests {
         let src = read(root, "src.yaml");
         let doc: Value = serde_yaml::from_str(&src).unwrap();
         assert_eq!(doc["comment"].as_str(), Some("keepalive"));
-        assert!(doc["members"].as_sequence().unwrap().is_empty());
+        assert!(doc["members"].is_null() || doc["members"].as_sequence().unwrap().is_empty());
     }
 
     #[test]

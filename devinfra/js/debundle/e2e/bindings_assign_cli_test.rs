@@ -195,3 +195,31 @@ fn positional_readable_name_cannot_contain_a_colon() {
     let fixture = GraphFixture::acyclic_pair();
     fixture.assert_rejected_unchanged(&["bindings", "assign", "alpha:dest:Bad:Name"], &[":"]);
 }
+
+#[test]
+fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modules() {
+    let fixture = GraphFixture::new(
+        "const a = 1; const b = 2; const c = 3; const d = 4; console.log(a + b + c + d);",
+        &[
+            ("home.yaml", "members: [{selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}, {selector: {binding: {name: c}}}, {selector: {binding: {name: d}}}]"),
+            ("empty.yaml", "# untouched default-only module\nmembers: []\nannotations: {}\n"),
+        ],
+    );
+    let empty = fixture.modules.join("empty.yaml");
+    let before = fs::read(&empty).unwrap();
+    fixture.json(&["bindings", "assign", "a:dest", "c:dest"]);
+    for (path, names) in [("home.yaml", ["b", "d"]), ("dest.yaml", ["a", "c"])] {
+        let doc = module(&fixture, path);
+        let members = doc["members"].as_sequence().unwrap();
+        assert_eq!(members.len(), 2);
+        for (member, name) in members.iter().zip(names) {
+            assert_eq!(member["selector"]["binding"]["name"], name);
+        }
+    }
+    fixture.json(&["bindings", "unassign", "b"]);
+    let doc = module(&fixture, "home.yaml");
+    assert_eq!(doc["members"].as_sequence().unwrap().len(), 1);
+    assert_eq!(doc["members"][0]["selector"]["binding"]["name"], "d");
+    assert_eq!(fs::read(&empty).unwrap(), before);
+    fixture.assert_runs("10\n");
+}

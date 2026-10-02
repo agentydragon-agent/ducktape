@@ -211,7 +211,7 @@ impl MergePlan {
             String::new(),
             (
                 self.summary.target.clone(),
-                serde_yaml::to_value(&self.document)?,
+                self.document.clone(),
             ),
         )]);
         post_spec
