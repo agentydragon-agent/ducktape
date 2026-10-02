@@ -49,8 +49,8 @@ use swc_ecma_visit::VisitMutWith;
 
 use crate::regex_anchor::RegexAnchorSubstitution;
 use crate::render::{
-    AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_object_padded, hole_stmt,
-    holes_present, named_pat,
+    AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded, hole_stmt,
+    holes_present, ident_node, named_pat,
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
@@ -275,9 +275,20 @@ fn render_context_neighbor(
     let ModuleItem::Stmt(stmt) = item else {
         return Ok(None);
     };
-    Ok(Some(emit_selector(ModuleItem::Stmt(hole_stmt(
-        stmt, kept,
-    )))?))
+    let holed = match stmt {
+        Stmt::Decl(Decl::Fn(function)) => Stmt::Decl(Decl::Fn(FnDecl {
+            ident: ident_node("ANYTHING"),
+            function: Box::new(hole_function(&function.function, kept)),
+            ..function.clone()
+        })),
+        Stmt::Decl(Decl::Class(decl)) => Stmt::Decl(Decl::Class(ClassDecl {
+            ident: ident_node("ANYTHING"),
+            class: Box::new(class::hole_class(&decl.class, kept)),
+            ..decl.clone()
+        })),
+        other => hole_stmt(other, kept),
+    };
+    Ok(Some(emit_selector(ModuleItem::Stmt(holed))?))
 }
 
 /// Per-slot initializer holing for the read-off var paths: an object init holes
@@ -287,6 +298,10 @@ fn render_context_neighbor(
 fn hole_var_init_padded(init: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
     match init {
         Expr::Object(object) => Expr::Object(hole_object_padded(object, kept)),
+        Expr::Class(expr) => Expr::Class(ClassExpr {
+            class: Box::new(class::hole_class(&expr.class, kept)),
+            ..expr.clone()
+        }),
         other => hole_expr(other, kept),
     }
 }
