@@ -178,7 +178,14 @@ const trigger = readB();
 console.log(trigger);
 "#,
         vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("readB"), Member::new("trigger")]),
+            logical_module(
+                "mod_a",
+                &[
+                    Member::new("A"),
+                    Member::new("readB"),
+                    Member::new("trigger"),
+                ],
+            ),
             logical_module("mod_b", &[Member::new("B")]),
         ],
     ));
@@ -188,8 +195,10 @@ console.log(trigger);
     for cycle in cycles {
         let cut = cycle["cut"].as_array().expect("cycle cut");
         assert!(!cut.is_empty());
-        assert!(cut.iter().all(|edge| edge["kind"] != "lazy_use"),
-            "lazy reads must not constrain initialization: {cycle}");
+        assert!(
+            cut.iter().all(|edge| edge["kind"] != "lazy_use"),
+            "lazy reads must not constrain initialization: {cycle}"
+        );
     }
 }
 
@@ -635,9 +644,13 @@ export { a1, a2, b1 };
         assert!(rejected.stderr.contains(expected), "{}", rejected.stderr);
     }
     let graph = rejected.owner_graph();
-    assert!(graph.edges.iter().any(|edge| {
-        edge.edge_kind == DepKind::Sequenced && edge.binding.is_none()
-    }), "side-effect edges must omit the binding: {graph:#?}");
+    assert!(
+        graph
+            .edges
+            .iter()
+            .any(|edge| { edge.edge_kind == DepKind::Sequenced && edge.binding.is_none() }),
+        "side-effect edges must omit the binding: {graph:#?}"
+    );
     assert!(
         !rejected
             .report_root
@@ -660,8 +673,10 @@ export { a1, a2, b1 };
     for (i, entry) in cycles.iter().enumerate() {
         let cut = entry["cut"].as_array().expect("cycle cut");
         assert!(!cut.is_empty(), "a blocking cycle needs a cut: {entry}");
-        assert!(cut.iter().all(|edge| edge["kind"] == "sequenced"),
-            "S-only cycle cut must contain only side-effect reasons: {entry}");
+        assert!(
+            cut.iter().all(|edge| edge["kind"] == "sequenced"),
+            "S-only cycle cut must contain only side-effect reasons: {entry}"
+        );
         let obj = entry.as_object().expect("blocking-SCC entry is an object");
         let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
         keys.sort();
@@ -722,7 +737,6 @@ export { a1, a2, a3, b1, b2, b3 };
     ));
     assert_entry_output(&fixture, "1 x 1 2 y 2\n");
 }
-
 
 // --- Per-declarator attribution across comma-list var-decls --------------
 
