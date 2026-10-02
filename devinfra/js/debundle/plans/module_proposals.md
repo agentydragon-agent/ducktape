@@ -10,7 +10,7 @@ Extend the existing command rather than adding a parallel CLI: new information
 goes into proposal metadata, output stays bounded JSON, and corpus taxonomy is
 consumer policy rather than debundler core logic.
 
-- **Proposal metadata.** Each proposal carries size, source line range,
+- **Proposal metadata.** `ModuleProposal` carries size, source line range,
   ordinal span and cross-cell edge counts. Still missing: source-locality
   scores, likely naming anchors, and warnings when a proposal is graph-valid
   but likely awkward for humans.

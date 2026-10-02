@@ -1,4 +1,4 @@
-//! Integration tests for the `quotient` kernel and the `factorize`
+//! Integration tests for the `quotient` kernel and the `propose`
 //! renderer-over-quotient. Fixtures seed quotients through the
 //! test-only constructors in `quotient::testing`.
 
@@ -8,7 +8,7 @@ use report_fixtures::{
     residual_owner,
 };
 
-use crate::factorize::{FactorizeProposal, factorize};
+use crate::propose::{ModuleProposal, propose};
 use crate::quotient::testing::{
     PartitionGroup, greedy_merge_to_convergence_full_scan, module_group,
 };
@@ -623,7 +623,7 @@ fn partition_constructor_contracts_each_group() {
 
 #[test]
 fn factorize_golden_output_unchanged() {
-    // Golden test: factorize's output stays byte-identical for the
+    // Golden test: propose's output stays byte-identical for the
     // same representative inputs. The renderer-over-quotient path
     // must keep these outputs stable unless the proposal contract
     // intentionally changes.
@@ -639,10 +639,10 @@ fn factorize_golden_output_unchanged() {
     // Snapshots live at `devinfra/js/debundle/peel/golden/`. To
     // regenerate (only after a deliberate, justified change), set
     // `UPDATE_GOLDENS=1` when running the test.
-    let f1 = factorize(&golden_residual_singletons(), &no_claims(), 10_000).unwrap();
-    let f2 = factorize(&golden_closed_residual_unit(), &no_claims(), 10_000).unwrap();
+    let f1 = propose(&golden_residual_singletons(), &no_claims(), 10_000).unwrap();
+    let f2 = propose(&golden_closed_residual_unit(), &no_claims(), 10_000).unwrap();
     let claims_active = claims(&[("BindingA", "ui/x")]);
-    let f3 = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000).unwrap();
+    let f3 = propose(&golden_extend_active_via_anon(), &claims_active, 10_000).unwrap();
 
     let json1 = serde_json::to_string_pretty(&f1).unwrap();
     let json2 = serde_json::to_string_pretty(&f2).unwrap();
@@ -708,7 +708,7 @@ fn golden_closed_residual_unit() -> OwnerGraphReport {
 fn golden_extend_active_via_anon() -> OwnerGraphReport {
     // BindingA is in an active module ui/x. An anonymous statement
     // (no declared bindings) has one constraining edge into a.
-    // factorize should promote it to extend:ui/x.
+    // propose should promote it to extend:ui/x.
     let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
     let anon = residual_owner("owner:anon", 2, &[], 5);
     graph_of(
@@ -1104,13 +1104,13 @@ fn merge_two_existing_modules_with_mutual_eager_reads() {
         ],
         vec![],
     );
-    let result = factorize(
+    let result = propose(
         &report,
         &claims(&[("BindingA", "ui/a"), ("BindingB", "ui/b")]),
         10_000,
     )
     .unwrap();
-    let merge_proposals: Vec<&FactorizeProposal> = result
+    let merge_proposals: Vec<&ModuleProposal> = result
         .proposals
         .iter()
         .filter(|p| p.merge_into.is_some())
@@ -1164,13 +1164,13 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
         ],
         vec![],
     );
-    let result = factorize(
+    let result = propose(
         &report,
         &claims(&[("BindingA", "ui/a"), ("BindingB", "ui/b")]),
         10_000,
     )
     .unwrap();
-    let merge_proposals: Vec<&FactorizeProposal> = result
+    let merge_proposals: Vec<&ModuleProposal> = result
         .proposals
         .iter()
         .filter(|p| p.merge_into.is_some())
@@ -1216,9 +1216,9 @@ fn unification_byte_identical_on_well_formed_inputs() {
     // `factorize_golden_output_unchanged`.
     let claims_active = claims(&[("BindingA", "ui/x")]);
 
-    let r1 = factorize(&golden_residual_singletons(), &no_claims(), 10_000).unwrap();
-    let r2 = factorize(&golden_closed_residual_unit(), &no_claims(), 10_000).unwrap();
-    let r3 = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000).unwrap();
+    let r1 = propose(&golden_residual_singletons(), &no_claims(), 10_000).unwrap();
+    let r2 = propose(&golden_closed_residual_unit(), &no_claims(), 10_000).unwrap();
+    let r3 = propose(&golden_extend_active_via_anon(), &claims_active, 10_000).unwrap();
 
     assert!(
         r1.seed_rejections.is_empty(),
@@ -1335,10 +1335,10 @@ fn unification_rejects_cyclic_atomic_reachability_with_diagnostic() {
             },
         ],
     );
-    // Spec module mod_alpha contains Foo. The factorize entry
+    // Spec module mod_alpha contains Foo. The propose entry
     // point derives spec_modules from the owner destinations, so
     // the active owner above is already registered as mod_alpha.
-    let result = factorize(&report, &claims(&[("Foo", "mod_alpha")]), 10_000).unwrap();
+    let result = propose(&report, &claims(&[("Foo", "mod_alpha")]), 10_000).unwrap();
 
     // (a) No proposal should bundle Foo with Helper or Bar — the
     // cycle prevents merging Foo's class with Helper's class

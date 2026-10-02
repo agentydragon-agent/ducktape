@@ -17,7 +17,7 @@ The proposer is a renderer over `peel::quotient::QuotientGraph`:
    one proposal when the output class contains absorbed residual
    owners.
 3. `emit_proposals` walks the surviving quotient classes and renders
-   `FactorizeProposal` rows plus diagnostics.
+   `ModuleProposal` rows plus diagnostics.
 
 `QuotientGraph` is the single source of truth for which owners are in
 each proposed class.
@@ -59,7 +59,7 @@ full-scan sequence across representative fixtures.
 
 ## Output Shapes
 
-`FactorizeProposal` rows distinguish:
+`ModuleProposal` rows distinguish:
 
 - direct member moves, usable by `bindings assign --batch` when the row
   is landable and contains only addressable bindings;
@@ -74,7 +74,7 @@ require merge/manual work.
 
 ## Where To Look
 
-- `peel/factorize.rs`: report assembly and proposal rendering.
+- `peel/propose.rs`: report assembly and proposal rendering.
 - `peel/quotient.rs`: quotient kernel, seed contraction, greedy driver.
 - `peel/quotient_integration_test.rs`: seed, greedy, merge-output, and
   lazy-PQ equivalence coverage.

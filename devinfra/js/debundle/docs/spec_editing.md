@@ -5,10 +5,10 @@ Proposing, moving, merging, and renaming modules and bindings; peel heuristics;
 
 ## Workflow: proposing new modules
 
-Use the factorizer to surface what's currently extractable:
+Use the proposer to surface what's currently extractable:
 
 1. **`debundle modules propose --format json > proposals.json`** —
-   factorizer proposals + diagnostics derived from the atomic DAG.
+   proposer proposals + diagnostics derived from the atomic DAG.
 2. **Skim the diagnostics.** Each diagnostic carries a `reason`
    explaining why a closed atomic-DAG set could not become a proposal
    (currently `exceeds_size_cap`: the spec edit is larger than
@@ -172,7 +172,7 @@ The gate refuses; nothing on disk has changed.
 These patterns surface repeatedly when peeling minified bundles. Each
 one usually appears as a singleton or two-statement `auto_partition_*`
 shell whose source happens to live one line below a named binding;
-the factorizer can't always see the textual adjacency, so the human
+the proposer can't always see the textual adjacency, so the human
 peeler (or a custom propose-side heuristic) makes the call.
 
 ### TypeScript decorator wirings live with the class they decorate
