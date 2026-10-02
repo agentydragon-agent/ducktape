@@ -48,7 +48,13 @@ describe("foldSessionEvents", () => {
       event(2, "user", {
         type: "user",
         uuid: "peer-message-1",
-        origin: { kind: "peer", from: "agent-17", name: "Review agent" },
+        origin: {
+          kind: "peer",
+          from: "agent-17",
+          name: "Review agent",
+          handback: true,
+          handbackNote: "I checked the active assertion and found the fixture mismatch.",
+        },
         message: { content: [{ type: "text", text: "The test expects active, but the fixture says paused." }] },
       }),
       event(3, "system", {
@@ -87,6 +93,8 @@ describe("foldSessionEvents", () => {
       messageUuid: "peer-message-1",
       from: "agent-17",
       name: "Review agent",
+      handback: true,
+      handbackNote: "I checked the active assertion and found the fixture mismatch.",
       text: "The test expects active, but the fixture says paused.",
       events: [{ event_id: "event-1" }, { event_id: "event-2" }, { event_id: "event-3" }],
     });
@@ -143,6 +151,8 @@ describe("foldSessionEvents", () => {
         events: [{ event_id: "event-1" }, { event_id: "event-2" }, { event_id: "event-3" }],
       },
     ]);
+    expect(released[0]).not.toHaveProperty("handback");
+    expect(released[0]).not.toHaveProperty("handbackNote");
   });
 
   it("turns messages, tool results, task updates, and turn usage into ordered transcript items", () => {
