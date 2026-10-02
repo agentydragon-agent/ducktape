@@ -6,48 +6,16 @@
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, assert_fail_fast_stops_at_first_outcome, find_outcome,
     logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
-    logical_module_with_binding_groups, read_selector_outcomes, run_dry_run_rejection_fixture,
+    logical_module_with_binding_groups, mixed_selector_failure_fixture, read_selector_outcomes, run_dry_run_rejection_fixture,
 };
 use serde_json::{Value, json};
 
 #[test]
 fn keep_going_writes_machine_readable_selector_outcomes() {
-    let missing_selector = r#"function selectedFormatter(value) {
-  return value.toLowerCase();
-}"#;
-    let ambiguous_selector = r#"function repeatedHelper() {
-  return "shared";
-}"#;
-    let opts = FixtureOpts::new(
-        r#"function renderCard(value) {
-  return value.trim();
-}
-function decoratePrimary() {
-  return "shared";
-}
-function decorateSecondary() {
-  return "shared";
-}
-console.log(renderCard(" ok "), decoratePrimary(), decorateSecondary());
-export { renderCard, decoratePrimary, decorateSecondary };
-"#,
-        vec![
-            logical_module(
-                "diagnostics/missing",
-                &[Member::source_alpha("MissingFormatter", missing_selector)],
-            ),
-            logical_module("owners/card", &[Member::new("renderCard")]),
-            logical_module(
-                "duplicates/card",
-                &[Member::renamed("renderCardAgain", "renderCard")],
-            ),
-            logical_module(
-                "diagnostics/ambiguous",
-                &[Member::source_alpha("AmbiguousHelper", ambiguous_selector)],
-            ),
-            logical_module_with_anon("diagnostics/anon", &[], &["console.warn(\"absent\");"]),
-        ],
-    );
+    let mut opts = mixed_selector_failure_fixture();
+    opts.logical_modules.push(logical_module_with_anon(
+        "diagnostics/anon", &[], &["console.warn(\"absent\");"],
+    ));
 
     let rejected = run_dry_run_rejection_fixture(opts);
     for required in [

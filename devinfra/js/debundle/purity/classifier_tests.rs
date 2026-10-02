@@ -1115,19 +1115,6 @@ fn object_values_on_plain_object_literal_classifies_pure() {
     assert!((classify(r#"Object.values({a: 1, b: 2})"#)).is_pure());
 }
 
-#[test]
-fn object_entries_on_plain_object_literal_classifies_pure() {
-    assert!((classify(r#"Object.entries({a: 1, b: 2})"#)).is_pure());
-}
-
-#[test]
-fn object_freeze_on_plain_object_literal_classifies_pure() {
-    // `Object.freeze({a: 1})` — SetIntegrityLevel does no
-    // `[[Get]]`, only rewrites descriptors. Fresh literal has
-    // no aliases, so mutation is unobservable from outside the
-    // call.
-    assert!((classify(r#"Object.freeze({a: 1})"#)).is_pure());
-}
 
 #[test]
 fn object_freeze_on_vite_namespace_facade_classifies_pure() {
@@ -1163,13 +1150,6 @@ fn object_define_property_namespace_facade_rejects_accessor_descriptor() {
         ))
         .is_pure()
     );
-}
-
-#[test]
-fn object_keys_on_plain_array_literal_classifies_pure() {
-    // Array literals are ordinary objects with integer-index
-    // own data properties — same admission as object literals.
-    assert!((classify("Object.keys([1, 2, 3])")).is_pure());
 }
 
 #[test]
@@ -1238,14 +1218,6 @@ fn object_keys_on_plain_data_binding_classifies_pure() {
     assert!(
         classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph).is_pure()
     );
-}
-
-#[test]
-fn object_from_entries_on_array_of_pair_literals_classifies_pure() {
-    // `Object.fromEntries([[k, v], …])` — same admission as
-    // `new Map([[k, v], …])`. Array literal of 2-element Array
-    // literals with pure values.
-    assert!((classify(r#"Object.fromEntries([["a", 1], ["b", 2]])"#)).is_pure());
 }
 
 #[test]

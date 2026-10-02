@@ -698,114 +698,26 @@ export { A, B, C, PureBox };
 // is Pure → b drops out of the S-chain.
 
 #[test]
-fn new_map() {
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
-const b = new Map();
-const c = b.size + a;
-console.log(c);
-export { a, b, c };
-"#,
-        vec![logical_module("b_module", &[Member::new("b")])],
-        "b_module",
-        &["const b = new Map()"],
-        &["const a"],
-        "1\n",
-    );
-}
-
-#[test]
-fn new_set() {
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
-const b = new Set();
-const c = b.size + a;
-console.log(c);
-export { a, b, c };
-"#,
-        vec![logical_module("b_module", &[Member::new("b")])],
-        "b_module",
-        &["const b = new Set()"],
-        &["const a"],
-        "1\n",
-    );
-}
-
-#[test]
-fn new_weakmap() {
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
-const b = new WeakMap();
-const c = (b ? "y" : "n") + a;
-console.log(c);
-export { a, b, c };
-"#,
-        vec![logical_module("b_module", &[Member::new("b")])],
-        "b_module",
-        &["const b = new WeakMap()"],
-        &["const a"],
-        "y1\n",
-    );
-}
-
-#[test]
-fn new_array() {
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
-const b = new Array();
-const c = b.length + a;
-console.log(c);
-export { a, b, c };
-"#,
-        vec![logical_module("b_module", &[Member::new("b")])],
-        "b_module",
-        &["const b = new Array()"],
-        &["const a"],
-        "1\n",
-    );
-}
-
-#[test]
-fn new_set_with_array_of_primitives() {
-    // `new Set([prim_lit, prim_lit, ...])` — Array literal with
-    // all-Pure elements. ECMA-262 §24.2.1.1: iterates via the
-    // built-in Array iterator and calls `Set.add` per element;
-    // no user code on primitive keys.
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
-const b = new Set(["x", "y", "z"]);
-const c = b.size + a;
-console.log(c);
-export { a, b, c };
-"#,
-        vec![logical_module("b_module", &[Member::new("b")])],
-        "b_module",
-        &["const b = new Set("],
-        &["const a"],
-        "4\n",
-    );
-}
-
-#[test]
-fn new_map_with_array_of_pure_pairs() {
-    // `new Map([[k, v], [k, v], ...])` — Array of 2-tuple Array
-    // literals with primitive keys + pure values. Map's
-    // construct path Get's [0]/[1] of each entry (own data
-    // properties on a fresh Array, no getter) and Map.set's
-    // them (primitive key SameValueZero, no user code).
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
-const b = new Map([["x", 1], ["y", 2]]);
-const c = b.get("x") + a;
-console.log(c);
-export { a, b, c };
-"#,
-        vec![logical_module("b_module", &[Member::new("b")])],
-        "b_module",
-        &["const b = new Map(", r#""x""#],
-        &["const a"],
-        "2\n",
-    );
+fn builtin_container_initializers_break_the_side_effect_cycle() {
+    for (initializer, read, output) in [
+        ("new Map()", "b.size", "1\n"),
+        ("new Set()", "b.size", "1\n"),
+        ("new WeakMap()", "(b ? \"y\" : \"n\")", "y1\n"),
+        ("new Array()", "b.length", "1\n"),
+        (r#"new Set(["x", "y", "z"])"#, "b.size", "4\n"),
+        (r#"new Map([["x", 1], ["y", 2]])"#, r#"b.get("x")"#, "2\n"),
+    ] {
+        let declaration = format!("const b = {initializer};");
+        let source = format!("const a = (() => 1)();\n{declaration}\nconst c = {read} + a;\nconsole.log(c);\nexport {{ a, b, c }};");
+        assert_pure_cycle_break(
+            &source,
+            vec![logical_module("b_module", &[Member::new("b")])],
+            "b_module",
+            &[&declaration],
+            &["const a"],
+            output,
+        );
+    }
 }
 
 #[test]
