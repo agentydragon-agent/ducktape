@@ -111,7 +111,7 @@ def test_haku_spike_stays_unwired(generated: Path) -> None:
     assert (archived / "proxy/proxy.k8s.yaml").is_file()
 
 
-def test_legacy_sandboxes_retire_without_redeploying(generated: Path) -> None:
+def test_legacy_sandboxes_stay_unwired(generated: Path) -> None:
     active = [
         doc
         for path in generated.rglob("*.k8s.yaml")
@@ -123,18 +123,10 @@ def test_legacy_sandboxes_retire_without_redeploying(generated: Path) -> None:
     assert not any(doc["metadata"].get("namespace") in retired_namespaces for doc in active)
     assert not any(doc["kind"] == "Namespace" and doc["metadata"]["name"] in retired_namespaces for doc in active)
     owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
-    for name, directory in (("agents-mitmproxy", "agents-mitmproxy"), ("agent-workspaces-app", "agent-workspaces")):
-        retirement = owners[name]["spec"]
-        assert retirement["prune"] is True
-        assert not retirement.get("suspend", False)
-        assert retirement["deletionPolicy"] == "WaitForTermination"
-        assert retirement["sourceRef"] == {"kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
-        assert retirement["path"] == f"./cluster/generated/retired/{directory}"
-        empty = yaml.safe_load((generated / retirement["path"].removeprefix("./") / "kustomization.yaml").read_text())
-        assert not empty.get("resources")
-    # A broken sandbox-controller upgrade must not prevent pruning an existing warm pool.
-    assert not owners["agent-workspaces-app"]["spec"].get("dependsOn")
-    assert owners["agents-mitmproxy"]["spec"]["dependsOn"] == [{"name": "claude-rbac", "namespace": "ducktape-flux"}]
+    assert "agents-mitmproxy" not in owners
+    assert "agent-workspaces-app" not in owners
+    for directory in retired_namespaces:
+        assert not (generated / "cluster/generated/retired" / directory).exists()
     # Claude's shared roles, identities and credentials survive; ad-hoc compute does not.
     claude = [doc for doc in active if doc["metadata"].get("namespace") == "claude-sandbox"]
     quota = next(doc for doc in claude if doc["kind"] == "ResourceQuota")

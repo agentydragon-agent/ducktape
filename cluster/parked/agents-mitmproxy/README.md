@@ -4,18 +4,19 @@ The generator remains in `cluster/cdk8s/mitmproxy.py`, with its CA, trust bundle
 proxy and policies rendered here for revival. The former Authentik blueprint is
 `agents-mitmproxy-sso.yaml.disabled`, not a Kubernetes manifest or active blueprint.
 
-The original Flux owner used `deletionPolicy: Orphan`. Retirement therefore keeps
-that same `agents-mitmproxy` owner temporarily pointed at an empty directory with
-pruning enabled, instead of deleting the owner or merely suspending it. After
-merging, verify namespace/deployment deletion and an empty Flux inventory before
-removing the retirement owner/directory in a follow-up.
+The original Flux owner used `deletionPolicy: Orphan`. Retirement therefore first
+reconciled that same `agents-mitmproxy` owner against an empty directory with pruning
+enabled, instead of deleting the owner or merely suspending it. Read-only live
+checks on 2026-10-02 at 21:57 UTC confirmed Ready on the #8806 merge (`93ee322b`),
+an empty inventory, and no proxy namespace or Pods. The verified-empty retirement
+owner and directory are now removed; nothing deploys this archived tree.
 
 `claude-sandbox` itself remains active **only as an identity/credential home** for
-external sessions: its shared RBAC and credential delivery are not removed. Its
-Pod quota is zero and it gets a deny-all egress policy before the old proxy-owned
-clusterwide allow policy is pruned. The retirement depends on `claude-rbac` so that
-boundary is installed first. Confirm no remaining Claude compute Pods during
-post-merge verification; quotas prevent creation but do not evict existing Pods.
+external sessions: its shared RBAC and credential delivery are not removed. The
+same live checks confirmed no Claude Pods, a zero Pod quota, the deny-all egress
+policy, and all four ExternalSecrets Ready/SecretSynced. The former proxy-owned
+clusterwide allow policy was part of the pruned inventory. Quotas prevent creation
+but do not evict existing Pods.
 
 The unused `inject-mitmproxy` Kyverno policy, public traffic-viewer route and
 Authentik outpost attachment are removed. An active Authentik tombstone deletes

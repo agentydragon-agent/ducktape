@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
@@ -17,10 +15,8 @@ from cluster.cdk8s.flux import (
     Kustomization,
     flux_kustomization,
     flux_kustomization_depends_on_many,
-    kustomize_kustomization,
 )
-from cluster.cdk8s.generation import write_yaml
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 
 
 def agent_box(
@@ -210,27 +206,4 @@ def sdr(
         suspend=True,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
-    )
-
-
-def retire(root: Path, chart: Chart, *, name: str, directory_name: str, after: Kustomization | None = None) -> None:
-    """Prune an existing owner's inventory before removing its temporary empty declaration.
-
-    No dependency on the retired workload's operators: a failed upgrade must not block
-    pruning an already-installed workload. Remove only after namespace deletion and an
-    empty Flux inventory have been verified.
-    """
-    directory = f"{GENERATED_ROOT}/retired/{directory_name}"
-    (root / directory).mkdir(parents=True, exist_ok=True)
-    write_yaml(root / directory / "kustomization.yaml", kustomize_kustomization(resources=[]))
-    flux_kustomization(
-        chart,
-        name,
-        KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="ducktape", namespace="ducktape-flux"
-        ),
-        path=f"./{directory}",
-        depends_on=flux_kustomization_depends_on_many(after) if after is not None else None,
-        deletion_policy=KustomizationSpecDeletionPolicy.WAIT_FOR_TERMINATION,
-        description=f"Retirement: prune {directory_name}; remove this owner after inventory is empty.",
     )
