@@ -45,7 +45,7 @@
 use swc_common::{Span, SyntaxContext};
 
 use super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
-use super::util::is_valid_js_identifier;
+use js_ast::is_binding_identifier;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{
     RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
@@ -94,7 +94,7 @@ pub(super) fn collect_plan_export_rename_intents(
         let mut sorted_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
         sorted_bindings.sort_by(|a, b| a.0.cmp(b.0));
         for (local, exported) in sorted_bindings {
-            if local != exported && is_valid_js_identifier(exported) {
+            if local != exported && is_binding_identifier(exported) {
                 ledger.submit(RenameIntent {
                     scope: RenameScope::Module(ModuleId::logical(index)),
                     from: top_level_id(local, chunk_top_level_mark),
@@ -806,7 +806,7 @@ pub(super) fn collect_naturalization_renames_from_pattern(
                         {
                             let from = value.id.sym.to_string();
                             let to = key.sym.to_string();
-                            if from != to && is_valid_js_identifier(&to) {
+                            if from != to && is_binding_identifier(&to) {
                                 renames.insert(from, to);
                             }
                         }
@@ -847,7 +847,7 @@ pub(super) fn collect_return_object_alias_renames(
                         {
                             let from = value.sym.to_string();
                             let to = key.sym.to_string();
-                            if from != to && is_valid_js_identifier(&to) {
+                            if from != to && is_binding_identifier(&to) {
                                 renames.insert(from, to);
                             }
                         }
@@ -881,7 +881,7 @@ pub(super) fn collect_constructor_assignment_renames(
         return;
     };
     let from = value.sym.to_string();
-    if param_names.contains(&from) && from != target_name && is_valid_js_identifier(&target_name) {
+    if param_names.contains(&from) && from != target_name && is_binding_identifier(&target_name) {
         renames.insert(from, target_name);
     }
 }
@@ -896,7 +896,7 @@ pub(super) fn this_property_name(target: &AssignTarget) -> Option<String> {
     match &member.prop {
         MemberProp::Ident(ident) => Some(ident.sym.to_string()),
         MemberProp::Computed(computed) => match &*computed.expr {
-            Expr::Lit(Lit::Str(value)) if is_valid_js_identifier(&str_value(value)) => {
+            Expr::Lit(Lit::Str(value)) if is_binding_identifier(&str_value(value)) => {
                 Some(str_value(value))
             }
             _ => None,

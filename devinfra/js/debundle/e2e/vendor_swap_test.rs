@@ -820,47 +820,21 @@ fn run_partial_swap_with_mark(
 fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixture {
     const PACKAGE_NAME: &str = "zod";
     const SUBPATH: &str = "lib/index.mjs";
-    const MEGACHUNK_PATH: &str = "static/megachunk.js";
-    const CALLER_PATH: &str = "static/app.js";
 
-    let ws = VendorTestWorkspace::new("vendor-partial-swap-");
-    ws.write_chunk(MEGACHUNK_PATH, args.chunk_source);
-    ws.write_chunk(CALLER_PATH, args.caller_source);
-    ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
-    // Pin the on-disk upstream to 3.23.8 regardless of what the spec
-    // requests — the version-mismatch test relies on this so the spec
-    // can declare a different version and trigger the strict check.
-    let package_root = ws.write_upstream_package(
-        &format!("upstream/{PACKAGE_NAME}"),
-        PACKAGE_NAME,
-        "3.23.8",
-        SUBPATH,
-        args.upstream_source,
+    // Keep the installed version fixed: mismatch cases deliberately request
+    // a different version in the spec.
+    let (ws, package_root) = setup_partial_swap_consumer_fixture(
+        "vendor-partial-swap-", args.chunk_source, args.caller_source,
+        PACKAGE_NAME, "3.23.8", SUBPATH, args.upstream_source,
     );
-
-    let mut symbols_json = serde_json::Map::new();
-    for (chunk_export, package, upstream_export) in &args.symbols {
-        symbols_json.insert(
-            (*chunk_export).to_string(),
-            json!({ "package": package, "upstream_export": upstream_export }),
-        );
-    }
-
-    let mut vendor = serde_json::Map::new();
-    vendor.insert("level".into(), json!("partial_swap"));
-    vendor.insert("identity".into(), json!("megachunk partial swap fixture"));
-    vendor.insert(
-        "packages".into(),
-        json!({
-            PACKAGE_NAME: {
-                "namespace": "z",
-                "version": args.upstream_version,
-                "subpath": SUBPATH,
-            },
-        }),
+    let symbols: Vec<_> = args.symbols.iter().map(|(export, package, upstream)| {
+        (*export, swap_symbol(package, PartialSwapKind::Member, Some(upstream), None))
+    }).collect();
+    let vendor = partial_swap_vendor(
+        "megachunk partial swap fixture",
+        &[(PACKAGE_NAME, partial_package(args.upstream_version, SUBPATH, Some("z")))],
+        &symbols,
     );
-    vendor.insert("symbols".into(), Value::Object(symbols_json));
-
     run_partial_swap_with_mark(ws, vendor, &[(PACKAGE_NAME, &package_root)])
 }
 

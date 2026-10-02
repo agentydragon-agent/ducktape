@@ -11,6 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use artifact::ChunkId;
+use js_ast::is_binding_identifier;
 use swc_ecma_ast::Id;
 
 use crate::{DeferredImport, IdentRewriteTarget, VendorImportAction};
@@ -83,6 +84,17 @@ impl VendorImportRewrites {
                 package,
                 upstream_export,
             } => {
+                // An external name need not be a legal local binding. Keep the
+                // existing, hygienic local for reserved or string export names.
+                if !is_binding_identifier(&upstream_export) {
+                    imports.push(DeferredImport::Named {
+                        source: package,
+                        local: local_id.0.to_string(),
+                        upstream_export,
+                    });
+                    *self.references_rewritten.entry((chunk, chunk_export)).or_insert(0) += 1;
+                    return imports;
+                }
                 imports.push(DeferredImport::Named {
                     source: package,
                     local: upstream_export.clone(),

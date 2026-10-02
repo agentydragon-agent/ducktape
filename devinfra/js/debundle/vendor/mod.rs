@@ -25,7 +25,7 @@ use artifact::{
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
 pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
 pub use import_rewrites::VendorImportRewrites;
-use js_ast::str_value;
+use js_ast::{is_binding_identifier, member_property, module_export_name_node, str_value};
 #[cfg(test)]
 use js_ast::{emit_js_module, parse_js_module};
 pub use manifests::*;
@@ -74,7 +74,7 @@ fn collect_and_validate_boundary_mapping(
                     // under a different, valid identifier.
                     if let Some(local_sym) = &local
                         && exported != *local_sym
-                        && is_valid_identifier(&exported)
+                        && is_binding_identifier(&exported)
                     {
                         mapping.insert(local_sym.clone(), exported.clone());
                     }
@@ -950,10 +950,7 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
                         namespace.clone().into(),
                         DUMMY_SP,
                     ))),
-                    prop: MemberProp::Ident(IdentName::new(
-                        upstream_export.clone().into(),
-                        DUMMY_SP,
-                    )),
+                    prop: member_property(upstream_export),
                 });
                 (*chunk_id, chunk_export)
             }
@@ -977,12 +974,12 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
 /// the names match).
 fn make_named_reexport(source: &str, orig: &str, exported: &str) -> ModuleItem {
     let exported_name = (orig != exported)
-        .then(|| ModuleExportName::Ident(Ident::new_no_ctxt(exported.into(), DUMMY_SP)));
+        .then(|| module_export_name_node(exported));
     ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
         span: DUMMY_SP,
         specifiers: vec![ExportSpecifier::Named(ExportNamedSpecifier {
             span: DUMMY_SP,
-            orig: ModuleExportName::Ident(Ident::new_no_ctxt(orig.into(), DUMMY_SP)),
+            orig: module_export_name_node(orig),
             exported: exported_name,
             is_type_only: false,
         })],
@@ -1035,7 +1032,7 @@ fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
         span: DUMMY_SP,
         specifiers: vec![ExportSpecifier::Namespace(ExportNamespaceSpecifier {
             span: DUMMY_SP,
-            name: ModuleExportName::Ident(Ident::new_no_ctxt(exported.into(), DUMMY_SP)),
+            name: module_export_name_node(exported),
         })],
         src: Some(Box::new(Str {
             span: DUMMY_SP,
@@ -1233,17 +1230,6 @@ fn check_partial_swap_consumer_decl(
         _ => {}
     }
     Ok(())
-}
-
-fn is_valid_identifier(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first == '_' || first == '$' || first.is_ascii_alphabetic()) {
-        return false;
-    }
-    chars.all(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphanumeric())
 }
 
 #[cfg(test)]
