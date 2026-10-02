@@ -57,6 +57,7 @@ class Peer:
         self.attachments: asyncio.Queue[PeerAttachment] = asyncio.Queue()
         self.port = 0
         self.state = runner_pb2.HARNESS_STATE_RUNNING
+        self.answer_open = True
 
     async def attach(
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
@@ -71,9 +72,10 @@ class Peer:
 
         consumer = asyncio.create_task(consume())
         try:
-            yield runner_pb2.ServerMessage(
-                attached=runner_pb2.Attached(session_id=first.open.session_id, harness_state=self.state)
-            )
+            if self.answer_open:
+                yield runner_pb2.ServerMessage(
+                    attached=runner_pb2.Attached(session_id=first.open.session_id, harness_state=self.state)
+                )
             while (message := await connection.responses.get()) is not None:
                 if isinstance(message, grpc.StatusCode):
                     await context.abort(message, "test runner failure")
@@ -233,6 +235,19 @@ async def test_cancellation_closes_runner_attachment(remote: SandboxServiceClien
         connection = await peer.attachments.get()
         attachment.cancel()
         await connection.closed.wait()
+
+
+async def test_unanswered_runner_open_is_a_deadline_not_a_state_rejection(
+    remote: SandboxServiceClient, peer: Peer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    peer.answer_open = False
+    monkeypatch.setattr("agentplane.runner.client.OBSERVE_ANSWER_S", 0.05)
+    async with asyncio.timeout(8):
+        with pytest.raises(TimeoutError, match="uncertain"):
+            await remote.runner(DESTINATION).attach("session")
+        connection = await peer.attachments.get()
+        await connection.closed.wait()
+        assert connection.commands.empty()
 
 
 async def test_timeout_is_uncertain_and_closes_attachment(remote: SandboxServiceClient, peer: Peer) -> None:

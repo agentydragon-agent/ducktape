@@ -32,10 +32,12 @@ class MalformedMessageError(Exception):
 
 
 class RunnerAdmissionTimeoutError(Exception):
-    """The runner did not durably admit a Command before the bounded relay deadline."""
+    """Command admission was not confirmed before the deadline; its outcome is uncertain."""
 
     def __init__(self, command_id: str) -> None:
-        super().__init__(f"runner did not admit command {command_id!r} within {COMMAND_ADMISSION_S} seconds")
+        super().__init__(
+            f"admission of command {command_id!r} was not confirmed within {COMMAND_ADMISSION_S} seconds; outcome uncertain"
+        )
 
 
 class NewSession(BaseModel):

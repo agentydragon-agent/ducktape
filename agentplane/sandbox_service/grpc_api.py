@@ -13,7 +13,7 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
-from agentplane.runner.client import RunnerClient, RunnerError, StreamClosedError
+from agentplane.runner.client import OpenTimeoutError, RunnerClient, RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, session_lifecycle, wire
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.command_relay import admit_running_command
@@ -94,13 +94,13 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
-    except InventoryError, RunnerError, StreamClosedError:
-        await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")
-    except TimeoutError:
+    except TimeoutError, OpenTimeoutError:
         await context.abort(
             grpc.StatusCode.DEADLINE_EXCEEDED,
             "service deadline or follow lease expired; mutation outcome may be uncertain",
         )
+    except InventoryError, RunnerError, StreamClosedError:
+        await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")
     except DestinationUnavailableError, ConnectionError, k8s_client.ApiException:
         await context.abort(grpc.StatusCode.UNAVAILABLE, "destination unavailable; no offline admission")
     except grpc.RpcError as error:

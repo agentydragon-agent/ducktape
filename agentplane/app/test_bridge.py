@@ -876,7 +876,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
             json={"commandId": "reused-before-copy", "interruptTurn": {"turnId": "second-target"}},
         )
         assert conflict.status_code == 409, conflict.text
-        assert "different work" in conflict.json()["detail"]
+        assert "refused" in conflict.json()["detail"]
         stored = await _stored_events(http, str(thread), until="commandNoop")
         (admitted,) = [entry for entry in stored if "commandAdmitted" in entry["event"]]
         assert admitted["event"]["commandAdmitted"]["command"] == {
@@ -1000,7 +1000,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
             _commands(thread_id), json={"commandId": "timed-out-command", "submitInput": {"text": "not delivered"}}
         )
         assert response.status_code == 504, response.text
-        assert response.json()["detail"] == "runner did not admit command 'timed-out-command' within 15 seconds"
+        assert response.json()["detail"] == "admission of command 'timed-out-command' was not confirmed within 15 seconds; outcome uncertain"
 
 
 async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_notification(
