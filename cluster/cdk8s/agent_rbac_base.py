@@ -45,7 +45,6 @@ def _add_sandbox(chart: Chart) -> None:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.RECOMMEND,
-        agent_readable=None,
         labels={"name": NAMESPACE, "environment": "development"},
     )
     k8s.KubeResourceQuota(

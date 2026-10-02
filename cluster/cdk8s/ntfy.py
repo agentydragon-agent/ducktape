@@ -168,7 +168,6 @@ class Ntfy(Construct):
             "namespace",
             name=NAMESPACE,
             vpa=Vpa.RECOMMEND,
-            agent_readable=None,
             labels={"app.kubernetes.io/name": NAMESPACE},
         )
         _secret_store(self)

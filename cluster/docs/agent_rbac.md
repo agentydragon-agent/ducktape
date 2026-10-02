@@ -185,7 +185,8 @@ static identity references, and deployment-side profile selections. Service char
 still own their Roles and bindings; Agentplane consumes the same references for its
 catalog and presets, from which delegation is already generated. This does not add
 an Agentplane API or combine namespace-scoped readers into a cluster-wide binding.
-Role names, binding names, cleanup scopes, and Flux ownership remain unchanged.
+Service-specific Role names and ownership remain unchanged. The common namespace
+readers migrate to Flux-owned bindings as described below.
 
 The logical profiles are distinct from the transport identities:
 
@@ -208,8 +209,10 @@ Static Haku retains redundant narrow inventory bindings; managed Haku's broader
 cluster reader covers those rules without selecting the same Role names.
 
 `test_cluster_integration` compares the rendered, active RBAC rule coverage for
-each identity separately, with the actual Kyverno namespace-reader policy expanded
-against active Namespace labels (including the rendered Flux bootstrap overlay).
+each identity separately, using the new Flux-owned namespace readers **without**
+counting Kyverno-generated bindings. A migration check separately proves that the
+replacements match the existing Kyverno readers against active Namespace labels
+(including the rendered Flux bootstrap overlay).
 It checks static/managed parity, Haku's public-coder superset, finance's exact Coinbase addition, and
 explicit denials for staging operator/login, devbox restart, and public node proxy.
 The separate legacy accounts have their own contracts; their permissions are not
@@ -223,6 +226,42 @@ built-in authorization, external identity group membership, admission constraint
 egress, Actions policies, and authority reachable through exec/node proxy need
 separate verification. The broad Haku diagnostics Role is deliberately unchanged;
 narrowing its node-proxy/Flux capabilities is a follow-up policy decision.
+
+### Namespace reader migration: Kyverno to GitOps
+
+`cluster/cdk8s/namespace_access.py` declares namespace diagnostics once.
+`namespaces.py` derives labels from it; service charts no longer choose a second
+classification. `agent_namespace_rbac.py` emits static bindings referencing the
+same ClusterRoles as the managed catalog. Agentplane still owns the lifecycle of
+each sandbox ServiceAccount's bindings. No group grants blanket sandbox access,
+and no namespaced reader is bound cluster-wide.
+
+Each namespace has its own Flux Kustomization, dependent on its namespace owner
+and the shared Roles. An unavailable namespace cannot block readers elsewhere.
+The bootstrap `flux-system` label remains in its hand-written overlay during the
+migration; the integration test checks it against both projections.
+
+**Stage 1 (this PR):** add `agent-diagnostics-metadata` / `agent-diagnostics-logs`
+RoleBindings. Keep Kyverno's `agent-readable-*` bindings and generator temporarily.
+The names are distinct; Flux neither adopts Kyverno's synchronized objects nor
+adds Kyverno ownership labels. Overlap grants no additional permissions. Tests
+prove exact binding equivalence and static/managed parity without counting the
+old bindings.
+
+**Stage 2 (only after stage 1 deploys):** verify all `agent-namespace-rbac-*` Flux
+Kustomizations are Ready at the merged revision, and verify the new bindings'
+subjects, roleRefs and namespace scope. Then remove
+`generate-agent-diagnostics-readers` and its now-unneeded generation delegation,
+not unrelated Kyverno policies/controllers. Verify old `agent-readable-*`
+RoleBindings are gone; if the installed Kyverno version leaves any behind, remove
+only those legacy generated bindings through an operator-approved cleanup. Keep
+the Roles and new `agent-diagnostics-*` bindings. Recheck static access and a fresh
+managed sandbox before calling migration complete.
+
+Do not combine the stages: synchronized-generation cleanup may delete old objects
+before replacements deploy. If stage 1 fails, keep Kyverno in place. After stage 2,
+restore the old generator and verify its bindings before rolling back the new
+ones. No live RBAC changes are made by preparing this PR.
 
 ### Shared managed-agent diagnostics
 
@@ -319,14 +358,11 @@ Remove the empty Role once those old Sandboxes have been replaced. Namespace
 cleanup delegation remains available for their old bindings.
 
 The initial `sandbox-tool-config` catalog entry separately proves narrow ConfigMap
-read selection. Kyverno's `agent-readable-*` labels grant the static identities access; managed
-Sandbox SAs require explicit catalog entries and preset selections before they receive
-those namespaced readers. No namespace label silently widens them.
-
-The shared diagnostics bundle's explicit catalog mirrors the metadata/log labels on every active
-cluster-managed Namespace. Log-labeled namespaces receive both metadata and pod-log
-grants; metadata-only labels receive only the metadata grant. Props stays excluded
-because its Namespace is absent from the live cluster and its Flux source is parked.
+read selection. `namespace_access.py` is the single reviewed namespace classification.
+It generates namespace labels, static RoleBindings, and managed catalog entries.
+Log-approved namespaces receive metadata and pod-log grants; metadata-only
+namespaces receive metadata alone. An absent namespace grants nothing. Props stays
+excluded because its Namespace is absent and its Flux source is parked.
 The `flux-system` and `ducktape-flux` delegation Kustomizations have no `dependsOn`:
 they are bootstrap roots without generated owner Kustomizations. The cluster integration
 test derives active label opt-ins and checks their catalog grants, all three preset defaults, and
@@ -422,9 +458,8 @@ one of two data-classification labels:
 
 Both classifications grant the same subjects: Haku's OIDC and synthetic access-profile groups,
 its in-cluster ServiceAccounts, `kubectl-sandbox-users`, the synthetic public-coder group, and
-agentplane-staging's `claude-ai` ServiceAccount. The Kyverno policy
-`generate-agent-diagnostics-readers` (`cluster/cdk8s/kyverno/policies.py`) generates the
-corresponding namespaced RoleBindings. Sensitive or identity-specific access remains explicit
+agentplane-staging's `claude-ai` ServiceAccount. The new Flux-owned bindings come from `agent_namespace_rbac.py`; the Kyverno
+generator remains only for the staged migration described above. Sensitive or identity-specific access remains explicit
 service RBAC.
 
 Augur is parked in `gaffer-private` and has no namespace in the cluster. Its agent RBAC

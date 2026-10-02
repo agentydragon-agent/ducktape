@@ -14,5 +14,5 @@ def write_manifests(root: Path) -> None:
     write_charts(
         root,
         f"{HAND_WRITTEN_ROOT}/tofu-state",
-        partial(namespace_chart, name="tofu-state", vpa=Vpa.AUTO, agent_readable=None),
+        partial(namespace_chart, name="tofu-state", vpa=Vpa.AUTO),
     )

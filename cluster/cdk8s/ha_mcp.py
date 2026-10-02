@@ -301,7 +301,6 @@ class HaMcp(Construct):
             "namespace",
             name=_NAMESPACE,
             vpa=Vpa.DISABLED,
-            agent_readable=None,
             labels={"app.kubernetes.io/name": _NAMESPACE},
         )
         _home_assistant_token(self)

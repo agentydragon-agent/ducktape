@@ -50,7 +50,7 @@ from cluster.cdk8s.model_rosters import (
     codex_responses_name,
     exposed_name,
 )
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
     haku_console_mcp,
@@ -1061,7 +1061,6 @@ def namespace_chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=Vpa.AUTO,
-        agent_readable=AgentReadable.METADATA,
         labels={"name": NAMESPACE},
         annotations=_NAMESPACE_ANNOTATIONS,
     )

@@ -15,7 +15,7 @@ from cluster.cdk8s.namespaces import AgentReadable, Vpa
 
 def haku_egress_proxy(app: App) -> Chart:
     return namespace_chart(
-        app, name="haku-egress-proxy", vpa=Vpa.AUTO, agent_readable=None, labels={"name": "haku-egress-proxy"}
+        app, name="haku-egress-proxy", vpa=Vpa.AUTO, labels={"name": "haku-egress-proxy"}
     )
 
 
@@ -23,5 +23,5 @@ def write_manifests(root: Path) -> None:
     write_charts(
         root,
         f"{HAND_WRITTEN_ROOT}/agents/plaid-mcp",
-        partial(namespace_chart, name="plaid-mcp", vpa=Vpa.DISABLED, agent_readable=AgentReadable.LOGS),
+        partial(namespace_chart, name="plaid-mcp", vpa=Vpa.DISABLED),
     )

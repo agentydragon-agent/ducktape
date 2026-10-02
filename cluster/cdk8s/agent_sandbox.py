@@ -16,7 +16,7 @@ from constructs import Construct
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.agent_sandbox.sandbox_warm_pool import SandboxWarmPool
 
@@ -39,7 +39,6 @@ def controller_patches(app: App) -> Chart:
         "namespace",
         name=_NAMESPACE,
         vpa=Vpa.DISABLED,
-        agent_readable=AgentReadable.METADATA,
         labels={"name": _NAMESPACE},
     )
     labels = {"app": _CONTROLLER}

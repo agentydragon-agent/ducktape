@@ -13,7 +13,6 @@ def test_extra_labels_cannot_restate_the_policy_labels(key: str) -> None:
             "namespace",
             name="test-ns",
             vpa=Vpa.AUTO,
-            agent_readable=AgentReadable.LOGS,
             labels={key: "false"},
         )
 

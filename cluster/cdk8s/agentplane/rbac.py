@@ -17,7 +17,7 @@ from constructs import Construct
 from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.api_resource import custom_resource, named_resource
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 
 TESTING_OPERATOR_ROLE_NAME = "agentplane-testing-operator"
 
@@ -72,7 +72,7 @@ class NamespaceQuota(Construct):
             vpa=Vpa.DISABLED,
             # Standing agent access to metadata and logs (Kyverno-generated bindings);
             # write access lives in the operator Role below.
-            agent_readable=AgentReadable.LOGS,
+
             labels={"name": env.namespace},
             annotations={"description": env.description},
         )

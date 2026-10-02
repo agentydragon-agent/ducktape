@@ -10,14 +10,14 @@ from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import manifest_file, namespace_chart, write_charts, write_yaml
 from cluster.cdk8s.litellm import database
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import AgentReadable, Vpa
+from cluster.cdk8s.namespaces import Vpa
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm"
 
 
 def write_manifests(root: Path) -> None:
     namespace = write_charts(
-        root, OUTPUT_DIR, partial(namespace_chart, name="litellm", vpa=Vpa.AUTO, agent_readable=AgentReadable.LOGS)
+        root, OUTPUT_DIR, partial(namespace_chart, name="litellm", vpa=Vpa.AUTO)
     )
     write_yaml(
         root / OUTPUT_DIR / "kustomization.yaml",

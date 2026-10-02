@@ -43,6 +43,7 @@ from cluster.validation.image_automation import (
     check_image_policy_markers,
     check_no_flow_mappings_where_flux_writes,
 )
+from cluster.validation.k8s import RoleBindingResource
 from cluster.validation.k8s import RbacRoleRef
 from cluster.validation.kustomize import (
     KustomizeBuildResult,
@@ -213,8 +214,8 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
 ) -> None:
     """Managed agents get the same labeled namespace readers as the static identities.
 
-    Only active Namespace manifests participate. A new label opt-in must add
-    shared catalog/default entries and an independently owned delegation Kustomization.
+    Only active Namespace manifests participate. Shared policy emits labels,
+    static bindings, and catalog/default entries; namespace dependencies stay explicit.
     """
     metadata_label = "rbac.ducktape.io/agent-readable-metadata"
     logs_label = "rbac.ducktape.io/agent-readable-logs"
@@ -495,7 +496,21 @@ def agent_permissions(cluster: ParsedCluster, repo_root: Path, k8s_dir: Path, ge
     assert any(r.kind == "ClusterPolicy" and r.name == policy_name for r in resources)
     policies = yaml.safe_load_all((generated_dir / "kyverno/policies/policies.k8s.yaml").read_text())
     policy = one(doc for doc in policies if doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == policy_name)
-    resources.extend(namespace_readers(policy, [r for r in resources if r.kind == "Namespace"]))
+    # Migration gate: the replacement bindings must match every old generated
+    # binding directly. Broader Haku roles cannot mask a missing reader here.
+    old_bindings = namespace_readers(policy, [r for r in resources if r.kind == "Namespace"])
+    replacements = {
+        (r.namespace, r.name): r
+        for r in resources
+        if isinstance(r, RoleBindingResource) and r.name in {"agent-diagnostics-metadata", "agent-diagnostics-logs"}
+    }
+    assert len(replacements) == len({(old.namespace, old.name) for old in old_bindings})
+    for old in old_bindings:
+        replacement = replacements[(old.namespace, old.name.replace("agent-readable-", "agent-diagnostics-"))]
+        assert replacement.role_ref == old.role_ref
+        assert replacement.subjects == old.subjects
+    # Do NOT expand Kyverno into the permission model: all parity/superset tests
+    # must pass using the Flux-owned bindings alone, before the old policy retires.
     docs = yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text())
     config = yaml.safe_load(
         one(doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config")[

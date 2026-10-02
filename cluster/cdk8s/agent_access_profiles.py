@@ -1,8 +1,8 @@
 """Deployment-side Kubernetes access profiles shared by static bindings and Agentplane.
 
 Existing role owners still define rules and own their bindings. These are references and
-selections, not a new runtime API. Preserve ordering as well as scope when refactoring:
-this module must not change generated RBAC, delegation, or preset configuration.
+selections, not a new runtime API. Namespace diagnostics come from namespace_access;
+sensitive grants are explicit profile selections rather than diagnostics.
 """
 
 from __future__ import annotations
@@ -20,6 +20,8 @@ from agentplane.app.kubernetes_grants import (
     RoleBindingGrant,
     RoleRef,
 )
+
+from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 
 RBAC_GROUP = "rbac.authorization.k8s.io"
 
@@ -67,49 +69,17 @@ NAMESPACE_READER_SUBJECTS = (*HAKU_IDENTITIES, KUBECTL_USERS, PUBLIC_CODER, CLAU
 CLUSTER_DIAGNOSTIC_SUBJECTS = (KUBECTL_USERS, *HAKU_IDENTITIES, AGENT_BOX, CLAUDE_AI)
 TESTING_OPERATOR_SUBJECTS = (HAKU_OIDC, HAKU_CONSOLE, PUBLIC_CODER, HAKU_SERVICE_ACCOUNT, KUBECTL_USERS)
 
-# The static Haku and public-coder identities receive Kyverno's metadata/log readers in these
-# approved namespaces. Keep the explicit managed-Sandbox catalog in sync with
-# the deployed Namespace labels; test_cluster_integration checks that contract.
-LOG_NAMESPACES = (
-    "activitywatch",
-    "agentplane-index",
-    "agentplane-testing",
-    "airlock",
-    "authentik",
-    "cert-manager",
-    "cli-proxy-api",
-    "clickhouse",
-    "cnpg-system",
-    "flux-system",
-    "gatus",
-    "grocy-sf",
-    "grocy-vallejo",
-    "haku-ci",
-    "litellm",
-    "local-path-storage",
-    "loki",
-    "monitoring",
-    "node-feature-discovery",
-    "nvidia-device-plugin",
-    "oci-cache",
-    "openebs",
-    "plaid-mcp",
-    "proxmox-proxy",
-    "study-casino",
-    "tana-mcp",
-)
-METADATA_ONLY_NAMESPACES = ("agent-sandbox-system", "nix-cache", "public-coder-agent", "vm-images-publisher")
-
 
 def _namespace_read_grants() -> dict[str, RoleBindingGrant]:
     grants: dict[str, RoleBindingGrant] = {}
-    for namespace in sorted((*LOG_NAMESPACES, *METADATA_ONLY_NAMESPACES)):
+    # Keep staging first to preserve existing preset order.
+    for namespace in ("agentplane-staging", *sorted(NAMESPACE_DIAGNOSTICS.keys() - {"agentplane-staging"})):
         grants[f"{namespace}-metadata"] = RoleBindingGrant(
             kind="RoleBinding",
             namespace=namespace,
             role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-metadata"),
         )
-        if namespace in LOG_NAMESPACES:
+        if NAMESPACE_DIAGNOSTICS[namespace] is AgentReadable.LOGS:
             grants[f"{namespace}-logs"] = RoleBindingGrant(
                 kind="RoleBinding",
                 namespace=namespace,
@@ -141,16 +111,6 @@ def catalog() -> dict[str, KubernetesGrant]:
             kind="RoleBinding",
             namespace="agentplane-testing",
             role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
-        ),
-        "agentplane-staging-metadata": RoleBindingGrant(
-            kind="RoleBinding",
-            namespace="agentplane-staging",
-            role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-metadata"),
-        ),
-        "agentplane-staging-logs": RoleBindingGrant(
-            kind="RoleBinding",
-            namespace="agentplane-staging",
-            role_ref=RoleRef(kind="ClusterRole", name="agent-readable-namespace-logs"),
         ),
         **_namespace_read_grants(),
         "coinbase-credentials": RoleBindingGrant(
@@ -190,8 +150,6 @@ def catalog() -> dict[str, KubernetesGrant]:
 
 
 SHARED_DIAGNOSTICS = (
-    "agentplane-staging-metadata",
-    "agentplane-staging-logs",
     *_namespace_read_grants(),
     "haku-console-metadata",
     "clickhouse-diagnostics",
@@ -233,4 +191,4 @@ def role_ref(grant: str) -> k8s.RoleRef:
 
 def cleanup_namespaces() -> list[str]:
     # Retained cleanup scopes are intentionally independent of current selections.
-    return sorted({"haku-sandbox", "haku-console", "ducktape-flux", *LOG_NAMESPACES, *METADATA_ONLY_NAMESPACES})
+    return sorted({"haku-sandbox", "haku-console", "ducktape-flux", *(NAMESPACE_DIAGNOSTICS.keys() - {"agentplane-staging"})})
