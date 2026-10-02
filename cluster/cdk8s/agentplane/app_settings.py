@@ -26,7 +26,7 @@ OLLAMA_MODELS = [
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 _THREAD_PRESET_HAKU_CLAUDE = "haku-claude"
 # The EgressPolicy objects egress creates in every environment, named here
-# because the presets bind them.
+# because presets and explicit grants refer to them.
 BASIC_POLICY = "basic"
 GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
 GITHUB_CLONE_POLICY = "github-clone"
@@ -35,6 +35,7 @@ FORGEJO_HAKU_POLICY = "forgejo-haku"
 FORGEJO_FINANCE_AGENT_POLICY = "forgejo-finance-agent"
 AGENTPLANE_TESTING_POLICY = "agentplane-testing"
 PACKAGES_POLICY = "packages"
+PUBLIC_INTERNET_POLICY = "public-internet"
 GOOGLE_READONLY_POLICY = "google-readonly"
 GROCY_SF_READONLY_POLICY = "grocy-sf-readonly"
 HOME_ASSISTANT_READONLY_POLICY = "home-assistant-readonly"

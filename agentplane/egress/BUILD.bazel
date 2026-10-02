@@ -209,6 +209,7 @@ py_test(
         ":resources",
         "//:conftest",
         "//agentplane:subjects",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -59,6 +59,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
     PACKAGES_POLICY,
+    PUBLIC_INTERNET_POLICY,
 )
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
@@ -212,6 +213,13 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
 
 
 def _egress_policies(scope: Construct, *, namespace: str) -> None:
+    # Available for explicit grants only: no defaults, presets or standing bindings opt in.
+    EgressPolicy(
+        scope,
+        "public-internet-policy",
+        metadata=ApiObjectMetadata(name=PUBLIC_INTERNET_POLICY, namespace=namespace),
+        rules=[EgressPolicySpecRules(hosts=["*"])],
+    )
     EgressPolicy(
         scope,
         "egresspolicy-basic",

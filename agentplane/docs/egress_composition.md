@@ -80,21 +80,37 @@ decides only which rule is named in the decision log and which credential, if an
 The constraint that follows: where a broad policy overlaps a credentialed one, the overlap cannot
 be narrowed away, only ordered around.
 
-## Open question: "any host" is not expressible
+## Opt-in public Internet access
 
-`hosts` takes exact names and `*.` suffixes. Nothing spells "any host":
+`hosts: ["*"]` admits any destination host, subject to the existing public-address guard.
+The generated `public-internet` policy is available in both environments, but is absent from
+all defaults, presets and standing bindings. An operator must grant it explicitly via an
+`EgressBinding`; merely creating the policy grants nothing. No client is opted in automatically.
 
-- A bare `*` is refused at admission: the CRD's `hosts` item pattern requires a domain label after
-  the optional `*.` prefix.
-- Admitted, it would still never match. `host_matches` treats a pattern without a leading `*.` as
-  an exact string, so `*` is compared literally against the hostname.
-- `*.com` is the closest approximation and is wrong twice over: it misses every other TLD, and a
-  `*.` pattern never matches the apex of the suffix it names, so `*.github.com` does not match
-  `github.com`.
+```yaml
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: public-internet
+spec:
+  rules:
+    - hosts: ["*"]
+```
 
-The natural resolution is to give `"*"` the meaning "any host" — no new field and no new kind, only
-the CRD's `hosts` pattern admitting the bare `*` and `host_matches` answering true for it. Nobody
-has decided this.
+This is blanket **HTTP(S)** access, not raw TCP/UDP access. It deliberately permits public data
+exfiltration and should not be granted to agents handling sensitive material without reviewing
+that trade-off. Identity, binding expiry/revocation, method/path checks, TLS verification and
+DNS/address pinning still apply. Private, loopback, link-local/metadata and other special-purpose
+addresses remain blocked (production configures no address exemptions).
+
+A blanket rule cannot set `credentialRef` or `clusterInternal` (admission and runtime validation).
+Credential substitution and private backends need separate, destination-scoped rules. A known
+credential placeholder presented to an unauthorized destination is refused even when a blanket
+rule would otherwise admit the request. Existing placeholder-directed matching means the blanket
+policy cannot shadow an authorized credentialed rule, regardless of policy/binding order.
+
+The schema must be rolled out before applying policies using `*`; older proxies fail closed on
+public destinations until the new matcher is deployed. Roll back by removing grants first.
 
 ## A broad policy can break a credentialed one
 
@@ -102,7 +118,7 @@ Where the first matching rule decides, adding a broad policy to a subject that a
 credentialed one can stop the credentialed traffic instead of widening it.
 
 Take `researcher` above with the list reversed, so a credential-less `open-internet` rule
-(`hosts: ["*.com"]`) precedes `github-agentydragon-agent`. A request to `api.github.com` carrying
+(`hosts: ["*"]`) precedes `github-agentydragon-agent`. A request to `api.github.com` carrying
 `Authorization: Bearer agentplane-credential-github-pat`:
 
 1. `open-internet`'s rule matches first. It names no credential, so nothing is substituted.

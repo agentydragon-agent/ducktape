@@ -28,6 +28,11 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   subject is every Pod running as that account, so bind only an account dedicated to one workload;
   the integration app gives each sandbox an account of its own, owned by it, so deleting the sandbox
   collects the account and the bindings naming it alike.
+- Hosts admit exact names, `*.` suffix wildcards (not their apex), or `*` for any public
+  destination. A blanket `*` rule cannot set `credentialRef` or `clusterInternal`, enforced by
+  both CRD admission and runtime parsing. It grants no credential substitution or private-address
+  exemption; combine it with separate, destination-scoped credential/internal rules as needed.
+  Authentication and a live binding are still required. No default or preset opts in.
 - A rule matches a request when its hosts, methods, and paths all admit it. One matching rule in
   any policy of any of the subject's bindings is enough to admit the request; nothing matching
   refuses with `no-rule`. A CONNECT is matched on host alone; each request inside the tunnel is
