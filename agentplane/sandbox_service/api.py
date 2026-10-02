@@ -157,7 +157,10 @@ def create_app(resources: SessionResources) -> FastAPI:
     @app.exception_handler(TimeoutError)
     async def timeout(request: Request, error: TimeoutError) -> JSONResponse:
         return JSONResponse(
-            {"detail": "runner request timed out; outcome uncertain, reconcile using unchanged identifiers and payload"}, status_code=504
+            {
+                "detail": "runner request timed out; outcome uncertain, reconcile using unchanged identifiers and payload"
+            },
+            status_code=504,
         )
 
     @app.get("/healthz")
@@ -189,7 +192,9 @@ def create_app(resources: SessionResources) -> FastAPI:
         assert resources.platform_instructions is not None
         try:
             spec = session_lifecycle.launch_spec(
-                body.destination, body.spec, binding=endpoint.binding,
+                body.destination,
+                body.spec,
+                binding=endpoint.binding,
                 platform_instructions=resources.platform_instructions,
             )
         except (ParseError, ValueError) as error:
@@ -197,9 +202,11 @@ def create_app(resources: SessionResources) -> FastAPI:
         client = RunnerClient(endpoint.target)
         try:
             async with asyncio.timeout(resources.lifecycle_timeout_s):
-                return MessageToDict(await session_lifecycle.open_session(
-                    client, body.destination, spec, binding=endpoint.binding, setup_script=body.setup_script
-                ))
+                return MessageToDict(
+                    await session_lifecycle.open_session(
+                        client, body.destination, spec, binding=endpoint.binding, setup_script=body.setup_script
+                    )
+                )
         finally:
             await client.close()
 

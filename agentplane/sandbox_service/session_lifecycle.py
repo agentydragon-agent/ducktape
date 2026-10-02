@@ -29,9 +29,7 @@ def launch_spec(
         f"{destination.model_dump_json()}\n"
         "Use these identifiers when addressing this session; they are not credentials."
     )
-    spec.instructions = combine_instructions(
-        combine_instructions(platform_instructions, context), spec.instructions
-    )
+    spec.instructions = combine_instructions(combine_instructions(platform_instructions, context), spec.instructions)
     return spec
 
 

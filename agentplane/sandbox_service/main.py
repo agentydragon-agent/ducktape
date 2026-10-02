@@ -52,7 +52,8 @@ async def serve(settings: Settings) -> None:
             egress_api_url=settings.agent_egress_api_url,
             actions_service_url=settings.agent_actions_service_url,
         )
-        if settings.manager_accounts else None
+        if settings.manager_accounts
+        else None
     )
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:

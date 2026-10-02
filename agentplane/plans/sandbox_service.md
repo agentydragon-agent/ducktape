@@ -4,9 +4,9 @@ Status: **extraction in progress; not deployed or cut over.** The app uses the i
 [command relay, inventory and concrete launch values](../sandbox_service/README.md). A standalone
 [session API](../sandbox_service/API.md) authenticates workloads and resolves UID-pinned
 Sandbox/Pod associations without the app. Explicit bootstrap/open/resume and backend-owned
-launch instructions are implemented; resume preserves the runner-retained spec. Sandbox provisioning orchestration,
-app HTTP cutover and archive ownership migration remain. The initial API follows only the surviving
-runner log; retained app PostgreSQL history has not moved.
+launch instructions are implemented; resume preserves the runner-retained spec. Sandbox provisioning
+orchestration and app HTTP cutover remain. The API follows only the surviving runner log; retained
+app PostgreSQL history has not moved. Archive ownership migration is separate, not a cutover prerequisite.
 
 This is the concrete backend boundary required by the
 [service dependency rule](../docs/service_boundaries.md). The integration app must be a client;

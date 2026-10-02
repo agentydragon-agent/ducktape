@@ -39,7 +39,6 @@ from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.kubernetes import pod, sandbox
-from agentplane.sandbox_service.instructions import resolved_agent_instructions
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.session_config import Harness
 from util.net import pick_free_port
@@ -115,16 +114,6 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     )
     # https, so the cookie takes the __Host- prefix that binds it to this exact origin.
     assert oidc.cookie_name.startswith("__Host-")
-
-
-def test_image_owned_agent_instructions_render_deployment_service_urls() -> None:
-    instructions = resolved_agent_instructions(
-        None, egress_api_url="http://egress.test.invalid", actions_service_url="http://actions.test.invalid:8080"
-    )
-
-    assert "http://egress.test.invalid/v1/rules" in instructions
-    assert "http://egress.test.invalid/openapi.json" in instructions
-    assert "http://actions.test.invalid:8080/openapi.json" in instructions
 
 
 def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) -> None:

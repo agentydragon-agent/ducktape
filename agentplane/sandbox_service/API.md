@@ -129,6 +129,7 @@ access is in-cluster unless `kubeconfig` is supplied. `/healthz` is unauthentica
 not a claim that Kubernetes or a destination is ready.
 
 This PR adds no deployment, network policy, egress credential rules, staging resources, or
-app HTTP cutover. Before cutover: finish Sandbox lifecycle/grant orchestration; configure narrow Kubernetes read/TokenReview permissions;
+app HTTP cutover. Before cutover: finish Sandbox lifecycle/grant orchestration; configure
+narrow Kubernetes read/TokenReview permissions;
 audit both sides of runner network access; inventory/back up retained staging state; and
 switch each migrated app path without leaving a permanent direct-runner bypass.

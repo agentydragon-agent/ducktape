@@ -3,9 +3,9 @@
 import asyncio
 import json
 import shlex
+from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
-from collections.abc import AsyncIterator
 
 import httpx
 import pytest
@@ -55,15 +55,15 @@ def resources(cluster: Cluster, runner: RunnerHandle) -> SessionResources:
         audiences=(AUDIENCE,),
     )
     return SessionResources(
-            authenticate=WorkloadPrincipalAuthenticator(
-                WorkloadPrincipalResolver(
-                    authentication=k8s_client.AuthenticationV1Api(cluster.api),
-                    audience=AUDIENCE,
-                    allowed_service_account_namespaces={SANDBOX_NAMESPACE},
-                )
-            ),
-            destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
-            follow_lease_s=0.2,
+        authenticate=WorkloadPrincipalAuthenticator(
+            WorkloadPrincipalResolver(
+                authentication=k8s_client.AuthenticationV1Api(cluster.api),
+                audience=AUDIENCE,
+                allowed_service_account_namespaces={SANDBOX_NAMESPACE},
+            )
+        ),
+        destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
+        follow_lease_s=0.2,
     )
 
 
@@ -320,9 +320,7 @@ async def test_invalid_launch_and_failed_bootstrap_never_create(
         response = await manager_api.post("/v1/sessions/open", json={"destination": destination, "spec": invalid})
         assert response.status_code == 422, response.text
     set_binding(cluster, SandboxBinding(bootstrap="exit 42"))
-    failed = await manager_api.post(
-        "/v1/sessions/open", json={"destination": destination, "spec": MessageToDict(spec)}
-    )
+    failed = await manager_api.post("/v1/sessions/open", json={"destination": destination, "spec": MessageToDict(spec)})
     assert failed.status_code == 409, failed.text
     assert not await client.list_sessions()
 

@@ -133,6 +133,7 @@ py_library(
     deps = [
         ":inventory",
         ":kubernetes_grants",
+        ":session_config",
         "//agentplane:subjects",
         "//agentplane/workload_auth:principal",
         "//util:agent_sandbox",
@@ -148,6 +149,8 @@ py_library(
         ":command_relay",
         ":destinations",
         ":inventory",
+        ":session_lifecycle",
+        "//agentplane:subjects",
         "//agentplane/protocol:command_pb2",
         "//agentplane/runner:client",
         "//agentplane/workload_auth:http",
@@ -166,6 +169,7 @@ py_library(
     deps = [
         ":api",
         ":destinations",
+        ":instructions",
         ":inventory",
         "//agentplane:subjects",
         "//agentplane/workload_auth:http",
@@ -220,6 +224,8 @@ py_test(
         ":api",
         ":conftest",
         ":destinations",
+        ":inventory",
+        ":session_config",
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/protocol:command_pb2",
@@ -233,6 +239,7 @@ py_test(
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
@@ -245,4 +252,21 @@ py_library(
     name = "instructions",
     srcs = ["instructions.py"],
     data = ["agent_instructions.j2"],  # keep: backend-owned operational prompt template
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//jinja2",
+    ],
+)
+
+py_library(
+    name = "session_lifecycle",
+    srcs = ["session_lifecycle.py"],
+    deps = [
+        ":destinations",
+        ":instructions",
+        ":session_config",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+    ],
 )
