@@ -52,7 +52,7 @@ class Authentication:
                     username=f"system:serviceaccount:{MANAGER.namespace}:{MANAGER.name}",
                     extra={POD_NAME_CLAIM: ["test-app-pod"], POD_UID_CLAIM: ["test-app-pod-uid"]},
                 ),
-            )
+            ),
         )
 
 
