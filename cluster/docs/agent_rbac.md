@@ -260,6 +260,7 @@ It grants no write access in `agentplane-staging` and no direct Kubernetes
 Secret read. Pod exec can expose data mounted in testing Pods, and a holder can
 operate every Sandbox in the testing namespace and use that environment's
 credentialless MCP fixtures. Treat it as operator authority, not a diagnostics reader.
+
 ### Retired devbox restart capability
 
 The image rollout controller, not agents, owns devbox restarts. No preset or

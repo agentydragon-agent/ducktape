@@ -262,7 +262,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
             BASIC_POLICY,
             PACKAGES_POLICY,
             AGENTPLANE_TESTING_POLICY,
-    AIQUOTA_READ_POLICY,
+            AIQUOTA_READ_POLICY,
             COINBASE_POLICY,
             FORGEJO_FINANCE_AGENT_POLICY,
             PLAID_PGWEB_POLICY,

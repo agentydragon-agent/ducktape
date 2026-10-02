@@ -197,12 +197,7 @@ def test_public_coder_never_exceeds_haku(
     """Every role public-coder is bound to, Haku is bound to as well: the profile never exceeds
     the orchestrator that dispatches to it."""
     subjects_by_role_ref: dict[tuple[str | None, str, str], set[tuple[str, str, str | None]]] = {}
-    binding_sources = (
-        clickhouse_diagnostics_objects,
-        _synth(ducktape_flux.chart),
-        console_objects,
-        app_objects,
-    )
+    binding_sources = (clickhouse_diagnostics_objects, _synth(ducktape_flux.chart), console_objects, app_objects)
     for objects in binding_sources:
         for binding in objects:
             if binding["kind"] not in {"RoleBinding", "ClusterRoleBinding"}:

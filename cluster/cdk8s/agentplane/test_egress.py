@@ -124,7 +124,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             GROCY_SF_READONLY_POLICY,
             HOME_ASSISTANT_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
-    AGENTPLANE_TESTING_POLICY,
+            AGENTPLANE_TESTING_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
             PLAID_PGWEB_POLICY,
@@ -171,12 +171,9 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     haku = config["sandbox_presets"]["haku"]
-    assert {
-        "cluster-diagnostics",
-        "haku-sandbox-write",
-        "agentplane-testing-operator",
-        "coinbase-credentials",
-    } <= set(haku["kubernetes_grants"])
+    assert {"cluster-diagnostics", "haku-sandbox-write", "agentplane-testing-operator", "coinbase-credentials"} <= set(
+        haku["kubernetes_grants"]
+    )
     assert config["kubernetes_grants"]["cluster-diagnostics"] == {
         "kind": "ClusterRoleBinding",
         "role_ref": {"kind": "ClusterRole", "name": "cluster-diagnostics-reader"},
@@ -251,11 +248,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     assert len(selected) == len(set(selected))
     haku = config["sandbox_presets"]["haku"]["kubernetes_grants"]
     assert len(haku) == len(set(haku))
-    assert set(haku) - set(selected) == {
-        "cluster-diagnostics",
-        "haku-sandbox-write",
-        "coinbase-credentials",
-    }
+    assert set(haku) - set(selected) == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"}
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"}
     assert {
         "agentplane-staging-metadata",
