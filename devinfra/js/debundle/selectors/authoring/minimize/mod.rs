@@ -46,7 +46,7 @@ use swc_ecma_visit::VisitMutWith;
 use crate::regex_anchor::RegexAnchorSubstitution;
 use crate::render::{
     AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
-    hole_stmt, holes_present, ident_node, named_pat,
+    hole_stmt, holes_present, named_pat,
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
@@ -271,14 +271,14 @@ fn render_context_neighbor(
     let ModuleItem::Stmt(stmt) = item else {
         return Ok(None);
     };
+    // Declaration names already match modulo alpha-renaming. ANYTHING is not
+    // a supported declaration-name hole; retain the name and prune the body.
     let holed = match stmt {
         Stmt::Decl(Decl::Fn(function)) => Stmt::Decl(Decl::Fn(FnDecl {
-            ident: ident_node("ANYTHING"),
             function: Box::new(hole_function(&function.function, kept)),
             ..function.clone()
         })),
         Stmt::Decl(Decl::Class(decl)) => Stmt::Decl(Decl::Class(ClassDecl {
-            ident: ident_node("ANYTHING"),
             class: Box::new(class::hole_class(&decl.class, kept)),
             ..decl.clone()
         })),
