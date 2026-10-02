@@ -2084,7 +2084,6 @@ data:
         policies:
           - basic
           - packages
-          - agentplane-testing
           - aiquota-read
           - coinbase
           - forgejo-finance-agent
@@ -5073,6 +5072,16 @@ spec:
           serverNames:
             - agentplane-testing.allegedly.works
             - agentplane-dex-testing.allegedly.works
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-testing-dex
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "5556"
+              protocol: TCP
+          serverNames:
+            - agentplane-dex-testing.allegedly.works
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-egress
@@ -5113,7 +5122,6 @@ spec:
     - grocy-sf-readonly
     - home-assistant-readonly
     - activitywatch-read
-    - agentplane-testing
     - aiquota-read
     - haku-mailbox
     - coinbase
@@ -5144,7 +5152,6 @@ spec:
     - grocy-sf-readonly
     - home-assistant-readonly
     - activitywatch-read
-    - agentplane-testing
     - aiquota-read
     - haku-mailbox
     - plaid-pgweb

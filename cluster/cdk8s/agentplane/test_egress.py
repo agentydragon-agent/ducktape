@@ -505,10 +505,12 @@ def test_shared_agentplane_operator_access_is_testing_only(
         )
     )
     assert dex_backend["toEndpoints"] == [
-        {"matchLabels": {
-            "k8s:io.kubernetes.pod.namespace": "agentplane-testing",
-            "app.kubernetes.io/name": "agentplane-testing-dex",
-        }}
+        {
+            "matchLabels": {
+                "k8s:io.kubernetes.pod.namespace": "agentplane-testing",
+                "app.kubernetes.io/name": "agentplane-testing-dex",
+            }
+        }
     ]
     assert dex_backend["toPorts"] == [
         {"ports": [{"port": "5556", "protocol": "TCP"}], "serverNames": ["agentplane-dex-testing.allegedly.works"]}
