@@ -363,8 +363,8 @@ pub(super) struct ExportGrowthFacts<'a> {
     pub(super) entry_declared_names: &'a HashSet<String>,
 }
 
-pub(super) fn auto_grown_residual_exports(
-    body_facts_by_module: &[ModuleBodyFacts],
+pub(super) fn auto_grown_residual_exports<'a>(
+    body_facts_by_module: impl IntoIterator<Item = &'a ModuleBodyFacts>,
     facts: &ExportGrowthFacts<'_>,
     chunk_top_level_mark: swc_common::Mark,
     ledger: &mut RenameLedger,

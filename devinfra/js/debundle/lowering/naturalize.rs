@@ -79,6 +79,28 @@ pub(super) struct NaturalizedRenames {
     pub(super) explicit: BTreeMap<String, String>,
 }
 
+/// One naturalization result: facts are collected from this exact post-rename
+/// body, and move with its rename maps into emission (not parallel vectors).
+pub(super) struct NaturalizedModuleBody {
+    pub(super) body: Vec<ModuleItem>,
+    pub(super) renames: NaturalizedRenames,
+    pub(super) facts: crate::body_facts::ModuleBodyFacts,
+}
+
+impl NaturalizedModuleBody {
+    pub(super) fn prepare(
+        mut body: Vec<ModuleItem>,
+        plan: &ModulePlan,
+        module: ModuleId,
+        plan_driven: BTreeMap<String, String>,
+        chunk_top_level_mark: swc_common::Mark,
+    ) -> Result<Self> {
+        let renames = naturalize_module_body(&mut body, plan, module, plan_driven, chunk_top_level_mark)?;
+        let facts = crate::body_facts::collect_module_body_facts(&body);
+        Ok(Self { body, renames, facts })
+    }
+}
+
 /// Collect each plan's spec-driven `export_name` renames into the ledger
 /// (scope: that plan's [`ModuleId`], origin: `Explicit`). Applies the same
 /// filter the pre-ledger `plan_driven` map applied: self-renames and
@@ -118,7 +140,7 @@ pub(super) const SCOPED_HEURISTIC_CONTRIBUTOR: &str = "scope-local heuristic nat
 /// occupancy-validated against this body at seal; sorted (`BTreeMap`)
 /// iteration keeps the rename-precedence the visitor applies when two
 /// locals compete for the same target independent of hash seed.
-pub(super) fn naturalize_module_body(
+fn naturalize_module_body(
     body: &mut [ModuleItem],
     plan: &ModulePlan,
     module: ModuleId,
