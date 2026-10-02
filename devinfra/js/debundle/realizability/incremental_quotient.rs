@@ -819,15 +819,22 @@ impl IncrementalQuotient {
         touching: Option<ModuleId>,
         overlay: Option<&QuotientOverlay>,
     ) {
-        let sources: BTreeSet<_> = self.constraining_graph.predecessors(self.residual)
-            .chain(overlay.into_iter().flat_map(|o| o.constraining_added.keys()
-                .filter_map(|&(from, to)| (to == self.residual).then_some(from))))
+        let sources: BTreeSet<_> = self
+            .constraining_graph
+            .predecessors(self.residual)
+            .chain(overlay.into_iter().flat_map(|o| {
+                o.constraining_added
+                    .keys()
+                    .filter_map(|&(from, to)| (to == self.residual).then_some(from))
+            }))
             .filter(|from| touching.is_none_or(|m| m == *from || m == self.residual))
             .collect();
         for from in sources {
             let pair = (from, self.residual);
             let edges = match overlay {
-                Some(o) => self.constraining_bucket_with_overlay(pair, o).evidence_edges(),
+                Some(o) => self
+                    .constraining_bucket_with_overlay(pair, o)
+                    .evidence_edges(),
                 None => self.constraining_buckets[&pair].evidence_edges(),
             };
             super::reject_entry_dependency(verdict, from, self.residual, edges);
@@ -955,12 +962,23 @@ impl IncrementalQuotient {
 
         // The source I-graph omits entry's universal imports. Its singleton
         // SCC fast path cannot justify accepting a dependency into entry.
-        let effective = |from| self.constraining_graph.edge_count(from, self.residual) as isize
-            + overlay.constraining_delta.get(&(from, self.residual)).copied().unwrap_or(0);
+        let effective = |from| {
+            self.constraining_graph.edge_count(from, self.residual) as isize
+                + overlay
+                    .constraining_delta
+                    .get(&(from, self.residual))
+                    .copied()
+                    .unwrap_or(0)
+        };
         let entry_dependency = if module == self.residual {
-            self.constraining_graph.predecessors(self.residual)
-                .chain(overlay.constraining_added.keys()
-                    .filter_map(|&(from, to)| (to == self.residual).then_some(from)))
+            self.constraining_graph
+                .predecessors(self.residual)
+                .chain(
+                    overlay
+                        .constraining_added
+                        .keys()
+                        .filter_map(|&(from, to)| (to == self.residual).then_some(from)),
+                )
                 .any(|from| effective(from) > 0)
         } else {
             effective(module) > 0

@@ -104,7 +104,7 @@ fn unassign_json_outcome_carries_shared_core() {
         graph_path.to_str().unwrap(),
         "--format",
         "json",
-        "beta",
+        "alpha",
     ]);
     assert!(
         out.status.success(),

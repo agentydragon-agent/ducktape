@@ -145,9 +145,12 @@ fn reject_entry_dependency(
     residual: ModuleId,
     mut owner_edges: Vec<OwnerEdgeId>,
 ) {
-    if owner_edges.is_empty() || verdict.unrealizable_sccs.iter().any(|scc| {
-        scc.core.modules.contains(&from) && scc.core.modules.contains(&residual)
-    }) {
+    if owner_edges.is_empty()
+        || verdict
+            .unrealizable_sccs
+            .iter()
+            .any(|scc| scc.core.modules.contains(&from) && scc.core.modules.contains(&residual))
+    {
         return;
     }
     owner_edges.sort();

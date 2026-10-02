@@ -27,9 +27,15 @@ impl Visit for TopLevelAwaitFinder {
     // own concern (and only legal if the body is itself `async`).
     fn visit_function(&mut self, _node: &Function) {}
     fn visit_arrow_expr(&mut self, _node: &ArrowExpr) {}
-    fn visit_method_prop(&mut self, node: &MethodProp) { node.key.visit_with(self); }
-    fn visit_getter_prop(&mut self, node: &GetterProp) { node.key.visit_with(self); }
-    fn visit_setter_prop(&mut self, node: &SetterProp) { node.key.visit_with(self); }
+    fn visit_method_prop(&mut self, node: &MethodProp) {
+        node.key.visit_with(self);
+    }
+    fn visit_getter_prop(&mut self, node: &GetterProp) {
+        node.key.visit_with(self);
+    }
+    fn visit_setter_prop(&mut self, node: &SetterProp) {
+        node.key.visit_with(self);
+    }
 
     fn visit_class_member(&mut self, member: &ClassMember) {
         visit_eager_member_parts(self, member);
