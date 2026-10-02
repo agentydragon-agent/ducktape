@@ -151,19 +151,19 @@ impl GraphFixture {
         assert_eq!(codes[0], codes[1], "dry-run and apply must agree");
     }
 
-    pub fn command(&self, args: &[&str]) -> std::process::Output {
-        Command::new(debundler_path())
+    /// Configure only this child process, including optional editor overrides.
+    pub fn process(&self, args: &[&str]) -> Command {
+        let mut command = Command::new(debundler_path());
+        command
             .args(args)
-            .arg("--modules")
-            .arg(&self.modules)
-            .arg("--graph")
-            .arg(&self.graph)
-            .env(
-                "DEBUNDLE_SOURCE_ROOT",
-                self.run._root.path().join("snapshot"),
-            )
-            .output()
-            .expect("run graph-backed command")
+            .env("DEBUNDLE_MODULES", &self.modules)
+            .env("DEBUNDLE_GRAPH", &self.graph)
+            .env("DEBUNDLE_SOURCE_ROOT", self.run._root.path().join("snapshot"));
+        command
+    }
+
+    pub fn command(&self, args: &[&str]) -> std::process::Output {
+        self.process(args).output().expect("run fixture command")
     }
 
     pub fn json(&self, args: &[&str]) -> Value {

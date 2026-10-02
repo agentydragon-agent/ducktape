@@ -374,7 +374,6 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "modules_delete_cli_test",
     deps = [
-        "//devinfra/js/debundle:cli",
         "@crates//:tempfile",
     ],
 )
@@ -441,17 +440,9 @@ debundle_e2e_test(
     ],
 )
 
-# The tests below do not build on `:support`.
-rust_test(
+debundle_e2e_test(
     name = "comment_cli_test",
-    srcs = ["comment_cli_test.rs"],
-    crate_root = "comment_cli_test.rs",
-    edition = "2024",
-    deps = [
-        "//devinfra/js/debundle:cli",
-        "@crates//:serde_yaml",
-        "@crates//:tempfile",
-    ],
+    deps = ["@crates//:serde_yaml"],
 )
 
 debundle_e2e_test(
@@ -462,14 +453,7 @@ debundle_e2e_test(
     ],
 )
 
-rust_test(
+debundle_e2e_test(
     name = "bindings_assign_cli_test",
-    srcs = ["bindings_assign_cli_test.rs"],
-    crate_root = "bindings_assign_cli_test.rs",
-    edition = "2024",
-    deps = [
-        "//devinfra/js/debundle:cli",
-        "@crates//:serde_yaml",
-        "@crates//:tempfile",
-    ],
+    deps = ["@crates//:serde_yaml"],
 )

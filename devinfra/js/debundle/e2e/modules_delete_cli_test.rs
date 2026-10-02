@@ -1,13 +1,7 @@
-//! End-to-end check of `debundle modules delete` against tempdir
-//! fixtures. The structural Rust entry point is hit directly via
-//! `cli::module::delete_modules`, and the CLI surface (refusal
-//! semantics, `--force`, `--dry-run`, `--no-verify`, atomicity) is
-//! exercised by shelling out to the built `debundle` binary so the
-//! clap wiring and the env-var plumbing are covered too.
+//! CLI deletion refusal, dry-run, force, and batch atomicity.
 
 use std::fs;
 
-use debundle_cli::module::delete_modules;
 use debundle_e2e_support::{run_debundle, write_text_file};
 use tempfile::TempDir;
 
@@ -213,38 +207,3 @@ fn batch_with_one_non_empty_refuses_atomically() {
     assert!(root.join("z.yaml").exists());
 }
 
-// Library-level coverage for `delete_modules` — confirms the
-// filesystem half of the operation in isolation from the CLI.
-#[test]
-fn delete_modules_library_call_deletes_then_reports() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write_text_file(&root.join("a.yaml"), "members: []\n");
-    write_text_file(&root.join("b.yaml"), "members: []\n");
-    let abs = [root.join("a.yaml"), root.join("b.yaml")];
-
-    let summary = delete_modules(&abs, false).unwrap();
-    assert_eq!(summary.deleted.len(), 2);
-    assert!(!summary.dry_run);
-    assert!(summary.summary_line().contains("deleted 2 file(s)"));
-    assert!(!root.join("a.yaml").exists());
-    assert!(!root.join("b.yaml").exists());
-}
-
-#[test]
-fn delete_modules_library_dry_run_leaves_files_in_place() {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path();
-    write_text_file(&root.join("a.yaml"), "members: []\n");
-    let abs = [root.join("a.yaml")];
-
-    let summary = delete_modules(&abs, true).unwrap();
-    assert_eq!(summary.deleted.len(), 1);
-    assert!(summary.dry_run);
-    assert!(
-        summary
-            .summary_line()
-            .contains("dry-run: would delete 1 file(s)")
-    );
-    assert!(root.join("a.yaml").exists());
-}
