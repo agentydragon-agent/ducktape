@@ -377,8 +377,13 @@ fn gate_describe_still_requires_graph_with_explicit_cycles() {
 #[test]
 fn scc_rejects_conflicting_size_filters_before_reading_files() {
     let output = run_debundle(&[
-        "scc", "--graph", "missing.json", "--modules", "missing",
-        "--cycles-only", "--singletons-only",
+        "scc",
+        "--graph",
+        "missing.json",
+        "--modules",
+        "missing",
+        "--cycles-only",
+        "--singletons-only",
     ]);
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
