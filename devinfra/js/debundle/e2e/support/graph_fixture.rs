@@ -184,7 +184,8 @@ impl GraphFixture {
     /// Re-run the edited spec, then execute its emitted entry under Node.
     pub fn assert_runs(&self, expected: &str) {
         let root = self.run._root.path();
-        let out_root = root.join("rerun");
+        let rerun = TempDir::new_in(root).expect("create fresh output directory");
+        let out_root = rerun.path();
         let out = Command::new(debundler_path())
             .arg("run")
             .arg("--tree-config")
@@ -196,7 +197,7 @@ impl GraphFixture {
             .arg("--tree-source-root")
             .arg(root)
             .arg("--out-root")
-            .arg(&out_root)
+            .arg(out_root)
             .output()
             .unwrap();
         assert!(
