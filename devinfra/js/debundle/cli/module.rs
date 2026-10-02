@@ -52,7 +52,7 @@ pub struct MergeArgs {
     pub sources: Vec<PathBuf>,
 }
 
-/// Summary returned by [`merge_modules`].
+/// Target and source files shared by merge preview, apply, and CLI reporting.
 #[derive(Debug, Clone)]
 pub struct MergeSummary {
     /// Absolute path of the rewritten target.
@@ -233,23 +233,6 @@ impl MergePlan {
         }
         Ok(self.summary)
     }
-}
-
-/// Merge `sources` into `target` under `modules_root`, then delete the
-/// source files.
-///
-/// `target` and each entry in `sources` are interpreted relative to
-/// `modules_root` unless already absolute.
-///
-/// Returns an error if any source declares a member/source-match readable name
-/// or a `selector.binding.name` that collides with the target or another
-/// source.
-pub fn merge_modules(
-    modules_root: &Path,
-    target: &Path,
-    sources: &[&Path],
-) -> Result<MergeSummary> {
-    plan_merge(modules_root, target, sources)?.apply()
 }
 
 fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<MergePlan> {

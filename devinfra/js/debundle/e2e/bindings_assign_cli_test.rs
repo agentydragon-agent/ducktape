@@ -64,7 +64,10 @@ fn rename_members_and_source_match_shorthand_rekeys_annotations() {
         assert_eq!(applied["action"], "applied");
         assert_eq!(applied["new_readable"], "Readable");
         let renamed = fs::read(&file).unwrap();
-        assert_eq!(fixture.json(&["bindings", "rename", "a", "Readable"])["action"], "unchanged");
+        assert_eq!(
+            fixture.json(&["bindings", "rename", "a", "Readable"])["action"],
+            "unchanged"
+        );
         assert_eq!(fs::read(&file).unwrap(), renamed);
         let doc = module(&fixture, "m.yaml");
         if selector.starts_with("members") {
@@ -147,8 +150,10 @@ fn positional_and_json_batches_create_one_canonical_destination() {
         } else {
             vec!["bindings", "assign", "a:UI/Widgets:Alpha", "b:ui/widgets"]
         };
-        let before: Vec<_> = ["src/a.yaml", "src/b.yaml"].into_iter()
-            .map(|path| (path, fs::read(fixture.modules.join(path)).unwrap())).collect();
+        let before: Vec<_> = ["src/a.yaml", "src/b.yaml"]
+            .into_iter()
+            .map(|path| (path, fs::read(fixture.modules.join(path)).unwrap()))
+            .collect();
         let mut preview = args.clone();
         preview.push("--dry-run");
         assert_eq!(fixture.json(&preview)["action"], "dry-run");
@@ -231,7 +236,10 @@ fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modu
     let empty = fixture.modules.join("empty.yaml");
     let before = fs::read(&empty).unwrap();
     fixture.json(&["bindings", "assign", "a:dest", "c:dest"]);
-    for (path, names) in [("home.yaml", vec!["b", "d"]), ("dest.yaml", vec!["e", "a", "c"])] {
+    for (path, names) in [
+        ("home.yaml", vec!["b", "d"]),
+        ("dest.yaml", vec!["e", "a", "c"]),
+    ] {
         let doc = module(&fixture, path);
         let members = doc["members"].as_sequence().unwrap();
         assert_eq!(members.len(), names.len());
@@ -250,7 +258,10 @@ fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modu
 #[test]
 fn rename_no_verify_explicitly_bypasses_collision_checks() {
     let fixture = GraphFixture::acyclic_pair();
-    fixture.assert_rejected_unchanged(&["bindings", "rename", "alpha", "beta"], &["name collision"]);
+    fixture.assert_rejected_unchanged(
+        &["bindings", "rename", "alpha", "beta"],
+        &["name collision"],
+    );
     let report = fixture.json(&["bindings", "rename", "alpha", "beta", "--no-verify"]);
     assert_eq!(report["new_readable"], "beta");
     assert_eq!(report["gate"], "skipped");

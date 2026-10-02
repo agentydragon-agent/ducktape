@@ -32,7 +32,10 @@ fn binding_and_module_comments_set_read_clear_and_dry_run() {
         assert_eq!(read["action"], "read");
         assert_eq!(read["comment"], "plugin glue");
         let saved = fs::read(&file).unwrap();
-        assert_eq!(fixture.json(&[namespace, "comment", locator, "plugin glue"])["action"], "unchanged");
+        assert_eq!(
+            fixture.json(&[namespace, "comment", locator, "plugin glue"])["action"],
+            "unchanged"
+        );
         assert_eq!(fs::read(&file).unwrap(), saved);
         let doc: Value = serde_yaml::from_slice(&fs::read(&file).unwrap()).unwrap();
         let location = if namespace == "bindings" {
@@ -43,7 +46,10 @@ fn binding_and_module_comments_set_read_clear_and_dry_run() {
         assert_eq!(location["comment"], "plugin glue");
         fixture.assert_runs("1\n");
         fixture.json(&[namespace, "comment", locator, ""]);
-        assert_eq!(fixture.json(&[namespace, "comment", locator])["comment"], "");
+        assert_eq!(
+            fixture.json(&[namespace, "comment", locator])["comment"],
+            ""
+        );
         let clear = fixture.json(&[namespace, "comment", locator, "--clear"]);
         assert_eq!(clear["action"], "cleared");
         let doc: Value = serde_yaml::from_slice(&fs::read(&file).unwrap()).unwrap();
@@ -113,32 +119,29 @@ fn binding_comments_use_readable_annotations_and_keep_other_metadata() {
         "members: [{name: Alpha, selector: {binding: {name: a}}}]",
         "source_matches: [{match: 'const a = 1;', bindings: [{local: a, name: Alpha}]}]",
     ] {
-    let yaml = format!("{claim}\nannotations: {{Alpha: {{note: selector debt}}}}");
-    let fixture = GraphFixture::new(
-        "const a = 1; console.log(a);",
-        &[(
-            "m.yaml",
-            &yaml,
-        )],
-    );
-    fixture.json(&["bindings", "comment", "a", "emitted comment"]);
-    assert_eq!(
-        fixture.json(&["bindings", "comment", "Alpha"])["comment"],
-        "emitted comment"
-    );
-    fixture.assert_runs("1\n");
-    fixture.json(&["bindings", "comment", "Alpha", "--clear"]);
-    let doc: Value =
-        serde_yaml::from_slice(&fs::read(fixture.modules.join("m.yaml")).unwrap()).unwrap();
-    assert!(doc["annotations"]["Alpha"]["comment"].is_null());
-    assert_eq!(doc["annotations"]["Alpha"]["note"], "selector debt");
-}
+        let yaml = format!("{claim}\nannotations: {{Alpha: {{note: selector debt}}}}");
+        let fixture = GraphFixture::new("const a = 1; console.log(a);", &[("m.yaml", &yaml)]);
+        fixture.json(&["bindings", "comment", "a", "emitted comment"]);
+        assert_eq!(
+            fixture.json(&["bindings", "comment", "Alpha"])["comment"],
+            "emitted comment"
+        );
+        fixture.assert_runs("1\n");
+        fixture.json(&["bindings", "comment", "Alpha", "--clear"]);
+        let doc: Value =
+            serde_yaml::from_slice(&fs::read(fixture.modules.join("m.yaml")).unwrap()).unwrap();
+        assert!(doc["annotations"]["Alpha"]["comment"].is_null());
+        assert_eq!(doc["annotations"]["Alpha"]["note"], "selector debt");
+    }
 }
 
 #[test]
 fn missing_comment_targets_are_errors_without_writes() {
     let fixture = fixture();
-    for (namespace, diagnostic) in [("bindings", "no binding named"), ("modules", "module YAML not found")] {
+    for (namespace, diagnostic) in [
+        ("bindings", "no binding named"),
+        ("modules", "module YAML not found"),
+    ] {
         fixture.assert_rejected_unchanged(&[namespace, "comment", "missing"], &[diagnostic]);
     }
 }
