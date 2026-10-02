@@ -86,10 +86,11 @@ class Rbac:
             else:
                 assert rule.resources, rule
                 assert rule.api_groups, rule
+                names: tuple[str | None, ...] = tuple(rule.resource_names) or (None,)
                 permissions.update(
                     Permission(namespace, group, resource, verb, name)
                     for group, resource, verb, name in product(
-                        rule.api_groups, rule.resources, rule.verbs, rule.resource_names or [None]
+                        rule.api_groups, rule.resources, rule.verbs, names
                     )
                 )
         return permissions

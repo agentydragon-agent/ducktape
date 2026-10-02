@@ -174,7 +174,7 @@ class RbacRule(BaseModel):
     resources: list[str] = Field(default_factory=list)
     verbs: list[str]
     resource_names: list[str] = Field(default_factory=list)
-    non_resource_urls: list[str] = Field(default_factory=list)
+    non_resource_urls: list[str] = Field(default_factory=list, alias="nonResourceURLs")
 
 
 class RoleResource(K8sResource):
