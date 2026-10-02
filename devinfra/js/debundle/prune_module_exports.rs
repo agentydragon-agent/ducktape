@@ -38,37 +38,31 @@ use artifact::{ChunkBundle, FileRole, JsFile, join_module_path, module_path_dirn
 use swc_ecma_ast::*;
 
 pub fn prune_unimported_module_exports(bundle: &mut ChunkBundle) {
+    let mut modules: Vec<_> = bundle
+        .chunks
+        .iter_mut()
+        .flat_map(|chunk| &mut chunk.js.files)
+        .filter_map(|file| {
+            let path = file_abs_path(file);
+            let role = file.metadata.role;
+            Some((path, role, &mut file.ast_mut()?.module))
+        })
+        .collect();
+    prune_exports(&mut modules);
+}
+
+fn prune_exports(modules: &mut [(String, FileRole, &mut Module)]) {
     let mut consumed: BTreeSet<String> = BTreeSet::new();
     let mut namespace_protected: BTreeSet<String> = BTreeSet::new();
-    for chunk in &bundle.chunks {
-        for file in &chunk.js.files {
-            let Some(ast) = file.ast() else {
-                continue;
-            };
-            collect_consumers(
-                &ast.module,
-                &file_abs_path(file),
-                &mut consumed,
-                &mut namespace_protected,
-            );
-        }
+    for (path, _, module) in modules.iter() {
+        collect_consumers(module, path, &mut consumed, &mut namespace_protected);
     }
-
-    for chunk in &mut bundle.chunks {
-        for file in &mut chunk.js.files {
-            if file.metadata.role != FileRole::Module {
-                continue;
-            }
-            let file_abs = file_abs_path(file);
-            if namespace_protected.contains(&file_abs) {
-                continue;
-            }
-            let Some(ast) = file.ast_mut() else {
-                continue;
-            };
-            let import_locals = collect_import_locals(&ast.module);
-            prune_local_named_exports(&mut ast.module, &consumed, &import_locals);
+    for (path, role, module) in modules.iter_mut() {
+        if *role != FileRole::Module || namespace_protected.contains(path) {
+            continue;
         }
+        let import_locals = collect_import_locals(module);
+        prune_local_named_exports(module, &consumed, &import_locals);
     }
 }
 
@@ -210,10 +204,6 @@ fn prune_local_named_exports(
 
 #[cfg(test)]
 mod tests {
-    use artifact::{
-        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, ChunkTable, FileMetadata,
-        FileRole, JsChunk, JsFile, JsFileBody,
-    };
     use js_ast::parse_js_module;
 
     use super::*;
@@ -235,66 +225,32 @@ mod tests {
         });
     }
 
-    /// One chunk `c` (source path `c.js`), files laid out flat so a sibling's
-    /// `./mod.js` resolves to `c/mod.js`.
-    fn bundle(files: &[(&str, &str, FileRole)]) -> ChunkBundle {
-        let mut bundle = ChunkBundle {
-            chunks: Vec::new(),
-            chunk_table: ChunkTable::default(),
-        };
-        let chunk_id = bundle.chunk_table.intern("c".to_string());
-        let js_files = files
+    fn pruned_modules(files: &[(&str, &str, FileRole)]) -> Vec<(String, Module)> {
+        let mut modules: Vec<_> = files
             .iter()
-            .map(|(path, source, role)| {
-                let parsed = parse_js_module(&format!("c/{path}"), source).expect("parse");
-                JsFile {
-                    path: path.to_string(),
-                    body: JsFileBody::Ast(parsed),
-                    header_lines: Vec::new(),
-                    binding_comments: std::collections::BTreeMap::new(),
-                    leading_item_comments: std::collections::BTreeMap::new(),
-                    metadata: FileMetadata {
-                        chunk_id: "c".to_string(),
-                        chunk_file: path.to_string(),
-                        role: *role,
-                        source_path: "c.js".to_string(),
-                    },
-                }
+            .map(|(path, source, _)| {
+                (
+                    (*path).to_string(),
+                    parse_js_module(path, source).unwrap().module,
+                )
             })
             .collect();
-        bundle.chunks.push(ChunkArtifact {
-            chunk_id,
-            js: JsChunk {
-                entry_file: "entry.js".to_string(),
-                files: js_files,
-                metadata: ChunkMetadata {
-                    source_path: "c.js".to_string(),
-                },
-            },
-            analysis: ChunkAnalysisReport {
-                chunk_id: "c".to_string(),
-                source_path: "c.js".to_string(),
-                entry_file: "entry.js".to_string(),
-                counts: Default::default(),
-                files: Vec::new(),
-                imports: Vec::new(),
-                export_aliases: Vec::new(),
-                unresolved_exports: Vec::new(),
-                kept_top_level_declarations: Vec::new(),
-            },
-        });
-        bundle
+        let mut views: Vec<_> = modules
+            .iter_mut()
+            .zip(files)
+            .map(|((path, module), (_, _, role))| (format!("c/{path}"), *role, module))
+            .collect();
+        prune_exports(&mut views);
+        modules
     }
 
-    fn emitted_exports(bundle: &ChunkBundle, file_path: &str) -> Vec<String> {
-        let file = bundle.chunks[0]
-            .js
-            .files
+    fn emitted_exports(modules: &[(String, Module)], file_path: &str) -> Vec<String> {
+        let (_, module) = modules
             .iter()
-            .find(|f| f.path == file_path)
+            .find(|(path, _)| path == file_path)
             .expect("file");
         let mut names = Vec::new();
-        for item in &file.ast().expect("ast").module.body {
+        for item in &module.body {
             if let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item
                 && named.src.is_none()
             {
@@ -317,7 +273,7 @@ mod tests {
         js_ast::with_swc_globals(|| {
             // `mod.js` owns `used` (imported by the entry) and `internalOnly`
             // (referenced only inside `mod.js`). The dead export is dropped.
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "entry.js",
                     "import { used } from \"./mod.js\";\nconsole.log(used);\n",
@@ -329,8 +285,10 @@ mod tests {
                     FileRole::Module,
                 ),
             ]);
-            prune_unimported_module_exports(&mut bundle);
-            assert_eq!(emitted_exports(&bundle, "mod.js"), vec!["used".to_string()]);
+            assert_eq!(
+                emitted_exports(&modules, "mod.js"),
+                vec!["used".to_string()]
+            );
         });
     }
 
@@ -338,7 +296,7 @@ mod tests {
     fn keeps_export_consumed_via_alias_import() {
         js_ast::with_swc_globals(|| {
             // `import { used as u }` still consumes the source name `used`.
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "entry.js",
                     "import { used as u } from \"./mod.js\";\nconsole.log(u);\n",
@@ -350,26 +308,25 @@ mod tests {
                     FileRole::Module,
                 ),
             ]);
-            prune_unimported_module_exports(&mut bundle);
-            assert_eq!(emitted_exports(&bundle, "mod.js"), vec!["used".to_string()]);
+            assert_eq!(
+                emitted_exports(&modules, "mod.js"),
+                vec!["used".to_string()]
+            );
         });
     }
 
     #[test]
     fn removes_emptied_export_block() {
         js_ast::with_swc_globals(|| {
-            let mut bundle = bundle(&[(
+            let modules = pruned_modules(&[(
                 "mod.js",
                 "const a = 1;\nconst b = 2;\nexport { a, b };\n",
                 FileRole::Module,
             )]);
-            prune_unimported_module_exports(&mut bundle);
-            assert!(emitted_exports(&bundle, "mod.js").is_empty());
+            assert!(emitted_exports(&modules, "mod.js").is_empty());
             // The whole `export { ... }` ModuleItem is gone, not left empty.
-            let has_export = bundle.chunks[0].js.files[0]
-                .ast()
-                .unwrap()
-                .module
+            let has_export = modules[0]
+                .1
                 .body
                 .iter()
                 .any(|i| matches!(i, ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(_))));
@@ -381,15 +338,14 @@ mod tests {
     fn never_prunes_entry_file() {
         js_ast::with_swc_globals(|| {
             // An entry's exports are the chunk's public surface (consumed
-            // outside the bundle); they are never pruned even if unimported.
-            let mut bundle = bundle(&[(
+            // outside the modules); they are never pruned even if unimported.
+            let modules = pruned_modules(&[(
                 "entry.js",
                 "const publicApi = 1;\nexport { publicApi };\n",
                 FileRole::Entry,
             )]);
-            prune_unimported_module_exports(&mut bundle);
             assert_eq!(
-                emitted_exports(&bundle, "entry.js"),
+                emitted_exports(&modules, "entry.js"),
                 vec!["publicApi".to_string()]
             );
         });
@@ -400,7 +356,7 @@ mod tests {
         js_ast::with_swc_globals(|| {
             // A namespace import accesses any export by property, so every
             // export of the target module is protected.
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "entry.js",
                     "import * as ns from \"./mod.js\";\nconsole.log(ns);\n",
@@ -412,9 +368,8 @@ mod tests {
                     FileRole::Module,
                 ),
             ]);
-            prune_unimported_module_exports(&mut bundle);
             assert_eq!(
-                emitted_exports(&bundle, "mod.js"),
+                emitted_exports(&modules, "mod.js"),
                 vec!["a".to_string(), "b".to_string()]
             );
         });
@@ -425,7 +380,7 @@ mod tests {
         js_ast::with_swc_globals(|| {
             // The entry re-exports `inner` out of `mod.js` via `export … from`;
             // the source must keep exporting it.
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "entry.js",
                     "export { inner } from \"./mod.js\";\n",
@@ -437,9 +392,8 @@ mod tests {
                     FileRole::Module,
                 ),
             ]);
-            prune_unimported_module_exports(&mut bundle);
             assert_eq!(
-                emitted_exports(&bundle, "mod.js"),
+                emitted_exports(&modules, "mod.js"),
                 vec!["inner".to_string()]
             );
         });
@@ -450,7 +404,7 @@ mod tests {
         js_ast::with_swc_globals(|| {
             // Consumption by a sibling logical module (not the entry) keeps the
             // export alive too.
-            let mut bundle = bundle(&[
+            let modules = pruned_modules(&[
                 (
                     "a.js",
                     "import { shared } from \"./b.js\";\nexport const useShared = () => shared;\n",
@@ -462,8 +416,10 @@ mod tests {
                     FileRole::Module,
                 ),
             ]);
-            prune_unimported_module_exports(&mut bundle);
-            assert_eq!(emitted_exports(&bundle, "b.js"), vec!["shared".to_string()]);
+            assert_eq!(
+                emitted_exports(&modules, "b.js"),
+                vec!["shared".to_string()]
+            );
         });
     }
 
@@ -471,16 +427,15 @@ mod tests {
     fn keeps_reexported_imported_binding_shim() {
         js_ast::with_swc_globals(|| {
             // `mod.js` re-imports a vendor binding and re-exports it under a
-            // readable name. Even with no in-bundle consumer the export is
+            // readable name. Even with no in-modules consumer the export is
             // kept: pruning it would orphan the now-unused import. Only dead
             // exports of *locally declared* bindings (`dead`) are pruned.
-            let mut bundle = bundle(&[(
+            let modules = pruned_modules(&[(
                 "mod.js",
                 "import { x as a } from \"./vendor.js\";\nconst dead = 1;\nexport { a, dead };\n",
                 FileRole::Module,
             )]);
-            prune_unimported_module_exports(&mut bundle);
-            assert_eq!(emitted_exports(&bundle, "mod.js"), vec!["a".to_string()]);
+            assert_eq!(emitted_exports(&modules, "mod.js"), vec!["a".to_string()]);
         });
     }
 }

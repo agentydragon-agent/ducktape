@@ -42,7 +42,7 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use artifact::{ChunkBundle, ChunkId, EmissionFiles};
-use js_ast::SourceLineIndex;
+use js_ast::{ParsedJsModule, SourceLineIndex};
 
 /// `excluded_chunk_ids`: chunks excluded from the emission set (fully
 /// vendor-swapped) — never emitted, so their export surfaces are not
@@ -58,25 +58,36 @@ fn validate_bundle_exports(
     artifact: &ChunkBundle,
     excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<()> {
+    validate_modules(
+        artifact
+            .chunks
+            .iter()
+            .filter(|chunk| !excluded_chunk_ids.contains(&chunk.chunk_id))
+            .flat_map(|chunk| {
+                let name = artifact.chunk_table.name(chunk.chunk_id);
+                chunk
+                    .js
+                    .files
+                    .iter()
+                    .map(move |file| (name, file.path.as_str(), file.ast()))
+            }),
+    )
+}
+
+/// Validate parsed output files without depending on chunk analysis reports.
+fn validate_modules<'a>(
+    files: impl IntoIterator<Item = (&'a str, &'a str, Option<&'a ParsedJsModule>)>,
+) -> Result<()> {
     let mut findings: Vec<FileFinding> = Vec::new();
-    for chunk in &artifact.chunks {
-        if excluded_chunk_ids.contains(&chunk.chunk_id) {
-            continue;
-        }
-        let chunk_name = artifact.chunk_table.name(chunk.chunk_id).to_string();
-        for file in &chunk.js.files {
-            let Some(ast) = file.ast() else {
-                continue;
-            };
-            let lines = ast.line_index();
-            let duplicates = duplicates_in_module(&ast.module, &lines);
-            if !duplicates.is_empty() {
-                findings.push(FileFinding {
-                    chunk: chunk_name.clone(),
-                    file: file.path.clone(),
-                    duplicates,
-                });
-            }
+    for (chunk, file, ast) in files {
+        let Some(ast) = ast else { continue };
+        let duplicates = duplicates_in_module(&ast.module, &ast.line_index());
+        if !duplicates.is_empty() {
+            findings.push(FileFinding {
+                chunk: chunk.to_string(),
+                file: file.to_string(),
+                duplicates,
+            });
         }
     }
     if findings.is_empty() {
@@ -241,82 +252,37 @@ fn exported_decl_names(decl: &Decl) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use artifact::{
-        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, ChunkTable, FileMetadata,
-        FileRole, JsChunk, JsFile, JsFileBody,
-    };
     use js_ast::parse_js_module;
 
     use super::*;
 
-    fn bundle_with_file(chunk_name: &str, file_name: &str, source: &str) -> ChunkBundle {
-        let mut bundle = ChunkBundle {
-            chunks: Vec::new(),
-            chunk_table: ChunkTable::default(),
-        };
-        insert_file(&mut bundle, chunk_name, file_name, source, FileRole::Entry);
-        bundle
-    }
-
-    fn insert_file(
-        bundle: &mut ChunkBundle,
-        chunk_name: &str,
-        file_name: &str,
-        source: &str,
-        role: FileRole,
-    ) {
-        let parsed = parse_js_module(&format!("{chunk_name}/{file_name}"), source).expect("parse");
-        let chunk_id = bundle.chunk_table.intern(chunk_name.to_string());
-        let file = JsFile {
-            path: file_name.to_string(),
-            body: JsFileBody::Ast(parsed),
-            header_lines: Vec::new(),
-            binding_comments: std::collections::BTreeMap::new(),
-            leading_item_comments: std::collections::BTreeMap::new(),
-            metadata: FileMetadata {
-                chunk_id: chunk_name.to_string(),
-                chunk_file: file_name.to_string(),
-                role,
-                source_path: format!("{chunk_name}.js"),
-            },
-        };
-        if let Some(existing) = bundle.chunks.iter_mut().find(|c| c.chunk_id == chunk_id) {
-            existing.js.files.push(file);
-            return;
-        }
-        bundle.chunks.push(ChunkArtifact {
-            chunk_id,
-            js: JsChunk {
-                entry_file: file_name.to_string(),
-                files: vec![file],
-                metadata: ChunkMetadata {
-                    source_path: format!("{chunk_name}.js"),
-                },
-            },
-            analysis: ChunkAnalysisReport {
-                chunk_id: chunk_name.to_string(),
-                source_path: format!("{chunk_name}.js"),
-                entry_file: file_name.to_string(),
-                counts: Default::default(),
-                files: Vec::new(),
-                imports: Vec::new(),
-                export_aliases: Vec::new(),
-                unresolved_exports: Vec::new(),
-                kept_top_level_declarations: Vec::new(),
-            },
-        });
+    fn validate_sources(files: &[(&str, &str, Option<&str>)]) -> Result<()> {
+        let parsed: Vec<_> = files
+            .iter()
+            .map(|(chunk, path, source)| {
+                (
+                    *chunk,
+                    *path,
+                    source.map(|source| parse_js_module(path, source).unwrap()),
+                )
+            })
+            .collect();
+        validate_modules(
+            parsed
+                .iter()
+                .map(|(chunk, path, ast)| (*chunk, *path, ast.as_ref())),
+        )
     }
 
     #[test]
     fn passes_on_clean_module() {
         js_ast::with_swc_globals(|| {
-            let bundle = bundle_with_file(
+            validate_sources(&[(
                 "ok",
                 "entry.js",
-                "const a = 1;\nconst b = 2;\nexport { a, b };\n",
-            );
-            validate_emitted_exports(&EmissionFiles::new(bundle).unwrap(), &BTreeSet::new())
-                .expect("clean module passes");
+                Some("const a = 1;\nconst b = 2;\nexport { a, b };\n"),
+            )])
+            .expect("clean module passes");
         });
     }
 
@@ -331,8 +297,7 @@ const BackgroundPattern = () => null;\n\
 function av() {}\n\
 export { BackgroundPattern as av };\n\
 export { av };\n";
-            let bundle = bundle_with_file("chunk", "entry.js", source);
-            let err = validate_bundle_exports(&bundle, &BTreeSet::new())
+            let err = validate_sources(&[("chunk", "entry.js", Some(source))])
                 .expect_err("duplicate av should be rejected");
             let msg = format!("{err}");
             assert!(msg.contains("`av` exported 2×"), "missing count: {msg}");
@@ -348,8 +313,7 @@ export { av };\n";
 export const x = 1;\n\
 const y = 2;\n\
 export { y as x };\n";
-            let bundle = bundle_with_file("c", "f.js", source);
-            let err = validate_bundle_exports(&bundle, &BTreeSet::new()).expect_err("duplicate x");
+            let err = validate_sources(&[("c", "f.js", Some(source))]).expect_err("duplicate x");
             let msg = format!("{err}");
             assert!(msg.contains("`x` exported 2×"), "{msg}");
             assert!(msg.contains("(decl)"), "decl shape missing: {msg}");
@@ -364,9 +328,8 @@ export { y as x };\n";
 export default 1;\n\
 const fallback = 2;\n\
 export { fallback as default };\n";
-            let bundle = bundle_with_file("c", "f.js", source);
             let err =
-                validate_bundle_exports(&bundle, &BTreeSet::new()).expect_err("duplicate default");
+                validate_sources(&[("c", "f.js", Some(source))]).expect_err("duplicate default");
             let msg = format!("{err}");
             assert!(msg.contains("`default` exported 2×"), "{msg}");
         });
@@ -383,8 +346,7 @@ export { fallback as default };\n";
 const foo = 1;\n\
 export { foo };\n\
 export * from \"./sibling.js\";\n";
-            let bundle = bundle_with_file("c", "f.js", source);
-            validate_bundle_exports(&bundle, &BTreeSet::new())
+            validate_sources(&[("c", "f.js", Some(source))])
                 .expect("star re-export does not duplicate");
         });
     }
@@ -393,16 +355,15 @@ export * from \"./sibling.js\";\n";
     fn checks_every_file_in_chunk() {
         js_ast::with_swc_globals(|| {
             // Two files in the same chunk; only one has duplicates.
-            let mut bundle = bundle_with_file("c", "good.js", "export const a = 1;\n");
-            insert_file(
-                &mut bundle,
-                "c",
-                "bad.js",
-                "export const z = 1;\nconst zz = 2;\nexport { zz as z };\n",
-                FileRole::Module,
-            );
-            let err =
-                validate_bundle_exports(&bundle, &BTreeSet::new()).expect_err("bad file flagged");
+            let err = validate_sources(&[
+                ("c", "good.js", Some("export const a = 1;\n")),
+                (
+                    "c",
+                    "bad.js",
+                    Some("export const z = 1;\nconst zz = 2;\nexport { zz as z };\n"),
+                ),
+            ])
+            .expect_err("bad file flagged");
             let msg = format!("{err}");
             assert!(msg.contains("bad.js"), "{msg}");
             assert!(!msg.contains("good.js"), "good.js should not appear: {msg}");
@@ -416,23 +377,11 @@ export * from \"./sibling.js\";\n";
             // walks the in-memory AST and has nothing to inspect for raw
             // bodies. This is intentional: such files came from upstream
             // verbatim, not from a pipeline emit path.
-            let mut bundle = bundle_with_file("c", "ok.js", "export const a = 1;\n");
-            bundle.chunks[0].js.files.push(JsFile {
-                path: "raw.js".to_string(),
-                body: JsFileBody::Source(
-                    "export const x = 1;\nconst y = 2;\nexport { y as x };\n".to_string(),
-                ),
-                header_lines: Vec::new(),
-                binding_comments: std::collections::BTreeMap::new(),
-                leading_item_comments: std::collections::BTreeMap::new(),
-                metadata: FileMetadata {
-                    chunk_id: "c".to_string(),
-                    chunk_file: "raw.js".to_string(),
-                    role: FileRole::Module,
-                    source_path: "c.js".to_string(),
-                },
-            });
-            validate_bundle_exports(&bundle, &BTreeSet::new()).expect("source-only file skipped");
+            validate_sources(&[
+                ("c", "ok.js", Some("export const a = 1;\n")),
+                ("c", "raw.js", None),
+            ])
+            .expect("source-only file skipped");
         });
     }
 }
