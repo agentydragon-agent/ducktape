@@ -13,7 +13,7 @@ from typing import Literal
 from cdk8s_plus_34 import Group, ISubject, ServiceAccount, k8s
 from constructs import Construct
 
-from agentplane.app.kubernetes_grants import (
+from agentplane.sandbox_service.kubernetes_grants import (
     ClusterRoleBindingGrant,
     ClusterRoleRef,
     KubernetesGrant,
