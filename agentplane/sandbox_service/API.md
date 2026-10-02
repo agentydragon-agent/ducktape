@@ -5,7 +5,7 @@ HTTP is limited to a health probe. The integration app retains its browser-facin
 There is no transparent runner `Attach` tunnel or caller-supplied runner URL.
 
 **Status:** gRPC server/client implementation and acceptance tests are being added in #8744.
-Production app cutover and deployment are not complete. The earlier `api.py` HTTP adapter and
+Production app callers and deployment source use this API; live rollout is not yet verified. The earlier `api.py` HTTP adapter and
 its native tests remain transitional test coverage, not a second deployed service contract.
 
 ## Authentication and destinations
@@ -38,6 +38,9 @@ enabled provisioning backend:
 - `CreateSandbox`: concrete template, policy/grant selections, optional session defaults, and bootstrap.
   Grant intent is stored on the Sandbox so reconciliation can recover partial provisioning without
   the app. The RPC returns after provisioning orchestration, not necessarily after Pod readiness.
+- `GrantEgress`: UID-pinned Sandbox destination and policy names; returns the created binding name.
+  `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
+  same trusted-manager authority and enabled provisioning backend.
 - `SuspendSandbox`, `ResumeSandbox`, `DeleteSandbox`: explicit owner/name/UID-pinned mutations.
   Resume refuses incomplete provisioning; deletion requires suspension.
 
@@ -135,3 +138,7 @@ Deployment must grant the service the appropriate Kubernetes/TokenReview/provisi
 project an audience-correct token for app-to-service calls, and enforce sole normal production access
 to runner control/event RPCs. Do not leave a direct-runner app fallback or two provisioning reconcilers.
 Inventory/backup and rollback checks gate staging handoff; no staging data reset is part of this change.
+
+Deployment source uses the dedicated `agentplane-sandbox-service` token audience; the app mounts a
+rotating projected token and the client rereads it on every RPC. `AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE`
+can select an independent YAML settings file. It does not load app configuration or require app startup.

@@ -75,6 +75,7 @@ from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import OpenTimeoutError, RunnerError
 from agentplane.sandbox_service.action_policy import UnknownPolicySetError
+from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.egress import (
     BindingNotFoundError,
     BindingView,
@@ -100,7 +101,6 @@ from agentplane.sandbox_service.kubernetes_grants import (
     resolve_grants,
 )
 from agentplane.sandbox_service.provisioning import SandboxProvisioner
-from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.session_config import Harness
 from agentplane.subjects import ServiceAccountRef
 

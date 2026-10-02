@@ -1,14 +1,12 @@
 # Sandbox Service extraction
 
-Status: **extraction in progress; not deployed or cut over.** The app uses the independent
-[command relay, inventory and concrete launch values](../sandbox_service/README.md). A standalone
-[session API](../sandbox_service/API.md) authenticates workloads and resolves UID-pinned
-Sandbox/Pod associations without the app. Explicit bootstrap/open/resume and backend-owned
-launch instructions are implemented; resume preserves the runner-retained spec. Recoverable Sandbox
-provisioning is implemented. The standalone server now serves gRPC with a typed Python client; transport acceptance is being
-validated in CI. Legacy HTTP test migration, app cutover, and deployment remain in progress. The service follows
-only the surviving runner log. The app keeps its PostgreSQL archive; moving that archive is not planned
-as part of this extraction.
+Status: **production app cutover implemented in source; CI and live handoff pending.**
+The standalone gRPC service owns inventory, provisioning/reconciliation, launch guidance and runner
+session access. The production app calls it for lifecycle, manual egress grants, session management,
+commands and event following; there is no direct-runner fallback. Deployment source transfers backend
+RBAC/network authority to the service and projects an audience-specific app token. Existing app
+PostgreSQL archives/checkpoints and runner volumes stay in place. No live staging cutover, backup,
+restore rehearsal, or preservation validation has been performed by this source change.
 
 This is the concrete backend boundary required by the
 [service dependency rule](../docs/service_boundaries.md). The integration app must be a client;
@@ -192,6 +190,32 @@ If preserving some data proves infeasible, report exactly what would be lost, wh
 considered, and the operational impact. **Do not delete/reset it without explicit operator approval.**
 This plan records requirements; no backups, restore rehearsal, migration, or preservation guarantee
 has been performed by the documentation change.
+
+## Production handoff checklist
+
+This is a coordinated writer/authority handoff, not a database migration. Before merging/applying
+changed manifests, arrange a maintenance window and prevent automatic reconciliation/image updates
+from switching only part of the system. Record the current app, runner and policy revisions for rollback.
+
+1. Complete the staging inventory, consistent backup and isolated restore checks above. Record Sandbox
+   names/UIDs, SAs, Pod/volume identities, Thread/session IDs and ingestion high-water marks. Do not
+   recreate any of them. Existing Sandboxes without pending provisioning intent are adopted as-is.
+2. Build/test and publish the service image and matching app image. Record real immutable tags/digests;
+   pin **both** before applying the authority change. Fork PR CI does not publish images, and `unset`
+   is not a deployable image pin. Keep staging/testing pin components and Flux image policies wired.
+3. Drain old app replicas/reconcilers. Deploy the independent service, projected token, and matching
+   app client; transfer existing grant-delegation subjects and runner network access together. There
+   must not be competing old/new provisioning reconcilers. Keep the archive database and runner Pods/PVCs.
+4. Verify app inventory, open/command/stream/resume, existing archived history and checkpoint replay;
+   stop the app and verify backend inventory/provisioning/session access still works. Verify the app
+   cannot dial runner RPCs directly. Expired follows reconnect without falsely ending native sessions.
+5. Rollback restores a compatible app image **and** the previous RBAC/network authority together after
+   stopping the new owner. Keep newly written archive rows and native journal entries; do not restore
+   an old DB/volume snapshot over post-cutover work or replay commands to reconstruct history.
+
+The source includes acceptance tests, but they do not replace this staging rehearsal. No live resources
+have been mutated by the implementation work. First image publication and coordinated immutable pinning
+remain a release prerequisite rather than a fabricated tag in the PR.
 
 ## Extraction sequence
 

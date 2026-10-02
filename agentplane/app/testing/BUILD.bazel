@@ -15,6 +15,8 @@ py_library(
     name = "replication_process",
     srcs = ["replication_process.py"],
     deps = [
+        ":app_factory",
+        ":native_runners",
         ":replication_source",
         "//agentplane/app:action_policy",
         "//agentplane/app:api",
@@ -30,7 +32,6 @@ py_library(
         "//agentplane/app/agent_runtime/events:event_log",
         "//agentplane/app/agent_runtime/events:ingestion_lease",
         "//agentplane/app/agent_runtime/runner:bridge",
-        "//agentplane/app/agent_runtime/runner:runners",
         "//agentplane/app/agent_runtime/thread:store",
         "//agentplane/app/agent_runtime/view:content",
         "//agentplane/protocol:event_log_pb2",
@@ -88,5 +89,33 @@ py_library(
         "@pypi//cryptography",
         "@pypi//h2",
         "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "app_factory",
+    srcs = ["app_factory.py"],
+    deps = [
+        "//agentplane/app:api",
+        "//agentplane/sandbox_service:provisioning",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "native_runners",
+    srcs = ["native_runners.py"],
+    deps = [
+        "//agentplane/app:changes",
+        "//agentplane/app:live",
+        "//agentplane/app/agent_runtime/runner:runners",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:command_relay",
+        "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:session_lifecycle",
+        "@pypi//protobuf",
     ],
 )

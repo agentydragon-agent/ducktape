@@ -7,8 +7,8 @@ The [plan](../plans/sandbox_service.md) describes the intended service; the
 ## Implemented foundation
 
 `command_relay.admit_running_command` extracts the existing app's running-session
-command relay. The app now uses it while retaining its existing archive wait and
-error mapping. The helper:
+command relay. The standalone service uses it; the app calls the service while retaining its existing
+archive wait and error mapping. The helper:
 
 - Opens an explicit runner session without a spec, so it cannot create or resume it.
 - Sends the caller's unchanged common-protocol `Command` and requests detach.
@@ -34,8 +34,8 @@ by this package. Existing annotation keys, field/class names, defaults, ServiceA
 creation, PVC policy, and provisioning behavior are unchanged.
 
 `provisioning.py` owns recoverable grant orchestration and policy binding, with pending launch
-intent stored on the Sandbox. Switching production callers and reconciler ownership to the
-separately deployed service is still in progress; the package extraction alone is not a cutover.
+intent stored on the Sandbox. The production app now uses the remote client, not an in-process provisioner or reconciler.
+The deployment source transfers these authorities to the service; live handoff remains gated below.
 
 ## Session API
 
@@ -47,24 +47,28 @@ The backend owns launch instructions and concrete defaults; no UI preset lookup 
 Read/command/follow never start sessions. Separate explicit Sandbox lifecycle operations can resume
 a Sandbox. Read/follow availability is limited to the surviving runner log.
 
-## Still to extract
+## Production app cutover and rollout
 
-This is **not yet a deployed service or a completed app cutover**. The agreed service API is
-protobuf/gRPC; the standalone server serves it, not the earlier HTTP adapter. The latter remains
-transitional test coverage, not a parallel deployed API. The low-level relay still requires an already selected/authorized client; the service
-API provides that boundary. Full test migration, app callers, and deployment/authority handoff remain
-in the [extraction plan](../plans/sandbox_service.md). Notifications must not work around these gaps
-by depending on the app.
+The production app requires `sandbox_service_target` and a projected workload token. Its directory,
+bridge, and ingester use the service client with no direct-runner fallback. UI preset selection,
+read-only Kubernetes projections, PostgreSQL archive, and ingestion checkpoints remain app-owned.
+Native transport doubles are confined to `app/testing`; app/service integration acceptance uses
+real authenticated gRPC, native harnesses, and the existing app database archive.
 
-The service will not own a session-log archive. Runner logs are durable on the state volume; clients
-needing independent retention must archive events themselves. The app keeps its existing PostgreSQL
+The deployment source adds a separately built service image, Deployment/Service/ServiceAccount,
+TokenReview and lifecycle/grant RBAC, and network isolation. The app has read-only resource RBAC;
+only Sandbox Service can reach the runner control port. Cross-namespace delegation keeps its
+existing Role/RoleBinding identities and changes the grantee. Runner template/volume identities
+and archive schema are unchanged. The legacy HTTP service adapter remains test-only.
+
+**Source changes are not evidence of a live cutover.** Image publication/pinning, generated-manifest
+validation, and the staging preservation/rollback gate must complete before rollout. Do not let
+Flux independently switch RBAC/network policies while an old app image is still running. See the
+[handoff checklist](../plans/sandbox_service.md#production-handoff-checklist).
+
+The service owns no session-log archive. Runner logs remain on their state volume; clients needing
+independent retention must archive events themselves. The app keeps its existing PostgreSQL
 archive and checkpoints. Archive migration is not a required follow-up.
 
-TODO: proper runner RPC authentication/TLS. The planned v1 service-to-runner connection
-reuses the current network trust boundary; this helper does not confer identity or
-permission, and it does not introduce runner command RBAC.
-
-This extraction changes no database schema, stored wire format, deployment, or staging
-resources. Subsequent storage/ownership cutovers must inventory and preserve existing
-staging data, with a backup/restore and migration plan before making changes. Ask before
-any destructive reset, unavoidable loss, or disruptive/identity-breaking cutover.
+TODO: proper runner RPC authentication/TLS. V1 uses network isolation for service-to-runner traffic,
+not runner command RBAC. App-to-service calls already require a Pod-bound workload TokenReview.

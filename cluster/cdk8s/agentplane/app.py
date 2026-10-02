@@ -175,21 +175,42 @@ class App(Construct):
     def _add_rbac(self, app_service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
         token_reviewer_cluster_rbac(
-            self, "token-reviewer", name=f"{namespace}-app-token-reviewer",
-            service_account_name=NAME, namespace=namespace,
+            self,
+            "token-reviewer",
+            name=f"{namespace}-app-token-reviewer",
+            service_account_name=NAME,
+            namespace=namespace,
         )
         role = Role(
-            self, "role", metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            self,
+            "role",
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
-                RolePolicyRule(resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get", "list"]),
-                RolePolicyRule(resources=[custom_resource("agents.x-k8s.io", "sandboxes")], verbs=["get", "list", "watch"]),
+                RolePolicyRule(
+                    resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get", "list"]
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")], verbs=["get", "list", "watch"]
+                ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
-                RolePolicyRule(resources=[custom_resource("agentplane.allegedly.works", resource) for resource in (
-                    "egresspolicies", "egressbindings", "egresscredentials", "actionpolicysets", "actionpolicybindings",
-                )], verbs=["get", "list", "watch"]),
+                RolePolicyRule(
+                    resources=[
+                        custom_resource("agentplane.allegedly.works", resource)
+                        for resource in (
+                            "egresspolicies",
+                            "egressbindings",
+                            "egresscredentials",
+                            "actionpolicysets",
+                            "actionpolicybindings",
+                        )
+                    ],
+                    verbs=["get", "list", "watch"],
+                ),
             ],
         )
-        RoleBinding(self, "rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role).add_subjects(app_service_account)
+        RoleBinding(
+            self, "rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role
+        ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
@@ -285,19 +306,33 @@ class App(Construct):
         )
         config.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
         # A rotating, audience-scoped workload token, separate from the API-server token.
-        ApiObject.of(deployment).add_json_patch(JsonPatch.add(
-            "/spec/template/spec/volumes/-",
-            k8s.Volume(name="sandbox-service-token", projected=k8s.ProjectedVolumeSource(sources=[
-                k8s.VolumeProjection(service_account_token=k8s.ServiceAccountTokenProjection(
-                    audience=sandbox_service.TOKEN_AUDIENCE, expiration_seconds=3600, path="token",
-                )),
-            ])),
-        ))
-        ApiObject.of(deployment).add_json_patch(JsonPatch.add(
-            "/spec/template/spec/containers/0/volumeMounts/-",
-            k8s.VolumeMount(name="sandbox-service-token", mount_path="/var/run/secrets/agentplane-sandbox-service", read_only=True),
-        ))
-
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/volumes/-",
+                k8s.Volume(
+                    name="sandbox-service-token",
+                    projected=k8s.ProjectedVolumeSource(
+                        sources=[
+                            k8s.VolumeProjection(
+                                service_account_token=k8s.ServiceAccountTokenProjection(
+                                    audience=sandbox_service.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
+                                )
+                            )
+                        ]
+                    ),
+                ),
+            )
+        )
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(
+                    name="sandbox-service-token",
+                    mount_path="/var/run/secrets/agentplane-sandbox-service",
+                    read_only=True,
+                ),
+            )
+        )
 
         # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
         # carries no control-plane toleration.

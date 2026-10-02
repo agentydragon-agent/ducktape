@@ -24,26 +24,41 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     assert f"--sandbox-service-target={target.fqdn}:{target.pod_port}" in container["args"]
     assert not any(arg.startswith("--runner-port") for arg in container["args"])
     token = one(volume for volume in application["volumes"] if volume["name"] == "sandbox-service-token")
-    assert token["projected"]["sources"] == [{"serviceAccountToken": {
-        "audience": sandbox_service.TOKEN_AUDIENCE, "expirationSeconds": 3600, "path": "token",
-    }}]
+    assert token["projected"]["sources"] == [
+        {
+            "serviceAccountToken": {
+                "audience": sandbox_service.TOKEN_AUDIENCE,
+                "expirationSeconds": 3600,
+                "path": "token",
+            }
+        }
+    ]
     assert one(mount for mount in container["volumeMounts"] if mount["name"] == "sandbox-service-token")["readOnly"]
     service_pod = resource("Deployment", sandbox_service.NAME)["spec"]["template"]["spec"]
     assert service_pod["serviceAccountName"] == sandbox_service.NAME
     assert all("persistentVolumeClaim" not in volume for volume in service_pod.get("volumes", []))
-    assert not service_pod.get("initContainers"), "the independent service must not migrate or depend on the app database"
+    assert not service_pod.get("initContainers"), (
+        "the independent service must not migrate or depend on the app database"
+    )
     for rule in resource("Role", app.NAME)["rules"]:
         assert set(rule["verbs"]) <= {"get", "list", "watch"}
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
     assert backend_config["enable_provisioning"]
     assert backend_config["manager_accounts"] == [{"namespace": namespace, "name": app.NAME}]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
-    assert runner_policy["ingress"] == [{
-        "fromEndpoints": [{"matchLabels": target.pods.cilium}],
-        "toPorts": [{"ports": [{"port": "7000", "protocol": "TCP"}]}],
-    }]
+    assert runner_policy["ingress"] == [
+        {
+            "fromEndpoints": [{"matchLabels": target.pods.cilium}],
+            "toPorts": [{"ports": [{"port": "7000", "protocol": "TCP"}]}],
+        }
+    ]
     application_egress = resource("CiliumNetworkPolicy", app.NAME)["spec"]["egress"]
-    assert not any(port["port"] == "7000" for rule in application_egress for ports in rule.get("toPorts", []) for port in ports["ports"])
+    assert not any(
+        port["port"] == "7000"
+        for rule in application_egress
+        for ports in rule.get("toPorts", [])
+        for port in ports["ports"]
+    )
 
 
 if __name__ == "__main__":

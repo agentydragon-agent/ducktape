@@ -91,7 +91,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
     except DestinationDeniedError:
         await context.abort(grpc.StatusCode.PERMISSION_DENIED, "destination access denied")
-    except (SandboxNotFoundError, BindingNotFoundError):
+    except SandboxNotFoundError, BindingNotFoundError:
         await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
@@ -232,9 +232,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             return protocol_pb2.GrantEgressResponse(binding_name=binding.name)
 
     @override
-    async def RevokeEgress(
-        self, request: protocol_pb2.RevokeEgressRequest, context: grpc.aio.ServicerContext
-    ) -> Empty:
+    async def RevokeEgress(self, request: protocol_pb2.RevokeEgressRequest, context: grpc.aio.ServicerContext) -> Empty:
         async with self.request(context) as principal:
             provisioning = self.resources.administrator(principal)
             if not request.binding_name:

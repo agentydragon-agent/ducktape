@@ -213,5 +213,21 @@ async def test_authorization_precedes_creation(api: SandboxServiceClient, cluste
     assert not await case.service.inventory.list_sandboxes()
 
 
+async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServiceClient, case: Case) -> None:
+    view = await api.create(NewSandbox(slug="test", template=TEMPLATE))
+    name = await api.grant_egress(view, ["test-basic"])
+    assert name in {binding.name for binding in await case.service.egress.bindings_for(view.service_account)}
+    await api.revoke_egress(name)
+    assert name not in {binding.name for binding in await case.service.egress.bindings_for(view.service_account)}
+    with pytest.raises(ServiceError) as missing:
+        await api.revoke_egress(name)
+    assert missing.value.code is grpc.StatusCode.NOT_FOUND
+    stale = view.model_copy(update={"uid": uuid4()})
+    before = dict(case.custom.objects)
+    with pytest.raises(RunnerError):
+        await api.grant_egress(stale, ["test-basic"])
+    assert case.custom.objects == before
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

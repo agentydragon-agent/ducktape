@@ -23,8 +23,8 @@ from agentplane.app.database_updates import Channel, notify
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerError, StreamClosedError
-from agentplane.sandbox_service.session_access import SessionAttachment, Sessions
 from agentplane.sandbox_service.inventory import SandboxNotFoundError
+from agentplane.sandbox_service.session_access import SessionAttachment, Sessions
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -300,7 +300,13 @@ class Ingester:
                         )
                         feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
                         self._feeds[key] = feed
-                except grpc.aio.AioRpcError, ConnectionError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError:
+                except (
+                    grpc.aio.AioRpcError,
+                    ConnectionError,
+                    SandboxNotReachableError,
+                    SandboxNotFoundError,
+                    TimeoutError,
+                ):
                     logger.warning("sandbox %s ingestion discovery unavailable", sandbox, exc_info=True)
         except SQLAlchemyError, OSError, TimeoutError:
             logger.warning("sandbox %s ingestion reconciliation failed; will retry", sandbox, exc_info=True)

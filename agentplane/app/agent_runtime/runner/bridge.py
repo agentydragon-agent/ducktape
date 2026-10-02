@@ -29,7 +29,9 @@ COMMAND_ADMISSION_S = 15
 ADMISSION_REREAD_S = 2
 
 
-async def ready_sandbox_for_session(inventory: SandboxInventory | SandboxServiceClient, name: str) -> SandboxView | None:
+async def ready_sandbox_for_session(
+    inventory: SandboxInventory | SandboxServiceClient, name: str
+) -> SandboxView | None:
     """Return an existing Sandbox only after its selected Kubernetes grants are provisioned.
 
     A missing inventory row preserves the concrete-spec runner path. Sandboxes without selected
@@ -84,7 +86,11 @@ class RunnerBridge:
         return await self._runners.client(sandbox).list_sessions()
 
     async def open_session(
-        self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec | dict[str, object], setup_script: str | None = None
+        self,
+        sandbox: str,
+        session_id: str,
+        spec: protocol_pb2.SessionSpec | dict[str, object],
+        setup_script: str | None = None,
     ) -> protocol_pb2.Attached:
         existing = await self._event_logs.find(sandbox, session_id)
         if existing is not None:
@@ -96,7 +102,9 @@ class RunnerBridge:
         )
         return await self._archive_open(sandbox, session_id, attached)
 
-    async def _archive_open(self, sandbox: str, session_id: str, attached: protocol_pb2.Attached) -> protocol_pb2.Attached:
+    async def _archive_open(
+        self, sandbox: str, session_id: str, attached: protocol_pb2.Attached
+    ) -> protocol_pb2.Attached:
         thread_id = await self._event_logs.open(sandbox, session_id, attached.spec)
         await self._ingester.start()
         # In particular, do not return a resumed session while the database still says its

@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-
 import asyncio
 
 from google.protobuf.json_format import ParseDict
-from agentplane.protocol import command_pb2, event_log_pb2
-from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.command_relay import admit_running_command
-from agentplane.sandbox_service.session_lifecycle import resume_session
+
 from agentplane.app.agent_runtime.runner.runners import SandboxNotReachableError
 from agentplane.app.changes import Changes
 from agentplane.app.live import LiveIndex
+from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
+from agentplane.sandbox_service.command_relay import admit_running_command
 from agentplane.sandbox_service.inventory import ProvisioningState, SandboxNotFoundError
-
+from agentplane.sandbox_service.session_lifecycle import resume_session
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -52,8 +51,12 @@ class Runners:
 class NativeSessions(RunnerClient):
     """Transport double for app archive/replication tests, not a production access path."""
 
-    async def open(self, session_id: str, spec: dict[str, object], setup_script: str | None = None) -> protocol_pb2.Attached:
-        attachment = await self.attach(session_id, spec=ParseDict(spec, protocol_pb2.SessionSpec()), setup_script=setup_script)
+    async def open(
+        self, session_id: str, spec: dict[str, object], setup_script: str | None = None
+    ) -> protocol_pb2.Attached:
+        attachment = await self.attach(
+            session_id, spec=ParseDict(spec, protocol_pb2.SessionSpec()), setup_script=setup_script
+        )
         try:
             return attachment.attached
         finally:
@@ -62,5 +65,7 @@ class NativeSessions(RunnerClient):
     async def resume(self, session_id: str) -> protocol_pb2.Attached:
         return await resume_session(self, session_id)
 
-    async def command(self, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> event_log_pb2.EventEntry:
+    async def command(
+        self, session_id: str, command: command_pb2.Command, *, after_cursor: int
+    ) -> event_log_pb2.EventEntry:
         return await admit_running_command(self, session_id, command, after_cursor=after_cursor, timeout_s=15)

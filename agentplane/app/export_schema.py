@@ -29,8 +29,8 @@ from agentplane.app.decisions import DecisionsClient
 from agentplane.app.electric import ThreadScopeResponse
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.session_config import Harness
 
 

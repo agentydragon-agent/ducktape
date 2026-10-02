@@ -27,7 +27,6 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
-
 CONFIG_FILE_ENV = "AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE"
 
 
@@ -60,7 +59,6 @@ class Settings(BaseSettings):
 
     def __init__(self, **values: Any) -> None:
         super().__init__(**values)
-
 
     @classmethod
     def settings_customise_sources(

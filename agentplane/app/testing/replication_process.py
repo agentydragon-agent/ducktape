@@ -34,11 +34,9 @@ from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.testing.native_runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption
-from agentplane.app.testing.app_factory import create_app
 from agentplane.app.conftest import TEST_REASONING_EFFORTS
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
@@ -47,6 +45,8 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.testing.app_factory import create_app
+from agentplane.app.testing.native_runners import Runners
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.protocol import event_log_pb2
 from agentplane.sandbox_service.egress import EgressInventory

@@ -25,13 +25,13 @@ from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption
-from agentplane.app.testing.app_factory import create_app
 from agentplane.app.conftest import TEST_REASONING_EFFORTS, Replica
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, request_session
+from agentplane.app.testing.app_factory import create_app
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.session_config import Harness

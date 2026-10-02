@@ -1,10 +1,10 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image")
-load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -632,4 +632,15 @@ oci_image(
     ],
     user = "1000:1000",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "session_access",
+    srcs = ["session_access.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+    ],
 )

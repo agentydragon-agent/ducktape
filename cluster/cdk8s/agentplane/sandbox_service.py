@@ -4,9 +4,22 @@ from typing import cast
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    ApiResource, ContainerResources, ContainerSecurityContextProps, Cpu, CpuResources,
-    Deployment, IApiResource, ImagePullPolicy, MemoryResources, PodSecurityContextProps,
-    Role, RoleBinding, RolePolicyRule, Service, ServiceAccount, k8s,
+    ApiResource,
+    ContainerResources,
+    ContainerSecurityContextProps,
+    Cpu,
+    CpuResources,
+    Deployment,
+    IApiResource,
+    ImagePullPolicy,
+    MemoryResources,
+    PodSecurityContextProps,
+    Role,
+    RoleBinding,
+    RolePolicyRule,
+    Service,
+    ServiceAccount,
+    k8s,
 )
 from constructs import Construct
 
@@ -31,21 +44,28 @@ _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-service"
 
 
 def service(namespace: str) -> ServiceRef:
-    return ServiceRef(name=NAME, port=Port(name="grpc", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())))
+    return ServiceRef(
+        name=NAME, port=Port(name="grpc", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+    )
 
 
 class SandboxService(Construct):
-    def __init__(self, scope: Construct, id: str, env: Environment, *, manager: ServiceAccountRef, caller: ServiceRef) -> None:
+    def __init__(
+        self, scope: Construct, id: str, env: Environment, *, manager: ServiceAccountRef, caller: ServiceRef
+    ) -> None:
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
-        account = ServiceAccount(self, "account", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True)
+        account = ServiceAccount(
+            self, "account", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
+        )
         self._add_rbac(account)
         settings = Settings(
             _cli_parse_args=False,
             sandbox_namespace=env.namespace,
             allowed_service_account_namespaces=frozenset({env.namespace}),
-            trusted_accounts=frozenset({manager}), manager_accounts=frozenset({manager}),
+            trusted_accounts=frozenset({manager}),
+            manager_accounts=frozenset({manager}),
             token_audience=TOKEN_AUDIENCE,
             enable_provisioning=True,
             agent_instructions=env.app_config.agent_instructions,
@@ -56,30 +76,74 @@ class SandboxService(Construct):
             kubernetes_binding_cleanup_namespaces=set(env.app_config.kubernetes_binding_cleanup_namespaces),
             kubernetes_cluster_binding_cleanup=env.app_config.kubernetes_cluster_binding_cleanup,
         )
-        config = SettingsFile(self, "config", metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace), model=Settings,
-            content=settings.model_dump(mode="json", exclude_none=True), path="/etc/agentplane-sandbox-service/config.yaml")
-        deployment = Deployment(self, "deployment", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS), replicas=env.replicas.count, strategy=env.replicas.strategy,
-            min_ready=env.replicas.min_ready, termination_grace_period=Duration.seconds(60),
-            service_account=account, automount_service_account_token=True,
+        config = SettingsFile(
+            self,
+            "config",
+            metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
+            model=Settings,
+            content=settings.model_dump(mode="json", exclude_none=True),
+            path="/etc/agentplane-sandbox-service/config.yaml",
+        )
+        deployment = Deployment(
+            self,
+            "deployment",
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
+            pod_metadata=ApiObjectMetadata(labels=_LABELS),
+            replicas=env.replicas.count,
+            strategy=env.replicas.strategy,
+            min_ready=env.replicas.min_ready,
+            termination_grace_period=Duration.seconds(60),
+            service_account=account,
+            automount_service_account_token=True,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000))
-        container = deployment.add_container(name="sandbox-service", image=f"{_IMAGE}:unset", image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
+            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
+        )
+        container = deployment.add_container(
+            name="sandbox-service",
+            image=f"{_IMAGE}:unset",
+            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             ports=[endpoint.port.container_port(), Port(name="health", number=settings.health_port).container_port()],
             readiness=http_probe("/healthz", port=settings.health_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=settings.health_port, initial_delay_seconds=20, period_seconds=30),
-            resources=ContainerResources(cpu=CpuResources(request=Cpu.millis(50)), memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512))),
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False))
+            resources=ContainerResources(
+                cpu=CpuResources(request=Cpu.millis(50)),
+                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+            ),
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+        )
         config.mount_into(container, env=CONFIG_FILE_ENV)
         pod_policy.place(deployment, node_scheduling.HIL_OVH)
         pod_policy.harden(deployment)
-        Service(self, "service", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS), selector=deployment, ports=[endpoint.port.service_port()])
-        NetworkPolicy(self, "network-policy", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), endpoint_selector=endpoint.pods.selector,
+        Service(
+            self,
+            "service",
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
+            selector=deployment,
+            ports=[endpoint.port.service_port()],
+        )
+        NetworkPolicy(
+            self,
+            "network-policy",
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            endpoint_selector=endpoint.pods.selector,
             ingress=[caller.pods.admit(endpoint.pod_port)],
-            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER),
-                EgressRule.to_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-runner"), settings.runner_port)])
+            egress=[
+                cilium.dns_egress(),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
+                EgressRule.to_endpoints(
+                    cilium.endpoint_labels(env.namespace, "agentplane-runner"), settings.runner_port
+                ),
+            ],
+        )
         if env.replicas.pdb_min_available is not None:
-            add_pod_disruption_budget(self, "pdb", name=NAME, namespace=env.namespace, min_available=env.replicas.pdb_min_available, selector=_LABELS)
+            add_pod_disruption_budget(
+                self,
+                "pdb",
+                name=NAME,
+                namespace=env.namespace,
+                min_available=env.replicas.pdb_min_available,
+                selector=_LABELS,
+            )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
@@ -226,4 +290,3 @@ class SandboxService(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             role=Role.from_role_name(self, "role-ref", NAME),
         ).add_subjects(service_account)
-

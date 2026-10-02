@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import replace
 import socket
 from collections.abc import AsyncIterator, Iterator
+from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any, cast
@@ -23,12 +23,10 @@ from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.agent_runtime.events.event_log import EventLogStore
 from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
 from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.testing.native_runners import Runners
 from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
 from agentplane.app.api import ModelCatalog, ModelOption, upstream_http_error
-from agentplane.app.testing.app_factory import create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -37,7 +35,9 @@ from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, r
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.testing.app_factory import create_app
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
+from agentplane.app.testing.native_runners import Runners
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.unanswering_runner import UnansweringRunner
@@ -357,7 +357,11 @@ def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_acc
         read_namespaced_role_binding=AsyncMock(side_effect=k8s_client.ApiException(status=404)),
         create_namespaced_role_binding=AsyncMock(),
     )
-    app.state.provisioner = replace(app.state.provisioner, grants=app.state.kubernetes_grants, bindings=KubernetesBindings(inventory, cast(Any, rbac)))
+    app.state.provisioner = replace(
+        app.state.provisioner,
+        grants=app.state.kubernetes_grants,
+        bindings=KubernetesBindings(inventory, cast(Any, rbac)),
+    )
     app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
     try:
         response = client.post(

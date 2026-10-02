@@ -16,12 +16,7 @@ import uvicorn
 from fastapi import Response
 from fastapi.staticfiles import StaticFiles
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from kubernetes_asyncio.client import (
-    ApiClient,
-    AuthenticationV1Api,
-    CoreV1Api,
-    CustomObjectsApi,
-)
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -43,8 +38,8 @@ from agentplane.app.api import ModelCatalog, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.electric import ElectricProxy
 from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
@@ -52,9 +47,9 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
-from agentplane.sandbox_service.client import SandboxServiceClient
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 
@@ -287,9 +282,7 @@ async def async_main(settings: Settings) -> None:
             namespace=settings.sandbox_namespace,
             token_file=settings.sandbox_service_token_file,
         )
-        egress = EgressAccess(
-            EgressInventory(namespace=settings.namespace, custom_objects=custom_objects), inventory
-        )
+        egress = EgressAccess(EgressInventory(namespace=settings.namespace, custom_objects=custom_objects), inventory)
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.
         action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
@@ -346,10 +339,7 @@ async def async_main(settings: Settings) -> None:
                 if settings.electric_url is not None
                 else None
             ),
-            presets=PresetCatalog(
-                sandboxes=settings.sandbox_presets,
-                threads=settings.thread_presets,
-            ),
+            presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
             kubernetes_grants=settings.kubernetes_grants,
             provisioner=inventory,
             event_logs=event_logs,

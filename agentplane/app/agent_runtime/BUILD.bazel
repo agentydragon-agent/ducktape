@@ -27,6 +27,7 @@ py_library(
         "//agentplane/runner:client",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:session_access",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
