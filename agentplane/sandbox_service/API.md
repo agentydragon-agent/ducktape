@@ -1,9 +1,45 @@
-# Sandbox Service session API
+# Sandbox Service API
 
-The standalone API exposes existing-session access and explicit bootstrap/open/resume.
-It does not yet expose Sandbox provisioning, migrate app callers to HTTP, or start a
-second provisioning/ingestion process. All operations require a currently running runner;
-none provision or wake a Sandbox.
+## Agreed contract: protobuf/gRPC
+
+**Implementation status:** the HTTP adapter documented below is transitional. The gRPC conversion
+and app client cutover are not complete. Do not treat the HTTP routes as a second supported long-term
+API. The [extraction plan](../plans/sandbox_service.md#transport-decision) records the transport decision.
+
+The service will expose unary RPCs for inventory, explicit sandbox lifecycle, session inspection/
+management, and command admission; session following will be server-streaming. Reuse the common
+runner protobuf types for commands, snapshots, specs, events, and cursors. Inventory and provisioning
+requests/responses also need typed protobuf messages, not generic JSON envelopes. This is a
+service-level API, not a transparent proxy for the runner's bidirectional `Attach` RPC.
+
+- Each session RPC carries an explicit owner, sandbox name and UID, and session ID. Sandbox-level
+  operations omit the session ID. The service resolves endpoints internally.
+- Authenticate workload bearers in `authorization` metadata with the shared principal resolver.
+  Apply the same destination, cross-owner, and management authorization as the transitional adapter.
+- Command submission returns the original matching native `CommandAdmitted` event entry, not a new
+  service-authored receipt. Admission does not mean harness consumption or command completion.
+- Following begins with a snapshot and then original event entries. Preserve source identity and
+  per-reader replay cursors. Distinguish native stream closure, lease expiry, and backend failure;
+  a transport disconnect alone says nothing about whether the session ended.
+- Use gRPC deadlines/cancellation and standard status codes. Reconnect bounded follow leases with
+  the last fully consumed cursor, rechecking identity and destination. Cancel runner attachments on
+  every exit, including stalled or disconnected consumers.
+- Do not automatically retry mutations. A timeout/unavailable response may follow commitment;
+  reconcile command submission using its unchanged ID/payload and runner evidence. Sandbox creation
+  is not currently idempotent; an uncertain create needs inventory reconciliation, not blind retry.
+
+The app keeps its browser HTTP API. HTTP health probes can remain. This choice does not require
+agent-facing subscription tools to use gRPC or introduce fine-grained RBAC inside the runner.
+
+The service exposes logs retained by the runner on its state volume, with no additional archive.
+Clients needing independent retention archive events themselves. The app keeps its current PostgreSQL
+archive and consumes runner events through this service after cutover.
+
+## Transitional HTTP implementation
+
+The current standalone adapter exposes existing-session access and explicit bootstrap/open/resume.
+An optional provisioning router also exposes Sandbox inventory and lifecycle operations. The session
+operations described below require a currently running runner; they do not provision or wake a Sandbox.
 
 ## Identity and destinations
 

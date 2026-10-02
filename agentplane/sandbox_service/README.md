@@ -33,9 +33,9 @@ these implementations. UI preset catalogs remain app-owned and are not interpret
 by this package. Existing annotation keys, field/class names, defaults, ServiceAccount
 creation, PVC policy, and provisioning behavior are unchanged.
 
-The app still orchestrates grant reconciliation and policy binding, and still calls
-these Python components in-process. Moving that orchestration and switching callers
-to a separately deployed API are subsequent cuts, not accomplished by this move.
+`provisioning.py` owns recoverable grant orchestration and policy binding, with pending launch
+intent stored on the Sandbox. Switching production callers and reconciler ownership to the
+separately deployed service is still in progress; the package extraction alone is not a cutover.
 
 ## Session API
 
@@ -44,15 +44,21 @@ SA-authorized, UID-pinned destinations inside the configured Kubernetes inventor
 inspects, commands, or follows existing runner sessions. Separately authorized explicit
 management routes list sessions, bootstrap, open, and resume using runner-retained specs.
 The backend owns launch instructions and concrete defaults; no UI preset lookup is needed.
-Read/command/follow never start sessions, and no route wakes a Sandbox. Read/follow availability is explicitly limited to the surviving runner log.
+Read/command/follow never start sessions. Separate explicit Sandbox lifecycle operations can resume
+a Sandbox. Read/follow availability is limited to the surviving runner log.
 
 ## Still to extract
 
-This is **not yet a deployed service or an app HTTP cutover**. The low-level relay still
-requires an already selected/authorized client; the API provides that boundary. Remote
-Sandbox provisioning/lifecycle orchestration, app HTTP callers, shared fan-out,
-and archive-ownership migration remain in the [extraction plan](../plans/sandbox_service.md). Notifications must not
-work around these gaps by depending on the app.
+This is **not yet a deployed service or a completed app cutover**. The agreed service API is
+protobuf/gRPC; the current HTTP adapter is transitional and will be replaced, not maintained as a
+parallel API. The low-level relay still requires an already selected/authorized client; the service
+API provides that boundary. Transport conversion, app callers, and deployment/authority handoff remain
+in the [extraction plan](../plans/sandbox_service.md). Notifications must not work around these gaps
+by depending on the app.
+
+The service will not own a session-log archive. Runner logs are durable on the state volume; clients
+needing independent retention must archive events themselves. The app keeps its existing PostgreSQL
+archive and checkpoints. Archive migration is not a required follow-up.
 
 TODO: proper runner RPC authentication/TLS. The planned v1 service-to-runner connection
 reuses the current network trust boundary; this helper does not confer identity or

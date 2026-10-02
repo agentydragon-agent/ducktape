@@ -41,14 +41,14 @@ presentation state and projections, but those must not become hidden sources of 
 ## Ownership
 
 - **Sandbox Service:** sandbox provisioning/lifecycle, verified destination bindings, authorized
-  runner-session access, command relay/event following, and backend archive ownership as extracted.
+  runner-session access, and command relay/event following. It does not own a session-log archive.
 - **Runner:** native harness scheduling/execution, durable command journal, canonical execution Events
   and causal receipts.
 - **Notification service:** providers, subscriptions, persisted payloads, inbox HWM, notice policy, and
   notice delivery bookkeeping.
 - **Action Service:** Action authorization/Decisions, execution lifecycle, and canonical Action history.
 - **Integration app:** user-facing composition, interaction, presentation, and app-only projections/state;
-  a client of the above.
+  a client of the above, retaining its existing PostgreSQL session archive and ingestion checkpoints.
 
 The proposed backend name is **Sandbox Service**: it manages sandboxes and access to their runner
 sessions. It is not another Action executor or a service called "runtime" with unspecified ownership.
@@ -66,10 +66,16 @@ extracted. Notification-triggered wake and durable acceptance of commands for of
 remain separate, deferred product features. A service boundary is not permission to silently create
 a second runner-command queue.
 
-Decide ownership of the existing app event archive/ingestion during extraction. Data required by backend
-consumers must move to a backend owner, preserving retained history and provenance; do not build an
-independent competing archive or query app tables from the new service. Pure UI projections can remain
-in the app. Product Thread identity/annotations need not move wholesale for runner-session-scoped v1.
+Runner journals remain durable on runner state volumes. Sandbox Service exposes the surviving
+runner log, not an independently retained archive; clients needing retention beyond that volume
+must archive events themselves. The app keeps its existing archive/projections as a service client.
+That archive must not become a dependency of backend services, and migrating it is not a required
+follow-up. Preserve its retained history and provenance during the app cutover.
+
+Sandbox Service uses a protobuf/gRPC service API; the app retains its browser-facing HTTP API.
+After cutover, Sandbox Service is the sole normal production client of runner control/event RPCs.
+This boundary does not proxy runner outbound model, Actions, or egress traffic. Administrative/test
+exceptions must be explicit; there is no production direct-runner fallback in the app or notifications.
 
 ## Review and acceptance gates
 
