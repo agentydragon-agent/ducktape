@@ -68,11 +68,9 @@ py_library(
     srcs = ["inventory.py"],
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
-        ":kubernetes_grants",
         ":kubernetes_views",
         ":models",
         ":session_config",
-        "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
         "//util:agent_sandbox",
         "//util:kubernetes",

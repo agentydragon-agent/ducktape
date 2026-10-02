@@ -337,7 +337,10 @@ def test_kubernetes_grant_picker_requires_an_approved_name_and_operator(
 
 
 def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_account(
-    client: TestClient, sandbox_grants: dict[str, KubernetesGrant], sandbox_rbac: FakeRbac, custom_objects: FakeCustomObjectsApi
+    client: TestClient,
+    sandbox_grants: dict[str, KubernetesGrant],
+    sandbox_rbac: FakeRbac,
+    custom_objects: FakeCustomObjectsApi,
 ) -> None:
     app = cast(Any, client.app)
     app.state.kubernetes_grants = {
