@@ -5,6 +5,8 @@
 
 mod ast_assertions;
 mod fixture_spec;
+mod graph_fixture;
+pub use graph_fixture::GraphFixture;
 
 pub use ast_assertions::{
     VariableDeclarationKind, VariableInitializerKind, assert_export_named_specifiers,
@@ -883,21 +885,6 @@ pub fn graph_with_merge_cycle_potential() -> String {
         ],
     )
     .to_string()
-}
-
-/// Write [`graph_with_atomic_unit`] plus a single module co-locating `alpha`
-/// and `beta`, returning `(modules_dir, owner_graph_path)`.
-pub fn write_atomic_unit_fixture(root: &Path) -> (PathBuf, PathBuf) {
-    let modules = root.join("modules");
-    let graph = root.join("owner_graph.json");
-    write_text_file(&graph, &graph_with_atomic_unit());
-    // Pre-edit: alpha + beta co-located in one module — atom
-    // respected, realizable.
-    write_text_file(
-        &modules.join("home/atom.yaml"),
-        "members:\n  - selector: { binding: { name: alpha } }\n  - selector: { binding: { name: beta } }\n",
-    );
-    (modules, graph)
 }
 
 pub fn write_yaml_file<T: Serialize + ?Sized>(path: &Path, value: &T) {

@@ -1,244 +1,69 @@
-//! End-to-end coverage of the realizability gate hookup in
-//! `debundle bindings assign` — atom-split detection and the
-//! dry-run / non-dry-run exit-code consistency contract.
-//!
-//! Shells out to the built `debundle` binary against synthetic
-//! `owner_graph.json` fixtures so the gate's path through CLI args +
-//! validation + diagnostic rendering is exercised end-to-end.
-//!
-//! Each fixture pre-declares the destination claims in
-//! `OwnerGraphNodeReport.destination` so reconstructing the
-//! pre-edit partition is unambiguous; the spec YAMLs we write under
-//! `--modules` carry the same module-vs-binding assignments. The
-//! gate's reconstruction joins YAML members → owners by binding
-//! name, matching `gate_post_edit_partition`'s wire contract.
+//! Real JS/spec workflows for assignment validation and atomic edits.
 
-use debundle_e2e_support::{
-    graph_with_acyclic_cross_module_read, run_debundle, write_atomic_unit_fixture, write_text_file,
-};
+use debundle_e2e_support::{GraphFixture, run_debundle};
 use std::fs;
 
-/// Synthetic owner graph where alpha (owner:0) and beta (owner:1)
-/// form an atomic unit via a mutual `eager_rebind` edge. Per
-/// `atomic_units.rs`'s closure rules, `EagerRebind` adds edges in
-/// both directions to G_atomic, so the resulting SCC is `{alpha,
-/// beta}` — they MUST co-locate in any realizable spec.
-///
-/// Pre-edit: both members live in `home/atom.yaml` → one module,
-/// atom respected, realizable. A `bindings assign` that moves only
-/// `alpha` to a different module would split the atom; the gate
-/// must reject before any YAML is written.
-/// Synthetic owner graph with one acyclic cross-module read so a
-/// `bindings assign` between two existing modules is realizable.
-/// Used as the positive control.
 #[test]
-fn bindings_assign_rejects_split_of_known_atomic_unit() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (modules, graph) = write_atomic_unit_fixture(root);
-    let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
-
-    let out = run_debundle(&[
-        "bindings",
-        "assign",
-        "--modules",
-        modules.to_str().unwrap(),
-        "--graph",
-        graph.to_str().unwrap(),
-        "alpha:dogfood/split",
-    ]);
-    assert!(
-        !out.status.success(),
-        "expected non-zero exit; stdout: {}; stderr: {}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
+fn bindings_assign_rejects_atom_split_in_both_modes_without_writes() {
+    GraphFixture::atomic_pair().assert_rejected_unchanged(
+        &["bindings", "assign", "alpha:dogfood/split"],
+        &["splits one or more atomic units"],
     );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("splits one or more atomic units") || stderr.contains("atom-split"),
-        "expected atom-split diagnostic, got stderr:\n{stderr}",
-    );
-    // Spec must NOT have been touched.
-    assert_eq!(
-        fs::read_to_string(modules.join("home/atom.yaml")).unwrap(),
-        pre_atom,
-        "atom.yaml must be unchanged after rejection",
-    );
-    assert!(
-        !modules.join("dogfood/split.yaml").exists(),
-        "destination must not have been created",
-    );
-}
-
-#[test]
-fn bindings_assign_rejects_split_under_dry_run_too() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (modules, graph) = write_atomic_unit_fixture(root);
-    let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
-
-    let out = run_debundle(&[
-        "bindings",
-        "assign",
-        "--modules",
-        modules.to_str().unwrap(),
-        "--graph",
-        graph.to_str().unwrap(),
-        "--dry-run",
-        "alpha:dogfood/split",
-    ]);
-    assert!(
-        !out.status.success(),
-        "dry-run on an atom-splitting plan must still exit non-zero; stdout: {}; stderr: {}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
-    assert_eq!(
-        fs::read_to_string(modules.join("home/atom.yaml")).unwrap(),
-        pre_atom,
-    );
-}
-
-#[test]
-fn bindings_assign_dry_run_and_apply_share_exit_code() {
-    // `--dry-run` and non-dry-run on the same input must return the same
-    // exit code. The atom-split fixture is a
-    // clean way to assert this — both should bail with exit 1.
-    let dir_dry = tempfile::tempdir().unwrap();
-    let (modules_dry, graph_dry) = write_atomic_unit_fixture(dir_dry.path());
-    let dry = run_debundle(&[
-        "bindings",
-        "assign",
-        "--modules",
-        modules_dry.to_str().unwrap(),
-        "--graph",
-        graph_dry.to_str().unwrap(),
-        "--dry-run",
-        "alpha:dogfood/split",
-    ]);
-
-    let dir_apply = tempfile::tempdir().unwrap();
-    let (modules_apply, graph_apply) = write_atomic_unit_fixture(dir_apply.path());
-    let apply = run_debundle(&[
-        "bindings",
-        "assign",
-        "--modules",
-        modules_apply.to_str().unwrap(),
-        "--graph",
-        graph_apply.to_str().unwrap(),
-        "alpha:dogfood/split",
-    ]);
-
-    assert_eq!(
-        dry.status.code(),
-        apply.status.code(),
-        "dry-run and apply must return the same exit code on the same input.\n\
-         dry stderr: {}\napply stderr: {}",
-        String::from_utf8_lossy(&dry.stderr),
-        String::from_utf8_lossy(&apply.stderr),
-    );
-    assert!(!dry.status.success() && !apply.status.success());
 }
 
 #[test]
 fn bindings_assign_accepts_acyclic_cross_module_move() {
-    // Positive control: an assign that doesn't split any atomic
-    // unit nor introduce a cycle is accepted and writes the YAML.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let modules = root.join("modules");
-    let graph = root.join("owner_graph.json");
-    write_text_file(&graph, &graph_with_acyclic_cross_module_read());
-    write_text_file(
-        &modules.join("a.yaml"),
-        "members:\n  - selector: { binding: { name: alpha } }\n",
-    );
-    write_text_file(
-        &modules.join("b.yaml"),
-        "members:\n  - selector: { binding: { name: beta } }\n",
-    );
-
-    // Move beta into module `c`. The post-edit partition is
-    // `a → c` (DAG) — no cycle, no atomic-unit conflict.
-    let out = run_debundle(&[
-        "bindings",
-        "assign",
-        "--modules",
-        modules.to_str().unwrap(),
-        "--graph",
-        graph.to_str().unwrap(),
-        "beta:c",
-    ]);
+    let fixture = GraphFixture::acyclic_pair();
+    fixture.assert_success(&["bindings", "assign", "beta:c"]);
+    assert!(fixture.modules.join("c.yaml").exists());
     assert!(
-        out.status.success(),
-        "expected zero exit; stderr: {}",
-        String::from_utf8_lossy(&out.stderr),
+        !fixture.modules.join("b.yaml").exists(),
+        "drained source must be deleted"
     );
-    assert!(modules.join("c.yaml").exists(), "c.yaml must be written");
-    assert!(
-        !modules.join("b.yaml").exists(),
-        "drained b.yaml must be deleted"
-    );
+    fixture.assert_runs("2\n");
 }
 
 #[test]
-fn bindings_assign_requires_graph_or_no_verify() {
-    // Mirrors the policy `modules merge` / `modules delete --force`
-    // already enforce: invoking the verb without a way to validate
-    // is refused up front.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let modules = root.join("modules");
-    write_text_file(
-        &modules.join("a.yaml"),
-        "members:\n  - selector: { binding: { name: alpha } }\n",
-    );
-
-    let out = run_debundle(&[
-        "bindings",
-        "assign",
-        "--modules",
-        modules.to_str().unwrap(),
-        "alpha:b",
-    ]);
-    assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("--graph") || stderr.contains("--no-verify"),
-        "expected refusal mentioning --graph / --no-verify; got: {stderr}",
-    );
+fn bindings_assign_and_unassign_require_graph_or_no_verify() {
+    let fixture = GraphFixture::acyclic_pair();
+    let before = fs::read(fixture.modules.join("a.yaml")).unwrap();
+    for (verb, binding) in [("assign", "alpha:c"), ("unassign", "alpha")] {
+        // Deliberately bypass GraphFixture::command, which supplies --graph.
+        let out = run_debundle(&[
+            "bindings",
+            verb,
+            "--modules",
+            fixture.modules.to_str().unwrap(),
+            binding,
+        ]);
+        assert!(!out.status.success());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("--graph") || stderr.contains("--no-verify"),
+            "{stderr}"
+        );
+        assert_eq!(fs::read(fixture.modules.join("a.yaml")).unwrap(), before);
+        assert!(!fixture.modules.join("c.yaml").exists());
+    }
 }
 
 #[test]
 fn assign_rejects_readable_name_claimed_by_source_match_before_writing() {
-    let dir = tempfile::tempdir().unwrap();
-    let modules = dir.path().join("modules");
-    let graph = dir.path().join("owner_graph.json");
-    let member = "members: [{selector: {binding: {name: alpha}}}]\n";
-    let claim = "source_matches: [{match: 'const beta = alpha;', bindings: [{local: beta, name: Existing}]}]\n";
-    write_text_file(&graph, &graph_with_acyclic_cross_module_read());
-    write_text_file(&modules.join("a.yaml"), member);
-    write_text_file(&modules.join("b.yaml"), claim);
-    for dry_run in [false, true] {
-        let mut args = vec![
-            "bindings",
-            "assign",
-            "--modules",
-            modules.to_str().unwrap(),
-            "--graph",
-            graph.to_str().unwrap(),
-            "alpha:c:Existing",
-        ];
-        if dry_run {
-            args.push("--dry-run");
-        }
-        let out = run_debundle(&args);
-        assert!(!out.status.success());
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(stderr.contains("name collision"), "{stderr}");
-        assert!(stderr.contains("source_matches[0].bindings[0]"), "{stderr}");
-        assert_eq!(fs::read_to_string(modules.join("a.yaml")).unwrap(), member);
-        assert_eq!(fs::read_to_string(modules.join("b.yaml")).unwrap(), claim);
-        assert!(!modules.join("c.yaml").exists());
-    }
+    let fixture = GraphFixture::new(
+        "const alpha = 1;\nconst beta = alpha;\nconsole.log(beta);\n",
+        &[
+            (
+                "a.yaml",
+                "members: [{selector: {binding: {name: alpha}}}]\n",
+            ),
+            (
+                "b.yaml",
+                "source_matches: [{match: 'const beta = alpha;', bindings: [{local: beta, name: Existing}]}]\n",
+            ),
+        ],
+    );
+    fixture.assert_rejected_unchanged(
+        &["bindings", "assign", "alpha:c:Existing"],
+        &["name collision", "source_matches[0].bindings[0]"],
+    );
 }
