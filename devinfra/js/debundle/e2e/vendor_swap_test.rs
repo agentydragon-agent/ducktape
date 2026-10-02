@@ -6,9 +6,10 @@ use debundle_e2e_support::{
     CommandResult, assert_node_output, run_debundler, write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
-use spec::{BundledPartialSwapMark, BundledPartialSwapBundle, BundledPartialSwapPackage,
-    PartialSwapKind, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel,
-    VendorMark, WrapperShape,
+use spec::{
+    BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, PartialSwapKind,
+    PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel, VendorMark,
+    WrapperShape,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -16,7 +17,13 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 fn assert_success(result: &CommandResult) {
-    assert!(result.status.success(), "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}", result.status.code(), result.stdout, result.stderr);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr
+    );
 }
 
 #[test]
@@ -325,8 +332,8 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
     };
     let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = ws.transform_spec(json!({
-            CHUNK_PATH: vendor_mark,
-        }));
+        CHUNK_PATH: vendor_mark,
+    }));
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
@@ -791,8 +798,8 @@ fn run_partial_swap_with_mark(
 
     let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = ws.transform_spec(json!({
-            MEGACHUNK_PATH: vendor_spec,
-        }));
+        MEGACHUNK_PATH: vendor_spec,
+    }));
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, packages);
@@ -1871,15 +1878,33 @@ fn setup_partial_swap_consumer_fixture(
     (ws, package_root)
 }
 
-fn partial_swap_vendor(identity: &str, packages: &[(&str, PartialSwapPackage)], symbols: &[(&str, PartialSwapSymbol)]) -> VendorMark {
-    VendorMark { identity: identity.into(), role: Default::default(), level: VendorLevel::PartialSwap(PartialSwapMark {
-        packages: packages.iter().map(|(name, value)| ((*name).into(), value.clone())).collect(),
-        symbols: symbols.iter().map(|(name, value)| ((*name).into(), value.clone())).collect(),
-    }) }
+fn partial_swap_vendor(
+    identity: &str,
+    packages: &[(&str, PartialSwapPackage)],
+    symbols: &[(&str, PartialSwapSymbol)],
+) -> VendorMark {
+    VendorMark {
+        identity: identity.into(),
+        role: Default::default(),
+        level: VendorLevel::PartialSwap(PartialSwapMark {
+            packages: packages
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+            symbols: symbols
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+        }),
+    }
 }
 
 fn partial_package(version: &str, subpath: &str, namespace: Option<&str>) -> PartialSwapPackage {
-    PartialSwapPackage { version: version.into(), subpath: subpath.into(), namespace: namespace.map(str::to_owned) }
+    PartialSwapPackage {
+        version: version.into(),
+        subpath: subpath.into(),
+        namespace: namespace.map(str::to_owned),
+    }
 }
 
 fn emitted_app_root(fixture: &PartialSwapFixture) -> PathBuf {
@@ -1922,7 +1947,14 @@ fn partial_swap_rewrites_named_kind_reexport_from_consumer() {
         "lib/index.mjs",
         "export const boolean = () => \"UPSTREAM\";\n",
     );
-    let vendor = partial_swap_vendor("named re-export consumer fixture", &[("zod", partial_package("3.23.8", "lib/index.mjs", None))], &[("e6", swap_symbol("zod", PartialSwapKind::Named, Some("boolean"), None))]);
+    let vendor = partial_swap_vendor(
+        "named re-export consumer fixture",
+        &[("zod", partial_package("3.23.8", "lib/index.mjs", None))],
+        &[(
+            "e6",
+            swap_symbol("zod", PartialSwapKind::Named, Some("boolean"), None),
+        )],
+    );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert_success(&fixture.result);
@@ -1967,7 +1999,14 @@ fn partial_swap_rewrites_default_kind_reexport_from_consumer() {
         "dist/clsx.mjs",
         "export default (...args) => args.join(\"+\");\n",
     );
-    let vendor = partial_swap_vendor("default re-export consumer fixture", &[("clsx", partial_package("2.1.1", "dist/clsx.mjs", None))], &[("aQ", swap_symbol("clsx", PartialSwapKind::Default, None, None))]);
+    let vendor = partial_swap_vendor(
+        "default re-export consumer fixture",
+        &[("clsx", partial_package("2.1.1", "dist/clsx.mjs", None))],
+        &[(
+            "aQ",
+            swap_symbol("clsx", PartialSwapKind::Default, None, None),
+        )],
+    );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("clsx", &package_root)]);
 
     assert_success(&fixture.result);
@@ -2004,7 +2043,14 @@ fn partial_swap_rewrites_namespace_kind_reexport_from_consumer() {
         "index.js",
         "export const useState = () => 1;\n",
     );
-    let vendor = partial_swap_vendor("namespace re-export consumer fixture", &[("react", partial_package("18.3.1", "index.js", None))], &[("a", swap_symbol("react", PartialSwapKind::Namespace, None, None))]);
+    let vendor = partial_swap_vendor(
+        "namespace re-export consumer fixture",
+        &[("react", partial_package("18.3.1", "index.js", None))],
+        &[(
+            "a",
+            swap_symbol("react", PartialSwapKind::Namespace, None, None),
+        )],
+    );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("react", &package_root)]);
 
     assert_success(&fixture.result);
@@ -2045,7 +2091,14 @@ fn partial_swap_bails_on_namespace_import_of_partially_swapped_chunk() {
         "lib/index.mjs",
         "export const boolean = () => true;\n",
     );
-    let vendor = partial_swap_vendor("namespace consumer fixture", &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))], &[("e6", swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None))]);
+    let vendor = partial_swap_vendor(
+        "namespace consumer fixture",
+        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
+        &[(
+            "e6",
+            swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None),
+        )],
+    );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert!(
@@ -2077,7 +2130,14 @@ fn partial_swap_bails_on_member_kind_reexport_from_consumer() {
         "lib/index.mjs",
         "export const boolean = () => true;\n",
     );
-    let vendor = partial_swap_vendor("member re-export consumer fixture", &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))], &[("e6", swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None))]);
+    let vendor = partial_swap_vendor(
+        "member re-export consumer fixture",
+        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
+        &[(
+            "e6",
+            swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None),
+        )],
+    );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert!(
@@ -2106,7 +2166,14 @@ fn partial_swap_bails_on_export_star_from_partially_swapped_chunk() {
         "lib/index.mjs",
         "export const boolean = () => true;\n",
     );
-    let vendor = partial_swap_vendor("export-star consumer fixture", &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))], &[("e6", swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None))]);
+    let vendor = partial_swap_vendor(
+        "export-star consumer fixture",
+        &[("zod", partial_package("3.23.8", "lib/index.mjs", Some("z")))],
+        &[(
+            "e6",
+            swap_symbol("zod", PartialSwapKind::Member, Some("boolean"), None),
+        )],
+    );
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert!(
@@ -2325,14 +2392,14 @@ fn full_swap_with_caller_keeps_dangling_chunk_import_for_live_proxy() {
 
     let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = ws.transform_spec(json!({
-            CHUNK_PATH: {
-                "level": "swap",
-                "identity": "lib/dist/index.mjs",
-                "package": PACKAGE_NAME,
-                "version": "1.0.0",
-                "subpath": "dist/index.mjs",
-            },
-        }));
+        CHUNK_PATH: {
+            "level": "swap",
+            "identity": "lib/dist/index.mjs",
+            "package": PACKAGE_NAME,
+            "version": "1.0.0",
+            "subpath": "dist/index.mjs",
+        },
+    }));
     write_yaml_file(&spec_path, &spec);
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
@@ -2592,18 +2659,55 @@ fn named_from_json_default_rejects_names_missing_from_json() {
     );
 }
 
-fn bundled_package(version: &str, subpath: &str, bundle_export: &str, namespace: Option<&str>) -> BundledPartialSwapPackage {
-    BundledPartialSwapPackage { version: version.into(), subpath: subpath.into(), bundle_export: bundle_export.into(), namespace: namespace.map(str::to_owned) }
+fn bundled_package(
+    version: &str,
+    subpath: &str,
+    bundle_export: &str,
+    namespace: Option<&str>,
+) -> BundledPartialSwapPackage {
+    BundledPartialSwapPackage {
+        version: version.into(),
+        subpath: subpath.into(),
+        bundle_export: bundle_export.into(),
+        namespace: namespace.map(str::to_owned),
+    }
 }
 
-fn swap_symbol(package: &str, kind: PartialSwapKind, upstream_export: Option<&str>, local: Option<&str>) -> PartialSwapSymbol {
-    PartialSwapSymbol { package: package.into(), kind, upstream_export: upstream_export.map(str::to_owned), local: local.map(str::to_owned) }
+fn swap_symbol(
+    package: &str,
+    kind: PartialSwapKind,
+    upstream_export: Option<&str>,
+    local: Option<&str>,
+) -> PartialSwapSymbol {
+    PartialSwapSymbol {
+        package: package.into(),
+        kind,
+        upstream_export: upstream_export.map(str::to_owned),
+        local: local.map(str::to_owned),
+    }
 }
 
-fn bundled_vendor(identity: &str, bundle: &Path, packages: &[(&str, BundledPartialSwapPackage)], symbols: &[(&str, PartialSwapSymbol)]) -> VendorMark {
-    VendorMark { identity: identity.into(), role: Default::default(), level: VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
-        bundle: BundledPartialSwapBundle { path: bundle.into() },
-        packages: packages.iter().map(|(name, value)| ((*name).into(), value.clone())).collect(),
-        symbols: symbols.iter().map(|(name, value)| ((*name).into(), value.clone())).collect(),
-    }) }
+fn bundled_vendor(
+    identity: &str,
+    bundle: &Path,
+    packages: &[(&str, BundledPartialSwapPackage)],
+    symbols: &[(&str, PartialSwapSymbol)],
+) -> VendorMark {
+    VendorMark {
+        identity: identity.into(),
+        role: Default::default(),
+        level: VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
+            bundle: BundledPartialSwapBundle {
+                path: bundle.into(),
+            },
+            packages: packages
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+            symbols: symbols
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.clone()))
+                .collect(),
+        }),
+    }
 }
