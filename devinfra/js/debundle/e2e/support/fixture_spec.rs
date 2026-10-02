@@ -8,10 +8,10 @@ use spec::{
     AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, ChunkRenameMember,
     ChunkRenameSelector, ChunkRenames, CrossRefSelector, IntrinsicAliasSelector, LoadJsChunksArgs,
     LogicalModule, MakesDecorateCallSelector, MaterializeLogicalModulesConfig,
-    Member as SpecMember, MemberOfModuleSelector, MemberSelector, PassedToCallSelector,
-    ReadsMemberSelector, SourceMatch, SourceMatchBinding, SourceMatchBindingDetail,
-    SourceMatchClaim, SourceMatchIdentifierMode, SwapVendorChunksConfig, TransformSpec,
-    UnassignedMode, OwnerGraphOptions, WriteJsTreeConfig,
+    Member as SpecMember, MemberOfModuleSelector, MemberSelector, OwnerGraphOptions,
+    PassedToCallSelector, ReadsMemberSelector, SourceMatch, SourceMatchBinding,
+    SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode, SwapVendorChunksConfig,
+    TransformSpec, UnassignedMode, WriteJsTreeConfig,
 };
 use spec::{MemberEffect, MemberPurity};
 use std::collections::BTreeMap;
@@ -775,7 +775,9 @@ pub fn unassigned_mode_inline() -> UnassignedMode {
 /// `target` of `None` means "default residual target", which the
 /// materializer resolves to `residual/unhandled`.
 pub fn unassigned_mode_catchall_file(target: Option<&str>) -> UnassignedMode {
-    UnassignedMode::CatchallFile { target: target.map(str::to_string) }
+    UnassignedMode::CatchallFile {
+        target: target.map(str::to_string),
+    }
 }
 
 /// Build an `unassigned_mode: mini_factors` entry.
@@ -824,30 +826,50 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
     let chunk_id = opts.chunk_id;
     let mut logical_modules = BTreeMap::new();
     if !opts.logical_modules.is_empty() {
-        logical_modules.insert(chunk_id.to_string(), opts.logical_modules.iter().cloned().collect());
+        logical_modules.insert(
+            chunk_id.to_string(),
+            opts.logical_modules.iter().cloned().collect(),
+        );
     }
     for (extra_chunk, modules) in opts.extra_chunk_logical_modules {
-        logical_modules.insert((*extra_chunk).to_string(), modules.iter().cloned().collect());
+        logical_modules.insert(
+            (*extra_chunk).to_string(),
+            modules.iter().cloned().collect(),
+        );
     }
-    let chunk_renames = opts.chunk_renames.iter()
-        .map(|renames| (chunk_id.to_string(), renames.clone())).collect();
-    let mut unassigned_mode = BTreeMap::from([(chunk_id.to_string(), opts.unassigned_mode.clone())]);
+    let chunk_renames = opts
+        .chunk_renames
+        .iter()
+        .map(|renames| (chunk_id.to_string(), renames.clone()))
+        .collect();
+    let mut unassigned_mode =
+        BTreeMap::from([(chunk_id.to_string(), opts.unassigned_mode.clone())]);
     for (extra_chunk, _) in opts.extra_chunk_logical_modules {
-        unassigned_mode.insert((*extra_chunk).to_string(), unassigned_mode_catchall_file(None));
+        unassigned_mode.insert(
+            (*extra_chunk).to_string(),
+            unassigned_mode_catchall_file(None),
+        );
     }
     let chunk_analysis_options = if opts.dataflow_aware_s_chain
         || opts.trusted_dataflow_summaries
         || opts.local_property_effects
         || !opts.admission_overrides.is_empty()
     {
-        BTreeMap::from([(chunk_id.to_string(), OwnerGraphOptions {
-            dataflow_aware_s_chain: opts.dataflow_aware_s_chain,
-            trusted_dataflow_summaries: opts.trusted_dataflow_summaries,
-            local_property_effects: opts.local_property_effects,
-            admission_overrides: spec::AdmissionOverrides::deserialize(
-                SeqDeserializer::<_, DeserializeError>::new(opts.admission_overrides.iter().copied()),
-            ).expect("valid admission override names"),
-        })])
+        BTreeMap::from([(
+            chunk_id.to_string(),
+            OwnerGraphOptions {
+                dataflow_aware_s_chain: opts.dataflow_aware_s_chain,
+                trusted_dataflow_summaries: opts.trusted_dataflow_summaries,
+                local_property_effects: opts.local_property_effects,
+                admission_overrides: spec::AdmissionOverrides::deserialize(SeqDeserializer::<
+                    _,
+                    DeserializeError,
+                >::new(
+                    opts.admission_overrides.iter().copied(),
+                ))
+                .expect("valid admission override names"),
+            },
+        )])
     } else {
         BTreeMap::new()
     };
