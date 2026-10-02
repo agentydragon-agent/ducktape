@@ -322,3 +322,39 @@ fn needs_ast_for_chunk(
 
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    // Retention is an internal storage invariant, not observable in emitted JS.
+    // Load real source files through the normal loader and fused preparation.
+    #[test]
+    fn vendor_neighbors_retain_ast_only_for_their_own_work() {
+        js_ast::with_swc_globals(|| {
+            let root = tempfile::TempDir::new().unwrap();
+            for (name, source) in [
+                ("vendor.js", "import { helper } from './helper.js'; export const value = helper();"),
+                ("helper.js", "export const helper = () => 7;"),
+                ("caller.js", "import { value } from './vendor.js'; console.log(value);"),
+                ("forward.js", "export { value } from './vendor.js';"),
+                ("dynamic.js", "export const load = () => import('./vendor.js');"),
+            ] {
+                fs::write(root.path().join(name), source).unwrap();
+            }
+            let list = root.path().join("js-files.txt");
+            fs::write(&list, "vendor.js\nhelper.js\ncaller.js\nforward.js\ndynamic.js\n").unwrap();
+            let spec: TransformSpec = serde_yaml::from_str(
+                "inputs: {input_root: '.', js_list_path: js-files.txt}\nvendor:\n  vendor.js: {identity: fixture, level: suppress}\n",
+            ).unwrap();
+            let loaded = artifact::load_js_chunks(root.path(), &list).unwrap();
+            let prepared = prepare_js_chunks(&spec, loaded).unwrap();
+            for chunk in &prepared.artifact.chunks {
+                let name = prepared.artifact.chunk_table.name(chunk.chunk_id);
+                let has_ast = chunk.js.get_file(CANONICAL_CHUNK_ENTRY_FILE).unwrap().ast().is_some();
+                assert_eq!(has_ast, name != "helper", "{name}");
+            }
+        });
+    }
+}
