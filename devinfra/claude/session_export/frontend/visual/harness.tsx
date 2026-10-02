@@ -293,7 +293,13 @@ const latestFirstPageEvents = Array.from({ length: 12 }, (_, index) => {
     type: sequence % 2 === 0 ? "user" : "assistant",
     message: {
       role: sequence % 2 === 0 ? "user" : "assistant",
-      content: [{ type: "text", text: `Newest-first fixture message ${sequence}; shown in chronological order.` }],
+      // Keep this fixture scrollable even with compact rows and a small page header.
+      content: [
+        {
+          type: "text",
+          text: `Newest-first fixture message ${sequence}; shown in chronological order.\nThis detail keeps the initial history taller than the viewport.\nOlder events must prepend without moving the open disclosure.`,
+        },
+      ],
     },
   });
 });
@@ -767,7 +773,11 @@ if (scenario.startsWith("SessionLatestFirst")) {
     }
     const viewportRect = viewport.getBoundingClientRect();
     const latestRect = latestCard.getBoundingClientRect();
-    if (Math.abs(latestRect.bottom - viewportRect.bottom) > 3) {
+    // The latest message can have bottom spacing or an event strip after it.
+    // Assert the scroll position and message visibility, not a card-edge coincidence.
+    const atTail = Math.abs(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight) <= 1;
+    const latestVisible = latestRect.bottom > viewportRect.top && latestRect.top < viewportRect.bottom;
+    if (!atTail || !latestVisible) {
       attempts += 1;
       if (attempts >= 300) {
         if (scenario === "SessionLatestFirstAnchor") failAnchorScenario("The newest event is not at the initial tail");
@@ -860,7 +870,10 @@ if (scenario.startsWith("SessionNoisy")) {
       if (document.querySelector('[data-fold-kind="notice"]')) throw new Error("Hook noise leaked into the transcript");
       if (scenario.includes("Thinking")) {
         const thinking = document.querySelector<HTMLDetailsElement>('[data-fold-kind="thinking"]');
-        if (thinking === null) return;
+        if (thinking === null) {
+          document.querySelector<HTMLButtonElement>('[data-tool-group-toggle][aria-expanded="false"]')?.click();
+          return;
+        }
         thinking.open = true;
         scrollTranscriptElementIntoView(thinking);
       }
@@ -948,4 +961,35 @@ if (scenario.startsWith("SessionNoisySidebar")) {
     sidebarObserver.disconnect();
   });
   sidebarObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+}
+
+if (scenario.startsWith("SessionNoisyActivity")) {
+  let stage = 0;
+  const observer = new MutationObserver(() => {
+    const group = document.querySelector<HTMLElement>('[data-fold-kind="tool-group"]');
+    if (group === null) return;
+    if (stage === 0) {
+      if (group.getBoundingClientRect().height > 28) throw new Error("Collapsed tool group exceeds 28px");
+      if (group.querySelector('[data-fold-kind="tool-run"]')) throw new Error("Tool group expanded by default");
+      if (scenario.includes("Expanded")) {
+        stage = 1;
+        group.querySelector<HTMLButtonElement>("[data-tool-group-toggle]")!.click();
+        return;
+      }
+    }
+    if (scenario.includes("Expanded")) {
+      const tool = group.querySelector<HTMLButtonElement>("[data-tool-run-toggle]");
+      if (tool === null) return;
+      if (stage === 1) {
+        stage = 2;
+        tool.click();
+        return;
+      }
+      if (!group.querySelector("[data-tool-file-preview]")) return;
+    }
+    scrollTranscriptElementIntoView(group);
+    root.dataset.activityReady = "true";
+    observer.disconnect();
+  });
+  observer.observe(root, { childList: true, subtree: true, attributes: true });
 }
