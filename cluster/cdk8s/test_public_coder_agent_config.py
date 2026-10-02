@@ -153,7 +153,10 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
     role = _one(objects, "Role")
     binding = _one(objects, "RoleBinding")
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
-    assert _subjects(binding) == _HAKU_SUBJECTS | {("Group", console_config.PUBLIC_CODER_GROUP, None)}
+    assert _subjects(binding) == _HAKU_SUBJECTS | {
+        ("Group", console_config.PUBLIC_CODER_GROUP, None),
+        ("ServiceAccount", "claude-ai", "agentplane-staging"),
+    }
     rule = one(role["rules"])
     assert rule["resources"] == ["secrets"]
     assert rule["verbs"] == ["get"]

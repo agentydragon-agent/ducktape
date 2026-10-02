@@ -17,8 +17,6 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesExcludeAny,
     ClusterPolicySpecRulesExcludeAnyResources,
     ClusterPolicySpecRulesExcludeAnySubjects,
-    ClusterPolicySpecRulesMatch,
-    ClusterPolicySpecRulesMatchAny,
     ClusterPolicySpecRulesMatchAnyResources,
     ClusterPolicySpecRulesMatchAnyResourcesOperations,
     ClusterPolicySpecRulesMatchAnyResourcesSelector,
