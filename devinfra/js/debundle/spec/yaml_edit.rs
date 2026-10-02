@@ -31,7 +31,10 @@ pub fn apply_yaml_edit(path: &Path, doc: &Value, dry_run: bool) -> Result<bool> 
     if !changed || dry_run {
         return Ok(changed);
     }
-    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     // A unique sibling stays on the same filesystem, never clobbers another
     // writer's scratch file, and is cleaned up automatically on failure.
@@ -39,7 +42,8 @@ pub fn apply_yaml_edit(path: &Path, doc: &Value, dry_run: bool) -> Result<bool> 
         .with_context(|| format!("creating temporary YAML beside {}", path.display()))?;
     serde_yaml::to_writer(temp.as_file_mut(), doc)
         .with_context(|| format!("serializing {}", path.display()))?;
-    temp.persist(path).with_context(|| format!("replacing {}", path.display()))?;
+    temp.persist(path)
+        .with_context(|| format!("replacing {}", path.display()))?;
     Ok(true)
 }
 
