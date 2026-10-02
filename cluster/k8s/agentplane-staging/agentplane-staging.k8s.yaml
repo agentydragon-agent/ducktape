@@ -1374,45 +1374,12 @@ rules:
     verbs:
       - get
 ---
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: forgejo-images-creds
-  namespace: agentplane-staging
-spec:
-  dataFrom:
-    - extract:
-        key: forgejo-images-creds
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-forgejo-images-secret-store
-  target:
-    name: forgejo-images-creds
-    template:
-      mergePolicy: Merge
-      type: kubernetes.io/dockerconfigjson
----
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: agentplane-agent
-  namespace: agentplane-staging
-automountServiceAccountToken: false
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentplane-app
+  name: agentplane-sandbox-service
   namespace: agentplane-staging
 automountServiceAccountToken: true
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentplane-runner
-  namespace: agentplane-staging
-automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -1485,13 +1452,13 @@ roleRef:
   name: agentplane-staging-managed-cluster-bindings
 subjects:
   - kind: ServiceAccount
-    name: agentplane-app
+    name: agentplane-sandbox-service
     namespace: agentplane-staging
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: agentplane-staging-app-token-reviewer
+  name: agentplane-staging-sandbox-service-token-reviewer
 rules:
   - apiGroups:
       - authentication.k8s.io
@@ -1503,21 +1470,21 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: agentplane-staging-app-token-reviewer
+  name: agentplane-staging-sandbox-service-token-reviewer
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: agentplane-staging-app-token-reviewer
+  name: agentplane-staging-sandbox-service-token-reviewer
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
-    name: agentplane-app
+    name: agentplane-sandbox-service
     namespace: agentplane-staging
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-app
+  name: agentplane-sandbox-service
   namespace: agentplane-staging
 rules:
   - apiGroups:
@@ -1639,6 +1606,815 @@ rules:
       - roles
     verbs:
       - bind
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-sandbox-service
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-sandbox-service
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-sandbox-service
+    namespace: agentplane-staging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-sandbox-service-config
+  namespace: agentplane-staging
+data:
+  config.yaml: |
+    sandbox_namespace: agentplane-staging
+    allowed_service_account_namespaces:
+      - agentplane-staging
+    trusted_accounts:
+      - namespace: agentplane-staging
+        name: agentplane-app
+    manager_accounts:
+      - namespace: agentplane-staging
+        name: agentplane-app
+    agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
+    agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
+    lifecycle_timeout_s: 300
+    enable_provisioning: true
+    default_policies:
+      - basic
+    kubernetes_grants:
+      sandbox-tool-config:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: Role
+          name: agentplane-sandbox-tool-config-reader
+      public-coder-node-read:
+        kind: ClusterRoleBinding
+        role_ref:
+          kind: ClusterRole
+          name: public-coder-agent-node-reader
+      public-coder-cluster-metadata-read:
+        kind: ClusterRoleBinding
+        role_ref:
+          kind: ClusterRole
+          name: public-coder-agent-cluster-metadata-reader
+      cluster-diagnostics:
+        kind: ClusterRoleBinding
+        role_ref:
+          kind: ClusterRole
+          name: cluster-diagnostics-reader
+      haku-sandbox-write:
+        kind: RoleBinding
+        namespace: haku-sandbox
+        role_ref:
+          kind: Role
+          name: haku-sandbox-admin
+      agentplane-testing-operator:
+        kind: RoleBinding
+        namespace: agentplane-testing
+        role_ref:
+          kind: Role
+          name: agentplane-testing-operator
+      agentplane-staging-metadata:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      agentplane-staging-logs:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      activitywatch-metadata:
+        kind: RoleBinding
+        namespace: activitywatch
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      activitywatch-logs:
+        kind: RoleBinding
+        namespace: activitywatch
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      agent-sandbox-system-metadata:
+        kind: RoleBinding
+        namespace: agent-sandbox-system
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      agentplane-index-metadata:
+        kind: RoleBinding
+        namespace: agentplane-index
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      agentplane-index-logs:
+        kind: RoleBinding
+        namespace: agentplane-index
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      agentplane-testing-metadata:
+        kind: RoleBinding
+        namespace: agentplane-testing
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      agentplane-testing-logs:
+        kind: RoleBinding
+        namespace: agentplane-testing
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      airlock-metadata:
+        kind: RoleBinding
+        namespace: airlock
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      airlock-logs:
+        kind: RoleBinding
+        namespace: airlock
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      authentik-metadata:
+        kind: RoleBinding
+        namespace: authentik
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      authentik-logs:
+        kind: RoleBinding
+        namespace: authentik
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      cert-manager-metadata:
+        kind: RoleBinding
+        namespace: cert-manager
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      cert-manager-logs:
+        kind: RoleBinding
+        namespace: cert-manager
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      cli-proxy-api-metadata:
+        kind: RoleBinding
+        namespace: cli-proxy-api
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      cli-proxy-api-logs:
+        kind: RoleBinding
+        namespace: cli-proxy-api
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      clickhouse-metadata:
+        kind: RoleBinding
+        namespace: clickhouse
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      clickhouse-logs:
+        kind: RoleBinding
+        namespace: clickhouse
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      cnpg-system-metadata:
+        kind: RoleBinding
+        namespace: cnpg-system
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      cnpg-system-logs:
+        kind: RoleBinding
+        namespace: cnpg-system
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      flux-system-metadata:
+        kind: RoleBinding
+        namespace: flux-system
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      flux-system-logs:
+        kind: RoleBinding
+        namespace: flux-system
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      gatus-metadata:
+        kind: RoleBinding
+        namespace: gatus
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      gatus-logs:
+        kind: RoleBinding
+        namespace: gatus
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      grocy-sf-metadata:
+        kind: RoleBinding
+        namespace: grocy-sf
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      grocy-sf-logs:
+        kind: RoleBinding
+        namespace: grocy-sf
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      grocy-vallejo-metadata:
+        kind: RoleBinding
+        namespace: grocy-vallejo
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      grocy-vallejo-logs:
+        kind: RoleBinding
+        namespace: grocy-vallejo
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      haku-ci-metadata:
+        kind: RoleBinding
+        namespace: haku-ci
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      haku-ci-logs:
+        kind: RoleBinding
+        namespace: haku-ci
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      litellm-metadata:
+        kind: RoleBinding
+        namespace: litellm
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      litellm-logs:
+        kind: RoleBinding
+        namespace: litellm
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      local-path-storage-metadata:
+        kind: RoleBinding
+        namespace: local-path-storage
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      local-path-storage-logs:
+        kind: RoleBinding
+        namespace: local-path-storage
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      loki-metadata:
+        kind: RoleBinding
+        namespace: loki
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      loki-logs:
+        kind: RoleBinding
+        namespace: loki
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      monitoring-metadata:
+        kind: RoleBinding
+        namespace: monitoring
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      monitoring-logs:
+        kind: RoleBinding
+        namespace: monitoring
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      nix-cache-metadata:
+        kind: RoleBinding
+        namespace: nix-cache
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      node-feature-discovery-metadata:
+        kind: RoleBinding
+        namespace: node-feature-discovery
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      node-feature-discovery-logs:
+        kind: RoleBinding
+        namespace: node-feature-discovery
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      nvidia-device-plugin-metadata:
+        kind: RoleBinding
+        namespace: nvidia-device-plugin
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      nvidia-device-plugin-logs:
+        kind: RoleBinding
+        namespace: nvidia-device-plugin
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      oci-cache-metadata:
+        kind: RoleBinding
+        namespace: oci-cache
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      oci-cache-logs:
+        kind: RoleBinding
+        namespace: oci-cache
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      openebs-metadata:
+        kind: RoleBinding
+        namespace: openebs
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      openebs-logs:
+        kind: RoleBinding
+        namespace: openebs
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      plaid-mcp-metadata:
+        kind: RoleBinding
+        namespace: plaid-mcp
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      plaid-mcp-logs:
+        kind: RoleBinding
+        namespace: plaid-mcp
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      proxmox-proxy-metadata:
+        kind: RoleBinding
+        namespace: proxmox-proxy
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      proxmox-proxy-logs:
+        kind: RoleBinding
+        namespace: proxmox-proxy
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      public-coder-agent-metadata:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      study-casino-metadata:
+        kind: RoleBinding
+        namespace: study-casino
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      study-casino-logs:
+        kind: RoleBinding
+        namespace: study-casino
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      tana-mcp-metadata:
+        kind: RoleBinding
+        namespace: tana-mcp
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      tana-mcp-logs:
+        kind: RoleBinding
+        namespace: tana-mcp
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      vm-images-publisher-metadata:
+        kind: RoleBinding
+        namespace: vm-images-publisher
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      coinbase-credentials:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: Role
+          name: claude-ai-coinbase-reader
+      haku-console-metadata:
+        kind: RoleBinding
+        namespace: haku-console
+        role_ref:
+          kind: Role
+          name: agent-haku-console-metadata-reader
+      clickhouse-diagnostics:
+        kind: RoleBinding
+        namespace: clickhouse
+        role_ref:
+          kind: Role
+          name: agent-clickhouse-diagnostics-reader
+      ducktape-flux-read:
+        kind: RoleBinding
+        namespace: ducktape-flux
+        role_ref:
+          kind: Role
+          name: ducktape-flux-reader
+      public-coder-volsync-status:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: Role
+          name: agent-public-coder-extended-diagnostics-reader
+      public-coder-agent-reader:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: Role
+          name: public-coder-agent-reader
+      agentplane-testing-login:
+        kind: RoleBinding
+        namespace: public-coder-agent
+        role_ref:
+          kind: Role
+          name: agentplane-testing-login-reader
+    kubernetes_binding_cleanup_namespaces:
+      - ducktape-flux
+      - node-feature-discovery
+      - openebs
+      - authentik
+      - gatus
+      - loki
+      - clickhouse
+      - agentplane-index
+      - haku-ci
+      - proxmox-proxy
+      - agent-sandbox-system
+      - cert-manager
+      - study-casino
+      - activitywatch
+      - monitoring
+      - agentplane-testing
+      - vm-images-publisher
+      - grocy-vallejo
+      - oci-cache
+      - litellm
+      - airlock
+      - tana-mcp
+      - haku-console
+      - nix-cache
+      - nvidia-device-plugin
+      - cli-proxy-api
+      - flux-system
+      - local-path-storage
+      - plaid-mcp
+      - cnpg-system
+      - haku-sandbox
+      - grocy-sf
+      - public-coder-agent
+    kubernetes_cluster_binding_cleanup: true
+    token_audience: agentplane-sandbox-service
+    runner_port: 7000
+    admission_timeout_s: 15
+    follow_lease_s: 30
+    host: 0.0.0.0
+    port: 8080
+    health_port: 8081
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-sandbox-service
+  name: agentplane-sandbox-service
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-sandbox-service
+        cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE
+              value: /etc/agentplane-sandbox-service/config.yaml
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: sandbox-service
+          ports:
+            - containerPort: 8080
+              name: grpc
+              protocol: TCP
+            - containerPort: 8081
+              name: health
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-sandbox-service
+              name: configmap-agentplane-sandbox-service-config
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-sandbox-service
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-sandbox-service-config
+          name: configmap-agentplane-sandbox-service-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-sandbox-service
+  name: agentplane-sandbox-service
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: grpc
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-sandbox-service
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "7000"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-sandbox-service
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentplane-sandbox-service
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-sandbox-service
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-agent
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-runner
+  namespace: agentplane-staging
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-app-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-app-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-app-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresspolicies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egressbindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresscredentials
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicybindings
+    verbs:
+      - get
+      - list
+      - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2687,7 +3463,7 @@ spec:
         - args:
             - --namespace=agentplane-staging
             - --sandbox-namespace=agentplane-staging
-            - --runner-port=7000
+            - --sandbox-service-target=agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
             - --host=0.0.0.0
             - --port=8080
           env:
@@ -2784,6 +3560,9 @@ spec:
             - mountPath: /etc/agentplane
               name: configmap-agentplane-app-config
               readOnly: true
+            - mountPath: /var/run/secrets/agentplane-sandbox-service
+              name: sandbox-service-token
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -2876,6 +3655,13 @@ spec:
         - configMap:
             name: agentplane-app-config
           name: configmap-agentplane-app-config
+        - name: sandbox-service-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-sandbox-service
+                  expirationSeconds: 3600
+                  path: token
 ---
 apiVersion: v1
 kind: Service
@@ -2952,6 +3738,7 @@ spec:
   ingress:
     - fromEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: agentplane-sandbox-service
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -3000,11 +3787,11 @@ spec:
             - auth.allegedly.works
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: agentplane-runner
+            app.kubernetes.io/name: agentplane-sandbox-service
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "7000"
+            - port: "8080"
               protocol: TCP
     - toEndpoints:
         - matchLabels:

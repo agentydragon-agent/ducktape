@@ -34,8 +34,9 @@ async def ready_sandbox_for_session(
 ) -> SandboxView | None:
     """Return an existing Sandbox only after its selected Kubernetes grants are provisioned.
 
-    A missing inventory row preserves the concrete-spec runner path. Sandboxes without selected
-    grants are unaffected; Kubernetes binding readiness matters only for a nonempty selection.
+    This is an advisory UI check. The service revalidates every pinned destination, even
+    when this read has no row; it never falls back to direct runner access. Sandboxes
+    without selected grants are unaffected.
     """
     try:
         sandbox = await inventory.get(name)

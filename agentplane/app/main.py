@@ -112,7 +112,7 @@ class AppSettingsConfig(BaseSettings):
     """Deployment-authored app settings, before runtime-only inputs arrive.
 
     The runtime `Settings` model extends this, so cdk8s can construct this typed fragment
-    without fabricating the app's namespace, runner port, or database URL.
+    without fabricating the app's namespace, Sandbox Service target, or database URL.
     """
 
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)

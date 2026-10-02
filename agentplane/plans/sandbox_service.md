@@ -200,7 +200,9 @@ from switching only part of the system. Record the current app, runner and polic
 1. Complete the staging inventory, consistent backup and isolated restore checks above. Record Sandbox
    names/UIDs, SAs, Pod/volume identities, Thread/session IDs and ingestion high-water marks. Do not
    recreate any of them. Existing Sandboxes without pending provisioning intent are adopted as-is.
-2. Build/test and publish the service image and matching app image. Record real immutable tags/digests;
+2. Build/test, then merge only with the live handoff paused as above so devel CI can publish the service
+   image and matching app image. The pin components carry an explicit `unset` bootstrap marker for the
+   new service; wait for publication/image automation to replace it. Record real immutable tags/digests;
    pin **both** before applying the authority change. Fork PR CI does not publish images, and `unset`
    is not a deployable image pin. Keep staging/testing pin components and Flux image policies wired.
 3. Drain old app replicas/reconcilers. Deploy the independent service, projected token, and matching
@@ -215,7 +217,7 @@ from switching only part of the system. Record the current app, runner and polic
 
 The source includes acceptance tests, but they do not replace this staging rehearsal. No live resources
 have been mutated by the implementation work. First image publication and coordinated immutable pinning
-remain a release prerequisite rather than a fabricated tag in the PR.
+remain release prerequisites. The bootstrap `unset` pin is deliberately not a claim that an image exists.
 
 ## Extraction sequence
 

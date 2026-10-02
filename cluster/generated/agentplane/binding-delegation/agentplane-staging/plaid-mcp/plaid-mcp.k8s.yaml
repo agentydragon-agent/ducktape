@@ -31,5 +31,5 @@ roleRef:
   name: agentplane-staging-external-bindings
 subjects:
   - kind: ServiceAccount
-    name: agentplane-app
+    name: agentplane-sandbox-service
     namespace: agentplane-staging
