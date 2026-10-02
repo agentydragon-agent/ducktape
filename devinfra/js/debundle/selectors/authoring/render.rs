@@ -291,28 +291,44 @@ fn hole_callee_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
 /// an arity-exact single-node hole. Mirrors [`hole_object`]'s property-run
 /// collapsing. An anchored spread is kept verbatim (its expr left intact);
 /// a non-anchor spread is absorbed into the run like any other dropped argument.
-fn hole_args(args: &[ExprOrSpread], kept: &BTreeSet<AnchorSpan>) -> Vec<ExprOrSpread> {
-    let mut holed = Vec::new();
-    let mut dropped_run = false;
-    for arg in args {
-        if node_retains_any(arg.expr.span(), kept) {
-            if dropped_run {
-                holed.push(args_hole());
-                dropped_run = false;
+/// Replace each nonempty run of omitted elements with one list hole.
+/// Callers own retention/rendering and any hole required for an empty list.
+pub(crate) fn collapse_omitted_runs<T>(
+    items: impl IntoIterator<Item = Option<T>>,
+    hole: impl Fn() -> T,
+) -> Vec<T> {
+    let mut out = Vec::new();
+    let mut omitted = false;
+    for item in items {
+        if let Some(item) = item {
+            if omitted {
+                out.push(hole());
+                omitted = false;
             }
-            let mut kept_arg = arg.clone();
-            if arg.spread.is_none() {
-                kept_arg.expr = Box::new(hole_expr(&arg.expr, kept));
-            }
-            holed.push(kept_arg);
+            out.push(item);
         } else {
-            dropped_run = true;
+            omitted = true;
         }
     }
-    if dropped_run {
-        holed.push(args_hole());
+    if omitted {
+        out.push(hole());
     }
-    holed
+    out
+}
+
+fn hole_args(args: &[ExprOrSpread], kept: &BTreeSet<AnchorSpan>) -> Vec<ExprOrSpread> {
+    collapse_omitted_runs(
+        args.iter().map(|arg| {
+            node_retains_any(arg.expr.span(), kept).then(|| {
+                let mut arg = arg.clone();
+                if arg.spread.is_none() {
+                    arg.expr = Box::new(hole_expr(&arg.expr, kept));
+                }
+                arg
+            })
+        }),
+        args_hole,
+    )
 }
 
 /// Prune the elements of an array literal, holing each non-anchor element to
@@ -371,46 +387,26 @@ fn hole_pat(pat: &Pat, kept: &BTreeSet<AnchorSpan>) -> Pat {
 /// an `ANYTHING` hole. The pattern analog of [`hole_object`]; a kept prop is
 /// retained verbatim (its bound local is alpha-wildcarded by the matcher).
 fn hole_object_pat(object: &ObjectPat, kept: &BTreeSet<AnchorSpan>) -> ObjectPat {
-    let mut props = Vec::new();
-    let mut dropped_run = false;
-    for prop in &object.props {
-        if node_retains_any(prop.span(), kept) {
-            if dropped_run {
-                props.push(object_props_pat_prop());
-                dropped_run = false;
-            }
-            props.push(prop.clone());
-        } else {
-            dropped_run = true;
-        }
-    }
-    if dropped_run {
-        props.push(object_props_pat_prop());
-    }
     let mut holed = object.clone();
-    holed.props = props;
+    holed.props = collapse_omitted_runs(
+        object
+            .props
+            .iter()
+            .map(|prop| node_retains_any(prop.span(), kept).then(|| prop.clone())),
+        object_props_pat_prop,
+    );
     holed
 }
 
 fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
-    let mut props = Vec::new();
-    let mut dropped_run = false;
-    for prop in &object.props {
-        if node_retains_any(prop.span(), kept) {
-            if dropped_run {
-                props.push(object_props_prop());
-                dropped_run = false;
-            }
-            props.push(hole_prop(prop, kept));
-        } else {
-            dropped_run = true;
-        }
-    }
-    if dropped_run {
-        props.push(object_props_prop());
-    }
     let mut holed = object.clone();
-    holed.props = props;
+    holed.props = collapse_omitted_runs(
+        object
+            .props
+            .iter()
+            .map(|prop| node_retains_any(prop.span(), kept).then(|| hole_prop(prop, kept))),
+        object_props_prop,
+    );
     holed
 }
 
@@ -456,20 +452,13 @@ fn hole_prop(prop: &PropOrSpread, kept: &BTreeSet<AnchorSpan>) -> PropOrSpread {
 /// Hole a statement list, collapsing runs of dropped statements into a single
 /// `STMT_LIST;` hole statement.
 fn hole_stmts(stmts: &[Stmt], kept: &BTreeSet<AnchorSpan>) -> Vec<Stmt> {
-    let mut out = Vec::new();
-    let mut dropped_run = false;
-    for stmt in stmts {
-        if node_retains_any(stmt.span(), kept) {
-            if dropped_run {
-                out.push(stmt_list_stmt());
-                dropped_run = false;
-            }
-            out.push(hole_stmt(stmt, kept));
-        } else {
-            dropped_run = true;
-        }
-    }
-    if dropped_run || out.is_empty() {
+    let mut out = collapse_omitted_runs(
+        stmts
+            .iter()
+            .map(|item| node_retains_any(item.span(), kept).then(|| hole_stmt(item, kept))),
+        stmt_list_stmt,
+    );
+    if out.is_empty() {
         out.push(stmt_list_stmt());
     }
     out
@@ -548,20 +537,13 @@ pub(crate) fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
 /// clauses that retain an anchor (their test literal or a body statement).
 /// Mirrors [`hole_class_members`].
 fn hole_switch_cases(cases: &[SwitchCase], kept: &BTreeSet<AnchorSpan>) -> Vec<SwitchCase> {
-    let mut out = Vec::new();
-    let mut dropped_run = false;
-    for case in cases {
-        if node_retains_any(case.span(), kept) {
-            if dropped_run {
-                out.push(case_rest_case());
-                dropped_run = false;
-            }
-            out.push(hole_switch_case(case, kept));
-        } else {
-            dropped_run = true;
-        }
-    }
-    if dropped_run || out.is_empty() {
+    let mut out = collapse_omitted_runs(
+        cases
+            .iter()
+            .map(|item| node_retains_any(item.span(), kept).then(|| hole_switch_case(item, kept))),
+        case_rest_case,
+    );
+    if out.is_empty() {
         out.push(case_rest_case());
     }
     out
@@ -649,6 +631,21 @@ pub(crate) fn holes_present(source: &str) -> Result<BTreeSet<String>> {
 #[cfg(test)]
 mod interior_holing_tests {
     use super::*;
+
+    #[test]
+    fn omitted_runs_preserve_retained_order_and_empty_input() {
+        for (input, expected) in [
+            (vec![], vec![]),
+            (vec![None, None], vec![0]),
+            (vec![Some(1), Some(2)], vec![1, 2]),
+            (
+                vec![None, Some(1), None, None, Some(2), None],
+                vec![0, 1, 0, 2, 0],
+            ),
+        ] {
+            assert_eq!(collapse_omitted_runs(input, || 0), expected);
+        }
+    }
 
     #[test]
     fn hole_inventory_uses_syntax_and_the_complete_vocabulary() {
