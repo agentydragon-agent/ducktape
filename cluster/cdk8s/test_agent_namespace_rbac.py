@@ -97,7 +97,6 @@ def test_kyverno_no_longer_generates_agent_bindings() -> None:
         "default-vpa-requests-only",
         "inject-mitmproxy",
         "inject-haku-egress-proxy",
-        "restrict-agent-kustomization-patch",
         "restrict-agent-gateway-routes",
         "require-secret-store-conditions",
     }
@@ -115,6 +114,19 @@ def test_namespace_labels_do_not_create_bindings() -> None:
     docs = Cdk8sTesting.synth(scope)
     assert [doc["kind"] for doc in docs] == ["Namespace"]
     assert docs[0]["metadata"]["labels"][AgentReadable.LOGS] == "true"
+
+
+def test_claude_ai_narrow_profile_selection() -> None:
+    assert {grant for grant in access.catalog() if access.CLAUDE_AI in access.profile_subjects(grant)} == {
+        "agentplane-testing-operator",
+        "agentplane-testing-login",
+        "haku-console-metadata",
+        "clickhouse-diagnostics",
+        "public-coder-agent-reader",
+        "public-coder-volsync-status",
+    }
+    assert access.CLAUDE_AI in access.TESTING_OPERATOR_SUBJECTS
+    assert "claude-ai" not in access.MANAGED_GRANTS
 
 
 if __name__ == "__main__":

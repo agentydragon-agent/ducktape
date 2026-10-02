@@ -28,8 +28,8 @@ Tested: `default-vpa-requests-only`, `default-disable-service-links`, `inject-mi
 
 Untested, and why:
 
-- `require-gitops` and `restrict-agent-kustomization-patch` match on
-  `request.userInfo`, which plain `kyverno apply` does not supply. They need
+- `require-gitops` matches on `request.userInfo`, which plain `kyverno apply`
+  does not supply. It needs
   `--userinfo` or a mock admission context.
 - `default-revision-history-limit` has no test yet; it is the same shape as
   `default-vpa-requests-only` (mutate, add-if-absent), so

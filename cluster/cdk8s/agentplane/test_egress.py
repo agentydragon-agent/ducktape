@@ -372,6 +372,7 @@ def test_managed_haku_testing_operator_reuses_static_role_with_external_delegati
     static_binding = _by_name(testing_docs, "RoleBinding", "agent-agentplane-testing-operator")
     assert static_binding["roleRef"]["name"] == "agentplane-testing-operator"
     assert {subject["name"] for subject in static_binding["subjects"]} >= {
+        "claude-ai",
         "oidc-ksbx-groups:haku",
         "haku:access-profile:haku",
         "haku",
