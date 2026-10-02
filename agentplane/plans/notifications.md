@@ -19,6 +19,8 @@ Endpoint/tool names below illustrate the intended operations, not an existing wi
   fields rather than an Agentplane-specific vocabulary for the same facts.
 - **Push an inbox notice; pull the content.** Deliver a small automated user-message input through
   the existing runner protocol. Do not inject every provider payload into the conversation.
+- **Store the actual notification payload in every inbox entry.** Source references supplement the
+  retained content; they do not replace it. Reading the inbox does not fetch content from the source.
 - **Non-destructive reads, explicit acknowledgement high-water mark (HWM), no repeated reminders.**
   Runner confirmation, fetching content, and acknowledging it are distinct operations.
 - **Running destinations only in v1.** No notification-triggered harness resume or sandbox startup.
@@ -46,9 +48,11 @@ and follows its receipts. This is not another Action executor, Decision authorit
 manager, or generic runner-command queue. The existing runner owns native command scheduling.
 
 The Action Service remains the authority for Decisions and execution outcomes. Consume its canonical
-ordered events; do not introduce a second Action outbox or authoritative Action event store. Inbox
-entries may refer to those events, with service-owned matching/delivery metadata. Any persisted
-rendering is a derived notification, not a new source of Action truth. Preserve individual source
+ordered events; do not introduce a second Action outbox or authoritative Action event store. Every inbox
+entry stores the provider-defined notification payload along with source references and service-owned
+matching/delivery metadata. The retained payload is a notification snapshot, not a new source of
+Action truth. Providers construct authorized/redacted content before persistence; retaining the
+notification does not mean blindly copying credentials or an entire upstream response. Preserve individual source
 events even when one notice covers a batch. Approval is not execution success; an unknown execution
 outcome must never cause the notification service to resubmit the Action.
 
@@ -96,8 +100,9 @@ Persist these logical records:
 - **Subscriptions:** owning Thread, provider configuration, authenticated creator, creation
   idempotency key, lifecycle state, and source checkpoint.
 - **Inbox entries:** ordered Thread-local cursor, stable provider event identity, source reference,
-  matching subscriptions, and any provider-defined retained content. For Actions, keep canonical
-  facts in the Action Service; an inbox reference or derived rendering is not a second Action log.
+  matching subscriptions, and the actual provider-defined notification payload, always persisted.
+  Reads serve that snapshot without refetching content from the source. Action lifecycle authority
+  remains in the Action Service; retained notification content is not a second authoritative Action log.
 - **Thread inbox state:** cursor allocation, explicit acknowledgement HWM, and confirmed notice
   coverage. These last two positions must not be conflated.
 - **Notice deliveries:** exact text, covered range, destination binding, stable runner command ID,
@@ -107,7 +112,8 @@ Persist these logical records:
 
 The storage invariants matter more than the eventual table names:
 
-1. Commit matched inbox entries and advancement of their source checkpoint together. A crash may
+1. Commit matched inbox entries, including their payloads, and advancement of their source checkpoint
+   together. A crash may
    cause a reread but must not skip an event or duplicate an entry. Deduplicate stable source event
    identities within the destination inbox; record overlapping subscription matches separately.
 2. Inbox cursors must describe a committed prefix. A plain PostgreSQL sequence is insufficient:
@@ -244,7 +250,7 @@ deletion when that ends its Threads. Determine removal from authoritative lifecy
 unreachability or a timeout. Never silently retarget a successor session or sandbox. Finalize the exact
 cleanup signal alongside the binding API; the hosted-Thread lifecycle is not a prerequisite for v1.
 
-Keep accepted inbox entries under bounded retention, making expiry/replay gaps visible rather than
+Keep accepted inbox entries and their payloads under bounded retention, making expiry/replay gaps visible rather than
 silently acknowledging them. They remain readable when the agent returns. A coalesced notice on the
 next running harness is desirable but **not a v1 acceptance requirement**; initially there is no
 complete offline/catch-up delivery promise. Retaining accepted notifications and recovering events
@@ -296,6 +302,9 @@ as a shipped API. Operator UI and generic webhook setup are not prerequisites fo
 - Concurrent inbox insertion cannot expose a later cursor before an earlier transaction commits.
   Crashes around source-checkpoint commits and notice submission do not skip entries or create new
   command identities; worker recovery uses durable state rather than relying on `NOTIFY`.
+- Every retained inbox entry has its actual notification payload. Reading it does not refetch source
+  content; provider unavailability or later source changes do not replace the stored snapshot. Inbox
+  access remains authorized, and expiry remains explicit.
 - Reads do not acknowledge. HWM advancement is monotonic/idempotent, applies to a contiguous prefix,
   and rejects a future cursor. Retention gaps are visible. Subscription cancellation does not cancel
   an Action or erase/ack its existing inbox entries.
