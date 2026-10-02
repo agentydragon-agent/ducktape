@@ -221,9 +221,9 @@ fn modules_delete_force_accepts_clean_deletion() {
         "members:\n  - selector: { binding: { name: beta } }\n",
     );
 
-    // Delete `b.yaml`: beta becomes unclaimed → residual. The
-    // post-delete quotient is `a → residual`, still a DAG, so the
-    // gate accepts.
+    // Delete the dependent `a.yaml`, not its provider. Entry can read
+    // emitted beta after initialization; emitted alpha cannot read beta
+    // if beta is left in entry (entry evaluates last).
     let out = run_debundle(&[
         "modules",
         "delete",
@@ -231,7 +231,7 @@ fn modules_delete_force_accepts_clean_deletion() {
         modules.to_str().unwrap(),
         "--graph",
         graph.to_str().unwrap(),
-        "b.yaml",
+        "a.yaml",
         "--force",
     ]);
     assert!(
@@ -239,6 +239,6 @@ fn modules_delete_force_accepts_clean_deletion() {
         "expected zero exit; stderr: {}",
         String::from_utf8_lossy(&out.stderr),
     );
-    assert!(!modules.join("b.yaml").exists());
-    assert!(modules.join("a.yaml").exists());
+    assert!(!modules.join("a.yaml").exists());
+    assert!(modules.join("b.yaml").exists());
 }
