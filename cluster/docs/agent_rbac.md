@@ -208,7 +208,7 @@ Preset changes affect **new Sandboxes only**. After deployment, launch a new San
 (or explicitly migrate through the operator workflow), then check its effective
 access with `kubectl auth can-i` and exercise the intended reads. In particular,
 verify Ducktape Flux access, approved logs, and testing operator/login access. Verify
-that staging operator login and staging writes remain denied; public coder and finance
+that staging operator login and staging Sandbox lifecycle/exec remain denied; public coder and finance
 must also remain denied node proxy access and Secrets/exec outside their explicit
 permissions. Namespace diagnostic reads in staging are distinct from operator access. Do not treat
 a configured catalog or preset as proof that existing Sandboxes received bindings.
