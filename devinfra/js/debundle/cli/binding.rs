@@ -112,10 +112,11 @@ impl BindingLocation {
     }
 }
 
-/// Read every module YAML under `modules_root` once; return the
-/// loaded docs by module-path. The `assign` path uses this to compute
-/// the post-batch state in memory before writing anything back.
-pub fn load_module_docs(modules_root: &Path) -> Result<BTreeMap<String, (PathBuf, Value)>> {
+type ModuleDocs = BTreeMap<String, (PathBuf, Value)>;
+
+/// Load one planning snapshot for resolution, collision checks, and edits.
+/// Persistence still compares each prospective document against disk.
+pub fn load_module_docs(modules_root: &Path) -> Result<ModuleDocs> {
     let mut docs = BTreeMap::new();
     for file in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&file, modules_root);
@@ -214,23 +215,24 @@ fn source_match_binding_name(binding: &Value) -> Option<BindingName> {
 /// Locate every member matching `sym` under `modules_root`. `sym`
 /// matches either the minified binding name or the readable `name:`.
 pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>> {
-    let mut out = Vec::new();
-    for file in collect_module_files(modules_root)? {
-        let module_path = module_path_from_file(&file, modules_root);
-        let doc = read_yaml(&file)?;
-        out.extend(
-            binding_matches_in_doc(&file, &module_path, &doc)
-                .into_iter()
-                .filter(|binding| binding.name.matches(sym)),
-        );
-    }
-    Ok(out)
+    Ok(matches_in_docs(&load_module_docs(modules_root)?, sym))
+}
+
+fn matches_in_docs(docs: &ModuleDocs, sym: &str) -> Vec<BindingMatch> {
+    docs.iter()
+        .flat_map(|(module, (file, doc))| binding_matches_in_doc(file, module, doc))
+        .filter(|binding| binding.name.matches(sym))
+        .collect()
 }
 
 /// Resolve a single unambiguous match for `sym`, or bail with the
 /// canonical structured-list error message.
 pub fn resolve_unambiguous(modules_root: &Path, sym: &str) -> Result<BindingMatch> {
-    let matches = find_matches(modules_root, sym)?;
+    resolve_in_docs(modules_root, &load_module_docs(modules_root)?, sym)
+}
+
+fn resolve_in_docs(modules_root: &Path, docs: &ModuleDocs, sym: &str) -> Result<BindingMatch> {
+    let matches = matches_in_docs(docs, sym);
     match matches.len() {
         0 => bail!(
             "no binding named \"{sym}\" found under {}",
@@ -351,9 +353,10 @@ pub fn rename_binding(
              cases"
         );
     }
-    let hit = resolve_unambiguous(modules_root, original)?;
+    let mut docs = load_module_docs(modules_root)?;
+    let hit = resolve_in_docs(modules_root, &docs, original)?;
     if !no_verify {
-        let clashes = find_readable_collisions(modules_root, new, &hit.file, &hit.location)?;
+        let clashes = find_readable_collisions(&docs, new, &hit.file, &hit.location);
         if !clashes.is_empty() {
             bail!(
                 "name collision: \"{new}\" already used by:\n{}",
@@ -361,15 +364,17 @@ pub fn rename_binding(
             );
         }
     }
-    let mut doc = read_yaml(&hit.file)?;
-    let old_readable = current_readable_name(&doc, &hit.file, &hit.location)?;
+    let (_, doc) = docs
+        .get_mut(&hit.module_path)
+        .expect("resolved module is loaded");
+    let old_readable = current_readable_name(doc, &hit.file, &hit.location)?;
     let old_effective = old_readable
         .clone()
         .unwrap_or_else(|| hit.name.minified().to_string());
-    let annotation = remove_annotation(&mut doc, &old_effective)?;
-    set_readable_name(&mut doc, &hit.file, &hit.location, new)?;
-    insert_annotation(&mut doc, new, annotation)?;
-    let changed = apply_yaml_edit(&hit.file, &doc, dry_run)?;
+    let annotation = remove_annotation(doc, &old_effective)?;
+    set_readable_name(doc, &hit.file, &hit.location, new)?;
+    insert_annotation(doc, new, annotation)?;
+    let changed = apply_yaml_edit(&hit.file, doc, dry_run)?;
     let action = if !changed {
         "unchanged"
     } else if dry_run {
@@ -400,16 +405,14 @@ pub fn rename_binding(
 }
 
 fn find_readable_collisions(
-    modules_root: &Path,
+    docs: &ModuleDocs,
     new_readable: &str,
     self_file: &Path,
     self_location: &BindingLocation,
-) -> Result<Vec<String>> {
+) -> Vec<String> {
     let mut clashes = Vec::new();
-    for file in collect_module_files(modules_root)? {
-        let module_path = module_path_from_file(&file, modules_root);
-        let doc = read_yaml(&file)?;
-        for binding in binding_matches_in_doc(&file, &module_path, &doc) {
+    for (module_path, (file, doc)) in docs {
+        for binding in binding_matches_in_doc(file, module_path, doc) {
             if file == self_file && &binding.location == self_location {
                 continue;
             }
@@ -424,7 +427,7 @@ fn find_readable_collisions(
             }
         }
     }
-    Ok(clashes)
+    clashes
 }
 
 // ---------------------------------------------------------------------
@@ -616,6 +619,21 @@ pub fn run_bindings_assign(
     dry_run: bool,
     gate: Gate<'_>,
 ) -> Result<AssignOutcome> {
+    if moves.is_empty() {
+        return Ok(AssignOutcome {
+            outcome: MutationOutcome {
+                verb: "assign",
+                action: "noop",
+                gate: GateOutcome::NotRequired,
+                files_written: Vec::new(),
+                files_deleted: Vec::new(),
+            },
+            moves_applied: 0,
+        });
+    }
+
+    // Resolve and edit the same snapshot; never reread the tree per binding.
+    let mut docs = load_module_docs(modules_root)?;
     // Step 1: locate each move's member and canonicalize its
     // destination. Identity is the resolved (source module, member
     // index) slot: `<sym>` accepts both the minified and readable
@@ -624,7 +642,7 @@ pub fn run_bindings_assign(
     // extraction would then splice a null sentinel into the spec.
     let mut by_identity: BTreeMap<(String, usize), PlannedMove> = BTreeMap::new();
     for m in moves {
-        let hit = resolve_unambiguous(modules_root, &m.sym)?;
+        let hit = resolve_in_docs(modules_root, &docs, &m.sym)?;
         let source_index = match &hit.location {
             BindingLocation::Member { member_index } => *member_index,
             BindingLocation::SourceMatch { .. } => {
@@ -678,22 +696,6 @@ pub fn run_bindings_assign(
         }
     }
     let plan: Vec<PlannedMove> = by_identity.into_values().collect();
-    if plan.is_empty() {
-        return Ok(AssignOutcome {
-            outcome: MutationOutcome {
-                verb: "assign",
-                action: "noop",
-                gate: GateOutcome::NotRequired,
-                files_written: Vec::new(),
-                files_deleted: Vec::new(),
-            },
-            moves_applied: 0,
-        });
-    }
-
-    // Step 2: load every module YAML once.
-    let mut docs = load_module_docs(modules_root)?;
-
     // Step 3: pull each member out of its source doc (and rename if
     // requested). `take_member` leaves a `Null` sentinel so indices
     // stay stable across multiple takes from one module; collapse
@@ -1084,12 +1086,27 @@ pub fn run_bindings_unassign(
     dry_run: bool,
     gate: Gate<'_>,
 ) -> Result<UnassignOutcome> {
+    if syms.is_empty() {
+        return Ok(UnassignOutcome {
+            outcome: MutationOutcome {
+                verb: "unassign",
+                action: "noop",
+                gate: GateOutcome::NotRequired,
+                files_written: Vec::new(),
+                files_deleted: Vec::new(),
+            },
+            unassigned: 0,
+        });
+    }
+
+    // Resolve and edit the same snapshot; never reread the tree per binding.
+    let mut docs = load_module_docs(modules_root)?;
     // Step 1: resolve each sym and dedupe on member identity (same
     // rule as `run_bindings_assign` — both spellings of one member
     // are one removal).
     let mut plan: BTreeMap<(String, usize), String> = BTreeMap::new();
     for s in syms {
-        let hit = resolve_unambiguous(modules_root, &s)?;
+        let hit = resolve_in_docs(modules_root, &docs, &s)?;
         let member_index = match &hit.location {
             BindingLocation::Member { member_index } => *member_index,
             BindingLocation::SourceMatch { .. } => {
@@ -1103,22 +1120,6 @@ pub fn run_bindings_unassign(
             );
         }
     }
-    if plan.is_empty() {
-        return Ok(UnassignOutcome {
-            outcome: MutationOutcome {
-                verb: "unassign",
-                action: "noop",
-                gate: GateOutcome::NotRequired,
-                files_written: Vec::new(),
-                files_deleted: Vec::new(),
-            },
-            unassigned: 0,
-        });
-    }
-
-    // Step 2: load every module YAML once.
-    let mut docs = load_module_docs(modules_root)?;
-
     // Step 3: drop each member from its source doc. Same null-sentinel
     // + collapse-after pattern `run_bindings_assign` uses so multiple
     // unassigns from the same module don't shift indices mid-pass.
