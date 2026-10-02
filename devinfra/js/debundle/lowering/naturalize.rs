@@ -6,8 +6,9 @@
 //! (return-object aliases, destructure unpacks, constructor
 //! `this.x = param` mappings).
 //!
-//! `naturalize_module_body` is the public entry. Heuristic renames are
-//! split by what their source name resolves to:
+//! `NaturalizedModuleBody::prepare` is the phase entry: it returns the body,
+//! rename maps and post-rename facts together. Heuristic renames are split by
+//! what their source name resolves to:
 //!
 //! - **Free sources** (return-object aliases of names the deriving
 //!   function does not bind — typically source-chunk import aliases)
