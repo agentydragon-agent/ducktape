@@ -109,6 +109,12 @@ can cause an Open retry to conflict: inspect/list retained state and explicitly 
 never silently adopt a different spec or allocate another session ID. The runner owns
 idempotence for bootstrap, session identity, and setup. There is no service-side queue.
 
+Resume also requires the native harness's retained conversation, not just a runner spec.
+For example, the pinned Claude harness can reject resuming an empty conversation that has
+never persisted a turn. This API surfaces that refusal; it does not fabricate a replacement
+conversation or claim that runner admission proves native persistence. Improving empty-native-
+conversation resume is a runner follow-up, not part of this service extraction.
+
 Management requests are bounded by `lifecycle_timeout_s` (default 300). A timeout or client
 loss does not prove that bootstrap, setup, or launch did not happen. Reconcile via the same
 runner identity and retained state; an exact bootstrap retry replays its terminal result.
