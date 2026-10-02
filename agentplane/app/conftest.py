@@ -29,18 +29,10 @@ from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
-from agentplane.sandbox_service.testing.fake_inventory import (
-    NAMESPACE,
-    TEMPLATE,
-    FakeAuthenticationV1Api,
-    FakeCoreV1Api,
-    FakeCustomObjectsApi,
-)
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
@@ -49,7 +41,15 @@ from agentplane.runner import protocol_pb2
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
 from agentplane.runner.conftest import config, endpoint, harness, model, runner, spec, workspace
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.testing.fake_inventory import (
+    NAMESPACE,
+    TEMPLATE,
+    FakeAuthenticationV1Api,
+    FakeCoreV1Api,
+    FakeCustomObjectsApi,
+)
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 

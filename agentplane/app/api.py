@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
@@ -31,6 +30,7 @@ from agentplane.action_service.models import (
     ActionState,
     DecisionInput,
 )
+from agentplane.action_service.policy_view import ActionPolicySetView
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
@@ -39,8 +39,6 @@ from agentplane.app.action_federation import (
     upstream_failure_detail,
 )
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.action_service.policy_view import ActionPolicySetView
-from agentplane.sandbox_service.action_policy import UnknownPolicySetError
 from agentplane.app.agent_runtime.events import stream
 from agentplane.app.agent_runtime.events.debug import (
     ArchivedObservationEntry,
@@ -66,6 +64,16 @@ from agentplane.app.consent import (
 )
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
+from agentplane.app.electric import ElectricProxy, router as electric_router
+from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
+from agentplane.app.live import LiveIndex, Updates, router as live_router
+from agentplane.app.oidc import OIDCSettings, build_oauth
+from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
+from agentplane.app.presets import PresetCatalog, SandboxPresetView
+from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
+from agentplane.runner import protocol_pb2
+from agentplane.runner.client import OpenTimeoutError, RunnerError
+from agentplane.sandbox_service.action_policy import UnknownPolicySetError
 from agentplane.sandbox_service.egress import (
     BindingNotFoundError,
     BindingView,
@@ -74,16 +82,6 @@ from agentplane.sandbox_service.egress import (
     PolicyView,
     UnknownPolicyError,
 )
-from agentplane.app.electric import ElectricProxy, router as electric_router
-from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
-from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
-from agentplane.app.live import LiveIndex, Updates, router as live_router
-from agentplane.app.oidc import OIDCSettings, build_oauth
-from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
-from agentplane.app.presets import PresetCatalog, SandboxPresetView
-from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
-from agentplane.runner import protocol_pb2
-from agentplane.runner.client import OpenTimeoutError, RunnerError
 from agentplane.sandbox_service.inventory import (
     NewSandbox,
     SandboxInventory,
@@ -91,6 +89,7 @@ from agentplane.sandbox_service.inventory import (
     SandboxRunningError,
     SandboxView,
 )
+from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import (
     DuplicateKubernetesGrantError,
     KubernetesGrant,
@@ -99,8 +98,8 @@ from agentplane.sandbox_service.kubernetes_grants import (
     grant_views,
     resolve_grants,
 )
-from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.session_config import Harness
 from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -261,9 +260,9 @@ async def create_sandbox(
     bindings: KubernetesBindings | None = request.app.state.kubernetes_bindings
     if grants and bindings is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Kubernetes grant provisioning is unavailable")
-    return await Provisioning(
-        inventory, egress, action_policy, request.app.state.kubernetes_grants, bindings
-    ).create(spec)
+    return await Provisioning(inventory, egress, action_policy, request.app.state.kubernetes_grants, bindings).create(
+        spec
+    )
 
 
 @router.get("/{name}")

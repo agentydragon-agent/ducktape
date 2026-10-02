@@ -66,9 +66,12 @@ def launch_overrides(request: protocol_pb2.OpenSessionRequest) -> dict[str, obje
 def open_proto(
     destination: protocol_pb2.SessionDestination, overrides: dict[str, object], setup_script: str | None
 ) -> protocol_pb2.OpenSessionRequest:
-    spec = ParseDict(overrides, runner_pb2.SessionSpec())
     fields = runner_pb2.SessionSpec.DESCRIPTOR.fields
-    # ParseDict validates names, types and duplicate JSON/proto spellings before constructing a mask.
+    if any(
+        field.name != field.json_name and field.name in overrides and field.json_name in overrides for field in fields
+    ):
+        raise ValueError("a SessionSpec field cannot use both proto and JSON spellings")
+    spec = ParseDict(overrides, runner_pb2.SessionSpec())
     paths = [field.name for field in fields if field.name in overrides or field.json_name in overrides]
     request = protocol_pb2.OpenSessionRequest(destination=destination, spec=spec, setup_script=setup_script)
     request.override_mask.paths.extend(paths)

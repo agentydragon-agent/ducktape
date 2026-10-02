@@ -114,9 +114,9 @@ class SessionStream(StreamingResponse):
                     entry = await self._attachment.next_entry()
                     yield f"event: entry\ndata: {json.dumps(MessageToDict(entry))}\n\n"
         except TimeoutError:
-            yield 'event: lease_expired\ndata: {}\n\n'
+            yield "event: lease_expired\ndata: {}\n\n"
         except StreamClosedError:
-            yield 'event: ended\ndata: {}\n\n'
+            yield "event: ended\ndata: {}\n\n"
         except RunnerError, grpc.RpcError:
             # A transport envelope, deliberately not a synthetic runner Event or success receipt.
             yield 'event: unavailable\ndata: {"detail":"runner follow ended without a complete receipt"}\n\n'

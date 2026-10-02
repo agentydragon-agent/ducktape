@@ -22,10 +22,10 @@ from agentplane.app.agent_runtime.runner.bridge import NewSession
 from agentplane.app.agent_runtime.view.views import ThreadView
 from agentplane.app.api import EgressGrant, ModelCatalog
 from agentplane.app.decisions import Decision
-from agentplane.sandbox_service.egress import BindingView, PolicyView
 from agentplane.app.presets import SandboxPresetView
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.sandbox_service.egress import BindingView, PolicyView
 from agentplane.sandbox_service.inventory import NewSandbox, ProvisioningState, SandboxView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

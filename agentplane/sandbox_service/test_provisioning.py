@@ -11,13 +11,13 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.runner.client import RunnerError
 from agentplane.sandbox_service import protocol_pb2, wire
+from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.destinations import DestinationResolver, SandboxDestination
 from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import NewSandbox, ProvisioningState, SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -123,12 +123,20 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
 
 
 async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxServiceClient, case: Case) -> None:
-    view = await api.create(NewSandbox.model_validate({
-        "slug": "test", "template": TEMPLATE, "action_policy_sets": ["test-actions"],
-        "kubernetes_grants": ["test-read"], "bootstrap": "printf ready",
-        "thread_defaults": {"model": "test-model", "instructions": ""},
-    }))
-    assert view.binding is not None and view.binding.bootstrap == "printf ready"
+    view = await api.create(
+        NewSandbox.model_validate(
+            {
+                "slug": "test",
+                "template": TEMPLATE,
+                "action_policy_sets": ["test-actions"],
+                "kubernetes_grants": ["test-read"],
+                "bootstrap": "printf ready",
+                "thread_defaults": {"model": "test-model", "instructions": ""},
+            }
+        )
+    )
+    assert view.binding is not None
+    assert view.binding.bootstrap == "printf ready"
     assert view.binding.thread_defaults is not None
     assert view.binding.thread_defaults.instructions == ""
     assert view.binding.thread_defaults.cwd is None

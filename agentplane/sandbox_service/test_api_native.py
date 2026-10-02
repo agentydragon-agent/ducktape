@@ -32,10 +32,14 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 
+
 def entry_data(stream: str) -> list[str]:
     return [
-        line for frame in stream.split("\n\n") if frame.startswith("event: entry\n")
-        for line in frame.splitlines() if line.startswith("data: ")
+        line
+        for frame in stream.split("\n\n")
+        if frame.startswith("event: entry\n")
+        for line in frame.splitlines()
+        if line.startswith("data: ")
     ]
 
 

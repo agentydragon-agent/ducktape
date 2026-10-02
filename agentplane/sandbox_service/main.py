@@ -14,10 +14,9 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
-from agentplane.sandbox_service import protocol_pb2_grpc
-from agentplane.sandbox_service.grpc_api import Resources, SandboxService
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.grpc_api import Resources, add_service
 from agentplane.sandbox_service.instructions import resolved_agent_instructions
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
@@ -116,22 +115,20 @@ async def serve(settings: Settings) -> None:
                     or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
                 ),
             )
-        service = SandboxService(
-            Resources(
-                principals=principals,
-                destinations=DestinationResolver(inventory, core, settings.runner_port, settings.trusted_accounts),
-                admission_timeout_s=settings.admission_timeout_s,
-                follow_lease_s=settings.follow_lease_s,
-                manager_accounts=settings.manager_accounts,
-                platform_instructions=platform_instructions,
-                lifecycle_timeout_s=settings.lifecycle_timeout_s,
-                provisioning=provisioning,
-            )
+        resources = Resources(
+            principals=principals,
+            destinations=DestinationResolver(inventory, core, settings.runner_port, settings.trusted_accounts),
+            admission_timeout_s=settings.admission_timeout_s,
+            follow_lease_s=settings.follow_lease_s,
+            manager_accounts=settings.manager_accounts,
+            platform_instructions=platform_instructions,
+            lifecycle_timeout_s=settings.lifecycle_timeout_s,
+            provisioning=provisioning,
         )
         if settings.port == settings.health_port:
             raise ValueError("gRPC and health ports must differ")
         server = grpc.aio.server()
-        protocol_pb2_grpc.add_SandboxServiceServicer_to_server(service, server)
+        add_service(resources, server)
         server.add_insecure_port(f"{settings.host}:{settings.port}")
         await server.start()
         health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
@@ -142,7 +139,9 @@ async def serve(settings: Settings) -> None:
 
         reconcile = asyncio.create_task(provisioning.run(), name="sandbox-provisioning") if provisioning else None
         try:
-            await uvicorn.Server(uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)).serve()
+            await uvicorn.Server(
+                uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)
+            ).serve()
         finally:
             await server.stop(grace=5)
             if reconcile is not None:

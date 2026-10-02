@@ -5,8 +5,7 @@ from contextlib import asynccontextmanager
 
 import grpc
 
-from agentplane.sandbox_service import protocol_pb2_grpc
-from agentplane.sandbox_service.grpc_api import Resources, SandboxService
+from agentplane.sandbox_service.grpc_api import Resources, add_service
 
 # gazelle:include_dep @pypi//grpcio
 
@@ -14,7 +13,7 @@ from agentplane.sandbox_service.grpc_api import Resources, SandboxService
 @asynccontextmanager
 async def service(resources: Resources) -> AsyncIterator[str]:
     server = grpc.aio.server()
-    protocol_pb2_grpc.add_SandboxServiceServicer_to_server(SandboxService(resources), server)
+    add_service(resources, server)
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
     try:

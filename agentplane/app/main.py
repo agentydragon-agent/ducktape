@@ -44,20 +44,20 @@ from agentplane.app.api import ModelCatalog, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
-from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
+from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.instructions import resolved_agent_instructions
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, RoleBindingGrant
+from agentplane.sandbox_service.provisioning import Provisioning
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 

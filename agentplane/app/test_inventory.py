@@ -10,6 +10,14 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
+from agentplane.sandbox_service.inventory import (
+    MANAGED_LABEL,
+    NewSandbox,
+    ProvisioningState,
+    SandboxInventory,
+    SandboxNotFoundError,
+    SandboxRunningError,
+)
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     POD_TEMPLATE,
@@ -18,14 +26,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeCustomObjectsApi,
     pod,
     sandbox,
-)
-from agentplane.sandbox_service.inventory import (
-    MANAGED_LABEL,
-    NewSandbox,
-    ProvisioningState,
-    SandboxInventory,
-    SandboxNotFoundError,
-    SandboxRunningError,
 )
 
 _READY = {"conditions": [{"type": "Ready", "status": "True", "reason": "PodReady"}], "nodeName": "test-node"}

@@ -15,7 +15,6 @@ from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient, RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, session_lifecycle, wire
 from agentplane.sandbox_service.action_policy import UnknownPolicySetError
-from agentplane.sandbox_service.egress import UnknownPolicyError
 from agentplane.sandbox_service.command_relay import admit_running_command
 from agentplane.sandbox_service.destinations import (
     DestinationDeniedError,
@@ -24,6 +23,7 @@ from agentplane.sandbox_service.destinations import (
     RunnerEndpoint,
     SandboxDestination,
 )
+from agentplane.sandbox_service.egress import UnknownPolicyError
 from agentplane.sandbox_service.inventory import InventoryError, SandboxNotFoundError, SandboxView
 from agentplane.sandbox_service.kubernetes_grants import grant_views
 from agentplane.sandbox_service.provisioning import Provisioning
@@ -57,7 +57,7 @@ class Resources:
             raise ValueError("session management requires configured platform instructions")
 
     async def authenticate(self, context: grpc.aio.ServicerContext) -> WorkloadPrincipal:
-        values = [value for key, value in context.invocation_metadata() if key == "authorization"]
+        values = [value for key, value in (context.invocation_metadata() or ()) if key == "authorization"]
         if any(not isinstance(value, str) for value in values):
             raise WorkloadPrincipalRejectedError("invalid bearer metadata")
         value = sole_header([value for value in values if isinstance(value, str)])
@@ -92,16 +92,16 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.PERMISSION_DENIED, "destination access denied")
     except SandboxNotFoundError:
         await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
-    except (ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError):
+    except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
-    except (InventoryError, RunnerError, StreamClosedError):
+    except InventoryError, RunnerError, StreamClosedError:
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")
     except TimeoutError:
         await context.abort(
             grpc.StatusCode.DEADLINE_EXCEEDED,
             "service deadline or follow lease expired; mutation outcome may be uncertain",
         )
-    except (DestinationUnavailableError, k8s_client.ApiException):
+    except DestinationUnavailableError, k8s_client.ApiException:
         await context.abort(grpc.StatusCode.UNAVAILABLE, "destination unavailable; no offline admission")
     except grpc.RpcError as error:
         if isinstance(error, grpc.aio.AioRpcError):
@@ -135,24 +135,34 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
         finally:
             await client.close()
 
-    async def ListSandboxes(self, request: Empty, context: grpc.aio.ServicerContext) -> protocol_pb2.ListSandboxesResponse:  # noqa: N802
+    async def ListSandboxes(
+        self, request: Empty, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.ListSandboxesResponse:  # noqa: N802
         async with self.request(context) as principal:
             inventory = self.resources.administrator(principal).inventory
-            return protocol_pb2.ListSandboxesResponse(sandboxes=[wire.sandbox_proto(v) for v in await inventory.list_sandboxes()])
+            return protocol_pb2.ListSandboxesResponse(
+                sandboxes=[wire.sandbox_proto(v) for v in await inventory.list_sandboxes()]
+            )
 
-    async def GetSandbox(self, request: protocol_pb2.GetSandboxRequest, context: grpc.aio.ServicerContext) -> protocol_pb2.Sandbox:  # noqa: N802
+    async def GetSandbox(
+        self, request: protocol_pb2.GetSandboxRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.Sandbox:  # noqa: N802
         async with self.request(context) as principal:
             inventory = self.resources.administrator(principal).inventory
             if not request.name:
                 raise ValueError("name is required")
             return wire.sandbox_proto(await inventory.get(request.name))
 
-    async def CreateSandbox(self, request: protocol_pb2.CreateSandboxRequest, context: grpc.aio.ServicerContext) -> protocol_pb2.Sandbox:  # noqa: N802
+    async def CreateSandbox(
+        self, request: protocol_pb2.CreateSandboxRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.Sandbox:  # noqa: N802
         async with self.request(context, timeout_s=self.resources.lifecycle_timeout_s) as principal:
             provisioning = self.resources.administrator(principal)
             return wire.sandbox_proto(await provisioning.create(wire.new_sandbox(request)))
 
-    async def checked_sandbox(self, principal: WorkloadPrincipal, request: protocol_pb2.SandboxRequest) -> tuple[Provisioning, SandboxView]:
+    async def checked_sandbox(
+        self, principal: WorkloadPrincipal, request: protocol_pb2.SandboxRequest
+    ) -> tuple[Provisioning, SandboxView]:
         provisioning = self.resources.administrator(principal)
         destination = wire.sandbox_destination(request.destination)
         view = await provisioning.inventory.get(destination.sandbox)
@@ -180,30 +190,46 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             await provisioning.inventory.delete(view.name, uid=view.uid)
             return Empty()
 
-    async def ListTemplates(self, request: Empty, context: grpc.aio.ServicerContext) -> protocol_pb2.ListTemplatesResponse:  # noqa: N802
+    async def ListTemplates(
+        self, request: Empty, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.ListTemplatesResponse:  # noqa: N802
         async with self.request(context) as principal:
             inventory = self.resources.administrator(principal).inventory
             return protocol_pb2.ListTemplatesResponse(templates=await inventory.list_templates())
 
-    async def ListKubernetesGrants(self, request: Empty, context: grpc.aio.ServicerContext) -> protocol_pb2.ListKubernetesGrantsResponse:  # noqa: N802
+    async def ListKubernetesGrants(
+        self, request: Empty, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.ListKubernetesGrantsResponse:  # noqa: N802
         async with self.request(context) as principal:
             provisioning = self.resources.administrator(principal)
-            return protocol_pb2.ListKubernetesGrantsResponse(grants=[
-                ParseDict(view.model_dump(mode="json", exclude_none=True), protocol_pb2.KubernetesGrantView())
-                for view in grant_views(provisioning.grants)
-            ])
+            return protocol_pb2.ListKubernetesGrantsResponse(
+                grants=[
+                    ParseDict(view.model_dump(mode="json", exclude_none=True), protocol_pb2.KubernetesGrantView())
+                    for view in grant_views(provisioning.grants)
+                ]
+            )
 
-    async def ListSessions(self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext) -> runner_pb2.ListSessionsResponse:  # noqa: N802
-        async with self.request(context) as principal:
-            async with self.runner(principal, wire.sandbox_destination(request.destination)) as (client, _):
-                return runner_pb2.ListSessionsResponse(sessions=await client.list_sessions())
+    async def ListSessions(
+        self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.ListSessionsResponse:  # noqa: N802
+        async with (
+            self.request(context) as principal,
+            self.runner(principal, wire.sandbox_destination(request.destination)) as (client, _),
+        ):
+            return runner_pb2.ListSessionsResponse(sessions=await client.list_sessions())
 
-    async def InitializeSandbox(self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext) -> runner_pb2.InitializeResult:  # noqa: N802
-        async with self.request(context, timeout_s=self.resources.lifecycle_timeout_s) as principal:
-            async with self.runner(principal, wire.sandbox_destination(request.destination), manage=True) as (client, endpoint):
-                return await session_lifecycle.initialize(client, endpoint.binding)
+    async def InitializeSandbox(
+        self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.InitializeResult:  # noqa: N802
+        async with (
+            self.request(context, timeout_s=self.resources.lifecycle_timeout_s) as principal,
+            self.runner(principal, wire.sandbox_destination(request.destination), manage=True) as (client, endpoint),
+        ):
+            return await session_lifecycle.initialize(client, endpoint.binding)
 
-    async def OpenSession(self, request: protocol_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext) -> runner_pb2.Attached:  # noqa: N802
+    async def OpenSession(
+        self, request: protocol_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.Attached:  # noqa: N802
         async with self.request(context, timeout_s=self.resources.lifecycle_timeout_s) as principal:
             destination = wire.session_destination(request.destination)
             async with self.runner(principal, destination, manage=True) as (client, endpoint):
@@ -211,21 +237,30 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 if len(request.setup_script) > 65_536:
                     raise ValueError("setup script is too long")
                 spec = session_lifecycle.launch_spec(
-                    destination, wire.launch_overrides(request), binding=endpoint.binding,
+                    destination,
+                    wire.launch_overrides(request),
+                    binding=endpoint.binding,
                     platform_instructions=self.resources.platform_instructions,
                 )
                 return await session_lifecycle.open_session(
-                    client, destination, spec, binding=endpoint.binding,
+                    client,
+                    destination,
+                    spec,
+                    binding=endpoint.binding,
                     setup_script=request.setup_script if request.HasField("setup_script") else None,
                 )
 
-    async def ResumeSession(self, request: protocol_pb2.SessionRequest, context: grpc.aio.ServicerContext) -> runner_pb2.Attached:  # noqa: N802
+    async def ResumeSession(
+        self, request: protocol_pb2.SessionRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.Attached:  # noqa: N802
         async with self.request(context, timeout_s=self.resources.lifecycle_timeout_s) as principal:
             destination = wire.session_destination(request.destination)
             async with self.runner(principal, destination, manage=True) as (client, _):
                 return await session_lifecycle.resume_session(client, destination.session_id)
 
-    async def InspectSession(self, request: protocol_pb2.SessionRequest, context: grpc.aio.ServicerContext) -> runner_pb2.Attached:  # noqa: N802
+    async def InspectSession(
+        self, request: protocol_pb2.SessionRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.Attached:  # noqa: N802
         async with self.request(context) as principal:
             destination = wire.session_destination(request.destination)
             async with self.runner(principal, destination) as (client, _):
@@ -235,18 +270,27 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 finally:
                     attachment.cancel()
 
-    async def SubmitCommand(self, request: protocol_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext) -> event_log_pb2.EventEntry:  # noqa: N802
+    async def SubmitCommand(
+        self, request: protocol_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
+    ) -> event_log_pb2.EventEntry:  # noqa: N802
         async with self.request(context) as principal:
             destination = wire.session_destination(request.destination)
             if not request.command.command_id or request.command.WhichOneof("operation") is None:
                 raise ValueError("command ID and operation are required")
             async with self.runner(principal, destination) as (client, _):
                 return await admit_running_command(
-                    client, destination.session_id, request.command,
-                    after_cursor=request.follow.after_cursor, timeout_s=self.resources.admission_timeout_s,
+                    client,
+                    destination.session_id,
+                    request.command,
+                    after_cursor=request.follow.after_cursor,
+                    timeout_s=self.resources.admission_timeout_s,
                 )
 
-    async def FollowSession(self, request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext) -> None:  # noqa: N802
+    # mypy-protobuf omits aio's supported writer-style streaming handlers. Explicit writes are
+    # intentional: flow-control stalls must stay inside the deadline and cleanup scope.
+    async def FollowSession(  # type: ignore[override]
+        self, request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
+    ) -> None:  # noqa: N802
         # Explicit writes keep flow-control stalls inside our deadline and finally blocks.
         async with errors(context):
             async with asyncio.timeout(self.resources.admission_timeout_s):
@@ -271,3 +315,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     attachment.cancel()
             finally:
                 await client.close()
+
+
+def add_service(resources: Resources, server: grpc.aio.Server) -> None:
+    protocol_pb2_grpc.add_SandboxServiceServicer_to_server(SandboxService(resources), server)

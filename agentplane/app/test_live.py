@@ -31,7 +31,6 @@ from agentplane.app.conftest import TEST_REASONING_EFFORTS, Replica, stored_logi
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
 from agentplane.app.live import (
     PODS_PLURAL,
@@ -53,6 +52,10 @@ from agentplane.app.operator_sessions import (
     SessionRow,
 )
 from agentplane.app.shutdown import Drain
+from agentplane.runner import protocol_pb2
+from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory
+from agentplane.sandbox_service.session_config import Harness
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
@@ -64,9 +67,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     pod,
     sandbox,
 )
-from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.inventory import ProvisioningState, SandboxInventory
-from agentplane.sandbox_service.session_config import Harness
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOXES_PLURAL
 from util.net import pick_free_port

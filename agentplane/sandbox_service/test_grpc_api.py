@@ -11,12 +11,13 @@ import grpc
 import pytest
 import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
+from kubernetes_asyncio import client as k8s_client
 
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
-from agentplane.sandbox_service.client import FollowLeaseExpired, SandboxServiceClient, ServiceError
+from agentplane.sandbox_service.client import FollowLeaseExpiredError, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver, SandboxDestination
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.testing.grpc_service import service
@@ -24,7 +25,6 @@ from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SAND
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from kubernetes_asyncio import client as k8s_client
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -50,7 +50,7 @@ class Peer:
         self.state = runner_pb2.HARNESS_STATE_RUNNING
 
     async def attach(
-        self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext,
+        self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         first = await anext(requests)
         connection = PeerAttachment(first.open)
@@ -62,7 +62,9 @@ class Peer:
 
         consumer = asyncio.create_task(consume())
         try:
-            yield runner_pb2.ServerMessage(attached=runner_pb2.Attached(session_id=first.open.session_id, harness_state=self.state))
+            yield runner_pb2.ServerMessage(
+                attached=runner_pb2.Attached(session_id=first.open.session_id, harness_state=self.state)
+            )
             while (message := await connection.responses.get()) is not None:
                 if isinstance(message, grpc.StatusCode):
                     await context.abort(message, "test runner failure")
@@ -70,23 +72,33 @@ class Peer:
                     yield message
         finally:
             consumer.cancel()
-            with suppress(asyncio.CancelledError):
-                await consumer
-            connection.closed.set()
+            try:
+                with suppress(asyncio.CancelledError):
+                    await consumer
+            finally:
+                # Aborting the server RPC can also fail its request-reader task. Still record
+                # completed cleanup, rather than making the test wait on an unreachable marker.
+                connection.closed.set()
 
 
 @pytest.fixture
 async def peer() -> AsyncIterator[Peer]:
     peer = Peer()
     server = grpc.aio.server()
-    server.add_generic_rpc_handlers([grpc.method_handlers_generic_handler(
-        "ducktape.agentplane.runner.v1.Runner", {
-            "Attach": grpc.stream_stream_rpc_method_handler(
-                peer.attach, request_deserializer=runner_pb2.ClientMessage.FromString,
-                response_serializer=runner_pb2.ServerMessage.SerializeToString,
-            ),
-        },
-    )])
+    server.add_generic_rpc_handlers(
+        [
+            grpc.method_handlers_generic_handler(
+                "ducktape.agentplane.runner.v1.Runner",
+                {
+                    "Attach": grpc.stream_stream_rpc_method_handler(
+                        peer.attach,
+                        request_deserializer=runner_pb2.ClientMessage.FromString,
+                        response_serializer=runner_pb2.ServerMessage.SerializeToString,
+                    )
+                },
+            )
+        ]
+    )
     peer.port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
     try:
@@ -99,15 +111,19 @@ async def peer() -> AsyncIterator[Peer]:
 async def remote(cluster: Cluster, peer: Peer, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
     cluster.fake.tokens[TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
-        pod_name="test-caller", pod_uid="test-caller-uid", audiences=(AUDIENCE,),
+        pod_name="test-caller",
+        pod_uid="test-caller-uid",
+        audiences=(AUDIENCE,),
     )
     resources = Resources(
         principals=WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(cluster.api), audience=AUDIENCE,
+            authentication=k8s_client.AuthenticationV1Api(cluster.api),
+            audience=AUDIENCE,
             allowed_service_account_namespaces={SANDBOX_NAMESPACE},
         ),
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), peer.port),
-        follow_lease_s=0.5, admission_timeout_s=1,
+        follow_lease_s=0.5,
+        admission_timeout_s=1,
     )
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)
@@ -121,7 +137,8 @@ async def remote(cluster: Cluster, peer: Peer, tmp_path: Path) -> AsyncIterator[
 
 def admission(command: command_pb2.Command, cursor: int) -> event_log_pb2.EventEntry:
     return event_log_pb2.EventEntry(
-        cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="test-journal", sequence=cursor),
+        cursor=cursor,
+        origin=event_log_pb2.EventOrigin(source_id="test-journal", sequence=cursor),
         event=event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)),
     )
 
@@ -154,7 +171,7 @@ async def test_follow_reconnect_rechecks_token_and_preserves_cursor(remote: Sand
         receipt = admission(command_pb2.Command(command_id="recorded"), 12)
         connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=receipt))
         assert await attachment.next_entry() == receipt
-        with pytest.raises(FollowLeaseExpired):
+        with pytest.raises(FollowLeaseExpiredError):
             await attachment.next_entry()
         await connection.closed.wait()
         second = await runner.attach("session", after_cursor=12)
@@ -172,7 +189,7 @@ async def test_follow_reconnect_rechecks_token_and_preserves_cursor(remote: Sand
 
 @pytest.mark.parametrize("ending", [None, grpc.StatusCode.UNAVAILABLE])
 async def test_native_eof_is_distinct_from_backend_failure(
-    remote: SandboxServiceClient, peer: Peer, ending: grpc.StatusCode | None,
+    remote: SandboxServiceClient, peer: Peer, ending: grpc.StatusCode | None
 ) -> None:
     async with asyncio.timeout(8):
         attachment = await remote.runner(DESTINATION).attach("session")
@@ -224,27 +241,34 @@ async def test_stopped_command_does_not_send_input(remote: SandboxServiceClient,
         assert connection.commands.empty()
 
 
-@pytest.mark.parametrize("metadata", [(), (("authorization", "Bearer invalid"),), (
-    ("authorization", f"Bearer {TOKEN}"), ("authorization", f"Bearer {TOKEN}"),
-)])
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        (),
+        (("authorization", "Bearer invalid"),),
+        (("authorization", f"Bearer {TOKEN}"), ("authorization", f"Bearer {TOKEN}")),
+    ],
+)
 async def test_missing_invalid_or_duplicate_bearer_is_rejected(
-    remote: SandboxServiceClient, peer: Peer, metadata: tuple[tuple[str, str], ...],
+    remote: SandboxServiceClient, peer: Peer, metadata: tuple[tuple[str, str], ...]
 ) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as rejected:
         await remote.stub.InspectSession(
-            protocol_pb2.SessionRequest(destination=wire.session_proto(DESTINATION, "session")),
-            metadata=metadata,
+            protocol_pb2.SessionRequest(destination=wire.session_proto(DESTINATION, "session")), metadata=metadata
         )
     assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
     assert peer.attachments.empty()
 
 
-@pytest.mark.parametrize("change,code", [
-    ({"owner": ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="other")}, grpc.StatusCode.PERMISSION_DENIED),
-    ({"sandbox_uid": uuid4()}, grpc.StatusCode.NOT_FOUND),
-])
+@pytest.mark.parametrize(
+    ("change", "code"),
+    [
+        ({"owner": ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="other")}, grpc.StatusCode.PERMISSION_DENIED),
+        ({"sandbox_uid": uuid4()}, grpc.StatusCode.NOT_FOUND),
+    ],
+)
 async def test_destination_authority_and_incarnation(
-    remote: SandboxServiceClient, peer: Peer, change: dict[str, object], code: grpc.StatusCode,
+    remote: SandboxServiceClient, peer: Peer, change: dict[str, object], code: grpc.StatusCode
 ) -> None:
     with pytest.raises(ServiceError) as rejected:
         await remote.runner(DESTINATION.model_copy(update=change)).attach("session")
@@ -265,19 +289,69 @@ async def test_management_requires_explicit_authority(remote: SandboxServiceClie
 async def test_wire_preserves_inventory_and_explicit_empty_overrides(cluster: Cluster) -> None:
     view = await cluster.inventory.get(SANDBOX)
     assert wire.sandbox_view(wire.sandbox_proto(view)) == view
-    request = wire.open_proto(wire.session_proto(DESTINATION, "session"), {
-        "model": "test-model", "instructions": "", "reasoningEffort": "",
-    }, "")
+    request = wire.open_proto(
+        wire.session_proto(DESTINATION, "session"),
+        {"model": "test-model", "instructions": "", "reasoningEffort": ""},
+        "",
+    )
     assert wire.launch_overrides(request) == {"model": "test-model", "instructions": "", "reasoningEffort": ""}
     assert request.HasField("setup_script")
     assert request.setup_script == ""
     request.override_mask.paths.append("unknown")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unique SessionSpec field names"):
         wire.launch_overrides(request)
     request.override_mask.paths[:] = ["model"]
     request.spec.cwd = "/unselected"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="every supplied SessionSpec field"):
         wire.launch_overrides(request)
+
+
+async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
+    async def truncated(
+        request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[protocol_pb2.FollowSessionResponse]:
+        yield protocol_pb2.FollowSessionResponse(
+            attached=runner_pb2.Attached(session_id=request.destination.session_id)
+        )
+        # Deliberately no ended observation: even an OK transport status is not native EOF evidence.
+
+    server = grpc.aio.server()
+    server.add_generic_rpc_handlers(
+        [
+            grpc.method_handlers_generic_handler(
+                "ducktape.agentplane.sandbox.v1.SandboxService",
+                {
+                    "FollowSession": grpc.unary_stream_rpc_method_handler(
+                        truncated,
+                        request_deserializer=protocol_pb2.FollowSessionRequest.FromString,
+                        response_serializer=protocol_pb2.FollowSessionResponse.SerializeToString,
+                    )
+                },
+            )
+        ]
+    )
+    port = server.add_insecure_port("127.0.0.1:0")
+    await server.start()
+    token_file = tmp_path / "token"
+    token_file.write_text(TOKEN)
+    client = SandboxServiceClient(f"127.0.0.1:{port}", namespace=SANDBOX_NAMESPACE, token_file=token_file)
+    try:
+        attachment = await client.runner(DESTINATION).attach("session")
+        try:
+            with pytest.raises(ConnectionError, match="without native closure"):
+                await attachment.next_entry()
+        finally:
+            attachment.cancel()
+    finally:
+        await client.close()
+        await server.stop(0)
+
+
+def test_duplicate_spec_aliases_are_refused() -> None:
+    with pytest.raises(ValueError, match="both proto and JSON"):
+        wire.open_proto(
+            wire.session_proto(DESTINATION, "session"), {"reasoning_effort": "low", "reasoningEffort": "high"}, None
+        )
 
 
 if __name__ == "__main__":

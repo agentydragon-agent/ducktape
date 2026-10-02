@@ -36,17 +36,21 @@ async def remote(cluster: Cluster, runner: RunnerHandle, tmp_path: Path) -> Asyn
     audience = "test-native-grpc"
     cluster.fake.tokens[token] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
-        pod_name="test-native-caller", pod_uid="test-native-caller-uid", audiences=(audience,),
+        pod_name="test-native-caller",
+        pod_uid="test-native-caller-uid",
+        audiences=(audience,),
     )
     token_file = tmp_path / "service-token"
     token_file.write_text(token)
     resources = Resources(
         principals=WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(cluster.api), audience=audience,
+            authentication=k8s_client.AuthenticationV1Api(cluster.api),
+            audience=audience,
             allowed_service_account_namespaces={SANDBOX_NAMESPACE},
         ),
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
-        manager_accounts=frozenset({OWNER}), platform_instructions="Test backend-owned guidance.",
+        manager_accounts=frozenset({OWNER}),
+        platform_instructions="Test backend-owned guidance.",
     )
     async with service(resources) as target:
         client = SandboxServiceClient(target, namespace=SANDBOX_NAMESPACE, token_file=token_file)
@@ -57,7 +61,7 @@ async def remote(cluster: Cluster, runner: RunnerHandle, tmp_path: Path) -> Asyn
 
 
 async def test_open_admit_replay_follow_stop_and_resume(
-    remote: SandboxServiceClient, model: ScriptedModel, spec: runner_pb2.SessionSpec,
+    remote: SandboxServiceClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     runner = remote.runner(DESTINATION)
     opened = await runner.open("grpc-session", MessageToDict(spec))
@@ -83,8 +87,10 @@ async def test_open_admit_replay_follow_stop_and_resume(
     finally:
         attachment.cancel()
     assert events.of_kind(entries, "command_admitted") == [receipt]
-    assert any(command.command_id in e.event.harness_user_message_confirmed.origin_command_ids
-               for e in events.of_kind(entries, "harness_user_message_confirmed"))
+    assert any(
+        command.command_id in e.event.harness_user_message_confirmed.origin_command_ids
+        for e in events.of_kind(entries, "harness_user_message_confirmed")
+    )
     stop = command_pb2.Command(command_id="grpc-stop", stop_runner_session=command_pb2.StopRunnerSession())
     await runner.command("grpc-session", stop, after_cursor=entries[-1].cursor)
     tail = await runner.attach("grpc-session", after_cursor=entries[-1].cursor)
@@ -99,9 +105,11 @@ async def test_open_admit_replay_follow_stop_and_resume(
     finally:
         tail.cancel()
     with pytest.raises(RunnerError):
-        await runner.command("grpc-session", command_pb2.Command(
-            command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake"),
-        ), after_cursor=0)
+        await runner.command(
+            "grpc-session",
+            command_pb2.Command(command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake")),
+            after_cursor=0,
+        )
     assert (await runner.list_sessions())[0].harness_state == runner_pb2.HARNESS_STATE_STOPPED
     resumed = await runner.resume("grpc-session")
     assert resumed.spec == opened.spec
@@ -113,9 +121,11 @@ async def test_observe_and_command_do_not_create_unknown_session(remote: Sandbox
     with pytest.raises(RunnerError):
         await runner.attach("unknown")
     with pytest.raises(RunnerError):
-        await runner.command("unknown", command_pb2.Command(
-            command_id="unknown-notice", submit_input=command_pb2.SubmitInput(text="no creation"),
-        ), after_cursor=0)
+        await runner.command(
+            "unknown",
+            command_pb2.Command(command_id="unknown-notice", submit_input=command_pb2.SubmitInput(text="no creation")),
+            after_cursor=0,
+        )
     assert not await runner.list_sessions()
 
 
