@@ -209,10 +209,7 @@ impl MergePlan {
         // than independently concatenating the original files' claims.
         let docs = BTreeMap::from([(
             String::new(),
-            (
-                self.summary.target.clone(),
-                serde_yaml::to_value(&self.document)?,
-            ),
+            (self.summary.target.clone(), self.document.clone()),
         )]);
         post_spec
             .modules

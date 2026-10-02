@@ -23,32 +23,12 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use spec::{
-    AnonymousStatement, AnonymousStatementSelector, BindingAnnotation, BindingSourceKind, Member,
-    MemberSelectorSpec, ModulePath, SourceMatchClaim, is_residual_module_path,
+    AnonymousStatementSelector, BindingSourceKind, Member, MemberSelectorSpec, ModulePath,
+    SourceMatchClaim, is_residual_module_path,
 };
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleFile {
-    /// Optional module-level human-readable comment. Emitted at the
-    /// top of the generated module file, before any imports. See
-    /// [`spec::LogicalModule::comment`].
-    #[serde(default)]
-    pub comment: Option<String>,
-    /// Optional module-level YAML-only note. Carried into
-    /// [`spec::LogicalModule::note`]; never emitted into generated JS.
-    /// `modules merge` writes its `merged from: …` provenance here.
-    #[serde(default)]
-    pub note: Option<String>,
-    #[serde(default)]
-    pub members: Vec<Member>,
-    #[serde(default)]
-    pub source_matches: Vec<SourceMatchClaim>,
-    #[serde(default)]
-    pub annotations: BTreeMap<String, BindingAnnotation>,
-    #[serde(default)]
-    pub anonymous_statements: Vec<AnonymousStatement>,
-}
+/// The on-disk module and the logical module share one canonical schema.
+pub type ModuleFile = spec::LogicalModule;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]

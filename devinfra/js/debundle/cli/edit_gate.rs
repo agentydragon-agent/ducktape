@@ -55,7 +55,6 @@ use analysis::{
 use anonymous_resolution::{SourceClaimSet, resolve_source_claims};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use serde_yaml::Value;
 use spec::ModulePath;
 use spec_modules::{
     ModuleClaims, ModuleFile, collect_module_files, is_module_yaml, module_claims,
@@ -278,7 +277,7 @@ pub fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<
 
 /// Build the post-edit spec view from in-memory module docs — the
 /// exact post-batch state `bindings assign` / `bindings unassign`
-/// will write. Each doc is parsed through the same `ModuleFile` →
+/// will write. Each typed doc uses the same `ModuleFile` →
 /// `module_claims` path `debundle run`'s spec loading uses, so plain
 /// binding members, canonical `source_matches:` claims, and
 /// `anonymous_statements:` all contribute the same claims to the gate
@@ -289,7 +288,7 @@ pub fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<
 /// of the gate's view so the gate runs against the same module set
 /// the post-write spec will have.
 pub fn post_edit_spec_from_docs(
-    docs: &BTreeMap<String, (PathBuf, Value)>,
+    docs: &BTreeMap<String, (PathBuf, ModuleFile)>,
     deleted_module_paths: &BTreeSet<String>,
 ) -> Result<PostEditSpec> {
     let mut modules: Vec<PostEditModule> = Vec::new();
@@ -297,9 +296,7 @@ pub fn post_edit_spec_from_docs(
         if deleted_module_paths.contains(module_path) {
             continue;
         }
-        let module: ModuleFile = serde_yaml::from_value(doc.clone())
-            .with_context(|| format!("parsing module {}", file.display()))?;
-        let claims = module_claims(module)?;
+        let claims = module_claims(doc.clone())?;
         if claims.is_empty() {
             continue;
         }
