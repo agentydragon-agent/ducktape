@@ -169,22 +169,13 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     haku = config["sandbox_presets"]["haku"]
-    assert haku["kubernetes_grants"][:5] == [
+    assert {
         "cluster-diagnostics",
         "haku-sandbox-write",
         "agentplane-testing-operator",
-        "agentplane-staging-metadata",
-        "agentplane-staging-logs",
-    ]
-    assert "coinbase-credentials" in haku["kubernetes_grants"]
-    assert haku["kubernetes_grants"][-6:] == [
-        "haku-console-metadata",
-        "clickhouse-diagnostics",
-        "ducktape-flux-read",
-        "public-coder-volsync-status",
-        "public-coder-agent-reader",
+        "coinbase-credentials",
         "public-coder-agent-devbox-vmi-restart",
-    ]
+    } <= set(haku["kubernetes_grants"])
     assert config["kubernetes_grants"]["cluster-diagnostics"] == {
         "kind": "ClusterRoleBinding",
         "role_ref": {"kind": "ClusterRole", "name": "cluster-diagnostics-reader"},
@@ -223,7 +214,13 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
     app_cluster_role = _by_name(docs, "ClusterRole", "agentplane-staging-managed-cluster-bindings")
     assert {
         tuple(rule.get("resourceNames", [])) for rule in app_cluster_role["rules"] if rule["verbs"] == ["bind"]
-    } == {("agent-readable-namespace-logs",), ("agent-readable-namespace-metadata",), ("cluster-diagnostics-reader",)}
+    } == {
+        ("agent-readable-namespace-logs",),
+        ("agent-readable-namespace-metadata",),
+        ("cluster-diagnostics-reader",),
+        ("public-coder-agent-node-reader",),
+        ("public-coder-agent-cluster-metadata-reader",),
+    }
     assert any(
         rule["resources"] == ["clusterroles"] and rule["verbs"] == ["get"] and not rule.get("resourceNames")
         for rule in app_cluster_role["rules"]
@@ -239,6 +236,64 @@ def test_haku_grant_catalog_generates_scoped_app_delegation(
     } <= cleanup_namespaces
     assert staging.ENV.namespace not in cleanup_namespaces
     assert config["kubernetes_cluster_binding_cleanup"] is True
+
+
+@pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
+def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
+    preset: str, agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    docs = agentplane_manifests[staging.ENV.namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    catalog = config["kubernetes_grants"]
+    selected = config["sandbox_presets"][preset]["kubernetes_grants"]
+    assert selected == config["sandbox_presets"]["public-coder"]["kubernetes_grants"]
+    assert len(selected) == len(set(selected))
+    haku = config["sandbox_presets"]["haku"]["kubernetes_grants"]
+    assert len(haku) == len(set(haku))
+    assert set(haku) - set(selected) == {
+        "cluster-diagnostics",
+        "haku-sandbox-write",
+        "agentplane-testing-operator",
+        "coinbase-credentials",
+        "public-coder-agent-devbox-vmi-restart",
+    }
+    assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"}
+    assert {
+        "agentplane-staging-metadata",
+        "agentplane-staging-logs",
+        "haku-console-metadata",
+        "clickhouse-diagnostics",
+        "ducktape-flux-read",
+        "public-coder-volsync-status",
+        "public-coder-agent-reader",
+    } <= set(selected)
+    # Only these two narrow ClusterRoles may be bound cluster-wide. In particular,
+    # never bind the namespaced log/metadata readers or Haku's broader reader there.
+    assert {name: catalog[name] for name in selected if catalog[name]["kind"] == "ClusterRoleBinding"} == {
+        "public-coder-node-read": {
+            "kind": "ClusterRoleBinding",
+            "role_ref": {"kind": "ClusterRole", "name": "public-coder-agent-node-reader"},
+        },
+        "public-coder-cluster-metadata-read": {
+            "kind": "ClusterRoleBinding",
+            "role_ref": {"kind": "ClusterRole", "name": "public-coder-agent-cluster-metadata-reader"},
+        },
+    }
+    assert {
+        (catalog[name]["namespace"], catalog[name]["role_ref"]["name"])
+        for name in selected
+        if catalog[name]["role_ref"]["kind"] == "Role"
+    } == {
+        ("haku-console", "agent-haku-console-metadata-reader"),
+        ("clickhouse", "agent-clickhouse-diagnostics-reader"),
+        ("ducktape-flux", "ducktape-flux-reader"),
+        ("public-coder-agent", "agent-public-coder-extended-diagnostics-reader"),
+        ("public-coder-agent", "public-coder-agent-reader"),
+    }
+    testing_config = yaml.safe_load(
+        _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "agentplane-app-config")["data"]["config.yaml"]
+    )
+    assert testing_config["sandbox_presets"]["public-coder"]["kubernetes_grants"] == []
 
 
 def test_managed_haku_public_coder_reader_and_restart_have_named_bind_delegation(
