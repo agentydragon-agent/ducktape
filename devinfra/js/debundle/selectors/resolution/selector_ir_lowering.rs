@@ -560,18 +560,20 @@ pub enum SelectorIrLoweringError {
         selector_kind: &'static str,
         reason: &'static str,
     },
-    #[error("cross_ref/reads_member/passed_to_call/makes_decorate_call/intrinsic_alias \
+    #[error(
+        "cross_ref/reads_member/passed_to_call/makes_decorate_call/intrinsic_alias \
                  selector anchor `@{export_name}` does not name a lowered member in module \
-                 {logical_module}")]
+                 {logical_module}"
+    )]
     DanglingAnchor {
         logical_module: String,
         export_name: String,
     },
-    #[error("cross_ref/reads_member/passed_to_call/makes_decorate_call/intrinsic_alias \
-                 selector anchor `@{export_name}` is ambiguous across lowered members")]
-    AmbiguousAnchor {
-        export_name: String,
-    },
+    #[error(
+        "cross_ref/reads_member/passed_to_call/makes_decorate_call/intrinsic_alias \
+                 selector anchor `@{export_name}` is ambiguous across lowered members"
+    )]
+    AmbiguousAnchor { export_name: String },
     #[error("invalid selector IR program: {0}")]
     InvalidProgram(selector_ir::SelectorProgramError),
 }

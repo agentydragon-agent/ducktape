@@ -1348,13 +1348,9 @@ impl CompiledSelectorProblemBuilder {
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum CompiledSelectorProblemError {
     #[error("constraint references unknown variable {variable:?}")]
-    UnknownVariable {
-        variable: ConstraintVariableId,
-    },
+    UnknownVariable { variable: ConstraintVariableId },
     #[error("constraint references unknown shared domain {domain_id:?}")]
-    UnknownSharedVariableDomain {
-        domain_id: SharedVariableDomainId,
-    },
+    UnknownSharedVariableDomain { domain_id: SharedVariableDomainId },
     #[error("variable {variable:?} expected {expected:?} domain, found {actual:?}")]
     VariableDomainMismatch {
         variable: ConstraintVariableId,
@@ -1367,34 +1363,30 @@ pub enum CompiledSelectorProblemError {
         actual: VariableDomain,
     },
     #[error("target {target:?} has more than one projection")]
-    DuplicateTargetProjection {
-        target: SelectorTargetId,
-    },
+    DuplicateTargetProjection { target: SelectorTargetId },
     #[error("target {target:?} has no projection")]
-    UnknownTargetProjection {
-        target: SelectorTargetId,
-    },
+    UnknownTargetProjection { target: SelectorTargetId },
     #[error("allowed tuple constraint {id:?} has no variables")]
-    EmptyAllowedTupleVariables {
-        id: AllowedTupleConstraintId,
-    },
+    EmptyAllowedTupleVariables { id: AllowedTupleConstraintId },
     #[error("allowed tuple constraint {id:?} references variable {variable:?} more than once")]
     DuplicateTupleVariable {
         id: AllowedTupleConstraintId,
         variable: ConstraintVariableId,
     },
     #[error("allowed tuple row set {row_set:?} does not exist")]
-    UnknownAllowedTupleRowSet {
-        row_set: AllowedTupleRowsId,
-    },
-    #[error("allowed tuple constraint {id:?} row {tuple_index} has arity {actual}, expected {expected}")]
+    UnknownAllowedTupleRowSet { row_set: AllowedTupleRowsId },
+    #[error(
+        "allowed tuple constraint {id:?} row {tuple_index} has arity {actual}, expected {expected}"
+    )]
     TupleArityMismatch {
         id: AllowedTupleConstraintId,
         tuple_index: usize,
         expected: usize,
         actual: usize,
     },
-    #[error("allowed tuple constraint {id:?} row {tuple_index} variable {variable:?} expected {expected:?}, found {actual:?}")]
+    #[error(
+        "allowed tuple constraint {id:?} row {tuple_index} variable {variable:?} expected {expected:?}, found {actual:?}"
+    )]
     TupleDomainMismatch {
         id: AllowedTupleConstraintId,
         tuple_index: usize,
@@ -1402,7 +1394,9 @@ pub enum CompiledSelectorProblemError {
         expected: VariableDomain,
         actual: VariableDomain,
     },
-    #[error("allowed tuple constraint {id:?} row {tuple_index} variable {variable:?} has encoded value {value:?} outside {domain:?} domain")]
+    #[error(
+        "allowed tuple constraint {id:?} row {tuple_index} variable {variable:?} has encoded value {value:?} outside {domain:?} domain"
+    )]
     EncodedTupleValueOutOfDomain {
         id: AllowedTupleConstraintId,
         tuple_index: usize,
@@ -1410,7 +1404,9 @@ pub enum CompiledSelectorProblemError {
         domain: VariableDomain,
         value: BackendValueId,
     },
-    #[error("variable {variable:?} restriction contains encoded value {value:?} outside {domain:?} domain")]
+    #[error(
+        "variable {variable:?} restriction contains encoded value {value:?} outside {domain:?} domain"
+    )]
     EncodedVariableDomainValueOutOfDomain {
         variable: ConstraintVariableId,
         domain: VariableDomain,
@@ -1422,9 +1418,7 @@ pub enum CompiledSelectorProblemError {
         value: BackendValueId,
     },
     #[error("all_different constraint {id:?} has fewer than two variables")]
-    DegenerateAllDifferent {
-        id: AllDifferentConstraintId,
-    },
+    DegenerateAllDifferent { id: AllDifferentConstraintId },
     #[error("all_different constraint {id:?} references variable {variable:?} more than once")]
     DuplicateAllDifferentVariable {
         id: AllDifferentConstraintId,
@@ -1437,9 +1431,7 @@ pub enum CompiledSelectorProblemError {
         actual: VariableDomain,
     },
     #[error("compiled selector problem has too many values: {count}")]
-    TooManyValues {
-        count: usize,
-    },
+    TooManyValues { count: usize },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1498,30 +1490,20 @@ pub trait SelectorProblemBackend {
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum BackendAssignmentError {
     #[error("assignment references unknown variable {variable:?}")]
-    UnknownVariable {
-        variable: ConstraintVariableId,
-    },
+    UnknownVariable { variable: ConstraintVariableId },
     #[error("assignment references unknown value {value:?}")]
-    UnknownValue {
-        value: BackendValueId,
-    },
+    UnknownValue { value: BackendValueId },
     #[error("assignment value {value:?} is outside variable {variable:?} domain")]
     ValueOutsideDomain {
         variable: ConstraintVariableId,
         value: BackendValueId,
     },
     #[error("assignment includes variable {variable:?} more than once")]
-    DuplicateVariable {
-        variable: ConstraintVariableId,
-    },
+    DuplicateVariable { variable: ConstraintVariableId },
     #[error("assignment value id {value:?} is negative")]
-    NegativeValue {
-        value: BackendValueId,
-    },
+    NegativeValue { value: BackendValueId },
     #[error("assignment value id {value:?} does not fit in usize")]
-    ValueIndexOutOfRange {
-        value: BackendValueId,
-    },
+    ValueIndexOutOfRange { value: BackendValueId },
 }
 
 fn intersect_sorted_encoded_values(

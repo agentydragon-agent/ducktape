@@ -744,9 +744,7 @@ pub enum SelectorProgramError {
         id: SelectorVariableId,
     },
     #[error("all_different references unknown selector target {id:?}")]
-    UnknownTarget {
-        id: SelectorTargetId,
-    },
+    UnknownTarget { id: SelectorTargetId },
     #[error("{context} expected {expected:?} variable, found {actual:?}")]
     DomainMismatch {
         context: &'static str,
@@ -763,7 +761,9 @@ pub enum SelectorProgramError {
         expected: usize,
         actual: usize,
     },
-    #[error("projected_allowed_tuples row {row_index} column {column} has domain {actual:?}, expected {expected:?}")]
+    #[error(
+        "projected_allowed_tuples row {row_index} column {column} has domain {actual:?}, expected {expected:?}"
+    )]
     ProjectedAllowedTupleDomain {
         row_index: usize,
         column: usize,
