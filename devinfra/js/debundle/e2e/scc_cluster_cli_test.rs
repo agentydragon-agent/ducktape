@@ -49,6 +49,11 @@ fn scc_listing_and_filters_agree_on_cycles_and_singletons() {
         singletons["sccs"].as_array().unwrap().len() + 1
     );
     assert_eq!(fixture.json(&["scc", "--binding", "first"]), cycles);
+    let isolated = fixture.json(&["scc", "--binding", "isolated"]);
+    assert_eq!(isolated["sccs"].as_array().unwrap().len(), 1);
+    assert_eq!(isolated["sccs"][0]["labels"][0], "isolated");
+    assert_eq!(isolated["sccs"][0]["is_cycle"], false);
+    assert_eq!(isolated["sccs"][0]["realizable"], true);
 }
 
 #[test]

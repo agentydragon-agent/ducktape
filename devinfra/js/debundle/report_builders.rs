@@ -51,7 +51,7 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
     );
     let (quotient_nodes, quotient_edges) = quotient_pair;
     let (nodes, edges) = nodes_edges;
-    let quotient_sccs = build_quotient_scc_reports(factorization, &quotient_edges);
+    let quotient_sccs = build_quotient_scc_reports(factorization, &quotient_nodes, &quotient_edges);
     OwnerGraphReport {
         chunk_id: factorization.analysis.chunk_id().to_string(),
         nodes,
@@ -312,6 +312,7 @@ fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphR
 
 fn build_quotient_scc_reports(
     factorization: &ChunkFactorization,
+    quotient_nodes: &[ModuleEntry],
     quotient_edges: &[QuotientEdgeReport],
 ) -> Vec<QuotientSccReport> {
     let quotient_edges_by_source = quotient_edge_indices_by_source(quotient_edges);
@@ -352,6 +353,24 @@ fn build_quotient_scc_reports(
             module_edge_ids,
             constraining_module_edge_ids,
         });
+    }
+    // Preserve cycle IDs, then include every other module as a singleton.
+    // The dependency graph is edge-built, so its SCCs omit isolated modules.
+    let cyclic_modules: HashSet<_> = sccs
+        .iter()
+        .flat_map(|scc| scc.modules.iter().cloned())
+        .collect();
+    for module in quotient_nodes {
+        if !cyclic_modules.contains(&module.key) {
+            sccs.push(QuotientSccReport {
+                id: format!("scc:{}", sccs.len()),
+                modules: vec![module.key.clone()],
+                is_cycle: false,
+                realizable: true,
+                module_edge_ids: Vec::new(),
+                constraining_module_edge_ids: Vec::new(),
+            });
+        }
     }
     sccs
 }
