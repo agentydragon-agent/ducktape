@@ -51,6 +51,56 @@ fn member_fixture<'a>(source: &'a str, module: &str, member: Member) -> FixtureO
     FixtureOpts::new(source, vec![logical_module(module, &[member])])
 }
 
+fn anonymous_init_fixture<'a>(source: &'a str, selector: &str) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon_alpha(
+            "init",
+            &[Member::new("marker")],
+            &[selector],
+        )],
+    )
+}
+
+const TRIM_FUNCTION_SOURCE: &str = r#"function actual(value) {
+  return value.trim();
+}
+console.log(actual(" ok "));
+export { actual };
+"#;
+
+const SETUP_BLOCK_SOURCE: &str = r#"if (true) {
+  console.log("setup");
+  console.log("done");
+}
+const marker = "ready";
+export { marker };
+"#;
+
+const THREE_STATEMENT_BLOCK_SOURCE: &str = r#"if (true) {
+  console.log("a");
+  console.log("b");
+  console.log("c");
+}
+const marker = "ready";
+export { marker };
+"#;
+
+const SINGLE_STATEMENT_BLOCK_SOURCE: &str = r#"if (true) {
+  console.log("only");
+}
+const marker = "ready";
+export { marker };
+"#;
+
+const COMPUTE_TOTAL_SOURCE: &str = r#"function computeTotal(a, b) {
+  return a + b;
+}
+const actual = computeTotal(1, 2);
+console.log(actual);
+export { actual };
+"#;
+
 #[test]
 fn member_source_match_alpha_all_allows_name_reuse_in_sibling_function_scopes() {
     let fixture = run_fixture(member_fixture(
@@ -597,12 +647,7 @@ export { runPipeline };
 fn source_match_seq_exprs_outside_a_sequence_reports_the_misplaced_hole() {
     expect_rejection_containing_all(
         member_fixture(
-            r#"function actual(value) {
-  return value.trim();
-}
-console.log(actual(" ok "));
-export { actual };
-"#,
+            TRIM_FUNCTION_SOURCE,
             "hooks/misplaced",
             Member::source_alpha_target(
                 "misplaced",
@@ -623,12 +668,7 @@ export { actual };
 fn source_match_lone_seq_exprs_in_parens_reports_the_misplaced_hole() {
     expect_rejection_containing_all(
         member_fixture(
-            r#"function actual(value) {
-  return value.trim();
-}
-console.log(actual(" ok "));
-export { actual };
-"#,
+            TRIM_FUNCTION_SOURCE,
             "hooks/lone_hole",
             Member::source_alpha_target(
                 "lone_hole",
@@ -1996,22 +2036,12 @@ export { selectedA, selectedB, selectedC };
 
 #[test]
 fn anonymous_source_match_stmt_prefix_hole_matches_arbitrary_nested_statement() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture(anonymous_init_fixture(
+        SETUP_BLOCK_SOURCE,
         r#"if (true) {
-  console.log("setup");
-  console.log("done");
-}
-const marker = "ready";
-export { marker };
-"#,
-        vec![logical_module_with_anon_alpha(
-            "init",
-            &[Member::new("marker")],
-            &[r#"if (true) {
   STMT_SETUP;
   console.log("done");
-}"#],
-        )],
+}"#,
     ));
 
     assert_entry_output(&fixture, "setup\ndone\n");
@@ -2029,7 +2059,7 @@ export { marker };
 
 #[test]
 fn anonymous_source_match_stmt_prefix_holes_still_reject_ambiguous_matches() {
-    let opts = FixtureOpts::new(
+    let opts = anonymous_init_fixture(
         r#"if (true) {
   console.log("first");
   console.log("done");
@@ -2041,14 +2071,10 @@ if (true) {
 }
 export { marker };
 "#,
-        vec![logical_module_with_anon_alpha(
-            "init",
-            &[Member::new("marker")],
-            &[r#"if (true) {
+        r#"if (true) {
   STMT_SETUP;
   console.log("done");
-}"#],
-        )],
+}"#,
     );
 
     expect_rejection_containing_all(
@@ -2066,22 +2092,11 @@ export { marker };
 fn anonymous_source_match_stmt_list_hole_absorbs_contiguous_statements() {
     // `STMT_LIST_BODY;` as the whole block body absorbs the three
     // statements, so the selector matches the `if` regardless of body.
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture(anonymous_init_fixture(
+        THREE_STATEMENT_BLOCK_SOURCE,
         r#"if (true) {
-  console.log("a");
-  console.log("b");
-  console.log("c");
-}
-const marker = "ready";
-export { marker };
-"#,
-        vec![logical_module_with_anon_alpha(
-            "init",
-            &[Member::new("marker")],
-            &[r#"if (true) {
   STMT_LIST_BODY;
-}"#],
-        )],
+}"#,
     ));
 
     assert_entry_output(&fixture, "a\nb\nc\n");
@@ -2104,21 +2119,12 @@ export { marker };
 fn anonymous_source_match_stmt_list_hole_absorbs_empty_run() {
     // A trailing `STMT_LIST_TAIL;` matches a block that has only the
     // pinned prefix statement — the hole absorbs zero statements.
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture(anonymous_init_fixture(
+        SINGLE_STATEMENT_BLOCK_SOURCE,
         r#"if (true) {
   console.log("only");
-}
-const marker = "ready";
-export { marker };
-"#,
-        vec![logical_module_with_anon_alpha(
-            "init",
-            &[Member::new("marker")],
-            &[r#"if (true) {
-  console.log("only");
   STMT_LIST_TAIL;
-}"#],
-        )],
+}"#,
     ));
 
     assert_entry_output(&fixture, "only\n");
@@ -2477,22 +2483,12 @@ export { actual };
 fn anonymous_stmt_hole_matches_one_arbitrary_statement() {
     // The bare keyword `STMT` matches exactly one statement, with no
     // suffix to mint — the anonymous single-statement form.
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture(anonymous_init_fixture(
+        SETUP_BLOCK_SOURCE,
         r#"if (true) {
-  console.log("setup");
-  console.log("done");
-}
-const marker = "ready";
-export { marker };
-"#,
-        vec![logical_module_with_anon_alpha(
-            "init",
-            &[Member::new("marker")],
-            &[r#"if (true) {
   STMT;
   console.log("done");
-}"#],
-        )],
+}"#,
     ));
 
     assert_entry_output(&fixture, "setup\ndone\n");
@@ -2710,7 +2706,7 @@ fn anonymous_source_match_multiple_stmt_list_holes_bracket_pinned_statements() {
     // Three `STMT_LIST_*;` holes bracket two pinned statements inside a
     // block: the holes absorb the `a`/`b`/`c` logs, leaving `pinned1`
     // then `pinned2` matched in order.
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture(anonymous_init_fixture(
         r#"if (true) {
   console.log("a");
   console.log("pinned1");
@@ -2721,17 +2717,13 @@ fn anonymous_source_match_multiple_stmt_list_holes_bracket_pinned_statements() {
 const marker = "ready";
 export { marker };
 "#,
-        vec![logical_module_with_anon_alpha(
-            "init",
-            &[Member::new("marker")],
-            &[r#"if (true) {
+        r#"if (true) {
   STMT_LIST_HEAD;
   console.log("pinned1");
   STMT_LIST_MID;
   console.log("pinned2");
   STMT_LIST_TAIL;
-}"#],
-        )],
+}"#,
     ));
 
     assert_entry_output(&fixture, "a\npinned1\nb\npinned2\nc\n");
@@ -2823,13 +2815,7 @@ export { total };
 #[test]
 fn suffixed_hole_labels_are_cosmetic() {
     let universal = run_fixture(member_fixture(
-        r#"function computeTotal(a, b) {
-  return a + b;
-}
-const actual = computeTotal(1, 2);
-console.log(actual);
-export { actual };
-"#,
+        COMPUTE_TOTAL_SOURCE,
         "calc",
         Member::source_alpha("total", r#"const readable = ANYTHING_FUTURE;"#),
     ));
@@ -2849,13 +2835,7 @@ export { actual };
     assert_entry_output(&object_gap, "4\n");
 
     let named_expr = run_fixture(member_fixture(
-        r#"function computeTotal(a, b) {
-  return a + b;
-}
-const actual = computeTotal(1, 2);
-console.log(actual);
-export { actual };
-"#,
+        COMPUTE_TOTAL_SOURCE,
         "calc",
         Member::source_alpha(
             "total",
@@ -2992,39 +2972,24 @@ fn stmt_list_run_absorber_is_not_redundant_with_anything_single_stmt() {
     // The `if` block has three statements. `{ STMT_LIST; }` absorbs the run
     // and matches; `{ ANYTHING; }` is a single-statement hole (arity 1 != 3)
     // and does NOT match.
-    let subject = r#"if (true) {
-  console.log("a");
-  console.log("b");
-  console.log("c");
-}
-const marker = "ready";
-export { marker };
-"#;
+    let subject = THREE_STATEMENT_BLOCK_SOURCE;
 
     // STMT_LIST: run-absorber matches the three-statement block.
-    let with_stmt_list = run_fixture(FixtureOpts::new(
+    let with_stmt_list = run_fixture(anonymous_init_fixture(
         subject,
-        vec![logical_module_with_anon_alpha(
-            "init",
-            &[Member::new("marker")],
-            &[r#"if (true) {
+        r#"if (true) {
   STMT_LIST;
-}"#],
-        )],
+}"#,
     ));
     assert_entry_output(&with_stmt_list, "a\nb\nc\n");
 
     // ANYTHING as a block statement is a single STMT: arity 1 != 3, no match.
     expect_rejection_containing_all(
-        FixtureOpts::new(
+        anonymous_init_fixture(
             subject,
-            vec![logical_module_with_anon_alpha(
-                "init",
-                &[Member::new("marker")],
-                &[r#"if (true) {
+            r#"if (true) {
   ANYTHING;
-}"#],
-            )],
+}"#,
         ),
         &["static/app::init", "did not match"],
     );
@@ -3035,21 +3000,12 @@ fn stmt_and_anything_agree_on_a_single_statement_block() {
     // Companion: a single-statement block is matched identically by a bare
     // `STMT` and a bare `ANYTHING` (both single-node holes). So in the
     // statement position `ANYTHING` is redundant with `STMT`, NOT `STMT_LIST`.
-    let subject = r#"if (true) {
-  console.log("only");
-}
-const marker = "ready";
-export { marker };
-"#;
+    let subject = SINGLE_STATEMENT_BLOCK_SOURCE;
 
     for body in ["STMT;", "ANYTHING;"] {
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture(anonymous_init_fixture(
             subject,
-            vec![logical_module_with_anon_alpha(
-                "init",
-                &[Member::new("marker")],
-                &[&format!("if (true) {{\n  {body}\n}}")],
-            )],
+            &format!("if (true) {{\n  {body}\n}}"),
         ));
         assert_entry_output(&fixture, "only\n");
     }
