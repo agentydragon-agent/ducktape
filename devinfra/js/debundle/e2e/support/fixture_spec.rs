@@ -1,16 +1,17 @@
 //! Typed fixture inputs and construction of transform specs. No process execution.
 
-use super::FixtureSetup;
+use super::PreparedFixture;
 use super::ast_assertions::declared_bindings_in_source_match;
-use serde_json::Value;
+use serde::Deserialize;
+use serde::de::value::{Error as DeserializeError, SeqDeserializer};
 use spec::{
     AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, ChunkRenameMember,
     ChunkRenameSelector, ChunkRenames, CrossRefSelector, IntrinsicAliasSelector, LoadJsChunksArgs,
     LogicalModule, MakesDecorateCallSelector, MaterializeLogicalModulesConfig,
-    Member as SpecMember, MemberOfModuleSelector, MemberSelector, PassedToCallSelector,
-    ReadsMemberSelector, SourceMatch, SourceMatchBinding, SourceMatchBindingDetail,
-    SourceMatchClaim, SourceMatchIdentifierMode, SwapVendorChunksConfig, TransformSpec,
-    WriteJsTreeConfig,
+    Member as SpecMember, MemberOfModuleSelector, MemberSelector, OwnerGraphOptions,
+    PassedToCallSelector, ReadsMemberSelector, SourceMatch, SourceMatchBinding,
+    SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode, SwapVendorChunksConfig,
+    TransformSpec, UnassignedMode, WriteJsTreeConfig,
 };
 use spec::{MemberEffect, MemberPurity};
 use std::collections::BTreeMap;
@@ -514,7 +515,7 @@ fn fixture_annotations(
 
 /// One entry of the spec's `logical_modules[chunk_id]` map: the target path
 /// (the map key) plus its body (members).
-pub type LogicalModuleEntry = (String, Value);
+pub type LogicalModuleEntry = (String, LogicalModule);
 
 fn logical_module_entry(
     path: &str,
@@ -527,7 +528,7 @@ fn logical_module_entry(
         let mut source_matches = fixture_member_source_matches(members);
         source_matches.extend(fixture_grouped_source_matches(binding_groups));
         let annotations = fixture_annotations(members, binding_groups);
-        serde_json::to_value(LogicalModule {
+        LogicalModule {
             members: fixture_members(members),
             source_matches,
             annotations,
@@ -537,8 +538,7 @@ fn logical_module_entry(
                 .collect(),
             comment,
             note: None,
-        })
-        .expect("logical module fixture must serialize")
+        }
     })
 }
 
@@ -629,7 +629,7 @@ pub struct FixtureOpts<'a> {
     /// members; the materializer applies them in-place to bindings
     /// staying in entry's body without creating a `Logical(R)` for
     /// them.
-    pub chunk_renames: Option<Value>,
+    pub chunk_renames: Option<ChunkRenames>,
     pub chunk_id: &'a str,
     /// `unassigned_mode` setting for this chunk. Required — every
     /// chunk listed in `logical_modules` or `chunk_renames` must
@@ -638,7 +638,7 @@ pub struct FixtureOpts<'a> {
     /// any variant-specific fields. Use [`unassigned_mode_inline`],
     /// [`unassigned_mode_catchall_file`], or
     /// [`unassigned_mode_mini_factors`] to build typical bodies.
-    pub unassigned_mode: Value,
+    pub unassigned_mode: UnassignedMode,
     /// Opt into the dataflow-aware S-chain emission in `graph/` for
     /// this chunk. Default `false` — leaves the strictly-conservative
     /// adjacent-impure chain. Tests that exercise the relaxation set
@@ -741,7 +741,7 @@ impl<'a> FixtureOpts<'a> {
     }
 
     /// Attach a `TransformSpec.chunk_renames` entry for this chunk.
-    pub fn with_chunk_renames(mut self, chunk_renames: Value) -> Self {
+    pub fn with_chunk_renames(mut self, chunk_renames: ChunkRenames) -> Self {
         self.chunk_renames = Some(chunk_renames);
         self
     }
@@ -753,7 +753,7 @@ impl<'a> FixtureOpts<'a> {
     }
 
     /// Override the default `unassigned_mode` of `catchall_file`.
-    pub fn with_unassigned_mode(mut self, mode: Value) -> Self {
+    pub fn with_unassigned_mode(mut self, mode: UnassignedMode) -> Self {
         self.unassigned_mode = mode;
         self
     }
@@ -765,25 +765,24 @@ impl<'a> FixtureOpts<'a> {
     }
 }
 
-/// Build the JSON body for an `unassigned_mode: inline_in_entry`
+/// Build an `unassigned_mode: inline_in_entry`
 /// entry — unclaimed bindings stay inline in the chunk's entry file.
-pub fn unassigned_mode_inline() -> Value {
-    serde_json::json!({ "kind": "inline_in_entry" })
+pub fn unassigned_mode_inline() -> UnassignedMode {
+    UnassignedMode::InlineInEntry
 }
 
-/// Build the JSON body for an `unassigned_mode: catchall_file` entry.
+/// Build an `unassigned_mode: catchall_file` entry.
 /// `target` of `None` means "default residual target", which the
 /// materializer resolves to `residual/unhandled`.
-pub fn unassigned_mode_catchall_file(target: Option<&str>) -> Value {
-    match target {
-        Some(target) => serde_json::json!({ "kind": "catchall_file", "target": target }),
-        None => serde_json::json!({ "kind": "catchall_file" }),
+pub fn unassigned_mode_catchall_file(target: Option<&str>) -> UnassignedMode {
+    UnassignedMode::CatchallFile {
+        target: target.map(str::to_string),
     }
 }
 
-/// Build the JSON body for an `unassigned_mode: mini_factors` entry.
-pub fn unassigned_mode_mini_factors() -> Value {
-    serde_json::json!({ "kind": "mini_factors" })
+/// Build an `unassigned_mode: mini_factors` entry.
+pub fn unassigned_mode_mini_factors() -> UnassignedMode {
+    UnassignedMode::MiniFactors
 }
 
 /// Fluent wrapper for building a `(chunk, ChunkExportPurity)` tuple with the
@@ -823,90 +822,54 @@ impl ChunkExportPurityBuilder {
     }
 }
 
-pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> TransformSpec {
+pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> TransformSpec {
     let chunk_id = opts.chunk_id;
     let mut logical_modules = BTreeMap::new();
     if !opts.logical_modules.is_empty() {
-        let for_chunk = opts
-            .logical_modules
-            .iter()
-            .map(|(path, body)| {
-                (
-                    path.clone(),
-                    serde_json::from_value(body.clone()).expect(
-                        "logical module fixture body deserializes into spec::LogicalModule",
-                    ),
-                )
-            })
-            .collect();
-        logical_modules.insert(chunk_id.to_string(), for_chunk);
-    }
-    for (extra_chunk, modules) in opts.extra_chunk_logical_modules {
-        let for_chunk = modules
-            .iter()
-            .map(|(path, body)| {
-                (
-                    path.clone(),
-                    serde_json::from_value(body.clone()).expect(
-                        "extra chunk logical module fixture body deserializes into spec::LogicalModule",
-                    ),
-                )
-            })
-            .collect();
-        logical_modules.insert((*extra_chunk).to_string(), for_chunk);
-    }
-
-    let mut chunk_renames = BTreeMap::new();
-    if let Some(renames) = &opts.chunk_renames {
-        chunk_renames.insert(
+        logical_modules.insert(
             chunk_id.to_string(),
-            serde_json::from_value(renames.clone())
-                .expect("chunk_renames fixture deserializes into spec::ChunkRenames"),
+            opts.logical_modules.iter().cloned().collect(),
         );
     }
-
-    let mut unassigned_mode = BTreeMap::new();
-    unassigned_mode.insert(
-        chunk_id.to_string(),
-        serde_json::from_value(opts.unassigned_mode.clone())
-            .expect("unassigned_mode fixture deserializes into spec::UnassignedMode"),
-    );
+    for (extra_chunk, modules) in opts.extra_chunk_logical_modules {
+        logical_modules.insert(
+            (*extra_chunk).to_string(),
+            modules.iter().cloned().collect(),
+        );
+    }
+    let chunk_renames = opts
+        .chunk_renames
+        .iter()
+        .map(|renames| (chunk_id.to_string(), renames.clone()))
+        .collect();
+    let mut unassigned_mode =
+        BTreeMap::from([(chunk_id.to_string(), opts.unassigned_mode.clone())]);
     for (extra_chunk, _) in opts.extra_chunk_logical_modules {
         unassigned_mode.insert(
             (*extra_chunk).to_string(),
-            serde_json::from_value(unassigned_mode_catchall_file(None))
-                .expect("unassigned_mode fixture deserializes into spec::UnassignedMode"),
+            unassigned_mode_catchall_file(None),
         );
     }
-
     let chunk_analysis_options = if opts.dataflow_aware_s_chain
         || opts.trusted_dataflow_summaries
         || opts.local_property_effects
         || !opts.admission_overrides.is_empty()
     {
-        let mut analysis = serde_json::Map::new();
-        if opts.dataflow_aware_s_chain {
-            analysis.insert("dataflow_aware_s_chain".to_string(), Value::Bool(true));
-        }
-        if opts.trusted_dataflow_summaries {
-            analysis.insert("trusted_dataflow_summaries".to_string(), Value::Bool(true));
-        }
-        if opts.local_property_effects {
-            analysis.insert("local_property_effects".to_string(), Value::Bool(true));
-        }
-        if !opts.admission_overrides.is_empty() {
-            analysis.insert(
-                "admission_overrides".to_string(),
-                serde_json::json!(opts.admission_overrides),
-            );
-        }
-        let mut map = BTreeMap::new();
-        map.insert(
+        BTreeMap::from([(
             chunk_id.to_string(),
-            serde_json::from_value(Value::Object(analysis))
-                .expect("analysis options deserialize into spec::OwnerGraphOptions"),
-        );
-        map
+            OwnerGraphOptions {
+                dataflow_aware_s_chain: opts.dataflow_aware_s_chain,
+                trusted_dataflow_summaries: opts.trusted_dataflow_summaries,
+                local_property_effects: opts.local_property_effects,
+                admission_overrides: spec::AdmissionOverrides::deserialize(SeqDeserializer::<
+                    _,
+                    DeserializeError,
+                >::new(
+                    opts.admission_overrides.iter().copied(),
+                ))
+                .expect("valid admission override names"),
+            },
+        )])
     } else {
         BTreeMap::new()
     };
@@ -944,7 +907,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &FixtureSetup) -> Transf
 
 /// A single-member chunk-renames spec mapping the binding `from_binding` to the
 /// exported name `rename_to`.
-pub fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
+pub fn chunk_rename(rename_to: &str, from_binding: &str) -> ChunkRenames {
     chunk_renames(&[ChunkRenameEntry::new(rename_to, from_binding)])
 }
 
@@ -976,7 +939,7 @@ impl ChunkRenameEntry {
 /// Build a chunk-renames body from one or more [`ChunkRenameEntry`]s. The wire
 /// shape is `{ members: [{ name, selector: { binding: { name, kind? } } }, …] }`
 /// plus an empty (omitted) `annotations` map.
-pub fn chunk_renames(entries: &[ChunkRenameEntry]) -> Value {
+pub fn chunk_renames(entries: &[ChunkRenameEntry]) -> ChunkRenames {
     let members = entries
         .iter()
         .map(|entry| ChunkRenameMember {
@@ -989,11 +952,10 @@ pub fn chunk_renames(entries: &[ChunkRenameEntry]) -> Value {
             },
         })
         .collect();
-    serde_json::to_value(ChunkRenames {
+    ChunkRenames {
         members,
         annotations: BTreeMap::new(),
-    })
-    .expect("chunk renames fixture must serialize")
+    }
 }
 
 /// Build a single-member chunk-renames body that carries a `purity` annotation
@@ -1005,7 +967,7 @@ pub fn chunk_rename_with_purity(
     from_binding: &str,
     kind: Option<&'static str>,
     purity: MemberPurity,
-) -> Value {
+) -> ChunkRenames {
     let mut annotations = BTreeMap::new();
     annotations.insert(
         rename_to.to_string(),
@@ -1023,11 +985,10 @@ pub fn chunk_rename_with_purity(
             },
         },
     }];
-    serde_json::to_value(ChunkRenames {
+    ChunkRenames {
         members,
         annotations,
-    })
-    .expect("chunk renames fixture must serialize")
+    }
 }
 
 /// One fixture exercising a no-match, an ambiguous selector and a duplicate

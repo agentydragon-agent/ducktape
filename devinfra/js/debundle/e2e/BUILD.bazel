@@ -310,7 +310,7 @@ debundle_e2e_test(
     name = "pure_members_test",
     deps = [
         "//devinfra/js/debundle:analysis",
-        "@crates//:serde_json",
+        "//devinfra/js/debundle:spec",
     ],
 )
 

@@ -93,12 +93,9 @@ pub struct DryRunFixture {
 }
 
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
-    let setup = setup_fixture(&opts);
-    let spec_path = setup.root.path().join("transform_spec.yaml");
-    let spec = build_spec(&opts, &setup);
-    write_yaml_file(&spec_path, &spec);
+    let setup = prepare_fixture(&opts);
 
-    let result = spawn_transform(&spec_path);
+    let result = spawn_transform(&setup.spec_path);
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -243,10 +240,8 @@ pub fn assert_fail_fast_stops_at_first_outcome<'a>(
 /// root holds whatever the pass still writes on success, such as selector
 /// warnings in `selector_diagnostics.json`.
 pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
-    let setup = setup_fixture(&opts);
-    let spec_path = setup.root.path().join("transform_spec.yaml");
-    write_yaml_file(&spec_path, &build_spec(&opts, &setup));
-    let result = spawn_transform_with_args(&spec_path, &["--dry-run"]);
+    let setup = prepare_fixture(&opts);
+    let result = spawn_transform_with_args(&setup.spec_path, &["--dry-run"]);
     assert!(
         result.status.success(),
         "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
@@ -262,12 +257,9 @@ pub fn run_dry_run_fixture(opts: FixtureOpts<'_>) -> DryRunFixture {
 }
 
 fn run_rejection_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> RejectedFixture {
-    let setup = setup_fixture(&opts);
-    let spec_path = setup.root.path().join("transform_spec.yaml");
-    let spec = build_spec(&opts, &setup);
-    write_yaml_file(&spec_path, &spec);
+    let setup = prepare_fixture(&opts);
 
-    let result = spawn_transform_with_args(&spec_path, extra_args);
+    let result = spawn_transform_with_args(&setup.spec_path, extra_args);
     assert!(
         !result.status.success(),
         "expected spec to be rejected\nstdout:\n{}\nstderr:\n{}",
@@ -295,12 +287,9 @@ pub struct ValidateFixture {
 /// pipeline. Lets a CLI test point `debundle spec validate --spec <path>` at
 /// exactly the same fixture shape the keep-going materialize tests build.
 pub fn write_validate_fixture_spec(opts: FixtureOpts<'_>) -> ValidateFixture {
-    let setup = setup_fixture(&opts);
-    let spec_path = setup.root.path().join("transform_spec.yaml");
-    let spec = build_spec(&opts, &setup);
-    write_yaml_file(&spec_path, &spec);
+    let setup = prepare_fixture(&opts);
     ValidateFixture {
-        spec_path,
+        spec_path: setup.spec_path,
         _root: setup.root,
     }
 }
@@ -614,15 +603,17 @@ pub fn assert_node_output(path: &Path, expected_stdout: &str, expected_stderr: &
     assert_eq!(result.stderr, expected_stderr, "stderr mismatch");
 }
 
-struct FixtureSetup {
+/// Real source files plus a serialized spec, ready for any CLI execution mode.
+struct PreparedFixture {
     root: TempDir,
+    spec_path: PathBuf,
     out_root: PathBuf,
     report_root: PathBuf,
     snapshot_root: PathBuf,
     js_list_path: PathBuf,
 }
 
-fn setup_fixture(opts: &FixtureOpts<'_>) -> FixtureSetup {
+fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
     let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
     let extracted_root = root.path().join("extracted");
     let out_root = root.path().join("out");
@@ -663,13 +654,16 @@ fn setup_fixture(opts: &FixtureOpts<'_>) -> FixtureSetup {
     let js_list_path = extracted_root.join("js-files.txt");
     write_text_file(&js_list_path, &js_list);
 
-    FixtureSetup {
+    let setup = PreparedFixture {
+        spec_path: root.path().join("transform_spec.yaml"),
         root,
         out_root,
         report_root,
         snapshot_root,
         js_list_path,
-    }
+    };
+    write_yaml_file(&setup.spec_path, &build_spec(opts, &setup));
+    setup
 }
 
 /// Slugified test path for the current `#[test]` thread, used as the
