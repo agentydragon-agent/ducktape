@@ -3495,6 +3495,10 @@ spec:
       kind: Database
       name: egress
       namespace: agentplane-testing
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: notifications
+      namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-electric
@@ -3518,6 +3522,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-actions
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-notifications
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
@@ -3746,6 +3754,10 @@ spec:
       kind: Database
       name: egress
       namespace: agentplane-staging
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: notifications
+      namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-electric
@@ -3769,6 +3781,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-actions
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-notifications
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate
