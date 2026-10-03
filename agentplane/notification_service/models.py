@@ -12,7 +12,9 @@ class Model(BaseModel):
 
 
 class ProviderView(Model):
-    subscription_schema: dict[str, JsonValue] = Field(description="Provider-defined JSON Schema for subscription creation.")
+    subscription_schema: dict[str, JsonValue] = Field(
+        description="Provider-defined JSON Schema for subscription creation."
+    )
     content: str = Field(description="Description of the retained provider payload.")
 
 
