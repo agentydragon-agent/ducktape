@@ -15,10 +15,18 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from more_itertools import one
 
-from agentplane.egress.presentation import HeaderRewrite, Presentation, present
+from agentplane.egress.presentation import (
+    BodyRewrite,
+    HeaderRewrite,
+    InvalidJsonBodyError,
+    Presentation,
+    parse_json_body,
+    present,
+)
 from agentplane.egress.resources import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
@@ -27,6 +35,7 @@ from agentplane.egress.resources import (
     EgressBinding,
     EgressCredential,
     EgressPolicy,
+    JsonFieldTarget,
     Rule,
     Secret,
 )
@@ -44,6 +53,7 @@ class DenyReason(StrEnum):
     POD_MISMATCH = "pod-mismatch"
     NO_BINDING = "no-binding"
     NO_RULE = "no-rule"
+    INVALID_BODY = "invalid-body"
     PLACEHOLDER_UNRESOLVED = "placeholder-unresolved"
     CREDENTIAL_UNAVAILABLE = "credential-unavailable"
     ADDRESS_FORBIDDEN = "address-forbidden"
@@ -96,6 +106,7 @@ class EgressRequest:
     port: int
     path: str | None = field(default=None)
     headers: Mapping[str, Sequence[str]] = field(default_factory=dict)
+    body: bytes | None = field(default=None, repr=False)
 
     @property
     def is_connect(self) -> bool:
@@ -127,6 +138,7 @@ class Allowed:
     cluster_internal: bool = False
     """Whether the deciding rule declared its hosts cluster-internal, which the dial needs: the
     address check happens where the connection is made, not here."""
+    body_rewrite: BodyRewrite | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -227,7 +239,9 @@ def _matching_rules(bindings: Sequence[BindingResolution], request: EgressReques
     ]
 
 
-def presented_credentials(index: Index, request: EgressRequest) -> dict[str, Presentation]:
+def presented_credentials(
+    index: Index, request: EgressRequest, json_body: Mapping[str, Any] | None = None
+) -> dict[str, Presentation]:
     """Every known credential this request presents, by name.
 
     Known is namespace-wide: any `EgressCredential` in the index counts, whether or not the subject
@@ -237,7 +251,7 @@ def presented_credentials(index: Index, request: EgressRequest) -> dict[str, Pre
     return {
         credential.metadata.name: presentation
         for credential in index.credentials.values()
-        if (presentation := present(credential, request.headers)) is not None
+        if (presentation := present(credential, request.headers, json_body)) is not None
     }
 
 
@@ -268,7 +282,28 @@ def evaluate(
         return Denied(DenyReason.NO_RULE)
     # A CONNECT is decided on host alone: its headers belong to the tunnel, and the requests inside
     # it are decided one by one, which is where a target applies.
-    presented = {} if request.is_connect else presented_credentials(index, request)
+    json_body = None
+    if not request.is_connect:
+        body_credentials = {
+            name
+            for name, credential in index.credentials.items()
+            if any(isinstance(target, JsonFieldTarget) for target in credential.spec.targets)
+        }
+        if body_credentials:
+            try:
+                json_body = parse_json_body(request.headers, request.body)
+            except InvalidJsonBodyError:
+                # Ordinary uploads and header-only credentials are not JSON-only. A route
+                # authorizing a JSON credential must fail closed unless it was already
+                # presented in a declared header target instead.
+                if any(
+                    match.rule.credential_ref is not None
+                    and match.rule.credential_ref.name in body_credentials
+                    and present(index.credentials[match.rule.credential_ref.name], request.headers) is None
+                    for match in matches
+                ):
+                    return Denied(DenyReason.INVALID_BODY)
+    presented = {} if request.is_connect else presented_credentials(index, request, json_body)
     if not presented:
         first = matches[0]
         return Allowed(
@@ -302,5 +337,6 @@ def evaluate(
         policy=match.policy,
         rule=match.number,
         rewrites=presented[credential.metadata.name].rewrites(value),
+        body_rewrite=(body.rewrite(value) if (body := presented[credential.metadata.name].body) is not None else None),
         cluster_internal=match.rule.cluster_internal,
     )

@@ -16,7 +16,8 @@ request; only one that knows the placeholder stands for a bot account's token ca
 Secretless by construction, and by construction rather than by discipline: this module builds the
 projection from its own field list and never from a resource object wholesale, so a field added to
 `EgressCredential` -- a second source, a decrypted value, anything -- does not appear here until
-someone writes it in. The value source never does.
+someone writes it in. The value source never does. Targets deliberately share the public
+`Target` discriminated union, which contains presentation syntax only, not optional sibling fields.
 """
 
 from __future__ import annotations
@@ -26,20 +27,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.egress.policy import Index, subject_bindings
-from agentplane.egress.resources import EgressCredential, Rule, SchemeTokenTarget, Target, TargetMethod
+from agentplane.egress.resources import EgressCredential, Rule, Target
 from agentplane.subjects import ServiceAccountRef
-
-
-class TargetView(BaseModel):
-    """One place the credential may be presented, as the client has to build it."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    header: str = Field(description="Request header this presentation puts the placeholder in.")
-    method: TargetMethod = Field(description="Shape of the header value around the placeholder.")
-    scheme: str | None = Field(
-        default=None, description="The scheme `schemeToken` expects; absent for every other method."
-    )
 
 
 class CredentialView(BaseModel):
@@ -50,7 +39,7 @@ class CredentialView(BaseModel):
     name: str
     description: str = Field(description="What the credential is and what it can do, as its owner wrote it.")
     placeholder: str = Field(description="Inert string to send; the proxy swaps the real value in.")
-    targets: list[TargetView] = Field(description="Every location the proxy substitutes at.")
+    targets: list[Target] = Field(description="Every location the proxy substitutes at.")
 
 
 class RuleView(BaseModel):
@@ -82,20 +71,12 @@ class AgentEgressView(BaseModel):
     policies: list[PolicyView] = Field(description="Granted by an active binding; empty means no egress.")
 
 
-def _target_view(target: Target) -> TargetView:
-    return TargetView(
-        header=target.header,
-        method=target.method,
-        scheme=target.scheme if isinstance(target, SchemeTokenTarget) else None,
-    )
-
-
 def _credential_view(credential: EgressCredential) -> CredentialView:
     return CredentialView(
         name=credential.metadata.name,
         description=credential.spec.description,
         placeholder=credential.placeholder,
-        targets=[_target_view(target) for target in credential.spec.targets],
+        targets=list(credential.spec.targets),
     )
 
 

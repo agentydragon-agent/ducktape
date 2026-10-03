@@ -63,7 +63,7 @@ def placeholder_of(credential_name: str) -> str:
 
 
 class TargetMethod(StrEnum):
-    """How a client presents a credential in one header value. Each names a total parse of that
+    """How a client presents a credential in a header component or declared JSON field. Each names a total parse of that
     value into the credential component and the text around it; adding a presentation means adding a
     method, never loosening one."""
 
@@ -72,9 +72,12 @@ class TargetMethod(StrEnum):
     BASIC_USERNAME = "basicUsername"
     BASIC_PASSWORD = "basicPassword"
     BASIC_WHOLE = "basicWhole"
+    JSON_FIELD = "jsonField"
 
 
 class _TargetBase(_Wire):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
     header: str = Field(min_length=1, description="Request header this presentation puts the credential in.")
 
 
@@ -111,8 +114,28 @@ class BasicWholeTarget(_TargetBase):
     method: Literal[TargetMethod.BASIC_WHOLE]
 
 
+class JsonFieldTarget(_Wire):
+    """An exact string value in one top-level JSON object field; no paths or templates."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    method: Literal[TargetMethod.JSON_FIELD]
+    field: str = Field(
+        min_length=1,
+        max_length=256,
+        description="Top-level JSON field whose entire string value must equal the placeholder.",
+    )
+
+
+# Public presentation syntax, shared by resource parsing and both API projections. Keep
+# credential values/source metadata out of these variants; those belong to CredentialSpec.
 Target = Annotated[
-    WholeValueTarget | SchemeTokenTarget | BasicUsernameTarget | BasicPasswordTarget | BasicWholeTarget,
+    WholeValueTarget
+    | SchemeTokenTarget
+    | BasicUsernameTarget
+    | BasicPasswordTarget
+    | BasicWholeTarget
+    | JsonFieldTarget,
     Field(discriminator="method"),
 ]
 

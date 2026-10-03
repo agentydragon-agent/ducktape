@@ -15,20 +15,82 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from agentplane.egress.resources import (
     BasicPasswordTarget,
     BasicUsernameTarget,
     BasicWholeTarget,
     EgressCredential,
+    JsonFieldTarget,
     SchemeTokenTarget,
     Target,
     WholeValueTarget,
 )
 
 BASIC = "basic"
+MAX_JSON_BODY_BYTES = 64 * 1024
+
+
+class InvalidJsonBodyError(ValueError):
+    """A body-target request is not an unambiguous, bounded JSON object."""
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise InvalidJsonBodyError("Duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _reject_constant(_value: str) -> None:
+    raise InvalidJsonBodyError("Non-finite JSON number")
+
+
+def parse_json_body(headers: Mapping[str, Sequence[str]], body: bytes | None) -> dict[str, Any]:
+    """Parse only uncompressed UTF-8 application/json, never logging raw parser exceptions."""
+    values = {name.lower(): tuple(value) for name, value in headers.items()}
+    content_types = values.get("content-type", ())
+    encodings = values.get("content-encoding", ())
+    if (
+        body is None
+        or len(body) > MAX_JSON_BODY_BYTES
+        or len(content_types) != 1
+        or content_types[0].partition(";")[0].strip().lower() != "application/json"
+        or (encodings and encodings != ("identity",))
+    ):
+        raise InvalidJsonBodyError("Unsupported JSON body envelope")
+    try:
+        value = json.loads(body.decode("utf-8"), object_pairs_hook=_unique_object, parse_constant=_reject_constant)
+        if not isinstance(value, dict):
+            raise InvalidJsonBodyError("JSON body must be an object")
+        # Reject numeric overflow too (e.g. 1e999), before any credential is available.
+        json.dumps(value, allow_nan=False)
+    except ValueError, RecursionError:
+        raise InvalidJsonBodyError("Invalid JSON object") from None
+    return value
+
+
+@dataclass(frozen=True)
+class BodyRewrite:
+    content: bytes = field(repr=False)
+
+
+@dataclass(frozen=True)
+class BodyPresentation:
+    document: Mapping[str, Any] = field(repr=False)
+    fields: tuple[str, ...]
+
+    def rewrite(self, credential: str) -> BodyRewrite:
+        value = dict(self.document)
+        for name in self.fields:
+            value[name] = credential
+        return BodyRewrite(json.dumps(value, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode())
 
 
 @dataclass(frozen=True)
@@ -65,6 +127,7 @@ class Presentation:
 
     credential: str
     headers: tuple[HeaderPresentation, ...]
+    body: BodyPresentation | None = field(default=None, repr=False)
 
     def rewrites(self, credential: str) -> tuple[HeaderRewrite, ...]:
         return tuple(header.rewrite(credential) for header in self.headers)
@@ -74,6 +137,8 @@ def parse(target: Target, value: str) -> Parsed | None:
     """The credential component `target` reads out of this header value, or None when the value is
     not of that target's shape."""
     match target:
+        case JsonFieldTarget():
+            return None
         case WholeValueTarget():
             return Parsed(component=value, rebuild=lambda credential: credential)
         case SchemeTokenTarget():
@@ -104,7 +169,9 @@ def parse(target: Target, value: str) -> Parsed | None:
             )
 
 
-def present(credential: EgressCredential, headers: Mapping[str, Sequence[str]]) -> Presentation | None:
+def present(
+    credential: EgressCredential, headers: Mapping[str, Sequence[str]], json_body: Mapping[str, Any] | None = None
+) -> Presentation | None:
     """Where `credential`'s placeholder sits in these headers, or None when it is not presented."""
     placeholder = credential.placeholder
     values_by_name = {name.lower(): tuple(values) for name, values in headers.items()}
@@ -118,7 +185,17 @@ def present(credential: EgressCredential, headers: Mapping[str, Sequence[str]]) 
             rebuilders.append(rebuild if rebuild is not None else _unchanged(value))
         if matched:
             presented.append(HeaderPresentation(header=header, rebuilders=tuple(rebuilders)))
-    return Presentation(credential=credential.metadata.name, headers=tuple(presented)) if presented else None
+    fields = tuple(
+        target.field
+        for target in credential.spec.targets
+        if isinstance(target, JsonFieldTarget) and json_body is not None and json_body.get(target.field) == placeholder
+    )
+    body = BodyPresentation(document=json_body, fields=fields) if fields and json_body is not None else None
+    return (
+        Presentation(credential=credential.metadata.name, headers=tuple(presented), body=body)
+        if presented or body is not None
+        else None
+    )
 
 
 def _headers_of(credential: EgressCredential) -> dict[str, str]:
@@ -126,7 +203,8 @@ def _headers_of(credential: EgressCredential) -> dict[str, str]:
     -- which is the spelling the rewritten header goes out under, whatever case the client sent."""
     headers: dict[str, str] = {}
     for target in credential.spec.targets:
-        headers.setdefault(target.header.lower(), target.header)
+        if not isinstance(target, JsonFieldTarget):
+            headers.setdefault(target.header.lower(), target.header)
     return headers
 
 
@@ -137,7 +215,7 @@ def _rebuild_of(credential: EgressCredential, header: str, value: str, placehold
     since a `Basic` payload is not a `Bearer` token and neither is the other.
     """
     for target in credential.spec.targets:
-        if target.header.lower() != header:
+        if isinstance(target, JsonFieldTarget) or target.header.lower() != header:
             continue
         parsed = parse(target, value)
         if parsed is not None and parsed.component == placeholder:

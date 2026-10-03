@@ -281,6 +281,7 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/sandbox_service/testing:fake_inventory",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

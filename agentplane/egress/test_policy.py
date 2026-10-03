@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -36,6 +37,7 @@ from agentplane.egress.resources import (
     EgressBinding,
     EgressCredential,
     EgressPolicy,
+    JsonFieldTarget,
     ObjectMeta,
     PolicySpec,
     ProjectedWorkloadTokenSource,
@@ -683,6 +685,80 @@ def test_blanket_does_not_send_a_known_credential_to_another_host_or_path() -> N
         request(path="/outside-github-rule", authorization=f"Bearer {PLACEHOLDER}"),
     ]:
         assert evaluate(rules, CALLER, outbound, NOW) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
+
+
+MATRIX_CREDENTIAL = credential("matrix-login", JsonFieldTarget(method=TargetMethod.JSON_FIELD, field="password"))
+MATRIX_PATH = "/_matrix/client/v3/login"
+
+
+def matrix_index() -> Index:
+    return index(
+        credentials=[MATRIX_CREDENTIAL],
+        policies=[
+            policy(
+                "matrix",
+                Rule(
+                    hosts=["matrix.test"],
+                    methods=["POST"],
+                    paths=[MATRIX_PATH],
+                    credential_ref=CredentialRef(name="matrix-login"),
+                ),
+                Rule(hosts=["matrix.test", "other.test"]),
+            )
+        ],
+        bindings=[binding("b", policies=["matrix"])],
+    )
+
+
+def matrix_request(
+    *, method: str = "POST", host: str = "matrix.test", path: str = MATRIX_PATH, body: bytes | None = None
+) -> EgressRequest:
+    return EgressRequest(
+        method=method,
+        host=host,
+        port=443,
+        path=path,
+        headers={"content-type": ["application/json"]},
+        body=body if body is not None else json.dumps({"password": MATRIX_CREDENTIAL.placeholder}).encode(),
+    )
+
+
+def test_json_secret_is_substituted_only_after_credential_authorization() -> None:
+    outbound = matrix_request()
+    decision = evaluate(matrix_index(), CALLER, outbound, NOW)
+    assert isinstance(decision, Allowed)
+    assert decision.body_rewrite is not None
+    assert json.loads(decision.body_rewrite.content) == {"password": SECRET_VALUE}
+    assert SECRET_VALUE not in repr(decision)
+    assert MATRIX_CREDENTIAL.placeholder not in repr(outbound)
+
+
+@pytest.mark.parametrize(
+    "outbound", [matrix_request(method="GET"), matrix_request(host="other.test"), matrix_request(path="/elsewhere")]
+)
+def test_otherwise_allowed_requests_cannot_redeem_json_credentials_off_route(outbound: EgressRequest) -> None:
+    assert evaluate(matrix_index(), CALLER, outbound, NOW) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
+
+
+def test_json_route_fails_closed_for_invalid_body_missing_secret_or_revoked_binding() -> None:
+    rules = matrix_index()
+    assert evaluate(rules, CALLER, matrix_request(body=b"{broken"), NOW) == Denied(DenyReason.INVALID_BODY)
+    rules.secrets.clear()
+    assert evaluate(rules, CALLER, matrix_request(), NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
+    rules.bindings.clear()
+    assert evaluate(rules, CALLER, matrix_request(), NOW) == Denied(DenyReason.NO_BINDING)
+
+
+def test_nonjson_uploads_to_unrelated_routes_are_unchanged() -> None:
+    assert evaluate(matrix_index(), CALLER, matrix_request(path="/upload", body=b"not json"), NOW) == Allowed(
+        "b", "matrix", 1
+    )
+
+
+def test_body_credential_is_known_even_without_a_binding_naming_it() -> None:
+    rules = matrix_index()
+    rules.policies["matrix"] = policy("matrix", Rule(hosts=["matrix.test"]))
+    assert evaluate(rules, CALLER, matrix_request(), NOW) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
 
 
 if __name__ == "__main__":

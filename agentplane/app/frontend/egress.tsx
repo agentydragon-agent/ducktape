@@ -37,7 +37,13 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
               {rule.paths ? rule.paths.join(", ") : "any path"}
               {rule.credential
                 ? ` · ${rule.credential.name}: ${rule.credential.description} (${rule.credential.targets
-                    .map((t) => (t.scheme ? `${t.header}: ${t.scheme} <credential>` : `${t.header} ${t.method}`))
+                    .map((t) =>
+                      t.method === "jsonField"
+                        ? `JSON field ${t.field}: <credential>`
+                        : t.method === "schemeToken"
+                          ? `${t.header}: ${t.scheme} <credential>`
+                          : `${t.header} ${t.method}`
+                    )
                     .join(", ")}, from ${
                     rule.credential.secret && rule.credential.key
                       ? `${rule.credential.secret}/${rule.credential.key}`

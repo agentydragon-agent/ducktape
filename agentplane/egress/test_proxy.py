@@ -112,6 +112,7 @@ class RecordingUpstream:
     port: int = 0
     http_port: int = 0
     requests: list[tuple[str, str, dict[str, str]]] = field(default_factory=list)
+    bodies: list[bytes] = field(default_factory=list, repr=False)
 
     async def handle(self, request: web.Request) -> web.Response:
         if request.path == "/public/slow":
@@ -119,6 +120,7 @@ class RecordingUpstream:
             await self.slow_release.wait()
         headers = {k.lower(): v for k, v in request.headers.items()}
         self.requests.append((request.method, request.path_qs, headers))
+        self.bodies.append(await request.read())
         if request.path == "/workload/requires-auth" and "authorization" not in headers:
             return web.Response(status=401, text="authentication required")
         return web.Response(text="upstream ok")
@@ -1258,6 +1260,77 @@ async def test_a_placeholder_with_no_projected_token_offered_is_refused(
     assert response.status == 403
     assert response.headers[DENIED_HEADER] == f"denied; reason={DenyReason.CREDENTIAL_UNAVAILABLE}"
     assert proxy.upstream.requests == []
+
+
+async def test_matrix_json_login_through_real_proxy(
+    fake: FakeApiServer, proxy: ProxyUnderTest, caplog: pytest.LogCaptureFixture, decision_log: DecisionLog
+) -> None:
+    caplog.set_level("INFO", logger="agentplane.egress.decision_log")
+    name = "matrix-login"
+    login_path = "/_matrix/client/v3/login"
+    secret_value = 'matrix-secret"\\\n☃'
+    fake.put(SECRETS_PLURAL, secret("matrix-password", {"password": secret_value}))
+    fake.put(
+        CREDENTIALS_PLURAL,
+        credential(
+            name, secret_name="matrix-password", key="password", targets=[{"method": "jsonField", "field": "password"}]
+        ),
+    )
+    fake.put(
+        POLICIES_PLURAL,
+        policy(
+            name,
+            [
+                {"hosts": [UPSTREAM_HOST], "methods": ["POST"], "paths": [login_path], "credentialRef": {"name": name}},
+                {"hosts": [UPSTREAM_HOST], "paths": ["/public/**"]},
+            ],
+        ),
+    )
+    fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[name]))
+    await proxy.index.wait_for(
+        lambda: (
+            name in proxy.index.credentials
+            and name in proxy.index.policies
+            and proxy.index.bindings[BINDING].spec.policies == [name]
+            and "matrix-password" in proxy.index.secrets
+        )
+    )
+    payload = {
+        "type": "m.login.password",
+        "identifier": {"type": "m.id.user", "user": "@bot:test"},
+        "password": placeholder_of(name),
+    }
+    async with aiohttp.ClientSession() as session:
+        for path, data, expected in [
+            (login_path, json.dumps(payload).encode(), 200),
+            ("/public/not-login", json.dumps(payload).encode(), 403),
+            (login_path, b'{"password":"one","password":"two"}', 403),
+        ]:
+            async with session.post(
+                proxy.url(path),
+                proxy=f"http://127.0.0.1:{proxy.proxy_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
+                ssl=client_tls_context(proxy.interception_ca),
+                headers={"Content-Type": "application/json"},
+                data=data,
+            ) as response:
+                assert response.status == expected
+                assert secret_value.encode() not in await response.read()
+    assert len(proxy.upstream.requests) == 1
+    body = one(proxy.upstream.bodies)
+    assert json.loads(body) == {**payload, "password": secret_value}
+    assert int(one(proxy.upstream.requests)[2]["content-length"]) == len(body)
+    assert secret_value not in caplog.text
+    assert json.dumps(secret_value) not in caplog.text
+    await decision_log.flush()
+    async with (
+        aiohttp.ClientSession(base_url=f"http://127.0.0.1:{proxy.admin_port}") as admin,
+        admin.get("/decisions", params=SUBJECT_A.model_dump()) as response,
+    ):
+        evidence = await response.text()
+    assert secret_value not in evidence
+    assert "@bot:test" not in evidence
+    assert '"substituted": true' in evidence
 
 
 if __name__ == "__main__":

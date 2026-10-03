@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
 import pytest_bazel
+from pydantic import TypeAdapter, ValidationError
 
-from agentplane.egress.agent_view import CredentialView, TargetView, agent_view
+from agentplane.egress.agent_view import CredentialView, agent_view
 from agentplane.egress.policy import Index
 from agentplane.egress.resources import (
     BasicPasswordTarget,
@@ -17,12 +19,14 @@ from agentplane.egress.resources import (
     EgressBinding,
     EgressCredential,
     EgressPolicy,
+    JsonFieldTarget,
     ObjectMeta,
     PolicySpec,
     Rule,
     SchemeTokenTarget,
     Secret,
     SecretKeyRef,
+    Target,
     TargetMethod,
 )
 from agentplane.subjects import ServiceAccountRef
@@ -88,8 +92,8 @@ def test_a_sandbox_is_told_every_target_and_not_just_the_placeholder() -> None:
         description=DESCRIPTION,
         placeholder=PLACEHOLDER,
         targets=[
-            TargetView(header="Authorization", method=TargetMethod.SCHEME_TOKEN, scheme="Bearer"),
-            TargetView(header="Authorization", method=TargetMethod.BASIC_PASSWORD),
+            SchemeTokenTarget(header="Authorization", method=TargetMethod.SCHEME_TOKEN, scheme="Bearer"),
+            BasicPasswordTarget(header="Authorization", method=TargetMethod.BASIC_PASSWORD),
         ],
     )
     assert public.credential is None, "a rule that substitutes nothing offers nothing to present"
@@ -154,6 +158,77 @@ def test_the_same_name_in_another_namespace_is_a_different_subject() -> None:
 
     assert view.subject == elsewhere
     assert view.policies == []
+
+
+def test_json_target_is_discoverable_without_exposing_credential_source_or_value() -> None:
+    rules = _index()
+    rules.credentials[CREDENTIAL.metadata.name] = CREDENTIAL.model_copy(
+        update={
+            "spec": CREDENTIAL.spec.model_copy(
+                update={"targets": [JsonFieldTarget(method=TargetMethod.JSON_FIELD, field="password")]}
+            )
+        }
+    )
+    view = agent_view(rules, CALLER, NOW)
+    target = view.policies[0].rules[0].credential
+    assert target is not None
+    assert target.targets == [JsonFieldTarget(method=TargetMethod.JSON_FIELD, field="password")]
+    assert SECRET_VALUE not in view.model_dump_json()
+    assert "vault-entry" not in view.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"method": "wholeValue", "header": "X-Key"},
+        {"method": "schemeToken", "header": "Authorization", "scheme": "Bearer"},
+        {"method": "basicUsername", "header": "Authorization"},
+        {"method": "basicPassword", "header": "Authorization"},
+        {"method": "basicWhole", "header": "Authorization"},
+        {"method": "jsonField", "field": "password"},
+    ],
+)
+def test_agent_target_variants_serialize_only_their_own_fields(target: dict[str, str]) -> None:
+    view = CredentialView.model_validate(
+        {"name": "test", "description": "test credential", "placeholder": "test-placeholder", "targets": [target]}
+    )
+    assert view.model_dump(mode="json")["targets"] == [target]
+    assert TypeAdapter(Target).validate_python(target).model_dump(mode="json") == target
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"method": "jsonField", "field": "password", "header": "Authorization"},
+        {"method": "jsonField", "field": "password", "scheme": "Bearer"},
+        {"method": "jsonField", "field": "password", "header": None},
+        {"method": "jsonField", "header": "Authorization"},
+        {"method": "wholeValue", "header": "X-Key", "field": "password"},
+        {"method": "wholeValue", "header": "X-Key", "scheme": "Bearer"},
+        {"method": "schemeToken", "header": "Authorization"},
+        {"method": "basicPassword", "header": "Authorization", "scheme": None},
+        {"method": "unknown", "header": "Authorization"},
+        {"header": "Authorization"},
+    ],
+)
+def test_mixed_or_incomplete_targets_are_rejected_by_resources_and_agent_api(target: dict[str, str | None]) -> None:
+    with pytest.raises(ValidationError):
+        TypeAdapter(Target).validate_python(target)
+    with pytest.raises(ValidationError):
+        CredentialView.model_validate(
+            {"name": "test", "description": "test credential", "placeholder": "test-placeholder", "targets": [target]}
+        )
+
+
+def test_agent_schema_exposes_a_discriminated_union_not_nullable_sibling_fields() -> None:
+    schema = CredentialView.model_json_schema()
+    items = schema["properties"]["targets"]["items"]
+    assert items["discriminator"]["propertyName"] == "method"
+    assert set(items["discriminator"]["mapping"]) == {method.value for method in TargetMethod}
+    assert len(items["oneOf"]) == len(TargetMethod)
+    assert set(schema["$defs"]["JsonFieldTarget"]["properties"]) == {"method", "field"}
+    assert set(schema["$defs"]["SchemeTokenTarget"]["properties"]) == {"method", "header", "scheme"}
+    assert set(schema["$defs"]["BasicPasswordTarget"]["properties"]) == {"method", "header"}
 
 
 if __name__ == "__main__":

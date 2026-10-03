@@ -9,15 +9,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress.resources import (
-    EgressBinding,
-    EgressCredential,
-    EgressPolicy,
-    Rule,
-    SchemeTokenTarget,
-    Target,
-    TargetMethod,
-)
+from agentplane.egress.resources import EgressBinding, EgressCredential, EgressPolicy, Rule, Target
 from agentplane.sandbox_service.models import InventoryError
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
@@ -76,16 +68,6 @@ class _ResourceList(_Wire):
 # API views.
 
 
-class CredentialTargetView(BaseModel):
-    """One place the credential is substituted, as the credential declares it."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    header: str
-    method: TargetMethod
-    scheme: str | None = Field(default=None, description="The scheme `schemeToken` expects; absent for the rest.")
-
-
 class CredentialView(BaseModel):
     """A credential a rule lets a subject present. Source metadata names no credential value."""
 
@@ -96,7 +78,7 @@ class CredentialView(BaseModel):
     placeholder: str = Field(description="What a sandbox sends in its place; derived from the name.")
     secret: str | None = Field(default=None, description="Source Secret, absent for a workload-token source.")
     key: str | None = Field(default=None, description="Source Secret key, absent for a workload-token source.")
-    targets: list[CredentialTargetView]
+    targets: list[Target]
 
 
 class RuleView(BaseModel):
@@ -201,17 +183,9 @@ def _credentials_by_name(credentials: Iterable[object]) -> dict[str, CredentialV
             placeholder=credential.placeholder,
             secret=secret_ref.name if secret_ref is not None else None,
             key=secret_ref.key if secret_ref is not None else None,
-            targets=[_target_view(target) for target in credential.spec.targets],
+            targets=list(credential.spec.targets),
         )
     return resolved
-
-
-def _target_view(target: Target) -> CredentialTargetView:
-    return CredentialTargetView(
-        header=target.header,
-        method=target.method,
-        scheme=target.scheme if isinstance(target, SchemeTokenTarget) else None,
-    )
 
 
 def _policy_view(policy: EgressPolicy, credentials: dict[str, CredentialView]) -> PolicyView:
