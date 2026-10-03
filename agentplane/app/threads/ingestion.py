@@ -23,7 +23,7 @@ from agentplane.app.threads.view.recording import ThreadFoldError, record_thread
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
-from agentplane.sandbox_service.client import Attachment, Runner
+from agentplane.sandbox_service.client import Attachment, ReconnectRequired, Runner, ServiceError
 from agentplane.sandbox_service.models import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
@@ -31,6 +31,7 @@ from agentplane.sandbox_service.models import SandboxNotFoundError
 
 logger = logging.getLogger(__name__)
 RECONCILE_S = 2
+RECONNECT_WARNING_S = 30
 LEASE_DURATION = timedelta(seconds=30)
 
 
@@ -59,6 +60,9 @@ async def event_batches(
                 except StreamClosedError:
                     yield batch
                     return
+                except ReconnectRequired:
+                    yield batch
+                    raise
                 pending = asyncio.ensure_future(read())
             yield batch
     finally:
@@ -147,8 +151,52 @@ class Feed:
         self.ingestion = ingestion
         self.lease = lease
         self.task: asyncio.Task[None] | None = None
+        self._connected_at: float | None = None
 
     async def run(self) -> None:
+        loop = asyncio.get_running_loop()
+        retry_since: float | None = None
+        last_warning = 0.0
+        while True:
+            self._connected_at = None
+            try:
+                await self._copy()
+                return
+            except ReconnectRequired:
+                logger.debug("renewing ingestion for %s/%s", self.lease.sandbox, self.session_id)
+                retry_since = None
+                continue
+            except IngestionLeaseLostError:
+                logger.info("ingestion lease lost for %s/%s", self.lease.sandbox, self.session_id)
+                return
+            except (grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError) as error:
+                now = loop.time()
+                # Keep retry state across attempts, but not across a healthy long-lived follow.
+                if retry_since is None or (
+                    self._connected_at is not None and now - self._connected_at >= RECONNECT_WARNING_S
+                ):
+                    retry_since = now
+                denied = isinstance(error, ServiceError) and error.code in (
+                    grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED
+                )
+                if (denied or now - retry_since >= RECONNECT_WARNING_S) and (
+                    not last_warning or now - last_warning >= RECONNECT_WARNING_S
+                ):
+                    logger.warning(
+                        "ingestion reconnect unsuccessful for %s/%s; retrying for %.1fs (%s)",
+                        self.lease.sandbox, self.session_id, now - retry_since, type(error).__name__,
+                        exc_info=True,
+                    )
+                    last_warning = now
+                else:
+                    logger.debug(
+                        "reconnecting ingestion for %s/%s (%s)",
+                        self.lease.sandbox, self.session_id, type(error).__name__,
+                    )
+                # Also handles a lost renewal marker/bare transport EOF; never end the feed.
+                await asyncio.sleep(RECONCILE_S)
+
+    async def _copy(self) -> None:
         attachment: Attachment | None = None
         try:
             attachment = await self.client.attach(self.session_id)
@@ -170,6 +218,8 @@ class Feed:
                 # exact archived Event and source even if the runner has no new entries.
                 attachment = await self.client.attach(self.session_id, after_cursor=stored - 1)
             await self.ingestion.set_attached(thread_id, attachment.attached, lease=self.lease)
+            self._connected_at = asyncio.get_running_loop().time()
+            logger.debug("ingestion attached for %s/%s", self.lease.sandbox, self.session_id)
             try:
                 async with contextlib.aclosing(event_batches(attachment.next_entry)) as batches:
                     async for batch in batches:
@@ -187,11 +237,6 @@ class Feed:
             except EventReplicationError as error:
                 logger.error("invalid runner history for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
                 await self.ingestion.end_feed(thread_id, lease=self.lease, error=str(error), error_cursor=error.cursor)
-        except IngestionLeaseLostError:
-            logger.info("ingestion lease lost for %s/%s", self.lease.sandbox, self.session_id)
-        except grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError:
-            # Reconcile retries from the committed cursor. A transport loss is not session end.
-            logger.warning("ingestion interrupted for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
         finally:
             if attachment is not None:
                 attachment.cancel()

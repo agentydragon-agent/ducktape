@@ -28,8 +28,8 @@ class ServiceError(ConnectionError):
         self.code = code
 
 
-class FollowLeaseExpiredError(ConnectionError):
-    """Reconnect from the committed cursor; this is not the native session ending."""
+class ReconnectRequired(ConnectionError):
+    """Planned follow renewal, not an interruption or native session end."""
 
 
 def _raise(error: grpc.aio.AioRpcError) -> Never:
@@ -54,13 +54,16 @@ class Attachment:
             message = await self._call.read()
         except grpc.aio.AioRpcError as error:
             if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                raise FollowLeaseExpiredError("Sandbox Service follow lease or deadline expired") from error
+                raise TimeoutError("Sandbox Service follow deadline expired") from error
             _raise(error)
         if message is grpc.aio.EOF:
             raise ConnectionError("Sandbox Service follow ended without native closure evidence")
         assert isinstance(message, protocol_pb2.FollowSessionResponse)
         if message.HasField("entry"):
             return message.entry
+        if message.HasField("reconnect_required"):
+            self._call.cancel()
+            raise ReconnectRequired
         if message.HasField("ended"):
             self._ended = True
             self._call.cancel()
@@ -81,7 +84,7 @@ class SandboxServiceClient:
         token_file: Path,
         request_timeout_s: float = 20,
         lifecycle_timeout_s: float = 310,
-        follow_timeout_s: float = 90,
+        follow_timeout_s: float = 960,
     ) -> None:
         if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0:
             raise ValueError("timeouts must be positive")
@@ -225,7 +228,8 @@ class Runner:
             timeout=self.service.follow_timeout_s,
         )
         try:
-            message = await call.read()
+            async with asyncio.timeout(self.service.request_timeout_s):
+                message = await call.read()
             if not isinstance(message, protocol_pb2.FollowSessionResponse) or not message.HasField("attached"):
                 raise ConnectionError("Sandbox Service did not provide an Attached snapshot")
             return Attachment(call, message.attached)

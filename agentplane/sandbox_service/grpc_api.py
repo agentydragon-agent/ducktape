@@ -39,7 +39,7 @@ class Resources:
     caller_accounts: frozenset[ServiceAccountRef]
     platform_instructions: str
     admission_timeout_s: float = 15
-    follow_lease_s: float = 30
+    follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
 
     def __post_init__(self) -> None:
@@ -75,7 +75,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
     except TimeoutError, OpenTimeoutError:
         await context.abort(
             grpc.StatusCode.DEADLINE_EXCEEDED,
-            "service deadline or follow lease expired; mutation outcome may be uncertain",
+            "service deadline expired; mutation outcome may be uncertain",
         )
     except InventoryError, RunnerError, StreamClosedError:
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")
@@ -284,15 +284,28 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 async with asyncio.timeout(self.resources.admission_timeout_s):
                     attachment = await client.attach(destination.session_id, after_cursor=request.follow.after_cursor)
                 try:
-                    async with asyncio.timeout(self.resources.follow_lease_s):
+                    deadline = asyncio.get_running_loop().time() + self.resources.follow_lease_s
+                    async with asyncio.timeout(self.resources.admission_timeout_s):
                         await context.write(protocol_pb2.FollowSessionResponse(attached=attachment.attached))
-                        while True:
-                            try:
+                    while True:
+                        # Idle runners may stay quiet for the whole lease. Only writes have
+                        # the short timeout: a blocked consumer must not pin an attachment.
+                        lease = asyncio.timeout_at(deadline)
+                        try:
+                            async with lease:
                                 entry = await attachment.next_entry()
-                            except StreamClosedError:
-                                await context.write(protocol_pb2.FollowSessionResponse(ended=Empty()))
-                                return
+                        except TimeoutError:
+                            if not lease.expired():
+                                raise
+                            terminal = protocol_pb2.FollowSessionResponse(reconnect_required=Empty())
+                            break
+                        except StreamClosedError:
+                            terminal = protocol_pb2.FollowSessionResponse(ended=Empty())
+                            break
+                        async with asyncio.timeout(self.resources.admission_timeout_s):
                             await context.write(protocol_pb2.FollowSessionResponse(entry=entry))
+                    async with asyncio.timeout(self.resources.admission_timeout_s):
+                        await context.write(terminal)
                 finally:
                     attachment.cancel()
             finally:

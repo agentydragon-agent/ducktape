@@ -95,11 +95,23 @@ cursor. It emits:
 3. An `ended` observation only when the native runner attachment reaches successful EOF. This is a
    transport observation, not a synthesized execution Event or deletion of retained history.
 
-A bounded follow lease ends with `DEADLINE_EXCEEDED`; backend transport failure is `UNAVAILABLE`.
-Neither is native closure. Bare service-stream EOF without `ended` is an error in the client, not
-session termination. Reconnect from the last fully consumed/committed cursor; each reconnect checks
-identity and destination again. Follow flow-control stalls are inside the lease deadline, and every
-exit cancels the runner attachment and closes its channel. There is no unbounded fan-out queue.
+4. Alternatively, a terminal `reconnect_required` observation followed by successful stream closure
+   when the follow lease expires. This is planned transport renewal, not native closure.
+
+Reconnect from the last durably committed cursor; each reconnect rereads the projected token and
+checks identity and destination again. The app flushes its buffered batch before planned renewal,
+then reconnects immediately, including replay of the archived boundary entry for identity checking.
+It does not end the feed. Planned renewals are debug-level observations, not warnings.
+
+Bare service EOF without a terminal observation, `DEADLINE_EXCEEDED`, and backend `UNAVAILABLE`
+remain failures, never session termination. The app retries these from the same durable checkpoint
+(including when a renewal marker is lost), with warnings for unsuccessful reconnects lasting 30s
+and immediately for authorization denial. Invalid history remains a durable feed failure.
+
+Healthy idle follows last until renewal. Each downstream write, including the terminal observation,
+is separately bounded by `admission_timeout_s`, so a stalled consumer cannot pin an attachment for
+15 minutes. Every exit cancels the runner attachment and closes its channel. There is no unbounded
+fan-out queue.
 
 The service retains no additional session-log archive. Runner logs are durable on the state volume,
 but reading them requires a reachable runner. Clients needing retention independent of that volume
@@ -114,7 +126,7 @@ client of service event following; migrating that archive is not a required foll
 - `INVALID_ARGUMENT`: malformed request or invalid concrete grant selection.
 - `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation.
 - `UNAVAILABLE`: destination/backend unavailable; no offline admission.
-- `DEADLINE_EXCEEDED`: operation deadline or follow lease expired.
+- `DEADLINE_EXCEEDED`: operation or transport safety deadline expired (not planned follow renewal).
 
 Neither a successful write nor a timeout proves admission/rejection. A mutation may commit before
 its response is lost. Reconcile commands with the unchanged ID/payload and runner evidence; admission
@@ -131,7 +143,12 @@ kebab-case CLI flags. Required settings are `sandbox_namespace` and
 `port` defaults to 8080 for gRPC. `health_port` defaults to 8081 for unauthenticated HTTP `/healthz`;
 it is liveness, not proof that Kubernetes or a particular destination is ready. Admission requests
 are bounded by `admission_timeout_s` (default 15); management by `lifecycle_timeout_s` (default 300);
-follow leases by `follow_lease_s` (default 30, configured maximum 60).
+follow leases by `follow_lease_s` (default and configured maximum 900 seconds / 15 minutes).
+The client whole-follow safety deadline defaults to 960 seconds / 16 minutes; initial attachment
+still uses the short request timeout. Renewal repeats TokenReview and destination admission; it
+is not in-stream reauthentication or a lease derived from the token's exact expiry. The app's
+30-second database ingestion-ownership lease is independently renewed without closing follows.
+Runner RPC authentication/TLS remains a separate TODO.
 
 Deployment must grant the service the appropriate Kubernetes/TokenReview/provisioning permissions,
 project an audience-correct token for app-to-service calls, and enforce sole normal production access

@@ -82,8 +82,12 @@ API authentication or satisfy the separate runner-authentication TODO.
 Use native gRPC deadlines, cancellation, and status codes, but retain application semantics:
 command admission is not completion; transport EOF is not session termination; a timeout does not
 prove a mutation failed. Following starts with a native snapshot and preserves original event
-entries and cursors. Bound each follow lease, reauthenticate on reconnect, and distinguish lease
-expiry, backend failure, and native stream closure. Do not enable automatic mutation retries merely
+entries and cursors. Renew follows every 15 minutes using a terminal `reconnect_required`
+observation and successful stream closure; use a 16-minute client safety deadline. Reauthenticate
+on reconnect from the client's durable cursor, preserving the distinction between planned renewal,
+backend failure, and native stream closure. The app commits buffered entries before renewal and
+reconnects without marking the feed ended; sustained retry failures still warn. Authentication,
+initial attachment, and stalled downstream writes retain short deadlines. Do not enable automatic mutation retries merely
 because a generated client supports them.
 
 Production entrypoints, app callers, and service acceptance tests use the same gRPC API.
