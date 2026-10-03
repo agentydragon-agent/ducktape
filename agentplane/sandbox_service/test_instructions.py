@@ -30,6 +30,13 @@ def test_image_owned_agent_instructions_render_deployment_service_urls() -> None
         "The submitted request's decision/state is authoritative",
         "Do not submit speculative requests merely to discover whether they prompt the operator",
         "This preference does not permit bypassing egress policy, an explicit approval requirement",
+        "POST /v1/action-requests/{id}/cancel",
+        "MCP `cancel_action_request(request_id)`",
+        "`cancelled` or `already_cancelled` confirms withdrawal",
+        "`too_late` means dispatch was already claimed; cancellation does not interrupt execution",
+        "`already_finished` means inspect the original decision/result before proceeding",
+        "Disconnecting or stopping a wait does not withdraw a request",
+        "do not assume it was cancelled",
         "Approval alone is not execution success",
     ],
 )
