@@ -42,7 +42,10 @@ are outside transactions. They poll canonical Actions history (bounded pages of 
 terminal requests; no second Action queue or retry of Action execution is introduced. Errors of a
 source subscription and delivery errors are exposed separately. Polling rechecks source ownership.
 
-Before submitting a notice, persist its command ID, exact input, and coverage boundary. Replays
+Before submitting a notice, persist its command ID, exact input, and coverage boundary. Before the
+first delivery attempt, checkpoint the current runner journal tail instead of replaying unrelated
+session history. Persist the exact boundary entry, then the attempt marker, before sending the command.
+A crash before that marker allows a newer initial checkpoint; after it, never skip entries. Replays
 verify the last committed runner entry before advancing. A lost command response reuses the same ID;
 `CommandAdmitted` is not delivery. `HarnessUserMessageConfirmed.origin_command_ids` supplies causal
 confirmation, including coalesced inputs. Failed/no-op/unconfirmed commands are not confirmed receipts.
