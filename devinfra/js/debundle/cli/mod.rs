@@ -10,6 +10,8 @@ pub mod validate;
 mod bindings_commands;
 mod inspection_commands;
 mod modules_commands;
+mod selector_explanation;
+mod selector_input;
 mod spec_commands;
 
 use anyhow::{Context, Result};

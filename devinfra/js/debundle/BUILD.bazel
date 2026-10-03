@@ -944,6 +944,8 @@ rust_library(
         "cli/modules_commands.rs",
         "cli/outcome.rs",
         "cli/scc_cluster.rs",
+        "cli/selector_explanation.rs",
+        "cli/selector_input.rs",
         "cli/spec_commands.rs",
         "cli/validate.rs",
     ],
