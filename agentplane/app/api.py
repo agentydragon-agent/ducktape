@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from agentplane.app.sandbox_models import KubernetesGrantView, grant_views
+
 import asyncio
 import hashlib
 import logging
@@ -86,13 +88,12 @@ from agentplane.sandbox_service.egress_views import (
 from agentplane.sandbox_service.kubernetes_grants import (
     DuplicateKubernetesGrantError,
     KubernetesGrant,
-    KubernetesGrantView,
     UnknownKubernetesGrantError,
-    grant_views,
     resolve_grants,
 )
-from agentplane.sandbox_service.models import NewSandbox, SandboxNotFoundError, SandboxRunningError, SandboxView
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxRunningError
+from agentplane.app.sandbox_models import NewSandbox, SandboxView, create_request, sandbox_view
+from agentplane.runner.harness import Harness
 from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -228,7 +229,7 @@ Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 
 @router.get("")
 async def list_sandboxes(inventory: Inventory) -> list[SandboxView]:
-    return await inventory.list_sandboxes()
+    return [sandbox_view(view) for view in await inventory.list_sandboxes()]
 
 
 @router.get("/templates")
@@ -245,12 +246,12 @@ async def create_sandbox(
     grants = resolve_grants(spec.kubernetes_grants, request.app.state.kubernetes_grants)
     if grants and caller.kind is not CallerKind.OPERATOR:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Kubernetes grant selection requires an operator session")
-    return await inventory.create(spec)
+    return sandbox_view(await inventory.create(create_request(spec)))
 
 
 @router.get("/{name}")
 async def get_sandbox(inventory: Inventory, name: str) -> SandboxView:
-    return await inventory.get(name)
+    return sandbox_view(await inventory.get(name))
 
 
 @router.post("/{name}/suspend", status_code=status.HTTP_204_NO_CONTENT)
@@ -284,7 +285,7 @@ class EgressGrant(BaseModel):
 async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
     """What may leave the sandbox: the bindings naming the ServiceAccount it runs as, with their
     policies as they resolve."""
-    return await egress.bindings_for((await inventory.get(name)).service_account)
+    return await egress.bindings_for(sandbox_view(await inventory.get(name)).service_account)
 
 
 @router.post("/{name}/egress", status_code=status.HTTP_201_CREATED)
@@ -297,7 +298,7 @@ async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, 
 @router.get("/{name}/egress/decisions")
 async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, name: str) -> list[Decision]:
     """What recently left or was refused, from the proxy; 502 when the proxy cannot be asked."""
-    return await decisions.recent((await inventory.get(name)).service_account)
+    return await decisions.recent(sandbox_view(await inventory.get(name)).service_account)
 
 
 egress_router = APIRouter(prefix="/egress", tags=["egress"])
@@ -684,7 +685,7 @@ async def list_threads_with_sandboxes(
 ) -> ThreadsWithSandboxes:
     """Visible Threads newest first, joined with the complete Sandbox inventory."""
     thread_views = await store.list_threads(include_archived=include_archived)
-    sandboxes = {view.name: view for view in await inventory.list_sandboxes()}
+    sandboxes = {view.name: sandbox_view(view) for view in await inventory.list_sandboxes()}
     return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
 
@@ -736,7 +737,7 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
     if thread is None:
         raise ThreadNotFoundError(thread_id)
     try:
-        sandbox = await inventory.get(thread.sandbox)
+        sandbox = sandbox_view(await inventory.get(thread.sandbox))
     except SandboxNotFoundError:
         # A deleted Sandbox has no running harness to keep visible.
         pass

@@ -53,8 +53,8 @@ from agentplane.native.claude import wire as claude_wire  # Both harnesses name 
 from agentplane.native.codex import wire as codex_wire
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.models import SandboxView
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.app.sandbox_models import SandboxView
+from agentplane.runner.harness import Harness
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

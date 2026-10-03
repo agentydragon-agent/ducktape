@@ -13,7 +13,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.runner.errors import RunnerError
-from agentplane.sandbox_service import protocol_pb2, wire
+from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
@@ -23,7 +23,8 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
-from agentplane.sandbox_service.models import NewSandbox, ProvisioningState, SandboxDestination
+from agentplane.sandbox_service.models import ProvisioningState
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -112,9 +113,9 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
             allowed_service_account_namespaces={SANDBOX_NAMESPACE},
         ),
         destinations=DestinationResolver(
-            case.service.inventory, cast(k8s_client.CoreV1Api, case.core), 7000, frozenset({ADMIN})
+            case.service.inventory, cast(k8s_client.CoreV1Api, case.core), 7000
         ),
-        manager_accounts=frozenset({ADMIN}),
+        caller_accounts=frozenset({ADMIN}),
         platform_instructions="",
         provisioning=case.service,
     )
@@ -130,22 +131,17 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
 
 async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxServiceClient, case: Case) -> None:
     view = await api.create(
-        NewSandbox.model_validate(
-            {
-                "slug": "test",
-                "template": TEMPLATE,
-                "action_policy_sets": ["test-actions"],
-                "kubernetes_grants": ["test-read"],
-                "bootstrap": "printf ready",
-                "session_defaults": {"model": "test-model", "instructions": ""},
-            }
+        CreateSandboxRequest(
+            slug="test", template=TEMPLATE, action_policy_sets=["test-actions"], kubernetes_grants=["test-read"],
+            bootstrap="printf ready", session_defaults=protocol_pb2.SessionDefaults(model="test-model", instructions=""),
         )
     )
-    assert view.binding is not None
+    assert view.HasField("binding")
     assert view.binding.bootstrap == "printf ready"
-    assert view.binding.session_defaults is not None
+    assert view.binding.HasField("session_defaults")
+    assert view.binding.session_defaults.HasField("instructions")
     assert view.binding.session_defaults.instructions == ""
-    assert view.binding.session_defaults.cwd is None
+    assert not view.binding.session_defaults.HasField("cwd")
     stored = case.custom.objects[("sandboxes", view.name)]["metadata"]["annotations"]
     assert json.loads(stored[SANDBOX_BINDING_ANNOTATION]) == {
         "thread_defaults": {"model": "test-model", "instructions": ""},
@@ -158,10 +154,10 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
     assert await api.list_templates() == [TEMPLATE]
     with pytest.raises(RunnerError):
         await api.delete(view.name)
-    stale = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=uuid4())
+    stale = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=str(uuid4()))
     for operation in (api.stub.SuspendSandbox, api.stub.ResumeSandbox, api.stub.DeleteSandbox):
         with pytest.raises(ServiceError) as rejected:
-            await api.unary(operation, protocol_pb2.SandboxRequest(destination=wire.destination_proto(stale)))
+            await api.unary(operation, protocol_pb2.SandboxRequest(destination=stale))
         assert rejected.value.code == grpc.StatusCode.NOT_FOUND
     await api.suspend(view.name)
     await api.resume(view.name)
@@ -173,7 +169,7 @@ async def test_partial_create_recovers_from_kubernetes_state_without_app(case: C
     case.custom.fail_plural = "actionpolicybindings"
     with pytest.raises(k8s_client.ApiException):
         await case.service.create(
-            NewSandbox(
+            CreateSandboxRequest(
                 slug="test", template=TEMPLATE, action_policy_sets=["test-actions"], kubernetes_grants=["test-read"]
             )
         )
@@ -197,7 +193,7 @@ async def test_partial_create_recovers_from_kubernetes_state_without_app(case: C
 async def test_foreign_binding_is_not_overwritten_and_provisioning_stays_pending(case: Case) -> None:
     case.custom.fail_plural = "actionpolicybindings"
     with pytest.raises(k8s_client.ApiException):
-        await case.service.create(NewSandbox(slug="test", template=TEMPLATE, action_policy_sets=["test-actions"]))
+        await case.service.create(CreateSandboxRequest(slug="test", template=TEMPLATE, action_policy_sets=["test-actions"]))
     (view,) = await case.service.inventory.list_sandboxes()
     binding = next(value for (kind, _), value in case.custom.objects.items() if kind == "egressbindings")
     binding["spec"]["policies"] = ["test-foreign"]
@@ -215,22 +211,24 @@ async def test_authorization_precedes_creation(api: SandboxServiceClient, cluste
         audiences=(AUDIENCE,),
     )
     with pytest.raises(ServiceError) as rejected:
-        await api.create(NewSandbox(slug="test", template=TEMPLATE))
+        await api.create(CreateSandboxRequest(slug="test", template=TEMPLATE))
     assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
     assert not case.core.service_accounts
     assert not await case.service.inventory.list_sandboxes()
 
 
 async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServiceClient, case: Case) -> None:
-    view = await api.create(NewSandbox(slug="test", template=TEMPLATE))
+    view = await api.create(CreateSandboxRequest(slug="test", template=TEMPLATE))
     name = await api.grant_egress(view, ["test-basic"])
-    assert name in {binding.name for binding in await case.service.egress.bindings_for(view.service_account)}
+    assert name in {binding.name for binding in await case.service.egress.bindings_for(ServiceAccountRef(namespace=view.service_account.namespace, name=view.service_account.name))}
     await api.revoke_egress(name)
-    assert name not in {binding.name for binding in await case.service.egress.bindings_for(view.service_account)}
+    assert name not in {binding.name for binding in await case.service.egress.bindings_for(ServiceAccountRef(namespace=view.service_account.namespace, name=view.service_account.name))}
     with pytest.raises(ServiceError) as missing:
         await api.revoke_egress(name)
     assert missing.value.code is grpc.StatusCode.NOT_FOUND
-    stale = view.model_copy(update={"uid": uuid4()})
+    stale = protocol_pb2.Sandbox()
+    stale.CopyFrom(view)
+    stale.uid = str(uuid4())
     before = dict(case.custom.objects)
     with pytest.raises(ServiceError) as replaced:
         await api.grant_egress(stale, ["test-basic"])

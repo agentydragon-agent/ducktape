@@ -725,3 +725,11 @@ py_library(
     visibility = ["//agentplane/app:__pkg__"],
     deps = [":client"],
 )
+
+py_library(
+    name = "harness",
+    srcs = ["harness.py"],
+    visibility = ["//agentplane:__subpackages__", "//cluster/cdk8s:__subpackages__"],
+    deps = [
+    ],
+)

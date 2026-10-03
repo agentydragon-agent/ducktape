@@ -78,8 +78,8 @@ py_library(
         "//agentplane/app:__subpackages__",
     ],
     deps = [
+        "//agentplane/runner:harness",
         ":fold",
-        "//agentplane/sandbox_service:session_config",
         "@pypi//pydantic",
     ],
 )

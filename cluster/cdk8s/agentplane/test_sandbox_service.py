@@ -46,8 +46,7 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     assert backend_config["kubernetes_binding_cleanup_namespaces"] == sorted(
         backend_config["kubernetes_binding_cleanup_namespaces"]
     )
-    assert backend_config["enable_provisioning"]
-    assert backend_config["manager_accounts"] == [{"namespace": namespace, "name": app.NAME}]
+    assert backend_config["caller_accounts"] == [{"namespace": namespace, "name": app.NAME}]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
     assert runner_policy["ingress"] == [
         {

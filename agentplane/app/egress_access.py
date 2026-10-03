@@ -2,7 +2,7 @@
 
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import BindingView, EgressReader, PolicyView
-from agentplane.sandbox_service.models import SandboxView
+from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from agentplane.subjects import ServiceAccountRef
 
 
@@ -17,10 +17,10 @@ class EgressAccess:
     async def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return await self.read.bindings_for(subject)
 
-    async def grant(self, sandbox: SandboxView, policies: list[str]) -> BindingView:
+    async def grant(self, sandbox: Sandbox, policies: list[str]) -> BindingView:
         name = await self.service.grant_egress(sandbox, policies)
         # Read-only UI projection. Failure after a successful mutation must not trigger a retry.
-        for binding in await self.bindings_for(sandbox.service_account):
+        for binding in await self.bindings_for(ServiceAccountRef(namespace=sandbox.service_account.namespace, name=sandbox.service_account.name)):
             if binding.name == name:
                 return binding
         raise ConnectionError("Created egress binding is no longer visible; reconcile before retrying")

@@ -2,14 +2,14 @@
 
 from pathlib import PurePosixPath
 
-from google.protobuf.json_format import ParseDict
+from google.protobuf.json_format import MessageToDict, MessageToJson, ParseDict
 
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.instructions import combine_instructions
-from agentplane.sandbox_service.models import SessionDestination
-from agentplane.sandbox_service.session_config import SandboxBinding
+from agentplane.sandbox_service.protocol_pb2 import SessionDestination
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -21,13 +21,16 @@ def launch_spec(
     binding: SandboxBinding | None,
     platform_instructions: str,
 ) -> protocol_pb2.SessionSpec:
-    defaults = binding.session_defaults if binding is not None else None
-    values = defaults.proto_json(destination.session_id) if defaults is not None else {}
+    defaults = binding.session_defaults if binding is not None and binding.HasField("session_defaults") else None
+    values = MessageToDict(defaults) if defaults is not None else {}
+    values.pop("setupScript", None)
+    if "cwd" in values:
+        values["cwd"] = values["cwd"].replace("{session_id}", destination.session_id)
     spec = ParseDict(values | overrides, protocol_pb2.SessionSpec())
     validate_spec(spec)
     context = (
         "Your explicit Sandbox Service session destination is:\n"
-        f"{destination.model_dump_json()}\n"
+        f"{MessageToJson(destination, preserving_proto_field_name=True)}\n"
         "Use these identifiers when addressing this session; they are not credentials."
     )
     spec.instructions = combine_instructions(combine_instructions(platform_instructions, context), spec.instructions)
@@ -60,7 +63,7 @@ async def open_session(
             result = await initialize(client, binding)
             if result.exit_code != 0:
                 raise RunnerError("Sandbox bootstrap failed; no session was opened")
-        if setup_script is None and binding.session_defaults is not None:
+        if setup_script is None and binding.session_defaults.HasField("setup_script"):
             setup_script = binding.session_defaults.setup_script
     attachment = await client.attach(destination.session_id, spec=spec, setup_script=setup_script)
     try:

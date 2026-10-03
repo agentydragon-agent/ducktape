@@ -63,11 +63,8 @@ class SandboxService(Construct):
         settings = Settings(
             _cli_parse_args=False,
             sandbox_namespace=env.namespace,
-            allowed_service_account_namespaces=frozenset({env.namespace}),
-            trusted_accounts=frozenset({manager}),
-            manager_accounts=frozenset({manager}),
+            caller_accounts=frozenset({manager}),
             token_audience=TOKEN_AUDIENCE,
-            enable_provisioning=True,
             agent_instructions=env.app_config.agent_instructions,
             agent_egress_api_url=env.app_config.agent_egress_api_url,
             agent_actions_service_url=env.app_config.agent_actions_service_url,

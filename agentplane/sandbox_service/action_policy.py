@@ -2,6 +2,8 @@
 
 from collections.abc import Sequence
 
+from google.protobuf.json_format import MessageToDict
+
 from agentplane.action_service.policies.resources import BINDINGS_PLURAL, ActionPolicySet, InvalidResource
 from agentplane.sandbox_service.action_policy_views import (
     ACTION_POLICY_API,
@@ -10,7 +12,7 @@ from agentplane.sandbox_service.action_policy_views import (
     ActionPolicyReader,
     UnknownPolicySetError,
 )
-from agentplane.sandbox_service.models import SandboxView
+from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from agentplane.sandbox_service.owned_binding import create_binding
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
 
@@ -22,7 +24,7 @@ class ActionPolicyBindings(ActionPolicyReader):
         """Every name must resolve to a set the namespace holds, or nothing is written."""
         _require_known(names, await self._policy_sets_by_name())
 
-    async def bind(self, sandbox: SandboxView, policy_sets: Sequence[str], *, initial: bool = False) -> None:
+    async def bind(self, sandbox: Sandbox, policy_sets: Sequence[str], *, initial: bool = False) -> None:
         """One binding of the ServiceAccount the sandbox runs as to the sets, owned by the Sandbox
         so its deletion garbage-collects it. Creating it is the whole grant; the Action Service
         reads `spec` and learns nothing of which preset chose the sets.
@@ -39,7 +41,7 @@ class ActionPolicyBindings(ActionPolicyReader):
                 "metadata": {
                     # The API server names it, as it does the egress binding: a Sandbox may be
                     # bound again later, and a name derived from the Sandbox alone would 409.
-                    **({"name": f"ap-init-{sandbox.uid.hex}"} if initial else {"generateName": f"{sandbox.name}-"}),
+                    **({"name": f"ap-init-{sandbox.uid.replace("-", "")}"} if initial else {"generateName": f"{sandbox.name}-"}),
                     "labels": {MANAGED_BY_LABEL: MANAGED_BY_APP},
                     # Not the controller: the Sandbox controller owns the Pod and PVC, and this
                     # reference is for cascading deletion only. The binding lives in the Sandbox's
@@ -56,7 +58,7 @@ class ActionPolicyBindings(ActionPolicyReader):
                         }
                     ],
                 },
-                "spec": {"subject": sandbox.service_account.model_dump(), "policySets": list(policy_sets)},
+                "spec": {"subject": MessageToDict(sandbox.service_account, preserving_proto_field_name=True), "policySets": list(policy_sets)},
             },
         )
 

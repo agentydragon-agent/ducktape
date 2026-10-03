@@ -17,9 +17,11 @@ projected token file on every RPC, including follow reconnects.
 
 A `SandboxDestination` contains the owner ServiceAccount (namespace/name), Sandbox name, and
 Sandbox UID. A `SessionDestination` wraps that destination and adds an explicit runner session ID.
-The owner is a resource selector, not a forwarded identity. Ordinary callers can address only their
-own account. `trusted_accounts` grants selected service accounts cross-owner access; it defaults to
-empty. All sessions under an account share the sandbox trust boundary. There is no inferred Thread.
+The owner is a resource selector, not a forwarded identity. Every RPC requires a caller in the
+configured `caller_accounts` service-account allowlist. Authorization happens before any inventory
+lookup or runner contact. An ordinary workload token, even for the destination's own account, does
+not grant access. There is no separate manager/delivery tier or inferred Thread identity in v1.
+Listed services can operate across owners, but must still supply the verified destination owner/UID.
 
 Resolution checks the stored Sandbox account, UID, lifecycle state, and current ready Pod's controller
 ownership before selecting its endpoint. Name reuse with a new UID is refused. A successor Pod under
@@ -29,18 +31,17 @@ Service API authentication is implemented independently of that deferred runner-
 
 ## Inventory and explicit sandbox lifecycle
 
-These unary RPCs require an account in **both** `manager_accounts` and `trusted_accounts`, and an
-enabled provisioning backend:
+The same service-caller allowlist gates every RPC. Provisioning is always enabled:
 
 - `ListSandboxes`, `GetSandbox`: Kubernetes-backed inventory, including concrete stored launch
   bindings, provisioning state, and current Pod observations.
-- `ListTemplates`, `ListKubernetesGrants`: concrete backend choices, not app UI presets.
+- `ListTemplates`: available SandboxTemplates. The app renders its configured grant catalog locally.
 - `CreateSandbox`: concrete template, policy/grant selections, optional session defaults, and bootstrap.
   Grant intent is stored on the Sandbox so reconciliation can recover partial provisioning without
   the app. The RPC returns after provisioning orchestration, not necessarily after Pod readiness.
 - `GrantEgress`: UID-pinned Sandbox destination and policy names; returns the created binding name.
   `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
-  same trusted-manager authority and enabled provisioning backend.
+  same service-caller authorization as other operations.
 - `SuspendSandbox`, `ResumeSandbox`, `DeleteSandbox`: explicit owner/name/UID-pinned mutations.
   Resume refuses incomplete provisioning; deletion requires suspension.
 
@@ -51,9 +52,6 @@ Kubernetes ownership labels, stored bindings, identities, and PVC policy remain 
 ## Sessions and commands
 
 - `ListSessions`: Sandbox destination; returns native retained `SessionSummary` messages.
-- `InspectSession`: session destination; returns a native `Attached` snapshot. Does not create or resume.
-- `InitializeSandbox`: executes the backend-configured bootstrap through the runner. Exact retries use
-  the runner's stored bootstrap result; no caller-supplied bootstrap override in this RPC.
 - `OpenSession`: explicit session creation/start using stored defaults plus selected overrides. Bootstrap
   and setup use the runner's existing idempotence; the response is the native attachment snapshot, not
   a claim that all setup or a model turn has completed.
@@ -63,9 +61,6 @@ Kubernetes ownership labels, stored bindings, identities, and PVC policy remain 
   the original `EventEntry` containing its exact matching `CommandAdmitted`. Specify a native `Follow`
   cursor before the possible admission when reconciling an uncertain submission.
 
-Initialize/open/resume require `manager_accounts`. Cross-owner management also requires
-`trusted_accounts`; neither list implies the other. Delivery-only trusted accounts do not gain launch
-permission. This is a service lifecycle boundary, not fine-grained command RBAC inside the runner.
 Read/follow/command RPCs never provision, resume, or wake a Sandbox or harness.
 
 ### Launch overrides and field presence
@@ -77,8 +72,8 @@ instructions string clears the caller's inherited instructions, but not backend 
 Nested paths, unknown paths, duplicate paths, and supplied nondefault fields outside the mask are
 refused. An empty mask means no overrides. Optional `setup_script` distinguishes omitted from empty.
 
-The backend adds operational guidance and the explicit destination. When management is enabled,
-configure the egress/Actions URLs for bundled instructions or explicitly configure `agent_instructions`.
+The backend adds operational guidance and the explicit destination.
+Configure the egress/Actions URLs for bundled instructions or explicitly configure `agent_instructions`.
 Stored specs are never rewritten. Changed defaults may make an Open retry conflict: inspect retained
 state and explicitly resume rather than silently adopting a different spec or creating another ID.
 
@@ -87,6 +82,10 @@ resuming an empty conversation that never persisted a turn. The service surfaces
 not fabricate native history or claim runner admission proves native persistence.
 
 ## Event following
+
+To inspect a session, read the initial `FollowSession` attachment snapshot and cancel the stream.
+There is no separate inspection or bootstrap RPC added for tests. Bootstrap runs through `OpenSession`;
+exact retries use the runner's stored bootstrap result.
 
 `FollowSession` is server-streaming. Its request selects an explicit session and a native `Follow`
 cursor. It emits:
@@ -110,7 +109,7 @@ client of service event following; migrating that archive is not a required foll
 ## Errors and uncertain outcomes
 
 - `UNAUTHENTICATED`: invalid workload bearer.
-- `PERMISSION_DENIED`: unauthorized destination or management operation.
+- `PERMISSION_DENIED`: authenticated but unlisted service caller.
 - `NOT_FOUND`: missing/stale Sandbox incarnation.
 - `INVALID_ARGUMENT`: malformed request or invalid concrete grant selection.
 - `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation.
@@ -126,8 +125,8 @@ queue, new receipt authority, or exactly-once guarantee is introduced.
 
 `//agentplane/sandbox_service:server` uses `AGENTPLANE_SANDBOX_SERVICE_*` environment variables or
 kebab-case CLI flags. Required settings are `sandbox_namespace` and
-`allowed_service_account_namespaces`. `token_audience` defaults to the existing `agentplane-egress`
-workload audience. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
+`caller_accounts` (nonempty). TokenReview namespaces are derived from that allowlist.
+`token_audience` defaults to `agentplane-sandbox-service`. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
 `port` defaults to 8080 for gRPC. `health_port` defaults to 8081 for unauthenticated HTTP `/healthz`;
 it is liveness, not proof that Kubernetes or a particular destination is ready. Admission requests
@@ -142,3 +141,12 @@ Inventory/backup and rollback checks gate staging handoff; no staging data reset
 Deployment source uses the dedicated `agentplane-sandbox-service` token audience; the app mounts a
 rotating projected token and the client rereads it on every RPC. `AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE`
 can select an independent YAML settings file. It does not load app configuration or require app startup.
+
+## Representation
+
+Generated protobuf messages are the service's request/response and client types, including inventory,
+launch defaults, destinations, and resolved grants. There is no parallel Pydantic service DTO layer.
+The integration app owns its browser-facing HTTP schemas and converts only at that boundary.
+Pydantic remains for deployment settings, catalog validation, and persisted Kubernetes input parsing;
+those are not a second service protocol. Existing annotation spellings and optional-field presence
+are retained for staging compatibility and rollback.

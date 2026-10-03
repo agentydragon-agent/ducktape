@@ -88,8 +88,8 @@ def backend(
             audience=AUDIENCE,
             allowed_service_account_namespaces={NAMESPACE},
         ),
-        destinations=DestinationResolver(inventory, core_api, runner_port, frozenset({MANAGER})),
-        manager_accounts=frozenset({MANAGER}),
+        destinations=DestinationResolver(inventory, core_api, runner_port),
+        caller_accounts=frozenset({MANAGER}),
         platform_instructions=platform_instructions,
         provisioning=Provisioning(
             inventory,

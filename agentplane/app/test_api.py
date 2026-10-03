@@ -40,7 +40,7 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.testing.backend import backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,

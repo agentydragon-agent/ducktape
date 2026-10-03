@@ -3,23 +3,18 @@
 import json
 from collections.abc import Iterable
 from datetime import datetime
-from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, DnsName
 
 from agentplane.sandbox_service.binding_storage import read_binding
-from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant
-from agentplane.sandbox_service.models import (
-    Condition,
-    ContainerStatus,
-    OperatingMode,
-    PodStatus,
-    ProvisioningState,
-    SandboxView,
-)
-from agentplane.sandbox_service.session_config import SandboxBinding
-from agentplane.subjects import ServiceAccountRef
+from agentplane.sandbox_service.models import OperatingMode, ProvisioningState
+from agentplane.sandbox_service.protocol_pb2 import Condition, ContainerStatus, PodStatus, Sandbox
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
+from google.protobuf.timestamp_pb2 import Timestamp
+from google.protobuf.json_format import ParseDict
+from agentplane.sandbox_service.protocol_pb2 import ServiceAccount, ResolvedGrant
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
@@ -34,7 +29,7 @@ class _ObjectMeta(BaseModel):
 
     name: str
     namespace: str
-    uid: UUID
+    uid: str
     labels: dict[str, str] = Field(default_factory=dict)
     annotations: dict[str, str] = Field(default_factory=dict)
     creation_timestamp: datetime = Field(alias="creationTimestamp")
@@ -66,7 +61,7 @@ class _SandboxSpec(BaseModel):
 class _SandboxStatus(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    conditions: list[Condition] = Field(default_factory=list)
+    conditions: list[dict[str, object]] = Field(default_factory=list)
     node_name: str | None = Field(alias="nodeName", default=None)
 
 
@@ -78,7 +73,7 @@ class SandboxResource(BaseModel):
     status: _SandboxStatus = Field(default_factory=_SandboxStatus)
 
 
-def sandbox_views(sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod]) -> list[SandboxView]:
+def sandbox_views(sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod]) -> list[Sandbox]:
     """One row per Sandbox, each joined to the Pod of the same name."""
     pods_by_name = {pod.metadata.name: pod for pod in pods}
     views = []
@@ -88,22 +83,24 @@ def sandbox_views(sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod])
     return views
 
 
-def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None) -> SandboxView:
+def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None) -> Sandbox:
     return _view(SandboxResource.model_validate(sandbox), pod)
 
 
-def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None) -> SandboxView:
+def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None) -> Sandbox:
     grants = _resolved_grants(sandbox)
-    return SandboxView(
+    created_at = Timestamp()
+    created_at.FromDatetime(sandbox.metadata.creation_timestamp)
+    return Sandbox(
         name=sandbox.metadata.name,
         uid=sandbox.metadata.uid,
         state=_state(sandbox, pod),
-        created_at=sandbox.metadata.creation_timestamp,
+        created_at=created_at,
         operating_mode=sandbox.spec.operating_mode,
-        service_account=ServiceAccountRef(
+        service_account=ServiceAccount(
             namespace=sandbox.metadata.namespace, name=sandbox.spec.pod_template.spec.service_account_name
         ),
-        conditions=sandbox.status.conditions,
+        conditions=[ParseDict({k: v for k, v in c.items() if k in {"type", "status", "reason", "message"}}, Condition()) for c in sandbox.status.conditions],
         node_name=sandbox.status.node_name,
         binding=_binding(sandbox),
         kubernetes_grants=grants,
@@ -126,7 +123,12 @@ def _resolved_grants(sandbox: SandboxResource) -> list[ResolvedGrant]:
     raw = sandbox.metadata.annotations.get(KUBERNETES_GRANTS_ANNOTATION)
     if raw is None:
         return []
-    return [ResolvedGrant.model_validate(item) for item in json.loads(raw)]
+    result = []
+    for item in json.loads(raw):
+        TypeAdapter(DnsName).validate_python(item["name"])
+        TypeAdapter(KubernetesGrant).validate_python(item["grant"])
+        result.append(ParseDict(item, ResolvedGrant()))
+    return result
 
 
 def _pod_status(pod: k8s_client.V1Pod) -> PodStatus:

@@ -9,6 +9,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Annotated, Literal
 
+from google.protobuf.json_format import ParseDict
+
+from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant
+
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 DnsName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=63)]
@@ -46,26 +50,6 @@ class ClusterRoleBindingGrant(BaseModel):
 KubernetesGrant = Annotated[RoleBindingGrant | ClusterRoleBindingGrant, Field(discriminator="kind")]
 
 
-class KubernetesGrantView(BaseModel):
-    """An enabled choice with its fixed target, for the operator's launch picker."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: DnsName
-    kind: Literal["RoleBinding", "ClusterRoleBinding"]
-    namespace: DnsName | None = None
-    role_ref: RoleRef | ClusterRoleRef
-
-
-class ResolvedGrant(BaseModel):
-    """Snapshot of the exact choice; catalog changes never retarget an existing Sandbox."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: DnsName
-    grant: KubernetesGrant
-
-
 class UnknownKubernetesGrantError(ValueError):
     def __init__(self, names: list[str]) -> None:
         super().__init__(f"unknown Kubernetes grants: {', '.join(names)}")
@@ -83,16 +67,4 @@ def resolve_grants(names: list[str], catalog: Mapping[str, KubernetesGrant]) -> 
         raise UnknownKubernetesGrantError(unknown)
     if len(names) != len(set(names)):
         raise DuplicateKubernetesGrantError
-    return [ResolvedGrant(name=name, grant=catalog[name]) for name in names]
-
-
-def grant_views(catalog: Mapping[str, KubernetesGrant]) -> list[KubernetesGrantView]:
-    return [
-        KubernetesGrantView(
-            name=name,
-            kind=grant.kind,
-            namespace=grant.namespace if isinstance(grant, RoleBindingGrant) else None,
-            role_ref=grant.role_ref,
-        )
-        for name, grant in sorted(catalog.items())
-    ]
+    return [ParseDict({"name": name, "grant": catalog[name].model_dump(mode="json")}, ResolvedGrant()) for name in names]

@@ -7,6 +7,9 @@ Existing labels/finalizers and deletion semantics are retained for an in-place o
 import asyncio
 import json
 import logging
+import re
+from google.protobuf.json_format import MessageToDict
+from agentplane.runner import protocol_pb2 as runner_pb2
 from dataclasses import dataclass
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
@@ -14,14 +17,15 @@ from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KUBERNETES_BINDINGS_FINALIZER, KubernetesBindings
-from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, resolve_grants
+from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, resolve_grants
 from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_ANNOTATION,
     PROVISIONING_ANNOTATION,
     SANDBOX_BINDING_ANNOTATION,
 )
-from agentplane.sandbox_service.models import NewSandbox, SandboxView
-from agentplane.sandbox_service.session_config import LaunchGrants, SandboxBinding
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox
+from agentplane.sandbox_service.session_config import LaunchGrants
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
 
 
 @dataclass(frozen=True)
@@ -32,33 +36,41 @@ class Provisioning:
     grants: dict[str, KubernetesGrant]
     bindings: KubernetesBindings | None
 
-    async def create(self, spec: NewSandbox) -> SandboxView:
-        grants = resolve_grants(spec.kubernetes_grants, self.grants)
+    async def create(self, spec: CreateSandboxRequest) -> Sandbox:
+        if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", spec.slug) or len(spec.slug) > 57 or not spec.template:
+            raise ValueError("valid slug and template are required")
+        if max(len(spec.bootstrap), len(spec.session_defaults.setup_script)) > 65_536:
+            raise ValueError("script exceeds 65536 characters")
+        if spec.session_defaults.HasField("harness") and spec.session_defaults.harness not in (
+            runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX,
+        ):
+            raise ValueError("unsupported harness")
+        grants = resolve_grants(list(spec.kubernetes_grants), self.grants)
         if grants and self.bindings is None:
             raise ConnectionError("Kubernetes grant provisioning is unavailable")
-        policies = self.egress.launch_policies(spec.policies)
+        policies = self.egress.launch_policies(list(spec.policies))
         await self.egress.require_policies(policies)
-        await self.action_policy.require_policy_sets(spec.action_policy_sets)
+        await self.action_policy.require_policy_sets(list(spec.action_policy_sets))
         binding = (
-            SandboxBinding(session_defaults=spec.session_defaults, bootstrap=spec.bootstrap)
-            if spec.session_defaults is not None or spec.bootstrap
+            SandboxBinding(session_defaults=spec.session_defaults if spec.HasField("session_defaults") else None, bootstrap=spec.bootstrap)
+            if spec.HasField("session_defaults") or spec.bootstrap
             else None
         )
         annotations = {
             PROVISIONING_ANNOTATION: LaunchGrants(
-                policies=policies, action_policy_sets=spec.action_policy_sets
+                policies=policies, action_policy_sets=list(spec.action_policy_sets)
             ).model_dump_json()
         }
         if binding is not None:
             annotations[SANDBOX_BINDING_ANNOTATION] = write_binding(binding)
         if grants:
-            annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([grant.model_dump(mode="json") for grant in grants])
+            annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([MessageToDict(grant, preserving_proto_field_name=True) for grant in grants])
         view = await self.inventory.create(
             spec,
             annotations=annotations or None,
             finalizers=[KUBERNETES_BINDINGS_FINALIZER]
             if any(
-                isinstance(grant.grant, ClusterRoleBindingGrant) or grant.grant.namespace != self.inventory.namespace
+                grant.grant.kind == "ClusterRoleBinding" or grant.grant.namespace != self.inventory.namespace
                 for grant in grants
             )
             else None,
@@ -66,7 +78,7 @@ class Provisioning:
         await self.ensure(view)
         return await self.inventory.get(view.name)
 
-    async def ensure(self, sandbox: SandboxView) -> None:
+    async def ensure(self, sandbox: Sandbox) -> None:
         if sandbox.deleting:
             return
         intent = await self.inventory.pending_grants(sandbox.name)

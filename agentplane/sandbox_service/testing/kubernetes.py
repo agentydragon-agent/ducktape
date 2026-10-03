@@ -6,10 +6,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
-from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
@@ -23,7 +26,7 @@ from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 
 SANDBOX = "test-runner"
-SANDBOX_UID = UUID("40e373bd-2742-43de-8d1c-1ef97c4d4801")
+SANDBOX_UID = "40e373bd-2742-43de-8d1c-1ef97c4d4801"
 ACCOUNT = "test-runner-account"
 
 
@@ -31,7 +34,11 @@ ACCOUNT = "test-runner-account"
 class Cluster:
     fake: FakeApiServer
     api: k8s_client.ApiClient
-    inventory: SandboxInventory
+    provisioning: Provisioning
+
+    @property
+    def inventory(self) -> SandboxInventory:
+        return self.provisioning.inventory
 
 
 @asynccontextmanager
@@ -61,15 +68,17 @@ async def kubernetes() -> AsyncIterator[Cluster]:
         fake.pods[SANDBOX] = pod
         configuration = k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")
         async with k8s_client.ApiClient(configuration) as api:
-            yield Cluster(
-                fake,
-                api,
-                SandboxInventory(
-                    namespace=SANDBOX_NAMESPACE,
-                    custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api)),
-                    core_v1=k8s_client.CoreV1Api(api),
-                ),
+            custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
+            inventory = SandboxInventory(
+                namespace=SANDBOX_NAMESPACE, custom_objects=custom, core_v1=k8s_client.CoreV1Api(api)
             )
+            yield Cluster(fake, api, Provisioning(
+                inventory,
+                EgressInventory(namespace=SANDBOX_NAMESPACE, custom_objects=custom),
+                ActionPolicyBindings(namespace=SANDBOX_NAMESPACE, custom_objects=custom),
+                {},
+                KubernetesBindings(inventory, k8s_client.RbacAuthorizationV1Api(api)),
+            ))
 
 
 @asynccontextmanager
@@ -92,9 +101,10 @@ async def authenticated_service(
             allowed_service_account_namespaces={SANDBOX_NAMESPACE},
         ),
         destinations=DestinationResolver(
-            cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port, frozenset({manager})
+            cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port
         ),
-        manager_accounts=frozenset({manager}),
+        provisioning=cluster.provisioning,
+        caller_accounts=frozenset({manager}),
         platform_instructions="Backend guidance for app-launched sessions.",
         follow_lease_s=1,
     )

@@ -32,7 +32,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.threads.view.views import ThreadEntityView
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.runner.harness import Harness
 
 
 def openapi_document() -> dict[str, Any]:

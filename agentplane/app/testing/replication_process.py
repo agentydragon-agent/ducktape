@@ -52,7 +52,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import event_log_pb2
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.models import ProvisioningState
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.testing.backend import backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 

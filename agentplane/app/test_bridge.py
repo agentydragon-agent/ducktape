@@ -54,7 +54,7 @@ from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.session import Session
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.sandbox_service.client import Attachment, SandboxServiceClient
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
 from util.net import bind_free_port

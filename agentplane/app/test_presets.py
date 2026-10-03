@@ -6,7 +6,9 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
-from agentplane.sandbox_service.session_config import Harness, SandboxBinding, SessionDefaults
+from agentplane.runner.harness import Harness
+from agentplane.app.sandbox_models import SandboxBinding
+from agentplane.app.sandbox_models import SessionDefaults
 
 
 @pytest.fixture

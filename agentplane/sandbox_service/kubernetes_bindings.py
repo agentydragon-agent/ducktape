@@ -10,8 +10,10 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import RbacAuthorizationV1Api
 
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant, RoleBindingGrant
-from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxView
+from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant
+from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant
+from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from util.agent_sandbox import SANDBOX_API
 
 logger = logging.getLogger(__name__)
@@ -27,12 +29,12 @@ class BindingConflictError(Exception):
     """A deterministic name belongs to a different binding; never adopt or remove it."""
 
 
-def binding_name(sandbox: SandboxView, grant: ResolvedGrant) -> str:
+def binding_name(sandbox: Sandbox, grant: ResolvedGrant) -> str:
     digest = hashlib.sha256(f"{sandbox.uid}/{grant.name}".encode()).hexdigest()[:16]
     return f"ap-{sandbox.name[:40]}-{digest}"
 
 
-def _binding(sandbox: SandboxView, grant: ResolvedGrant) -> k8s_client.V1RoleBinding | k8s_client.V1ClusterRoleBinding:
+def _binding(sandbox: Sandbox, grant: ResolvedGrant) -> k8s_client.V1RoleBinding | k8s_client.V1ClusterRoleBinding:
     template = grant.grant
     owner_references = (
         [
@@ -45,12 +47,12 @@ def _binding(sandbox: SandboxView, grant: ResolvedGrant) -> k8s_client.V1RoleBin
                 block_owner_deletion=False,
             )
         ]
-        if isinstance(template, RoleBindingGrant) and template.namespace == sandbox.service_account.namespace
+        if template.kind == "RoleBinding" and template.namespace == sandbox.service_account.namespace
         else None
     )
     metadata = k8s_client.V1ObjectMeta(
         name=binding_name(sandbox, grant),
-        namespace=template.namespace if isinstance(template, RoleBindingGrant) else None,
+        namespace=template.namespace if template.kind == "RoleBinding" else None,
         labels={MANAGED_BY_LABEL: MANAGED_BY_APP},
         annotations={SANDBOX_UID_ANNOTATION: str(sandbox.uid), SANDBOX_NAME_ANNOTATION: sandbox.name},
         owner_references=owner_references,
@@ -63,7 +65,7 @@ def _binding(sandbox: SandboxView, grant: ResolvedGrant) -> k8s_client.V1RoleBin
             kind="ServiceAccount", name=sandbox.service_account.name, namespace=sandbox.service_account.namespace
         )
     ]
-    if isinstance(template, RoleBindingGrant):
+    if template.kind == "RoleBinding":
         return k8s_client.V1RoleBinding(metadata=metadata, role_ref=role_ref, subjects=subjects)
     return k8s_client.V1ClusterRoleBinding(metadata=metadata, role_ref=role_ref, subjects=subjects)
 
@@ -103,7 +105,7 @@ class KubernetesBindings:
         self._cleanup_namespaces = cleanup_namespaces or set()
         self._cleanup_cluster_bindings = cleanup_cluster_bindings
 
-    async def ensure(self, sandbox: SandboxView) -> None:
+    async def ensure(self, sandbox: Sandbox) -> None:
         if sandbox.deleting or not sandbox.kubernetes_grants:
             return
         try:
@@ -112,10 +114,10 @@ class KubernetesBindings:
         except Exception as error:
             await self._report_error(sandbox, error)
         else:
-            if not sandbox.kubernetes_grants_ready or sandbox.kubernetes_grant_error is not None:
+            if not sandbox.kubernetes_grants_ready or sandbox.HasField("kubernetes_grant_error"):
                 await self._inventory.set_kubernetes_grants_status(sandbox.name, ready=True)
 
-    async def _report_error(self, sandbox: SandboxView, error: Exception) -> None:
+    async def _report_error(self, sandbox: Sandbox, error: Exception) -> None:
         detail = f"{type(error).__name__}" + (
             f" ({error.status})" if isinstance(error, k8s_client.ApiException) else ""
         )
@@ -149,7 +151,7 @@ class KubernetesBindings:
         else:
             await self._rbac.delete_cluster_role_binding(expected.metadata.name)
 
-    async def _ensure_one(self, sandbox: SandboxView, grant: ResolvedGrant) -> None:
+    async def _ensure_one(self, sandbox: Sandbox, grant: ResolvedGrant) -> None:
         expected = _binding(sandbox, grant)
         # Kubernetes accepts a binding whose roleRef does not exist. Check the
         # referenced Role on every pass so a missing grant cannot become Ready.
@@ -180,14 +182,14 @@ class KubernetesBindings:
                 f"binding {binding_name(sandbox, grant)} does not belong to Sandbox {sandbox.name}"
             )
 
-    async def cleanup(self, sandbox: SandboxView) -> None:
+    async def cleanup(self, sandbox: Sandbox) -> None:
         """Remove external bindings before allowing Kubernetes to delete the Sandbox."""
         if not sandbox.deleting:
             return
         try:
             for grant in sandbox.kubernetes_grants:
                 template = grant.grant
-                if isinstance(template, RoleBindingGrant) and template.namespace == sandbox.service_account.namespace:
+                if template.kind == "RoleBinding" and template.namespace == sandbox.service_account.namespace:
                     continue  # Kubernetes garbage collection owns these.
                 expected = _binding(sandbox, grant)
                 try:

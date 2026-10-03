@@ -3,7 +3,8 @@
 from agentplane.app.changes import Changes
 from agentplane.app.live import LiveIndex
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
-from agentplane.sandbox_service.models import ProvisioningState, SandboxDestination, SandboxNotFoundError
+from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
+from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
 
 
 class SandboxNotReachableError(Exception):
@@ -16,7 +17,7 @@ class SandboxSessions:
     def __init__(self, index: LiveIndex, service: SandboxServiceClient) -> None:
         self._index = index
         self._service = service
-        self._clients: dict[SandboxDestination, Runner] = {}
+        self._clients: dict[str, Runner] = {}
 
     @property
     def changes(self) -> Changes:
@@ -31,10 +32,10 @@ class SandboxSessions:
             raise SandboxNotFoundError(sandbox)
         if view.state is not ProvisioningState.RUNNING:
             raise SandboxNotReachableError(sandbox, view.state)
-        destination = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid)
-        if destination not in self._clients:
-            self._clients[destination] = self._service.runner(destination)
-        return self._clients[destination]
+        destination = SandboxDestination(owner=ServiceAccount(namespace=view.service_account.namespace, name=view.service_account.name), sandbox=view.name, sandbox_uid=str(view.uid))
+        if str(view.uid) not in self._clients:
+            self._clients[str(view.uid)] = self._service.runner(destination)
+        return self._clients[str(view.uid)]
 
     async def close(self) -> None:
         await self._service.close()

@@ -6,15 +6,10 @@ from ipaddress import ip_address
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.models import ProvisioningState, SandboxDestination, SandboxNotFoundError
-from agentplane.sandbox_service.session_config import SandboxBinding
-from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.principal import WorkloadPrincipal
+from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
+from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
 from util.agent_sandbox import SANDBOX_API
-
-
-class DestinationDeniedError(Exception):
-    """The authenticated account is not allowed to address this owner."""
 
 
 class DestinationUnavailableError(Exception):
@@ -33,19 +28,14 @@ class DestinationResolver:
     inventory: SandboxInventory
     core: k8s_client.CoreV1Api
     runner_port: int
-    trusted_accounts: frozenset[ServiceAccountRef] = frozenset()
 
-    async def resolve(self, principal: WorkloadPrincipal, destination: SandboxDestination) -> RunnerEndpoint:
-        # A trusted service names the resource owner explicitly. A forwarded header or request body
-        # cannot make an ordinary caller a trusted service or grant cross-account access.
-        if principal.account != destination.owner and principal.account not in self.trusted_accounts:
-            raise DestinationDeniedError
-        if destination.owner.namespace != self.inventory.namespace:
-            raise DestinationDeniedError
+    async def resolve(self, destination: SandboxDestination) -> RunnerEndpoint:
+        if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
+            raise ValueError("Sandbox name, UID, and owner are required")
         view = await self.inventory.get(destination.sandbox)
         if view.uid != destination.sandbox_uid or view.service_account != destination.owner:
             raise SandboxNotFoundError(destination.sandbox)
-        if view.deleting or view.state is not ProvisioningState.RUNNING:
+        if view.deleting or view.state != ProvisioningState.RUNNING:
             raise DestinationUnavailableError
         try:
             pod = await self.core.read_namespaced_pod(destination.sandbox, self.inventory.namespace)
@@ -84,4 +74,4 @@ class DestinationResolver:
         except ValueError as error:
             raise DestinationUnavailableError from error
         host = f"[{address}]" if address.version == 6 else str(address)
-        return RunnerEndpoint(target=f"{host}:{self.runner_port}", pod_uid=metadata.uid, binding=view.binding)
+        return RunnerEndpoint(target=f"{host}:{self.runner_port}", pod_uid=metadata.uid, binding=view.binding if view.HasField("binding") else None)

@@ -26,7 +26,7 @@ from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObs
 from agentplane.app.threads.models import Event, EventLog, FeedState
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.runner.harness import Harness
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

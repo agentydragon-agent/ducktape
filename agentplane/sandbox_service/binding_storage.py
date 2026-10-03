@@ -1,23 +1,23 @@
-"""Keep persisted launch bindings readable by the pre-cutover app during rollback.
+"""Retain the pre-cutover annotation spelling so old-app rollback remains possible."""
 
-Only this annotation codec knows the legacy field name. Service and browser APIs use
-session_defaults; writing a binding must not silently migrate staging's stored format.
-"""
+import json
 
-from pydantic import Field
+from google.protobuf.json_format import MessageToDict, ParseDict
 
-from agentplane.sandbox_service.session_config import SandboxBinding, SessionDefaults
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
 
-
-class _StoredBinding(SandboxBinding):
-    session_defaults: SessionDefaults | None = Field(default=None, alias="thread_defaults")
+# gazelle:include_dep @pypi//protobuf
 
 
 def read_binding(raw: str) -> SandboxBinding:
-    return SandboxBinding.model_validate(_StoredBinding.model_validate_json(raw).model_dump())
+    data = json.loads(raw)
+    if "thread_defaults" in data:
+        data["session_defaults"] = data.pop("thread_defaults")
+    return ParseDict(data, SandboxBinding())
 
 
 def write_binding(binding: SandboxBinding) -> str:
-    return _StoredBinding(thread_defaults=binding.session_defaults, bootstrap=binding.bootstrap).model_dump_json(
-        by_alias=True, exclude_none=True
-    )
+    data = MessageToDict(binding, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+    if "session_defaults" in data:
+        data["thread_defaults"] = data.pop("session_defaults")
+    return json.dumps(data)

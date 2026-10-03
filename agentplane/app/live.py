@@ -56,7 +56,7 @@ from agentplane.sandbox_service.egress_views import (
     matching_bindings,
 )
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, sandbox_view, sandbox_views
-from agentplane.sandbox_service.models import SandboxView
+from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
@@ -135,11 +135,11 @@ class LiveIndex:
     changes: Changes = field(default_factory=Changes)
 
     def sandbox_views(self) -> list[SandboxView]:
-        return sandbox_views(self.sandboxes.values(), self.pods.values())
+        return [http_sandbox_view(view) for view in sandbox_views(self.sandboxes.values(), self.pods.values())]
 
     def sandbox_view(self, name: str) -> SandboxView | None:
         raw = self.sandboxes.get(name)
-        return None if raw is None else sandbox_view(raw, self.pods.get(name))
+        return None if raw is None else http_sandbox_view(sandbox_view(raw, self.pods.get(name)))
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(

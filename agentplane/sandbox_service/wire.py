@@ -4,49 +4,8 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.models import NewSandbox, SandboxDestination, SandboxView, SessionDestination
 
 # gazelle:include_dep @pypi//protobuf
-
-
-def sandbox_destination(value: protocol_pb2.SandboxDestination) -> SandboxDestination:
-    return SandboxDestination.model_validate(MessageToDict(value, preserving_proto_field_name=True))
-
-
-def session_destination(value: protocol_pb2.SessionDestination) -> SessionDestination:
-    return SessionDestination(**sandbox_destination(value.sandbox).model_dump(), session_id=value.session_id)
-
-
-def destination_proto(value: SandboxDestination) -> protocol_pb2.SandboxDestination:
-    return ParseDict(value.model_dump(mode="json", exclude={"session_id"}), protocol_pb2.SandboxDestination())
-
-
-def session_proto(value: SandboxDestination, session_id: str) -> protocol_pb2.SessionDestination:
-    return protocol_pb2.SessionDestination(sandbox=destination_proto(value), session_id=session_id)
-
-
-def sandbox_proto(value: SandboxView) -> protocol_pb2.Sandbox:
-    return ParseDict(value.model_dump(mode="json", exclude_none=True), protocol_pb2.Sandbox())
-
-
-def sandbox_view(value: protocol_pb2.Sandbox) -> SandboxView:
-    data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-    # These existing persisted/UI models require the key even when Kubernetes has no value.
-    data.setdefault("kubernetes_grant_error", None)
-    if "pod" in data:
-        for field in ("phase", "ip", "node_name"):
-            data["pod"].setdefault(field, None)
-    return SandboxView.model_validate(data)
-
-
-def new_sandbox(value: protocol_pb2.CreateSandboxRequest) -> NewSandbox:
-    return NewSandbox.model_validate(
-        MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-    )
-
-
-def create_proto(value: NewSandbox) -> protocol_pb2.CreateSandboxRequest:
-    return ParseDict(value.model_dump(mode="json", exclude_none=True), protocol_pb2.CreateSandboxRequest())
 
 
 def launch_overrides(request: protocol_pb2.OpenSessionRequest) -> dict[str, object]:

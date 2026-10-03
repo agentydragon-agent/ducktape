@@ -24,8 +24,10 @@ from agentplane.sandbox_service.client import Runner, SandboxServiceClient, Serv
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
-from agentplane.sandbox_service.models import SandboxDestination
-from agentplane.sandbox_service.session_config import Harness, SandboxBinding, SessionDefaults
+from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
+from agentplane.sandbox_service.protocol_pb2 import SessionDefaults
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -39,7 +41,7 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 TOKEN = "test-native-grpc-token"
 AUDIENCE = "test-native-grpc"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
-DESTINATION = SandboxDestination(owner=OWNER, sandbox=SANDBOX, sandbox_uid=SANDBOX_UID)
+DESTINATION = SandboxDestination(owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name), sandbox=SANDBOX, sandbox_uid=SANDBOX_UID)
 SESSION = "grpc-session"
 
 
@@ -57,8 +59,9 @@ def resources(cluster: Cluster, runner: RunnerHandle) -> Resources:
             audience=AUDIENCE,
             allowed_service_account_namespaces={SANDBOX_NAMESPACE},
         ),
+        provisioning=cluster.provisioning,
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
-        manager_accounts=frozenset({OWNER}),
+        caller_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
     )
 
@@ -83,9 +86,11 @@ def set_binding(cluster: Cluster, binding: SandboxBinding) -> None:
 
 
 async def inspect(remote: SandboxServiceClient) -> runner_pb2.Attached:
-    return await remote.unary(
-        remote.stub.InspectSession, protocol_pb2.SessionRequest(destination=wire.session_proto(DESTINATION, SESSION))
-    )
+    attachment = await remote.runner(DESTINATION).attach(SESSION)
+    try:
+        return attachment.attached
+    finally:
+        attachment.cancel()
 
 
 async def complete_turn(runner: Runner, model: ScriptedModel, command_id: str) -> list[event_log_pb2.EventEntry]:
@@ -136,7 +141,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         SandboxBinding(
             bootstrap=f"printf B >> {shlex.quote(str(bootstrap_marker))}",
             session_defaults=SessionDefaults(
-                harness=Harness(runner_pb2.Harness.Name(spec.harness)),
+                harness=spec.harness,
                 model=spec.model,
                 reasoning_effort=spec.reasoning_effort,
                 cwd=spec.cwd,
@@ -145,12 +150,8 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
             ),
         ),
     )
-    sandbox_request = protocol_pb2.SandboxRequest(destination=wire.destination_proto(DESTINATION))
     async with service_client(resources, token_file) as remote:
         runner = remote.runner(DESTINATION)
-        for _ in range(2):
-            initialized = await remote.unary(remote.stub.InitializeSandbox, sandbox_request)
-            assert initialized.exit_code == 0
         opened = await runner.open(SESSION, {})
         async with asyncio.timeout(15):
             while opened.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
@@ -212,7 +213,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         await complete_turn(runner, model, "grpc-resumed")
         assert (await runner.list_sessions())[0].spec == opened.spec
         with pytest.raises(RunnerError):
-            await restarted.unary(restarted.stub.InitializeSandbox, sandbox_request)
+            await runner.open("new-session", {"harness": "HARNESS_CODEX", "cwd": "/workspace", "model": "test"})
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
 

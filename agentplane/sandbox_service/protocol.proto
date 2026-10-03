@@ -19,16 +19,13 @@ service SandboxService {
   rpc ResumeSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc DeleteSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ListTemplates(google.protobuf.Empty) returns (ListTemplatesResponse);
-  rpc ListKubernetesGrants(google.protobuf.Empty) returns (ListKubernetesGrantsResponse);
 
   rpc GrantEgress(GrantEgressRequest) returns (GrantEgressResponse);
   rpc RevokeEgress(RevokeEgressRequest) returns (google.protobuf.Empty);
 
   rpc ListSessions(SandboxRequest) returns (ducktape.agentplane.runner.v1.ListSessionsResponse);
-  rpc InitializeSandbox(SandboxRequest) returns (ducktape.agentplane.runner.v1.InitializeResult);
   rpc OpenSession(OpenSessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
   rpc ResumeSession(SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
-  rpc InspectSession(SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
   rpc SubmitCommand(SubmitCommandRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
@@ -123,12 +120,6 @@ message ResolvedGrant {
   string name = 1;
   KubernetesGrant grant = 2;
 }
-message KubernetesGrantView {
-  string name = 1;
-  string kind = 2;
-  optional string namespace = 3;
-  RoleRef role_ref = 4;
-}
 message Condition {
   string type = 1;
   string status = 2;
@@ -170,7 +161,6 @@ message Sandbox {
 }
 message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
 message ListTemplatesResponse { repeated string templates = 1; }
-message ListKubernetesGrantsResponse { repeated KubernetesGrantView grants = 1; }
 
 message GrantEgressRequest {
   SandboxDestination destination = 1;

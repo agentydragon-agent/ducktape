@@ -22,7 +22,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.runner.harness import Harness
 
 # gazelle:include_dep @pypi//protobuf
 

@@ -10,7 +10,8 @@ from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
-from agentplane.sandbox_service.wire import sandbox_proto, sandbox_view
+from agentplane.sandbox_service.session_lifecycle import launch_spec
+from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, SessionDestination
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOXES_PLURAL
 
@@ -23,7 +24,7 @@ async def test_read_retained_sandbox_without_mutation(cluster: Cluster) -> None:
     assert view.uid == SANDBOX_UID
     assert view.service_account.namespace == SANDBOX_NAMESPACE
     assert view.service_account.name == ACCOUNT
-    assert view.state is ProvisioningState.RUNNING
+    assert view.state == ProvisioningState.RUNNING
     assert cluster.fake.objects == before
 
 
@@ -44,15 +45,18 @@ async def test_legacy_binding_storage_is_preserved_but_not_exposed(cluster: Clus
     assert binding is not None
     assert view.binding == binding
     assert json.loads(write_binding(binding)) == json.loads(raw)
-    assert "thread_defaults" not in binding.model_dump()
-    assert "session_defaults" in binding.model_dump()
-    wire = sandbox_proto(view)
-    assert wire.binding.DESCRIPTOR.fields_by_name["session_defaults"].number == 1
-    assert "thread_defaults" not in wire.binding.DESCRIPTOR.fields_by_name
-    assert sandbox_view(wire).binding == binding
-    if binding.session_defaults is not None:
+    assert binding.DESCRIPTOR.fields_by_name["session_defaults"].number == 1
+    assert "thread_defaults" not in binding.DESCRIPTOR.fields_by_name
+    if binding.HasField("session_defaults"):
+        assert binding.session_defaults.HasField("instructions")
         assert binding.session_defaults.instructions == ""
-        assert binding.session_defaults.proto_json("retained-session")["cwd"] == "/state/retained-session"
+        spec = launch_spec(
+            SessionDestination(sandbox=SandboxDestination(
+                owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid,
+            ), session_id="retained-session"),
+            {}, binding=binding, platform_instructions="",
+        )
+        assert spec.cwd == "/state/retained-session"
     assert cluster.fake.objects == before
 
 
@@ -61,7 +65,7 @@ async def test_suspended_sandbox_is_not_resumed(cluster: Cluster) -> None:
     cluster.fake.pods.clear()
     before = deepcopy(cluster.fake.objects)
     view = await cluster.inventory.get(SANDBOX)
-    assert view.state is ProvisioningState.SUSPENDED
+    assert view.state == ProvisioningState.SUSPENDED
     assert view.uid == SANDBOX_UID
     assert cluster.fake.objects == before
 

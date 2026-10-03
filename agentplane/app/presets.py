@@ -10,7 +10,8 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.sandbox_service.instructions import combine_instructions
-from agentplane.sandbox_service.session_config import Harness, SessionDefaults
+from agentplane.runner.harness import Harness
+from agentplane.app.sandbox_models import SessionDefaults
 
 
 class ThreadPreset(BaseModel):

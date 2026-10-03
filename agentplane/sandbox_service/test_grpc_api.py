@@ -21,13 +21,16 @@ from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.client import FollowLeaseExpiredError, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
-from agentplane.sandbox_service.kubernetes_grants import ResolvedGrant, RoleBindingGrant, RoleRef
+from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_ANNOTATION,
     KUBERNETES_GRANTS_READY_ANNOTATION,
     PROVISIONING_ANNOTATION,
 )
-from agentplane.sandbox_service.models import ProvisioningState, SandboxDestination
+from google.protobuf.json_format import MessageToDict, ParseDict
+from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant
+from agentplane.sandbox_service.models import ProvisioningState
+from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -41,7 +44,7 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 TOKEN = "test-grpc-token"
 AUDIENCE = "test-sandbox-service"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
-DESTINATION = SandboxDestination(owner=OWNER, sandbox=SANDBOX, sandbox_uid=SANDBOX_UID)
+DESTINATION = SandboxDestination(owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name), sandbox=SANDBOX, sandbox_uid=SANDBOX_UID)
 
 
 @dataclass
@@ -132,7 +135,10 @@ def resources(cluster: Cluster, peer: Peer) -> Resources:
             audience=AUDIENCE,
             allowed_service_account_namespaces={SANDBOX_NAMESPACE},
         ),
+        provisioning=cluster.provisioning,
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), peer.port),
+        caller_accounts=frozenset({OWNER}),
+        platform_instructions="Test guidance",
         follow_lease_s=0.5,
         admission_timeout_s=1,
     )
@@ -166,12 +172,15 @@ async def test_admission_is_exact_native_evidence(remote: SandboxServiceClient, 
         connection = await peer.attachments.get()
         assert connection.opened.follow.after_cursor == 4
         assert not connection.opened.HasField("spec")
+        assert not connection.opened.HasField("setup_script")
         assert (await connection.commands.get()).command == command
         assert (await connection.commands.get()).HasField("detach")
         wrong = command_pb2.Command(command_id="notice", submit_input=command_pb2.SubmitInput(text="different"))
         connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=admission(wrong, 5)))
         assert not pending.done()
-        receipt = admission(command, 6)
+        other = command_pb2.Command(command_id="other", submit_input=command.submit_input)
+        connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=admission(other, 6)))
+        receipt = admission(command, 7)
         connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=receipt))
         assert await pending == receipt
         await connection.closed.wait()
@@ -290,9 +299,7 @@ async def test_missing_invalid_or_duplicate_bearer_is_rejected(
     remote: SandboxServiceClient, peer: Peer, metadata: tuple[tuple[str, str], ...]
 ) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as rejected:
-        await remote.stub.InspectSession(
-            protocol_pb2.SessionRequest(destination=wire.session_proto(DESTINATION, "session")), metadata=metadata
-        )
+        await remote.stub.ListSessions(protocol_pb2.SandboxRequest(destination=DESTINATION), metadata=metadata)
     assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
     assert peer.attachments.empty()
 
@@ -300,56 +307,60 @@ async def test_missing_invalid_or_duplicate_bearer_is_rejected(
 @pytest.mark.parametrize(
     ("change", "code"),
     [
-        ({"owner": ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="other")}, grpc.StatusCode.PERMISSION_DENIED),
-        ({"sandbox_uid": uuid4()}, grpc.StatusCode.NOT_FOUND),
+        ({"owner": protocol_pb2.ServiceAccount(namespace=SANDBOX_NAMESPACE, name="other")}, grpc.StatusCode.NOT_FOUND),
+        ({"sandbox_uid": str(uuid4())}, grpc.StatusCode.NOT_FOUND),
     ],
 )
 async def test_destination_authority_and_incarnation(
     remote: SandboxServiceClient, peer: Peer, change: dict[str, object], code: grpc.StatusCode
 ) -> None:
+    destination = SandboxDestination()
+    destination.CopyFrom(DESTINATION)
+    if "owner" in change:
+        destination.owner.name = "other"
+    else:
+        destination.sandbox_uid = str(change["sandbox_uid"])
     with pytest.raises(ServiceError) as rejected:
-        await remote.runner(DESTINATION.model_copy(update=change)).attach("session")
+        await remote.runner(destination).attach("session")
     assert rejected.value.code == code
     assert peer.attachments.empty()
 
 
-async def test_management_requires_explicit_authority(
-    remote: SandboxServiceClient, peer: Peer, cluster: Cluster
+@pytest.mark.parametrize("account_name", [ACCOUNT, "unlisted-service"])
+async def test_unlisted_callers_rejected_before_lookup(
+    resources: Resources, token_file: Path, peer: Peer, cluster: Cluster, account_name: str
 ) -> None:
-    destination = wire.session_proto(DESTINATION, "session")
-    for call, request in (
-        (remote.stub.OpenSession, protocol_pb2.OpenSessionRequest(destination=destination)),
-        (remote.stub.ResumeSession, protocol_pb2.SessionRequest(destination=destination)),
-        (remote.stub.InitializeSandbox, protocol_pb2.SandboxRequest(destination=destination.sandbox)),
-        (remote.stub.ListSandboxes, Empty()),
-    ):
-        with pytest.raises(ServiceError) as rejected:
-            await remote.unary(call, request)
-        assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
-    assert cluster.fake.pod_reads == 0
-    assert peer.attachments.empty()
-
-
-@pytest.mark.parametrize("manager", [False, True])
-async def test_cross_owner_management_requires_both_grants(
-    resources: Resources, token_file: Path, cluster: Cluster, peer: Peer, manager: bool
-) -> None:
-    account = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-control-service")
+    # Owning the destination does not grant service access. The same allowlist gates all RPCs.
     cluster.fake.tokens[TOKEN] = TokenVerdict(
-        username=f"system:serviceaccount:{account.namespace}:{account.name}",
-        pod_name="test-control-pod",
-        pod_uid="test-control-pod-uid",
-        audiences=(AUDIENCE,),
+        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{account_name}",
+        pod_name="test-unlisted-pod", pod_uid="test-unlisted-uid", audiences=(AUDIENCE,),
     )
-    configured = replace(
-        resources,
-        destinations=replace(resources.destinations, trusted_accounts=frozenset() if manager else frozenset({account})),
-        manager_accounts=frozenset({account}) if manager else frozenset(),
-        platform_instructions="Test guidance",
-    )
-    async with service_client(configured, token_file) as caller:
+    configured = replace(resources, caller_accounts=frozenset({
+        ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")
+    }))
+    cluster.fake.objects[SANDBOXES_PLURAL].clear()
+    destination = protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
+    async with service_client(configured, token_file) as remote:
+        for call, request in (
+            (remote.stub.ListSandboxes, Empty()),
+            (remote.stub.GetSandbox, protocol_pb2.GetSandboxRequest(name=SANDBOX)),
+            (remote.stub.CreateSandbox, protocol_pb2.CreateSandboxRequest()),
+            (remote.stub.SuspendSandbox, protocol_pb2.SandboxRequest(destination=DESTINATION)),
+            (remote.stub.ResumeSandbox, protocol_pb2.SandboxRequest(destination=DESTINATION)),
+            (remote.stub.DeleteSandbox, protocol_pb2.SandboxRequest(destination=DESTINATION)),
+            (remote.stub.ListTemplates, Empty()),
+            (remote.stub.GrantEgress, protocol_pb2.GrantEgressRequest(destination=DESTINATION)),
+            (remote.stub.RevokeEgress, protocol_pb2.RevokeEgressRequest()),
+            (remote.stub.ListSessions, protocol_pb2.SandboxRequest(destination=DESTINATION)),
+            (remote.stub.OpenSession, protocol_pb2.OpenSessionRequest(destination=destination)),
+            (remote.stub.ResumeSession, protocol_pb2.SessionRequest(destination=destination)),
+            (remote.stub.SubmitCommand, protocol_pb2.SubmitCommandRequest(destination=destination)),
+        ):
+            with pytest.raises(ServiceError) as rejected:
+                await remote.unary(call, request)
+            assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
         with pytest.raises(ServiceError) as rejected:
-            await caller.runner(DESTINATION).open("session", {})
+            await remote.runner(DESTINATION).attach("session")
         assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
     assert cluster.fake.pod_reads == 0
     assert peer.attachments.empty()
@@ -365,14 +376,14 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
     else:
         grant = ResolvedGrant(
             name="config",
-            grant=RoleBindingGrant(
+            grant=ParseDict(RoleBindingGrant(
                 kind="RoleBinding", namespace=SANDBOX_NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
-            ),
+            ).model_dump(mode="json"), protocol_pb2.KubernetesGrant()),
         )
-        annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([grant.model_dump(mode="json")])
+        annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([MessageToDict(grant, preserving_proto_field_name=True)])
         annotations[KUBERNETES_GRANTS_READY_ANNOTATION] = "false"
-    assert (await cluster.inventory.get(SANDBOX)).state is ProvisioningState.WAITING_FOR_GRANTS
-    configured = replace(resources, manager_accounts=frozenset({OWNER}), platform_instructions="Test guidance")
+    assert (await cluster.inventory.get(SANDBOX)).state == ProvisioningState.WAITING_FOR_GRANTS
+    configured = replace(resources, caller_accounts=frozenset({OWNER}), platform_instructions="Test guidance")
     async with service_client(configured, token_file) as caller:
         runner = caller.runner(DESTINATION)
         with pytest.raises(ServiceError) as opened:
@@ -402,11 +413,9 @@ async def test_invalid_command_is_not_submitted(
     assert peer.attachments.empty()
 
 
-async def test_wire_preserves_inventory_and_explicit_empty_overrides(cluster: Cluster) -> None:
-    view = await cluster.inventory.get(SANDBOX)
-    assert wire.sandbox_view(wire.sandbox_proto(view)) == view
+def test_wire_preserves_explicit_empty_overrides() -> None:
     request = wire.open_proto(
-        wire.session_proto(DESTINATION, "session"),
+        protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session"),
         {"model": "test-model", "instructions": "", "reasoningEffort": ""},
         "",
     )
@@ -466,8 +475,83 @@ async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
 def test_duplicate_spec_aliases_are_refused() -> None:
     with pytest.raises(ValueError, match="both proto and JSON"):
         wire.open_proto(
-            wire.session_proto(DESTINATION, "session"), {"reasoning_effort": "low", "reasoningEffort": "high"}, None
+            protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session"), {"reasoning_effort": "low", "reasoningEffort": "high"}, None
         )
+
+
+async def test_command_cancellation_closes_native_attachment(remote: SandboxServiceClient, peer: Peer) -> None:
+    command = command_pb2.Command(command_id="cancel", submit_input=command_pb2.SubmitInput(text="notice"))
+    async with asyncio.timeout(8), asyncio.TaskGroup() as tasks:
+        pending = tasks.create_task(remote.runner(DESTINATION).command("session", command, after_cursor=0))
+        connection = await peer.attachments.get()
+        assert (await connection.commands.get()).command == command
+        assert (await connection.commands.get()).HasField("detach")
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+        await connection.closed.wait()
+
+
+@pytest.mark.parametrize("error", [None, "test journal failure"])
+async def test_native_eof_or_error_is_not_admission(
+    remote: SandboxServiceClient, peer: Peer, error: str | None
+) -> None:
+    command = command_pb2.Command(command_id="end", submit_input=command_pb2.SubmitInput(text="notice"))
+    async def submit() -> None:
+        with pytest.raises(RunnerError):
+            await remote.runner(DESTINATION).command("session", command, after_cursor=0)
+    async with asyncio.timeout(8), asyncio.TaskGroup() as tasks:
+        pending = tasks.create_task(submit())
+        connection = await peer.attachments.get()
+        assert (await connection.commands.get()).command == command
+        connection.responses.put_nowait(runner_pb2.ServerMessage(error=error) if error else None)
+        await pending
+        await connection.closed.wait()
+        assert peer.attachments.empty()
+
+
+@pytest.mark.parametrize("field", ["controller", "uid", "name", "kind", "apiVersion"])
+async def test_unverified_pod_owner_is_unavailable(
+    remote: SandboxServiceClient, peer: Peer, cluster: Cluster, field: str
+) -> None:
+    cluster.fake.pods[SANDBOX]["metadata"]["ownerReferences"][0][field] = (
+        False if field == "controller" else "test-foreign"
+    )
+    with pytest.raises(ServiceError) as rejected:
+        await remote.runner(DESTINATION).attach("session")
+    assert rejected.value.code == grpc.StatusCode.UNAVAILABLE
+    assert peer.attachments.empty()
+
+
+@pytest.mark.parametrize("condition", ["different-account", "suspended", "deleting"])
+async def test_unavailable_destination_does_not_contact_runner(
+    remote: SandboxServiceClient, peer: Peer, cluster: Cluster, condition: str
+) -> None:
+    stored = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
+    match condition:
+        case "different-account":
+            cluster.fake.pods[SANDBOX]["spec"]["serviceAccountName"] = "test-other"
+        case "suspended":
+            stored["spec"]["operatingMode"] = "Suspended"
+        case "deleting":
+            stored["metadata"]["deletionTimestamp"] = "2026-09-01T12:00:00Z"
+    with pytest.raises(ServiceError) as rejected:
+        await remote.runner(DESTINATION).attach("session")
+    assert rejected.value.code == grpc.StatusCode.UNAVAILABLE
+    assert peer.attachments.empty()
+
+
+async def test_successor_pod_same_sandbox_and_account_keeps_destination(
+    resources: Resources, cluster: Cluster
+) -> None:
+    first = await resources.destinations.resolve(DESTINATION)
+    assert first.pod_uid == "test-pod-uid"
+    assert first.target == f"127.0.0.1:{resources.destinations.runner_port}"
+    cluster.fake.pods[SANDBOX]["metadata"]["uid"] = "test-successor-pod"
+    cluster.fake.pods[SANDBOX]["status"]["podIP"] = "::1"
+    resolved = await resources.destinations.resolve(DESTINATION)
+    assert resolved.pod_uid == "test-successor-pod"
+    assert resolved.target == f"[::1]:{resources.destinations.runner_port}"
 
 
 if __name__ == "__main__":

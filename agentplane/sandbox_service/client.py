@@ -15,7 +15,8 @@ from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, wire
-from agentplane.sandbox_service.models import NewSandbox, SandboxDestination, SandboxNotFoundError, SandboxView
+from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination, Sandbox
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -114,32 +115,30 @@ class SandboxServiceClient:
         except grpc.aio.AioRpcError as error:
             _raise(error)
 
-    async def list_sandboxes(self) -> list[SandboxView]:
+    async def list_sandboxes(self) -> list[Sandbox]:
         result = await self.unary(self.stub.ListSandboxes, Empty())
-        return [wire.sandbox_view(row) for row in result.sandboxes]
+        return list(result.sandboxes)
 
     async def list_templates(self) -> list[str]:
         result = await self.unary(self.stub.ListTemplates, Empty())
         return list(result.templates)
 
-    async def get(self, name: str) -> SandboxView:
+    async def get(self, name: str) -> Sandbox:
         try:
             result = await self.unary(self.stub.GetSandbox, protocol_pb2.GetSandboxRequest(name=name))
         except ServiceError as error:
             if error.code == grpc.StatusCode.NOT_FOUND:
                 raise SandboxNotFoundError(name) from error
             raise
-        return wire.sandbox_view(result)
+        return result
 
-    async def create(self, spec: NewSandbox) -> SandboxView:
-        return wire.sandbox_view(
-            await self.unary(self.stub.CreateSandbox, wire.create_proto(spec), timeout_s=self.lifecycle_timeout_s)
-        )
+    async def create(self, spec: CreateSandboxRequest) -> Sandbox:
+        return await self.unary(self.stub.CreateSandbox, spec, timeout_s=self.lifecycle_timeout_s)
 
     async def _lifecycle(self, call: Callable[..., Awaitable[Empty]], name: str) -> None:
         view = await self.get(name)
         destination = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid)
-        await self.unary(call, protocol_pb2.SandboxRequest(destination=wire.destination_proto(destination)))
+        await self.unary(call, protocol_pb2.SandboxRequest(destination=destination))
 
     async def suspend(self, name: str) -> None:
         await self._lifecycle(self.stub.SuspendSandbox, name)
@@ -150,11 +149,11 @@ class SandboxServiceClient:
     async def delete(self, name: str) -> None:
         await self._lifecycle(self.stub.DeleteSandbox, name)
 
-    async def grant_egress(self, sandbox: SandboxView, policies: list[str]) -> str:
+    async def grant_egress(self, sandbox: Sandbox, policies: list[str]) -> str:
         destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
         result = await self.unary(
             self.stub.GrantEgress,
-            protocol_pb2.GrantEgressRequest(destination=wire.destination_proto(destination), policies=policies),
+            protocol_pb2.GrantEgressRequest(destination=destination, policies=policies),
         )
         return result.binding_name
 
@@ -179,7 +178,7 @@ class Runner:
     async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
         result = await self.service.unary(
             self.service.stub.ListSessions,
-            protocol_pb2.SandboxRequest(destination=wire.destination_proto(self.destination)),
+            protocol_pb2.SandboxRequest(destination=self.destination),
         )
         return list(result.sessions)
 
@@ -188,14 +187,14 @@ class Runner:
     ) -> runner_pb2.Attached:
         return await self.service.unary(
             self.service.stub.OpenSession,
-            wire.open_proto(wire.session_proto(self.destination, session_id), spec, setup_script),
+            wire.open_proto(protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id), spec, setup_script),
             timeout_s=self.service.lifecycle_timeout_s,
         )
 
     async def resume(self, session_id: str) -> runner_pb2.Attached:
         return await self.service.unary(
             self.service.stub.ResumeSession,
-            protocol_pb2.SessionRequest(destination=wire.session_proto(self.destination, session_id)),
+            protocol_pb2.SessionRequest(destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)),
             timeout_s=self.service.lifecycle_timeout_s,
         )
 
@@ -205,7 +204,7 @@ class Runner:
         receipt = await self.service.unary(
             self.service.stub.SubmitCommand,
             protocol_pb2.SubmitCommandRequest(
-                destination=wire.session_proto(self.destination, session_id),
+                destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
                 command=command,
                 follow=event_log_pb2.Follow(after_cursor=after_cursor),
             ),
@@ -217,7 +216,7 @@ class Runner:
     async def attach(self, session_id: str, *, after_cursor: int = 0) -> Attachment:
         call = self.service.stub.FollowSession(
             protocol_pb2.FollowSessionRequest(
-                destination=wire.session_proto(self.destination, session_id),
+                destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
                 follow=event_log_pb2.Follow(after_cursor=after_cursor),
             ),
             metadata=await self.service.metadata(),

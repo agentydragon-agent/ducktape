@@ -26,7 +26,8 @@ from agentplane.app.threads.view.views import ThreadView
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.sandbox_service.egress_views import BindingView, PolicyView
-from agentplane.sandbox_service.models import NewSandbox, ProvisioningState, SandboxView
+from agentplane.sandbox_service.models import ProvisioningState
+from agentplane.app.sandbox_models import NewSandbox, SandboxView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

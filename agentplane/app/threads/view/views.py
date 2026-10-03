@@ -11,7 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from agentplane.app.threads.view import fold
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.runner.harness import Harness
 
 
 class EntityKind(StrEnum):

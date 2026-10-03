@@ -12,7 +12,7 @@ from agentplane.app.api import ModelCatalog, ModelOption
 from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.runner.harness import Harness
 from cluster.cdk8s.agentplane.model_display_names import display_name
 from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
 

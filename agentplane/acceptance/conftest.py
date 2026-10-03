@@ -17,8 +17,9 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.client import Client, is_running
 from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.models import NewSandbox, SandboxView
-from agentplane.sandbox_service.session_config import Harness, SessionDefaults
+from agentplane.app.sandbox_models import NewSandbox, SandboxView
+from agentplane.runner.harness import Harness
+from agentplane.app.sandbox_models import SessionDefaults
 
 # `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

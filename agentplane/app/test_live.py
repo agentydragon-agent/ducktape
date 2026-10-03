@@ -56,7 +56,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner import protocol_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.models import ProvisioningState
-from agentplane.sandbox_service.session_config import Harness
+from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,

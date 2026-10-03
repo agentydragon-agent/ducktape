@@ -7,7 +7,7 @@ py_library(
     srcs = ["models.py"],
     deps = [
         "//agentplane/app:database",
-        "//agentplane/sandbox_service:session_config",
+        "//agentplane/runner:harness",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
@@ -104,15 +104,15 @@ py_test(
     size = "medium",
     srcs = ["test_store.py"],
     deps = [
-        ":ingestion",
-        ":store",
         "//:conftest",
-        "//agentplane/app:conftest",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/events:ingestion_lease",
+        "//agentplane/app:conftest",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",
-        "//agentplane/sandbox_service:session_config",
+        ":ingestion",
+        ":store",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -128,6 +128,7 @@ py_library(
         "//agentplane/app:live",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:models",
+        "//agentplane/sandbox_service:protocol_pb2",
     ],
 )
 

@@ -13,7 +13,6 @@ import asyncio
 import secrets
 import string
 from typing import cast
-from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
@@ -31,14 +30,10 @@ from agentplane.sandbox_service.kubernetes_views import (
     sandbox_view,
     sandbox_views,
 )
-from agentplane.sandbox_service.models import (
-    NewSandbox,
-    OperatingMode,
-    SandboxNotFoundError,
-    SandboxRunningError,
-    SandboxView,
-)
-from agentplane.sandbox_service.session_config import LaunchGrants, SandboxBinding
+from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError, SandboxRunningError
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox
+from agentplane.sandbox_service.session_config import LaunchGrants
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
 from util.kubernetes import CustomObjectsClient
 
@@ -103,7 +98,7 @@ class SandboxInventory:
             _NamedResource.model_validate(item).metadata.name for item in _ResourceList.model_validate(page).items
         )
 
-    async def list_sandboxes(self) -> list[SandboxView]:
+    async def list_sandboxes(self) -> list[Sandbox]:
         sandboxes_page, pods = await asyncio.gather(
             self._custom_objects.list_namespaced_custom_object(
                 *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, label_selector=f"{MANAGED_LABEL}=true"
@@ -112,13 +107,13 @@ class SandboxInventory:
         )
         return sandbox_views(_ResourceList.model_validate(sandboxes_page).items, pods.items)
 
-    async def get(self, name: str) -> SandboxView:
+    async def get(self, name: str) -> Sandbox:
         sandbox = await self._sandbox(name)
         return sandbox_view(sandbox, await self._pod(name))
 
     async def create(
-        self, spec: NewSandbox, *, annotations: dict[str, str] | None = None, finalizers: list[str] | None = None
-    ) -> SandboxView:
+        self, spec: CreateSandboxRequest, *, annotations: dict[str, str] | None = None, finalizers: list[str] | None = None
+    ) -> Sandbox:
         template = _Template.model_validate(
             await self._custom_objects.get_namespaced_custom_object(
                 *EXTENSIONS_API, self._namespace, TEMPLATES_PLURAL, spec.template
@@ -190,7 +185,7 @@ class SandboxInventory:
         raw = (await self._sandbox(name)).metadata.annotations.get(PROVISIONING_ANNOTATION)
         return LaunchGrants.model_validate_json(raw) if raw is not None else None
 
-    async def finish_provisioning(self, sandbox: SandboxView) -> None:
+    async def finish_provisioning(self, sandbox: Sandbox) -> None:
         await self._patch(
             sandbox.name, {"metadata": {"uid": str(sandbox.uid), "annotations": {PROVISIONING_ANNOTATION: None}}}
         )
@@ -222,13 +217,13 @@ class SandboxInventory:
                 name, {"metadata": {"finalizers": [item for item in sandbox.metadata.finalizers if item != finalizer]}}
             )
 
-    async def suspend(self, name: str, *, uid: UUID | None = None) -> None:
+    async def suspend(self, name: str, *, uid: str | None = None) -> None:
         await self._set_operating_mode(name, OperatingMode.SUSPENDED, uid=uid)
 
-    async def resume(self, name: str, *, uid: UUID | None = None) -> None:
+    async def resume(self, name: str, *, uid: str | None = None) -> None:
         await self._set_operating_mode(name, OperatingMode.RUNNING, uid=uid)
 
-    async def delete(self, name: str, *, uid: UUID | None = None) -> None:
+    async def delete(self, name: str, *, uid: str | None = None) -> None:
         """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
         everything on the volume. A running one is refused, so the irreversible step is a
         deliberate second one for a browser and for an agent calling the API alike."""
@@ -245,7 +240,7 @@ class SandboxInventory:
             body=k8s_client.V1DeleteOptions(preconditions=k8s_client.V1Preconditions(uid=str(sandbox.metadata.uid))),
         )
 
-    async def _set_operating_mode(self, name: str, mode: OperatingMode, *, uid: UUID | None = None) -> None:
+    async def _set_operating_mode(self, name: str, mode: OperatingMode, *, uid: str | None = None) -> None:
         sandbox = await self._sandbox(name)
         if uid is not None and sandbox.metadata.uid != uid:
             raise SandboxNotFoundError(name)

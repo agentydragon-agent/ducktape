@@ -12,7 +12,8 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
-from agentplane.sandbox_service.models import NewSandbox, ProvisioningState, SandboxNotFoundError, SandboxRunningError
+from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError, SandboxRunningError
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     POD_TEMPLATE,
@@ -59,7 +60,7 @@ async def test_list_derives_each_provisioning_state_from_the_sandbox_and_its_pod
         "paused": ProvisioningState.SUSPENDED,
     }
     live = views["live"]
-    assert live.pod is not None
+    assert live.HasField("pod")
     assert (live.node_name, live.pod.phase, live.pod.ip, live.pod.node_name) == (
         "test-node",
         "Running",
@@ -78,7 +79,8 @@ async def test_list_derives_each_provisioning_state_from_the_sandbox_and_its_pod
     assert [(container.state, container.reason, container.message) for container in starting.containers] == [
         ("waiting", "ImagePullBackOff", "ImagePullBackOff on starting")
     ]
-    assert (views["podless"].pod, views["podless"].conditions) == (None, [])
+    assert not views["podless"].HasField("pod")
+    assert not views["podless"].conditions
 
 
 async def test_get_reads_one_sandbox_and_refuses_foreign_or_missing_ones(
@@ -88,7 +90,7 @@ async def test_get_reads_one_sandbox_and_refuses_foreign_or_missing_ones(
 
     view = await inventory.get("live")
 
-    assert view.pod is not None
+    assert view.HasField("pod")
     assert (view.state, view.pod.ip) == (ProvisioningState.RUNNING, "10.0.0.7")
     with pytest.raises(SandboxNotFoundError):
         await inventory.get("foreign")
@@ -99,7 +101,7 @@ async def test_get_reads_one_sandbox_and_refuses_foreign_or_missing_ones(
 async def test_create_stamps_a_labelled_sandbox_from_the_template(
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    view = await inventory.create(NewSandbox(slug="my-task", template="agentplane-test-runner"))
+    view = await inventory.create(CreateSandboxRequest(slug="my-task", template="agentplane-test-runner"))
 
     assert re.fullmatch(r"my-task-[a-z0-9]{5}", view.name)
     assert view.state == ProvisioningState.WAITING_FOR_POD
@@ -122,7 +124,7 @@ async def test_create_gives_the_sandbox_a_service_account_of_its_own_that_it_run
     sharing the template's account could only ever be granted what every other sandbox is. The
     caller label is what the Action Service admits it on; without it the sandbox authenticates and
     reaches no route."""
-    view = await inventory.create(NewSandbox(slug="my-task", template="agentplane-test-runner"))
+    view = await inventory.create(CreateSandboxRequest(slug="my-task", template="agentplane-test-runner"))
 
     account = core_v1.service_accounts[view.name]
     assert account.metadata.labels == {MANAGED_LABEL: "true", CALLER_LABEL: "true"}
@@ -147,13 +149,13 @@ async def test_create_leaves_no_service_account_behind_when_the_sandbox_is_refus
     custom_objects.create_fails = True
 
     with pytest.raises(k8s_client.ApiException):
-        await inventory.create(NewSandbox(slug="my-task", template="agentplane-test-runner"))
+        await inventory.create(CreateSandboxRequest(slug="my-task", template="agentplane-test-runner"))
 
     assert core_v1.service_accounts == {}
 
 
 async def test_create_names_each_sandbox_uniquely(inventory: SandboxInventory) -> None:
-    spec = NewSandbox(slug="twice", template="agentplane-test-runner")
+    spec = CreateSandboxRequest(slug="twice", template="agentplane-test-runner")
 
     first, second = await inventory.create(spec), await inventory.create(spec)
 
