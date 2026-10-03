@@ -18,18 +18,18 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::print_section;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use output_layout::SELECTOR_DIAGNOSTICS_REPORT;
 use peel::{OutputFormat, print_report};
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
+use selector_codemod::source_input::resolve_chunk_source_file;
 use selector_outcome::{
     Entity, Outcome, Placement, SelectorKind, SelectorOutcome, SelectorOutcomeReport, Severity,
 };
 use selector_resolve::{AnonymousStatement, Member, MemberSelector, SpecModule};
 use serde::Serialize;
-use crate::print_section;
-use selector_codemod::source_input::resolve_chunk_source_file;
 use source_match::{ParsedSourceMatchSelector, source_match_claim_member_selectors};
 use spec::{AnonymousStatementSelector, MemberSelectorSpec};
 
@@ -358,5 +358,10 @@ fn emit_validate_ndjson(report: &SelectorOutcomeReport) -> Result<()> {
     for template in &report.templates {
         print_section("template", template)?;
     }
-    print_section("summary", &Summary { counts: report.counts() })
+    print_section(
+        "summary",
+        &Summary {
+            counts: report.counts(),
+        },
+    )
 }

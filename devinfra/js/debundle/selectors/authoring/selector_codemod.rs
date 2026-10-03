@@ -723,8 +723,11 @@ fn synthesized_source_match_claim_value(synthesized: &SynthesizedSelectorGroup) 
 
 fn load_synthesis_module(config: &SelectorCodemodConfig) -> Result<js_ast::ParsedJsModule> {
     let source_file = source_input::optional_chunk_source_file(
-        config.source_file.as_deref(), config.source_root.as_deref(), config.chunk.as_deref(),
-    )?.context("synthesize-selectors requires --source-file or --source-root + --chunk")?;
+        config.source_file.as_deref(),
+        config.source_root.as_deref(),
+        config.chunk.as_deref(),
+    )?
+    .context("synthesize-selectors requires --source-file or --source-root + --chunk")?;
     let source = fs::read_to_string(&source_file)
         .with_context(|| format!("reading source file {}", source_file.display()))?;
     js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)

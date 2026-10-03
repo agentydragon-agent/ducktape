@@ -1,6 +1,6 @@
 //! `spec` authoring commands: arguments, adapters, and output formats.
-use crate::{emit_report, print_section};
 use crate::validate::{ValidateArgs, run_validate_cmd};
+use crate::{emit_report, print_section};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::{OutputFormat, print_report};
@@ -314,7 +314,9 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
         bail!("--group-module-depth must be at least 1");
     }
     let source_file = selector_codemod::source_input::optional_chunk_source_file(
-        args.source_file.as_deref(), args.source_root.as_deref(), args.chunk.as_deref(),
+        args.source_file.as_deref(),
+        args.source_root.as_deref(),
+        args.chunk.as_deref(),
     )?;
     let source_aware = source_file
         .as_deref()
