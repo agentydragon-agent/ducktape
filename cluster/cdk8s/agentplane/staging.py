@@ -27,13 +27,12 @@ from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.app.action_federation import ExchangeFederationSettings
-from cluster.cdk8s import cilium, external_creds, ha_mcp, node_scheduling
+from cluster.cdk8s import cilium, external_creds, ha_mcp, node_scheduling, public_coder_egress
 from cluster.cdk8s.agentplane import actions, command_sandbox, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials, credential_external_secret
 from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
-from cluster.cdk8s import public_coder_egress
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
@@ -299,7 +298,11 @@ ENV = Environment(
     app_config=staging_config.config(action_federation=_ACTION_FEDERATION),
     db=DbProps(instances=2),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, log_llm_requests=True),
-    egress=EgressProps(ca_secret_name=public_coder_egress.CA_BUNDLE_NAME, credentials_namespace=STAGING_NAMESPACE, external_workload_namespaces=(public_coder_egress.NAMESPACE,)),
+    egress=EgressProps(
+        ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,
+        credentials_namespace=STAGING_NAMESPACE,
+        external_workload_namespaces=(public_coder_egress.NAMESPACE,),
+    ),
     app=AppProps(
         hostname=_HOSTNAME,
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
@@ -479,8 +482,10 @@ def agentplane_staging(
             *health_checks,
             *[
                 KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1", kind="ExternalSecret",
-                    name=name, namespace=ENV.egress.credentials_namespace,
+                    api_version="external-secrets.io/v1",
+                    kind="ExternalSecret",
+                    name=name,
+                    namespace=ENV.egress.credentials_namespace,
                 )
                 for name in (
                     public_coder_egress.HAKU_CREDENTIAL,

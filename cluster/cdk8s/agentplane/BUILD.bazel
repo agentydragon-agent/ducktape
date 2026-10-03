@@ -463,7 +463,6 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
     deps = [
-        "//cluster/cdk8s:public_coder_egress",
         ":actions",
         ":actions_staging_policies",
         ":chart",
@@ -485,6 +484,7 @@ py_library(
         "//cluster/cdk8s:ha_mcp",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:public_coder_egress",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -601,7 +601,6 @@ py_library(
     name = "egress_staging_credentials",
     srcs = ["egress_staging_credentials.py"],
     deps = [
-        "//cluster/cdk8s:public_coder_egress",
         ":app_settings",
         ":egress",
         ":egress_credentials",
@@ -609,6 +608,7 @@ py_library(
         "//agentplane/crds:egresspolicy",
         "//cluster/cdk8s:aiquota",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:public_coder_egress",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/home_assistant:app",
         "//cluster/cdk8s/plaid_mcp:pgweb",

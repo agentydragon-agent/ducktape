@@ -27,14 +27,14 @@ unchanged. Matrix substitution is only the `password` JSON field on
 
 Existing environment-variable names stay stable:
 
-| Variable | Agentplane credential name |
-| --- | --- |
-| `GH_PAT`, `GITHUB_TOKEN` | `github-pat` |
-| `HAKU_CONSOLE_TOKEN` | `public-coder-haku-console` |
-| `CLICKHOUSE_PUBLIC_CODER_PASSWORD` | `public-coder-clickhouse` |
-| `AIQUOTA_API_BEARER_TOKEN` | `aiquota-read` |
-| `BRAVE_API_KEY` | `brave-search` |
-| `MATRIX_PASSWORD` | `public-coder-matrix` |
+| Variable                           | Agentplane credential name  |
+| ---------------------------------- | --------------------------- |
+| `GH_PAT`, `GITHUB_TOKEN`           | `github-pat`                |
+| `HAKU_CONSOLE_TOKEN`               | `public-coder-haku-console` |
+| `CLICKHOUSE_PUBLIC_CODER_PASSWORD` | `public-coder-clickhouse`   |
+| `AIQUOTA_API_BEARER_TOKEN`         | `aiquota-read`              |
+| `BRAVE_API_KEY`                    | `brave-search`              |
+| `MATRIX_PASSWORD`                  | `public-coder-matrix`       |
 
 The generator supplies canonical placeholders, the Matrix proxy setting, and kubeconfig.
 No `gh` re-login is needed: the image's wrapper still exports `GH_TOKEN` from `GH_PAT`.
@@ -49,7 +49,7 @@ LiteLLM, local gateway authentication, and SSH credentials are unchanged.
 2. Only then land the Pod cutover. Flux additionally makes the app depend on staging,
    whose health checks include the new credential copies. Dependency readiness is not an
    atomic same-revision deployment barrier; the two merge steps are deliberate.
-3. Verify the OpenClaw Deployment is 2/2 Ready, its relay is ready, and the VM and Iron
+3. Verify the OpenClaw Pod is 2/2 Ready (Deployment 1/1), its relay is ready, and the VM and Iron
    remain healthy. Through approval-gated Agentplane actions, check authenticated GitHub,
    Haku diagnostics, `SELECT 1` on ClickHouse, AIQuota and Brave; report status only, never
    credential-bearing response bodies. Confirm Matrix sync/message health using its

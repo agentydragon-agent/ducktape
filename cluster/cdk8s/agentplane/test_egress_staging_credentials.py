@@ -56,7 +56,8 @@ def test_openclaw_sources_are_exact_and_do_not_depend_on_iron_mirrors() -> None:
     add_staging_egress_credentials(chart, namespace="agentplane-staging", credentials_namespace=STAGING_NAMESPACE)
     objects = Cdk8sTesting.synth(chart)
     roles = {
-        obj["metadata"]["namespace"]: obj for obj in objects
+        obj["metadata"]["namespace"]: obj
+        for obj in objects
         if obj["kind"] == "Role" and obj["metadata"]["name"].startswith("agentplane-public-coder-")
     }
     assert set(roles) == {"authentik", "clickhouse", "matrix"}
@@ -68,7 +69,9 @@ def test_openclaw_sources_are_exact_and_do_not_depend_on_iron_mirrors() -> None:
         assert roles[namespace]["rules"] == [
             {"apiGroups": [""], "resources": ["secrets"], "resourceNames": [secret], "verbs": ["get"]}
         ]
-    assert not any(obj["kind"] == "Role" and obj["metadata"].get("namespace") == "public-coder-agent" for obj in objects)
+    assert not any(
+        obj["kind"] == "Role" and obj["metadata"].get("namespace") == "public-coder-agent" for obj in objects
+    )
 
 
 if __name__ == "__main__":

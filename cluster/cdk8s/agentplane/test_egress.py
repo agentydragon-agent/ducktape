@@ -554,12 +554,19 @@ def test_static_openclaw_has_only_its_existing_destination_credentials(
     policy = _by_name(docs, "EgressPolicy", "public-coder-openclaw")
     rules = {r["credentialRef"]["name"]: r for r in policy["spec"]["rules"]}
     assert set(rules) == {
-        "github-pat", "public-coder-haku-console", "public-coder-clickhouse",
-        "aiquota-read", "brave-search", "public-coder-matrix", "agentplane-workload",
+        "github-pat",
+        "public-coder-haku-console",
+        "public-coder-clickhouse",
+        "aiquota-read",
+        "brave-search",
+        "public-coder-matrix",
+        "agentplane-workload",
     }
     assert rules["public-coder-matrix"] == {
-        "hosts": ["matrix.allegedly.works"], "methods": ["POST"],
-        "paths": ["/_matrix/client/v3/login"], "credentialRef": {"name": "public-coder-matrix"},
+        "hosts": ["matrix.allegedly.works"],
+        "methods": ["POST"],
+        "paths": ["/_matrix/client/v3/login"],
+        "credentialRef": {"name": "public-coder-matrix"},
     }
     assert rules["aiquota-read"]["methods"] == ["GET"]
     assert rules["aiquota-read"]["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
@@ -572,7 +579,11 @@ def test_static_openclaw_has_only_its_existing_destination_credentials(
     testing_docs = agentplane_manifests["agentplane-testing"]
     assert not any(d["metadata"]["name"] == "public-coder-openclaw" for d in testing_docs)
     for namespace, manifests in agentplane_manifests.items():
-        bundle_name = staging.ENV.egress.ca_secret_name if namespace == "agentplane-staging" else testing.ENV.egress.ca_secret_name
+        bundle_name = (
+            staging.ENV.egress.ca_secret_name
+            if namespace == "agentplane-staging"
+            else testing.ENV.egress.ca_secret_name
+        )
         bundle = _by_name(manifests, "Bundle", bundle_name)
         expressions = bundle["spec"]["target"]["namespaceSelector"]["matchExpressions"]
         assert one(expressions)["values"] == (

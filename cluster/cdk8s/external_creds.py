@@ -67,7 +67,10 @@ CREDENTIALS = (
         secret_name="brave-search-api-key",
         consumers=(
             ApprovedConsumer("public-coder-agent", "brave-search-api-key-public-coder-agent-reader"),
-            ApprovedConsumer("agentplane-staging-egress-credentials", "brave-search-api-key-agentplane-staging-egress-credentials-reader"),
+            ApprovedConsumer(
+                "agentplane-staging-egress-credentials",
+                "brave-search-api-key-agentplane-staging-egress-credentials-reader",
+            ),
         ),
     ),
     Credential(

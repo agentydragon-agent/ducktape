@@ -774,6 +774,7 @@ spec:
           operator: In
           values:
             - agentplane-staging
+            - public-coder-agent
 ---
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
@@ -807,6 +808,7 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
+      - public-coder-agent
     projected_token_audiences:
       - https://localhost:7445
 immutable: false
@@ -7143,3 +7145,417 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-egress
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-public-coder-haku-console-reader
+  namespace: authentik
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - haku-console-public-coder-agent
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-public-coder-haku-console-reader
+  namespace: authentik
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-public-coder-haku-console-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-public-coder-haku-console-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: authentik
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: public-coder-haku-console
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: haku-console-public-coder-agent
+        property: token
+      secretKey: token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-public-coder-haku-console-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: public-coder-haku-console
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: public-coder-haku-console
+  namespace: agentplane-staging
+spec:
+  description: Public coder's existing static-Agent Haku Console bearer, also used by its Kubernetes authorization proxy. No change of Haku identity or approval policy.
+  source:
+    secretRef:
+      name: public-coder-haku-console
+      key: token
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-public-coder-clickhouse-reader
+  namespace: clickhouse
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - clickhouse-public-coder-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-public-coder-clickhouse-reader
+  namespace: clickhouse
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-public-coder-clickhouse-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-public-coder-clickhouse-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: clickhouse
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: public-coder-clickhouse
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: clickhouse-public-coder-credentials
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-public-coder-clickhouse-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: public-coder-clickhouse
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: public-coder-clickhouse
+  namespace: agentplane-staging
+spec:
+  description: The existing read-only ClickHouse public_coder_analytics password. Present as the Basic password with that username.
+  source:
+    secretRef:
+      name: public-coder-clickhouse
+      key: password
+  targets:
+    - header: Authorization
+      method: basicPassword
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-public-coder-matrix-reader
+  namespace: matrix
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - public-coder-agent-matrix-bot-password
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-public-coder-matrix-reader
+  namespace: matrix
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-public-coder-matrix-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agentplane-staging-egress-credentials
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-agentplane-public-coder-matrix-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - agentplane-staging-egress-credentials
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: external-creds-reader
+      remoteNamespace: matrix
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: public-coder-matrix
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: public-coder-agent-matrix-bot-password
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-agentplane-public-coder-matrix-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: public-coder-matrix
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: public-coder-matrix
+  namespace: agentplane-staging
+spec:
+  description: The existing public-coder Matrix bot login password, only in the exact login password field. Login responses can contain session tokens; this does not hide those from the client.
+  source:
+    secretRef:
+      name: public-coder-matrix
+      key: password
+  targets:
+    - field: password
+      method: jsonField
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: brave-search
+  namespace: agentplane-staging-egress-credentials
+spec:
+  data:
+    - remoteRef:
+        key: brave-search-api-key
+        property: api-key
+      secretKey: api-key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: brave-search
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: brave-search
+  namespace: agentplane-staging
+spec:
+  description: The shared Brave Search API key, substituted only at Brave's API in X-Subscription-Token.
+  source:
+    secretRef:
+      name: brave-search
+      key: api-key
+  targets:
+    - header: X-Subscription-Token
+      method: wholeValue
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: public-coder-openclaw
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - github.com
+        - api.github.com
+        - codeload.github.com
+      credentialRef:
+        name: github-pat
+    - hosts:
+        - haku.allegedly.works
+        - haku-kubeapi.allegedly.works
+      credentialRef:
+        name: public-coder-haku-console
+    - hosts:
+        - clickhouse.clickhouse.svc.cluster.local
+      clusterInternal: true
+      credentialRef:
+        name: public-coder-clickhouse
+    - hosts:
+        - aiquota.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /v1/quotas
+        - /v1/providers/*/raw
+      credentialRef:
+        name: aiquota-read
+    - hosts:
+        - api.search.brave.com
+      credentialRef:
+        name: brave-search
+    - hosts:
+        - matrix.allegedly.works
+      methods:
+        - POST
+      paths:
+        - /_matrix/client/v3/login
+      credentialRef:
+        name: public-coder-matrix
+    - hosts:
+        - agentplane-egress.agentplane-staging.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /v1/rules
+        - /openapi.json
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressBinding
+metadata:
+  name: public-coder-openclaw
+  namespace: agentplane-staging
+spec:
+  subjects:
+    - namespace: public-coder-agent
+      name: openclaw
+  policies:
+    - public-coder-openclaw
+    - public-internet
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: public-coder-openclaw
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            clickhouse.altinity.com/app: chop
+            clickhouse.altinity.com/chi: clickhouse
+            clickhouse.altinity.com/namespace: clickhouse
+            clickhouse.altinity.com/ready: "yes"
+            k8s:io.kubernetes.pod.namespace: clickhouse
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: public-coder-agent
+            io.cilium.k8s.policy.serviceaccount: openclaw
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: public-coder-openclaw
+  namespace: clickhouse
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: clickhouse
+      app.kubernetes.io/name: clickhouse
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8123"
+              protocol: TCP

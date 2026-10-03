@@ -3790,6 +3790,22 @@ spec:
       namespace: agentplane-staging
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
+      name: public-coder-haku-console
+      namespace: agentplane-staging-egress-credentials
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: public-coder-clickhouse
+      namespace: agentplane-staging-egress-credentials
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: public-coder-matrix
+      namespace: agentplane-staging-egress-credentials
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: brave-search
+      namespace: agentplane-staging-egress-credentials
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
       name: agentplane-staging-session-secret
       namespace: agentplane-staging
   interval: 10m
