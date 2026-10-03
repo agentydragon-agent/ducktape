@@ -13,6 +13,7 @@ from typing import Any, cast
 import httpx
 import pytest
 from google.protobuf.timestamp_pb2 import Timestamp
+from kubernetes_asyncio.client import CoreV1Api
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -53,10 +54,17 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeAuthenticationV1Api,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
+    close_fake_api_clients,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
+
+
+@pytest.fixture(autouse=True)
+async def close_fake_clients() -> AsyncIterator[None]:
+    yield
+    await close_fake_api_clients()
 
 
 @pytest.hookimpl(wrapper=True)
@@ -326,9 +334,9 @@ def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
 
 
 @pytest.fixture
-def live_index() -> LiveIndex:
+def live_index(core_v1: FakeCoreV1Api) -> LiveIndex:
     """An index nothing is watching: the fixtures that need one drive it themselves."""
-    return LiveIndex(stale_after_seconds=90)
+    return LiveIndex(stale_after_seconds=90, core_v1=cast(CoreV1Api, core_v1))
 
 
 @pytest.fixture

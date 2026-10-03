@@ -120,6 +120,7 @@ class LiveIndex:
     """
 
     stale_after_seconds: float
+    core_v1: CoreV1Api
     sandboxes: dict[str, object] = field(default_factory=dict)
     pods: dict[str, k8s_client.V1Pod] = field(default_factory=dict, repr=False)
     bindings: dict[str, object] = field(default_factory=dict)
@@ -135,11 +136,18 @@ class LiveIndex:
     changes: Changes = field(default_factory=Changes)
 
     def sandbox_views(self) -> list[SandboxView]:
-        return [http_sandbox_view(view) for view in sandbox_views(self.sandboxes.values(), self.pods.values())]
+        return [
+            http_sandbox_view(view)
+            for view in sandbox_views(self.sandboxes.values(), self.pods.values(), api_client=self.core_v1.api_client)
+        ]
 
     def sandbox_view(self, name: str) -> SandboxView | None:
         raw = self.sandboxes.get(name)
-        return None if raw is None else http_sandbox_view(sandbox_view(raw, self.pods.get(name)))
+        return (
+            None
+            if raw is None
+            else http_sandbox_view(sandbox_view(raw, self.pods.get(name), api_client=self.core_v1.api_client))
+        )
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(
