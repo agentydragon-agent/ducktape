@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
+import yaml
 from cdk8s import (
     App,
     Chart,
@@ -236,6 +237,10 @@ def test_openclaw_uses_relay_without_receiving_its_token(app_objects: list[dict[
         "defaultMode": 0o440,
         "sources": [{"serviceAccountToken": {"audience": "agentplane-egress", "expirationSeconds": 600, "path": "token"}}],
     }
+    assert {
+        v["name"]: v["persistentVolumeClaim"]["claimName"]
+        for v in pod["volumes"] if "persistentVolumeClaim" in v
+    } == {"data": "public-coder-agent-state-v2", "diagnostics": "public-coder-agent-diagnostics"}
     trust = one(v for v in pod["volumes"] if v["name"] == "trust")
     assert trust["configMap"]["name"] == "agentplane-egress-ca"
     container = one(c for c in pod["containers"] if c["name"] == "openclaw")
@@ -274,6 +279,16 @@ def test_iron_only_admits_the_vm(proxy_objects: list[dict[str, Any]]) -> None:
         "k8s:io.kubernetes.pod.namespace": "public-coder-agent",
         **{f"k8s:{key}": value for key, value in public_coder_devbox.SSH.pods.selector.items()},
     }
+
+
+def test_kubeconfig_retains_haku_identity_over_the_relay() -> None:
+    config_map = _one(_synth(public_coder_agent_config.kubeconfig_chart), "ConfigMap", "kubeconfig")
+    config = yaml.safe_load(config_map["data"]["config"])
+    cluster = one(config["clusters"])["cluster"]
+    assert cluster["server"] == "https://haku-kubeapi.allegedly.works"
+    assert cluster["proxy-url"] == "http://127.0.0.1:3128"
+    assert cluster["certificate-authority"] == "/etc/ssl/certs/ca-certificates.crt"
+    assert one(config["users"])["user"] == {"token": "agentplane-credential-public-coder-haku-console"}
 
 
 if __name__ == "__main__":
