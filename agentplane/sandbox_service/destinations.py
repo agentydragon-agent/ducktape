@@ -73,8 +73,7 @@ class DestinationResolver:
             raise DestinationUnavailableError from error
         host = f"[{address}]" if address.version == 6 else str(address)
         return RunnerEndpoint(
-            target=f"{host}:{self.runner_port}",
-            binding=view.binding if view.HasField("binding") else None,
+            target=f"{host}:{self.runner_port}", binding=view.binding if view.HasField("binding") else None
         )
 
 
