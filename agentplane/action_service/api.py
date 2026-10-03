@@ -135,6 +135,10 @@ def _callers(request: Request) -> PolicyIndex:
     return cast(PolicyIndex, request.app.state.callers)
 
 
+def _reader_accounts(request: Request) -> frozenset[ServiceAccountRef]:
+    return cast(frozenset[ServiceAccountRef], request.app.state.reader_accounts)
+
+
 async def _try_workload(
     request: Request, authenticator: WorkloadPrincipalAuthenticator, callers: PolicyIndex
 ) -> CallerPrincipal | None:
@@ -165,11 +169,16 @@ async def _workload(
     return caller
 
 
-async def _reader(request: Request) -> CallerPrincipal | ServiceReaderPrincipal:
-    workload = await _workload_authenticator(request)(request)
-    if workload.account in cast(frozenset[ServiceAccountRef], request.app.state.reader_accounts):
+async def _reader(
+    request: Request,
+    authenticator: Annotated[WorkloadPrincipalAuthenticator, Depends(_workload_authenticator)],
+    callers: Annotated[PolicyIndex, Depends(_callers)],
+    reader_accounts: Annotated[frozenset[ServiceAccountRef], Depends(_reader_accounts)],
+) -> CallerPrincipal | ServiceReaderPrincipal:
+    workload = await authenticator(request)
+    if workload.account in reader_accounts:
         return ServiceReaderPrincipal(account=workload.account)
-    caller = _callers(request).admit(workload.account)
+    caller = callers.admit(workload.account)
     if caller is None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
