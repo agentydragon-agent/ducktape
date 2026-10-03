@@ -16,6 +16,31 @@ def test_image_owned_agent_instructions_render_deployment_service_urls() -> None
     assert "http://actions.test.invalid:8080/openapi.json" in instructions
 
 
+@pytest.mark.parametrize(
+    "guidance",
+    [
+        "Check your existing access before requesting an administrative Action",
+        "kubectl auth can-i --list -n <namespace>",
+        "kubectl auth can-i get pods --subresource=log -n <namespace>",
+        "kubectl auth can-i create pods --subresource=exec -n <namespace>",
+        "If allowed, prefer kubectl over an equivalent Kubernetes admin Action",
+        "GET /v1/action-policy",
+        "match the exact Action group/name AND the intended arguments",
+        "If no policy matches, or `synced` is false, the request needs operator approval",
+        "The submitted request's decision/state is authoritative",
+        "Do not submit speculative requests merely to discover whether they prompt the operator",
+        "This preference does not permit bypassing egress policy, an explicit approval requirement",
+        "Approval alone is not execution success",
+    ],
+)
+def test_bundled_instructions_explain_access_and_approval_discovery(guidance: str) -> None:
+    instructions = resolved_agent_instructions(
+        None, egress_api_url="http://egress.test.invalid", actions_service_url="http://actions.test.invalid:8080"
+    )
+
+    assert guidance in " ".join(instructions.split())
+
+
 @pytest.mark.parametrize("configured", ["", "Custom deployment instructions"])
 def test_explicit_instructions_do_not_require_service_urls(configured: str) -> None:
     assert resolved_agent_instructions(configured, egress_api_url=None, actions_service_url=None) == configured
