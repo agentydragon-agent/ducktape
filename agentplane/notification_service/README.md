@@ -78,7 +78,11 @@ Notification Kubernetes RBAC is TokenReview only. Cilium allows egress proxy →
 Bazel targets: `:server`, `:migrate`, `:image`, `:migration_image`; settings use
 `AGENTPLANE_NOTIFICATIONS_*` (`main.py`). Deployment adds only its own database/role and service resources.
 New images must be published and Flux image-policy tags selected before activating their rollout;
-`unset` image pins are bootstrap placeholders, not runnable tags. No live migration/reset is part of this PR.
+`unset` image pins are bootstrap placeholders, not runnable tags. On merge, the devel image-publishing
+workflow builds/publishes the server and migration images; Flux must select both real tags. Until that
+happens the new Deployment cannot become ready. Then verify the migration init container, `/readyz`,
+and an Action subscription through a newly opened harness. Existing sessions need no migration and
+keep their original prompt. No live migration/reset is part of this PR.
 
 Deferred: GitHub/webhooks, automatic subscriptions, cross-account delivery, per-thread credentials,
 notification-triggered provisioning/resume, and proper runner RPC authentication/TLS.

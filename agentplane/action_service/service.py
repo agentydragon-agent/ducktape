@@ -41,10 +41,10 @@ from agentplane.action_service.models import (
     ExternalGrantProvenance,
     OperatorPrincipal,
     Principal,
-    ReadPrincipal,
     ProviderOutcome,
     ProviderVerdict,
     ProviderVote,
+    ReadPrincipal,
     UnknownOutcomeReason,
 )
 from agentplane.action_service.policy_evaluation import auto_approvable, resolve_bindings

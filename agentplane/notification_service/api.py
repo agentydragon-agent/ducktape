@@ -52,7 +52,7 @@ def create_app(service: Service, principals: WorkloadPrincipalResolver) -> FastA
 
     @app.exception_handler(SourceNotOwnedError)
     async def source_not_owned(request: Request, error: SourceNotOwnedError) -> JSONResponse:
-        return JSONResponse({"detail": "Action source not owned by this account"}, status_code=403)
+        return JSONResponse({"detail": "Action source unavailable or unauthorized"}, status_code=403)
 
     @app.exception_handler(ConflictError)
     async def conflict(request: Request, error: ConflictError) -> JSONResponse:

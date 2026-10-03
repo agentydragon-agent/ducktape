@@ -127,7 +127,13 @@ class Service:
                     try:
                         events = await self.actions.events(owner, source.request_id, source.after_sequence)
                         await self.store.record(claim, source, events)
-                    except (httpx.HTTPError, ValidationError, SourceNotOwnedError, QuotaError, ConflictError) as failure:
+                    except (
+                        httpx.HTTPError,
+                        ValidationError,
+                        SourceNotOwnedError,
+                        QuotaError,
+                        ConflictError,
+                    ) as failure:
                         # No upstream body, bearer, or native content in diagnostics.
                         await self.store.record(
                             claim,

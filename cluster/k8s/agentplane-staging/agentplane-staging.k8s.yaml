@@ -4491,7 +4491,7 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
-            - name: AGENTPLANE_ACTIONS_EVENT_READER_ACCOUNTS
+            - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
               value: '[{"namespace": "agentplane-staging", "name": "agentplane-notifications"}]'
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
@@ -4604,7 +4604,7 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
-            - name: AGENTPLANE_ACTIONS_EVENT_READER_ACCOUNTS
+            - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
               value: '[{"namespace": "agentplane-staging", "name": "agentplane-notifications"}]'
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
