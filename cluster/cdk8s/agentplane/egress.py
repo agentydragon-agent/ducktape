@@ -51,7 +51,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import actions, database, llm_ingress
+from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
 from cluster.cdk8s.agentplane.app_settings import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -231,6 +231,12 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 hosts=[llm_ingress.service(namespace).fqdn],
                 cluster_internal=True,
                 methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
+            ),
+            EgressPolicySpecRules(
+                hosts=[notifications.service(namespace).fqdn], cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST, EgressPolicySpecRulesMethods.PUT, EgressPolicySpecRulesMethods.PATCH, EgressPolicySpecRulesMethods.DELETE],
+                paths=["/openapi.json", "/v1/providers", "/v1/subscriptions", "/v1/subscriptions/**", "/v1/inboxes", "/v1/inboxes/**"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
             ),
             EgressPolicySpecRules(
@@ -665,6 +671,7 @@ class Egress(Construct):
                 self.agent_api.egress(),
                 llm_ingress.service(namespace).egress(),
                 actions.service(namespace).egress(),
+                notifications.service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 # hostNetwork: Cilium sees the node, not an endpoint.
                 EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[home_assistant.SERVICE.port.number]),

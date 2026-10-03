@@ -190,6 +190,7 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
+        "//agentplane:subjects",
         ":api",
         ":auth",
         ":catalog",

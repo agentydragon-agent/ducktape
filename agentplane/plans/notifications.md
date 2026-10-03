@@ -1,6 +1,7 @@
 # Standalone subscriptions and notifications service
 
-Status: **design decisions and implementation plan, not a shipped service.** This refines `ING`
+Status: **Actions-first implementation in source; not yet rolled out.** See the
+[service API, limits, authorization, and recovery contract](../notification_service/README.md). This refines `ING`
 (the Event & Notification Hub) in [the task DAG](task_dag.md#ing--event--notification-hub).
 The first implementation follows Actions; GitHub and automatic lifecycle integration come later.
 Endpoint/tool names below illustrate the intended operations, not an existing wire API.

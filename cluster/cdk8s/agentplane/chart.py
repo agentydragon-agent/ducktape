@@ -16,6 +16,7 @@ from cluster.cdk8s.agentplane import (
     egress,
     electric,
     llm_ingress,
+    notifications,
     rbac,
     sandbox_pod,
     sandbox_service,
@@ -47,6 +48,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     )
     app_component.App(chart, "app", env)
     actions.Actions(chart, "actions", env)
+    notifications.Notifications(chart, "notifications", env, actions=actions.service(env.namespace), sandboxes=sandbox_service.service(env.namespace))
     add_fleet_rules(
         chart,
         # The interception proxy terminates TLS for the namespace; its allowlist is the

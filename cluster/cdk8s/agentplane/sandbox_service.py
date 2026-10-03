@@ -27,6 +27,7 @@ from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant
 from agentplane.sandbox_service.main import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s.agentplane import notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource, named_resource
@@ -63,11 +64,12 @@ class SandboxService(Construct):
         settings = Settings(
             _cli_parse_args=False,
             sandbox_namespace=env.namespace,
-            caller_accounts=frozenset({manager}),
+            caller_accounts=frozenset({manager, ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}),
             token_audience=TOKEN_AUDIENCE,
             agent_instructions=env.app_config.agent_instructions,
             agent_egress_api_url=env.app_config.agent_egress_api_url,
             agent_actions_service_url=env.app_config.agent_actions_service_url,
+            agent_notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
             default_policies=env.app_config.default_policies,
             kubernetes_grants=env.app_config.kubernetes_grants,
             kubernetes_binding_cleanup_namespaces=set(env.app_config.kubernetes_binding_cleanup_namespaces),
@@ -124,7 +126,7 @@ class SandboxService(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
-            ingress=[caller.pods.admit(endpoint.pod_port)],
+            ingress=[caller.pods.admit(endpoint.pod_port), notifications.service(env.namespace).pods.admit(endpoint.pod_port)],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),

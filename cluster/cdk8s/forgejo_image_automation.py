@@ -50,6 +50,8 @@ IMAGES = (
     "agentplane-sandbox",
     "agentplane-sandbox-build",
     "agentplane-sandbox-service",
+    "agentplane-notification-service",
+    "agentplane-notification-service-migrate",
     "aiquota-api",
     "airlock",
     "attic-jwt-rotation",

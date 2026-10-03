@@ -32,6 +32,8 @@ from constructs import Construct
 from agentplane.action_service.main import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database, llm_ingress
+from agentplane.subjects import ServiceAccountRef
+from cluster.cdk8s.agentplane import notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -250,7 +252,8 @@ class Actions(Construct):
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             args=cli_args(
-                Settings, host="0.0.0.0", port=self.service.pod_port, token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE
+                Settings, host="0.0.0.0", port=self.service.pod_port, token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE,
+                event_reader_accounts=frozenset({ServiceAccountRef(namespace=self.env.namespace, name=notifications.NAME)})
             ),
             env_variables=env,
             ports=[self.service.port.container_port()],
@@ -345,6 +348,7 @@ class Actions(Construct):
             endpoint_selector=self.service.pods.selector,
             ingress=[
                 IngressRule.from_gateway(self.service.pod_port),
+                notifications.service(namespace).pods.admit(self.service.pod_port),
                 # egress.py and app.py import this module, so their Pods are named here.
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(namespace, "agentplane-egress"), ports=[self.service.pod_port]

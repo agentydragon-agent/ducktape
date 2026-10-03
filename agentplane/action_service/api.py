@@ -219,6 +219,7 @@ def create_app(
     mcp_linkage: McpLinkageAuthority | None = None,
     direct_wait_seconds: float,
     max_wait_seconds: float,
+    event_reader_accounts: frozenset[ServiceAccountRef] = frozenset(),
 ) -> FastAPI:
     verifier = CallerTokenVerifier(workload_resolver, callers=callers, oauth=oauth)
     mcp_app = create_server(
@@ -369,6 +370,24 @@ def create_app(
         after_sequence: Annotated[int, Query(ge=0)] = 0,
     ) -> list[ActionEventView]:
         return await action_service.events(request_id, principal, after_sequence=after_sequence)
+
+    @app.get("/v1/service/action-requests/{request_id}/events", response_model=list[ActionEventView])
+    async def service_events(
+        request_id: UUID,
+        request: Request,
+        owner_namespace: str,
+        owner_name: str,
+        after_sequence: Annotated[int, Query(ge=0)] = 0,
+    ) -> list[ActionEventView]:
+        # Explicit, read-only service delegation. The delegate must have authenticated the
+        # subscribing owner itself. Never admit this identity as an operator or Action caller.
+        delegate = await app.state.workload_authenticator(request)
+        if delegate.account not in event_reader_accounts:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "event reader not allowed")
+        owner = callers.admit(ServiceAccountRef(namespace=owner_namespace, name=owner_name))
+        if owner is None:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "source owner is not an admitted caller")
+        return await service.events(request_id, owner, after_sequence=after_sequence, limit=128)
 
     # Catalog discovery: the reviewed, config-driven ActionGroup/Action universe. Read-only, and the
     # same for every caller, so it carries no owner-scoping unlike the ActionRequest surface above.

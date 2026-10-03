@@ -98,6 +98,7 @@ py_library(
     name = "egress",
     srcs = ["egress.py"],
     deps = [
+        ":notifications",
         ":actions",
         ":app_settings",
         ":database",
@@ -257,6 +258,8 @@ py_library(
     name = "actions",
     srcs = ["actions.py"],
     deps = [
+        "//agentplane:subjects",
+        ":notifications",
         ":database",
         ":environment",
         ":llm_ingress",
@@ -440,6 +443,7 @@ py_library(
     name = "chart",
     srcs = ["chart.py"],
     deps = [
+        ":notifications",
         ":actions",
         ":app",
         ":database",
@@ -695,6 +699,7 @@ py_library(
     name = "sandbox_service",
     srcs = ["sandbox_service.py"],
     deps = [
+        ":notifications",
         ":environment",
         ":pod_disruption_budget",
         "//agentplane:subjects",
@@ -732,5 +737,17 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "notifications",
+    srcs = ["notifications.py"],
+    deps = [
+        ":database", ":environment", ":migrate_container", ":pod_disruption_budget",
+        "//cluster/cdk8s:cilium", "//cluster/cdk8s:node_scheduling", "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s:forgejo_images", "//cluster/cdk8s:probes", "//cluster/cdk8s:secret_ref", "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:token_reviewer_rbac", "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s", "@pypi//cdk8s_plus_34", "@pypi//constructs",
     ],
 )
