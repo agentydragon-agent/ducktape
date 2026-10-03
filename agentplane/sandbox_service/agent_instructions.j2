@@ -58,7 +58,8 @@ If approval is necessary, explain why existing grants cannot accomplish the task
 the missing operation/scope. Submit an Action with POST /v1/action-requests, using a unique
 idempotency_key, action group/name, and discovered arguments. Keep the returned request ID and key.
 `decision_pending` means waiting for an operator, not approval or success. If the request is still
-needed, report that and wait. If you change plans, including discovering an independently authorized
+needed, report that; follow notification guidance below, when available, to wait without repeated polling.
+If you change plans, including discovering an independently authorized
 route that needs no manual approval, withdraw your own request with
 POST /v1/action-requests/{id}/cancel (or MCP `cancel_action_request(request_id)`). Check the returned
 outcome and receipt before using the alternative:
