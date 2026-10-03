@@ -19,7 +19,7 @@ from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
-from agentplane.sandbox_service.client import FollowLeaseExpiredError, SandboxServiceClient, ServiceError
+from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -189,6 +189,79 @@ async def test_admission_is_exact_native_evidence(remote: SandboxServiceClient, 
         await connection.closed.wait()
 
 
+async def test_idle_follow_renews_with_ok_status_not_native_end(
+    resources: Resources, token_file: Path, peer: Peer
+) -> None:
+    # Longer than admission/write deadlines: idle native reads must not use those deadlines.
+    async with service_client(replace(resources, admission_timeout_s=0.2, follow_lease_s=0.6), token_file) as remote:
+        async with asyncio.timeout(8):
+            call = remote.stub.FollowSession(
+                protocol_pb2.FollowSessionRequest(
+                    destination=protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
+                ),
+                metadata=await remote.metadata(),
+                timeout=5,
+            )
+            try:
+                assert (await call.read()).HasField("attached")
+                connection = await peer.attachments.get()
+                assert (await call.read()).HasField("reconnect_required")
+                assert await call.read() is grpc.aio.EOF
+                assert await call.code() == grpc.StatusCode.OK
+                await connection.closed.wait()
+            finally:
+                call.cancel()
+
+
+async def test_stalled_downstream_write_expires_before_follow_renewal(
+    resources: Resources, token_file: Path, peer: Peer
+) -> None:
+    async with service_client(replace(resources, admission_timeout_s=1, follow_lease_s=30), token_file) as remote:
+        async with asyncio.timeout(8):
+            attachment = await remote.runner(DESTINATION).attach("session")
+            connection = await peer.attachments.get()
+            try:
+                # Exceed the gRPC receive window without reading from the downstream stream.
+                message = runner_pb2.ServerMessage(
+                    event_entry=event_log_pb2.EventEntry(
+                        cursor=1, event=event_pb2.Event(native=event_pb2.Native(line="x" * 1024 * 1024))
+                    )
+                )
+                for _ in range(64):
+                    connection.responses.put_nowait(message)
+                await connection.closed.wait()
+
+                # A failed write is a deadline, not a successful planned renewal or native EOF.
+                async def drain() -> None:
+                    while True:
+                        await attachment.next_entry()
+
+                with pytest.raises(TimeoutError, match="follow deadline"):
+                    await drain()
+            finally:
+                attachment.cancel()
+
+
+async def test_follow_safety_deadline_is_not_planned_renewal(remote: SandboxServiceClient, peer: Peer) -> None:
+    remote.follow_timeout_s = 0.2
+    async with asyncio.timeout(8):
+        attachment = await remote.runner(DESTINATION).attach("session")
+        connection = await peer.attachments.get()
+        with pytest.raises(TimeoutError, match="follow deadline"):
+            await attachment.next_entry()
+        await connection.closed.wait()
+
+
+async def test_client_initial_attachment_keeps_short_deadline(remote: SandboxServiceClient, peer: Peer) -> None:
+    remote.request_timeout_s = 0.2
+    peer.answer_open = False
+    async with asyncio.timeout(8):
+        with pytest.raises(TimeoutError):
+            await remote.runner(DESTINATION).attach("session")
+        connection = await peer.attachments.get()
+        await connection.closed.wait()
+
+
 async def test_follow_reconnect_rechecks_token_and_preserves_cursor(
     remote: SandboxServiceClient, peer: Peer, cluster: Cluster
 ) -> None:
@@ -201,7 +274,7 @@ async def test_follow_reconnect_rechecks_token_and_preserves_cursor(
         receipt = admission(command_pb2.Command(command_id="recorded"), 12)
         connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=receipt))
         assert await attachment.next_entry() == receipt
-        with pytest.raises(FollowLeaseExpiredError):
+        with pytest.raises(ReconnectRequiredError):
             await attachment.next_entry()
         await connection.closed.wait()
         second = await runner.attach("session", after_cursor=12)

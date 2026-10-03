@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     token_audience: str = "agentplane-sandbox-service"
     runner_port: int = Field(default=7000, ge=1, le=65535)
     admission_timeout_s: float = Field(default=15, gt=0, le=60)
-    follow_lease_s: float = Field(default=30, gt=0, le=60)
+    follow_lease_s: float = Field(default=900, gt=0, le=900)
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     health_port: int = Field(default=8081, ge=1, le=65535)

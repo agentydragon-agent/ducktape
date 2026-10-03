@@ -52,6 +52,7 @@ py_test(
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:client",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

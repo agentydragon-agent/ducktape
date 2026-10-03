@@ -77,9 +77,12 @@ message FollowSessionResponse {
     ducktape.agentplane.protocol.v1.EventEntry entry = 2;
     // Runner attachment reached native EOF. This is not a fabricated execution Event.
     google.protobuf.Empty ended = 3;
+    // Planned renewal: reconnect with fresh authorization from the committed cursor.
+    // This is transport control, not native EOF or a journal entry.
+    google.protobuf.Empty reconnect_required = 4;
   }
-  // Lease expiry is DEADLINE_EXCEEDED; backend failure is UNAVAILABLE. A successful
-  // stream contains exactly one final ended observation; bare transport EOF is not evidence.
+  // A successful stream ends with ended or reconnect_required. Bare transport EOF
+  // and DEADLINE_EXCEEDED are failures, never native closure evidence.
 }
 
 message SessionDefaults {
