@@ -385,14 +385,12 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     // statements) vs non-empty. Required for the `--force` check and the
     // empty-fast-path gate.
     let mut non_empty: Vec<(PathBuf, usize, bool)> = Vec::new();
-    let mut all_empty = true;
     for p in &paths_abs {
         let module = read_module(p)?;
         let claim_count =
             module.members.len() + module.source_matches.len() + module.annotations.len();
         let has_anon = !module.anonymous_statements.is_empty();
-        if claim_count > 0 || has_anon {
-            all_empty = false;
+        if !module.is_structurally_empty() {
             non_empty.push((p.clone(), claim_count, has_anon));
         }
     }
@@ -420,7 +418,7 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     // anonymous statements, so removing it leaves the partition
     // unchanged). For non-empty `--force` deletions we run the full
     // gate against the post-delete partition.
-    let gate_outcome = if all_empty {
+    let gate_outcome = if non_empty.is_empty() {
         GateOutcome::NotRequired
     } else {
         let gate = args.edit.gate()?;
