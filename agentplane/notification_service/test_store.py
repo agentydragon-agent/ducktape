@@ -182,7 +182,9 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
     assert page.notice.confirmed
     assert page.inbox.acknowledged == 0
     assert await store.notice(claim) is None
-    changed = event_log_pb2.EventEntry(cursor=baseline + 2, event=event_pb2.Event(harness_exited=event_pb2.HarnessExited()))
+    changed = event_log_pb2.EventEntry(
+        cursor=baseline + 2, event=event_pb2.Event(harness_exited=event_pb2.HarnessExited())
+    )
     with pytest.raises(ConflictError):
         await store.receipt(claim, notice, changed)
 
