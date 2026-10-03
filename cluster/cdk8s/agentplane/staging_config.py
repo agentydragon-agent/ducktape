@@ -8,9 +8,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from agentplane.app.action_federation import ActionFederationSettings
-from agentplane.app.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.app.main import AppSettingsConfig
-from agentplane.app.presets import Harness, SandboxPreset, ThreadPreset
+from agentplane.app.presets import SandboxPreset, ThreadPreset
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.app_settings import (
     AGENTPLANE_TESTING_POLICY,

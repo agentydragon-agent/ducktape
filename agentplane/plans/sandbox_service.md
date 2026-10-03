@@ -1,6 +1,14 @@
 # Sandbox Service extraction
 
-Status: **planned, not implemented.** This is the concrete backend boundary required by the
+Status: **production app cutover implemented in source; CI and live handoff pending.**
+The standalone gRPC service owns inventory, provisioning/reconciliation, launch guidance and runner
+session access. The production app calls it for lifecycle, manual egress grants, session management,
+commands and event following; there is no direct-runner fallback. Deployment source transfers backend
+RBAC/network authority to the service and projects an audience-specific app token. Existing app
+PostgreSQL archives/checkpoints and runner volumes stay in place. No live staging cutover, backup,
+restore rehearsal, or preservation validation has been performed by this source change.
+
+This is the concrete backend boundary required by the
 [service dependency rule](../docs/service_boundaries.md). The integration app must be a client;
 notifications must not start with an app API, app-owned table, or app-issued Thread ticket dependency.
 
@@ -23,7 +31,6 @@ The Sandbox Service owns:
 - Forwarding commands and exposing runner admission/effect receipts and replayable event following.
 - Session creation/configuration and backend-required instructions/context for extracted launch paths,
   so neither automated agents nor services require the integration app to prepare their sessions.
-- Backend event archival/ingestion as it is moved from the app, with one declared archival owner.
 
 It does not own notification provider payloads, inbox acknowledgement/reminder policy, Action
 Decisions/execution, native harness scheduling, browser sessions, or UI-only Thread projections.
@@ -43,15 +50,53 @@ Extract the smallest coherent backend that supports:
    provisioning, session creation, prompt/context assembly, and discovery dependencies out of the app.
    No hidden requirement that the UI ran once to bootstrap the new service's state.
 
-These describe operations, not a selected REST/gRPC schema. Notifications and the app use the same
-backend contracts. Each request is authenticated and authorized against its destination. Shared SA
-identity remains the ordinary agent authority; a caller-supplied SA or destination ID is not proof of
-access. For trusted service calls, specify the delegated resource-owner context and configured service
-permissions rather than treating arbitrary forwarded identity headers as authentication.
+Notifications and the app use the same protobuf/gRPC backend contract. V1 has one nonempty
+`caller_accounts` service-account allowlist for all RPCs, checked before inventory lookup or runner
+contact. Ordinary sandbox workloads do not call Sandbox Service directly, even for their own SA.
+The notification service still authenticates its agent callers at its own subscription boundary.
+Caller-supplied owner/UID/session identifiers select resources; they are not forwarded credentials.
+Every destination must match the stored Sandbox owner/UID and verified current runner Pod.
 
-Read access, command/control access, and permission to wake a destination are distinct decisions.
-Trusted services may receive broad access initially; this does not require new command-level RBAC
-inside the runner. Reading a log must never provision or resume a sandbox as a side effect.
+Listed services have broad access initially; there is no separate manager/delivery tier or new
+command-level RBAC. Wake remains an explicit future operation/policy decision, never a read side
+effect. Read/follow/command must not provision, create, resume, or wake a destination.
+
+## Transport decision
+
+Use **one authoritative protobuf/gRPC service API**, not parallel REST and gRPC implementations.
+The integration app retains its browser-facing HTTP API; agent-facing notification HTTP/MCP tools
+are a separate interface decision. HTTP health probes are not a second service API.
+
+The existing runner protocol already defines `Command`, `EventEntry`, `SessionSpec`, and follow
+cursors. Reuse those messages instead of translating their payloads through JSON. Define a
+service-level contract: unary inventory, lifecycle, session management, and command admission RPCs,
+plus server-streaming session following. Do not expose a transparent tunnel to runner `Attach`.
+Every session operation names an explicit destination; the service authorizes it and chooses the
+current runner internally. No caller-supplied runner URL or inferred current Thread.
+
+The workload bearer travels in gRPC metadata and is checked using the shared transport-neutral
+workload-principal resolver. TokenReview namespaces derive from the configured service-caller allowlist.
+Egress supports gRPC metadata substitution and streaming; transport choice does not defer service
+API authentication or satisfy the separate runner-authentication TODO.
+
+Use native gRPC deadlines, cancellation, and status codes, but retain application semantics:
+command admission is not completion; transport EOF is not session termination; a timeout does not
+prove a mutation failed. Following starts with a native snapshot and preserves original event
+entries and cursors. Bound each follow lease, reauthenticate on reconnect, and distinguish lease
+expiry, backend failure, and native stream closure. Do not enable automatic mutation retries merely
+because a generated client supports them.
+
+Production entrypoints, app callers, and service acceptance tests use the same gRPC API.
+No test-only RPCs: inspection uses the initial `FollowSession` snapshot and cancellation; bootstrap
+is exercised through `OpenSession`. The app presents its configured Kubernetes grant catalog without
+an unused backend catalog RPC. Provisioning and reconciliation are always enabled in this service.
+Generated protobuf messages are canonical in the service/client, not mirrored by Pydantic DTOs.
+Browser HTTP schemas belong to the app; Pydantic remains only where needed for settings/catalogs
+and persisted Kubernetes input validation.
+HTTP is limited to service health probes; there is no parallel HTTP service implementation.
+Transport acceptance must cover authenticated gRPC calls, cancellation/resource cleanup, replay
+across lease expiry, native closure versus transport failure, and uncertain command admission,
+including a real remote-client app ingestion test rather than only in-process/native test doubles.
 
 ## Command and notification flow
 
@@ -84,17 +129,20 @@ provenance, and causal command IDs; it must not synthesize a duplicate successfu
 make transport acknowledgement look like harness consumption. Serving-log cursors and original source
 identity remain distinct when history is copied.
 
-Choose the archive cut explicitly:
+The archive boundary is settled:
 
-- If the initial API only follows the surviving runner log, state that availability boundary clearly.
-  Do not fall back to app-owned PostgreSQL when the runner is gone.
-- If backend consumers need archived history independent of the runner, move the existing archival/
-  ingestion responsibility and required ownership records out of the app. Preserve retained history;
-  do not add another independent event store or make both services authorities for the same archive.
-- App-specific folds and browser projections may remain app-owned clients of the backend event source.
+- The Sandbox Service follows the runner's journal, durable on its state volume. It does not own
+  an additional session-log archive or fall back to app PostgreSQL when the runner is unavailable.
+- Log availability through this API depends on the runner being reachable and its state volume
+  surviving. Durable data on a suspended sandbox's volume is not an online archive endpoint.
+- Clients needing retention independent of that volume must archive the events themselves,
+  preserving source identity and checkpoints. A client archive is not a new execution authority.
+- The app retains its existing PostgreSQL archive, ingestion checkpoints, and browser projections as
+  a client of service event following. Archive migration is not a required follow-up. Neither the
+  Sandbox Service nor notifications may query app-owned tables.
 
-Resolving this ownership is part of extraction; moving the entire hosted product Thread model is not
-an automatic prerequisite for the minimum session-scoped API.
+Preserve the app's existing retained data during cutover. Moving its hosted product Thread model
+is not a prerequisite for the session-scoped service API.
 
 ## Discovery and access implementation
 
@@ -152,11 +200,42 @@ considered, and the operational impact. **Do not delete/reset it without explici
 This plan records requirements; no backups, restore rehearsal, migration, or preservation guarantee
 has been performed by the documentation change.
 
+## Production handoff checklist
+
+This is a coordinated writer/authority handoff, not a database migration. Before merging/applying
+changed manifests, arrange a maintenance window and prevent automatic reconciliation/image updates
+from switching only part of the system. This includes the independent
+`agentplane-staging-binding-delegation-*` Kustomizations and image automation, not just the main
+staging/testing stacks. The `unset` image pin and its comments do not suspend Flux; arrange and verify
+that operational gate explicitly. Record the current app, runner and policy revisions for rollback.
+
+1. Complete the staging inventory, consistent backup and isolated restore checks above. Record Sandbox
+   names/UIDs, SAs, Pod/volume identities, Thread/session IDs and ingestion high-water marks. Do not
+   recreate any of them. Existing Sandboxes without pending provisioning intent are adopted as-is.
+2. Build/test, then merge only with the live handoff paused as above so devel CI can publish the service
+   image and matching app image. The pin components carry an explicit `unset` bootstrap marker for the
+   new service; wait for publication/image automation to replace it. Record real immutable tags/digests;
+   pin **both** before applying the authority change. Fork PR CI does not publish images, and `unset`
+   is not a deployable image pin. Keep staging/testing pin components and Flux image policies wired.
+3. Drain old app replicas/reconcilers. Deploy the independent service, projected token, and matching
+   app client; transfer existing grant-delegation subjects and runner network access together. There
+   must not be competing old/new provisioning reconcilers. Keep the archive database and runner Pods/PVCs.
+4. Verify app inventory, open/command/stream/resume, existing archived history and checkpoint replay;
+   stop the app and verify backend inventory/provisioning/session access still works. Verify the app
+   cannot dial runner RPCs directly. Expired follows reconnect without falsely ending native sessions.
+5. Rollback restores a compatible app image **and** the previous RBAC/network authority together after
+   stopping the new owner. Keep newly written archive rows and native journal entries; do not restore
+   an old DB/volume snapshot over post-cutover work or replay commands to reconstruct history.
+
+The source includes acceptance tests, but they do not replace this staging rehearsal. No live resources
+have been mutated by the implementation work. First image publication and coordinated immutable pinning
+remain release prerequisites. The bootstrap `unset` pin is deliberately not a claim that an image exists.
+
 ## Extraction sequence
 
 1. Identify the minimal ownership cut in app inventory/provisioning, session/command bridge, prompt
-   construction, and event ingestion/following. Record archive ownership, state inventory, and a
-   data-preserving staging migration/rollback plan before implementation fixes the ownership cut.
+   construction, and event following. Keep app archive ownership and preserve its existing checkpoints.
+   Inventory state and validate a data-preserving staging migration/rollback plan before changing staging.
 2. Extract the Sandbox Service with independent configuration, persistence where needed, and API
    authorization. No imports of app implementation, app-table reads, or app process/bootstrap dependency.
 3. Migrate the app to consume the extracted APIs for those paths. Avoid competing provisioning/control

@@ -1,9 +1,8 @@
 # Agentplane service dependency rule
 
-Status: **accepted architecture constraint, including v1; extraction is not yet implemented.**
-The integration app currently contains backend responsibilities. This rule determines where those
-responsibilities must go when another Agentplane service needs them; it does not claim they have
-already moved.
+Status: **accepted architecture constraint, including v1.** Sandbox Service and the production app
+client are implemented in source; the live authority handoff is not yet verified. Notification
+implementation remains separate. See the [extraction plan](../plans/sandbox_service.md) for rollout gates.
 
 ## The integration app is a client
 
@@ -41,18 +40,20 @@ presentation state and projections, but those must not become hidden sources of 
 ## Ownership
 
 - **Sandbox Service:** sandbox provisioning/lifecycle, verified destination bindings, authorized
-  runner-session access, command relay/event following, and backend archive ownership as extracted.
+  runner-session access, and command relay/event following. It does not own a session-log archive.
 - **Runner:** native harness scheduling/execution, durable command journal, canonical execution Events
   and causal receipts.
 - **Notification service:** providers, subscriptions, persisted payloads, inbox HWM, notice policy, and
   notice delivery bookkeeping.
 - **Action Service:** Action authorization/Decisions, execution lifecycle, and canonical Action history.
 - **Integration app:** user-facing composition, interaction, presentation, and app-only projections/state;
-  a client of the above.
+  a client of the above, retaining its existing PostgreSQL session archive and ingestion checkpoints.
 
-The proposed backend name is **Sandbox Service**: it manages sandboxes and access to their runner
+The backend is named **Sandbox Service**: it manages sandboxes and access to their runner
 sessions. It is not another Action executor or a service called "runtime" with unspecified ownership.
-The existing `app/agent_runtime/` package name describes current code placement, not the new boundary.
+`app/threads/` owns only the app's thread archive, metadata, projections, and browser-facing
+composition. Its session adapter uses the service client; it does not provision sandboxes or
+connect to runners. Thread identities never enter the Sandbox Service API.
 
 ## Extraction before notification v1
 
@@ -66,10 +67,16 @@ extracted. Notification-triggered wake and durable acceptance of commands for of
 remain separate, deferred product features. A service boundary is not permission to silently create
 a second runner-command queue.
 
-Decide ownership of the existing app event archive/ingestion during extraction. Data required by backend
-consumers must move to a backend owner, preserving retained history and provenance; do not build an
-independent competing archive or query app tables from the new service. Pure UI projections can remain
-in the app. Product Thread identity/annotations need not move wholesale for runner-session-scoped v1.
+Runner journals remain durable on runner state volumes. Sandbox Service exposes the surviving
+runner log, not an independently retained archive; clients needing retention beyond that volume
+must archive events themselves. The app keeps its existing archive/projections as a service client.
+That archive must not become a dependency of backend services, and migrating it is not a required
+follow-up. Preserve its retained history and provenance during the app cutover.
+
+Sandbox Service uses a protobuf/gRPC service API; the app retains its browser-facing HTTP API.
+After cutover, Sandbox Service is the sole normal production client of runner control/event RPCs.
+This boundary does not proxy runner outbound model, Actions, or egress traffic. Administrative/test
+exceptions must be explicit; there is no production direct-runner fallback in the app or notifications.
 
 ## Existing staging data
 
@@ -94,5 +101,30 @@ general staging-disposability guidance is not permission to bypass this task-spe
 - Test authorization failures and preserve the distinction between accepted intent, runner admission,
   and harness effect. Human decision requirements stay in their backend authority even if the UI is down.
 
-Dependency enforcement and those acceptance tests are implementation gates, not claims that this
-planning PR installs a new import linter or proves the extraction complete.
+Dependency enforcement and those acceptance tests are implementation gates. Source changes and unit
+tests do not themselves prove the live handoff complete or staging data preservation.
+
+## Sandbox Service callers
+
+Sandbox provisioning, grant mutations, and runner RPCs are service-owned operations. Consumers
+must call the authenticated Sandbox Service API, not instantiate its inventory, provisioner,
+reconciler, destination resolver, command relay, or lifecycle implementation. Do not introduce
+local-or-remote unions, in-process fallbacks, or a second provisioning dependency in the app.
+Backend implementation targets have Bazel visibility limited to the service and its testing package.
+
+Public protobuf/client models and read-only Kubernetes projections can be shared. The projection
+modules carry no create/delete/grant/session authority. Consumer acceptance tests use the real gRPC
+boundary through service-owned test fixtures; tests of backend mutations live with the service.
+
+Bazel defaults keep app implementation visible only to the app and its explicit acceptance/deployment
+consumers, and Sandbox Service implementation visible only inside that service. Public DTOs,
+client/protobufs, and read-only projections are opt-in exports. The direct runner transport and its
+generated gRPC stub are visible only to runner code and Sandbox Service. Archive fault tests get
+an explicit test-only transport dependency, which production app targets cannot use. Shared runner
+error types live separately so importing an error does not grant a transport
+dependency. Use concrete service clients, not protocols introduced solely to allow alternate
+in-process implementations in consumer tests.
+
+Session defaults are named `SessionDefaults` / `session_defaults` in the API. The annotation codec
+alone retains the legacy `thread_defaults` storage key, preserving staging data and old-app rollback;
+it is not an API alias. No database schema, identities, or retained logs change with package renames.

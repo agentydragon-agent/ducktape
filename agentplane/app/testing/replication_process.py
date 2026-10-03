@@ -19,6 +19,7 @@ from enum import StrEnum
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
@@ -30,28 +31,30 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, AsyncSessionTransa
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import TEST_REASONING_EFFORTS
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
-from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.presets import Harness
-from agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from agentplane.app.testing.replication_source import SANDBOX
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import event_log_pb2
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.egress_views import EgressReader
+from agentplane.sandbox_service.models import ProvisioningState
+from agentplane.sandbox_service.testing.backend import backend, seed_runner
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
@@ -257,88 +260,96 @@ async def _serve(
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
     if sandbox_state is not None:
-        raw = sandbox(
-            SANDBOX, operating_mode="Suspended" if sandbox_state is ProvisioningState.SUSPENDED else "Running"
-        )
-        custom.objects[("sandboxes", SANDBOX)] = raw
+        raw, running = seed_runner(custom, core, SANDBOX)
+        if sandbox_state is ProvisioningState.SUSPENDED:
+            raw["spec"]["operatingMode"] = "Suspended"
+        if sandbox_state is ProvisioningState.WAITING_FOR_POD_READY:
+            running.status.conditions[0].status = "False"
         index.sandboxes[SANDBOX] = raw
-        if sandbox_state in (ProvisioningState.RUNNING, ProvisioningState.WAITING_FOR_POD_READY):
-            # Where `ReplicationSource.serve` listens: the bridge dials this address at `runner_port`.
-            running = pod(SANDBOX, phase="Running", ready=sandbox_state is ProvisioningState.RUNNING, ip="127.0.0.1")
-            core.pods[SANDBOX] = running
-            index.pods[SANDBOX] = running
-    runners = Runners(index, runner_port)
-    ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
-    bridge = RunnerBridge(
-        runners=runners,
-        event_logs=event_logs,
-        content=content,
-        ingester=ingester,
-        thread_changes=database_updates.changes[Channel.THREADS],
-    )
-    async with (
-        httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
-        httpx.AsyncClient(base_url=electric_url or "http://test-unused-electric.invalid", timeout=65) as electric_http,
+        index.pods[SANDBOX] = running
+    with (
+        TemporaryDirectory() as directory,
+        backend(custom, core, Path(directory) / "token", runner_port=runner_port) as endpoint,
     ):
-        app = create_app(
-            SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
-            bridge,
-            store,
-            ModelCatalog(
-                models=[
-                    ModelOption(
-                        model="test-model-before",
-                        display_name="Test Model Before",
-                        reasoning_efforts=list(TEST_REASONING_EFFORTS),
-                    ),
-                    ModelOption(
-                        model="test-model-after",
-                        display_name="Test Model After",
-                        reasoning_efforts=list(TEST_REASONING_EFFORTS),
-                    ),
-                ],
-                harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
-            ),
-            EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=[]),
-            DecisionsClient(decisions_http),
-            index,
-            ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
-            electric=(
-                ElectricProxy(
-                    electric_http,
-                    content,
-                    event_logs=event_logs,
-                    thread_changes=database_updates.changes[Channel.THREADS],
-                )
-                if electric_url is not None
-                else None
-            ),
+        inventory = endpoint.client()
+        runners = SandboxSessions(index, inventory)
+        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+        bridge = RunnerBridge(
+            runners=runners,
             event_logs=event_logs,
             content=content,
-            database_updates=database_updates,
-            operator_sessions=OperatorSessionStore(engine),
+            ingester=ingester,
+            thread_changes=database_updates.changes[Channel.THREADS],
         )
-        # Authentication is tested separately; the production routes, HTTP transport, ingestion,
-        # PostgreSQL notifications, and SSE generator all run here unchanged.
-        app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
-        if replay_after is not None:
-            app.add_middleware(
-                GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
+        async with (
+            httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
+            httpx.AsyncClient(
+                base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
+            ) as electric_http,
+        ):
+            egress = EgressAccess(EgressReader(namespace=NAMESPACE, custom_objects=custom), inventory)
+            action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
+            app = create_app(
+                inventory,
+                bridge,
+                store,
+                ModelCatalog(
+                    models=[
+                        ModelOption(
+                            model="test-model-before",
+                            display_name="Test Model Before",
+                            reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                        ),
+                        ModelOption(
+                            model="test-model-after",
+                            display_name="Test Model After",
+                            reasoning_efforts=list(TEST_REASONING_EFFORTS),
+                        ),
+                    ],
+                    harnesses={harness: ["test-model-before", "test-model-after"] for harness in Harness},
+                ),
+                egress,
+                DecisionsClient(decisions_http),
+                index,
+                action_policy,
+                electric=(
+                    ElectricProxy(
+                        electric_http,
+                        content,
+                        event_logs=event_logs,
+                        thread_changes=database_updates.changes[Channel.THREADS],
+                    )
+                    if electric_url is not None
+                    else None
+                ),
+                event_logs=event_logs,
+                content=content,
+                database_updates=database_updates,
+                operator_sessions=OperatorSessionStore(engine),
             )
-        if frontend_directory is not None:
-            app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
-        await database_updates.start()
-        await ingester.start()
-        try:
-            with socket.socket() as listener:
-                listener.bind(("127.0.0.1", 0))
-                url = f"http://127.0.0.1:{listener.getsockname()[1]}"
-                await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(sockets=[listener])
-        finally:
-            await ingester.close()
-            await runners.close()
-            await database_updates.close()
-            await engine.dispose()
+            # Authentication is tested separately; the production routes, HTTP transport, ingestion,
+            # PostgreSQL notifications, and SSE generator all run here unchanged.
+            app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
+            if replay_after is not None:
+                app.add_middleware(
+                    GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
+                )
+            if frontend_directory is not None:
+                app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
+            await database_updates.start()
+            await ingester.start()
+            try:
+                with socket.socket() as listener:
+                    listener.bind(("127.0.0.1", 0))
+                    url = f"http://127.0.0.1:{listener.getsockname()[1]}"
+                    await ReadyServer(uvicorn.Config(app, log_level="warning"), connection, url).serve(
+                        sockets=[listener]
+                    )
+            finally:
+                await ingester.close()
+                await runners.close()
+                await database_updates.close()
+                await engine.dispose()
 
 
 async def receive(connection: Connection) -> object:

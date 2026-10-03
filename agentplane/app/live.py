@@ -39,17 +39,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.action_service.policies import resources as policy_resources
 from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
-from agentplane.app.action_policy import (
-    ACTION_POLICY_API,
-    ActionPolicyInventory,
-    ActionPolicyUnavailable,
-    ActionPolicyView,
-)
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.views import ThreadView
+from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.changes import Changes
 from agentplane.app.database_updates import Channel, DatabaseUpdates
-from agentplane.app.egress import (
+from agentplane.app.identity import CallerIdentity, require_caller
+from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
+from agentplane.app.shutdown import Shutdown
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.views import ThreadView
+from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
+from agentplane.sandbox_service.egress_views import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
     EGRESS_API,
@@ -57,17 +56,9 @@ from agentplane.app.egress import (
     BindingView,
     matching_bindings,
 )
-from agentplane.app.identity import CallerIdentity, require_caller
-from agentplane.app.inventory import (
-    MANAGED_LABEL,
-    SANDBOX_API,
-    SANDBOXES_PLURAL,
-    SandboxView,
-    sandbox_view,
-    sandbox_views,
-)
-from agentplane.app.shutdown import Shutdown
+from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, sandbox_view, sandbox_views
 from agentplane.subjects import ServiceAccountRef
+from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
@@ -144,11 +135,11 @@ class LiveIndex:
     changes: Changes = field(default_factory=Changes)
 
     def sandbox_views(self) -> list[SandboxView]:
-        return sandbox_views(self.sandboxes.values(), self.pods.values())
+        return [http_sandbox_view(view) for view in sandbox_views(self.sandboxes.values(), self.pods.values())]
 
     def sandbox_view(self, name: str) -> SandboxView | None:
         raw = self.sandboxes.get(name)
-        return None if raw is None else sandbox_view(raw, self.pods.get(name))
+        return None if raw is None else http_sandbox_view(sandbox_view(raw, self.pods.get(name)))
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(

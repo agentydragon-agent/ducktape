@@ -6,29 +6,29 @@ import httpx
 import pytest_bazel
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.presets import Harness
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingestion
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_pb2
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 
 
 async def test_lazy_scoped_evidence_and_native_expansion(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
@@ -36,7 +36,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     ingestion: Ingestion,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,

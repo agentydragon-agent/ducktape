@@ -332,7 +332,7 @@ already-recorded receipt or reinterpret it as an acknowledgement.
 ## Implementation sequence and remaining choices
 
 1. **Extract Sandbox Service first:** move the minimum provisioning/session-access backend out of
-   the app, including required prompt/context and event-following dependencies. Decide archive ownership;
+   the app, including required prompt/context and gRPC event-following dependencies. Keep the app archive;
    never read app tables as a shortcut. Migrate the app to be a client. Settle account/destination
    authorization and Cilium-controlled runner access; proper runner RPC auth remains deferred.
 2. **Build the standalone service:** owned persistence/migrations, provider discovery, explicit

@@ -8,40 +8,42 @@ them is published here.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, cast
 
 import httpx
 from pydantic import TypeAdapter
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.agent_runtime.view.views import ThreadEntityView
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ThreadScopeResponse
-from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.presets import Harness
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.threads.view.views import ThreadEntityView
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.egress_views import EgressReader
 
 
 def openapi_document() -> dict[str, Any]:
     # Only routes and models shape the document; the inventory's clients are never called.
-    inventory = SandboxInventory(namespace="schema", custom_objects=cast(Any, None), core_v1=cast(Any, None))
+    inventory = SandboxServiceClient("schema.invalid:8080", namespace="schema", token_file=Path("/schema-unused-token"))
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     database_updates = DatabaseUpdates(engine.url)
     event_logs, content = EventLogStore(engine), ContentStore(engine)
     live = LiveIndex(stale_after_seconds=900)
-    runners = Runners(live, port=1)
+    runners = SandboxSessions(live, inventory)
     document: dict[str, Any] = create_app(
         inventory,
         RunnerBridge(
@@ -60,7 +62,7 @@ def openapi_document() -> dict[str, Any]:
             ],
             harnesses={harness: ["schema-model"] for harness in Harness},
         ),
-        EgressInventory(namespace="schema", custom_objects=cast(Any, None)),
+        EgressAccess(EgressReader(namespace="schema", custom_objects=cast(Any, None)), inventory),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
         live,
         ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None)),

@@ -15,15 +15,8 @@ import httpx
 import uvicorn
 from fastapi import Response
 from fastapi.staticfiles import StaticFiles
-from jinja2 import StrictUndefined, Template
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from kubernetes_asyncio.client import (
-    ApiClient,
-    AuthenticationV1Api,
-    CoreV1Api,
-    CustomObjectsApi,
-    RbacAuthorizationV1Api,
-)
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -35,28 +28,28 @@ from agentplane.app.action_federation import (
     FederatedOperatorActions,
 )
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.inventory import SandboxInventory
-from agentplane.app.kubernetes_bindings import KubernetesBindings
-from agentplane.app.kubernetes_grants import ClusterRoleBindingGrant, KubernetesGrant, RoleBindingGrant
 from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.shutdown import Drain, drain_of
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
+from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.egress_views import EgressReader
+from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 
@@ -66,7 +59,6 @@ from util.kubernetes import CustomObjectsClient
 # The built frontend, a runfiles data dependency of this module's library.
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/agentplane/app/frontend/dist/index.html"
-DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE = "_main/agentplane/app/agent_instructions.j2"
 SERVICE_WORKER = "_main/agentplane/app/frontend/sw.js"
 
 
@@ -120,7 +112,7 @@ class AppSettingsConfig(BaseSettings):
     """Deployment-authored app settings, before runtime-only inputs arrive.
 
     The runtime `Settings` model extends this, so cdk8s can construct this typed fragment
-    without fabricating the app's namespace, runner port, or database URL.
+    without fabricating the app's namespace, Sandbox Service target, or database URL.
     """
 
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)
@@ -199,10 +191,11 @@ class Settings(AppSettingsConfig):
 
     namespace: str = Field(description="The app's own namespace, holding the egress policies and bindings.")
     sandbox_namespace: str = Field(
-        description="Namespace the app stamps Sandboxes into and dials runners in. Separate from the app's own "
+        description="Namespace whose Sandbox inventory the app observes. Separate from the app's own "
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
-    runner_port: int = Field(description="The port every runner Pod listens on.")
+    sandbox_service_target: str = Field(min_length=1)
+    sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     host: str = Field(default="127.0.0.1", description="Bind address.")
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
@@ -255,20 +248,6 @@ class Settings(AppSettingsConfig):
         return tuple(sources)
 
 
-def resolved_agent_instructions(
-    configured: str | None, *, egress_api_url: str | None, actions_service_url: str | None
-) -> str:
-    """Use the image-owned instructions unless deployment configuration explicitly replaces them."""
-    if configured is not None:
-        return configured
-    if egress_api_url is None or actions_service_url is None:
-        raise ValueError("image-owned agent instructions require agent_egress_api_url and agent_actions_service_url")
-    template = Template(
-        get_required_path(DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE).read_text(encoding="utf-8"), undefined=StrictUndefined
-    )
-    return str(template.render(egress_api_url=egress_api_url, actions_service_url=actions_service_url))
-
-
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     asyncio.run(async_main(Settings()))
@@ -298,27 +277,12 @@ async def async_main(settings: Settings) -> None:
     ):
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
-        inventory = SandboxInventory(
-            namespace=settings.sandbox_namespace, custom_objects=custom_objects, core_v1=CoreV1Api(api)
+        inventory = SandboxServiceClient(
+            settings.sandbox_service_target,
+            namespace=settings.sandbox_namespace,
+            token_file=settings.sandbox_service_token_file,
         )
-        kubernetes_bindings = KubernetesBindings(
-            inventory,
-            RbacAuthorizationV1Api(api),
-            cleanup_namespaces={
-                *settings.kubernetes_binding_cleanup_namespaces,
-                *(
-                    grant.namespace
-                    for grant in settings.kubernetes_grants.values()
-                    if isinstance(grant, RoleBindingGrant)
-                ),
-            }
-            - {settings.sandbox_namespace},
-            cleanup_cluster_bindings=settings.kubernetes_cluster_binding_cleanup
-            or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
-        )
-        egress = EgressInventory(
-            namespace=settings.namespace, custom_objects=custom_objects, default_policies=settings.default_policies
-        )
+        egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.
         action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
@@ -337,7 +301,7 @@ async def async_main(settings: Settings) -> None:
         store = ThreadStore(engine)
         event_logs = EventLogStore(engine)
         content = ContentStore(engine)
-        runners = Runners(live, settings.runner_port)
+        runners = SandboxSessions(live, inventory)
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine))
         bridge = RunnerBridge(
             runners=runners,
@@ -375,17 +339,8 @@ async def async_main(settings: Settings) -> None:
                 if settings.electric_url is not None
                 else None
             ),
-            presets=PresetCatalog(
-                sandboxes=settings.sandbox_presets,
-                threads=settings.thread_presets,
-                agent_instructions=resolved_agent_instructions(
-                    settings.agent_instructions,
-                    egress_api_url=settings.agent_egress_api_url,
-                    actions_service_url=settings.agent_actions_service_url,
-                ),
-            ),
+            presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
             kubernetes_grants=settings.kubernetes_grants,
-            kubernetes_bindings=kubernetes_bindings,
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,
@@ -400,7 +355,6 @@ async def async_main(settings: Settings) -> None:
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         watch_task = asyncio.create_task(watch.run(), name="live-watch")
-        grants_task = asyncio.create_task(kubernetes_bindings.run(), name="kubernetes-grants-reconcile")
         try:
             await serve_then_close(
                 AppServer(
@@ -420,15 +374,14 @@ async def async_main(settings: Settings) -> None:
             )
         finally:
             watch_task.cancel()
-            grants_task.cancel()
-            await asyncio.gather(watch_task, grants_task, return_exceptions=True)
+            await asyncio.gather(watch_task, return_exceptions=True)
 
 
 async def serve_then_close(
     server: uvicorn.Server,
     *,
     ingester: Ingester,
-    runners: Runners,
+    runners: SandboxSessions,
     database_updates: DatabaseUpdates,
     engine: AsyncEngine,
 ) -> None:

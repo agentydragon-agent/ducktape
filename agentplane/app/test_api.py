@@ -3,44 +3,46 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import socket
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock
 from uuid import UUID
 
 import httpx
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
-from kubernetes_asyncio import client as k8s_client
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
-from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
 from agentplane.app.api import ModelCatalog, ModelOption, create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
-from agentplane.app.inventory import KUBERNETES_GRANTS_ANNOTATION, KUBERNETES_GRANTS_READY_ANNOTATION, SandboxInventory
-from agentplane.app.kubernetes_bindings import KubernetesBindings
-from agentplane.app.kubernetes_grants import ResolvedGrant, RoleBindingGrant, RoleRef
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.presets import Harness, PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
-from agentplane.app.testing.kubernetes import (
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
+from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.runner import protocol_pb2
+from agentplane.runner.harness import Harness
+from agentplane.runner.testing.unanswering_runner import UnansweringRunner
+from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
+from agentplane.sandbox_service.testing.backend import backend, seed_runner
+from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
     FakeCoreV1Api,
@@ -51,9 +53,7 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
-from agentplane.runner import protocol_pb2
-from agentplane.runner.testing.unanswering_runner import UnansweringRunner
+from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -138,12 +138,12 @@ async def electric(
 
 @pytest.fixture
 def client(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -234,7 +234,7 @@ def test_create_requires_an_explicit_template(client: TestClient) -> None:
     assert client.post("/sandboxes", json={"slug": "demo"}).status_code == 422
 
 
-def test_create_records_the_concrete_thread_defaults_and_bootstrap(
+def test_create_records_the_concrete_session_defaults_and_bootstrap(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
     response = client.post(
@@ -244,7 +244,7 @@ def test_create_records_the_concrete_thread_defaults_and_bootstrap(
             "template": TEMPLATE,
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
-            "thread_defaults": {
+            "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "edited-model",
                 "cwd": "/state/workspaces/{session_id}",
@@ -258,7 +258,7 @@ def test_create_records_the_concrete_thread_defaults_and_bootstrap(
     assert response.status_code == 201, response.text
     row = response.json()
     assert row["binding"] == {
-        "thread_defaults": {
+        "session_defaults": {
             "harness": "HARNESS_CODEX",
             "model": "edited-model",
             "cwd": "/state/workspaces/{session_id}",
@@ -286,7 +286,7 @@ def test_create_binds_the_sandbox_to_its_action_policy_sets(
 
     sandbox_uid = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
     (written,) = [obj for (kind, _), obj in custom_objects.objects.items() if kind == "actionpolicybindings"]
-    assert written["metadata"]["name"].startswith(f"{row['name']}-")
+    assert written["metadata"]["name"] == f"ap-init-{UUID(sandbox_uid).hex}"
     assert written["metadata"]["labels"] == {"app.agentplane.allegedly.works/managed-by": "integration-app"}
     assert written["metadata"]["ownerReferences"][0]["uid"] == sandbox_uid
     assert written["spec"] == {"subject": {"namespace": NAMESPACE, "name": row["name"]}, "policySets": ["github-reads"]}
@@ -306,7 +306,7 @@ def test_a_missing_action_policy_set_creates_nothing(client: TestClient, custom_
     )
 
     assert response.status_code == 422, response.text
-    assert "github-reads" in response.json()["detail"]
+    assert "INVALID_ARGUMENT" in response.json()["detail"]
     assert {name for kind, name in custom_objects.objects if kind == "sandboxes"} == seeded
 
 
@@ -337,7 +337,10 @@ def test_kubernetes_grant_picker_requires_an_approved_name_and_operator(
 
 
 def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_account(
-    client: TestClient, inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
+    client: TestClient,
+    sandbox_grants: dict[str, KubernetesGrant],
+    sandbox_rbac: FakeRbac,
+    custom_objects: FakeCustomObjectsApi,
 ) -> None:
     app = cast(Any, client.app)
     app.state.kubernetes_grants = {
@@ -345,12 +348,7 @@ def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_acc
             kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
         )
     }
-    rbac = SimpleNamespace(
-        read_namespaced_role=AsyncMock(),
-        read_namespaced_role_binding=AsyncMock(side_effect=k8s_client.ApiException(status=404)),
-        create_namespaced_role_binding=AsyncMock(),
-    )
-    app.state.kubernetes_bindings = KubernetesBindings(inventory, cast(Any, rbac))
+    sandbox_grants.update(app.state.kubernetes_grants)
     app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
     try:
         response = client.post(
@@ -361,9 +359,8 @@ def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_acc
     assert response.status_code == 201, response.text
     row = response.json()
     assert row["kubernetes_grants_ready"] is True
-    rbac.read_namespaced_role.assert_awaited_once_with("config-reader", NAMESPACE)
     assert row["kubernetes_grants"][0]["grant"]["role_ref"] == {"kind": "Role", "name": "config-reader"}
-    bound = rbac.create_namespaced_role_binding.await_args.args[1]
+    (bound,) = sandbox_rbac.bindings.values()
     assert bound.role_ref.name == "config-reader"
     assert [(subject.namespace, subject.name) for subject in bound.subjects] == [(NAMESPACE, row["name"])]
     stored = custom_objects.objects[("sandboxes", row["name"])]
@@ -495,7 +492,7 @@ def test_delete_removes_the_sandbox_once_it_is_suspended(
     refused = client.delete("/sandboxes/live")
 
     assert refused.status_code == 409
-    assert "suspend it" in refused.json()["detail"]
+    assert "refused" in refused.json()["detail"]
     assert ("sandboxes", "live") in custom_objects.objects
 
     assert client.post("/sandboxes/live/suspend").status_code == 204
@@ -504,7 +501,7 @@ def test_delete_removes_the_sandbox_once_it_is_suspended(
     assert client.delete("/sandboxes/live").status_code == 404
 
 
-def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fields_win(
+def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assembly(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     created = client.post(
@@ -512,7 +509,7 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
         json={
             "slug": "coder",
             "template": TEMPLATE,
-            "thread_defaults": {
+            "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "sandbox-model",
                 "cwd": "/state/workspaces/{session_id}",
@@ -526,18 +523,13 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     calls: list[tuple[str, object]] = []
     setup_scripts: list[str | None] = []
 
-    async def initialize(name: str, script: str) -> protocol_pb2.InitializeResult:
-        calls.append(("initialize", script))
-        return protocol_pb2.InitializeResult(executed=True)
-
     async def open_session(
-        name: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
+        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         calls.append(("open", spec))
         setup_scripts.append(setup_script)
-        return protocol_pb2.Attached(session_id=session_id, spec=spec)
+        return protocol_pb2.Attached(session_id=session_id)
 
-    monkeypatch.setattr(bridge, "initialize", initialize)
     monkeypatch.setattr(bridge, "open_session", open_session)
 
     response = client.post(
@@ -546,94 +538,13 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     )
 
     assert response.status_code == 201, response.text
-    assert calls[0] == ("initialize", "mkdir -p /state/workspaces")
-    assert calls[1][0] == "open"
-    assert setup_scripts == ["printf 'preset setup\\n'"]
-    spec = calls[1][1]
-    assert isinstance(spec, protocol_pb2.SessionSpec)
-    assert (spec.harness, spec.cwd, spec.model, spec.reasoning_effort, spec.instructions) == (
-        protocol_pb2.HARNESS_CODEX,
-        "/state/workspaces/thread-1",
-        "thread-model",
-        "medium",
-        "shared agent instructions\n\nthread instructions",
-    )
+    assert calls == [("open", {"model": "thread-model", "instructions": "thread instructions"})]
+    assert setup_scripts == [None]
     cleared = client.post(
         f"/sandboxes/{created['name']}/sessions", json={"session_id": "thread-2", "spec": {}, "setup_script": ""}
     )
     assert cleared.status_code == 201, cleared.text
-    assert setup_scripts == ["printf 'preset setup\\n'", ""]
-
-
-def _select_unready_kubernetes_grant(custom_objects: FakeCustomObjectsApi, sandbox_name: str = "live") -> None:
-    annotations = custom_objects.objects[("sandboxes", sandbox_name)]["metadata"].setdefault("annotations", {})
-    annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps(
-        [
-            ResolvedGrant(
-                name="config",
-                grant=RoleBindingGrant(
-                    kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
-                ),
-            ).model_dump(mode="json")
-        ]
-    )
-    annotations[KUBERNETES_GRANTS_READY_ANNOTATION] = "false"
-
-
-def test_session_creation_waits_for_selected_kubernetes_grants(
-    client: TestClient, bridge: RunnerBridge, custom_objects: FakeCustomObjectsApi, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _select_unready_kubernetes_grant(custom_objects)
-    calls: list[tuple[str, str]] = []
-
-    async def initialize(name: str, script: str) -> protocol_pb2.InitializeResult:
-        calls.append(("initialize", name))
-        return protocol_pb2.InitializeResult(executed=True)
-
-    async def open_session(
-        name: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
-    ) -> protocol_pb2.Attached:
-        calls.append(("open", name))
-        return protocol_pb2.Attached(session_id=session_id, spec=spec)
-
-    monkeypatch.setattr(bridge, "initialize", initialize)
-    monkeypatch.setattr(bridge, "open_session", open_session)
-    response = client.post(
-        "/sandboxes/live/sessions",
-        json={"session_id": "waiting", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "m"}},
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "Kubernetes grants are not ready"
-    assert calls == []
-
-
-def test_thread_resume_waits_for_selected_kubernetes_grants(
-    client: TestClient,
-    bridge: RunnerBridge,
-    store: ThreadStore,
-    custom_objects: FakeCustomObjectsApi,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    thread_id = UUID("69ab219a-3cc1-4376-9159-4b504ed7ed85")
-
-    async def get_thread(_thread_id: UUID) -> Any:
-        return SimpleNamespace(sandbox="live", archived=False, harness=Harness.CLAUDE, cwd="/w")
-
-    monkeypatch.setattr(store, "get_thread", get_thread)
-    _select_unready_kubernetes_grant(custom_objects)
-    calls: list[UUID] = []
-
-    async def resume_thread(thread: UUID, *, expected_harness: str, expected_cwd: str) -> protocol_pb2.Attached:
-        calls.append(thread)
-        return protocol_pb2.Attached(session_id="waiting-resume")
-
-    monkeypatch.setattr(bridge, "resume_thread", resume_thread)
-    response = client.post(f"/threads/{thread_id}/resume")
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "Kubernetes grants are not ready"
-    assert calls == []
+    assert setup_scripts == [None, ""]
 
 
 def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
@@ -658,16 +569,16 @@ def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     assert calls == [(thread_id, Harness.CLAUDE.value, "/w")]
 
 
-def test_shared_instructions_are_also_added_to_direct_session_launches(
+def test_direct_session_launch_leaves_platform_instructions_to_service(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    captured: list[protocol_pb2.SessionSpec] = []
+    captured: list[dict[str, object]] = []
 
     async def open_session(
-        name: str, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None = None
+        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         captured.append(spec)
-        return protocol_pb2.Attached(session_id=session_id, spec=spec)
+        return protocol_pb2.Attached(session_id=session_id)
 
     monkeypatch.setattr(bridge, "open_session", open_session)
     response = client.post(
@@ -676,19 +587,40 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
     )
 
     assert response.status_code == 201, response.text
-    assert captured == [
-        protocol_pb2.SessionSpec(
-            harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="plain-model", instructions="shared agent instructions"
-        )
-    ]
+    assert captured == [{"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "plain-model"}]
+
+
+@pytest.mark.parametrize(("error_type", "status_code"), [(TimeoutError, 504), (ConnectionError, 503)])
+def test_service_launch_failure_preserves_uncertainty(
+    client: TestClient,
+    bridge: RunnerBridge,
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[Exception],
+    status_code: int,
+) -> None:
+    async def failed_open(
+        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+    ) -> protocol_pb2.Attached:
+        raise error_type("test upstream failure")
+
+    monkeypatch.setattr(bridge, "open_session", failed_open)
+    response = client.post(
+        "/sandboxes/live/sessions",
+        json={"session_id": "uncertain", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "m"}},
+    )
+    assert response.status_code == status_code
+    assert "uncertain" in response.json()["detail"]
 
 
 def test_a_runner_that_does_not_answer_is_a_503(
-    inventory: SandboxInventory,
+    tmp_path: Path,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    inventory: SandboxServiceClient,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -698,47 +630,52 @@ def test_a_runner_that_does_not_answer_is_a_503(
     ingestion: Ingestion,
 ) -> None:
     """A Pod with an address but no runner listening yet, as right after a resume."""
-    live_index.sandboxes["live"] = sandbox("live")
-    live_index.pods["live"] = pod("live", phase="Running", ready=True, ip="127.0.0.1")
+    live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
 
     # A bound but never listening port refuses every connection for as long as the socket is open.
     with socket.socket() as closed_port:
         closed_port.bind(("127.0.0.1", 0))
-        runners = Runners(live_index, closed_port.getsockname()[1])
-        app = create_app(
-            inventory,
-            RunnerBridge(
-                runners=runners,
+        with backend(
+            custom_objects, core_v1, tmp_path / "failure-token", runner_port=closed_port.getsockname()[1]
+        ) as endpoint:
+            runners = SandboxSessions(live_index, endpoint.client())
+            app = create_app(
+                inventory,
+                RunnerBridge(
+                    runners=runners,
+                    event_logs=event_logs,
+                    content=content,
+                    ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
+                    thread_changes=database_updates.changes[Channel.THREADS],
+                ),
+                store,
+                TEST_MODELS,
+                egress,
+                decisions,
+                live_index,
+                action_policy,
+                reviewer=reviewer,
                 event_logs=event_logs,
                 content=content,
-                ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
-                thread_changes=database_updates.changes[Channel.THREADS],
-            ),
-            store,
-            TEST_MODELS,
-            egress,
-            decisions,
-            live_index,
-            action_policy,
-            reviewer=reviewer,
-            event_logs=event_logs,
-            content=content,
-            database_updates=database_updates,
-            operator_sessions=operator_sessions,
-        )
-        with TestClient(app, headers=AGENT_AUTH) as client:
-            response = client.get("/sandboxes/live/sessions")
+                database_updates=database_updates,
+                operator_sessions=operator_sessions,
+            )
+            with TestClient(app, headers=AGENT_AUTH) as client:
+                response = client.get("/sandboxes/live/sessions")
     assert response.status_code == 503
-    assert "not answering" in response.json()["detail"]
+    assert "UNAVAILABLE" in response.json()["detail"]
 
 
 async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
+    tmp_path: Path,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
     monkeypatch: pytest.MonkeyPatch,
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -750,52 +687,52 @@ async def test_a_runner_that_never_answers_open_is_a_504_naming_the_session(
     """A runner that takes the command's Attach but never answers its Open, as a wedged one: the
     route answers rather than holding the request, and lets go of the runner's stream."""
     monkeypatch.setattr("agentplane.runner.client.OBSERVE_ANSWER_S", 1)
-    live_index.sandboxes["live"] = sandbox("live")
-    live_index.pods["live"] = pod("live", phase="Running", ready=True, ip="127.0.0.1")
+    live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.open("live", "test-unanswered", spec)
     wedged = UnansweringRunner()
     async with wedged.serve() as port:
-        runners = Runners(live_index, port)
-        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
-        app = create_app(
-            inventory,
-            RunnerBridge(
-                runners=runners,
+        with backend(custom_objects, core_v1, tmp_path / "wedged-token", runner_port=port) as endpoint:
+            runners = SandboxSessions(live_index, endpoint.client())
+            ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+            app = create_app(
+                inventory,
+                RunnerBridge(
+                    runners=runners,
+                    event_logs=event_logs,
+                    content=content,
+                    ingester=ingester,
+                    thread_changes=database_updates.changes[Channel.THREADS],
+                ),
+                store,
+                TEST_MODELS,
+                egress,
+                decisions,
+                live_index,
+                action_policy,
+                reviewer=reviewer,
                 event_logs=event_logs,
                 content=content,
-                ingester=ingester,
-                thread_changes=database_updates.changes[Channel.THREADS],
-            ),
-            store,
-            TEST_MODELS,
-            egress,
-            decisions,
-            live_index,
-            action_policy,
-            reviewer=reviewer,
-            event_logs=event_logs,
-            content=content,
-            database_updates=database_updates,
-            operator_sessions=operator_sessions,
-        )
-        try:
-            async with (
-                httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-                ) as http,
-                asyncio.timeout(10),
-            ):
-                response = await http.post(
-                    f"/threads/{thread_id}/commands",
-                    json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
-                )
-                assert response.status_code == 504, response.text
-                assert "'test-unanswered'" in response.json()["detail"]
-                assert await wedged.cancelled.get() == "test-unanswered"
-        finally:
-            await ingester.close()
-            await runners.close()
+                database_updates=database_updates,
+                operator_sessions=operator_sessions,
+            )
+            try:
+                async with (
+                    httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+                    ) as http,
+                    asyncio.timeout(10),
+                ):
+                    response = await http.post(
+                        f"/threads/{thread_id}/commands",
+                        json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
+                    )
+                    assert response.status_code == 504, response.text
+                    assert "uncertain" in response.json()["detail"]
+                    assert await wedged.cancelled.get() == "test-unanswered"
+            finally:
+                await ingester.close()
+                await runners.close()
 
 
 def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> None:
@@ -845,7 +782,7 @@ def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
     refused = client.post("/sandboxes/live/egress", json={"policies": ["github", "vanished"]})
 
     assert refused.status_code == 422
-    assert "vanished" in refused.json()["detail"]
+    assert "INVALID_ARGUMENT" in refused.json()["detail"]
     assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
     assert client.post("/sandboxes/nope/egress", json={"policies": ["github"]}).status_code == 404
     # The CRD's policies are minItems: 1, so an empty grant is refused here rather than at admission.
@@ -919,7 +856,7 @@ def test_binding_revocation(client: TestClient) -> None:
     """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied."""
     refused = client.delete("/egress/bindings/live-seeded")
     assert refused.status_code == 409
-    assert "git" in refused.json()["detail"]
+    assert "refused" in refused.json()["detail"]
     assert client.delete("/egress/bindings/live-granted").status_code == 204
     assert client.delete("/egress/bindings/live-granted").status_code == 404
     assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-seeded"]
@@ -929,7 +866,7 @@ def test_policies_lists_the_namespace_for_the_create_form(client: TestClient) ->
     assert {policy["name"] for policy in client.get("/egress/policies").json()} == {"github", "pypi"}
 
 
-def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient) -> None:
+def test_presets_publish_editable_sandbox_and_session_defaults(client: TestClient) -> None:
     assert client.get("/presets").json() == [
         {
             "name": "public-coder",
@@ -938,7 +875,7 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
             "kubernetes_grants": [],
-            "thread_defaults": {
+            "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "test-codex-model",
                 "cwd": "/state/workspaces/{session_id}",
@@ -971,13 +908,13 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
 
 
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -1024,14 +961,14 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
 
 
 async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply_and_reload(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
     ingestion: Ingestion,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -1108,13 +1045,13 @@ async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply
 
 
 async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -1156,13 +1093,13 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
 
 
 async def test_a_running_thread_cannot_be_archived(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -1211,13 +1148,13 @@ async def test_a_running_thread_cannot_be_archived(
 
 
 async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,

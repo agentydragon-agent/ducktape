@@ -14,7 +14,7 @@ import "agentplane/protocol/event_log.proto";
 
 service Runner {
   rpc Attach(stream ClientMessage) returns (stream ServerMessage);
-  // Execute integration-app configured initialization for this Sandbox. The runner records the
+  // Execute control-plane configured initialization for this Sandbox. The runner records the
   // selected script at one fixed state path. An exact retry is a no-op; any other script is refused.
   rpc Initialize(InitializeRequest) returns (stream InitializationEvent);
   // Every session in the runner's state directory. Session ids are client-chosen, so this is how a

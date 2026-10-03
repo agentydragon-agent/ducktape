@@ -20,20 +20,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from agentplane.action_service.operator_oidc import OperatorOidcSettings
 from agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester, Ingestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import TEST_REASONING_EFFORTS, Replica, stored_login
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
-from agentplane.app.inventory import ProvisioningState, SandboxInventory
 from agentplane.app.live import (
     PODS_PLURAL,
     ActionPolicyFrames,
@@ -53,9 +46,19 @@ from agentplane.app.operator_sessions import (
     RequestSession,
     SessionRow,
 )
-from agentplane.app.presets import Harness
+from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
-from agentplane.app.testing.kubernetes import (
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.runner import protocol_pb2
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.models import ProvisioningState
+from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
@@ -66,7 +69,6 @@ from agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from agentplane.runner import protocol_pb2
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOXES_PLURAL
 from util.net import pick_free_port
@@ -130,14 +132,14 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
 
 
 async def test_the_index_projects_the_rows_a_listing_would_return(
-    seeded: LiveIndex, inventory: SandboxInventory
+    seeded: LiveIndex, inventory: SandboxServiceClient
 ) -> None:
     """The push and the fetch share their projection; this is what says they still do."""
-    assert seeded.sandbox_views() == await inventory.list_sandboxes()
-    assert seeded.sandbox_view("runner-1") == await inventory.get("runner-1")
+    assert seeded.sandbox_views() == [sandbox_view(view) for view in await inventory.list_sandboxes()]
+    assert seeded.sandbox_view("runner-1") == sandbox_view(await inventory.get("runner-1"))
 
 
-async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex, egress: EgressInventory) -> None:
+async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex, egress: EgressAccess) -> None:
     runner = ServiceAccountRef(namespace=NAMESPACE, name="runner-1")
     assert seeded.bindings_for(runner) == await egress.bindings_for(runner)
     assert [binding.name for binding in seeded.bindings_for(runner)] == ["runner-1-picked"]
@@ -293,8 +295,8 @@ async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded:
 
 @pytest.fixture
 def app(
-    inventory: SandboxInventory,
-    egress: EgressInventory,
+    inventory: SandboxServiceClient,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -305,7 +307,7 @@ def app(
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
     event_logs, content = EventLogStore(engine), ContentStore(engine)
     database_updates = DatabaseUpdates(engine.url)
-    runners = Runners(live_index, port=1)
+    runners = SandboxSessions(live_index, inventory)
     bridge = RunnerBridge(
         runners=runners,
         event_logs=event_logs,

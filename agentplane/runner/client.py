@@ -11,6 +11,7 @@ import grpc
 
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2, protocol_pb2_grpc
+from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosedError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -22,18 +23,6 @@ OBSERVE_ANSWER_S = 10
 # One with a spec may first launch the harness. The runner gives each native handshake request 60 s
 # (`Session.request`) and Codex's handshake makes two, so a live runner reports its own failure first.
 LAUNCH_ANSWER_S = 150
-
-
-class RunnerError(Exception):
-    """The runner ended the stream with an error."""
-
-
-class OpenTimeoutError(RunnerError):
-    """The runner accepted Attach but did not answer Open in time: wedged, or a half-open connection."""
-
-
-class StreamClosedError(Exception):
-    """The runner ended the stream without an error, after StopRunnerSession or Detach."""
 
 
 class Attachment:

@@ -22,22 +22,22 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
-from agentplane.app.presets import Harness
-from agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api
 from util.net import bind_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
@@ -68,12 +68,12 @@ class ServeApp(Protocol):
 
 @pytest.fixture
 def serve(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     authentication: FakeAuthenticationV1Api,
     live_index: LiveIndex,

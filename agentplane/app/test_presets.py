@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPreset, ThreadDefaults, ThreadPreset
+from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.sandbox_models import SandboxBinding, SessionDefaults
+from agentplane.runner.harness import Harness
 
 
 @pytest.fixture
@@ -42,7 +44,7 @@ def test_sandbox_preset_expands_to_fields_the_operator_can_set_individually(pres
         "policies": ["github-agentydragon-agent"],
         "action_policy_sets": [],
         "kubernetes_grants": [],
-        "thread_defaults": {
+        "session_defaults": {
             "harness": "HARNESS_CODEX",
             "model": "preset-model",
             "cwd": "/state/workspaces/{session_id}",
@@ -57,14 +59,14 @@ def test_sandbox_preset_expands_to_fields_the_operator_can_set_individually(pres
 def test_sandbox_binding_keeps_the_selected_values_when_the_catalog_changes(presets: PresetCatalog) -> None:
     [selected] = presets.views()
     binding = SandboxBinding(
-        thread_defaults=ThreadDefaults(instructions="").over(selected.thread_defaults), bootstrap=selected.bootstrap
+        session_defaults=SessionDefaults(instructions="").over(selected.session_defaults), bootstrap=selected.bootstrap
     )
     presets.threads["public-coder-codex"] = presets.threads["public-coder-codex"].model_copy(
         update={"model": "new-preset-model", "reasoning_effort": "high"}
     )
 
-    assert binding.thread_defaults is not None
-    assert binding.thread_defaults.model_dump() == {
+    assert binding.session_defaults is not None
+    assert binding.session_defaults.model_dump() == {
         "harness": "HARNESS_CODEX",
         "model": "preset-model",
         "cwd": "/state/workspaces/{session_id}",
@@ -72,7 +74,7 @@ def test_sandbox_binding_keeps_the_selected_values_when_the_catalog_changes(pres
         "instructions": "",
         "setup_script": "",
     }
-    assert binding.thread_defaults.proto_json("thread-7") == {
+    assert binding.session_defaults.proto_json("thread-7") == {
         "harness": "HARNESS_CODEX",
         "model": "preset-model",
         "cwd": "/state/workspaces/thread-7",

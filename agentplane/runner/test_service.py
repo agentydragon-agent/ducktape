@@ -9,8 +9,9 @@ import pytest_bazel
 
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import RunnerClient, RunnerError
+from agentplane.runner.client import RunnerClient
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
+from agentplane.runner.errors import RunnerError
 from agentplane.runner.service import Runner
 from agentplane.runner.store import SessionRecord, StateOwner, StateOwnershipError
 

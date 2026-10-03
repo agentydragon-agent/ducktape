@@ -50,31 +50,30 @@ from agentplane.app.action_federation import (
     FederatedOperatorActions,
 )
 from agentplane.app.action_policy import (
-    MANAGED_BY_APP,
-    MANAGED_BY_LABEL,
     ActionPolicyInventory,
     ActionPolicyUnavailable,
     ActionPolicyView,
     BindingProvenance,
 )
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
-from agentplane.app.presets import Harness
-from agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
+from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, sandbox
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
@@ -129,12 +128,12 @@ def direct_federation() -> bool:
 @pytest.fixture
 async def review(
     db_url: str,
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,

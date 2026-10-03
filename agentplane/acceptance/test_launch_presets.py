@@ -9,9 +9,9 @@ import pytest_bazel
 
 from agentplane.acceptance.agent import Agent, runner_startup_retries
 from agentplane.app.client import Client
-from agentplane.app.inventory import SandboxView
-from agentplane.app.presets import Harness, ThreadDefaults
+from agentplane.app.sandbox_models import SandboxView, SessionDefaults
 from agentplane.runner import protocol_pb2
+from agentplane.runner.harness import Harness
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -28,20 +28,20 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
 ) -> None:
     configured = {preset.name: preset for preset in await client.presets()}
     preset = configured[PUBLIC_CODER]
-    assert preset.thread_defaults.harness is Harness.CODEX
+    assert preset.session_defaults.harness is Harness.CODEX
     assert GITHUB_AGENTYDRAGON_AGENT in preset.policies
-    assert preset.thread_defaults.model
+    assert preset.session_defaults.model
 
     view = await sandbox(
         "accept-public-coder",
         template=preset.template,
         policies=preset.policies,
-        thread_defaults=ThreadDefaults(instructions=INSTRUCTIONS).over(preset.thread_defaults),
+        session_defaults=SessionDefaults(instructions=INSTRUCTIONS).over(preset.session_defaults),
         bootstrap=preset.bootstrap,
     )
     assert view.binding is not None
-    assert view.binding.thread_defaults is not None
-    assert view.binding.thread_defaults.instructions == INSTRUCTIONS
+    assert view.binding.session_defaults is not None
+    assert view.binding.session_defaults.instructions == INSTRUCTIONS
     assert GITHUB_AGENTYDRAGON_AGENT in {
         policy.name for binding in await client.bindings(view.name) for policy in binding.policies
     }
@@ -52,8 +52,8 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
             first = await client.open_bound_session(view.name, first_id)
     assert (first.attached.spec.harness, first.attached.spec.model, first.attached.spec.reasoning_effort) == (
         protocol_pb2.HARNESS_CODEX,
-        preset.thread_defaults.model,
-        preset.thread_defaults.reasoning_effort,
+        preset.session_defaults.model,
+        preset.session_defaults.reasoning_effort,
     )
     # The app prepends its configured platform guidance to every session. The editable task
     # instructions remain the exact final block; the Sandbox binding above stores only that edit.
@@ -70,7 +70,7 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     inherited = await client.open_bound_session(view.name, f"preset-{uuid4().hex[:8]}")
     local_model = "acceptance-local-model-override"
     local = await client.open_bound_session(view.name, f"preset-{uuid4().hex[:8]}", overrides={"model": local_model})
-    assert inherited.attached.spec.model == preset.thread_defaults.model
+    assert inherited.attached.spec.model == preset.session_defaults.model
     assert local.attached.spec.model == local_model
 
 

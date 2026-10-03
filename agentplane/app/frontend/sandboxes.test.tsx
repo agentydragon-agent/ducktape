@@ -54,7 +54,7 @@ async function render(
     policies: [],
     action_policy_sets: ["test-reads"],
     kubernetes_grants: ["workspace-read"],
-    thread_defaults: { harness: "HARNESS_CODEX", model: "test-codex-b" },
+    session_defaults: { harness: "HARNESS_CODEX", model: "test-codex-b" },
     bootstrap: "mkdir -p /state/workspaces",
   };
   const policySets: ActionPolicySetView[] = [
@@ -183,7 +183,7 @@ it("pre-fills the preset's policy sets and Kubernetes grants, shows role scope, 
         action_policy_sets: ["test-reads"],
         kubernetes_grants: ["workspace-read"],
         bootstrap: "mkdir -p /state/workspaces",
-        thread_defaults: expect.objectContaining({ harness: "HARNESS_CODEX", model: "test-codex-b" }),
+        session_defaults: expect.objectContaining({ harness: "HARNESS_CODEX", model: "test-codex-b" }),
       }),
     })
   );

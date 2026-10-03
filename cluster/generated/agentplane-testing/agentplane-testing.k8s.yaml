@@ -1367,50 +1367,17 @@ rules:
     verbs:
       - get
 ---
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: forgejo-images-creds
-  namespace: agentplane-testing
-spec:
-  dataFrom:
-    - extract:
-        key: forgejo-images-creds
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-forgejo-images-secret-store
-  target:
-    name: forgejo-images-creds
-    template:
-      mergePolicy: Merge
-      type: kubernetes.io/dockerconfigjson
----
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: agentplane-agent
-  namespace: agentplane-testing
-automountServiceAccountToken: false
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentplane-app
+  name: agentplane-sandbox-service
   namespace: agentplane-testing
 automountServiceAccountToken: true
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentplane-runner
-  namespace: agentplane-testing
-automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: agentplane-testing-app-token-reviewer
+  name: agentplane-testing-sandbox-service-token-reviewer
 rules:
   - apiGroups:
       - authentication.k8s.io
@@ -1422,21 +1389,21 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: agentplane-testing-app-token-reviewer
+  name: agentplane-testing-sandbox-service-token-reviewer
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: agentplane-testing-app-token-reviewer
+  name: agentplane-testing-sandbox-service-token-reviewer
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
-    name: agentplane-app
+    name: agentplane-sandbox-service
     namespace: agentplane-testing
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agentplane-app
+  name: agentplane-sandbox-service
   namespace: agentplane-testing
 rules:
   - apiGroups:
@@ -1527,6 +1494,339 @@ rules:
     verbs:
       - create
       - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-sandbox-service
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-sandbox-service
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-sandbox-service
+    namespace: agentplane-testing
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-sandbox-service-config
+  namespace: agentplane-testing
+data:
+  config.yaml: |
+    sandbox_namespace: agentplane-testing
+    caller_accounts:
+      - namespace: agentplane-testing
+        name: agentplane-app
+    agent_egress_api_url: http://agentplane-egress.agentplane-testing.svc.cluster.local
+    agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
+    lifecycle_timeout_s: 300
+    default_policies:
+      - basic
+    kubernetes_grants: {}
+    kubernetes_binding_cleanup_namespaces: []
+    kubernetes_cluster_binding_cleanup: false
+    token_audience: agentplane-sandbox-service
+    runner_port: 7000
+    admission_timeout_s: 15
+    follow_lease_s: 30
+    host: 0.0.0.0
+    port: 8080
+    health_port: 8081
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-sandbox-service
+  name: agentplane-sandbox-service
+  namespace: agentplane-testing
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-sandbox-service
+        cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE
+              value: /etc/agentplane-sandbox-service/config.yaml
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: sandbox-service
+          ports:
+            - containerPort: 8080
+              name: grpc
+              protocol: TCP
+            - containerPort: 8081
+              name: health
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-sandbox-service
+              name: configmap-agentplane-sandbox-service-config
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-sandbox-service
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-sandbox-service-config
+          name: configmap-agentplane-sandbox-service-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-sandbox-service
+  name: agentplane-sandbox-service
+  namespace: agentplane-testing
+spec:
+  externalIPs: []
+  ports:
+    - name: grpc
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-sandbox-service
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "7000"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-sandbox-service
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: agentplane-testing
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-agent
+  namespace: agentplane-testing
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-app
+  namespace: agentplane-testing
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-runner
+  namespace: agentplane-testing
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-testing-app-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-testing-app-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-testing-app-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-testing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-app
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresspolicies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egressbindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresscredentials
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicybindings
+    verbs:
+      - get
+      - list
+      - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -1703,7 +2003,7 @@ spec:
         - args:
             - --namespace=agentplane-testing
             - --sandbox-namespace=agentplane-testing
-            - --runner-port=7000
+            - --sandbox-service-target=agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
             - --host=0.0.0.0
             - --port=8080
           env:
@@ -1800,6 +2100,9 @@ spec:
             - mountPath: /etc/agentplane
               name: configmap-agentplane-app-config
               readOnly: true
+            - mountPath: /var/run/secrets/agentplane-sandbox-service
+              name: sandbox-service-token
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -1892,6 +2195,13 @@ spec:
         - configMap:
             name: agentplane-app-config
           name: configmap-agentplane-app-config
+        - name: sandbox-service-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-sandbox-service
+                  expirationSeconds: 3600
+                  path: token
 ---
 apiVersion: v1
 kind: Service
@@ -1968,6 +2278,7 @@ spec:
   ingress:
     - fromEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: agentplane-sandbox-service
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:
@@ -2004,11 +2315,11 @@ spec:
             - agentplane-dex-testing.allegedly.works
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: agentplane-runner
+            app.kubernetes.io/name: agentplane-sandbox-service
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:
-            - port: "7000"
+            - port: "8080"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
