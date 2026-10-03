@@ -36,6 +36,7 @@ import {
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 
+import { Markdown } from "../../../../agentplane/app/frontend/markdown";
 import {
   ApiError,
   getSession,
@@ -793,16 +794,13 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
   if (item.kind === "tool-run") return <CompactToolRun item={item} />;
   if (item.kind === "narration") {
     return (
-      <Text
-        component="p"
-        size="sm"
-        my={4}
+      <Box
         data-fold-kind="narration"
         data-history-sequences={item.events.map((event) => event.sequence_num).join(" ")}
-        style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+        my={4}
       >
-        {item.text}
-      </Text>
+        <Markdown source={item.text} size="sm" />
+      </Box>
     );
   }
   const time = transcriptEventTime(item);
@@ -826,9 +824,7 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
             Subagent
           </Badge>
         )}
-        <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-          {item.text}
-        </Text>
+        <Markdown source={item.text} size="sm" />
       </Paper>
     );
   }
@@ -903,9 +899,9 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
             Thinking
           </Text>
         </Box>
-        <Text size="sm" mt="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-          {item.text}
-        </Text>
+        <Box mt="xs">
+          <Markdown source={item.text} size="sm" />
+        </Box>
       </Paper>
     );
   }
