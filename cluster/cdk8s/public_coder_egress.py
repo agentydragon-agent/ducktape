@@ -144,7 +144,7 @@ def add_gateway_resources(
         scope, "gateway-network", metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
         endpoint_selector=GATEWAY.pods.selector,
         ingress=[IngressRule.from_endpoints(
-            {**cilium.endpoint_labels(NAMESPACE, NAMESPACE), "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT},
+            {"k8s:io.kubernetes.pod.namespace": NAMESPACE, **LABELS, "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT},
             ports=[GATEWAY.pod_port],
         )],
         egress=[client.HTTP.egress()],

@@ -68,8 +68,8 @@ _DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
 _TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
 _CONFIG_MAP_NAME = "config"
 _NAME = "public-coder-agent"
-NAMESPACE = "public-coder-agent"
-LABELS = {"app.kubernetes.io/name": _NAME}
+NAMESPACE = public_coder_egress.NAMESPACE
+LABELS = public_coder_egress.LABELS
 # The gateway the Authentik outpost proxies to.
 _SERVICE = ServiceRef(
     name=_NAME, port=Port(name="gateway", number=18789), pods=Pods(namespace=NAMESPACE, labels=tuple(LABELS.items()))
