@@ -305,6 +305,7 @@ py_test(
     size = "medium",
     srcs = ["test_cluster_integration.py"],
     data = [
+        "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_bootstrap_files",
