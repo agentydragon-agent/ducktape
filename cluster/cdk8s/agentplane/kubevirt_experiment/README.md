@@ -1,35 +1,23 @@
 # KubeVirt launcher prototype
 
-This is PR 1 of the VM environment stack: opt-in platform admission and a disposable
-experiment. It does not enable VM environments in staging/testing. The guest runtime
-and Sandbox Service integration are separate changes.
+This directory contains opt-in platform admission and disposable KubeVirt experiments. The
+runner guest CLI uses direct, UID-checked KubeVirt operations; it does not enable VM environments
+in staging/testing or add a production Sandbox Service provider, app API, or proto kind.
 
-## What this establishes
+## Code map and boundary
 
-`//cluster/cdk8s/agentplane/kubevirt_experiment:policy` injects the existing relay into KubeVirt's
-launcher Pod, with rotating projected tokens mounted only by the relay. CREATE
-admission checks the actual KubeVirt controller caller, live Pod → VMI → VM UIDs,
-managed VM label, approved template, and VM-owned ServiceAccount. UPDATE admission
-also rejects token mounts in compute, init, and ephemeral containers. API lookup
-errors fail admission. Strategic merge is idempotent under webhook reinvocation.
+- [`policy.py`](policy.py): launcher admission and relay token mounts.
+- [`setup.py`](setup.py): disposable namespace, quotas, ESO pull secret, and synthetic gateway.
+- [`vm.py`](vm.py): Fedora and runner VM fixtures.
+- [`token_review_gateway.py`](token_review_gateway.py) and
+  [`runtime_model_gateway.py`](runtime_model_gateway.py): synthetic relay destinations.
 
-The constructor takes approved template names, relay image and central proxy host.
-Namespaces must be dedicated to Agentplane-managed VMs with respect to their KubeVirt
-workloads: every `kubevirt.io=virt-launcher` Pod there is checked. The platform must
-restrict direct Pod/VM/VMI writes separately; labels and owner references alone do
-not establish authority. The production provider must create the VM halted, provision
-its owned account and grants, and only then start it.
-
-This prototype uses KubeVirt's masquerade guest gateway (`10.0.2.1`) for the relay.
-Only guest SSH (diagnostics) and port 7000 are forwarded. The launcher NetworkPolicy
-allows DNS and the synthetic gateway, and admits port 7000 only from that gateway's
-Pod label. A real deployment must replace that caller selector with Sandbox Service.
-SSH is accessed by localhost-only Kubernetes port forwarding during the experiment.
-
-The synthetic `token_review_gateway.py` checks Kubernetes TokenReview and returns
-only the reviewed account/Pod identity. It does **not** implement the production
-egress gateway's credential policies, destination authorization, TLS interception,
-or CONNECT protocol. Passing this experiment is not full egress acceptance.
+Use a dedicated namespace for these KubeVirt workloads and separately restrict direct Pod/VM/VMI
+writes; labels and owner references alone do not establish authority. Neither gateway implements
+production credential substitution, destination authorization, TLS interception, or CONNECT.
+Runner inputs, commands, probes, and cleanup are in the
+[`runtime acceptance guide`](runtime_acceptance.md); guest build and measured findings are in
+[`runtime.md`](runtime.md).
 
 ## Reproduce
 
@@ -106,8 +94,7 @@ mutation/reinvocation and negative admission checks. The test mocks API response
 it still executes the UID, account, caller, and mount predicates. Live evidence is
 recorded in [the experiment log](../../../../agentplane/debug/kubevirt/evidence.md).
 
-An admission-service outage remains a separate isolated-control-plane experiment:
-this work does not stop shared Kyverno to test `failurePolicy: Fail`. Production
-credential substitution/CONNECT and runner gRPC need the subsequent integration
-acceptance. Persistent disk recovery, guest OOM budgets, and image replacement belong
-to the next two PRs. Nothing here promises live migration or node-loss recovery.
+This does not stop shared Kyverno to test `failurePolicy: Fail`, or exercise production
+credential substitution/CONNECT. The runner acceptance guide exercises gRPC, native-session
+recovery, setup probes, stop/start, and root-image replacement on a disposable guest. Nothing here
+promises live migration or node-loss recovery.
