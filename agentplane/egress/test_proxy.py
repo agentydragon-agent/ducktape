@@ -1263,8 +1263,9 @@ async def test_a_placeholder_with_no_projected_token_offered_is_refused(
 
 
 async def test_matrix_json_login_through_real_proxy(
-    fake: FakeApiServer, proxy: ProxyUnderTest, caplog: pytest.LogCaptureFixture
+    fake: FakeApiServer, proxy: ProxyUnderTest, caplog: pytest.LogCaptureFixture, decision_log: DecisionLog
 ) -> None:
+    caplog.set_level("INFO", logger="agentplane.egress.decision_log")
     name = "matrix-login"
     login_path = "/_matrix/client/v3/login"
     secret_value = 'matrix-secret"\\\n☃'
@@ -1321,9 +1322,10 @@ async def test_matrix_json_login_through_real_proxy(
     assert int(one(proxy.upstream.requests)[2]["content-length"]) == len(body)
     assert secret_value not in caplog.text
     assert json.dumps(secret_value) not in caplog.text
+    await decision_log.flush()
     async with (
         aiohttp.ClientSession(base_url=f"http://127.0.0.1:{proxy.admin_port}") as admin,
-        admin.get("/decisions") as response,
+        admin.get("/decisions", params=SUBJECT_A.model_dump()) as response,
     ):
         evidence = await response.text()
     assert secret_value not in evidence
