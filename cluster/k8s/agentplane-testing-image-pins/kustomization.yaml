@@ -23,4 +23,4 @@ images:
     newTag: devel-20260924010350-5ce04fd # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}
   # Bootstrap only: keep rollout suspended until CI publishes and automation pins a real tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-service
-    newTag: devel-20261003021623-6dd974e # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
+    newTag: devel-20261003031612-29056d5 # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
