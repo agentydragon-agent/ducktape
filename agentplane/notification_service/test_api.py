@@ -41,8 +41,18 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
     }
     async with (
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications.test") as client,
-        httpx.AsyncClient(transport=httpx.ASGITransport(app=other), base_url="http://notifications.test") as independent,
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=other), base_url="http://notifications.test"
+        ) as independent,
     ):
+        discovery = await client.get("/v1/providers")
+        assert discovery.status_code == 200
+        assert discovery.json() == {
+            "actions": {
+                "subscription_schema": Subscribe.model_json_schema(),
+                "content": "ActionEventView: sequence, state, at, actor",
+            }
+        }
         response = await client.post("/v1/subscriptions", json=body)
         assert response.status_code == 409
         assert response.json() == {"detail": "creation key conflict"}
@@ -59,9 +69,15 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
         service.subscribe.assert_awaited_once_with(PRINCIPAL, Subscribe.model_validate(body))
         app.dependency_overrides.clear()
         assert (await client.post("/v1/subscriptions", json=body)).status_code == 401
-    operation = app.openapi()["paths"]["/v1/subscriptions"]["post"]
+    schema = app.openapi()
+    discovery_operation = schema["paths"]["/v1/providers"]["get"]
+    provider_response = discovery_operation["responses"]["200"]["content"]["application/json"]["schema"]
+    assert provider_response["additionalProperties"] == {"$ref": "#/components/schemas/ProviderView"}
+    operation = schema["paths"]["/v1/subscriptions"]["post"]
     assert not operation.get("parameters")
-    assert operation["requestBody"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/Subscribe"}
+    assert operation["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/Subscribe"
+    }
 
 
 async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(store: Store) -> None:

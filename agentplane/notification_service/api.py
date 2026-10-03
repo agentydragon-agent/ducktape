@@ -16,6 +16,7 @@ from agentplane.notification_service.models import (
     Acknowledge,
     InboxPage,
     InboxView,
+    ProviderView,
     Subscribe,
     SubscriptionUpdate,
     SubscriptionView,
@@ -35,8 +36,7 @@ def workload_authenticator(request: Request) -> WorkloadPrincipalAuthenticator:
 
 
 async def authenticated_caller(
-    request: Request,
-    authenticate: Annotated[WorkloadPrincipalAuthenticator, Depends(workload_authenticator)],
+    request: Request, authenticate: Annotated[WorkloadPrincipalAuthenticator, Depends(workload_authenticator)]
 ) -> WorkloadPrincipal:
     return await authenticate(request)
 
@@ -62,12 +62,11 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/v1/providers")
-async def providers(caller: Caller) -> dict[str, object]:
+async def providers(caller: Caller) -> dict[str, ProviderView]:
     return {
-        "actions": {
-            "subscription_schema": Subscribe.model_json_schema(),
-            "content": "ActionEventView: sequence, state, at, actor",
-        }
+        "actions": ProviderView(
+            subscription_schema=Subscribe.model_json_schema(), content="ActionEventView: sequence, state, at, actor"
+        )
     }
 
 
@@ -77,8 +76,7 @@ async def subscribe(body: Subscribe, caller: Caller, service: Notifications) -> 
         return await service.subscribe(caller, body)
     except httpx.HTTPStatusError as error:
         raise HTTPException(
-            403 if error.response.status_code in (401, 403, 404) else 503,
-            "Action source unavailable or unauthorized",
+            403 if error.response.status_code in (401, 403, 404) else 503, "Action source unavailable or unauthorized"
         ) from error
 
 

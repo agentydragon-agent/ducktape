@@ -11,6 +11,11 @@ class Model(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True, hide_input_in_errors=True)
 
 
+class ProviderView(Model):
+    subscription_schema: dict[str, JsonValue] = Field(description="Provider-defined JSON Schema for subscription creation.")
+    content: str = Field(description="Description of the retained provider payload.")
+
+
 class DestinationRef(Model):
     namespace: str = Field(min_length=1, max_length=63)
     name: str = Field(min_length=1, max_length=63)
