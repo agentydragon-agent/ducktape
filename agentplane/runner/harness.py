@@ -8,5 +8,3 @@ class Harness(StrEnum):
 
     CLAUDE = "HARNESS_CLAUDE"
     CODEX = "HARNESS_CODEX"
-
-

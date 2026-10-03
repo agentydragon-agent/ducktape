@@ -35,8 +35,8 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api
 from util.net import bind_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, ParseDict
@@ -12,16 +13,19 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.kubernetes_grants import (
-    ClusterRoleRef, DnsName, KubernetesGrant, RoleBindingGrant, RoleRef,
+    ClusterRoleRef,
+    DnsName,
+    KubernetesGrant,
+    RoleBindingGrant,
+    RoleRef,
 )
-from collections.abc import Mapping
-from typing import Literal
 from agentplane.sandbox_service.models import OperatingMode, ProvisioningState
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
 
 Slug = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)]
+
 
 class KubernetesGrantView(BaseModel):
     """An enabled choice with its fixed target, for the operator's launch picker."""
@@ -174,7 +178,6 @@ class SandboxView(BaseModel):
     kubernetes_grant_error: str | None
     deleting: bool = False
     pod: PodStatus | None = None
-
 
 
 def sandbox_view(value: protocol_pb2.Sandbox) -> SandboxView:

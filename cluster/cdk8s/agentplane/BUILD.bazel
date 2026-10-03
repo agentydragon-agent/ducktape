@@ -342,6 +342,7 @@ py_library(
         "//cluster/cdk8s:__pkg__",
     ],
     deps = [
+        ":model_display_names",
         "//agentplane/app:action_federation",
         "//agentplane/app:api",
         "//agentplane/app:main",
@@ -349,7 +350,6 @@ py_library(
         "//agentplane/runner:harness",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//cluster/cdk8s:model_rosters",
-        ":model_display_names",
     ],
 )
 
@@ -397,17 +397,17 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
     deps = [
+        ":app_settings",
+        ":rbac",
+        ":sandbox_pod",
         "//agentplane/app:action_federation",
         "//agentplane/app:main",
         "//agentplane/app:presets",
         "//agentplane/runner:harness",
         "//agentplane/sandbox_service:kubernetes_grants",
-        "//cluster/cdk8s/litellm:keys",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:model_rosters",
-        ":app_settings",
-        ":rbac",
-        ":sandbox_pod",
+        "//cluster/cdk8s/litellm:keys",
     ],
 )
 
@@ -695,10 +695,11 @@ py_library(
     name = "sandbox_service",
     srcs = ["sandbox_service.py"],
     deps = [
+        ":environment",
+        ":pod_disruption_budget",
+        "//agentplane:subjects",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:main",
-        "//agentplane:subjects",
-        "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:forgejo_images",
@@ -708,8 +709,7 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:settings_file",
         "//cluster/cdk8s:token_reviewer_rbac",
-        ":environment",
-        ":pod_disruption_budget",
+        "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -724,10 +724,10 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        "//:conftest",
         ":app",
         ":conftest",
         ":sandbox_service",
+        "//:conftest",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

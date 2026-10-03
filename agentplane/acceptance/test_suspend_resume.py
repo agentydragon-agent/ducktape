@@ -10,11 +10,11 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.acceptance.agent import Agent
 from agentplane.app.client import Client, is_running
+from agentplane.app.sandbox_models import SandboxView
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.sandbox_service.models import ProvisioningState
-from agentplane.app.sandbox_models import SandboxView
 from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.models import ProvisioningState
 
 Sandboxes = Callable[..., Awaitable[SandboxView]]
 POD_TRANSITION_SECONDS = 300.0

@@ -43,6 +43,7 @@ from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnav
 from agentplane.app.changes import Changes
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.identity import CallerIdentity, require_caller
+from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
 from agentplane.app.shutdown import Shutdown
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.views import ThreadView
@@ -56,7 +57,6 @@ from agentplane.sandbox_service.egress_views import (
     matching_bindings,
 )
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, sandbox_view, sandbox_views
-from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient

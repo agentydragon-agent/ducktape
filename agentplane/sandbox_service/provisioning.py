@@ -8,10 +8,11 @@ import asyncio
 import json
 import logging
 import re
-from google.protobuf.json_format import MessageToDict
-from agentplane.runner import protocol_pb2 as runner_pb2
 from dataclasses import dataclass
 
+from google.protobuf.json_format import MessageToDict
+
+from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.egress import EgressInventory
@@ -23,9 +24,8 @@ from agentplane.sandbox_service.kubernetes_views import (
     PROVISIONING_ANNOTATION,
     SANDBOX_BINDING_ANNOTATION,
 )
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding
 from agentplane.sandbox_service.session_config import LaunchGrants
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,8 @@ class Provisioning:
         if max(len(spec.bootstrap), len(spec.session_defaults.setup_script)) > 65_536:
             raise ValueError("script exceeds 65536 characters")
         if spec.session_defaults.HasField("harness") and spec.session_defaults.harness not in (
-            runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX,
+            runner_pb2.HARNESS_CLAUDE,
+            runner_pb2.HARNESS_CODEX,
         ):
             raise ValueError("unsupported harness")
         grants = resolve_grants(list(spec.kubernetes_grants), self.grants)
@@ -52,7 +53,10 @@ class Provisioning:
         await self.egress.require_policies(policies)
         await self.action_policy.require_policy_sets(list(spec.action_policy_sets))
         binding = (
-            SandboxBinding(session_defaults=spec.session_defaults if spec.HasField("session_defaults") else None, bootstrap=spec.bootstrap)
+            SandboxBinding(
+                session_defaults=spec.session_defaults if spec.HasField("session_defaults") else None,
+                bootstrap=spec.bootstrap,
+            )
             if spec.HasField("session_defaults") or spec.bootstrap
             else None
         )
@@ -64,7 +68,9 @@ class Provisioning:
         if binding is not None:
             annotations[SANDBOX_BINDING_ANNOTATION] = write_binding(binding)
         if grants:
-            annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([MessageToDict(grant, preserving_proto_field_name=True) for grant in grants])
+            annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps(
+                [MessageToDict(grant, preserving_proto_field_name=True) for grant in grants]
+            )
         view = await self.inventory.create(
             spec,
             annotations=annotations or None,

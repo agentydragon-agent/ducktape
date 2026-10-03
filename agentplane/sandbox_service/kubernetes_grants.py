@@ -10,10 +10,9 @@ from collections.abc import Mapping
 from typing import Annotated, Literal
 
 from google.protobuf.json_format import ParseDict
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant
-
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 DnsName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=63)]
 
@@ -67,4 +66,6 @@ def resolve_grants(names: list[str], catalog: Mapping[str, KubernetesGrant]) -> 
         raise UnknownKubernetesGrantError(unknown)
     if len(names) != len(set(names)):
         raise DuplicateKubernetesGrantError
-    return [ParseDict({"name": name, "grant": catalog[name].model_dump(mode="json")}, ResolvedGrant()) for name in names]
+    return [
+        ParseDict({"name": name, "grant": catalog[name].model_dump(mode="json")}, ResolvedGrant()) for name in names
+    ]

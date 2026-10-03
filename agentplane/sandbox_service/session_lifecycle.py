@@ -8,8 +8,7 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.instructions import combine_instructions
-from agentplane.sandbox_service.protocol_pb2 import SessionDestination
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SessionDestination
 
 # gazelle:include_dep @pypi//protobuf
 

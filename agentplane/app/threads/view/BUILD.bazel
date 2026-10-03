@@ -78,8 +78,8 @@ py_library(
         "//agentplane/app:__subpackages__",
     ],
     deps = [
-        "//agentplane/runner:harness",
         ":fold",
+        "//agentplane/runner:harness",
         "@pypi//pydantic",
     ],
 )

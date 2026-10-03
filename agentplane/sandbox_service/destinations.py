@@ -7,8 +7,7 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination
 from util.agent_sandbox import SANDBOX_API
 
 
@@ -74,4 +73,10 @@ class DestinationResolver:
         except ValueError as error:
             raise DestinationUnavailableError from error
         host = f"[{address}]" if address.version == 6 else str(address)
-        return RunnerEndpoint(target=f"{host}:{self.runner_port}", pod_uid=metadata.uid, binding=view.binding if view.HasField("binding") else None)
+        return RunnerEndpoint(
+            target=f"{host}:{self.runner_port}",
+            pod_uid=metadata.uid,
+            binding=view.binding if view.HasField("binding") else None,
+        )
+
+# gazelle:include_dep @pypi//protobuf

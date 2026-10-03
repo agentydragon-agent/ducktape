@@ -50,14 +50,16 @@ Extract the smallest coherent backend that supports:
    provisioning, session creation, prompt/context assembly, and discovery dependencies out of the app.
    No hidden requirement that the UI ran once to bootstrap the new service's state.
 
-Notifications and the app use the same protobuf/gRPC backend contract. Each request is authenticated and authorized against its destination. Shared SA
-identity remains the ordinary agent authority; a caller-supplied SA or destination ID is not proof of
-access. For trusted service calls, specify the delegated resource-owner context and configured service
-permissions rather than treating arbitrary forwarded identity headers as authentication.
+Notifications and the app use the same protobuf/gRPC backend contract. V1 has one nonempty
+`caller_accounts` service-account allowlist for all RPCs, checked before inventory lookup or runner
+contact. Ordinary sandbox workloads do not call Sandbox Service directly, even for their own SA.
+The notification service still authenticates its agent callers at its own subscription boundary.
+Caller-supplied owner/UID/session identifiers select resources; they are not forwarded credentials.
+Every destination must match the stored Sandbox owner/UID and verified current runner Pod.
 
-Read access, command/control access, and permission to wake a destination are distinct decisions.
-Trusted services may receive broad access initially; this does not require new command-level RBAC
-inside the runner. Reading a log must never provision or resume a sandbox as a side effect.
+Listed services have broad access initially; there is no separate manager/delivery tier or new
+command-level RBAC. Wake remains an explicit future operation/policy decision, never a read side
+effect. Read/follow/command must not provision, create, resume, or wake a destination.
 
 ## Transport decision
 
@@ -73,7 +75,7 @@ Every session operation names an explicit destination; the service authorizes it
 current runner internally. No caller-supplied runner URL or inferred current Thread.
 
 The workload bearer travels in gRPC metadata and is checked using the shared transport-neutral
-workload-principal resolver. ServiceAccount authority and destination checks remain unchanged.
+workload-principal resolver. TokenReview namespaces derive from the configured service-caller allowlist.
 Egress supports gRPC metadata substitution and streaming; transport choice does not defer service
 API authentication or satisfy the separate runner-authentication TODO.
 
@@ -85,6 +87,12 @@ expiry, backend failure, and native stream closure. Do not enable automatic muta
 because a generated client supports them.
 
 Production entrypoints, app callers, and service acceptance tests use the same gRPC API.
+No test-only RPCs: inspection uses the initial `FollowSession` snapshot and cancellation; bootstrap
+is exercised through `OpenSession`. The app presents its configured Kubernetes grant catalog without
+an unused backend catalog RPC. Provisioning and reconciliation are always enabled in this service.
+Generated protobuf messages are canonical in the service/client, not mirrored by Pydantic DTOs.
+Browser HTTP schemas belong to the app; Pydantic remains only where needed for settings/catalogs
+and persisted Kubernetes input validation.
 HTTP is limited to service health probes; there is no parallel HTTP service implementation.
 Transport acceptance must cover authenticated gRPC calls, cancellation/resource cleanup, replay
 across lease expiry, native closure versus transport failure, and uncertain command admission,

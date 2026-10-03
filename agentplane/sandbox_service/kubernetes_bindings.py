@@ -10,10 +10,8 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import RbacAuthorizationV1Api
 
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant
-from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import Sandbox
+from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, Sandbox
 from util.agent_sandbox import SANDBOX_API
 
 logger = logging.getLogger(__name__)
@@ -303,3 +301,5 @@ class KubernetesBindings:
             except Exception:
                 logger.exception("Kubernetes grants reconciliation failed")
             await asyncio.sleep(interval_seconds)
+
+# gazelle:include_dep @pypi//protobuf

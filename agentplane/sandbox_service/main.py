@@ -74,12 +74,10 @@ class Settings(BaseSettings):
 
 
 async def serve(settings: Settings) -> None:
-    platform_instructions = (
-        resolved_agent_instructions(
-            settings.agent_instructions,
-            egress_api_url=settings.agent_egress_api_url,
-            actions_service_url=settings.agent_actions_service_url,
-        )
+    platform_instructions = resolved_agent_instructions(
+        settings.agent_instructions,
+        egress_api_url=settings.agent_egress_api_url,
+        actions_service_url=settings.agent_actions_service_url,
     )
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:
@@ -102,9 +100,7 @@ async def serve(settings: Settings) -> None:
         provisioning = Provisioning(
             inventory,
             EgressInventory(
-                namespace=settings.sandbox_namespace,
-                custom_objects=custom,
-                default_policies=settings.default_policies,
+                namespace=settings.sandbox_namespace, custom_objects=custom, default_policies=settings.default_policies
             ),
             ActionPolicyBindings(namespace=settings.sandbox_namespace, custom_objects=custom),
             settings.kubernetes_grants,

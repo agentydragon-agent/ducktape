@@ -12,6 +12,7 @@ import grpc
 import pytest
 import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
+from google.protobuf.json_format import MessageToDict, ParseDict
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -27,10 +28,8 @@ from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_READY_ANNOTATION,
     PROVISIONING_ANNOTATION,
 )
-from google.protobuf.json_format import MessageToDict, ParseDict
-from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant
 from agentplane.sandbox_service.models import ProvisioningState
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
+from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -44,7 +43,11 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 TOKEN = "test-grpc-token"
 AUDIENCE = "test-sandbox-service"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
-DESTINATION = SandboxDestination(owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name), sandbox=SANDBOX, sandbox_uid=SANDBOX_UID)
+DESTINATION = SandboxDestination(
+    owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name),
+    sandbox=SANDBOX,
+    sandbox_uid=SANDBOX_UID,
+)
 
 
 @dataclass
@@ -333,11 +336,13 @@ async def test_unlisted_callers_rejected_before_lookup(
     # Owning the destination does not grant service access. The same allowlist gates all RPCs.
     cluster.fake.tokens[TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{account_name}",
-        pod_name="test-unlisted-pod", pod_uid="test-unlisted-uid", audiences=(AUDIENCE,),
+        pod_name="test-unlisted-pod",
+        pod_uid="test-unlisted-uid",
+        audiences=(AUDIENCE,),
     )
-    configured = replace(resources, caller_accounts=frozenset({
-        ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")
-    }))
+    configured = replace(
+        resources, caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")})
+    )
     cluster.fake.objects[SANDBOXES_PLURAL].clear()
     destination = protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
     async with service_client(configured, token_file) as remote:
@@ -376,9 +381,12 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
     else:
         grant = ResolvedGrant(
             name="config",
-            grant=ParseDict(RoleBindingGrant(
-                kind="RoleBinding", namespace=SANDBOX_NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
-            ).model_dump(mode="json"), protocol_pb2.KubernetesGrant()),
+            grant=ParseDict(
+                RoleBindingGrant(
+                    kind="RoleBinding", namespace=SANDBOX_NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
+                ).model_dump(mode="json"),
+                protocol_pb2.KubernetesGrant(),
+            ),
         )
         annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([MessageToDict(grant, preserving_proto_field_name=True)])
         annotations[KUBERNETES_GRANTS_READY_ANNOTATION] = "false"
@@ -475,7 +483,9 @@ async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
 def test_duplicate_spec_aliases_are_refused() -> None:
     with pytest.raises(ValueError, match="both proto and JSON"):
         wire.open_proto(
-            protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session"), {"reasoning_effort": "low", "reasoningEffort": "high"}, None
+            protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session"),
+            {"reasoning_effort": "low", "reasoningEffort": "high"},
+            None,
         )
 
 
@@ -497,9 +507,11 @@ async def test_native_eof_or_error_is_not_admission(
     remote: SandboxServiceClient, peer: Peer, error: str | None
 ) -> None:
     command = command_pb2.Command(command_id="end", submit_input=command_pb2.SubmitInput(text="notice"))
+
     async def submit() -> None:
         with pytest.raises(RunnerError):
             await remote.runner(DESTINATION).command("session", command, after_cursor=0)
+
     async with asyncio.timeout(8), asyncio.TaskGroup() as tasks:
         pending = tasks.create_task(submit())
         connection = await peer.attachments.get()
@@ -541,9 +553,7 @@ async def test_unavailable_destination_does_not_contact_runner(
     assert peer.attachments.empty()
 
 
-async def test_successor_pod_same_sandbox_and_account_keeps_destination(
-    resources: Resources, cluster: Cluster
-) -> None:
+async def test_successor_pod_same_sandbox_and_account_keeps_destination(resources: Resources, cluster: Cluster) -> None:
     first = await resources.destinations.resolve(DESTINATION)
     assert first.pod_uid == "test-pod-uid"
     assert first.target == f"127.0.0.1:{resources.destinations.runner_port}"

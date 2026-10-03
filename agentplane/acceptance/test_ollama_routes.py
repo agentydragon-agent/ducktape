@@ -12,9 +12,9 @@ import pytest_bazel
 
 from agentplane.acceptance.agent import Agent
 from agentplane.app.client import Client
+from agentplane.app.sandbox_models import SandboxView
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.app.sandbox_models import SandboxView
 from agentplane.runner.harness import Harness
 from cluster.cdk8s.agentplane.app_settings import OLLAMA_MODELS
 from util.testing.undeclared_outputs import undeclared_outputs_dir

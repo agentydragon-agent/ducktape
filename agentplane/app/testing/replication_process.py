@@ -50,9 +50,9 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import event_log_pb2
+from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.models import ProvisioningState
-from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.testing.backend import backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 

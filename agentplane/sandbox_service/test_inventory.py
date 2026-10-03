@@ -9,9 +9,9 @@ import pytest_bazel
 from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.models import ProvisioningState, SandboxNotFoundError
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
-from agentplane.sandbox_service.session_lifecycle import launch_spec
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, SessionDestination
+from agentplane.sandbox_service.session_lifecycle import launch_spec
+from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOXES_PLURAL
 
@@ -51,10 +51,13 @@ async def test_legacy_binding_storage_is_preserved_but_not_exposed(cluster: Clus
         assert binding.session_defaults.HasField("instructions")
         assert binding.session_defaults.instructions == ""
         spec = launch_spec(
-            SessionDestination(sandbox=SandboxDestination(
-                owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid,
-            ), session_id="retained-session"),
-            {}, binding=binding, platform_instructions="",
+            SessionDestination(
+                sandbox=SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid),
+                session_id="retained-session",
+            ),
+            {},
+            binding=binding,
+            platform_instructions="",
         )
         assert spec.cwd == "/state/retained-session"
     assert cluster.fake.objects == before

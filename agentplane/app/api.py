@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from agentplane.app.sandbox_models import KubernetesGrantView, grant_views
-
 import asyncio
 import hashlib
 import logging
@@ -57,6 +55,14 @@ from agentplane.app.live import LiveIndex, Updates, router as live_router
 from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
+from agentplane.app.sandbox_models import (
+    KubernetesGrantView,
+    NewSandbox,
+    SandboxView,
+    create_request,
+    grant_views,
+    sandbox_view,
+)
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.app.threads import bridge as runner_bridge
 from agentplane.app.threads.events import stream
@@ -76,6 +82,7 @@ from agentplane.app.threads.view.fold import CommandOutcome
 from agentplane.app.threads.view.views import ThreadView
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
+from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.egress_views import (
@@ -92,8 +99,6 @@ from agentplane.sandbox_service.kubernetes_grants import (
     resolve_grants,
 )
 from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxRunningError
-from agentplane.app.sandbox_models import NewSandbox, SandboxView, create_request, sandbox_view
-from agentplane.runner.harness import Harness
 from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

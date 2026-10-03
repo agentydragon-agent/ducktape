@@ -2,10 +2,9 @@
 
 from collections.abc import Sequence
 
+from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import unique_everseen
-
-from google.protobuf.json_format import MessageToDict
 
 from agentplane.egress.resources import EgressBinding
 from agentplane.sandbox_service.egress_views import (
@@ -20,8 +19,8 @@ from agentplane.sandbox_service.egress_views import (
     UnknownPolicyError,
     binding_view,
 )
-from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from agentplane.sandbox_service.owned_binding import create_binding
+from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from util.agent_sandbox import SANDBOX_API
 from util.kubernetes import CustomObjectsClient
 
@@ -72,7 +71,11 @@ class EgressInventory(EgressReader):
                 "metadata": {
                     # The API server names it. A sandbox may be granted more than once, and a name
                     # derived from the sandbox alone would make every grant after the first a 409.
-                    **({"name": f"ap-init-{sandbox.uid.replace("-", "")}"} if initial else {"generateName": f"{sandbox.name}-"}),
+                    **(
+                        {"name": f"ap-init-{sandbox.uid.replace('-', '')}"}
+                        if initial
+                        else {"generateName": f"{sandbox.name}-"}
+                    ),
                     # Not the controller: the Sandbox controller owns the Pod and PVC, and this
                     # reference is for cascading deletion only. It cascades only while bindings and
                     # Sandboxes share a namespace — Kubernetes treats a namespaced owner in another
@@ -89,7 +92,10 @@ class EgressInventory(EgressReader):
                         }
                     ],
                 },
-                "spec": {"subjects": [MessageToDict(sandbox.service_account, preserving_proto_field_name=True)], "policies": policies},
+                "spec": {
+                    "subjects": [MessageToDict(sandbox.service_account, preserving_proto_field_name=True)],
+                    "policies": policies,
+                },
             },
         )
         return binding_view(EgressBinding.model_validate(created), known)

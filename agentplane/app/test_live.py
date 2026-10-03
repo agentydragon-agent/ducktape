@@ -54,9 +54,9 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner import protocol_pb2
+from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.models import ProvisioningState
-from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
@@ -134,8 +134,8 @@ async def test_the_index_projects_the_rows_a_listing_would_return(
     seeded: LiveIndex, inventory: SandboxServiceClient
 ) -> None:
     """The push and the fetch share their projection; this is what says they still do."""
-    assert seeded.sandbox_views() == await inventory.list_sandboxes()
-    assert seeded.sandbox_view("runner-1") == await inventory.get("runner-1")
+    assert seeded.sandbox_views() == [sandbox_view(view) for view in await inventory.list_sandboxes()]
+    assert seeded.sandbox_view("runner-1") == sandbox_view(await inventory.get("runner-1"))
 
 
 async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex, egress: EgressAccess) -> None:

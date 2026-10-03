@@ -31,9 +31,8 @@ from agentplane.sandbox_service.kubernetes_views import (
     sandbox_views,
 )
 from agentplane.sandbox_service.models import OperatingMode, SandboxNotFoundError, SandboxRunningError
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding
 from agentplane.sandbox_service.session_config import LaunchGrants
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL
 from util.kubernetes import CustomObjectsClient
 
@@ -112,7 +111,11 @@ class SandboxInventory:
         return sandbox_view(sandbox, await self._pod(name))
 
     async def create(
-        self, spec: CreateSandboxRequest, *, annotations: dict[str, str] | None = None, finalizers: list[str] | None = None
+        self,
+        spec: CreateSandboxRequest,
+        *,
+        annotations: dict[str, str] | None = None,
+        finalizers: list[str] | None = None,
     ) -> Sandbox:
         template = _Template.model_validate(
             await self._custom_objects.get_namespaced_custom_object(
@@ -289,3 +292,5 @@ def _running_as(pod_template: dict[str, object], service_account: str) -> dict[s
     """
     spec = {**cast(dict[str, object], pod_template.get("spec", {})), "serviceAccountName": service_account}
     return {**pod_template, "spec": spec}
+
+# gazelle:include_dep @pypi//protobuf

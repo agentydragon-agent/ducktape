@@ -33,8 +33,8 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 APP_URL = "http://test-app.invalid"
 OIDC = OIDCSettings(

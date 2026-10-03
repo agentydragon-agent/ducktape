@@ -21,8 +21,8 @@ from agentplane.app.threads.ingestion import Ingestion
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 

@@ -112,9 +112,7 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
             audience=AUDIENCE,
             allowed_service_account_namespaces={SANDBOX_NAMESPACE},
         ),
-        destinations=DestinationResolver(
-            case.service.inventory, cast(k8s_client.CoreV1Api, case.core), 7000
-        ),
+        destinations=DestinationResolver(case.service.inventory, cast(k8s_client.CoreV1Api, case.core), 7000),
         caller_accounts=frozenset({ADMIN}),
         platform_instructions="",
         provisioning=case.service,
@@ -132,8 +130,12 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
 async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxServiceClient, case: Case) -> None:
     view = await api.create(
         CreateSandboxRequest(
-            slug="test", template=TEMPLATE, action_policy_sets=["test-actions"], kubernetes_grants=["test-read"],
-            bootstrap="printf ready", session_defaults=protocol_pb2.SessionDefaults(model="test-model", instructions=""),
+            slug="test",
+            template=TEMPLATE,
+            action_policy_sets=["test-actions"],
+            kubernetes_grants=["test-read"],
+            bootstrap="printf ready",
+            session_defaults=protocol_pb2.SessionDefaults(model="test-model", instructions=""),
         )
     )
     assert view.HasField("binding")
@@ -193,7 +195,9 @@ async def test_partial_create_recovers_from_kubernetes_state_without_app(case: C
 async def test_foreign_binding_is_not_overwritten_and_provisioning_stays_pending(case: Case) -> None:
     case.custom.fail_plural = "actionpolicybindings"
     with pytest.raises(k8s_client.ApiException):
-        await case.service.create(CreateSandboxRequest(slug="test", template=TEMPLATE, action_policy_sets=["test-actions"]))
+        await case.service.create(
+            CreateSandboxRequest(slug="test", template=TEMPLATE, action_policy_sets=["test-actions"])
+        )
     (view,) = await case.service.inventory.list_sandboxes()
     binding = next(value for (kind, _), value in case.custom.objects.items() if kind == "egressbindings")
     binding["spec"]["policies"] = ["test-foreign"]
@@ -220,9 +224,19 @@ async def test_authorization_precedes_creation(api: SandboxServiceClient, cluste
 async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServiceClient, case: Case) -> None:
     view = await api.create(CreateSandboxRequest(slug="test", template=TEMPLATE))
     name = await api.grant_egress(view, ["test-basic"])
-    assert name in {binding.name for binding in await case.service.egress.bindings_for(ServiceAccountRef(namespace=view.service_account.namespace, name=view.service_account.name))}
+    assert name in {
+        binding.name
+        for binding in await case.service.egress.bindings_for(
+            ServiceAccountRef(namespace=view.service_account.namespace, name=view.service_account.name)
+        )
+    }
     await api.revoke_egress(name)
-    assert name not in {binding.name for binding in await case.service.egress.bindings_for(ServiceAccountRef(namespace=view.service_account.namespace, name=view.service_account.name))}
+    assert name not in {
+        binding.name
+        for binding in await case.service.egress.bindings_for(
+            ServiceAccountRef(namespace=view.service_account.namespace, name=view.service_account.name)
+        )
+    }
     with pytest.raises(ServiceError) as missing:
         await api.revoke_egress(name)
     assert missing.value.code is grpc.StatusCode.NOT_FOUND

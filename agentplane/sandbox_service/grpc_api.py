@@ -18,21 +18,14 @@ from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosed
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, session_lifecycle, wire
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.command_relay import admit_running_command
-from agentplane.sandbox_service.destinations import (
-    DestinationResolver,
-    DestinationUnavailableError,
-    RunnerEndpoint,
-)
+from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError, RunnerEndpoint
 from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
 from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, Sandbox
+from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
-from agentplane.workload_auth.principal import (
-    WorkloadPrincipalRejectedError,
-    WorkloadPrincipalResolver,
-)
+from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -66,7 +59,6 @@ class Resources:
         principal = await self.principals.resolve_workload(token)
         if principal.account not in self.caller_accounts:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, "service caller not allowed")
-
 
 
 @asynccontextmanager
@@ -111,9 +103,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             yield
 
     @asynccontextmanager
-    async def runner(
-        self, destination: SandboxDestination
-    ) -> AsyncIterator[tuple[RunnerClient, RunnerEndpoint]]:
+    async def runner(self, destination: SandboxDestination) -> AsyncIterator[tuple[RunnerClient, RunnerEndpoint]]:
         endpoint = await self.resources.destinations.resolve(destination)
         # TODO: runner RPC authentication/TLS. V1 relies on the deployment network boundary.
         client = RunnerClient(endpoint.target)
@@ -128,9 +118,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     ) -> protocol_pb2.ListSandboxesResponse:
         async with self.request(context):
             inventory = self.resources.provisioning.inventory
-            return protocol_pb2.ListSandboxesResponse(
-                sandboxes=await inventory.list_sandboxes()
-            )
+            return protocol_pb2.ListSandboxesResponse(sandboxes=await inventory.list_sandboxes())
 
     @override
     async def GetSandbox(
@@ -150,9 +138,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             provisioning = self.resources.provisioning
             return await provisioning.create(request)
 
-    async def checked_sandbox(
-        self, request: protocol_pb2.SandboxRequest
-    ) -> tuple[Provisioning, Sandbox]:
+    async def checked_sandbox(self, request: protocol_pb2.SandboxRequest) -> tuple[Provisioning, Sandbox]:
         provisioning = self.resources.provisioning
         destination = request.destination
         if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
@@ -219,10 +205,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def ListSessions(
         self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
-        async with (
-            self.request(context),
-            self.runner(request.destination) as (client, _),
-        ):
+        async with self.request(context), self.runner(request.destination) as (client, _):
             return runner_pb2.ListSessionsResponse(sessions=await client.list_sessions())
 
     @override
@@ -267,7 +250,11 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     ) -> event_log_pb2.EventEntry:
         async with self.request(context):
             destination = request.destination
-            if not destination.session_id or not request.command.command_id or request.command.WhichOneof("operation") is None:
+            if (
+                not destination.session_id
+                or not request.command.command_id
+                or request.command.WhichOneof("operation") is None
+            ):
                 raise ValueError("command ID and operation are required")
             async with self.runner(destination.sandbox) as (client, _):
                 return await admit_running_command(

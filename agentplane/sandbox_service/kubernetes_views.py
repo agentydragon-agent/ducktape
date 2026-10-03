@@ -4,17 +4,23 @@ import json
 from collections.abc import Iterable
 from datetime import datetime
 
+from google.protobuf.json_format import ParseDict
+from google.protobuf.timestamp_pb2 import Timestamp
 from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
-from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, DnsName
 
 from agentplane.sandbox_service.binding_storage import read_binding
+from agentplane.sandbox_service.kubernetes_grants import DnsName, KubernetesGrant
 from agentplane.sandbox_service.models import OperatingMode, ProvisioningState
-from agentplane.sandbox_service.protocol_pb2 import Condition, ContainerStatus, PodStatus, Sandbox
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
-from google.protobuf.timestamp_pb2 import Timestamp
-from google.protobuf.json_format import ParseDict
-from agentplane.sandbox_service.protocol_pb2 import ServiceAccount, ResolvedGrant
+from agentplane.sandbox_service.protocol_pb2 import (
+    Condition,
+    ContainerStatus,
+    PodStatus,
+    ResolvedGrant,
+    Sandbox,
+    SandboxBinding,
+    ServiceAccount,
+)
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
@@ -100,7 +106,10 @@ def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None) -> Sandbox:
         service_account=ServiceAccount(
             namespace=sandbox.metadata.namespace, name=sandbox.spec.pod_template.spec.service_account_name
         ),
-        conditions=[ParseDict({k: v for k, v in c.items() if k in {"type", "status", "reason", "message"}}, Condition()) for c in sandbox.status.conditions],
+        conditions=[
+            ParseDict({k: v for k, v in c.items() if k in {"type", "status", "reason", "message"}}, Condition())
+            for c in sandbox.status.conditions
+        ],
         node_name=sandbox.status.node_name,
         binding=_binding(sandbox),
         kubernetes_grants=grants,

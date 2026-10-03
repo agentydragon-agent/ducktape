@@ -201,3 +201,5 @@ async def test_delete_takes_a_suspended_sandbox_and_refuses_a_running_one(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+# gazelle:include_dep @pypi//protobuf

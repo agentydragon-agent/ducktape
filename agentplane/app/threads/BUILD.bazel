@@ -104,15 +104,15 @@ py_test(
     size = "medium",
     srcs = ["test_store.py"],
     deps = [
+        ":ingestion",
+        ":store",
         "//:conftest",
+        "//agentplane/app:conftest",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/events:ingestion_lease",
-        "//agentplane/app:conftest",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",
-        ":ingestion",
-        ":store",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -129,6 +129,7 @@ py_library(
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
     ],
 )
 

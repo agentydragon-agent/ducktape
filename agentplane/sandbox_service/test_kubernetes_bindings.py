@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
+from google.protobuf.json_format import MessageToDict, ParseDict
 from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 
@@ -30,10 +31,8 @@ from agentplane.sandbox_service.kubernetes_grants import (
     resolve_grants,
 )
 from agentplane.sandbox_service.kubernetes_views import KUBERNETES_GRANTS_ANNOTATION, sandbox_view
-from google.protobuf.json_format import MessageToDict, ParseDict
-from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant
 from agentplane.sandbox_service.models import ProvisioningState
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, ResolvedGrant
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
@@ -55,10 +54,14 @@ async def _sandbox(
     selected = resolve_grants(names, catalog)
     view = await inventory.create(
         CreateSandboxRequest(slug="haku", template=TEMPLATE, kubernetes_grants=names),
-        annotations={KUBERNETES_GRANTS_ANNOTATION: json.dumps([MessageToDict(grant, preserving_proto_field_name=True) for grant in selected])},
+        annotations={
+            KUBERNETES_GRANTS_ANNOTATION: json.dumps(
+                [MessageToDict(grant, preserving_proto_field_name=True) for grant in selected]
+            )
+        },
         finalizers=[KUBERNETES_BINDINGS_FINALIZER]
         if any(
-            isinstance(grant.grant, ClusterRoleBindingGrant) or grant.grant.namespace != NAMESPACE for grant in selected
+            grant.grant.kind == "ClusterRoleBinding" or grant.grant.namespace != NAMESPACE for grant in selected
         )
         else None,
     )
@@ -88,7 +91,7 @@ async def test_distinct_sandboxes_bind_only_their_own_service_accounts() -> None
     assert (await inventory.get(first)).state == ProvisioningState.WAITING_FOR_GRANTS
     await bindings.reconcile_once()
     first_view, second_view = await inventory.get(first), await inventory.get(second)
-    assert first_view.state is second_view.state == ProvisioningState.RUNNING
+    assert first_view.state == second_view.state == ProvisioningState.RUNNING
     assert first_view.kubernetes_grants == selection
     assert len(rbac.bindings) == 2
     for view in (first_view, second_view):
@@ -295,9 +298,12 @@ async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot() -> None
     inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
     selected = ResolvedGrant(
         name="cluster",
-        grant=ParseDict(ClusterRoleBindingGrant(
-            kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="diagnostics")
-        ).model_dump(mode="json"), protocol_pb2.KubernetesGrant()),
+        grant=ParseDict(
+            ClusterRoleBindingGrant(
+                kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="diagnostics")
+            ).model_dump(mode="json"),
+            protocol_pb2.KubernetesGrant(),
+        ),
     )
 
     class LateRbac(FakeRbac):
@@ -305,7 +311,9 @@ async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot() -> None
             if not self.cluster_bindings:
                 raw = sandbox("late")
                 raw["metadata"]["annotations"] = {
-                    KUBERNETES_GRANTS_ANNOTATION: json.dumps([MessageToDict(selected, preserving_proto_field_name=True)])
+                    KUBERNETES_GRANTS_ANNOTATION: json.dumps(
+                        [MessageToDict(selected, preserving_proto_field_name=True)]
+                    )
                 }
                 custom.objects[("sandboxes", "late")] = raw
                 binding = _binding(sandbox_view(raw, None), selected)

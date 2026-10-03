@@ -38,8 +38,8 @@ from agentplane.app.threads.models import SandboxIngestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.fake_inventory import pod, sandbox
 from util.net import pick_free_port
 

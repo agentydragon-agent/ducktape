@@ -32,10 +32,16 @@ class SandboxSessions:
             raise SandboxNotFoundError(sandbox)
         if view.state is not ProvisioningState.RUNNING:
             raise SandboxNotReachableError(sandbox, view.state)
-        destination = SandboxDestination(owner=ServiceAccount(namespace=view.service_account.namespace, name=view.service_account.name), sandbox=view.name, sandbox_uid=str(view.uid))
+        destination = SandboxDestination(
+            owner=ServiceAccount(namespace=view.service_account.namespace, name=view.service_account.name),
+            sandbox=view.name,
+            sandbox_uid=str(view.uid),
+        )
         if str(view.uid) not in self._clients:
             self._clients[str(view.uid)] = self._service.runner(destination)
         return self._clients[str(view.uid)]
 
     async def close(self) -> None:
         await self._service.close()
+
+# gazelle:include_dep @pypi//protobuf

@@ -18,16 +18,13 @@ from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.sandbox_service import protocol_pb2, wire
+from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
-from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
-from agentplane.sandbox_service.protocol_pb2 import SessionDefaults
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, SessionDefaults
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -41,7 +38,11 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 TOKEN = "test-native-grpc-token"
 AUDIENCE = "test-native-grpc"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
-DESTINATION = SandboxDestination(owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name), sandbox=SANDBOX, sandbox_uid=SANDBOX_UID)
+DESTINATION = SandboxDestination(
+    owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name),
+    sandbox=SANDBOX,
+    sandbox_uid=SANDBOX_UID,
+)
 SESSION = "grpc-session"
 
 

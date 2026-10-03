@@ -12,8 +12,8 @@ from agentplane.sandbox_service.action_policy_views import (
     ActionPolicyReader,
     UnknownPolicySetError,
 )
-from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from agentplane.sandbox_service.owned_binding import create_binding
+from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
 
 
@@ -41,7 +41,11 @@ class ActionPolicyBindings(ActionPolicyReader):
                 "metadata": {
                     # The API server names it, as it does the egress binding: a Sandbox may be
                     # bound again later, and a name derived from the Sandbox alone would 409.
-                    **({"name": f"ap-init-{sandbox.uid.replace("-", "")}"} if initial else {"generateName": f"{sandbox.name}-"}),
+                    **(
+                        {"name": f"ap-init-{sandbox.uid.replace('-', '')}"}
+                        if initial
+                        else {"generateName": f"{sandbox.name}-"}
+                    ),
                     "labels": {MANAGED_BY_LABEL: MANAGED_BY_APP},
                     # Not the controller: the Sandbox controller owns the Pod and PVC, and this
                     # reference is for cascading deletion only. The binding lives in the Sandbox's
@@ -58,7 +62,10 @@ class ActionPolicyBindings(ActionPolicyReader):
                         }
                     ],
                 },
-                "spec": {"subject": MessageToDict(sandbox.service_account, preserving_proto_field_name=True), "policySets": list(policy_sets)},
+                "spec": {
+                    "subject": MessageToDict(sandbox.service_account, preserving_proto_field_name=True),
+                    "policySets": list(policy_sets),
+                },
             },
         )
 

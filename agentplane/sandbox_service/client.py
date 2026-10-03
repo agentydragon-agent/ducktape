@@ -16,7 +16,7 @@ from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, wire
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination, Sandbox
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxDestination
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -152,8 +152,7 @@ class SandboxServiceClient:
     async def grant_egress(self, sandbox: Sandbox, policies: list[str]) -> str:
         destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
         result = await self.unary(
-            self.stub.GrantEgress,
-            protocol_pb2.GrantEgressRequest(destination=destination, policies=policies),
+            self.stub.GrantEgress, protocol_pb2.GrantEgressRequest(destination=destination, policies=policies)
         )
         return result.binding_name
 
@@ -177,8 +176,7 @@ class Runner:
 
     async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
         result = await self.service.unary(
-            self.service.stub.ListSessions,
-            protocol_pb2.SandboxRequest(destination=self.destination),
+            self.service.stub.ListSessions, protocol_pb2.SandboxRequest(destination=self.destination)
         )
         return list(result.sessions)
 
@@ -187,14 +185,18 @@ class Runner:
     ) -> runner_pb2.Attached:
         return await self.service.unary(
             self.service.stub.OpenSession,
-            wire.open_proto(protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id), spec, setup_script),
+            wire.open_proto(
+                protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id), spec, setup_script
+            ),
             timeout_s=self.service.lifecycle_timeout_s,
         )
 
     async def resume(self, session_id: str) -> runner_pb2.Attached:
         return await self.service.unary(
             self.service.stub.ResumeSession,
-            protocol_pb2.SessionRequest(destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)),
+            protocol_pb2.SessionRequest(
+                destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
+            ),
             timeout_s=self.service.lifecycle_timeout_s,
         )
 
