@@ -211,9 +211,7 @@ def test_agent_target_variants_serialize_only_their_own_fields(target: dict[str,
         {"header": "Authorization"},
     ],
 )
-def test_mixed_or_incomplete_targets_are_rejected_by_resources_and_agent_api(
-    target: dict[str, str | None],
-) -> None:
+def test_mixed_or_incomplete_targets_are_rejected_by_resources_and_agent_api(target: dict[str, str | None]) -> None:
     with pytest.raises(ValidationError):
         TypeAdapter(Target).validate_python(target)
     with pytest.raises(ValidationError):

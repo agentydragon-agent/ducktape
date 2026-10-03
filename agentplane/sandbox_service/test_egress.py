@@ -274,7 +274,10 @@ async def test_operator_json_target_has_no_nullable_header_or_scheme(
     _seed(custom_objects)
     target = {"method": "jsonField", "field": "password"}
     custom_objects.objects[("egresscredentials", "test-github-pat")] = egress_credential(
-        "test-github-pat", secret="test-github-pat-secret", key="token", description=CREDENTIAL_DESCRIPTION,
+        "test-github-pat",
+        secret="test-github-pat-secret",
+        key="token",
+        description=CREDENTIAL_DESCRIPTION,
         targets=[target],
     )
     views = await egress.bindings_for(LIVE)
@@ -305,7 +308,12 @@ def test_operator_schema_preserves_the_target_discriminator() -> None:
     items = CredentialView.model_json_schema()["properties"]["targets"]["items"]
     assert items["discriminator"]["propertyName"] == "method"
     assert set(items["discriminator"]["mapping"]) == {
-        "wholeValue", "schemeToken", "basicUsername", "basicPassword", "basicWhole", "jsonField"
+        "wholeValue",
+        "schemeToken",
+        "basicUsername",
+        "basicPassword",
+        "basicWhole",
+        "jsonField",
     }
     assert len(items["oneOf"]) == 6
 
