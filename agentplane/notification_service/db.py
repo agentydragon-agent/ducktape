@@ -40,7 +40,8 @@ class Subscription(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True)
     inbox_id: Mapped[UUID] = mapped_column(ForeignKey("inbox.id", ondelete="CASCADE"))
     request_id: Mapped[UUID]
-    client_key: Mapped[str]
+    # Keep the deployed column/constraint compatible with old replicas; the API uses idempotency_key.
+    idempotency_key: Mapped[str] = mapped_column("client_key")
     creation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     creator: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     version: Mapped[int]

@@ -11,7 +11,7 @@ verified ServiceAccount, shared by its workloads. Every creation specifies `dest
 (namespace/name/UID) and `session_id`; inbox and subscription IDs identify subsequent operations.
 
 - `GET /v1/providers`: provider schema discovery (Actions only).
-- `POST /v1/subscriptions`: immutable Action request/filter and creation key; identical retries return
+- `POST /v1/subscriptions`: immutable Action request/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Replay defaults to sequence zero.
 - `GET /v1/subscriptions[?after_id=…]`: ordered pages of 128; continue after the last ID.
 - `GET`, `PATCH`, `DELETE /v1/subscriptions/{id}`: inspect, pause/resume/renew with an expected version,
@@ -24,6 +24,15 @@ verified ServiceAccount, shared by its workloads. Every creation specifies `dest
   prefix. Future cursors are refused. Delivery and reads never acknowledge.
 - `DELETE /v1/inboxes/{id}`: explicit retirement; no future matching or delivery. An already submitted
   runner command cannot be withdrawn. Missing endpoints or transient lookup failures are not retirement.
+
+`idempotency_key` is caller-chosen and unique within an inbox (owning ServiceAccount, qualified sandbox
+incarnation, and runner session), not across the entire sandbox. The server-generated subscription `id`
+is used for subsequent GET/PATCH/DELETE. Reusing a key with different creation parameters returns 409;
+reusing it after cancellation returns that cancelled subscription rather than creating a replacement.
+The deprecated input spelling `client_key` remains accepted for existing sessions; responses, provider
+discovery, and new prompts use `idempotency_key`. Supplying both names is rejected. Historical database
+column/creation-snapshot spellings remain unchanged for rolling compatibility; no data migration or
+subscription recreation is required. Roll out the notification API before consumers use the new spelling.
 
 Platform prompts recommend a short synchronous wait for immediate Actions, subscriptions for approval
 waits or parallel work, and resuming dependent work only after checking authoritative results. They

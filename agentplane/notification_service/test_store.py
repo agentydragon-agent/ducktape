@@ -22,7 +22,7 @@ PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner
 BODY = Subscribe(
     destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
     session_id="session",
-    client_key="first",
+    idempotency_key="first",
     request_id=uuid4(),
 )
 
@@ -35,8 +35,23 @@ def events(count: int = 3) -> list[ActionEventView]:
 
 
 async def test_owner_idempotence_cancel_and_version(store: Store) -> None:
-    first, second = await asyncio.gather(store.subscribe(PRINCIPAL, BODY), store.subscribe(PRINCIPAL, BODY))
+    legacy = BODY.model_dump(mode="json")
+    legacy["client_key"] = legacy.pop("idempotency_key")
+    first, second = await asyncio.gather(
+        store.subscribe(PRINCIPAL, BODY), store.subscribe(PRINCIPAL, Subscribe.model_validate(legacy))
+    )
     assert first == second
+    assert first.idempotency_key == BODY.idempotency_key
+    assert "client_key" not in first.model_dump()
+    async with store.sessions() as session:
+        row = await session.get(Subscription, first.id)
+        assert row is not None
+        assert row.creation == legacy
+    # The key is local to the session inbox, not the whole sandbox or account.
+    other_session = await store.subscribe(PRINCIPAL, BODY.model_copy(update={"session_id": "other-session"}))
+    assert other_session.inbox_id != first.inbox_id
+    assert other_session.id != first.id
+    assert other_session.idempotency_key == first.idempotency_key
     with pytest.raises(ConflictError):
         await store.subscribe(PRINCIPAL, BODY.model_copy(update={"request_id": uuid4()}))
     with pytest.raises(NotFoundError):
@@ -48,11 +63,13 @@ async def test_owner_idempotence_cancel_and_version(store: Store) -> None:
     cancelled = await store.change(PRINCIPAL.account, first.id, None)
     assert cancelled.cancelled
     assert await store.change(PRINCIPAL.account, first.id, None) == cancelled
+    assert await store.subscribe(PRINCIPAL, BODY) == cancelled
+    assert await store.subscribe(PRINCIPAL, Subscribe.model_validate(legacy)) == cancelled
 
 
 async def test_overlapping_subscriptions_commit_one_prefix_and_read_does_not_ack(store: Store) -> None:
     first = await store.subscribe(PRINCIPAL, BODY)
-    await store.subscribe(PRINCIPAL, BODY.model_copy(update={"client_key": "overlap"}))
+    await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": "overlap"}))
     claim = await store.claim()
     assert claim is not None
     source = await store.source(claim)
@@ -101,7 +118,7 @@ async def test_cancellation_fences_inflight_source_and_claim_loss_fences_worker(
 async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) -> None:
     first = await store.subscribe(PRINCIPAL, BODY)
     second = await store.subscribe(
-        PRINCIPAL, BODY.model_copy(update={"client_key": "another-action", "request_id": uuid4()})
+        PRINCIPAL, BODY.model_copy(update={"idempotency_key": "another-action", "request_id": uuid4()})
     )
     claim = await store.claim()
     assert claim is not None
@@ -203,7 +220,7 @@ async def test_retention_gap_is_visible_and_replay_keeps_tombstone(store: Store)
     assert page.inbox.expired_through == 3
     assert page.inbox.acknowledged == 0
     assert not page.entries
-    await store.subscribe(PRINCIPAL, BODY.model_copy(update={"client_key": "late-overlap"}))
+    await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": "late-overlap"}))
     source = await store.source(claim)
     assert source is not None
     await store.record(claim, source, events())

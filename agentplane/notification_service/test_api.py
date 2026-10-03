@@ -36,7 +36,7 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
     body = {
         "destination_ref": {"namespace": "test", "name": "sandbox", "uid": "sandbox-uid"},
         "session_id": "session",
-        "client_key": "listen",
+        "idempotency_key": "listen",
         "request_id": str(uuid4()),
     }
     async with (
@@ -67,9 +67,15 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
         assert response.json() == {"detail": "inbox limit"}
         resolver.resolve_workload.assert_awaited_once_with("test-workload")
         service.subscribe.assert_awaited_once_with(PRINCIPAL, Subscribe.model_validate(body))
+        # A caller cannot supply both names and rely on ambiguous precedence.
+        response = await client.post("/v1/subscriptions", json=body | {"client_key": "different"})
+        assert response.status_code == 422
         app.dependency_overrides.clear()
         assert (await client.post("/v1/subscriptions", json=body)).status_code == 401
     schema = app.openapi()
+    for model in ["Subscribe", "SubscriptionView"]:
+        assert "idempotency_key" in schema["components"]["schemas"][model]["properties"]
+        assert "client_key" not in schema["components"]["schemas"][model]["properties"]
     discovery_operation = schema["paths"]["/v1/providers"]["get"]
     provider_response = discovery_operation["responses"]["200"]["content"]["application/json"]["schema"]
     assert provider_response["additionalProperties"] == {"$ref": "#/components/schemas/ProviderView"}

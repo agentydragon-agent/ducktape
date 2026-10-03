@@ -63,6 +63,9 @@ class Store:
 
     async def subscribe(self, principal: WorkloadPrincipal, body: Subscribe) -> SubscriptionView:
         owner = principal.account
+        # Preserve stored creation snapshots so retries match before and during a rolling upgrade.
+        creation = body.model_dump(mode="json")
+        creation["client_key"] = creation.pop("idempotency_key")
         now = datetime.now(UTC)
         key = hashlib.sha256(
             json.dumps([body.destination_ref.model_dump(), body.session_id], sort_keys=True).encode()
@@ -121,12 +124,12 @@ class Store:
                 raise ConflictError("inbox is retired")
             row = await session.scalar(
                 select(Subscription).where(
-                    Subscription.inbox_id == inbox.id, Subscription.client_key == body.client_key
+                    Subscription.inbox_id == inbox.id, Subscription.idempotency_key == body.idempotency_key
                 )
             )
             if row is not None:
-                if row.creation != body.model_dump(mode="json"):
-                    raise ConflictError("creation key already names another subscription")
+                if row.creation != creation:
+                    raise ConflictError("idempotency key already names another subscription")
                 return SubscriptionView.model_validate(row)
             count = await session.scalar(
                 select(func.count()).select_from(Subscription).where(Subscription.inbox_id == inbox.id)
@@ -137,8 +140,8 @@ class Store:
                 id=uuid4(),
                 inbox_id=inbox.id,
                 request_id=body.request_id,
-                client_key=body.client_key,
-                creation=body.model_dump(mode="json"),
+                idempotency_key=body.idempotency_key,
+                creation=creation,
                 creator=asdict(principal),
                 version=1,
                 after_sequence=body.after_sequence,

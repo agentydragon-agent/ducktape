@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue
 
 
 class Model(BaseModel):
@@ -27,7 +27,13 @@ class DestinationRef(Model):
 class Subscribe(Model):
     destination_ref: DestinationRef
     session_id: str = Field(min_length=1, max_length=200)
-    client_key: str = Field(min_length=1, max_length=200)
+    idempotency_key: str = Field(
+        min_length=1,
+        max_length=200,
+        # Existing sessions retain prompts using the old input spelling. Output/schema use the new one.
+        validation_alias=AliasChoices("idempotency_key", "client_key"),
+        description="Inbox-local creation idempotency key. Identical retries return the existing subscription.",
+    )
     provider: Literal["actions"] = "actions"
     request_id: UUID
     after_sequence: int = Field(default=0, ge=0, le=2**31 - 1)
@@ -44,7 +50,7 @@ class SubscriptionView(Model):
     id: UUID
     inbox_id: UUID
     request_id: UUID
-    client_key: str
+    idempotency_key: str
     version: int
     after_sequence: int
     paused: bool
