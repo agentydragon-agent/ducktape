@@ -28,7 +28,7 @@ class ServiceError(ConnectionError):
         self.code = code
 
 
-class ReconnectRequired(ConnectionError):
+class ReconnectRequiredError(ConnectionError):
     """Planned follow renewal, not an interruption or native session end."""
 
 
@@ -63,7 +63,7 @@ class Attachment:
             return message.entry
         if message.HasField("reconnect_required"):
             self._call.cancel()
-            raise ReconnectRequired
+            raise ReconnectRequiredError
         if message.HasField("ended"):
             self._ended = True
             self._call.cancel()

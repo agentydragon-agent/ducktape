@@ -94,7 +94,6 @@ cursor. It emits:
 2. Original `EventEntry` messages, preserving serving-log cursor, source origin, and command correlation.
 3. An `ended` observation only when the native runner attachment reaches successful EOF. This is a
    transport observation, not a synthesized execution Event or deletion of retained history.
-
 4. Alternatively, a terminal `reconnect_required` observation followed by successful stream closure
    when the follow lease expires. This is planned transport renewal, not native closure.
 
@@ -106,7 +105,7 @@ It does not end the feed. Planned renewals are debug-level observations, not war
 Bare service EOF without a terminal observation, `DEADLINE_EXCEEDED`, and backend `UNAVAILABLE`
 remain failures, never session termination. The app retries these from the same durable checkpoint
 (including when a renewal marker is lost), with warnings for unsuccessful reconnects lasting 30s
-and immediately for authorization denial. Invalid history remains a durable feed failure.
+and for authorization denial (rate-limited). Invalid history remains a durable feed failure.
 
 Healthy idle follows last until renewal. Each downstream write, including the terminal observation,
 is separately bounded by `admission_timeout_s`, so a stalled consumer cannot pin an attachment for

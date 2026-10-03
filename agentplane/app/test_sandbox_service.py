@@ -23,7 +23,7 @@ from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.conftest import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.sandbox_service.client import Attachment, ReconnectRequired, ServiceError
+from agentplane.sandbox_service.client import Attachment, ReconnectRequiredError, ServiceError
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOXES_PLURAL
@@ -68,7 +68,7 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
         async def lose_marker(attachment: Attachment) -> event_log_pb2.EventEntry:
             try:
                 return await next_entry(attachment)
-            except ReconnectRequired as error:
+            except ReconnectRequiredError as error:
                 raise ConnectionError("lost terminal observation") from error
 
         monkeypatch.setattr(Attachment, "next_entry", lose_marker)
@@ -127,7 +127,8 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
                     assert archived == native
                     assert any(entry.event.HasField("harness_exited") for entry in archived)
             assert not [
-                record for record in caplog.records
+                record
+                for record in caplog.records
                 if record.name == "agentplane.app.threads.ingestion" and record.levelno >= logging.WARNING
             ]
         finally:
@@ -137,8 +138,11 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
 
 @pytest.mark.parametrize(
     ("failures", "code", "warns"),
-    [(1, grpc.StatusCode.UNAVAILABLE, False), (5, grpc.StatusCode.UNAVAILABLE, True),
-     (1, grpc.StatusCode.PERMISSION_DENIED, True)],
+    [
+        (1, grpc.StatusCode.UNAVAILABLE, False),
+        (5, grpc.StatusCode.UNAVAILABLE, True),
+        (1, grpc.StatusCode.PERMISSION_DENIED, True),
+    ],
 )
 async def test_reconnect_diagnostics(
     cluster: Cluster,
@@ -169,8 +173,11 @@ async def test_reconnect_diagnostics(
         assert lease is not None
         try:
             await Feed(
-                session_id="retry", client=directory.client(SANDBOX), event_logs=event_logs,
-                ingestion=ingestion, lease=lease,
+                session_id="retry",
+                client=directory.client(SANDBOX),
+                event_logs=event_logs,
+                ingestion=ingestion,
+                lease=lease,
             ).run()
             assert attempts == failures + 1
             warnings = [record for record in caplog.records if "ingestion reconnect unsuccessful" in record.message]

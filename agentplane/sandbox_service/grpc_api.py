@@ -74,8 +74,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
     except TimeoutError, OpenTimeoutError:
         await context.abort(
-            grpc.StatusCode.DEADLINE_EXCEEDED,
-            "service deadline expired; mutation outcome may be uncertain",
+            grpc.StatusCode.DEADLINE_EXCEEDED, "service deadline expired; mutation outcome may be uncertain"
         )
     except InventoryError, RunnerError, StreamClosedError:
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")

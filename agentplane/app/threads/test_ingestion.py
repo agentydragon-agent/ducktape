@@ -27,7 +27,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import StreamClosedError
-from agentplane.sandbox_service.client import ReconnectRequired
+from agentplane.sandbox_service.client import ReconnectRequiredError
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -52,14 +52,13 @@ async def test_renewal_flushes_buffer_before_signalling_reconnect(count: int) ->
     async def read() -> event_log_pb2.EventEntry:
         if source:
             return source.popleft()
-        raise ReconnectRequired
+        raise ReconnectRequiredError
 
-    committed: list[int] = []
     async with aclosing(event_batches(read, delay_s=60)) as batches:
-        with pytest.raises(ReconnectRequired):
-            async for batch in batches:
-                committed.extend(entry.cursor for entry in batch)
-    assert committed == list(range(1, count + 1))
+        if count:
+            assert [entry.cursor for entry in await anext(batches)] == list(range(1, count + 1))
+        with pytest.raises(ReconnectRequiredError):
+            await anext(batches)
 
 
 async def test_deadline_flush_does_not_cancel_or_replace_pending_read() -> None:

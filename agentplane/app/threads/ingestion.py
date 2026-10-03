@@ -23,7 +23,7 @@ from agentplane.app.threads.view.recording import ThreadFoldError, record_thread
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
-from agentplane.sandbox_service.client import Attachment, ReconnectRequired, Runner, ServiceError
+from agentplane.sandbox_service.client import Attachment, ReconnectRequiredError, Runner, ServiceError
 from agentplane.sandbox_service.models import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
@@ -60,7 +60,7 @@ async def event_batches(
                 except StreamClosedError:
                     yield batch
                     return
-                except ReconnectRequired:
+                except ReconnectRequiredError:
                     yield batch
                     raise
                 pending = asyncio.ensure_future(read())
@@ -162,7 +162,7 @@ class Feed:
             try:
                 await self._copy()
                 return
-            except ReconnectRequired:
+            except ReconnectRequiredError:
                 logger.debug("renewing ingestion for %s/%s", self.lease.sandbox, self.session_id)
                 retry_since = None
                 continue
@@ -177,21 +177,27 @@ class Feed:
                 ):
                     retry_since = now
                 denied = isinstance(error, ServiceError) and error.code in (
-                    grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED
+                    grpc.StatusCode.UNAUTHENTICATED,
+                    grpc.StatusCode.PERMISSION_DENIED,
                 )
                 if (denied or now - retry_since >= RECONNECT_WARNING_S) and (
                     not last_warning or now - last_warning >= RECONNECT_WARNING_S
                 ):
                     logger.warning(
                         "ingestion reconnect unsuccessful for %s/%s; retrying for %.1fs (%s)",
-                        self.lease.sandbox, self.session_id, now - retry_since, type(error).__name__,
+                        self.lease.sandbox,
+                        self.session_id,
+                        now - retry_since,
+                        type(error).__name__,
                         exc_info=True,
                     )
                     last_warning = now
                 else:
                     logger.debug(
                         "reconnecting ingestion for %s/%s (%s)",
-                        self.lease.sandbox, self.session_id, type(error).__name__,
+                        self.lease.sandbox,
+                        self.session_id,
+                        type(error).__name__,
                     )
                 # Also handles a lost renewal marker/bare transport EOF; never end the feed.
                 await asyncio.sleep(RECONCILE_S)
