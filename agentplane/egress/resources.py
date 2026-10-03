@@ -76,6 +76,8 @@ class TargetMethod(StrEnum):
 
 
 class _TargetBase(_Wire):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
     header: str = Field(min_length=1, description="Request header this presentation puts the credential in.")
 
 
@@ -118,11 +120,22 @@ class JsonFieldTarget(_Wire):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
     method: Literal[TargetMethod.JSON_FIELD]
-    field: str = Field(min_length=1, max_length=256, description="Top-level JSON field whose entire string value must equal the placeholder.")
+    field: str = Field(
+        min_length=1,
+        max_length=256,
+        description="Top-level JSON field whose entire string value must equal the placeholder.",
+    )
 
 
+# Public presentation syntax, shared by resource parsing and both API projections. Keep
+# credential values/source metadata out of these variants; those belong to CredentialSpec.
 Target = Annotated[
-    WholeValueTarget | SchemeTokenTarget | BasicUsernameTarget | BasicPasswordTarget | BasicWholeTarget | JsonFieldTarget,
+    WholeValueTarget
+    | SchemeTokenTarget
+    | BasicUsernameTarget
+    | BasicPasswordTarget
+    | BasicWholeTarget
+    | JsonFieldTarget,
     Field(discriminator="method"),
 ]
 

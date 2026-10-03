@@ -50,6 +50,19 @@ Deploy the new proxy code and schema before creating credentials with the new ta
 An old proxy cannot parse that method and fails closed. Remove the new grants/credentials before
 rolling the code back.
 
+## Target variants
+
+Resource parsing, the agent rules API, the operator API and generated TypeScript share one
+`Target` union discriminated by `method`. Each variant has only its own required fields:
+
+- `wholeValue`, `basicUsername`, `basicPassword`, `basicWhole`: `method` and `header`.
+- `schemeToken`: `method`, `header` and `scheme`.
+- `jsonField`: `method` and `field`.
+
+There is no target with nullable `header`/`field`/`scheme` siblings. Mixed variants, missing
+required fields and unknown discriminator values are rejected, not normalized or silently pruned
+by the runtime/API models. Kubernetes admission enforces the corresponding structural `oneOf`.
+
 ## Exactness and limits
 
 - Only one declared **top-level JSON field name** per target; no JSONPath, nested traversal,

@@ -6,8 +6,9 @@ from datetime import UTC, datetime
 
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
-from agentplane.app.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
+from agentplane.app.egress import BindingNotFoundError, CredentialView, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
 from agentplane.app.inventory import sandbox_view
 from agentplane.app.testing.kubernetes import (
     NAMESPACE,
@@ -119,8 +120,8 @@ async def test_a_binding_view_carries_provenance_expiry_policies_without_proxy_a
     assert rule.credential is not None
     assert (rule.credential.name, rule.credential.description) == ("test-github-pat", CREDENTIAL_DESCRIPTION)
     assert (rule.credential.secret, rule.credential.key) == ("test-github-pat-secret", "token")
-    assert [(t.header, t.method, t.scheme) for t in rule.credential.targets] == [
-        ("Authorization", "schemeToken", "Bearer")
+    assert [target.model_dump(mode="json") for target in rule.credential.targets] == [
+        {"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}
     ]
     assert rule.missing_credential is None
 
@@ -259,6 +260,48 @@ async def test_a_rule_naming_a_credential_the_namespace_does_not_hold_says_which
 
     assert rule.credential is None
     assert rule.missing_credential == "gone"
+
+
+async def test_operator_json_target_has_no_nullable_header_or_scheme(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    _seed(custom_objects)
+    target = {"method": "jsonField", "field": "password"}
+    custom_objects.objects[("egresscredentials", "test-github-pat")] = egress_credential(
+        "test-github-pat", secret="test-github-pat-secret", key="token", description=CREDENTIAL_DESCRIPTION,
+        targets=[target],
+    )
+    views = await egress.bindings_for(LIVE)
+    seeded = next(view for view in views if view.name == "live-seeded")
+    credential = seeded.policies[0].rules[0].credential
+    assert credential is not None
+    assert credential.model_dump(mode="json")["targets"] == [target]
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"method": "jsonField", "field": "password", "header": "Authorization"},
+        {"method": "jsonField", "field": "password", "scheme": None},
+        {"method": "jsonField"},
+        {"method": "wholeValue", "header": "X-Key", "field": "password"},
+        {"method": "schemeToken", "header": "Authorization"},
+    ],
+)
+def test_operator_api_rejects_mixed_target_variants(target: dict[str, str | None]) -> None:
+    with pytest.raises(ValidationError):
+        CredentialView.model_validate(
+            {"name": "test", "description": "test credential", "placeholder": "test-placeholder", "targets": [target]}
+        )
+
+
+def test_operator_schema_preserves_the_target_discriminator() -> None:
+    items = CredentialView.model_json_schema()["properties"]["targets"]["items"]
+    assert items["discriminator"]["propertyName"] == "method"
+    assert set(items["discriminator"]["mapping"]) == {
+        "wholeValue", "schemeToken", "basicUsername", "basicPassword", "basicWhole", "jsonField"
+    }
+    assert len(items["oneOf"]) == 6
 
 
 if __name__ == "__main__":

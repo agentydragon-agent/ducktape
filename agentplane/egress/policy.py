@@ -285,7 +285,8 @@ def evaluate(
     json_body = None
     if not request.is_connect:
         body_credentials = {
-            name for name, credential in index.credentials.items()
+            name
+            for name, credential in index.credentials.items()
             if any(isinstance(target, JsonFieldTarget) for target in credential.spec.targets)
         }
         if body_credentials:
@@ -336,8 +337,6 @@ def evaluate(
         policy=match.policy,
         rule=match.number,
         rewrites=presented[credential.metadata.name].rewrites(value),
-        body_rewrite=(
-            body.rewrite(value) if (body := presented[credential.metadata.name].body) is not None else None
-        ),
+        body_rewrite=(body.rewrite(value) if (body := presented[credential.metadata.name].body) is not None else None),
         cluster_internal=match.rule.cluster_internal,
     )

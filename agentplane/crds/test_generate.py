@@ -10,6 +10,7 @@ import pytest
 import pytest_bazel
 import yaml
 from jsonschema import Draft4Validator
+from referencing import Registry
 
 from agentplane.crds.generate import CRD_FILES, CRDS_DIR, generated_files
 from util.bazel.runfiles import get_required_path
@@ -64,7 +65,7 @@ def test_credential_target_schema_is_unambiguous(target: dict[str, str], valid: 
     for version in crd["spec"]["versions"]:
         schema = version["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["targets"]["items"]
         # Draft 4 includes Kubernetes' structural oneOf/not, but not if/then/else.
-        assert Draft4Validator(schema).is_valid(target) is valid
+        assert Draft4Validator(schema, registry=Registry()).is_valid(target) is valid
 
 
 if __name__ == "__main__":

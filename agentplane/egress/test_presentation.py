@@ -167,7 +167,11 @@ JSON_CREDENTIAL = credential("matrix-password", JsonFieldTarget(method=TargetMet
 
 
 def test_json_replacement_is_exact_field_only_and_json_escaped() -> None:
-    document = {"password": JSON_CREDENTIAL.placeholder, "identifier": {"user": "@bot:test"}, "other": JSON_CREDENTIAL.placeholder}
+    document = {
+        "password": JSON_CREDENTIAL.placeholder,
+        "identifier": {"user": "@bot:test"},
+        "other": JSON_CREDENTIAL.placeholder,
+    }
     parsed = parse_json_body(JSON_HEADERS, json.dumps(document).encode())
     presentation = present(JSON_CREDENTIAL, JSON_HEADERS, parsed)
     assert presentation is not None
@@ -190,22 +194,38 @@ def test_json_substrings_and_nonstring_values_are_not_presentations(value: objec
     assert present(JSON_CREDENTIAL, JSON_HEADERS, {"nested": {"password": JSON_CREDENTIAL.placeholder}}) is None
 
 
-@pytest.mark.parametrize("body", [
-    b'{"password":"one","password":"two"}',
-    b'{"nested":{"x":1,"x":2}}', b'{"x":NaN}', b'{"x":1e999}',
-    b'[]', b'null', b'{invalid', b'{"x":"\xff"}',
-    b'{"x":"' + b'a' * MAX_JSON_BODY_BYTES + b'"}',
-])
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"password":"one","password":"two"}',
+        b'{"nested":{"x":1,"x":2}}',
+        b'{"x":NaN}',
+        b'{"x":1e999}',
+        b"[]",
+        b"null",
+        b"{invalid",
+        b'{"x":"\xff"}',
+        b'{"x":"' + b"a" * MAX_JSON_BODY_BYTES + b'"}',
+    ],
+)
 def test_invalid_json_is_refused_without_parser_input_in_the_error(body: bytes) -> None:
     with pytest.raises(InvalidJsonBodyError) as error:
         parse_json_body(JSON_HEADERS, body)
     assert "password" not in str(error.value)
 
 
-@pytest.mark.parametrize("headers", [{}, {"Content-Type": ["text/plain"]}, {"Content-Type": ["application/json", "application/json"]}, {"Content-Type": ["application/json"], "Content-Encoding": ["gzip"]}])
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"Content-Type": ["text/plain"]},
+        {"Content-Type": ["application/json", "application/json"]},
+        {"Content-Type": ["application/json"], "Content-Encoding": ["gzip"]},
+    ],
+)
 def test_unsupported_json_envelopes_are_refused(headers: dict[str, list[str]]) -> None:
     with pytest.raises(InvalidJsonBodyError):
-        parse_json_body(headers, b'{}')
+        parse_json_body(headers, b"{}")
 
 
 if __name__ == "__main__":

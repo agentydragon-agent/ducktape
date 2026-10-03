@@ -40,7 +40,9 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
                     .map((t) =>
                       t.method === "jsonField"
                         ? `JSON field ${t.field}: <credential>`
-                        : t.scheme ? `${t.header}: ${t.scheme} <credential>` : `${t.header} ${t.method}`,
+                        : t.method === "schemeToken"
+                          ? `${t.header}: ${t.scheme} <credential>`
+                          : `${t.header} ${t.method}`
                     )
                     .join(", ")}, from ${
                     rule.credential.secret && rule.credential.key

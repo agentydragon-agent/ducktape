@@ -1269,14 +1269,36 @@ async def test_matrix_json_login_through_real_proxy(
     login_path = "/_matrix/client/v3/login"
     secret_value = 'matrix-secret"\\\n☃'
     fake.put(SECRETS_PLURAL, secret("matrix-password", {"password": secret_value}))
-    fake.put(CREDENTIALS_PLURAL, credential(name, secret_name="matrix-password", key="password", targets=[{"method": "jsonField", "field": "password"}]))
-    fake.put(POLICIES_PLURAL, policy(name, [
-        {"hosts": [UPSTREAM_HOST], "methods": ["POST"], "paths": [login_path], "credentialRef": {"name": name}},
-        {"hosts": [UPSTREAM_HOST], "paths": ["/public/**"]},
-    ]))
+    fake.put(
+        CREDENTIALS_PLURAL,
+        credential(
+            name, secret_name="matrix-password", key="password", targets=[{"method": "jsonField", "field": "password"}]
+        ),
+    )
+    fake.put(
+        POLICIES_PLURAL,
+        policy(
+            name,
+            [
+                {"hosts": [UPSTREAM_HOST], "methods": ["POST"], "paths": [login_path], "credentialRef": {"name": name}},
+                {"hosts": [UPSTREAM_HOST], "paths": ["/public/**"]},
+            ],
+        ),
+    )
     fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[name]))
-    await proxy.index.wait_for(lambda: name in proxy.index.credentials and name in proxy.index.policies and proxy.index.bindings[BINDING].spec.policies == [name] and "matrix-password" in proxy.index.secrets)
-    payload = {"type": "m.login.password", "identifier": {"type": "m.id.user", "user": "@bot:test"}, "password": placeholder_of(name)}
+    await proxy.index.wait_for(
+        lambda: (
+            name in proxy.index.credentials
+            and name in proxy.index.policies
+            and proxy.index.bindings[BINDING].spec.policies == [name]
+            and "matrix-password" in proxy.index.secrets
+        )
+    )
+    payload = {
+        "type": "m.login.password",
+        "identifier": {"type": "m.id.user", "user": "@bot:test"},
+        "password": placeholder_of(name),
+    }
     async with aiohttp.ClientSession() as session:
         for path, data, expected in [
             (login_path, json.dumps(payload).encode(), 200),
@@ -1284,10 +1306,12 @@ async def test_matrix_json_login_through_real_proxy(
             (login_path, b'{"password":"one","password":"two"}', 403),
         ]:
             async with session.post(
-                proxy.url(path), proxy=f"http://127.0.0.1:{proxy.proxy_port}",
+                proxy.url(path),
+                proxy=f"http://127.0.0.1:{proxy.proxy_port}",
                 proxy_headers={"Proxy-Authorization": f"Bearer {TOKEN_A}"},
                 ssl=client_tls_context(proxy.interception_ca),
-                headers={"Content-Type": "application/json"}, data=data,
+                headers={"Content-Type": "application/json"},
+                data=data,
             ) as response:
                 assert response.status == expected
                 assert secret_value.encode() not in await response.read()

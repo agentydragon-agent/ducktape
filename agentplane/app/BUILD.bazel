@@ -563,6 +563,7 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/app/testing:kubernetes",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

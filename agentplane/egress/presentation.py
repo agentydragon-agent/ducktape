@@ -71,7 +71,7 @@ def parse_json_body(headers: Mapping[str, Sequence[str]], body: bytes | None) ->
             raise InvalidJsonBodyError("JSON body must be an object")
         # Reject numeric overflow too (e.g. 1e999), before any credential is available.
         json.dumps(value, allow_nan=False)
-    except (ValueError, RecursionError):
+    except ValueError, RecursionError:
         raise InvalidJsonBodyError("Invalid JSON object") from None
     return value
 
@@ -91,7 +91,6 @@ class BodyPresentation:
         for name in self.fields:
             value[name] = credential
         return BodyRewrite(json.dumps(value, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode())
-
 
 
 @dataclass(frozen=True)
@@ -171,9 +170,7 @@ def parse(target: Target, value: str) -> Parsed | None:
 
 
 def present(
-    credential: EgressCredential,
-    headers: Mapping[str, Sequence[str]],
-    json_body: Mapping[str, Any] | None = None,
+    credential: EgressCredential, headers: Mapping[str, Sequence[str]], json_body: Mapping[str, Any] | None = None
 ) -> Presentation | None:
     """Where `credential`'s placeholder sits in these headers, or None when it is not presented."""
     placeholder = credential.placeholder
@@ -194,7 +191,11 @@ def present(
         if isinstance(target, JsonFieldTarget) and json_body is not None and json_body.get(target.field) == placeholder
     )
     body = BodyPresentation(document=json_body, fields=fields) if fields and json_body is not None else None
-    return Presentation(credential=credential.metadata.name, headers=tuple(presented), body=body) if presented or body is not None else None
+    return (
+        Presentation(credential=credential.metadata.name, headers=tuple(presented), body=body)
+        if presented or body is not None
+        else None
+    )
 
 
 def _headers_of(credential: EgressCredential) -> dict[str, str]:
