@@ -419,7 +419,7 @@ class Egress(Construct):
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
             model=Settings,
             content={
-                "allowed_service_account_namespaces": [env.namespace],
+                "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
                 "projected_token_audiences": [KUBERNETES_AUDIENCE],
             },
             # A directory of its own: the CA volumes mount under /etc/agentplane-egress, and nothing
@@ -482,7 +482,7 @@ class Egress(Construct):
             secret_name=self.env.egress.ca_secret_name,
             bundle_name=self.env.egress.ca_secret_name,
             description=f"Trust bundle for {self.env.namespace} runner HTTPS traffic intercepted by the egress proxy",
-            target_namespaces=(self.env.namespace,),
+            target_namespaces=(self.env.namespace, *self.env.egress.external_workload_namespaces),
             # With no password, trust-manager writes the PKCS12 store with neither encryption
             # nor a MAC, which a JVM loads when it is given no password either.
             additional_formats=BundleSpecTargetAdditionalFormats(
