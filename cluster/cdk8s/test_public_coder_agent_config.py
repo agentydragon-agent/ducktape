@@ -75,12 +75,7 @@ def app_objects() -> list[dict[str, Any]]:
 
 @pytest.fixture(scope="module")
 def proxy_objects() -> list[dict[str, Any]]:
-    return _synth(
-        lambda app: public_coder_proxy.chart(
-            app,
-            aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key,
-        )
-    )
+    return _synth(lambda app: public_coder_proxy.chart(app, aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key))
 
 
 @pytest.fixture(scope="module")
@@ -188,7 +183,9 @@ def test_app_egress_reaches_the_internet_only_through_the_proxy(app_objects: lis
 
 def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[str, Any]]) -> None:
     """ClickHouse stays out of NO_PROXY: only the proxy replaces the app's password placeholder."""
-    container = one(c for c in _one(app_objects, "Deployment")["spec"]["template"]["spec"]["containers"] if c["name"] == "openclaw")
+    container = one(
+        c for c in _one(app_objects, "Deployment")["spec"]["template"]["spec"]["containers"] if c["name"] == "openclaw"
+    )
     no_proxy = one(entry["value"] for entry in container["env"] if entry["name"] == "NO_PROXY").split(",")
     assert not {client.HTTP.fqdn, client.HTTP.host} & set(no_proxy)
 
@@ -235,29 +232,33 @@ def test_openclaw_uses_relay_without_receiving_its_token(app_objects: list[dict[
     token = one(v for v in pod["volumes"] if v["name"] == "agentplane-egress-token")
     assert token["projected"] == {
         "defaultMode": 0o440,
-        "sources": [{"serviceAccountToken": {"audience": "agentplane-egress", "expirationSeconds": 600, "path": "token"}}],
+        "sources": [
+            {"serviceAccountToken": {"audience": "agentplane-egress", "expirationSeconds": 600, "path": "token"}}
+        ],
     }
     assert {
-        v["name"]: v["persistentVolumeClaim"]["claimName"]
-        for v in pod["volumes"] if "persistentVolumeClaim" in v
+        v["name"]: v["persistentVolumeClaim"]["claimName"] for v in pod["volumes"] if "persistentVolumeClaim" in v
     } == {"data": "public-coder-agent-state-v2", "diagnostics": "public-coder-agent-diagnostics"}
     trust = one(v for v in pod["volumes"] if v["name"] == "trust")
     assert trust["configMap"]["name"] == "agentplane-egress-ca"
     container = one(c for c in pod["containers"] if c["name"] == "openclaw")
     env = {e["name"]: e.get("value") for e in container["env"]}
-    assert env.items() >= {
-        "GH_PAT": "agentplane-credential-github-pat",
-        "GITHUB_TOKEN": "agentplane-credential-github-pat",
-        "HAKU_CONSOLE_TOKEN": "agentplane-credential-public-coder-haku-console",
-        "CLICKHOUSE_PUBLIC_CODER_PASSWORD": "agentplane-credential-public-coder-clickhouse",
-        "AIQUOTA_API_BEARER_TOKEN": "agentplane-credential-aiquota-read",
-        "BRAVE_API_KEY": "agentplane-credential-brave-search",
-        "MATRIX_PASSWORD": "agentplane-credential-public-coder-matrix",
-        "HTTP_PROXY": "http://127.0.0.1:3128",
-        "HTTPS_PROXY": "http://127.0.0.1:3128",
-        "http_proxy": "http://127.0.0.1:3128",
-        "https_proxy": "http://127.0.0.1:3128",
-    }.items()
+    assert (
+        env.items()
+        >= {
+            "GH_PAT": "agentplane-credential-github-pat",
+            "GITHUB_TOKEN": "agentplane-credential-github-pat",
+            "HAKU_CONSOLE_TOKEN": "agentplane-credential-public-coder-haku-console",
+            "CLICKHOUSE_PUBLIC_CODER_PASSWORD": "agentplane-credential-public-coder-clickhouse",
+            "AIQUOTA_API_BEARER_TOKEN": "agentplane-credential-aiquota-read",
+            "BRAVE_API_KEY": "agentplane-credential-brave-search",
+            "MATRIX_PASSWORD": "agentplane-credential-public-coder-matrix",
+            "HTTP_PROXY": "http://127.0.0.1:3128",
+            "HTTPS_PROXY": "http://127.0.0.1:3128",
+            "http_proxy": "http://127.0.0.1:3128",
+            "https_proxy": "http://127.0.0.1:3128",
+        }.items()
+    )
     assert public_coder_agent_config.config()["channels"]["matrix"]["proxy"] == env["HTTPS_PROXY"]
     assert env["no_proxy"] == env["NO_PROXY"]
 
@@ -266,10 +267,12 @@ def test_openclaw_cannot_dial_iron_or_clickhouse_directly(app_objects: list[dict
     rules = _one(app_objects, "NetworkPolicy", "egress")["spec"]["egress"]
     assert {p["port"] for r in rules for p in r["ports"]} == {53, 8888, 2222, 4000}
     gateway = one(r for r in rules if r["ports"] == [{"port": 8888, "protocol": "TCP"}])
-    assert gateway["to"] == [{
-        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "agentplane-staging"}},
-        "podSelector": {"matchLabels": public_coder_egress.GATEWAY.pods.selector},
-    }]
+    assert gateway["to"] == [
+        {
+            "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "agentplane-staging"}},
+            "podSelector": {"matchLabels": public_coder_egress.GATEWAY.pods.selector},
+        }
+    ]
 
 
 def test_iron_only_admits_the_vm(proxy_objects: list[dict[str, Any]]) -> None:

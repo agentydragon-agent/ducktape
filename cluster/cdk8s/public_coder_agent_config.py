@@ -21,6 +21,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import (
     agent_access_profiles as access,
     external_creds,
@@ -30,7 +31,6 @@ from cluster.cdk8s import (
     public_coder_proxy,
     public_coder_sshpiper,
 )
-from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -556,7 +556,8 @@ def _deployment(scope: Construct) -> None:
     config, state layout) is identical to the operator's shape.
     """
     k8s.KubeServiceAccount(
-        scope, "openclaw-service-account",
+        scope,
+        "openclaw-service-account",
         metadata=k8s.ObjectMeta(name=public_coder_egress.SERVICE_ACCOUNT, namespace=NAMESPACE),
         automount_service_account_token=False,
     )
@@ -751,9 +752,7 @@ def _network_policies(scope: Construct) -> None:
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="UDP"), _tcp(53)],
                 ),
                 k8s.NetworkPolicyEgressRule(
-                    to=[
-                        _peer(public_coder_egress.GATEWAY.pods.namespace, public_coder_egress.GATEWAY.pods.selector)
-                    ],
+                    to=[_peer(public_coder_egress.GATEWAY.pods.namespace, public_coder_egress.GATEWAY.pods.selector)],
                     ports=[_tcp(public_coder_egress.GATEWAY.pod_port)],
                 ),
                 # `ssh devbox`. Deliberately the piper and not the devbox itself: without a route

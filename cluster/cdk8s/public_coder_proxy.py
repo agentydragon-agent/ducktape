@@ -451,8 +451,4 @@ def chart(app: App, *, aiquota_bearer: SecretKey) -> Chart:
 
 
 def write_manifests(root: Path, *, aiquota_bearer: SecretKey) -> None:
-    write_charts(
-        root,
-        OUTPUT_DIR,
-        lambda app: chart(app, aiquota_bearer=aiquota_bearer),
-    )
+    write_charts(root, OUTPUT_DIR, lambda app: chart(app, aiquota_bearer=aiquota_bearer))

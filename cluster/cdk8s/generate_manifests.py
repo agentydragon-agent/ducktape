@@ -265,10 +265,7 @@ def generate_manifests(root: Path) -> None:
         agentplane_testing_resource_chart, testing.ENV.namespace
     )
     public_coder_agent_config.write_manifests(root)
-    public_coder_proxy.write_manifests(
-        root,
-        aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key,
-    )
+    public_coder_proxy.write_manifests(root, aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key)
     ssh_config = ssh_mcp_config.load(devbox_service)
     public_coder_sshpiper.write_manifests(
         root,
