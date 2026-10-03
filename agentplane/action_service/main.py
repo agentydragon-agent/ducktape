@@ -155,7 +155,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8080
     token_audience: str = "agentplane-egress"
-    event_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
+    reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     allowed_service_account_namespaces: frozenset[str] = Field(
         default=frozenset({"agentplane-staging"}),
         description="Kubernetes namespaces whose ServiceAccounts may authenticate sandbox callers and whose "
@@ -323,7 +323,7 @@ async def async_main(settings: Settings) -> None:
             operator_authenticator,
             catalog,
             callers=policy_index,
-            event_reader_accounts=settings.event_reader_accounts,
+            reader_accounts=settings.reader_accounts,
             connections=connections,
             updates=ActionUpdates(settings.database_url),
             enrollments=enrollments if oauth is not None else None,

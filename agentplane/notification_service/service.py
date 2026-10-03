@@ -9,7 +9,7 @@ import httpx
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.notification_service.actions import Actions
+from agentplane.notification_service.actions import Actions, SourceNotOwnedError
 from agentplane.notification_service.db import Inbox, Notice
 from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionView
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
@@ -127,7 +127,7 @@ class Service:
                     try:
                         events = await self.actions.events(owner, source.request_id, source.after_sequence)
                         await self.store.record(claim, source, events)
-                    except (httpx.HTTPError, ValidationError, QuotaError, ConflictError) as failure:
+                    except (httpx.HTTPError, ValidationError, SourceNotOwnedError, QuotaError, ConflictError) as failure:
                         # No upstream body, bearer, or native content in diagnostics.
                         await self.store.record(
                             claim,

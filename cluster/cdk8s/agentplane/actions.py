@@ -199,7 +199,7 @@ class Actions(Construct):
     def _container_env(self) -> dict[str, EnvValue]:
         env = self._database_env()
         namespace = self.env.namespace
-        env[env_name(Settings, "event_reader_accounts")] = EnvValue.from_value(
+        env[env_name(Settings, "reader_accounts")] = EnvValue.from_value(
             json.dumps([ServiceAccountRef(namespace=namespace, name=notifications.NAME).model_dump()])
         )
         if self.env.actions.web_push_secret_name is not None:

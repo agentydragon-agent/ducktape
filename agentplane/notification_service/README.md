@@ -40,7 +40,7 @@ expose a committed prefix, not a sequence whose transactions can commit out of o
 Workers claim inboxes for 30 seconds, with a 20-second work budget and fenced commits. Network calls
 are outside transactions. They poll canonical Actions history (bounded pages of 128), including
 terminal requests; no second Action queue or retry of Action execution is introduced. Errors of a
-source subscription and delivery errors are exposed separately. Polling rechecks source-owner access.
+source subscription and delivery errors are exposed separately. Polling rechecks source ownership.
 
 Before submitting a notice, persist its command ID, exact input, and coverage boundary. Replays
 verify the last committed runner entry before advancing. A lost command response reuses the same ID;
@@ -61,12 +61,14 @@ a new explicit subscription can establish a fresh inbox epoch; there is no impli
 
 ## Authorization and deployment
 
-Actions exposes a disabled-by-default, allowlisted **read-only service delegation** endpoint:
-`GET /v1/service/action-requests/{id}/events?owner_namespace=…&owner_name=…&after_sequence=…`.
-The notification service authenticates the subscriber itself and supplies that verified owner. Actions
-reauthorizes the trusted reader, checks the owner is an admitted caller, and applies ordinary caller-own
-request visibility. This grants neither operator access nor Action submission/decision/execution authority.
-The source endpoint is not added to sandbox egress routes. Agent tokens are never retained or forwarded.
+Actions allows the notification ServiceAccount to read all requests using the ordinary
+`GET /v1/action-requests`, `GET /v1/action-requests/{id}`, and
+`GET /v1/action-requests/{id}/events` endpoints. The `reader_accounts` allowlist defaults to empty;
+ordinary callers remain restricted to their own requests. A service reader is not an operator or
+Action submitter and cannot cancel, decide, or execute Actions. There is no delegated-owner parameter
+or separate service endpoint. The request view exposes its owner to trusted readers, while preserving
+ordinary argument redaction. Notifications checks that owner against the authenticated subscriber
+before accepting a subscription and on every source poll. Agent tokens are never retained or forwarded.
 
 The worker uses rotating, audience-specific projected service tokens. It is allowlisted at Sandbox
 Service; that service still validates sandbox UID and account binding and owns all runner access.

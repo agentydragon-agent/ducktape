@@ -92,7 +92,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 updates=ActionUpdates("postgresql://unused-listener"),
                 direct_wait_seconds=0,
                 max_wait_seconds=30,
-                event_reader_accounts=frozenset({delegate}),
+                reader_accounts=frozenset({delegate}),
             )
             token_file = tmp_path / "delegate-token"
             token_file.write_text("delegate-token")
@@ -145,28 +145,47 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         ),
                         OperatorPrincipal(issuer="test", subject="operator"),
                     )
-                    delegated = f"/v1/service/action-requests/{request['id']}/events"
-                    params = {"owner_namespace": owner.namespace, "owner_name": owner.name}
+                    read_path = f"/v1/action-requests/{request['id']}"
+                    delegate_headers = {"Authorization": "Bearer delegate-token"}
+                    for suffix in ["", "/events"]:
+                        assert (
+                            await action_http.get(read_path + suffix, headers=delegate_headers)
+                        ).status_code == 200
+                        assert (
+                            await action_http.get(read_path + suffix, headers={"Authorization": "Bearer other-token"})
+                        ).status_code == 404
+                    detail = await action_http.get(read_path, headers=delegate_headers)
+                    assert detail.json()["caller"] == owner.model_dump()
+                    listing = await action_http.get("/v1/action-requests", headers=delegate_headers)
+                    assert [item["id"] for item in listing.json()] == [request["id"]]
+                    first_page = await action_http.get(
+                        read_path + "/events", params={"limit": 1}, headers=delegate_headers
+                    )
+                    assert len(first_page.json()) == 1
                     assert (
-                        await action_http.get(delegated, params=params, headers={"Authorization": "Bearer owner-token"})
-                    ).status_code == 403
+                        await action_http.post(read_path + "/cancel", headers=delegate_headers)
+                    ).status_code == 401
                     assert (
-                        await action_http.get(
-                            delegated,
-                            params=params | {"owner_name": other.name},
-                            headers={"Authorization": "Bearer delegate-token"},
-                        )
-                    ).status_code == 404
-                    assert (
-                        await action_http.get(
-                            f"/v1/action-requests/{request['id']}", headers={"Authorization": "Bearer delegate-token"}
+                        await action_http.post(
+                            "/v1/action-requests",
+                            json={
+                                "idempotency_key": "forbidden",
+                                "title": "Forbidden",
+                                "action": {"group": "agentplane", "name": "echo"},
+                                "arguments": {"text": "hello"},
+                            },
+                            headers=delegate_headers,
                         )
                     ).status_code == 401
                     assert (
-                        await action_http.get(
-                            f"/v1/operator/action-requests/{request['id']}",
-                            headers={"Authorization": "Bearer delegate-token"},
+                        await action_http.post(
+                            f"/v1/operator/action-requests/{request['id']}/decision",
+                            json={"verdict": "deny", "expected_version": 1, "idempotency_key": "forbidden"},
+                            headers=delegate_headers,
                         )
+                    ).status_code == 401
+                    assert (
+                        await action_http.get(f"/v1/operator/action-requests/{request['id']}", headers=delegate_headers)
                     ).status_code == 401
                     body = {
                         "destination_ref": {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX, "uid": SANDBOX_UID},
@@ -182,6 +201,21 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             "/v1/subscriptions", json=body, headers={"Authorization": "Bearer other-token"}
                         )
                     ).status_code == 404
+                    other_request = await action_http.post(
+                        "/v1/action-requests",
+                        headers={"Authorization": "Bearer other-token"},
+                        json={
+                            "idempotency_key": "other",
+                            "title": "Other owner",
+                            "action": {"group": "agentplane", "name": "echo"},
+                            "arguments": {"text": "other"},
+                        },
+                    )
+                    other_request.raise_for_status()
+                    # Destination is owned, source is not: the worker's broad read access is not inherited.
+                    assert (
+                        await agent.post("/v1/subscriptions", json=body | {"request_id": other_request.json()["id"]})
+                    ).status_code == 403
                     response = await agent.post("/v1/subscriptions", json=body)
                     response.raise_for_status()
                     subscription = response.json()
