@@ -37,8 +37,8 @@ from agentplane.egress.resources import (
     EgressBinding,
     EgressCredential,
     EgressPolicy,
-    ObjectMeta,
     JsonFieldTarget,
+    ObjectMeta,
     PolicySpec,
     ProjectedWorkloadTokenSource,
     Rule,
@@ -709,7 +709,8 @@ def matrix_request(*, method: str = "POST", host: str = "matrix.test", path: str
 def test_json_secret_is_substituted_only_after_credential_authorization() -> None:
     outbound = matrix_request()
     decision = evaluate(matrix_index(), CALLER, outbound, NOW)
-    assert isinstance(decision, Allowed) and decision.body_rewrite is not None
+    assert isinstance(decision, Allowed)
+    assert decision.body_rewrite is not None
     assert json.loads(decision.body_rewrite.content) == {"password": SECRET_VALUE}
     assert SECRET_VALUE not in repr(decision)
     assert MATRIX_CREDENTIAL.placeholder not in repr(outbound)

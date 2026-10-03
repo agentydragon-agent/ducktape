@@ -13,7 +13,14 @@ import json
 import pytest
 import pytest_bazel
 
-from agentplane.egress.presentation import MAX_JSON_BODY_BYTES, HeaderRewrite, InvalidJsonBodyError, parse, parse_json_body, present
+from agentplane.egress.presentation import (
+    MAX_JSON_BODY_BYTES,
+    HeaderRewrite,
+    InvalidJsonBodyError,
+    parse,
+    parse_json_body,
+    present,
+)
 from agentplane.egress.resources import (
     BasicPasswordTarget,
     BasicUsernameTarget,
@@ -21,8 +28,8 @@ from agentplane.egress.resources import (
     CredentialSource,
     CredentialSpec,
     EgressCredential,
-    ObjectMeta,
     JsonFieldTarget,
+    ObjectMeta,
     SchemeTokenTarget,
     SecretKeyRef,
     Target,
@@ -163,7 +170,8 @@ def test_json_replacement_is_exact_field_only_and_json_escaped() -> None:
     document = {"password": JSON_CREDENTIAL.placeholder, "identifier": {"user": "@bot:test"}, "other": JSON_CREDENTIAL.placeholder}
     parsed = parse_json_body(JSON_HEADERS, json.dumps(document).encode())
     presentation = present(JSON_CREDENTIAL, JSON_HEADERS, parsed)
-    assert presentation is not None and presentation.body is not None
+    assert presentation is not None
+    assert presentation.body is not None
     secret_value = 'quotes" and slash\\ and newline\n and Unicode café'
     rewritten = presentation.body.rewrite(secret_value)
     assert json.loads(rewritten.content) == {**document, "password": secret_value}

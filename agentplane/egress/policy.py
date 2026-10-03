@@ -19,7 +19,14 @@ from typing import Any
 
 from more_itertools import one
 
-from agentplane.egress.presentation import BodyRewrite, HeaderRewrite, InvalidJsonBodyError, Presentation, parse_json_body, present
+from agentplane.egress.presentation import (
+    BodyRewrite,
+    HeaderRewrite,
+    InvalidJsonBodyError,
+    Presentation,
+    parse_json_body,
+    present,
+)
 from agentplane.egress.resources import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,

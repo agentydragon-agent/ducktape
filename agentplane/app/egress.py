@@ -24,9 +24,9 @@ from agentplane.egress.resources import (
     EgressBinding,
     EgressCredential,
     EgressPolicy,
+    JsonFieldTarget,
     Rule,
     SchemeTokenTarget,
-    JsonFieldTarget,
     Target,
     TargetMethod,
 )

@@ -1297,10 +1297,13 @@ async def test_matrix_json_login_through_real_proxy(
     assert int(one(proxy.upstream.requests)[2]["content-length"]) == len(body)
     assert secret_value not in caplog.text
     assert json.dumps(secret_value) not in caplog.text
-    async with aiohttp.ClientSession(base_url=f"http://127.0.0.1:{proxy.admin_port}") as admin:
-        async with admin.get("/decisions") as response:
-            evidence = await response.text()
-    assert secret_value not in evidence and "@bot:test" not in evidence
+    async with (
+        aiohttp.ClientSession(base_url=f"http://127.0.0.1:{proxy.admin_port}") as admin,
+        admin.get("/decisions") as response,
+    ):
+        evidence = await response.text()
+    assert secret_value not in evidence
+    assert "@bot:test" not in evidence
     assert '"substituted": true' in evidence
 
 
