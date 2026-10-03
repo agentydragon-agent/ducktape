@@ -1049,3 +1049,91 @@ fn candidate_limit_still_rejects_too_many_distinct_places() {
     assert_eq!(outcome["kind"], "too_broad", "{report:#}");
     assert_eq!(outcome["count"], 101, "{report:#}");
 }
+
+#[test]
+fn selector_commands_share_source_path_selection_without_changing_env_support() {
+    use std::process::Command;
+    use debundle_e2e_support::debundler_path;
+
+    let root = tempfile::tempdir().unwrap();
+    write_text_file(&root.path().join("chunk.js"), "const a = 1; console.log(a);");
+    write_text_file(&root.path().join("modules/chosen.yaml"),
+        "members: [{name: A, selector: {binding: {name: a}}}]");
+    let absolute_source = root.path().join("chunk.js");
+    for (verb, extras, optional_source, source_env) in [
+        ("validate", vec!["--modules", "modules"], false, false),
+        ("selector-debt", vec!["--modules", "modules"], true, true),
+        ("synthesize-selectors", vec!["--modules", "modules", "--item", "chosen:A"], false, false),
+        ("match-selector", vec!["--match", "const value = 1;", "--target-binding", "value", "--no-slack"], false, true),
+    ] {
+        let run = |args: &[&str], env: bool| {
+            let mut command = Command::new(debundler_path());
+            command.current_dir(root.path()).args(["spec", verb]).args(&extras)
+                .args(args).env_remove("DEBUNDLE_SOURCE_ROOT");
+            if env { command.env("DEBUNDLE_SOURCE_ROOT", root.path()); }
+            command.output().unwrap()
+        };
+        for args in [
+            vec!["--source-file", "chunk.js"],
+            vec!["--source-root", ".", "--chunk", "chunk.js"],
+            vec!["--source-file", "chunk.js", "--source-root", "unused-root"],
+            vec!["--source-file", absolute_source.to_str().unwrap()],
+        ] {
+            let out = run(&args, false);
+            assert!(out.status.success(), "{verb} {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        }
+        if source_env {
+            let out = run(&["--chunk", "chunk.js"], true);
+            assert!(out.status.success(), "{verb}: {}", String::from_utf8_lossy(&out.stderr));
+        }
+        let out = run(&[], false);
+        assert_eq!(out.status.success(), optional_source, "{verb}: {}", String::from_utf8_lossy(&out.stderr));
+        for (args, diagnostic) in [
+            (vec!["--source-file", "chunk.js", "--chunk", "chunk.js"], "not both"),
+            (vec!["--chunk", "chunk.js"], "--chunk requires --source-root"),
+        ] {
+            let out = run(&args, false);
+            assert!(!out.status.success(), "{verb} {args:?}");
+            assert!(String::from_utf8_lossy(&out.stderr).contains(diagnostic), "{verb}: {}", String::from_utf8_lossy(&out.stderr));
+        }
+    }
+}
+
+#[test]
+fn selector_debt_ndjson_preserves_json_payloads_and_section_order() {
+    use debundle_e2e_support::run_debundle;
+
+    let root = tempfile::tempdir().unwrap();
+    for name in ["a", "b"] {
+        write_text_file(&root.path().join(format!("ui/{name}.yaml")), &format!(
+            "members: [{{selector: {{binding: {{name: {name}}}}}}}]\nsource_matches: [{{match: 'const value = 1;', bindings: [value]}}]"
+        ));
+    }
+    let run = |format| {
+        let out = run_debundle(&["spec", "selector-debt", "--modules", root.path().to_str().unwrap(), "--group-module-depth", "1", "--format", format]);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        out.stdout
+    };
+    let report: Value = serde_json::from_slice(&run("json")).unwrap();
+    let rows: Vec<Value> = String::from_utf8(run("ndjson")).unwrap().lines()
+        .map(|line| serde_json::from_str(line).unwrap()).collect();
+    let mut expected = Vec::new();
+    for (field, section) in [
+        ("name_only", "name_only"),
+        ("repeated_source_match", "repeated_source_match"),
+        ("name_only_module_groups", "name_only_module_group"),
+        ("drifted_bindings", "drifted_binding"),
+        ("source_aware_near_ambiguous", "source_aware_near_ambiguous"),
+        ("source_aware_repeated_exact", "source_aware_repeated_exact"),
+        ("source_aware_binding_group_suggestions", "source_aware_binding_group_suggestion"),
+    ] {
+        for mut row in report[field].as_array().unwrap().iter().cloned() {
+            row["section"] = json!(section);
+            expected.push(row);
+        }
+    }
+    let mut summary = report["summary"].clone();
+    summary["section"] = json!("summary");
+    expected.push(summary);
+    assert_eq!(rows, expected);
+}

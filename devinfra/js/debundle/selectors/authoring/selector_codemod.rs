@@ -43,6 +43,7 @@ mod render;
 // Read-only agent-facing selector query primitives (M1 of the
 // selector-authoring plan), sharing this crate's source loading + prove-gate.
 pub mod match_selector;
+pub mod source_input;
 
 use crate::minimize::{
     minimize_class_selector_candidates, minimize_function_selector_candidates,
@@ -721,16 +722,9 @@ fn synthesized_source_match_claim_value(synthesized: &SynthesizedSelectorGroup) 
 }
 
 fn load_synthesis_module(config: &SelectorCodemodConfig) -> Result<js_ast::ParsedJsModule> {
-    let source_file = match (&config.source_file, &config.source_root, &config.chunk) {
-        (Some(source_file), _, None) => source_file.clone(),
-        (None, Some(source_root), Some(chunk)) => source_root.join(chunk),
-        (Some(_), _, Some(_)) => {
-            bail!("use either --source-file or --source-root with --chunk, not both")
-        }
-        _ => {
-            bail!("synthesize-selectors requires --source-file or --source-root + --chunk")
-        }
-    };
+    let source_file = source_input::optional_chunk_source_file(
+        config.source_file.as_deref(), config.source_root.as_deref(), config.chunk.as_deref(),
+    )?.context("synthesize-selectors requires --source-file or --source-root + --chunk")?;
     let source = fs::read_to_string(&source_file)
         .with_context(|| format!("reading source file {}", source_file.display()))?;
     js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)

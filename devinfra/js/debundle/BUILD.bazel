@@ -654,6 +654,7 @@ rust_library(
         "selectors/authoring/regex_anchor.rs",
         "selectors/authoring/render.rs",
         "selectors/authoring/selector_codemod.rs",
+        "selectors/authoring/source_input.rs",
         "selectors/authoring/selector_minimizer_proptest.rs",
     ],
     crate_root = "selectors/authoring/selector_codemod.rs",
