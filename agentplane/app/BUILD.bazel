@@ -656,6 +656,7 @@ py_test(
         ":live",
         ":oidc",
         ":operator_sessions",
+        ":sandbox_models",
         ":shutdown",
         "//:conftest",
         "//agentplane:subjects",

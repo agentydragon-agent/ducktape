@@ -46,6 +46,7 @@ from agentplane.app.operator_sessions import (
     RequestSession,
     SessionRow,
 )
+from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
