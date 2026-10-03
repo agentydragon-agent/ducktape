@@ -1,12 +1,15 @@
 # Sandbox Service extraction
 
-Status: **production app cutover implemented in source; CI and live handoff pending.**
+Status: **extraction and app cutover implemented; independent service exercised by the staging notification proof.**
 The standalone gRPC service owns inventory, provisioning/reconciliation, launch guidance and runner
 session access. The production app calls it for lifecycle, manual egress grants, session management,
 commands and event following; there is no direct-runner fallback. Deployment source transfers backend
 RBAC/network authority to the service and projects an audience-specific app token. Existing app
-PostgreSQL archives/checkpoints and runner volumes stay in place. No live staging cutover, backup,
-restore rehearsal, or preservation validation has been performed by this source change.
+PostgreSQL archives/checkpoints and runner volumes stay in place. The notification smoke test in
+[#8853](https://github.com/agentydragon/ducktape/pull/8853) verified the deployed session-command/receipt
+path in staging. Extraction is no longer a pending notification prerequisite. This evidence does not
+claim a backup/restore rehearsal, validation of every production environment, or closure of every
+historical preservation/handoff checklist below.
 
 This is the concrete backend boundary required by the
 [service dependency rule](../docs/service_boundaries.md). The integration app must be a client;
