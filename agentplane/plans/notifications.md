@@ -52,14 +52,14 @@ fields are omitted here:
 {
   "provider": "github",
   "repository": "agentydragon/ducktape",
-  "subject": {"kind": "pull_request", "number": 8860},
+  "subject": { "kind": "pull_request", "number": 8860 },
   "events": [
-    {"event": "pull_request"},
-    {"event": "issue_comment", "actions": ["created", "edited"]},
-    {"event": "pull_request_review", "actions": ["submitted"]},
-    {"event": "pull_request_review_comment", "actions": ["created", "edited"]},
-    {"event": "check_run", "actions": ["completed"]},
-    {"event": "status"}
+    { "event": "pull_request" },
+    { "event": "issue_comment", "actions": ["created", "edited"] },
+    { "event": "pull_request_review", "actions": ["submitted"] },
+    { "event": "pull_request_review_comment", "actions": ["created", "edited"] },
+    { "event": "check_run", "actions": ["completed"] },
+    { "event": "status" }
   ]
 }
 ```
@@ -134,6 +134,7 @@ also a viable initial deployment. Do not silently widen the existing write-capab
 reuse an operator's integration-app session.
 
 Open operator choices:
+
 1. Initial repositories and whether private repositories must work in this first slice.
 2. A dedicated/read-only GitHub App installation webhook versus managed repository webhooks with
    an existing suitable read credential. Confirm actual event coverage and provisioning ownership.
