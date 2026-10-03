@@ -31,7 +31,7 @@ import {
   type NewSandbox,
   type SandboxPresetView,
   type SandboxView,
-  type ThreadDefaults,
+  type SessionDefaults,
 } from "./client";
 import type { ActionPolicySetView } from "./actions/client";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
@@ -46,11 +46,11 @@ const EMPTY_FORM: NewSandbox = {
   kubernetes_grants: [],
   bootstrap: "",
 };
-const EMPTY_THREAD: ThreadDefaults = {};
+const EMPTY_THREAD: SessionDefaults = {};
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
 
-function hasThreadDefaults(defaults: ThreadDefaults): boolean {
+function hasSessionDefaults(defaults: SessionDefaults): boolean {
   return Object.values(defaults).some((value) => value !== undefined && value !== null && value !== "");
 }
 
@@ -115,7 +115,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     "loading"
   );
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
-  const [thread, setThread] = useState<ThreadDefaults>(EMPTY_THREAD);
+  const [thread, setThread] = useState<SessionDefaults>(EMPTY_THREAD);
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
   const modelOptions = thread.harness && modelCatalog ? modelsForHarness(modelCatalog, thread.harness) : [];
   const reasoningEfforts = modelOptions.find((option) => option.model === thread.model)?.reasoning_efforts ?? [];
@@ -154,7 +154,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       kubernetes_grants: preset.kubernetes_grants,
       bootstrap: preset.bootstrap,
     }));
-    setThread(preset.thread_defaults);
+    setThread(preset.session_defaults);
   }
 
   // The URL names a preset the form has not taken yet: once the catalog is here, take it.
@@ -216,7 +216,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   async function create(): Promise<void> {
     const body = {
       ...form,
-      thread_defaults: hasThreadDefaults(thread) ? thread : undefined,
+      session_defaults: hasSessionDefaults(thread) ? thread : undefined,
     };
     const { data, error: failure } = await api.POST("/sandboxes", {
       body,
@@ -357,7 +357,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             ]}
             value={thread.harness ?? null}
             onChange={(harness) =>
-              setThread({ ...thread, harness: (harness ?? undefined) as ThreadDefaults["harness"] })
+              setThread({ ...thread, harness: (harness ?? undefined) as SessionDefaults["harness"] })
             }
           />
           <Select

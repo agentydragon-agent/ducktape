@@ -312,7 +312,7 @@ export function SandboxPage({
       setSetupScript("");
       return;
     }
-    const defaults = binding.thread_defaults;
+    const defaults = binding.session_defaults;
     setDefaultsLabel(defaults ? "Sandbox defaults" : null);
     if (!defaults) {
       setCwdTemplate("/state/workspaces/{session_id}");

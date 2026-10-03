@@ -18,14 +18,14 @@ import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
-from agentplane.app.agent_runtime.ingestion import Ingestion
-from agentplane.app.agent_runtime.models import ThreadEntity
-from agentplane.app.agent_runtime.view.recording import THREAD_FOLD_EPOCH
 from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import electric_service
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.ingestion import Ingestion
+from agentplane.app.threads.models import ThreadEntity
+from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
 from agentplane.protocol import event_pb2
 
 # gazelle:include_dep @pypi//protobuf

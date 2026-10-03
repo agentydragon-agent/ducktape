@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
     actions,
     app as app_component,
@@ -17,6 +18,7 @@ from cluster.cdk8s.agentplane import (
     llm_ingress,
     rbac,
     sandbox_pod,
+    sandbox_service,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.fleet_rules import add_fleet_rules
@@ -36,6 +38,13 @@ def environment_chart(app: App, env: Environment) -> Chart:
     llm_ingress.LlmIngress(chart, "llm-ingress", env)
     egress.Egress(chart, "egress", env)
     sandbox_pod.add_tool_config(chart, env)
+    sandbox_service.SandboxService(
+        chart,
+        "sandbox-service",
+        env,
+        manager=ServiceAccountRef(namespace=env.namespace, name=app_component.NAME),
+        caller=app_component.service(env.namespace),
+    )
     app_component.App(chart, "app", env)
     actions.Actions(chart, "actions", env)
     add_fleet_rules(

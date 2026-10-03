@@ -20,33 +20,33 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.ingestion import Ingester
-from agentplane.app.agent_runtime.models import SandboxIngestion
-from agentplane.app.agent_runtime.runner.bridge import RunnerBridge
-from agentplane.app.agent_runtime.runner.runners import Runners
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import ContentStore
 from agentplane.app.api import ModelCatalog, ModelOption, create_app
 from agentplane.app.conftest import AGENT_AUTH, TEST_REASONING_EFFORTS
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
-from agentplane.app.egress import EgressInventory
+from agentplane.app.egress_access import EgressAccess
 from agentplane.app.identity import TokenReviewer
-from agentplane.app.inventory import SandboxInventory
 from agentplane.app.live import LiveIndex
-from agentplane.app.main import AppServer, Settings, SpaFiles, resolved_agent_instructions, serve_then_close
+from agentplane.app.main import AppServer, Settings, SpaFiles, serve_then_close
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.presets import Harness
 from agentplane.app.shutdown import drain_of
-from agentplane.app.testing.kubernetes import pod, sandbox
+from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.models import SandboxIngestion
+from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.testing.fake_inventory import pod, sandbox
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
     "AGENTPLANE_NAMESPACE": "test-namespace",
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
-    "AGENTPLANE_RUNNER_PORT": "7000",
+    "AGENTPLANE_SANDBOX_SERVICE_TARGET": "sandbox-service.test:8080",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
     "AGENTPLANE_MODELS": json.dumps(
         {
@@ -116,16 +116,6 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     assert oidc.cookie_name.startswith("__Host-")
 
 
-def test_image_owned_agent_instructions_render_deployment_service_urls() -> None:
-    instructions = resolved_agent_instructions(
-        None, egress_api_url="http://egress.test.invalid", actions_service_url="http://actions.test.invalid:8080"
-    )
-
-    assert "http://egress.test.invalid/v1/rules" in instructions
-    assert "http://egress.test.invalid/openapi.json" in instructions
-    assert "http://actions.test.invalid:8080/openapi.json" in instructions
-
-
 def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) -> None:
     """The app is guarded either way; unset, what is missing is the browser's way to get a session."""
     for name in OIDC_ENVIRONMENT:
@@ -191,13 +181,13 @@ async def _other_connections(database: AsyncEngine) -> int:
 
 @pytest.mark.usefixtures("sigterm_is_survivable")
 async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester_and_database(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: DatabaseUpdates,
     engine: AsyncEngine,
     operator_sessions: OperatorSessionStore,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -205,7 +195,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     database: AsyncEngine,
     event_logs: EventLogStore,
     content: ContentStore,
-    runners: Runners,
+    runners: SandboxSessions,
     ingester: Ingester,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream

@@ -7,6 +7,7 @@ fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` or `PA
 are pinned only one way.
 """
 
+from difflib import unified_diff
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ import yaml
 from cluster.cdk8s.generate_manifests import generate_manifests
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from util.bazel.runfiles import get_required_path
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
 
@@ -25,9 +27,23 @@ def _files(root: Path) -> set[str]:
 
 
 @pytest.fixture(scope="module")
-def generated(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def generated(tmp_path_factory: pytest.TempPathFactory, checkout: Path) -> Path:
     root = tmp_path_factory.mktemp("generated")
     generate_manifests(root)
+    # CI uses the same pinned generator as local runs. Preserve its exact drift as an
+    # applyable artifact rather than making authors reconstruct generated YAML by hand.
+    patch: list[str] = []
+    for relative in sorted(_files(root)):
+        committed = checkout / relative
+        before = committed.read_text().splitlines(keepends=True) if committed.is_file() else []
+        after = (root / relative).read_text().splitlines(keepends=True)
+        patch.extend(
+            unified_diff(
+                before, after, fromfile=f"a/{relative}" if committed.is_file() else "/dev/null", tofile=f"b/{relative}"
+            )
+        )
+    if patch:
+        (undeclared_outputs_dir() / "generated-manifests.patch").write_text("".join(patch))
     return root
 
 

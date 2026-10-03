@@ -1,0 +1,84 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "kubernetes",
+    testonly = True,
+    srcs = ["kubernetes.py"],
+    deps = [
+        ":grpc_service",
+        "//agentplane:subjects",
+        "//agentplane/sandbox_service:action_policy",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:destinations",
+        "//agentplane/sandbox_service:egress",
+        "//agentplane/sandbox_service:grpc_api",
+        "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:kubernetes_bindings",
+        "//agentplane/sandbox_service:kubernetes_views",
+        "//agentplane/sandbox_service:provisioning",
+        "//agentplane/testing:fake_apiserver",
+        "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "fake_inventory",
+    testonly = True,
+    srcs = ["fake_inventory.py"],
+    deps = [
+        "//agentplane/sandbox_service:egress_views",
+        "//agentplane/sandbox_service:kubernetes_views",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "fake_rbac",
+    testonly = True,
+    srcs = ["fake_rbac.py"],
+    deps = ["@pypi//kubernetes_asyncio"],
+)
+
+py_library(
+    name = "grpc_service",
+    testonly = True,
+    srcs = ["grpc_service.py"],
+    deps = [
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:grpc_api",
+        "@pypi//grpcio",
+    ],
+)
+
+py_library(
+    name = "backend",
+    srcs = ["backend.py"],
+    deps = [
+        ":fake_inventory",
+        ":fake_rbac",
+        ":grpc_service",
+        "//agentplane:subjects",
+        "//agentplane/sandbox_service:action_policy",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:destinations",
+        "//agentplane/sandbox_service:egress",
+        "//agentplane/sandbox_service:grpc_api",
+        "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:kubernetes_bindings",
+        "//agentplane/sandbox_service:kubernetes_grants",
+        "//agentplane/sandbox_service:provisioning",
+        "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "//util:kubernetes",
+        "@pypi//anyio",
+        "@pypi//kubernetes_asyncio",
+    ],
+)

@@ -7,43 +7,11 @@ fields, never a preset name to resolve later.
 
 from __future__ import annotations
 
-from enum import StrEnum
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
-class Harness(StrEnum):
-    """The runner protocol Harness enum names, reused by configuration and Thread projections."""
-
-    CLAUDE = "HARNESS_CLAUDE"
-    CODEX = "HARNESS_CODEX"
-
-
-class ThreadDefaults(BaseModel):
-    """Editable Thread launch fields; null means the caller deliberately left that field unspecified."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    harness: Harness | None = None
-    model: str | None = None
-    cwd: str | None = None
-    reasoning_effort: str | None = None
-    instructions: str | None = None
-    setup_script: str | None = Field(default=None, max_length=65_536)
-
-    def over(self, base: ThreadDefaults) -> ThreadDefaults:
-        """Replace only fields explicitly present in this object, including an explicit empty string."""
-        return base.model_copy(update=self.model_dump(exclude_none=True))
-
-    def proto_json(self, session_id: str) -> dict[str, object]:
-        values = self.model_dump(exclude_none=True, exclude={"setup_script"})
-        if cwd := values.get("cwd"):
-            values["cwd"] = str(cwd).replace("{session_id}", session_id)
-        if harness := values.pop("harness", None):
-            values["harness"] = str(harness)
-        if "reasoning_effort" in values:
-            values["reasoningEffort"] = values.pop("reasoning_effort")
-        return values
+from agentplane.app.sandbox_models import SessionDefaults
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.instructions import combine_instructions
 
 
 class ThreadPreset(BaseModel):
@@ -57,8 +25,8 @@ class ThreadPreset(BaseModel):
     instructions: str = ""
     setup_script: str = Field(default="", max_length=65_536)
 
-    def defaults(self) -> ThreadDefaults:
-        return ThreadDefaults.model_validate(self.model_dump(exclude={"title"}))
+    def defaults(self) -> SessionDefaults:
+        return SessionDefaults.model_validate(self.model_dump(exclude={"title"}))
 
 
 class SandboxPreset(BaseModel):
@@ -78,15 +46,6 @@ class SandboxPreset(BaseModel):
     bootstrap: str = Field(default="", max_length=65_536)
 
 
-class SandboxBinding(BaseModel):
-    """The exact reusable Thread defaults and bootstrap the Sandbox was created with."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    thread_defaults: ThreadDefaults | None = None
-    bootstrap: str = Field(max_length=65_536)
-
-
 class SandboxPresetView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -96,7 +55,7 @@ class SandboxPresetView(BaseModel):
     policies: list[str]
     action_policy_sets: list[str]
     kubernetes_grants: list[str]
-    thread_defaults: ThreadDefaults
+    session_defaults: SessionDefaults
     bootstrap: str
 
 
@@ -129,7 +88,7 @@ class PresetCatalog(BaseModel):
                 policies=preset.policies,
                 action_policy_sets=preset.action_policy_sets,
                 kubernetes_grants=preset.kubernetes_grants,
-                thread_defaults=self.threads[preset.thread_preset].defaults(),
+                session_defaults=self.threads[preset.thread_preset].defaults(),
                 bootstrap=preset.bootstrap,
             )
             for name, preset in self.sandboxes.items()
@@ -137,5 +96,4 @@ class PresetCatalog(BaseModel):
 
     def instructions_for(self, task_instructions: str) -> str:
         """Combine platform operation guidance with the caller's task-specific instructions."""
-        parts = [part.strip() for part in (self.agent_instructions, task_instructions) if part.strip()]
-        return "\n\n".join(parts)
+        return combine_instructions(self.agent_instructions, task_instructions)

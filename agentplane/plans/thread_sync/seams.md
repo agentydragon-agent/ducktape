@@ -28,7 +28,7 @@ Electric sits behind one module on each side:
   not sync.
 - **One new shared read**, which every non-Electric option needs: rows by `entity_index` range, and
   the delta — rows in a range with `revision_cursor > since`. It is a read of the fold rather than a
-  protocol, so it belongs in `agent_runtime/view/`.
+  protocol, so it belongs in `threads/view/`.
 - **Per implementation:** a package `agentplane/app/thread_sync/<name>/` owning a router mounted at
   `/threads/{thread_id}/sync/<name>/…` behind the same `require_caller` dependency (**C2**), and its
   own settings. Electric moves there.

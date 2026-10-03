@@ -222,6 +222,14 @@ class FakeApiServer:
         await response.write_eof()
         return response
 
+    async def get_object(self, request: web.Request) -> web.Response:
+        plural, name = request.match_info["plural"], request.match_info["name"]
+        assert request.match_info["namespace"] == self.namespace_of[plural]
+        obj = self.objects[plural].get(name)
+        if obj is None:
+            return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
+        return web.json_response(obj)
+
     async def patch_status(self, request: web.Request) -> web.Response:
         plural, name = request.match_info["plural"], request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
@@ -346,6 +354,7 @@ async def fake_apiserver(namespace_of: dict[str, str] | None = None) -> AsyncIte
     app.router.add_get("/api/v1/namespaces/{namespace}/pods/{name}", fake.get_pod)
     app.router.add_get("/api/v1/namespaces/{namespace}/{plural}", fake.list_or_watch)
     app.router.add_get("/apis/{group}/{version}/namespaces/{namespace}/{plural}", fake.list_or_watch)
+    app.router.add_get("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.get_object)
     app.router.add_patch("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}/status", fake.patch_status)
     # handler_cancellation: a watch handler outliving its disconnected client would otherwise
     # stall cleanup for the shutdown timeout.

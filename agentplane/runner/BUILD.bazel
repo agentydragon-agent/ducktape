@@ -35,6 +35,10 @@ py_grpc_service_library(
     name = "protocol_pb2_grpc",
     proto = ":protocol_proto",
     py_proto = ":protocol_pb2",
+    visibility = [
+        "//agentplane/runner:__subpackages__",
+        "//agentplane/sandbox_service:__subpackages__",
+    ],
 )
 
 ts_proto_library(
@@ -85,7 +89,12 @@ py_library(
 py_library(
     name = "client",
     srcs = ["client.py"],
+    visibility = [
+        "//agentplane/runner:__subpackages__",
+        "//agentplane/sandbox_service:__subpackages__",
+    ],
     deps = [
+        ":errors",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
@@ -228,6 +237,7 @@ py_test(
     deps = [
         ":client",
         ":conftest",
+        ":errors",
         "//:conftest",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
@@ -293,6 +303,7 @@ py_test(
     deps = [
         ":client",
         ":conftest",
+        ":errors",
         "//:conftest",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
@@ -589,6 +600,7 @@ py_test(
         ":client",
         ":config",
         ":conftest",
+        ":errors",
         ":service",
         ":store",
         "//:conftest",
@@ -696,5 +708,29 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "errors",
+    srcs = ["errors.py"],
+)
+
+# An explicit test-only dependency grants archive fault tests access to the native peer.
+# Production app targets cannot depend on this, even though they share the test's Bazel package.
+py_library(
+    name = "client_for_testing",
+    testonly = True,
+    srcs = [],
+    visibility = ["//agentplane/app:__pkg__"],
+    deps = [":client"],
+)
+
+py_library(
+    name = "harness",
+    srcs = ["harness.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
     ],
 )

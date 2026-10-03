@@ -144,7 +144,7 @@ async function choose(label: string, value: string): Promise<void> {
 it("preserves a Sandbox reasoning default through model loading and submits it on later Thread launch", async () => {
   (live.snapshot.sandbox as SandboxView).binding = {
     bootstrap: "",
-    thread_defaults: { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" },
+    session_defaults: { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" },
   };
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
@@ -160,7 +160,7 @@ it("preserves a Sandbox reasoning default through model loading and submits it o
 it("uses the bound working directory template and setup script for later Threads", async () => {
   (live.snapshot.sandbox as SandboxView).binding = {
     bootstrap: "",
-    thread_defaults: {
+    session_defaults: {
       harness: "HARNESS_CLAUDE",
       model: "test-model",
       cwd: "/state/custom/{session_id}/work",
@@ -196,7 +196,7 @@ it("shows an unspecified legacy setup as absent and a completed setup as complet
 it("lets a later Thread override the Sandbox reasoning default locally", async () => {
   (live.snapshot.sandbox as SandboxView).binding = {
     bootstrap: "",
-    thread_defaults: { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" },
+    session_defaults: { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" },
   };
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
@@ -206,7 +206,7 @@ it("lets a later Thread override the Sandbox reasoning default locally", async (
   await act(async () => newSession().click());
   const sent = sessions.mock.calls.find(([request]) => request.method === "POST")?.[0];
   expect((await sent?.json()).spec.reasoningEffort).toBe("medium");
-  expect((live.snapshot.sandbox as SandboxView).binding?.thread_defaults?.reasoning_effort).toBe("high");
+  expect((live.snapshot.sandbox as SandboxView).binding?.session_defaults?.reasoning_effort).toBe("high");
 });
 
 it("shows the selected Kubernetes grant scope, role, and application error", async () => {

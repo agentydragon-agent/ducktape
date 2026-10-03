@@ -10,7 +10,8 @@ import pytest_bazel
 
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
-from agentplane.runner.client import RunnerClient, RunnerError
+from agentplane.runner.client import RunnerClient
+from agentplane.runner.errors import RunnerError
 from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 

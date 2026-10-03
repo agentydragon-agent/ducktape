@@ -34,7 +34,7 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from agentplane.acceptance.agent import Agent
 from agentplane.app.client import Client
 from agentplane.app.decisions import Decision, Outcome
-from agentplane.app.inventory import SandboxView
+from agentplane.app.sandbox_models import SandboxView
 from agentplane.runner import protocol_pb2
 
 # `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.

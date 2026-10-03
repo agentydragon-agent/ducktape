@@ -45,16 +45,16 @@ from more_itertools import one
 from pydantic import BaseModel, Field
 
 from agentplane.acceptance.agent import Agent
-from agentplane.app.agent_runtime.view.fold import PayloadField
-from agentplane.app.agent_runtime.view.views import EntityKind, ThreadItemState, ThreadPayloadReference
 from agentplane.app.client import REQUEST_SECONDS, Client
 from agentplane.app.electric import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScopeResponse
-from agentplane.app.inventory import SandboxView
-from agentplane.app.presets import Harness
+from agentplane.app.sandbox_models import SandboxView
+from agentplane.app.threads.view.fold import PayloadField
+from agentplane.app.threads.view.views import EntityKind, ThreadItemState, ThreadPayloadReference
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.runner.harness import Harness
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

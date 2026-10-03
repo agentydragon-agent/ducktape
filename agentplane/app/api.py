@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
@@ -31,6 +30,7 @@ from agentplane.action_service.models import (
     ActionState,
     DecisionInput,
 )
+from agentplane.action_service.policy_view import ActionPolicySetView
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
     FederatedOperatorActions,
@@ -38,23 +38,7 @@ from agentplane.app.action_federation import (
     operator_actions,
     upstream_failure_detail,
 )
-from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicySetView, UnknownPolicySetError
-from agentplane.app.agent_runtime.events import stream
-from agentplane.app.agent_runtime.events.debug import (
-    ArchivedObservationEntry,
-    EvidencePage,
-    NativeFramePage,
-    ObservationPage,
-    ThreadEvidenceNotFoundError,
-    ThreadScopeChangedError,
-)
-from agentplane.app.agent_runtime.events.event_log import EventLogStore, ThreadNotFoundError
-from agentplane.app.agent_runtime.runner import bridge as runner_bridge
-from agentplane.app.agent_runtime.runner.runners import SandboxNotReachableError
-from agentplane.app.agent_runtime.thread.store import ThreadStore
-from agentplane.app.agent_runtime.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
-from agentplane.app.agent_runtime.view.fold import CommandOutcome
-from agentplane.app.agent_runtime.view.views import ThreadView
+from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -64,42 +48,57 @@ from agentplane.app.consent import (
 )
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
-from agentplane.app.egress import (
+from agentplane.app.egress_access import EgressAccess
+from agentplane.app.electric import ElectricProxy, router as electric_router
+from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
+from agentplane.app.live import LiveIndex, Updates, router as live_router
+from agentplane.app.oidc import OIDCSettings, build_oauth
+from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
+from agentplane.app.presets import PresetCatalog, SandboxPresetView
+from agentplane.app.sandbox_models import (
+    KubernetesGrantView,
+    NewSandbox,
+    SandboxView,
+    create_request,
+    grant_views,
+    sandbox_view,
+)
+from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
+from agentplane.app.threads import bridge as runner_bridge
+from agentplane.app.threads.events import stream
+from agentplane.app.threads.events.debug import (
+    ArchivedObservationEntry,
+    EvidencePage,
+    NativeFramePage,
+    ObservationPage,
+    ThreadEvidenceNotFoundError,
+    ThreadScopeChangedError,
+)
+from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
+from agentplane.app.threads.sessions import SandboxNotReachableError
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
+from agentplane.app.threads.view.fold import CommandOutcome
+from agentplane.app.threads.view.views import ThreadView
+from agentplane.runner import protocol_pb2
+from agentplane.runner.errors import OpenTimeoutError, RunnerError
+from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
+from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
+from agentplane.sandbox_service.egress_views import (
     BindingNotFoundError,
     BindingView,
-    EgressInventory,
     FluxOwnedBindingError,
     PolicyView,
     UnknownPolicyError,
 )
-from agentplane.app.electric import ElectricProxy, router as electric_router
-from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
-from agentplane.app.inventory import (
-    KUBERNETES_GRANTS_ANNOTATION,
-    SANDBOX_BINDING_ANNOTATION,
-    NewSandbox,
-    SandboxInventory,
-    SandboxNotFoundError,
-    SandboxRunningError,
-    SandboxView,
-)
-from agentplane.app.kubernetes_bindings import KUBERNETES_BINDINGS_FINALIZER, KubernetesBindings
-from agentplane.app.kubernetes_grants import (
-    ClusterRoleBindingGrant,
+from agentplane.sandbox_service.kubernetes_grants import (
     DuplicateKubernetesGrantError,
     KubernetesGrant,
-    KubernetesGrantView,
     UnknownKubernetesGrantError,
-    grant_views,
     resolve_grants,
 )
-from agentplane.app.live import LiveIndex, Updates, router as live_router
-from agentplane.app.oidc import OIDCSettings, build_oauth
-from agentplane.app.operator_sessions import OperatorSessionMiddleware, OperatorSessionStore, operator_session_row
-from agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
-from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
-from agentplane.runner import protocol_pb2
-from agentplane.runner.client import OpenTimeoutError, RunnerError
+from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxRunningError
 from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -193,24 +192,24 @@ async def list_kubernetes_grants(request: Request) -> list[KubernetesGrantView]:
     return grant_views(request.app.state.kubernetes_grants)
 
 
-def _inventory(request: Request) -> SandboxInventory:
+def _inventory(request: Request) -> SandboxServiceClient:
     inventory = request.app.state.inventory
-    if not isinstance(inventory, SandboxInventory):
-        raise TypeError(f"app.state.inventory is {type(inventory).__name__}, not SandboxInventory")
+    if not isinstance(inventory, SandboxServiceClient):
+        raise TypeError(f"app.state.inventory is {type(inventory).__name__}, not SandboxServiceClient")
     return inventory
 
 
-Inventory = Annotated[SandboxInventory, Depends(_inventory)]
+Inventory = Annotated[SandboxServiceClient, Depends(_inventory)]
 
 
-def _egress(request: Request) -> EgressInventory:
+def _egress(request: Request) -> EgressAccess:
     egress = request.app.state.egress
-    if not isinstance(egress, EgressInventory):
-        raise TypeError(f"app.state.egress is {type(egress).__name__}, not EgressInventory")
+    if not isinstance(egress, EgressAccess):
+        raise TypeError(f"app.state.egress is {type(egress).__name__}, not EgressAccess")
     return egress
 
 
-Egress = Annotated[EgressInventory, Depends(_egress)]
+Egress = Annotated[EgressAccess, Depends(_egress)]
 
 
 def _action_policy(request: Request) -> ActionPolicyInventory:
@@ -235,7 +234,7 @@ Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 
 @router.get("")
 async def list_sandboxes(inventory: Inventory) -> list[SandboxView]:
-    return await inventory.list_sandboxes()
+    return [sandbox_view(view) for view in await inventory.list_sandboxes()]
 
 
 @router.get("/templates")
@@ -246,57 +245,18 @@ async def list_templates(inventory: Inventory) -> list[str]:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(
-    request: Request,
-    inventory: Inventory,
-    egress: Egress,
-    action_policy: ActionPolicy,
-    spec: NewSandbox,
-    caller: Annotated[CallerIdentity, Depends(require_caller)],
+    request: Request, spec: NewSandbox, inventory: Inventory, caller: Annotated[CallerIdentity, Depends(require_caller)]
 ) -> SandboxView:
     """Create exactly the fields the caller selected; browser presets have already filled them."""
     grants = resolve_grants(spec.kubernetes_grants, request.app.state.kubernetes_grants)
     if grants and caller.kind is not CallerKind.OPERATOR:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Kubernetes grant selection requires an operator session")
-    bindings: KubernetesBindings | None = request.app.state.kubernetes_bindings
-    if grants and bindings is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Kubernetes grant provisioning is unavailable")
-    policies = egress.launch_policies(spec.policies)
-    await egress.require_policies(policies)
-    await action_policy.require_policy_sets(spec.action_policy_sets)
-    binding = (
-        SandboxBinding(thread_defaults=spec.thread_defaults, bootstrap=spec.bootstrap)
-        if spec.thread_defaults is not None or spec.bootstrap
-        else None
-    )
-    annotations = {}
-    if binding is not None:
-        annotations[SANDBOX_BINDING_ANNOTATION] = binding.model_dump_json(exclude_none=True)
-    if grants:
-        annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([grant.model_dump(mode="json") for grant in grants])
-    view = await inventory.create(
-        spec,
-        annotations=annotations or None,
-        finalizers=[KUBERNETES_BINDINGS_FINALIZER]
-        if any(
-            isinstance(grant.grant, ClusterRoleBindingGrant) or grant.grant.namespace != inventory.namespace
-            for grant in grants
-        )
-        else None,
-    )
-    if policies:
-        await egress.grant(view, policies)
-    if spec.action_policy_sets:
-        await action_policy.bind(view, spec.action_policy_sets)
-    if grants:
-        assert bindings is not None
-        await bindings.ensure(view)
-        view = await inventory.get(view.name)
-    return view
+    return sandbox_view(await inventory.create(create_request(spec)))
 
 
 @router.get("/{name}")
 async def get_sandbox(inventory: Inventory, name: str) -> SandboxView:
-    return await inventory.get(name)
+    return sandbox_view(await inventory.get(name))
 
 
 @router.post("/{name}/suspend", status_code=status.HTTP_204_NO_CONTENT)
@@ -330,7 +290,7 @@ class EgressGrant(BaseModel):
 async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
     """What may leave the sandbox: the bindings naming the ServiceAccount it runs as, with their
     policies as they resolve."""
-    return await egress.bindings_for((await inventory.get(name)).service_account)
+    return await egress.bindings_for(sandbox_view(await inventory.get(name)).service_account)
 
 
 @router.post("/{name}/egress", status_code=status.HTTP_201_CREATED)
@@ -343,7 +303,7 @@ async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, 
 @router.get("/{name}/egress/decisions")
 async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, name: str) -> list[Decision]:
     """What recently left or was refused, from the proxy; 502 when the proxy cannot be asked."""
-    return await decisions.recent((await inventory.get(name)).service_account)
+    return await decisions.recent(sandbox_view(await inventory.get(name)).service_account)
 
 
 egress_router = APIRouter(prefix="/egress", tags=["egress"])
@@ -730,7 +690,7 @@ async def list_threads_with_sandboxes(
 ) -> ThreadsWithSandboxes:
     """Visible Threads newest first, joined with the complete Sandbox inventory."""
     thread_views = await store.list_threads(include_archived=include_archived)
-    sandboxes = {view.name: view for view in await inventory.list_sandboxes()}
+    sandboxes = {view.name: sandbox_view(view) for view in await inventory.list_sandboxes()}
     return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
 
@@ -743,15 +703,12 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
 
 
 @threads.post("/{thread_id}/resume")
-async def resume_thread(
-    store: Store, bridge: runner_bridge.Bridge, inventory: Inventory, thread_id: UUID
-) -> dict[str, object]:
+async def resume_thread(store: Store, bridge: runner_bridge.Bridge, thread_id: UUID) -> dict[str, object]:
     thread = await store.get_thread(thread_id)
     if thread is None:
         raise ThreadNotFoundError(thread_id)
     if thread.archived:
         raise HTTPException(status.HTTP_409_CONFLICT, "an archived Thread cannot be resumed")
-    await runner_bridge.ready_sandbox_for_session(inventory, thread.sandbox)
     return MessageToDict(
         await bridge.resume_thread(thread_id, expected_harness=thread.harness.value, expected_cwd=thread.cwd)
     )
@@ -785,7 +742,7 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
     if thread is None:
         raise ThreadNotFoundError(thread_id)
     try:
-        sandbox = await inventory.get(thread.sandbox)
+        sandbox = sandbox_view(await inventory.get(thread.sandbox))
     except SandboxNotFoundError:
         # A deleted Sandbox has no running harness to keep visible.
         pass
@@ -977,11 +934,11 @@ async def thread_event_stream(
 
 
 def create_app(
-    inventory: SandboxInventory,
+    inventory: SandboxServiceClient,
     bridge: runner_bridge.RunnerBridge,
     store: ThreadStore,
     catalog: ModelCatalog,
-    egress: EgressInventory,
+    egress: EgressAccess,
     decisions: DecisionsClient,
     live: LiveIndex,
     action_policy: ActionPolicyInventory,
@@ -991,7 +948,6 @@ def create_app(
     operator_actions: FederatedOperatorActions | None = None,
     electric: ElectricProxy | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
-    kubernetes_bindings: KubernetesBindings | None = None,
     *,
     event_logs: EventLogStore,
     content: ContentStore,
@@ -1025,6 +981,24 @@ def create_app(
                 f"is not supported by {thread_preset.model!r}"
             )
     app = FastAPI(title="Agentplane", version="0")
+
+    @app.exception_handler(ServiceError)
+    async def sandbox_service_error(request: Request, error: ServiceError) -> JSONResponse:
+        code = {
+            grpc.StatusCode.NOT_FOUND: 404,
+            grpc.StatusCode.FAILED_PRECONDITION: 409,
+            grpc.StatusCode.INVALID_ARGUMENT: 422,
+        }.get(error.code, 503)
+        return JSONResponse({"detail": str(error)}, status_code=code)
+
+    @app.exception_handler(ConnectionError)
+    async def sandbox_service_unavailable(request: Request, error: ConnectionError) -> JSONResponse:
+        return JSONResponse({"detail": "Sandbox Service unavailable; outcome may be uncertain"}, status_code=503)
+
+    @app.exception_handler(TimeoutError)
+    async def sandbox_service_deadline(request: Request, error: TimeoutError) -> JSONResponse:
+        return JSONResponse({"detail": "Upstream deadline expired; mutation outcome may be uncertain"}, status_code=504)
+
     app.state.inventory = inventory
     app.state.bridge = bridge
     app.state.store = store
@@ -1035,7 +1009,6 @@ def create_app(
     app.state.models = catalog
     app.state.presets = configured_presets
     app.state.kubernetes_grants = configured_grants
-    app.state.kubernetes_bindings = kubernetes_bindings
     app.state.egress = egress
     app.state.action_policy = action_policy
     app.state.decisions = decisions
@@ -1157,17 +1130,6 @@ def create_app(
         _request: Request, error: runner_bridge.RunnerAdmissionTimeoutError | OpenTimeoutError
     ) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_504_GATEWAY_TIMEOUT, content={"detail": str(error)})
-
-    @app.exception_handler(grpc.aio.AioRpcError)
-    async def _runner_unavailable(_request: Request, error: grpc.aio.AioRpcError) -> JSONResponse:
-        # The Pod has an address but nothing answers on it yet: a runner still starting after a
-        # resume, or one that just died. Any other gRPC failure is a bug and stays a 500.
-        if error.code() != grpc.StatusCode.UNAVAILABLE:
-            raise error
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"detail": f"the sandbox's runner is not answering: {error.details()}"},
-        )
 
     @app.exception_handler(RunnerError)
     async def _runner_refused(_request: Request, error: RunnerError) -> JSONResponse:

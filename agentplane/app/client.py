@@ -18,15 +18,16 @@ from uuid import UUID
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
-from agentplane.app.agent_runtime.runner.bridge import NewSession
-from agentplane.app.agent_runtime.view.views import ThreadView
 from agentplane.app.api import EgressGrant, ModelCatalog
 from agentplane.app.decisions import Decision
-from agentplane.app.egress import BindingView, PolicyView
-from agentplane.app.inventory import NewSandbox, ProvisioningState, SandboxView
 from agentplane.app.presets import SandboxPresetView
+from agentplane.app.sandbox_models import NewSandbox, SandboxView
+from agentplane.app.threads.bridge import NewSession
+from agentplane.app.threads.view.views import ThreadView
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.sandbox_service.egress_views import BindingView, PolicyView
+from agentplane.sandbox_service.models import ProvisioningState
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

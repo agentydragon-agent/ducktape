@@ -48,7 +48,7 @@ export type KubernetesGrantView = components["schemas"]["KubernetesGrantView"];
 export type ResolvedGrant = components["schemas"]["ResolvedGrant"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
-export type ThreadDefaults = components["schemas"]["ThreadDefaults"];
+export type SessionDefaults = components["schemas"]["SessionDefaults"];
 export type Harness = components["schemas"]["Harness"];
 export type ModelOption = components["schemas"]["ModelOption"];
 export type ModelCatalog = components["schemas"]["ModelCatalog"];
@@ -296,7 +296,7 @@ export async function models(): Promise<ModelCatalog> {
 
 /**
  * Above the server's own bound: two sequential `COMMAND_ADMISSION_S` (15 s) waits, for runner
- * admission and then for its archive copy (`agentplane/app/agent_runtime/runner/bridge.py`). The
+ * admission and then for its archive copy (`agentplane/app/threads/bridge.py`). The
  * clock also runs while the browser queues the request for a free connection, so a queued or hung
  * request surfaces as a failed attempt rather than waiting silently forever.
  */

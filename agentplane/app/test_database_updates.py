@@ -8,12 +8,12 @@ import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.app.agent_runtime.events.event_log import EventLogStore
-from agentplane.app.agent_runtime.events.ingestion_lease import IngestionLease
-from agentplane.app.agent_runtime.ingestion import Ingestion
-from agentplane.app.agent_runtime.thread.store import ThreadStore
 from agentplane.app.conftest import SPEC, Replica, event_entry
 from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.ingestion import Ingestion
+from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

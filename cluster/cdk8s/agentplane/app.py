@@ -31,7 +31,7 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecVolumeClaimTemplatesSpecResources,
     SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests,
 )
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ContainerResources,
@@ -55,15 +55,14 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
-from agentplane.app.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.app.main import CONFIG_FILE_ENV, Settings
 from agentplane.app.oidc import OIDCSettings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_ingress, sandbox_pod
+from cluster.cdk8s.agentplane import actions, database, egress, electric, llm_ingress, sandbox_pod, sandbox_service
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
-from cluster.cdk8s.api_resource import custom_resource, named_resource
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
@@ -175,93 +174,6 @@ class App(Construct):
 
     def _add_rbac(self, app_service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
-        grants = tuple(self.env.app_config.kubernetes_grants.values())
-        # Retain management of scopes with live bindings even if an operator removes a
-        # catalog entry. Removing an enabled choice must not strand its old bindings.
-        cleanup_namespaces = set(self.env.app_config.kubernetes_binding_cleanup_namespaces)
-        role_binding_namespaces = {
-            grant.namespace for grant in grants if isinstance(grant, RoleBindingGrant)
-        } | cleanup_namespaces
-        role_binding_grant_names = sorted(
-            {
-                grant.role_ref.name
-                for grant in grants
-                if (
-                    isinstance(grant, RoleBindingGrant)
-                    and grant.namespace == namespace
-                    and grant.role_ref.kind == "Role"
-                )
-            }
-        )
-        role_binding_rules: list[RolePolicyRule] = []
-        if namespace in role_binding_namespaces:
-            role_binding_rules.append(
-                RolePolicyRule(
-                    resources=[custom_resource("rbac.authorization.k8s.io", "rolebindings")],
-                    verbs=["create", "get", "list", "delete"],
-                )
-            )
-            # Persisted grants can outlive catalog entries; keep role reads for
-            # their old names while bind remains limited to configured names.
-            role_binding_rules.append(
-                RolePolicyRule(resources=[custom_resource("rbac.authorization.k8s.io", "roles")], verbs=["get"])
-            )
-        if role_binding_grant_names:
-            role_binding_rules.extend(
-                RolePolicyRule(resources=[named_resource("rbac.authorization.k8s.io", "roles", name)], verbs=["bind"])
-                for name in role_binding_grant_names
-            )
-        # External namespace delegation is rendered into one independent Flux
-        # Kustomization per target by binding_delegation.py. The app's own
-        # Kustomization must not fail because an unrelated namespace is absent.
-        bind_cluster_roles = sorted({grant.role_ref.name for grant in grants if grant.role_ref.kind == "ClusterRole"})
-        uses_cluster_binding = self.env.app_config.kubernetes_cluster_binding_cleanup or any(
-            isinstance(grant, ClusterRoleBindingGrant) for grant in grants
-        )
-        if bind_cluster_roles or uses_cluster_binding:
-            k8s.KubeClusterRole(
-                self,
-                "managed-cluster-bindings-role",
-                metadata=k8s.ObjectMeta(name=f"{namespace}-managed-cluster-bindings"),
-                rules=[
-                    *(
-                        [
-                            k8s.PolicyRule(
-                                api_groups=["rbac.authorization.k8s.io"],
-                                resources=["clusterrolebindings"],
-                                verbs=["create", "get", "list", "delete"],
-                            )
-                        ]
-                        if uses_cluster_binding
-                        else []
-                    ),
-                    *[
-                        k8s.PolicyRule(
-                            api_groups=["rbac.authorization.k8s.io"],
-                            resources=["clusterroles"],
-                            resource_names=[name],
-                            verbs=["bind"],
-                        )
-                        for name in bind_cluster_roles
-                    ],
-                    # The stored selection can refer to a catalog entry later
-                    # removed; GET validates it without widening BIND.
-                    k8s.PolicyRule(api_groups=["rbac.authorization.k8s.io"], resources=["clusterroles"], verbs=["get"]),
-                ],
-            )
-            k8s.KubeClusterRoleBinding(
-                self,
-                "managed-cluster-bindings-binding",
-                metadata=k8s.ObjectMeta(name=f"{namespace}-managed-cluster-bindings"),
-                role_ref=k8s.RoleRef(
-                    api_group="rbac.authorization.k8s.io",
-                    kind="ClusterRole",
-                    name=f"{namespace}-managed-cluster-bindings",
-                ),
-                subjects=[k8s.Subject(kind="ServiceAccount", name=NAME, namespace=namespace)],
-            )
-        # TokenReview proves a Bearer token the app itself was handed. Creating a
-        # review grants none of the reviewed identity's authority.
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",
@@ -269,54 +181,35 @@ class App(Construct):
             service_account_name=NAME,
             namespace=namespace,
         )
-        Role(
+        role = Role(
             self,
             "role",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
-                # GET /sandboxes/templates lists them; a get-only Role 403'd the route (#7023).
                 RolePolicyRule(
                     resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get", "list"]
                 ),
                 RolePolicyRule(
-                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
-                    verbs=["create", "get", "list", "watch", "patch", "delete"],
+                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")], verbs=["get", "list", "watch"]
                 ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
-                # One ServiceAccount per Sandbox, created with it and owned by it; no
-                # patching beyond stamping that owner reference, and no reading of the
-                # tokens minted for it.
-                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["create", "patch", "delete"]),
                 RolePolicyRule(
                     resources=[
                         custom_resource("agentplane.allegedly.works", resource)
-                        for resource in ("egresspolicies", "egressbindings", "egresscredentials")
+                        for resource in (
+                            "egresspolicies",
+                            "egressbindings",
+                            "egresscredentials",
+                            "actionpolicysets",
+                            "actionpolicybindings",
+                        )
                     ],
                     verbs=["get", "list", "watch"],
                 ),
-                RolePolicyRule(
-                    resources=[custom_resource("agentplane.allegedly.works", "egressbindings")],
-                    verbs=["create", "delete"],
-                ),
-                RolePolicyRule(
-                    resources=[
-                        custom_resource("agentplane.allegedly.works", resource)
-                        for resource in ("actionpolicysets", "actionpolicybindings")
-                    ],
-                    verbs=["get", "list", "watch"],
-                ),
-                RolePolicyRule(
-                    resources=[custom_resource("agentplane.allegedly.works", "actionpolicybindings")],
-                    verbs=["create", "delete"],
-                ),
-                *role_binding_rules,
             ],
         )
         RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            role=Role.from_role_name(self, "role-ref", NAME),
+            self, "rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
@@ -396,7 +289,7 @@ class App(Construct):
                 # separate change, which moves the Sandboxes, their template, and the
                 # runner ServiceAccount out of here.
                 sandbox_namespace=namespace,
-                runner_port=_RUNNER_PORT,
+                sandbox_service_target=f"{sandbox_service.service(namespace).fqdn}:{sandbox_service.service(namespace).pod_port}",
                 host="0.0.0.0",
                 port=self.service.pod_port,
             ),
@@ -412,6 +305,34 @@ class App(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         config.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
+        # A rotating, audience-scoped workload token, separate from the API-server token.
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/volumes/-",
+                k8s.Volume(
+                    name="sandbox-service-token",
+                    projected=k8s.ProjectedVolumeSource(
+                        sources=[
+                            k8s.VolumeProjection(
+                                service_account_token=k8s.ServiceAccountTokenProjection(
+                                    audience=sandbox_service.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
+                                )
+                            )
+                        ]
+                    ),
+                ),
+            )
+        )
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(
+                    name="sandbox-service-token",
+                    mount_path="/var/run/secrets/agentplane-sandbox-service",
+                    read_only=True,
+                ),
+            )
+        )
 
         # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
         # carries no control-plane toleration.
@@ -455,17 +376,18 @@ class App(Construct):
         runner = Pods(namespace=namespace, labels=tuple(_RUNNER_LABELS.items()))
         dns_egress = cilium.dns_egress()
         # Runner Pods reach DNS and the egress proxy's listener, which the sidecar
-        # relays to; port 7000 is open only to Pods in this namespace.
+        # relays to; only Sandbox Service can connect to the control port.
+        # TODO: replace network-only runner authentication with authenticated transport.
         NetworkPolicy(
             self,
             "networkpolicy-runner",
             metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
             endpoint_selector=runner.selector,
-            ingress=[IngressRule.from_endpoints({"k8s:io.kubernetes.pod.namespace": namespace}, ports=[_RUNNER_PORT])],
+            ingress=[sandbox_service.service(namespace).pods.admit(_RUNNER_PORT)],
             egress=[dns_egress, egress.proxy(namespace).egress()],
         )
         # The app takes browser traffic straight from the gateway and reaches DNS, the
-        # API server, the OIDC provider, the runner Pods, the egress proxy's admin
+        # API server, the OIDC provider, Sandbox Service, the egress proxy's admin
         # port, the Action Service, and the trajectory store.
         NetworkPolicy(
             self,
@@ -477,7 +399,7 @@ class App(Construct):
                 dns_egress,
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
-                EgressRule.to_endpoints(runner.cilium, _RUNNER_PORT),
+                sandbox_service.service(namespace).egress(),
                 egress.admin(namespace).egress(),
                 # Separate BFF/operator transport boundary. The Action Service
                 # still requires its own configured operator authenticator;

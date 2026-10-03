@@ -357,7 +357,7 @@ def test_shared_public_coder_reader_and_testing_login_have_named_bind_delegation
     }
     binding = _by_name(delegated, "RoleBinding", "agentplane-staging-external-bindings")
     assert binding["subjects"] == [
-        {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+        {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
     ]
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
@@ -413,7 +413,7 @@ def test_managed_haku_testing_operator_reuses_static_role_with_external_delegati
     ]
     delegated_binding = _by_name(external_docs, "RoleBinding", "agentplane-staging-external-bindings")
     assert delegated_binding["subjects"] == [
-        {"kind": "ServiceAccount", "name": "agentplane-app", "namespace": "agentplane-staging"}
+        {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
     ]
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
