@@ -19,10 +19,21 @@ fn setup_modules_fixture(root: &Path) {
 }
 
 fn list(modules: &Path, extra: &[&str]) -> serde_json::Value {
-    let mut args = vec!["modules", "list", "--modules", modules.to_str().unwrap(), "--format", "json"];
+    let mut args = vec![
+        "modules",
+        "list",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--format",
+        "json",
+    ];
     args.extend_from_slice(extra);
     let out = run_debundle(&args);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     serde_json::from_slice(&out.stdout).unwrap()
 }
 
@@ -31,13 +42,33 @@ fn modules_list_filters_preserve_sorted_paths_and_counts() {
     let dir = tempfile::tempdir().unwrap();
     setup_modules_fixture(dir.path());
     for (args, expected) in [
-        (vec![], vec![("residual/unhandled", 0), ("runtime/plugins", 1), ("ui/empty", 0), ("ui/sidebar", 2)]),
+        (
+            vec![],
+            vec![
+                ("residual/unhandled", 0),
+                ("runtime/plugins", 1),
+                ("ui/empty", 0),
+                ("ui/sidebar", 2),
+            ],
+        ),
         (vec!["--residual"], vec![("residual/unhandled", 0)]),
-        (vec!["--empty"], vec![("residual/unhandled", 0), ("ui/empty", 0)]),
+        (
+            vec!["--empty"],
+            vec![("residual/unhandled", 0), ("ui/empty", 0)],
+        ),
     ] {
         let report = list(dir.path(), &args);
-        let rows: Vec<_> = report["modules"].as_array().unwrap().iter()
-            .map(|m| (m["path"].as_str().unwrap(), m["member_count"].as_u64().unwrap())).collect();
+        let rows: Vec<_> = report["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                (
+                    m["path"].as_str().unwrap(),
+                    m["member_count"].as_u64().unwrap(),
+                )
+            })
+            .collect();
         assert_eq!(rows, expected, "{args:?}");
     }
 }

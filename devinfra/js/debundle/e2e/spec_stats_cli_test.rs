@@ -26,9 +26,10 @@ fn module_tree(files: &[(&str, &str)]) -> tempfile::TempDir {
 
 #[test]
 fn one_module_one_binding_emits_expected_totals() {
-    let modules = module_tree(&[
-        ("solo.yaml", "members:\n  - selector: { binding: { name: a } }\n"),
-    ]);
+    let modules = module_tree(&[(
+        "solo.yaml",
+        "members:\n  - selector: { binding: { name: a } }\n",
+    )]);
 
     let out = run_stats(modules.path(), &["--format", "json"]);
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -52,11 +53,17 @@ fn one_module_one_binding_emits_expected_totals() {
 #[test]
 fn singleton_plus_multi_member_bucket_counts() {
     let modules = module_tree(&[
-        ("solo.yaml", "members:\n  - name: Solo\n    selector: { binding: { name: a } }\n"),
-        ("group.yaml", "members:\n\
+        (
+            "solo.yaml",
+            "members:\n  - name: Solo\n    selector: { binding: { name: a } }\n",
+        ),
+        (
+            "group.yaml",
+            "members:\n\
          \x20\x20- selector: { binding: { name: b } }\n\
          \x20\x20- selector: { binding: { name: c } }\n\
-         \x20\x20- selector: { binding: { name: d } }\n"),
+         \x20\x20- selector: { binding: { name: d } }\n",
+        ),
     ]);
 
     let out = run_stats(modules.path(), &["--format", "json"]);
@@ -76,10 +83,19 @@ fn singleton_plus_multi_member_bucket_counts() {
 #[test]
 fn output_is_deterministic_across_runs() {
     let modules = module_tree(&[
-        ("a.yaml", "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n"),
-        ("nested/c.yaml", "members:\n  - selector: { binding: { name: c } }\n"),
+        (
+            "a.yaml",
+            "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n",
+        ),
+        (
+            "nested/c.yaml",
+            "members:\n  - selector: { binding: { name: c } }\n",
+        ),
     ]);
-    write_text_file(&modules.path().join("residual/unhandled.yaml"), "members: []\n");
+    write_text_file(
+        &modules.path().join("residual/unhandled.yaml"),
+        "members: []\n",
+    );
 
     let out1 = run_stats(modules.path(), &["--format", "json"]);
     let out2 = run_stats(modules.path(), &["--format", "json"]);
@@ -88,9 +104,10 @@ fn output_is_deterministic_across_runs() {
 
 #[test]
 fn text_format_emits_non_empty_human_output() {
-    let modules = module_tree(&[
-        ("solo.yaml", "members:\n  - selector: { binding: { name: a } }\n"),
-    ]);
+    let modules = module_tree(&[(
+        "solo.yaml",
+        "members:\n  - selector: { binding: { name: a } }\n",
+    )]);
 
     let out = run_stats(modules.path(), &["--format", "text"]);
     let stdout = String::from_utf8(out.stdout).unwrap();
@@ -110,9 +127,10 @@ fn text_format_emits_non_empty_human_output() {
 
 #[test]
 fn ndjson_emits_one_line_per_section() {
-    let modules = module_tree(&[
-        ("a.yaml", "members:\n  - selector: { binding: { name: a } }\n"),
-    ]);
+    let modules = module_tree(&[(
+        "a.yaml",
+        "members:\n  - selector: { binding: { name: a } }\n",
+    )]);
 
     let out = run_stats(modules.path(), &["--format", "ndjson"]);
     let stdout = String::from_utf8(out.stdout).unwrap();
@@ -128,10 +146,14 @@ fn ndjson_emits_one_line_per_section() {
 
 #[test]
 fn residual_module_counted_under_modules_residual() {
-    let modules = module_tree(&[
-        ("ui/sidebar.yaml", "members:\n  - selector: { binding: { name: a } }\n"),
-    ]);
-    write_text_file(&modules.path().join("residual/unhandled.yaml"), "members: []\n");
+    let modules = module_tree(&[(
+        "ui/sidebar.yaml",
+        "members:\n  - selector: { binding: { name: a } }\n",
+    )]);
+    write_text_file(
+        &modules.path().join("residual/unhandled.yaml"),
+        "members: []\n",
+    );
 
     let out = run_stats(modules.path(), &["--format", "json"]);
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();

@@ -123,7 +123,10 @@ fn anonymous_only_module_path_dispatches_before_proposal_prefix() {
         let report = fixture.json(&["describe", id]);
         assert_eq!(report["query"]["kind"], "module");
         assert_eq!(report["owner_ids"], json!(["owner:0"]));
-        assert_eq!(report["atomic_units"][0]["anonymous_statement_owner_ids"], json!(["owner:0"]));
+        assert_eq!(
+            report["atomic_units"][0]["anonymous_statement_owner_ids"],
+            json!(["owner:0"])
+        );
     }
     let report = fixture.json(&[
         "show-source",
@@ -173,11 +176,17 @@ fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
 #[test]
 fn stale_proposal_and_diagnostic_ids_report_their_kind_and_recovery_command() {
     let fixture = fixture();
-    for (id, kind) in [("auto_partition_0499", "proposal"), ("diagnostic:size_cap_0001", "diagnostic")] {
+    for (id, kind) in [
+        ("auto_partition_0499", "proposal"),
+        ("diagnostic:size_cap_0001", "diagnostic"),
+    ] {
         let out = fixture.command(&["show-source", id]);
         assert!(!out.status.success());
         let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(stderr.contains(&format!("{kind} id {id:?} not found")), "{stderr}");
+        assert!(
+            stderr.contains(&format!("{kind} id {id:?} not found")),
+            "{stderr}"
+        );
         assert!(stderr.contains("debundle modules propose"), "{stderr}");
     }
 }
@@ -186,10 +195,17 @@ fn stale_proposal_and_diagnostic_ids_report_their_kind_and_recovery_command() {
 fn describe_text_includes_binding_home_module_paths() {
     let fixture = GraphFixture::new(
         "const a = 1; console.log(a);",
-        &[("runtime/plugins.yaml", "members: [{name: Readable, selector: {binding: {name: a}}}]")],
+        &[(
+            "runtime/plugins.yaml",
+            "members: [{name: Readable, selector: {binding: {name: a}}}]",
+        )],
     );
     let out = fixture.command(&["describe", "a", "--format", "text"]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("homes:"), "{text}");
     assert!(text.contains("a -> runtime/plugins"), "{text}");
