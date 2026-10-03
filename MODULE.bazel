@@ -241,11 +241,13 @@ oci.pull(
 
 # Matches the Agentplane deployed Electric service for real integration tests.
 # This digest is not cached by mirror.gcr.io (404); use the canonical registry
-# for this image while retaining the same production pin.
+# for this image while retaining the same production pin. The upstream Docker
+# Hub electric repository is currently broken; Electric publishes 1.8.1 from
+# the temporary electric-temp repository instead.
 oci.pull(
     name = "electric_1_8_1",
     digest = "sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211",
-    image = "docker.io/electricsql/electric",
+    image = "docker.io/electricsql/electric-temp",
     platforms = ["linux/amd64"],
     tag = "1.8.1",
 )
