@@ -45,24 +45,37 @@ Prompt changes apply to new sessions, not immutable existing session specs.
 
 Make the common request **follow this PR**, rather than requiring agents to understand all the
 webhook-to-PR joins. Preserve GitHub's vocabulary for event selection and retained payloads.
-The following is a proposal, not a deployed request schema; normal destination/session/client-key
-fields are omitted here:
+**Decision:** keep routing/lifecycle fields in a common subscription envelope, with a nested `source`
+discriminated union selected by `source.provider`. `GitHubSource` owns `repository`, `subject`, and
+`events`; `ActionsSource` owns `request_id` and `after_sequence`. These are concrete provider-defined
+models, not optional fields on a universal source model or an untyped filter dictionary. Each provider
+owns validation and its schema, exposed through OpenAPI and `/v1/providers`.
+
+The following is the proposed GitHub request fragment, not a deployed schema; common
+`destination_ref`, `session_id`, `client_key`, and `lifetime_days` fields are omitted:
 
 ```json
 {
-  "provider": "github",
-  "repository": "agentydragon/ducktape",
-  "subject": {"kind": "pull_request", "number": 8860},
-  "events": [
-    {"event": "pull_request"},
-    {"event": "issue_comment", "actions": ["created", "edited"]},
-    {"event": "pull_request_review", "actions": ["submitted"]},
-    {"event": "pull_request_review_comment", "actions": ["created", "edited"]},
-    {"event": "check_run", "actions": ["completed"]},
-    {"event": "status"}
-  ]
+  "source": {
+    "provider": "github",
+    "repository": "agentydragon/ducktape",
+    "subject": {"kind": "pull_request", "number": 8860},
+    "events": [
+      {"event": "pull_request"},
+      {"event": "issue_comment", "actions": ["created", "edited"]},
+      {"event": "pull_request_review", "actions": ["submitted"]},
+      {"event": "pull_request_review_comment", "actions": ["created", "edited"]},
+      {"event": "check_run", "actions": ["completed"]},
+      {"event": "status"}
+    ]
+  }
 }
 ```
+
+The Actions variant is `source: {"provider": "actions", "request_id": "REAL_ACTION_UUID",
+"after_sequence": 0}`. GitHub subjects may themselves use a provider-owned tagged union; they are
+not subjects that every notification provider must implement. Reject fields/combinations belonging
+to another variant. In particular, do not add Actions replay sequence semantics to GitHub by analogy.
 
 Omitting `events` should use a documented PR-follow default covering lifecycle, discussion, reviews,
 completed check runs, and commit statuses. Explicit selection permits comments-only or checks-only
@@ -143,8 +156,11 @@ Open operator choices:
 Current storage and wire models contain Action-specific `request_id` and sequence fields. Add only
 the provider-tagged subscription/event identity needed by the second real provider. Keep provider
 filter/content schemas concrete and discoverable through `/v1/providers`; no speculative plugin framework
-or universal event DSL. Preserve existing Actions request shapes where possible, and explicitly version
-any necessary response-envelope change rather than fabricating Action UUIDs for GitHub events.
+or universal event DSL. The current Actions request has flat provider/request fields; moving to the
+nested `source` union is an explicit wire-contract change, not its existing shape. Preserve existing
+Actions clients with a narrow compatibility boundary or an explicitly versioned migration, rather
+than silently breaking them or retaining two internal source representations. Explicitly version any
+necessary response-envelope change rather than fabricating Action UUIDs for GitHub events.
 
 Use an additive migration/backfill that preserves existing subscriptions, entries/payloads, cursors,
 acknowledgements, notice IDs, and receipt checkpoints. Rollout must tolerate old/new worker overlap;
