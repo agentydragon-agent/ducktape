@@ -36,9 +36,11 @@ fn atoms_coverage_summary_and_proposals_describe_the_real_graph() {
 #[test]
 fn describe_and_show_source_dispatch_bindings_and_module_ids() {
     let fixture = fixture();
-    let report = fixture.json(&["describe", "ZZ"]);
-    assert_eq!(report["owner_ids"], json!(["owner:0"]));
-    assert_eq!(report["atomic_units"][0]["id"], "atomic:0");
+    for id in ["ZZ", "owner:0", "atomic:0"] {
+        let report = fixture.json(&["describe", id]);
+        assert_eq!(report["owner_ids"], json!(["owner:0"]), "{id}");
+        assert_eq!(report["atomic_units"][0]["id"], "atomic:0");
+    }
     let graph = fixture.owner_graph();
     let destination = &graph.nodes[0].destination;
     let report = fixture.json(&["describe", destination.as_str()]);
@@ -117,13 +119,15 @@ fn anonymous_only_module_path_dispatches_before_proposal_prefix() {
             "anonymous_statements: [{match: 'console.log(\"task\");'}]\n",
         )],
     );
-    let report = fixture.json(&["describe", "auto_partition/auto_partition_0187"]);
-    assert_eq!(report["query"]["kind"], "module");
-    assert_eq!(report["owner_ids"], json!(["owner:0"]));
-    assert_eq!(
-        report["atomic_units"][0]["anonymous_statement_owner_ids"],
-        json!(["owner:0"])
-    );
+    for id in ["auto_partition/auto_partition_0187", "auto_partition_0187"] {
+        let report = fixture.json(&["describe", id]);
+        assert_eq!(report["query"]["kind"], "module");
+        assert_eq!(report["owner_ids"], json!(["owner:0"]));
+        assert_eq!(
+            report["atomic_units"][0]["anonymous_statement_owner_ids"],
+            json!(["owner:0"])
+        );
+    }
     let report = fixture.json(&[
         "show-source",
         "auto_partition/auto_partition_0187",
@@ -170,13 +174,39 @@ fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
 }
 
 #[test]
-fn missing_proposal_reports_stale_id_and_recovery_command() {
-    let out = fixture().command(&["show-source", "auto_partition_0499"]);
-    assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("proposal id \"auto_partition_0499\" not found"),
-        "{stderr}"
+fn stale_proposal_and_diagnostic_ids_report_their_kind_and_recovery_command() {
+    let fixture = fixture();
+    for (id, kind) in [
+        ("auto_partition_0499", "proposal"),
+        ("diagnostic:size_cap_0001", "diagnostic"),
+    ] {
+        let out = fixture.command(&["show-source", id]);
+        assert!(!out.status.success());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains(&format!("{kind} id {id:?} not found")),
+            "{stderr}"
+        );
+        assert!(stderr.contains("debundle modules propose"), "{stderr}");
+    }
+}
+
+#[test]
+fn describe_text_includes_binding_home_module_paths() {
+    let fixture = GraphFixture::new(
+        "const a = 1; console.log(a);",
+        &[(
+            "runtime/plugins.yaml",
+            "members: [{name: Readable, selector: {binding: {name: a}}}]",
+        )],
     );
-    assert!(stderr.contains("debundle modules propose"), "{stderr}");
+    let out = fixture.command(&["describe", "a", "--format", "text"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("homes:"), "{text}");
+    assert!(text.contains("a -> runtime/plugins"), "{text}");
 }

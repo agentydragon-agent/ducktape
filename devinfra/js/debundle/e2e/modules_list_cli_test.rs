@@ -18,79 +18,59 @@ fn setup_modules_fixture(root: &Path) {
     write_text_file(&root.join("ui/empty.yaml"), "members: []\n");
 }
 
-#[test]
-fn modules_list_emits_every_module_with_counts() {
-    let dir = tempfile::tempdir().unwrap();
-    let modules = dir.path().join("modules");
-    setup_modules_fixture(&modules);
-
-    let output = run_debundle(&[
+fn list(modules: &Path, extra: &[&str]) -> serde_json::Value {
+    let mut args = vec![
         "modules",
         "list",
         "--modules",
         modules.to_str().unwrap(),
         "--format",
         "json",
-    ]);
+    ];
+    args.extend_from_slice(extra);
+    let out = run_debundle(&args);
     assert!(
-        output.status.success(),
-        "non-zero exit: stderr={}",
-        String::from_utf8_lossy(&output.stderr)
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
     );
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let modules_arr = parsed["modules"].as_array().unwrap();
-    assert_eq!(modules_arr.len(), 4);
-    let paths: Vec<&str> = modules_arr
-        .iter()
-        .map(|m| m["path"].as_str().unwrap())
-        .collect();
-    assert!(paths.contains(&"runtime/plugins"));
-    assert!(paths.contains(&"residual/unhandled"));
+    serde_json::from_slice(&out.stdout).unwrap()
 }
 
 #[test]
-fn modules_list_residual_filter() {
+fn modules_list_filters_preserve_sorted_paths_and_counts() {
     let dir = tempfile::tempdir().unwrap();
-    let modules = dir.path().join("modules");
-    setup_modules_fixture(&modules);
-
-    let output = run_debundle(&[
-        "modules",
-        "list",
-        "--modules",
-        modules.to_str().unwrap(),
-        "--residual",
-        "--format",
-        "json",
-    ]);
-    assert!(output.status.success());
-    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let modules_arr = parsed["modules"].as_array().unwrap();
-    assert_eq!(modules_arr.len(), 1);
-    assert_eq!(modules_arr[0]["path"].as_str(), Some("residual/unhandled"));
-}
-
-#[test]
-fn modules_list_empty_filter() {
-    let dir = tempfile::tempdir().unwrap();
-    let modules = dir.path().join("modules");
-    setup_modules_fixture(&modules);
-
-    let output = run_debundle(&[
-        "modules",
-        "list",
-        "--modules",
-        modules.to_str().unwrap(),
-        "--empty",
-        "--format",
-        "json",
-    ]);
-    assert!(output.status.success());
-    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let modules_arr = parsed["modules"].as_array().unwrap();
-    // Both `residual/unhandled` and `ui/empty` are empty.
-    assert_eq!(modules_arr.len(), 2);
+    setup_modules_fixture(dir.path());
+    for (args, expected) in [
+        (
+            vec![],
+            vec![
+                ("residual/unhandled", 0),
+                ("runtime/plugins", 1),
+                ("ui/empty", 0),
+                ("ui/sidebar", 2),
+            ],
+        ),
+        (vec!["--residual"], vec![("residual/unhandled", 0)]),
+        (
+            vec!["--empty"],
+            vec![("residual/unhandled", 0), ("ui/empty", 0)],
+        ),
+    ] {
+        let report = list(dir.path(), &args);
+        let rows: Vec<_> = report["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                (
+                    m["path"].as_str().unwrap(),
+                    m["member_count"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(rows, expected, "{args:?}");
+    }
 }
 
 #[test]
@@ -113,21 +93,7 @@ fn modules_list_empty_filter_excludes_canonical_source_claims_and_annotations() 
 "#,
     );
 
-    let output = run_debundle(&[
-        "modules",
-        "list",
-        "--modules",
-        modules.to_str().unwrap(),
-        "--empty",
-        "--format",
-        "json",
-    ]);
-    assert!(
-        output.status.success(),
-        "non-zero exit: stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let parsed = list(&modules, &["--empty"]);
     let paths: Vec<&str> = parsed["modules"]
         .as_array()
         .unwrap()
