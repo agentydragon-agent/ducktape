@@ -227,5 +227,24 @@ def test_legacy_sandboxes_stay_unwired(generated: Path) -> None:
     assert not any(doc["kind"] == "ImagePolicy" and doc["metadata"]["name"] == "agent-workspace" for doc in active)
 
 
+def test_openclaw_cutover_waits_for_agentplane_credentials(generated: Path) -> None:
+    owners = {
+        doc["metadata"]["name"]: doc
+        for path in generated.rglob("*.k8s.yaml")
+        for doc in yaml.safe_load_all(path.read_text())
+        if isinstance(doc, dict) and doc["kind"] == "Kustomization"
+    }
+    app = owners["public-coder-agent-app"]["spec"]
+    assert "agentplane-staging" in {dependency["name"] for dependency in app["dependsOn"]}
+    assert app["deletionPolicy"] == "Orphan"
+    checks = owners["agentplane-staging"]["spec"]["healthChecks"]
+    assert {c["name"] for c in checks if c["kind"] == "ExternalSecret"} >= {
+        "public-coder-haku-console",
+        "public-coder-clickhouse",
+        "public-coder-matrix",
+        "brave-search",
+    }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
