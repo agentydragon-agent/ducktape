@@ -26,7 +26,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.egress.policy import Index, subject_bindings
-from agentplane.egress.resources import EgressCredential, Rule, SchemeTokenTarget, Target, TargetMethod
+from agentplane.egress.resources import EgressCredential, JsonFieldTarget, Rule, SchemeTokenTarget, Target, TargetMethod
 from agentplane.subjects import ServiceAccountRef
 
 
@@ -35,8 +35,9 @@ class TargetView(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    header: str = Field(description="Request header this presentation puts the placeholder in.")
-    method: TargetMethod = Field(description="Shape of the header value around the placeholder.")
+    header: str | None = Field(default=None, description="Request header; absent for jsonField.")
+    field: str | None = Field(default=None, description="Top-level JSON field for jsonField; absent for headers.")
+    method: TargetMethod = Field(description="Header shape or jsonField presentation of the placeholder.")
     scheme: str | None = Field(
         default=None, description="The scheme `schemeToken` expects; absent for every other method."
     )
@@ -83,6 +84,8 @@ class AgentEgressView(BaseModel):
 
 
 def _target_view(target: Target) -> TargetView:
+    if isinstance(target, JsonFieldTarget):
+        return TargetView(method=target.method, field=target.field)
     return TargetView(
         header=target.header,
         method=target.method,

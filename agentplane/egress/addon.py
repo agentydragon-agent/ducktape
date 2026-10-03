@@ -223,6 +223,7 @@ class EgressAddon:
             port=request.port,
             path=None if request.method == CONNECT else request.path,
             headers={name.lower(): request.headers.get_all(name) for name in set(request.headers.keys())},
+            body=None if request.method == CONNECT else request.raw_content,
         )
         subject: ServiceAccountRef | None = None
         authenticated_workload: AuthenticatedWorkloadContext | None = None
@@ -285,12 +286,16 @@ class EgressAddon:
                         binding=decision.binding,
                         policy=decision.policy,
                         rule=decision.rule,
-                        substituted=bool(decision.rewrites),
+                        substituted=bool(decision.rewrites) or decision.body_rewrite is not None,
                         address=str(pin.address) if pin is not None else None,
                     )
                 )
                 for rewrite in decision.rewrites:
                     request.headers.set_all(rewrite.header, list(rewrite.values))
+                if decision.body_rewrite is not None:
+                    # The JSON parser admits only uncompressed bodies. mitmproxy updates
+                    # Content-Length/transfer framing when assigning decoded content.
+                    request.content = decision.body_rewrite.content
                 if egress.method != CONNECT:
                     self._inflight[flow.id] = flow.client_conn.id
                     self._idle.clear()

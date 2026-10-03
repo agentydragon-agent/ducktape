@@ -26,6 +26,7 @@ from agentplane.egress.resources import (
     EgressPolicy,
     Rule,
     SchemeTokenTarget,
+    JsonFieldTarget,
     Target,
     TargetMethod,
 )
@@ -92,7 +93,8 @@ class CredentialTargetView(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    header: str
+    header: str | None = None
+    field: str | None = None
     method: TargetMethod
     scheme: str | None = Field(default=None, description="The scheme `schemeToken` expects; absent for the rest.")
 
@@ -293,6 +295,8 @@ def _credentials_by_name(credentials: Iterable[object]) -> dict[str, CredentialV
 
 
 def _target_view(target: Target) -> CredentialTargetView:
+    if isinstance(target, JsonFieldTarget):
+        return CredentialTargetView(method=target.method, field=target.field)
     return CredentialTargetView(
         header=target.header,
         method=target.method,

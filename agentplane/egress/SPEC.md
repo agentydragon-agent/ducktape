@@ -64,6 +64,15 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   it. A placeholder that is merely a substring of a component, or sits in a header or a shape no
   target declares, is not presented — it is neither detected nor substituted, and reaches the
   upstream inert.
+- **`jsonField`** presents a placeholder as the entire string value of a declared top-level
+  JSON object field. It is substituted only by the same credential-authorized host/method/path
+  decision as header targets. Rebuilding uses JSON encoding, not text interpolation, and changes
+  no other field's value. A body credential's route accepts only uncompressed UTF-8
+  `application/json` objects up to 64 KiB; duplicate keys, malformed JSON, non-finite numbers,
+  unsupported media/encoding and oversized bodies fail closed with `invalid-body` (unless the
+  credential was presented through a declared header target instead). Nested paths, arrays,
+  query parameters, substrings and arbitrary templates are not supported. Other requests keep
+  their existing body handling. Body values and rewritten bytes are excluded from evidence and repr.
 - Which of the matching rules decides is directed by the placeholder the request presents. A
   placeholder is known when some `EgressCredential` in the namespace has it, whether or not the
   subject is bound to a policy naming that credential. A request presenting a known placeholder is
@@ -91,7 +100,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   (`502` when the proxy itself could not decide) with an empty body and
   `x-agentplane-egress: denied; reason=<reason>`, where reason is one of `token-missing`,
   `token-rejected`, `pod-mismatch`, `no-binding`, `no-rule`,
-  `placeholder-unresolved`, `credential-unavailable`, `address-forbidden`, `host-unresolved`,
+  `placeholder-unresolved`, `credential-unavailable`, `invalid-body`, `address-forbidden`, `host-unresolved`,
   `unavailable`.
 
 ## Upstream address
@@ -205,10 +214,10 @@ GitOps gates and live rollout acceptance remain separate operational requirement
 
 ## What the proxy does not decide
 
-- **Only HTTP(S).** A decision is made from a request's method, host, port, path and headers, so
-  substitution reaches header values and nothing else. A placeholder anywhere else — a query
-  parameter, a body, another envelope — is inert and reaches the upstream unsubstituted, which is
-  the property to keep: a URL-borne credential would travel through logs and referrers.
+- **Only HTTP(S).** Substitution reaches declared header components and exact declared JSON
+  fields only. A placeholder elsewhere — a query parameter, an undeclared body field, another
+  envelope — is inert and reaches the upstream unsubstituted. In particular, a URL-borne
+  credential would travel through logs and referrers and is never substituted.
 - **Intercepted gRPC uses the same header target model.** A TLS gRPC client through the real
   sidecar and hosted mitmproxy presents its initial metadata in `flow.request.headers`; a
   `wholeValue` target on `x-buildbuddy-api-key` substitutes the placeholder before the upstream

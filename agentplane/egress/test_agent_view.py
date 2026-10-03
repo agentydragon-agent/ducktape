@@ -18,6 +18,7 @@ from agentplane.egress.resources import (
     EgressCredential,
     EgressPolicy,
     ObjectMeta,
+    JsonFieldTarget,
     PolicySpec,
     Rule,
     SchemeTokenTarget,
@@ -154,6 +155,17 @@ def test_the_same_name_in_another_namespace_is_a_different_subject() -> None:
 
     assert view.subject == elsewhere
     assert view.policies == []
+
+
+def test_json_target_is_discoverable_without_exposing_credential_source_or_value() -> None:
+    rules = _index()
+    rules.credentials[CREDENTIAL.metadata.name] = CREDENTIAL.model_copy(update={"spec": CREDENTIAL.spec.model_copy(update={"targets": [JsonFieldTarget(method=TargetMethod.JSON_FIELD, field="password")]})})
+    view = agent_view(rules, CALLER, NOW)
+    target = view.policies[0].rules[0].credential
+    assert target is not None
+    assert target.targets == [TargetView(method=TargetMethod.JSON_FIELD, field="password")]
+    assert SECRET_VALUE not in view.model_dump_json()
+    assert "vault-entry" not in view.model_dump_json()
 
 
 if __name__ == "__main__":

@@ -8,11 +8,12 @@ that found it, so a value the proxy recognised is a value it can put the real cr
 from __future__ import annotations
 
 import base64
+import json
 
 import pytest
 import pytest_bazel
 
-from agentplane.egress.presentation import HeaderRewrite, parse, present
+from agentplane.egress.presentation import MAX_JSON_BODY_BYTES, HeaderRewrite, InvalidJsonBodyError, parse, parse_json_body, present
 from agentplane.egress.resources import (
     BasicPasswordTarget,
     BasicUsernameTarget,
@@ -21,6 +22,7 @@ from agentplane.egress.resources import (
     CredentialSpec,
     EgressCredential,
     ObjectMeta,
+    JsonFieldTarget,
     SchemeTokenTarget,
     SecretKeyRef,
     Target,
@@ -151,6 +153,51 @@ def test_the_rewritten_header_carries_the_spelling_the_policy_declared() -> None
 
     assert presentation is not None
     assert presentation.rewrites(CREDENTIAL)[0].header == AUTHORIZATION
+
+
+JSON_HEADERS = {"Content-Type": ["application/json; charset=utf-8"]}
+JSON_CREDENTIAL = credential("matrix-password", JsonFieldTarget(method=TargetMethod.JSON_FIELD, field="password"))
+
+
+def test_json_replacement_is_exact_field_only_and_json_escaped() -> None:
+    document = {"password": JSON_CREDENTIAL.placeholder, "identifier": {"user": "@bot:test"}, "other": JSON_CREDENTIAL.placeholder}
+    parsed = parse_json_body(JSON_HEADERS, json.dumps(document).encode())
+    presentation = present(JSON_CREDENTIAL, JSON_HEADERS, parsed)
+    assert presentation is not None and presentation.body is not None
+    secret_value = 'quotes" and slash\\ and newline\n and Unicode café'
+    rewritten = presentation.body.rewrite(secret_value)
+    assert json.loads(rewritten.content) == {**document, "password": secret_value}
+    assert presentation.rewrites(secret_value) == ()
+    assert secret_value not in repr(rewritten)
+    assert "@bot:test" not in repr(presentation)
+
+
+@pytest.mark.parametrize("value", [None, True, 12, [], {}, "prefix-", "-suffix"])
+def test_json_substrings_and_nonstring_values_are_not_presentations(value: object) -> None:
+    if isinstance(value, str) and value == "prefix-":
+        value += JSON_CREDENTIAL.placeholder
+    elif isinstance(value, str) and value == "-suffix":
+        value = JSON_CREDENTIAL.placeholder + value
+    assert present(JSON_CREDENTIAL, JSON_HEADERS, {"password": value}) is None
+    assert present(JSON_CREDENTIAL, JSON_HEADERS, {"nested": {"password": JSON_CREDENTIAL.placeholder}}) is None
+
+
+@pytest.mark.parametrize("body", [
+    b'{"password":"one","password":"two"}',
+    b'{"nested":{"x":1,"x":2}}', b'{"x":NaN}', b'{"x":1e999}',
+    b'[]', b'null', b'{invalid', b'{"x":"\xff"}',
+    b'{"x":"' + b'a' * MAX_JSON_BODY_BYTES + b'"}',
+])
+def test_invalid_json_is_refused_without_parser_input_in_the_error(body: bytes) -> None:
+    with pytest.raises(InvalidJsonBodyError) as error:
+        parse_json_body(JSON_HEADERS, body)
+    assert "password" not in str(error.value)
+
+
+@pytest.mark.parametrize("headers", [{}, {"Content-Type": ["text/plain"]}, {"Content-Type": ["application/json", "application/json"]}, {"Content-Type": ["application/json"], "Content-Encoding": ["gzip"]}])
+def test_unsupported_json_envelopes_are_refused(headers: dict[str, list[str]]) -> None:
+    with pytest.raises(InvalidJsonBodyError):
+        parse_json_body(headers, b'{}')
 
 
 if __name__ == "__main__":
