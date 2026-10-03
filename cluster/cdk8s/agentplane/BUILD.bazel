@@ -381,6 +381,8 @@ py_test(
 py_test(
     name = "test_prompt_instructions",
     srcs = ["test_prompt_instructions.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":app_settings",
         ":staging_config",

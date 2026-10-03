@@ -2,7 +2,7 @@
 
 import pytest_bazel
 
-from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, _PUBLIC_CODER_INSTRUCTIONS
+from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
 from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS
 
 
