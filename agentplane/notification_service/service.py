@@ -60,6 +60,8 @@ class Service:
         return await self.store.subscribe(principal, body)
 
     async def deliver(self, claim: Inbox, runner: Runner, notice: Notice) -> None:
+        # TODO: Observe command-scoped admission/delivery outcomes through Sandbox Service,
+        # resumable by command ID, rather than checkpointing the shared conversation journal.
         attachment = await runner.attach(claim.session_id, after_cursor=max(0, notice.runner_cursor - 1))
         try:
             if attachment.attached.last_cursor < notice.runner_cursor:

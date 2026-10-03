@@ -87,5 +87,11 @@ happens the new Deployment cannot become ready. Then verify the migration init c
 and an Action subscription through a newly opened harness. Existing sessions need no migration and
 keep their original prompt. No live migration/reset is part of this PR.
 
+TODO: Add command-scoped delivery tracking through Sandbox Service, backed by the runner's existing
+canonical command/events. Notifications needs admission, harness confirmation, and failure outcomes
+for its own command ID, not conversation content. It should be possible to resume observing that ID
+after a disconnect without maintaining a notification-owned runner-journal checkpoint. The tail
+checkpoint above is the bounded-scope fix for now; this follow-up adds no second event authority.
+
 Deferred: GitHub/webhooks, automatic subscriptions, cross-account delivery, per-thread credentials,
 notification-triggered provisioning/resume, and proper runner RPC authentication/TLS.
