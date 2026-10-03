@@ -79,7 +79,7 @@ fn output_is_deterministic_across_runs() {
         ("a.yaml", "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n"),
         ("nested/c.yaml", "members:\n  - selector: { binding: { name: c } }\n"),
     ]);
-    write_text_file(&modules.join("residual/unhandled.yaml"), "members: []\n");
+    write_text_file(&modules.path().join("residual/unhandled.yaml"), "members: []\n");
 
     let out1 = run_stats(modules.path(), &["--format", "json"]);
     let out2 = run_stats(modules.path(), &["--format", "json"]);
@@ -131,7 +131,7 @@ fn residual_module_counted_under_modules_residual() {
     let modules = module_tree(&[
         ("ui/sidebar.yaml", "members:\n  - selector: { binding: { name: a } }\n"),
     ]);
-    write_text_file(&modules.join("residual/unhandled.yaml"), "members: []\n");
+    write_text_file(&modules.path().join("residual/unhandled.yaml"), "members: []\n");
 
     let out = run_stats(modules.path(), &["--format", "json"]);
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
