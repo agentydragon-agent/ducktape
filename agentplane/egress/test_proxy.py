@@ -781,8 +781,14 @@ class TestUpstreamAddress:
     def exempt_networks(self) -> Collection[Network]:
         return ()
 
-    async def test_host_resolving_into_a_private_range_is_refused_at_connect(self, proxy: ProxyUnderTest) -> None:
-        """The policy admits the host by name; the name points at loopback, so the tunnel is refused."""
+    @pytest.mark.parametrize("blanket", [False, True])
+    async def test_host_resolving_into_a_private_range_is_refused_at_connect(
+        self, proxy: ProxyUnderTest, fake: FakeApiServer, blanket: bool
+    ) -> None:
+        """Exact and blanket policies both leave the address gate enforced at CONNECT."""
+        if blanket:
+            fake.put(POLICIES_PLURAL, policy(GITHUB_POLICY, [{"hosts": ["*"]}]))
+            await proxy.index.wait_for(lambda: proxy.index.policies[GITHUB_POLICY].spec.rules[0].hosts == ["*"])
         with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
             await proxy.get("/repos/o/r")
         assert refused.value.status == 403

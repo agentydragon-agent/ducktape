@@ -54,7 +54,9 @@ py_test(
         ":generate",
         "//:conftest",
         "//util/bazel:runfiles",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

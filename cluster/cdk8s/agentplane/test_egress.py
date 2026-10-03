@@ -28,6 +28,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_POLICY,
     PLAID_PGWEB_POLICY,
+    PUBLIC_INTERNET_POLICY,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import KUBERNETES_AUDIENCE, KUBERNETES_CREDENTIAL, KUBERNETES_HOST
@@ -42,6 +43,21 @@ _AGENT_FACING_PREFIXES = ("/mcp", "/openapi.json", "/v1/action-")
 def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
     """The one object of `kind` named `name`, which every test here asserts exists."""
     return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_public_internet_is_available_but_never_implicitly_granted(
+    agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
+) -> None:
+    docs = agentplane_manifests[namespace]
+    public = _by_name(docs, "EgressPolicy", PUBLIC_INTERNET_POLICY)
+    assert public["spec"]["rules"] == [{"hosts": ["*"]}]
+    config = _by_name(docs, "ConfigMap", "agentplane-app-config")
+    # Includes defaults and every preset, not just today's public-coder preset.
+    assert PUBLIC_INTERNET_POLICY not in config["data"]["config.yaml"]
+    for doc in docs:
+        if doc["kind"] == "EgressBinding":
+            assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policies"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

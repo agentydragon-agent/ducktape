@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from agentplane.egress.policy import (
     Allowed,
@@ -111,7 +112,7 @@ APP_RULE = Rule(
     paths=["/repos/**"],
     credential_ref=CredentialRef(name=APP_CREDENTIAL.metadata.name),
 )
-OPEN_RULE = Rule(hosts=["api.github.com"])
+OPEN_RULE = Rule(hosts=["*"])
 
 
 def policy(name: str, *rules: Rule) -> EgressPolicy:
@@ -636,6 +637,52 @@ def test_binding_resolution(
 ) -> None:
     result = resolve_binding(index(policies=policies, bindings=[binding_]), binding_, NOW)
     assert (result.active, result.reason, len(result.policies)) == (status, reason, resolved)
+
+
+@pytest.mark.parametrize(
+    "host", ["example.com", "example.org", "a.b.example.net", "140.82.121.4", "2606:50c0:8000::153"]
+)
+def test_blanket_hosts_match(host: str) -> None:
+    assert host_matches("*", host)
+
+
+def test_blanket_does_not_match_an_empty_host() -> None:
+    assert not host_matches("*", "")
+
+
+@pytest.mark.parametrize("hosts", [["*"], ["api.github.com", "*"]])
+def test_blanket_cannot_authorize_credentials_or_private_addresses(hosts: list[str]) -> None:
+    with pytest.raises(ValidationError, match="blanket host rule"):
+        Rule(hosts=hosts, credential_ref=CredentialRef(name="github-pat"))
+    with pytest.raises(ValidationError, match="blanket host rule"):
+        Rule(hosts=hosts, cluster_internal=True)
+
+
+def test_blanket_requires_a_live_binding_and_respects_method_and_path() -> None:
+    limited = policy("public", Rule(hosts=["*"], methods=["GET"], paths=["/public/*"]))
+    rules = index(policies=[limited], bindings=[])
+    allowed_request = request(host="arbitrary.example.org", path="/public/file")
+    assert evaluate(rules, CALLER, allowed_request, NOW) == Denied(DenyReason.NO_BINDING)
+    rules.bindings["b"] = binding("b", policies=["public"], expires_at=NOW + timedelta(seconds=1))
+    allowed = evaluate(rules, CALLER, allowed_request, NOW)
+    assert allowed == Allowed("b", "public", 0)
+    assert not allowed.cluster_internal
+    assert evaluate(rules, CALLER, request(host="arbitrary.example.org", path="/private"), NOW) == Denied(
+        DenyReason.NO_RULE
+    )
+    assert evaluate(
+        rules, CALLER, request(method="POST", host="arbitrary.example.org", path="/public/file"), NOW
+    ) == Denied(DenyReason.NO_RULE)
+    assert evaluate(rules, CALLER, allowed_request, NOW + timedelta(seconds=1)) == Denied(DenyReason.NO_BINDING)
+
+
+def test_blanket_does_not_send_a_known_credential_to_another_host_or_path() -> None:
+    rules = broad_and_credentialed(binding("b", policies=["open", "github"]))
+    for outbound in [
+        request(host="untrusted.example.org", authorization=f"Bearer {PLACEHOLDER}"),
+        request(path="/outside-github-rule", authorization=f"Bearer {PLACEHOLDER}"),
+    ]:
+        assert evaluate(rules, CALLER, outbound, NOW) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
 
 
 if __name__ == "__main__":

@@ -175,7 +175,9 @@ def subject_bindings(index: Index, caller: ServiceAccountRef, now: datetime) -> 
 
 
 def host_matches(pattern: str, host: str) -> bool:
-    """Exact, case-insensitive; `*.example.com` matches any subdomain depth but not the apex."""
+    """`*` admits any host; suffix wildcards match subdomains, not the apex; case-insensitive."""
+    if pattern == "*":
+        return bool(host)
     host = host.lower()
     pattern = pattern.lower()
     if pattern.startswith("*."):

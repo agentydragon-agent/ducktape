@@ -1178,6 +1178,16 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
+  name: public-internet
+  namespace: agentplane-testing
+spec:
+  rules:
+    - hosts:
+        - "*"
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
   name: basic
   namespace: agentplane-testing
 spec:
