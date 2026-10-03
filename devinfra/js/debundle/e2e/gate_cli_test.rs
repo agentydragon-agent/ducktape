@@ -224,10 +224,15 @@ fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
     let cut_edges = cut["cut"].as_array().unwrap();
     assert!(!cut_edges.is_empty(), "{cut}");
     for edge in cut_edges {
-        assert!(evidence.contains(edge), "cut row absent from evidence: {edge}");
+        assert!(
+            evidence.contains(edge),
+            "cut row absent from evidence: {edge}"
+        );
     }
     assert!(
-        cut_edges.iter().any(|edge| edge["sequenced_owner"].is_object()),
+        cut_edges
+            .iter()
+            .any(|edge| edge["sequenced_owner"].is_object()),
         "fixture must exercise sequencing provenance: {cut}"
     );
     // Both directions of the at-init cycle appear, naming the
