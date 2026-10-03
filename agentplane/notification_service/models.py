@@ -23,7 +23,7 @@ class Subscribe(Model):
     client_key: str = Field(min_length=1, max_length=200)
     provider: Literal["actions"] = "actions"
     request_id: UUID
-    after_sequence: int = Field(default=0, ge=0)
+    after_sequence: int = Field(default=0, ge=0, le=2**31 - 1)
     lifetime_days: int = Field(default=7, ge=1, le=30)
 
 
@@ -82,4 +82,4 @@ class InboxPage(Model):
 
 
 class Acknowledge(Model):
-    through_cursor: int = Field(ge=0)
+    through_cursor: int = Field(ge=0, le=2**63 - 1)

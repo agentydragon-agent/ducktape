@@ -83,7 +83,12 @@ class SandboxService(Construct):
             content=settings.model_dump(mode="json", exclude_none=True)
             | {
                 "kubernetes_binding_cleanup_namespaces": sorted(settings.kubernetes_binding_cleanup_namespaces),
-                "caller_accounts": [account.model_dump() for account in sorted(settings.caller_accounts, key=lambda account: (account.namespace, account.name))],
+                "caller_accounts": [
+                    account.model_dump()
+                    for account in sorted(
+                        settings.caller_accounts, key=lambda account: (account.namespace, account.name)
+                    )
+                ],
             },
             path="/etc/agentplane-sandbox-service/config.yaml",
         )

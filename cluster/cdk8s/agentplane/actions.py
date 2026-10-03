@@ -255,10 +255,7 @@ class Actions(Construct):
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             args=cli_args(
-                Settings,
-                host="0.0.0.0",
-                port=self.service.pod_port,
-                token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE,
+                Settings, host="0.0.0.0", port=self.service.pod_port, token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE
             ),
             env_variables=env,
             ports=[self.service.port.container_port()],

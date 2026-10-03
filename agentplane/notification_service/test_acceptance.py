@@ -235,7 +235,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         if page["notice"]["confirmed"]:
                             break
                     assert page is not None
-                    assert page['notice']['confirmed']
+                    assert page["notice"]["confirmed"]
                     assert page["inbox"]["acknowledged"] == 0
                     assert [entry["payload"]["state"] for entry in page["entries"]] == ["decision_pending", "denied"]
                     assert (

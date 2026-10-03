@@ -100,7 +100,9 @@ async def test_cancellation_fences_inflight_source_and_claim_loss_fences_worker(
 
 async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) -> None:
     first = await store.subscribe(PRINCIPAL, BODY)
-    second = await store.subscribe(PRINCIPAL, BODY.model_copy(update={"client_key": "another-action", "request_id": uuid4()}))
+    second = await store.subscribe(
+        PRINCIPAL, BODY.model_copy(update={"client_key": "another-action", "request_id": uuid4()})
+    )
     claim = await store.claim()
     assert claim is not None
     async with store.sessions() as session:

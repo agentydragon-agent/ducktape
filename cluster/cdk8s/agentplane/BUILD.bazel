@@ -729,9 +729,9 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":notifications",
         ":app",
         ":conftest",
+        ":notifications",
         ":sandbox_service",
         "//:conftest",
         "@pypi//more_itertools",

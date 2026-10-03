@@ -266,7 +266,11 @@ class Store:
             inbox.retired = True
             inbox.updated_at = datetime.now(UTC)
             inbox.claim = None
-            await session.execute(update(Subscription).where(Subscription.inbox_id == inbox_id, ~Subscription.cancelled).values(cancelled=True, version=Subscription.version + 1))
+            await session.execute(
+                update(Subscription)
+                .where(Subscription.inbox_id == inbox_id, ~Subscription.cancelled)
+                .values(cancelled=True, version=Subscription.version + 1)
+            )
 
     async def claim(self) -> Inbox | None:
         async with self.sessions.begin() as session:

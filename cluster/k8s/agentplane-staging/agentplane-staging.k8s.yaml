@@ -1725,9 +1725,9 @@ data:
     sandbox_namespace: agentplane-staging
     caller_accounts:
       - namespace: agentplane-staging
-        name: agentplane-notifications
-      - namespace: agentplane-staging
         name: agentplane-app
+      - namespace: agentplane-staging
+        name: agentplane-notifications
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
     agent_notifications_service_url: http://agentplane-notifications.agentplane-staging.svc.cluster.local:8080
@@ -4463,7 +4463,6 @@ spec:
             - --host=0.0.0.0
             - --port=8080
             - --token-audience=agentplane-egress
-            - --event-reader-accounts=frozenset({ServiceAccountRef(namespace='agentplane-staging', name='agentplane-notifications')})
           env:
             - name: AGENTPLANE_ACTIONS_DB_USER
               valueFrom:
@@ -4492,6 +4491,8 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
+            - name: AGENTPLANE_ACTIONS_EVENT_READER_ACCOUNTS
+              value: '[{"namespace": "agentplane-staging", "name": "agentplane-notifications"}]'
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:
@@ -4603,6 +4604,8 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
+            - name: AGENTPLANE_ACTIONS_EVENT_READER_ACCOUNTS
+              value: '[{"namespace": "agentplane-staging", "name": "agentplane-notifications"}]'
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:

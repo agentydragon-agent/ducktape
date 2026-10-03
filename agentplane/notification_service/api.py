@@ -126,7 +126,7 @@ def create_app(service: Service, principals: WorkloadPrincipalResolver) -> FastA
     async def read(
         inbox_id: UUID,
         caller: Annotated[WorkloadPrincipal, Depends(principal)],
-        after_cursor: Annotated[int, Query(ge=0)] = 0,
+        after_cursor: Annotated[int, Query(ge=0, le=2**63 - 1)] = 0,
         limit: Annotated[int, Query(ge=1, le=128)] = 128,
     ) -> InboxPage:
         return await service.store.read(caller.account, inbox_id, after_cursor, limit)

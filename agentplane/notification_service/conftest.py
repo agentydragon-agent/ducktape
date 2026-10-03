@@ -49,7 +49,6 @@ async def store(engine: AsyncEngine) -> Store:
     return Store(engine)
 
 
-
 @pytest.fixture
 async def action_engine(postgres_container: PostgresContainer) -> AsyncIterator[AsyncEngine]:
     admin = f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}:{postgres_container.get_exposed_port(5432)}/postgres"

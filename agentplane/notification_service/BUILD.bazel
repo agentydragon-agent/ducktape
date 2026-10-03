@@ -81,8 +81,6 @@ py_library(
     name = "instructions",
     srcs = ["instructions.py"],
     visibility = ["//agentplane/sandbox_service:__pkg__"],
-    deps = [
-    ],
 )
 
 py_library(
@@ -117,8 +115,6 @@ py_library(
     name = "service",
     srcs = ["service.py"],
     deps = [
-        "@pypi//pydantic",
-        "@pypi//protobuf",
         ":actions",
         ":db",
         ":models",
@@ -133,6 +129,8 @@ py_library(
         "//agentplane/workload_auth:principal",
         "@pypi//grpcio",
         "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -141,13 +139,13 @@ py_library(
     name = "store",
     srcs = ["store.py"],
     deps = [
-        "@pypi//protobuf",
         ":db",
         ":models",
         "//agentplane:subjects",
         "//agentplane/action_service:models",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/workload_auth:principal",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )
@@ -156,6 +154,15 @@ py_test(
     name = "test_acceptance",
     size = "medium",
     srcs = ["test_acceptance.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: both pinned native harnesses
+        "@claude_code_cli_linux_x64//:claude",  # keep: both pinned native harnesses
+    ],
+    target_compatible_with = [
+        # keep: pinned native harness platforms
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
     deps = [
         ":actions",
         ":api",
@@ -199,7 +206,6 @@ py_test(
     size = "medium",
     srcs = ["test_store.py"],
     deps = [
-        "@pypi//protobuf",
         ":conftest",
         ":db",
         ":models",
@@ -211,6 +217,7 @@ py_test(
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/workload_auth:principal",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

@@ -377,7 +377,7 @@ def create_app(
         request: Request,
         owner_namespace: Annotated[str, Query(min_length=1, max_length=63)],
         owner_name: Annotated[str, Query(min_length=1, max_length=253)],
-        after_sequence: Annotated[int, Query(ge=0)] = 0,
+        after_sequence: Annotated[int, Query(ge=0, le=2**31 - 1)] = 0,
     ) -> list[ActionEventView]:
         # Explicit, read-only service delegation. The delegate must have authenticated the
         # subscribing owner itself. Never admit this identity as an operator or Action caller.
