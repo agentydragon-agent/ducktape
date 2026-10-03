@@ -34,7 +34,7 @@ class Provisioning:
     egress: EgressInventory
     action_policy: ActionPolicyBindings
     grants: dict[str, KubernetesGrant]
-    bindings: KubernetesBindings | None
+    bindings: KubernetesBindings
 
     async def create(self, spec: CreateSandboxRequest) -> Sandbox:
         if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", spec.slug) or len(spec.slug) > 57 or not spec.template:
@@ -47,8 +47,6 @@ class Provisioning:
         ):
             raise ValueError("unsupported harness")
         grants = resolve_grants(list(spec.kubernetes_grants), self.grants)
-        if grants and self.bindings is None:
-            raise ConnectionError("Kubernetes grant provisioning is unavailable")
         policies = self.egress.launch_policies(list(spec.policies))
         await self.egress.require_policies(policies)
         await self.action_policy.require_policy_sets(list(spec.action_policy_sets))
@@ -95,16 +93,13 @@ class Provisioning:
         if intent.action_policy_sets:
             await self.action_policy.bind(sandbox, intent.action_policy_sets, initial=True)
         if sandbox.kubernetes_grants:
-            if self.bindings is None:
-                raise ConnectionError("Kubernetes grant provisioning is unavailable")
             await self.bindings.ensure(sandbox)
             if not (await self.inventory.get(sandbox.name)).kubernetes_grants_ready:
                 return
         await self.inventory.finish_provisioning(sandbox)
 
     async def reconcile_once(self) -> None:
-        if self.bindings is not None:
-            await self.bindings.reconcile_once()
+        await self.bindings.reconcile_once()
         for sandbox in await self.inventory.list_sandboxes():
             try:
                 await self.ensure(sandbox)
