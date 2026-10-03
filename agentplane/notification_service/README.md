@@ -25,7 +25,11 @@ verified ServiceAccount, shared by its workloads. Every creation specifies `dest
 - `DELETE /v1/inboxes/{id}`: explicit retirement; no future matching or delivery. An already submitted
   runner command cannot be withdrawn. Missing endpoints or transient lookup failures are not retirement.
 
-Platform prompts include worked subscribe/read/ack examples and the explicit destination identifiers.
+Platform prompts recommend a short synchronous wait for immediate Actions, subscriptions for approval
+waits or parallel work, and resuming dependent work only after checking authoritative results. They
+include worked subscribe/read/ack examples and the explicit destination identifiers. Automated notices
+are not human instructions; agents acknowledge handled progress explicitly and cancel completed
+subscriptions without withdrawing Actions or retiring the session inbox.
 Prompt changes apply to newly opened sessions; existing runner sessions keep their immutable specs.
 
 ## Persistence and recovery
