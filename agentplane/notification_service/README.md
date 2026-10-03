@@ -29,15 +29,6 @@ verified ServiceAccount, shared by its workloads. Every creation specifies `dest
 incarnation, and runner session), not across the entire sandbox. The server-generated subscription `id`
 is used for subsequent GET/PATCH/DELETE. Reusing a key with different creation parameters returns 409;
 reusing it after cancellation returns that cancelled subscription rather than creating a replacement.
-Only `idempotency_key` is accepted; the former `client_key` spelling is rejected, including when
-both names are supplied. Migration `0002_idempotency_key` renames the database column, its unique
-constraint, and the key in stored creation snapshots without changing key values, subscription IDs,
-inbox contents, acknowledgement, or delivery receipts. Its downgrade restores the old spelling.
-
-This is a coordinated, downtime-acceptable API/schema cutover, not an old/new replica compatibility
-scheme. Roll out the migration, notification service, and prompt consumers together; old replicas
-cannot query the renamed column. Downgrade the schema before rolling back to the old service. Existing
-sessions retain immutable prompts and must use the new field explicitly rather than expecting an alias.
 
 Platform prompts recommend a short synchronous wait for immediate Actions, subscriptions for approval
 waits or parallel work, and resuming dependent work only after checking authoritative results. They

@@ -45,7 +45,7 @@ Prompt changes apply to new sessions, not immutable existing session specs.
 
 Make the common request **follow this PR**, rather than requiring agents to understand all the
 webhook-to-PR joins. Preserve GitHub's vocabulary for event selection and retained payloads.
-The following is a proposal, not a deployed request schema; normal destination/session/client-key
+The following is a proposal, not a deployed request schema; normal destination/session/idempotency-key
 fields are omitted here:
 
 ```json
