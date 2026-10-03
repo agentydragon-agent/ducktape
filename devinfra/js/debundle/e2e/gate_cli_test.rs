@@ -208,6 +208,33 @@ fn gate_describe_recomputes_nonempty_evidence_from_real_artifacts() {
             );
         }
     }
+    // Stored cut provenance and reconstructed evidence agree field-for-field,
+    // including binding labels, sequencing causes, and source locations. The
+    // evidence is deliberately broader: lazy/context edges are not cut edges.
+    let cut = gate_json(&[
+        "gate",
+        "cut",
+        "0",
+        "--graph",
+        graph_path(&rejected).to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(parsed["cut"], cut["cut"]);
+    let cut_edges = cut["cut"].as_array().unwrap();
+    assert!(!cut_edges.is_empty(), "{cut}");
+    for edge in cut_edges {
+        assert!(
+            evidence.contains(edge),
+            "cut row absent from evidence: {edge}"
+        );
+    }
+    assert!(
+        cut_edges
+            .iter()
+            .any(|edge| edge["sequenced_owner"].is_object()),
+        "fixture must exercise sequencing provenance: {cut}"
+    );
     // Both directions of the at-init cycle appear, naming the
     // bindings whose reads forced it.
     assert!(

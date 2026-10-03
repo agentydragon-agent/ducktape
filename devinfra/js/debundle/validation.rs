@@ -156,6 +156,28 @@ pub struct CycleEdge {
     pub sequenced_owner: Option<SequencedOwnerCause>,
 }
 
+impl CycleEdge {
+    /// Stable diagnostic ordering shared by stored cuts and reconstructed evidence.
+    pub fn sort_for_report(edges: &mut [Self]) {
+        edges.sort_by(|a, b| {
+            (
+                a.from.as_str(),
+                a.to.as_str(),
+                a.statement_ordinal,
+                &a.binding,
+                a.kind,
+            )
+                .cmp(&(
+                    b.from.as_str(),
+                    b.to.as_str(),
+                    b.statement_ordinal,
+                    &b.binding,
+                    b.kind,
+                ))
+        });
+    }
+}
+
 /// Render the per-cycle summary used in the materializer's bail
 /// message. Each cycle is a spec-induced module-quotient SCC carrying
 /// realizability-constraining (R/S) edges; the renderer blames
@@ -479,22 +501,7 @@ fn cycle_edges_for(
             }
         })
         .collect();
-    out.sort_by(|a, b| {
-        (
-            a.from.as_str(),
-            a.to.as_str(),
-            a.statement_ordinal,
-            &a.binding,
-            a.kind,
-        )
-            .cmp(&(
-                b.from.as_str(),
-                b.to.as_str(),
-                b.statement_ordinal,
-                &b.binding,
-                b.kind,
-            ))
-    });
+    CycleEdge::sort_for_report(&mut out);
     out
 }
 

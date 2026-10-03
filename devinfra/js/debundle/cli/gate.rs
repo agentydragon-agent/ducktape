@@ -413,45 +413,20 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
         || edge.from_binding.as_ref().map(|a| a.as_ref()) == Some(binding)
 }
 
-/// Recompute the `evidence` block for a blocking SCC from
-/// `owner_graph.json`. The on-disk `cycles.json` no longer carries
-/// it — it's recoverable by walking every edge in the owner graph
-/// and keeping those whose source and target both map to a module
-/// in the SCC's `modules` set.
+/// Reconstruct diagnostic context for an SCC from `owner_graph.json`.
+/// Unlike gate validation, this includes lazy edges as well as constraining
+/// edges. Preserve the report projection: omit intra-module/outside-SCC edges
+/// and promoted edges whose callee is in another module; dedup sequencing by
+/// module pair. This is diagnostic context, not a lossless reconstruction of
+/// gate provenance; do not replace it with the gate's constraining-edge set.
 ///
-/// Output mirrors the materializer's
-/// [`::gate::CycleReport`]`.evidence`: one `CycleEdge` per owner
-/// edge whose endpoints both fall in different modules of the SCC,
-/// with `from_binding` set to the first declared binding of any
-/// owner declaring at the same statement ordinal (anonymous source
-/// statements remain `None` and render as `<anon stmt #N>`), and
-/// `binding` set to the edge's target binding.
+/// Source labels prefer the first declared binding at the edge's statement
+/// ordinal, falling back to the source owner's first binding. Anonymous
+/// statements retain `None` and render as `<anon stmt #N>`.
 ///
-/// Filters applied to mirror the in-memory build:
-///
-/// * **Drop intra-module owner edges** (`from == to` after projection).
-///   `partition_endpoints` returns `None` for these; the materializer's
-///   evidence iteration is over the quotient.
-/// * **Drop cross-module `PromotedAtInit` edges whose callee
-///   module differs from the caller**. `EndpointView::Lenient`
-///   (used by `build_module_quotient`) treats them as redundant
-///   with the already-recorded `R -> callee` edge.
-/// * **Dedup sequenced edges per `(from_module, to_module)` pair** —
-///   `chunk_constraining_module_edges` collapses parallel sequenced
-///   edges into one constraint.
-///
-/// The reconstruction is **approximate**: the on-wire owner graph
-/// drops a few sub-edge attributes the in-memory `EdgeReason`
-/// carries (e.g. some at-init promotion details), so the recomputed
-/// evidence count may differ by a small number of rows from the
-/// pre-trim value. The per-binding-pair blame view (the surface
-/// spec authors actually read) is unaffected.
-///
-/// Join contract: `cycles.json` denotes modules by canonical
-/// [`ModulePath`]; each owner's `destination` is an interned
-/// [`ModuleKey`] that resolves to its path through the owner graph's
-/// module table (`module_graph.nodes`). A destination key missing
-/// from the table is a malformed owner graph and errors.
+/// `cycles.json` uses canonical [`ModulePath`]s; resolve each owner's interned
+/// destination [`ModuleKey`] through the report's module table. A missing table
+/// entry is malformed and errors; edges with absent owners are skipped.
 fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Result<Vec<CycleEdge>> {
     // Module table: interned key -> canonical path.
     let path_by_key: HashMap<&ModuleKey, &ModulePath> = graph
@@ -460,8 +435,9 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
         .iter()
         .map(|entry| (&entry.key, &entry.path))
         .collect();
-    // Owner id -> canonical module path of its destination.
-    let owner_module: HashMap<&str, &ModulePath> = graph
+    // Owner id -> report node and canonical destination. Reuse this index for
+    // source labels and sequencing causes instead of scanning nodes per edge.
+    let owners: HashMap<&str, _> = graph
         .nodes
         .iter()
         .map(|n| {
@@ -472,20 +448,9 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
                     n.destination
                 )
             })?;
-            Ok((n.id.as_str(), path))
+            Ok((n.id.as_str(), (n, path)))
         })
         .collect::<Result<_>>()?;
-    // Owner id -> first declared binding (matches the heuristic
-    // `from_binding_by_ordinal` builds in validation.rs).
-    let owner_first_binding: HashMap<&str, Atom> = graph
-        .nodes
-        .iter()
-        .filter_map(|n| {
-            n.declared_bindings
-                .first()
-                .map(|b| (n.id.as_str(), b.binding.clone()))
-        })
-        .collect();
     // Statement ordinal -> first declared binding of any owner
     // declaring at that ordinal. The materializer indexes by ordinal
     // (not owner) when labeling the source side; we match that here.
@@ -504,32 +469,24 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
     let mut out = Vec::new();
     let mut seen_sequenced_pairs: BTreeSet<(&ModulePath, &ModulePath)> = BTreeSet::new();
     for edge in &graph.edges {
-        let Some(&from_mod) = owner_module.get(edge.source.as_str()) else {
+        let Some(&(source, from_mod)) = owners.get(edge.source.as_str()) else {
             continue;
         };
-        let Some(&to_mod) = owner_module.get(edge.target.as_str()) else {
+        let Some(&(_, to_mod)) = owners.get(edge.target.as_str()) else {
             continue;
         };
         if from_mod == to_mod {
-            // Same-module owner edges never enter the quotient
-            // (`partition_endpoints` returns `None` when
-            // `from == to`). The materializer's evidence iteration
-            // is over the quotient, so intra-module edges are not
-            // evidence — match that here.
+            // Intra-module edges cannot explain a module-quotient cycle.
             continue;
         }
         if !scc_modules.contains(from_mod) || !scc_modules.contains(to_mod) {
             continue;
         }
-        // `build_module_quotient` uses `EndpointView::Lenient`, which
-        // drops cross-module `PromotedAtInit` edges whose callee
-        // module differs from the caller — ESM DFS post-order makes
-        // the manufactured `R -> target` redundant with the already-
-        // recorded `R -> callee` edge (see `graph::partition_endpoints`).
-        // Match that filter here so the recomputed evidence count
-        // agrees with the pre-trim cycles.json output.
+        // Preserve the diagnostic projection's lenient promotion policy:
+        // cross-module callees are represented by the direct caller->callee
+        // edge, not the manufactured caller->target edge.
         if let Some(EdgeRoleReport::PromotedAtInit { callee_owner }) = &edge.role
-            && let Some(&callee_mod) = owner_module.get(callee_owner.as_str())
+            && let Some(&(_, callee_mod)) = owners.get(callee_owner.as_str())
             && callee_mod != from_mod
         {
             continue;
@@ -545,7 +502,7 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
         let from_binding = from_binding_by_ordinal
             .get(&edge.statement_ordinal)
             .cloned()
-            .or_else(|| owner_first_binding.get(edge.source.as_str()).cloned());
+            .or_else(|| source.declared_bindings.first().map(|b| b.binding.clone()));
         out.push(CycleEdge {
             from: from_mod.clone(),
             to: to_mod.clone(),
@@ -553,46 +510,21 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
             binding: edge.binding.clone(),
             from_binding,
             kind: edge.edge_kind,
-            sequenced_owner: if edge.edge_kind == DepKind::Sequenced {
-                graph
-                    .nodes
+            sequenced_owner: (edge.edge_kind == DepKind::Sequenced
+                && matches!(&source.purity, Purity::NotPure { .. }))
+            .then(|| SequencedOwnerCause {
+                owner_id: source.id.clone(),
+                binding_names: source
+                    .declared_bindings
                     .iter()
-                    .find(|node| node.id == edge.source)
-                    .and_then(|node| {
-                        matches!(&node.purity, Purity::NotPure { .. }).then(|| {
-                            SequencedOwnerCause {
-                                owner_id: node.id.clone(),
-                                binding_names: node
-                                    .declared_bindings
-                                    .iter()
-                                    .map(|binding| binding.binding.clone())
-                                    .collect(),
-                                source_location: node.source_location.clone(),
-                                purity: node.purity.clone(),
-                            }
-                        })
-                    })
-            } else {
-                None
-            },
+                    .map(|binding| binding.binding.clone())
+                    .collect(),
+                source_location: source.source_location.clone(),
+                purity: source.purity.clone(),
+            }),
         });
     }
-    out.sort_by(|a, b| {
-        (
-            a.from.as_str(),
-            a.to.as_str(),
-            a.statement_ordinal,
-            &a.binding,
-            a.kind,
-        )
-            .cmp(&(
-                b.from.as_str(),
-                b.to.as_str(),
-                b.statement_ordinal,
-                &b.binding,
-                b.kind,
-            ))
-    });
+    CycleEdge::sort_for_report(&mut out);
     Ok(out)
 }
 
