@@ -63,9 +63,6 @@ class Store:
 
     async def subscribe(self, principal: WorkloadPrincipal, body: Subscribe) -> SubscriptionView:
         owner = principal.account
-        # Preserve stored creation snapshots so retries match before and during a rolling upgrade.
-        creation = body.model_dump(mode="json")
-        creation["client_key"] = creation.pop("idempotency_key")
         now = datetime.now(UTC)
         key = hashlib.sha256(
             json.dumps([body.destination_ref.model_dump(), body.session_id], sort_keys=True).encode()
@@ -128,7 +125,7 @@ class Store:
                 )
             )
             if row is not None:
-                if row.creation != creation:
+                if row.creation != body.model_dump(mode="json"):
                     raise ConflictError("idempotency key already names another subscription")
                 return SubscriptionView.model_validate(row)
             count = await session.scalar(
@@ -141,7 +138,7 @@ class Store:
                 inbox_id=inbox.id,
                 request_id=body.request_id,
                 idempotency_key=body.idempotency_key,
-                creation=creation,
+                creation=body.model_dump(mode="json"),
                 creator=asdict(principal),
                 version=1,
                 after_sequence=body.after_sequence,

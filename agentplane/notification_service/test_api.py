@@ -67,7 +67,10 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
         assert response.json() == {"detail": "inbox limit"}
         resolver.resolve_workload.assert_awaited_once_with("test-workload")
         service.subscribe.assert_awaited_once_with(PRINCIPAL, Subscribe.model_validate(body))
-        # A caller cannot supply both names and rely on ambiguous precedence.
+        legacy = body.copy()
+        legacy["client_key"] = legacy.pop("idempotency_key")
+        assert (await client.post("/v1/subscriptions", json=legacy)).status_code == 422
+        # The old name is not accepted alongside the new one either.
         response = await client.post("/v1/subscriptions", json=body | {"client_key": "different"})
         assert response.status_code == 422
         app.dependency_overrides.clear()

@@ -218,9 +218,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert subscription["idempotency_key"] == "listen"
                     assert "client_key" not in subscription
                     assert (await agent.post("/v1/subscriptions", json=body)).json() == subscription
-                    legacy = body.copy()
-                    legacy["client_key"] = legacy.pop("idempotency_key")
-                    assert (await agent.post("/v1/subscriptions", json=legacy)).json() == subscription
                     initial = None
                     if busy:
                         await native.command(
