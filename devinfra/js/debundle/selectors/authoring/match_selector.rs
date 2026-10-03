@@ -25,9 +25,9 @@
 //! tried — the matcher rejects a selector that no longer declares its target.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use binding_targets::{binding_name_strings, declaration_name_strings};
 use selector_outcome::{Outcome, SelectorOutcome, SelectorOutcomeReport};
 use selector_resolve::{Member, MemberSelector, SpecModule};
@@ -77,22 +77,7 @@ pub struct MatchSelectorReport {
     pub slack: Option<Vec<SlackRelaxation>>,
 }
 
-/// Resolve the chunk path from the `--source-file` / `--source-root` + `--chunk`
-/// flag combination shared by the source-aware selector commands.
-pub(crate) fn resolve_chunk_source_file(
-    source_file: Option<&Path>,
-    source_root: Option<&Path>,
-    chunk: Option<&Path>,
-) -> Result<PathBuf> {
-    match (source_file, source_root, chunk) {
-        (Some(source_file), _, None) => Ok(source_file.to_path_buf()),
-        (None, Some(source_root), Some(chunk)) => Ok(source_root.join(chunk)),
-        (Some(_), _, Some(_)) => {
-            bail!("use either --source-file or --source-root with --chunk, not both")
-        }
-        _ => bail!("a source chunk is required: pass --source-file or --source-root + --chunk"),
-    }
-}
+use crate::source_input::resolve_chunk_source_file;
 
 pub fn run_match_selector(config: &MatchSelectorConfig) -> Result<MatchSelectorReport> {
     js_ast::with_swc_globals(|| run_match_selector_impl(config))

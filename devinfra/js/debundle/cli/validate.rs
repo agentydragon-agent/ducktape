@@ -18,14 +18,15 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::print_section;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use output_layout::SELECTOR_DIAGNOSTICS_REPORT;
 use peel::{OutputFormat, print_report};
 use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
+use selector_codemod::source_input::resolve_chunk_source_file;
 use selector_outcome::{
     Entity, Outcome, Placement, SelectorKind, SelectorOutcome, SelectorOutcomeReport, Severity,
-    TemplateIdentifiers,
 };
 use selector_resolve::{AnonymousStatement, Member, MemberSelector, SpecModule};
 use serde::Serialize;
@@ -146,7 +147,7 @@ fn run_source_only_validate(args: &ValidateArgs) -> Result<SelectorOutcomeReport
         .modules_root
         .as_deref()
         .context("source-only validation requires --modules <modules-dir>")?;
-    let source_file = resolve_source_only_chunk_file(
+    let source_file = resolve_chunk_source_file(
         args.source_file.as_deref(),
         args.source_root.as_deref(),
         args.chunk.as_deref(),
@@ -158,21 +159,6 @@ fn run_source_only_validate(args: &ValidateArgs) -> Result<SelectorOutcomeReport
         .to_string_lossy()
         .replace('\\', "/");
     validate_modules_against_source(modules_root, &source_file, &chunk)
-}
-
-fn resolve_source_only_chunk_file(
-    source_file: Option<&Path>,
-    source_root: Option<&Path>,
-    chunk: Option<&Path>,
-) -> Result<std::path::PathBuf> {
-    match (source_file, source_root, chunk) {
-        (Some(source_file), _, None) => Ok(source_file.to_path_buf()),
-        (None, Some(source_root), Some(chunk)) => Ok(source_root.join(chunk)),
-        (Some(_), _, Some(_)) => {
-            bail!("use either --source-file or --source-root with --chunk, not both")
-        }
-        _ => bail!("a source chunk is required: pass --source-file or --source-root + --chunk"),
-    }
 }
 
 fn invalid(error: &impl std::fmt::Display) -> Outcome {
@@ -363,46 +349,19 @@ fn collect_chunk_reports(dir: &Path, reports: &mut Vec<SelectorOutcomeReport>) -
 /// dispatch on.
 fn emit_validate_ndjson(report: &SelectorOutcomeReport) -> Result<()> {
     #[derive(Serialize)]
-    struct OutcomeLine<'a> {
-        section: &'static str,
-        #[serde(flatten)]
-        outcome: &'a SelectorOutcome,
-    }
-    #[derive(Serialize)]
-    struct TemplateLine<'a> {
-        section: &'static str,
-        #[serde(flatten)]
-        template: &'a TemplateIdentifiers,
-    }
-    #[derive(Serialize)]
-    struct SummaryLine<T: Serialize> {
-        section: &'static str,
+    struct Summary<T> {
         counts: T,
     }
     for outcome in &report.outcomes {
-        println!(
-            "{}",
-            serde_json::to_string(&OutcomeLine {
-                section: "outcome",
-                outcome,
-            })?
-        );
+        print_section("outcome", outcome)?;
     }
     for template in &report.templates {
-        println!(
-            "{}",
-            serde_json::to_string(&TemplateLine {
-                section: "template",
-                template,
-            })?
-        );
+        print_section("template", template)?;
     }
-    println!(
-        "{}",
-        serde_json::to_string(&SummaryLine {
-            section: "summary",
+    print_section(
+        "summary",
+        &Summary {
             counts: report.counts(),
-        })?
-    );
-    Ok(())
+        },
+    )
 }

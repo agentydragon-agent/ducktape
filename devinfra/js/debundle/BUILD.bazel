@@ -655,6 +655,7 @@ rust_library(
         "selectors/authoring/render.rs",
         "selectors/authoring/selector_codemod.rs",
         "selectors/authoring/selector_minimizer_proptest.rs",
+        "selectors/authoring/source_input.rs",
     ],
     crate_root = "selectors/authoring/selector_codemod.rs",
     edition = "2024",

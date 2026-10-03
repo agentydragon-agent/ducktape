@@ -1,6 +1,6 @@
 //! `spec` authoring commands: arguments, adapters, and output formats.
-use crate::emit_report;
 use crate::validate::{ValidateArgs, run_validate_cmd};
+use crate::{emit_report, print_section};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::{OutputFormat, print_report};
@@ -300,28 +300,8 @@ fn run_spec_stats_cmd(args: SpecStatsArgs) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
     match format {
         OutputFormat::Ndjson => {
-            // One line per top-level section. Each line is a tagged
-            // object so downstream consumers can dispatch on `section`.
-            #[derive(serde::Serialize)]
-            struct Line<'a, T: serde::Serialize> {
-                section: &'a str,
-                #[serde(flatten)]
-                payload: &'a T,
-            }
-            println!(
-                "{}",
-                serde_json::to_string(&Line {
-                    section: "modules",
-                    payload: &stats.modules,
-                })?
-            );
-            println!(
-                "{}",
-                serde_json::to_string(&Line {
-                    section: "bindings",
-                    payload: &stats.bindings,
-                })?
-            );
+            print_section("modules", &stats.modules)?;
+            print_section("bindings", &stats.bindings)?;
             Ok(())
         }
         _ => print_report(&stats, format, render_spec_stats_text)
@@ -333,7 +313,11 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
     if args.group_module_depth == Some(0) {
         bail!("--group-module-depth must be at least 1");
     }
-    let source_file = selector_debt_source_file(&args)?;
+    let source_file = selector_codemod::source_input::optional_chunk_source_file(
+        args.source_file.as_deref(),
+        args.source_root.as_deref(),
+        args.chunk.as_deref(),
+    )?;
     let source_aware = source_file
         .as_deref()
         .map(|source_file| SourceAwareSelectorDebtConfig {
@@ -375,102 +359,31 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
     print_report(&report, format, render_selector_debt_text).context("writing selector-debt output")
 }
 
-fn selector_debt_source_file(args: &SelectorDebtArgs) -> Result<Option<PathBuf>> {
-    match (&args.source_file, &args.chunk) {
-        (Some(_), Some(_)) => {
-            bail!("use either --source-file or --source-root/--chunk, not both")
-        }
-        (Some(source_file), None) => Ok(Some(source_file.clone())),
-        (None, Some(chunk)) => {
-            let Some(source_root) = &args.source_root else {
-                bail!("--chunk requires --source-root or DEBUNDLE_SOURCE_ROOT");
-            };
-            Ok(Some(source_root.join(chunk)))
-        }
-        (None, None) => Ok(None),
-    }
-}
-
 /// One tagged JSON object per row, then a final `summary` line — the
 /// streaming shape `jq -c` consumers dispatch on via `.section`.
 fn emit_selector_debt_ndjson(report: &SelectorDebtReport) -> Result<()> {
-    #[derive(serde::Serialize)]
-    struct Line<'a, T: serde::Serialize> {
-        section: &'a str,
-        #[serde(flatten)]
-        row: &'a T,
+    for row in &report.name_only {
+        print_section("name_only", row)?;
     }
-    for entry in &report.name_only {
-        println!(
-            "{}",
-            serde_json::to_string(&Line {
-                section: "name_only",
-                row: entry,
-            })?
-        );
+    for row in &report.repeated_source_match {
+        print_section("repeated_source_match", row)?;
     }
-    for group in &report.repeated_source_match {
-        println!(
-            "{}",
-            serde_json::to_string(&Line {
-                section: "repeated_source_match",
-                row: group,
-            })?
-        );
+    for row in &report.name_only_module_groups {
+        print_section("name_only_module_group", row)?;
     }
-    for group in &report.name_only_module_groups {
-        println!(
-            "{}",
-            serde_json::to_string(&Line {
-                section: "name_only_module_group",
-                row: group,
-            })?
-        );
+    for row in &report.drifted_bindings {
+        print_section("drifted_binding", row)?;
     }
-    for drift in &report.drifted_bindings {
-        println!(
-            "{}",
-            serde_json::to_string(&Line {
-                section: "drifted_binding",
-                row: drift,
-            })?
-        );
+    for row in &report.source_aware_near_ambiguous {
+        print_section("source_aware_near_ambiguous", row)?;
     }
-    for selector in &report.source_aware_near_ambiguous {
-        println!(
-            "{}",
-            serde_json::to_string(&Line {
-                section: "source_aware_near_ambiguous",
-                row: selector,
-            })?
-        );
+    for row in &report.source_aware_repeated_exact {
+        print_section("source_aware_repeated_exact", row)?;
     }
-    for group in &report.source_aware_repeated_exact {
-        println!(
-            "{}",
-            serde_json::to_string(&Line {
-                section: "source_aware_repeated_exact",
-                row: group,
-            })?
-        );
+    for row in &report.source_aware_binding_group_suggestions {
+        print_section("source_aware_binding_group_suggestion", row)?;
     }
-    for group in &report.source_aware_binding_group_suggestions {
-        println!(
-            "{}",
-            serde_json::to_string(&Line {
-                section: "source_aware_binding_group_suggestion",
-                row: group,
-            })?
-        );
-    }
-    println!(
-        "{}",
-        serde_json::to_string(&Line {
-            section: "summary",
-            row: &report.summary,
-        })?
-    );
-    Ok(())
+    print_section("summary", &report.summary)
 }
 
 pub(super) fn run(args: SpecNs) -> Result<()> {

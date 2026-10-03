@@ -146,6 +146,18 @@ where
     print_report(report, OutputFormat::resolve(format), text_render).context(context)
 }
 
+/// One flattened, tagged NDJSON row. Each caller owns its section order and payload schema.
+fn print_section<T: serde::Serialize>(section: &str, payload: &T) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct Line<'a, T> {
+        section: &'a str,
+        #[serde(flatten)]
+        payload: &'a T,
+    }
+    println!("{}", serde_json::to_string(&Line { section, payload })?);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
