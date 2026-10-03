@@ -131,6 +131,7 @@ py_library(
     name = "resources",
     srcs = ["resources.py"],
     visibility = [
+        "//cluster/cdk8s:__pkg__",
         "//agentplane:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/validation:__pkg__",
@@ -320,6 +321,7 @@ py_library(
     name = "sidecar",
     srcs = ["sidecar.py"],
     visibility = [
+        "//cluster/cdk8s:__pkg__",
         "//agentplane:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],

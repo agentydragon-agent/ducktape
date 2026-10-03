@@ -38,6 +38,7 @@ from cluster.cdk8s.agentplane.egress_credentials import (
 )
 from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
+from cluster.cdk8s.public_coder_egress import add_gateway_resources
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
@@ -76,6 +77,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
+    add_gateway_resources(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
 
 
 def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
