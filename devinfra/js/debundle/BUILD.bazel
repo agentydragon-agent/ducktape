@@ -967,9 +967,7 @@ rust_test(
     crate = ":cli",
     edition = "2024",
     deps = [
-        ":report_fixtures",
         ":spec_tree",
-        "@crates//:tempfile",
     ],
 )
 

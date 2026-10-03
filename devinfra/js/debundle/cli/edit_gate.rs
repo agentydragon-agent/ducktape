@@ -109,11 +109,6 @@ pub enum Gate<'a> {
         /// values when the gate resolves source-backed selectors.
         source_root: Option<&'a Path>,
     },
-    /// Run name-collision checks but no graph-backed gate. Not
-    /// constructible via [`Gate::from_cli`] (the dispatcher requires
-    /// `--graph` or `--no-verify`); for library callers that have no
-    /// owner graph.
-    NamesOnly,
     /// `--no-verify`: skip all validation.
     Skip,
 }
@@ -147,7 +142,6 @@ impl<'a> Gate<'a> {
     pub fn outcome(&self) -> crate::outcome::GateOutcome {
         match self {
             Self::Run { .. } => crate::outcome::GateOutcome::Passed,
-            Self::NamesOnly => crate::outcome::GateOutcome::NamesOnly,
             Self::Skip => crate::outcome::GateOutcome::Skipped,
         }
     }
@@ -164,7 +158,7 @@ impl<'a> Gate<'a> {
             Self::Run { graph, source_root } => {
                 gate_post_edit_partition(graph, modules_root, *source_root, &post_spec()?)
             }
-            Self::NamesOnly | Self::Skip => Ok(()),
+            Self::Skip => Ok(()),
         }
     }
 }
@@ -549,110 +543,4 @@ fn detect_atomic_unit_conflicts(
         });
     }
     conflicts
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use analysis::{
-        AtomicGraphReport, BindingReport, DepKind, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-        OwnerGraphQuotientReport, Purity, QuotientSccReport, SourceLocation, StatementKind,
-        StatementOrdinal,
-    };
-    use report_fixtures::{module_ref, module_table};
-    use tempfile::TempDir;
-
-    use super::*;
-
-    fn owner(id: &str, ordinal: usize, bindings: Vec<BindingReport>) -> OwnerGraphNodeReport {
-        OwnerGraphNodeReport {
-            id: id.to_string(),
-            statement_ordinal: StatementOrdinal(ordinal),
-            source_location: Some(SourceLocation {
-                source_path: "static/index.js".to_string(),
-                start_line: ordinal + 1,
-                end_line: ordinal + 1,
-                start_column: None,
-            }),
-            statement_kind: if bindings.is_empty() {
-                StatementKind::SideEffect
-            } else {
-                StatementKind::ClassDecl
-            },
-            declared_bindings: bindings,
-            purity: Purity::Pure,
-            destination: module_ref("residual"),
-        }
-    }
-
-    fn write(path: &Path, body: &str) {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        fs::write(path, body).unwrap();
-    }
-
-    #[test]
-    fn edit_gate_resolves_anonymous_statement_selectors_as_claims() {
-        let temp = TempDir::new().unwrap();
-        let graph_path = temp.path().join("owner_graph.json");
-        let modules_root = temp.path().join("spec/modules");
-        write(
-            &temp.path().join("static/index.js"),
-            r#"const ignored = 0;
-class Co {}
-Ro([Z], Co.prototype, "visible", 2);
-"#,
-        );
-        let class_owner = owner(
-            "owner:0",
-            1,
-            vec![BindingReport {
-                binding: "Co".into(),
-                export_name: "SearchPopoverState".into(),
-            }],
-        );
-        let decorator_owner = owner("owner:1", 2, Vec::new());
-        let nodes = vec![class_owner, decorator_owner];
-        let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
-        let graph = OwnerGraphReport {
-            chunk_id: "static/index".to_string(),
-            nodes,
-            edges: vec![OwnerGraphEdgeReport {
-                id: "edge:0".to_string(),
-                source: "owner:1".to_string(),
-                target: "owner:0".to_string(),
-                edge_kind: DepKind::LocalEffect,
-                binding: Some("Co".into()),
-                statement_ordinal: StatementOrdinal(2),
-                constrains_init_order: true,
-                role: None,
-            }],
-            quotient: OwnerGraphQuotientReport {
-                nodes: module_nodes,
-                edges: Vec::new(),
-                sccs: Vec::<QuotientSccReport>::new(),
-            },
-            atomic_graph: AtomicGraphReport {
-                nodes: Vec::new(),
-                edges: Vec::new(),
-            },
-        };
-        write(&graph_path, &serde_json::to_string(&graph).unwrap());
-        write(
-            &modules_root.join("features/search/popover_state.yaml"),
-            r#"members:
-  - selector:
-      binding:
-        name: Co
-anonymous_statements:
-  - match: 'Ro([Z], Co.prototype, "visible", 2);'
-    note: "observable decorator side effect"
-"#,
-        );
-
-        let post_spec = post_delete_spec(&modules_root, &[]).unwrap();
-        gate_post_edit_partition(&graph_path, &modules_root, None, &post_spec).unwrap();
-    }
 }

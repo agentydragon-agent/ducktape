@@ -592,9 +592,8 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 ///   * [`Gate::Run`] runs the unified realizability gate
 ///     ([`crate::edit_gate::gate_post_edit_partition`]) against the
 ///     in-memory post-batch spec; cycle or atom-split rejections
-///     bail before any file is written. [`Gate::NamesOnly`] keeps
-///     collision detection; [`Gate::Skip`] (`--no-verify`) skips
-///     everything. The CLI dispatcher requires `--graph` unless
+///     bail before any file is written. [`Gate::Skip`] (`--no-verify`)
+///     skips validation. The CLI dispatcher requires `--graph` unless
 ///     `--no-verify` is set ([`Gate::from_cli`]).
 pub fn run_bindings_assign(
     modules_root: &Path,
