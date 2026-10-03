@@ -7,7 +7,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import app, sandbox_service
+from cluster.cdk8s.agentplane import app, notifications, sandbox_service
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -46,7 +46,10 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     assert backend_config["kubernetes_binding_cleanup_namespaces"] == sorted(
         backend_config["kubernetes_binding_cleanup_namespaces"]
     )
-    assert backend_config["caller_accounts"] == [{"namespace": namespace, "name": app.NAME}]
+    assert backend_config["caller_accounts"] == [
+        {"namespace": namespace, "name": app.NAME},
+        {"namespace": namespace, "name": notifications.NAME},
+    ]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
     assert runner_policy["ingress"] == [
         {

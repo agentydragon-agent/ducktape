@@ -87,9 +87,13 @@ async def kubernetes() -> AsyncIterator[Cluster]:
 
 @asynccontextmanager
 async def authenticated_service(
-    cluster: Cluster, runner_port: int, token_file: Path, *,
+    cluster: Cluster,
+    runner_port: int,
+    token_file: Path,
+    *,
     manager: ServiceAccountRef | None = None,
-    token: str = "test-app-service-token", audience: str = "test-app-sandbox-service",
+    token: str = "test-app-service-token",
+    audience: str = "test-app-sandbox-service",
     platform_instructions: str = "Backend guidance for app-launched sessions.",
 ) -> AsyncIterator[SandboxServiceClient]:
     manager = manager or ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-app")

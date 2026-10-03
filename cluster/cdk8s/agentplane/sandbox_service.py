@@ -81,7 +81,10 @@ class SandboxService(Construct):
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
             model=Settings,
             content=settings.model_dump(mode="json", exclude_none=True)
-            | {"kubernetes_binding_cleanup_namespaces": sorted(settings.kubernetes_binding_cleanup_namespaces)},
+            | {
+                "kubernetes_binding_cleanup_namespaces": sorted(settings.kubernetes_binding_cleanup_namespaces),
+                "caller_accounts": [account.model_dump() for account in sorted(settings.caller_accounts, key=lambda account: (account.namespace, account.name))],
+            },
             path="/etc/agentplane-sandbox-service/config.yaml",
         )
         deployment = Deployment(
@@ -126,7 +129,10 @@ class SandboxService(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
-            ingress=[caller.pods.admit(endpoint.pod_port), notifications.service(env.namespace).pods.admit(endpoint.pod_port)],
+            ingress=[
+                caller.pods.admit(endpoint.pod_port),
+                notifications.service(env.namespace).pods.admit(endpoint.pod_port),
+            ],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),

@@ -12,7 +12,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from agentplane.notification_service.models import (
-    Acknowledge, InboxPage, InboxView, Subscribe, SubscriptionUpdate, SubscriptionView,
+    Acknowledge,
+    InboxPage,
+    InboxView,
+    Subscribe,
+    SubscriptionUpdate,
+    SubscriptionView,
 )
 from agentplane.notification_service.service import DestinationRejectedError, Service
 from agentplane.notification_service.store import ConflictError, NotFoundError, QuotaError
@@ -72,29 +77,45 @@ def create_app(service: Service, principals: WorkloadPrincipalResolver) -> FastA
 
     @app.get("/v1/providers")
     async def providers(caller: Annotated[WorkloadPrincipal, Depends(principal)]) -> dict[str, object]:
-        return {"actions": {"subscription_schema": Subscribe.model_json_schema(), "content": "ActionEventView: sequence, state, at, actor"}}
+        return {
+            "actions": {
+                "subscription_schema": Subscribe.model_json_schema(),
+                "content": "ActionEventView: sequence, state, at, actor",
+            }
+        }
 
     @app.post("/v1/subscriptions", response_model=SubscriptionView)
     async def subscribe(body: Subscribe, caller: Annotated[WorkloadPrincipal, Depends(principal)]) -> SubscriptionView:
         try:
             return await service.subscribe(caller, body)
         except httpx.HTTPStatusError as error:
-            raise HTTPException(403 if error.response.status_code in (401, 403, 404) else 503, "Action source unavailable or unauthorized") from error
+            raise HTTPException(
+                403 if error.response.status_code in (401, 403, 404) else 503,
+                "Action source unavailable or unauthorized",
+            ) from error
 
     @app.get("/v1/subscriptions")
-    async def subscriptions(caller: Annotated[WorkloadPrincipal, Depends(principal)], after_id: UUID | None = None) -> list[SubscriptionView]:
+    async def subscriptions(
+        caller: Annotated[WorkloadPrincipal, Depends(principal)], after_id: UUID | None = None
+    ) -> list[SubscriptionView]:
         return await service.store.subscriptions(caller.account, after_id)
 
     @app.get("/v1/subscriptions/{subscription_id}")
-    async def subscription(subscription_id: UUID, caller: Annotated[WorkloadPrincipal, Depends(principal)]) -> SubscriptionView:
+    async def subscription(
+        subscription_id: UUID, caller: Annotated[WorkloadPrincipal, Depends(principal)]
+    ) -> SubscriptionView:
         return await service.store.subscription(caller.account, subscription_id)
 
     @app.patch("/v1/subscriptions/{subscription_id}")
-    async def update(subscription_id: UUID, body: SubscriptionUpdate, caller: Annotated[WorkloadPrincipal, Depends(principal)]) -> SubscriptionView:
+    async def update(
+        subscription_id: UUID, body: SubscriptionUpdate, caller: Annotated[WorkloadPrincipal, Depends(principal)]
+    ) -> SubscriptionView:
         return await service.store.change(caller.account, subscription_id, body)
 
     @app.delete("/v1/subscriptions/{subscription_id}")
-    async def cancel(subscription_id: UUID, caller: Annotated[WorkloadPrincipal, Depends(principal)]) -> SubscriptionView:
+    async def cancel(
+        subscription_id: UUID, caller: Annotated[WorkloadPrincipal, Depends(principal)]
+    ) -> SubscriptionView:
         return await service.store.change(caller.account, subscription_id, None)
 
     @app.get("/v1/inboxes")
@@ -102,11 +123,18 @@ def create_app(service: Service, principals: WorkloadPrincipalResolver) -> FastA
         return await service.store.inboxes(caller.account)
 
     @app.get("/v1/inboxes/{inbox_id}/entries")
-    async def read(inbox_id: UUID, caller: Annotated[WorkloadPrincipal, Depends(principal)], after_cursor: Annotated[int, Query(ge=0)] = 0, limit: Annotated[int, Query(ge=1, le=128)] = 128) -> InboxPage:
+    async def read(
+        inbox_id: UUID,
+        caller: Annotated[WorkloadPrincipal, Depends(principal)],
+        after_cursor: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=128)] = 128,
+    ) -> InboxPage:
         return await service.store.read(caller.account, inbox_id, after_cursor, limit)
 
     @app.put("/v1/inboxes/{inbox_id}/acknowledgement")
-    async def acknowledge(inbox_id: UUID, body: Acknowledge, caller: Annotated[WorkloadPrincipal, Depends(principal)]) -> InboxView:
+    async def acknowledge(
+        inbox_id: UUID, body: Acknowledge, caller: Annotated[WorkloadPrincipal, Depends(principal)]
+    ) -> InboxView:
         return await service.store.acknowledge(caller.account, inbox_id, body.through_cursor)
 
     @app.delete("/v1/inboxes/{inbox_id}", status_code=204)

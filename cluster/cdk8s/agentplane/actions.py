@@ -5,6 +5,7 @@ objects (staging's policy sets, testing's MCP fixtures) come from `Environment.e
 
 from __future__ import annotations
 
+import json
 from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -30,10 +31,9 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.action_service.main import CONFIG_FILE_ENV, Settings
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import database, llm_ingress
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s.agentplane import notifications
+from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s.agentplane import database, llm_ingress, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -199,6 +199,9 @@ class Actions(Construct):
     def _container_env(self) -> dict[str, EnvValue]:
         env = self._database_env()
         namespace = self.env.namespace
+        env[env_name(Settings, "event_reader_accounts")] = EnvValue.from_value(
+            json.dumps([ServiceAccountRef(namespace=namespace, name=notifications.NAME).model_dump()])
+        )
         if self.env.actions.web_push_secret_name is not None:
             env[env_name(Settings, "web_push", "private_key_pem")] = (
                 SecretRef(namespace=namespace, name=self.env.actions.web_push_secret_name)
@@ -252,8 +255,10 @@ class Actions(Construct):
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             args=cli_args(
-                Settings, host="0.0.0.0", port=self.service.pod_port, token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE,
-                event_reader_accounts=frozenset({ServiceAccountRef(namespace=self.env.namespace, name=notifications.NAME)})
+                Settings,
+                host="0.0.0.0",
+                port=self.service.pod_port,
+                token_audience=llm_ingress.WORKLOAD_TOKEN_AUDIENCE,
             ),
             env_variables=env,
             ports=[self.service.port.container_port()],

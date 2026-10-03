@@ -9,7 +9,7 @@ import pytest_bazel
 from sqlalchemy import update
 
 from agentplane.action_service.models import ActionEventView, ActionState
-from agentplane.notification_service.db import Entry, Inbox
+from agentplane.notification_service.db import Entry, Inbox, Subscription
 from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, Store
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -19,11 +19,19 @@ from agentplane.workload_auth.principal import WorkloadPrincipal
 # gazelle:include_dep @pypi//protobuf
 
 PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner", "pod", "pod-uid")
-BODY = Subscribe(destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"), session_id="session", client_key="first", request_id=uuid4())
+BODY = Subscribe(
+    destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
+    session_id="session",
+    client_key="first",
+    request_id=uuid4(),
+)
 
 
 def events(count: int = 3) -> list[ActionEventView]:
-    return [ActionEventView(sequence=i, state=ActionState.DECISION_PENDING, at=datetime.now(UTC)) for i in range(1, count + 1)]
+    return [
+        ActionEventView(sequence=i, state=ActionState.DECISION_PENDING, at=datetime.now(UTC))
+        for i in range(1, count + 1)
+    ]
 
 
 async def test_owner_idempotence_cancel_and_version(store: Store) -> None:
@@ -52,7 +60,8 @@ async def test_overlapping_subscriptions_commit_one_prefix_and_read_does_not_ack
     payload = events()
     await store.record(claim, source, payload)
     overlapping = await store.source(claim)
-    assert overlapping is not None and overlapping.id != source.id
+    assert overlapping is not None
+    assert overlapping.id != source.id
     await store.record(claim, overlapping, payload)
     page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
     assert [item.cursor for item in page.entries] == [1, 2, 3]
@@ -64,9 +73,11 @@ async def test_overlapping_subscriptions_commit_one_prefix_and_read_does_not_ack
     with pytest.raises(ConflictError):
         await store.acknowledge(PRINCIPAL.account, first.inbox_id, 4)
     notice = await store.notice(claim)
-    assert notice is not None and notice.through_cursor == 3
+    assert notice is not None
+    assert notice.through_cursor == 3
     retry = await store.notice(claim)
-    assert retry is not None and retry.command_id == notice.command_id
+    assert retry is not None
+    assert retry.command_id == notice.command_id
     await store.acknowledge(PRINCIPAL.account, first.inbox_id, 3)
     assert not await store.attempt(claim, notice)
     assert await store.notice(claim) is None
@@ -87,6 +98,30 @@ async def test_cancellation_fences_inflight_source_and_claim_loss_fences_worker(
         await store.record(claim, source, events())
 
 
+async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) -> None:
+    first = await store.subscribe(PRINCIPAL, BODY)
+    second = await store.subscribe(PRINCIPAL, BODY.model_copy(update={"client_key": "another-action", "request_id": uuid4()}))
+    claim = await store.claim()
+    assert claim is not None
+    async with store.sessions() as session:
+        a = await session.get(Subscription, first.id)
+        b = await session.get(Subscription, second.id)
+    assert a is not None
+    assert b is not None
+    await asyncio.gather(store.record(claim, a, events(1)), store.record(claim, b, events(1)))
+    page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
+    assert [entry.cursor for entry in page.entries] == [1, 2]
+    assert {entry.request_id for entry in page.entries} == {first.request_id, second.request_id}
+    await store.retire(PRINCIPAL.account, first.inbox_id)
+    assert (await store.subscription(PRINCIPAL.account, first.id)).cancelled
+    with pytest.raises(ClaimLostError):
+        await store.record(claim, a, events())
+    # Retirement stops work without erasing payloads or acknowledging them.
+    page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
+    assert len(page.entries) == 2
+    assert page.inbox.acknowledged == 0
+
+
 async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
     claim = await store.claim()
@@ -95,16 +130,36 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
     assert source is not None
     await store.record(claim, source, events(1))
     notice = await store.notice(claim)
-    assert notice is not None and await store.attempt(claim, notice)
-    admission = event_log_pb2.EventEntry(cursor=1, event=event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command_pb2.Command(command_id=str(notice.command_id), submit_input=command_pb2.SubmitInput(text=notice.text)))))
+    assert notice is not None
+    assert await store.attempt(claim, notice)
+    admission = event_log_pb2.EventEntry(
+        cursor=1,
+        event=event_pb2.Event(
+            command_admitted=event_pb2.CommandAdmitted(
+                command=command_pb2.Command(
+                    command_id=str(notice.command_id), submit_input=command_pb2.SubmitInput(text=notice.text)
+                )
+            )
+        ),
+    )
     await store.receipt(claim, notice, admission)
     page = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
-    assert page.notice is not None and page.notice.admitted and not page.notice.confirmed
-    confirmation = event_log_pb2.EventEntry(cursor=2, event=event_pb2.Event(harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(origin_command_ids=["coalesced-other", str(notice.command_id)])))
+    assert page.notice is not None
+    assert page.notice.admitted
+    assert not page.notice.confirmed
+    confirmation = event_log_pb2.EventEntry(
+        cursor=2,
+        event=event_pb2.Event(
+            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                origin_command_ids=["coalesced-other", str(notice.command_id)]
+            )
+        ),
+    )
     await store.receipt(claim, notice, confirmation)
     await store.receipt(claim, notice, confirmation)
     page = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
-    assert page.notice is not None and page.notice.confirmed
+    assert page.notice is not None
+    assert page.notice.confirmed
     assert page.inbox.acknowledged == 0
     assert await store.notice(claim) is None
     changed = event_log_pb2.EventEntry(cursor=2, event=event_pb2.Event(harness_exited=event_pb2.HarnessExited()))
@@ -123,7 +178,8 @@ async def test_retention_gap_is_visible_and_replay_keeps_tombstone(store: Store)
         await session.execute(update(Entry).values(created_at=datetime.now(UTC) - timedelta(days=31)))
     await store.cleanup()
     page = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
-    assert page.inbox.expired_through == 3 and page.inbox.acknowledged == 0
+    assert page.inbox.expired_through == 3
+    assert page.inbox.acknowledged == 0
     assert not page.entries
     await store.subscribe(PRINCIPAL, BODY.model_copy(update={"client_key": "late-overlap"}))
     source = await store.source(claim)

@@ -22,7 +22,9 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_NOTIFICATIONS_", cli_parse_args=True, cli_kebab_case=True, hide_input_in_errors=True)
+    model_config = SettingsConfigDict(
+        env_prefix="AGENTPLANE_NOTIFICATIONS_", cli_parse_args=True, cli_kebab_case=True, hide_input_in_errors=True
+    )
     database_url: str
     namespace: str
     actions_url: str
@@ -36,11 +38,25 @@ class Settings(BaseSettings):
 
 async def serve(settings: Settings) -> None:
     k8s_config.load_incluster_config()
-    engine = create_async_engine(make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=10, max_overflow=5)
-    sandboxes = SandboxServiceClient(settings.sandbox_service_target, namespace=settings.namespace, token_file=settings.sandbox_service_token_file, request_timeout_s=5)
+    engine = create_async_engine(
+        make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=10, max_overflow=5
+    )
+    sandboxes = SandboxServiceClient(
+        settings.sandbox_service_target,
+        namespace=settings.namespace,
+        token_file=settings.sandbox_service_token_file,
+        request_timeout_s=5,
+    )
     try:
-        async with k8s_client.ApiClient() as kube, httpx.AsyncClient(base_url=settings.actions_url, timeout=5, follow_redirects=False) as http:
-            principals = WorkloadPrincipalResolver(authentication=k8s_client.AuthenticationV1Api(kube), audience=settings.token_audience, allowed_service_account_namespaces={settings.namespace})
+        async with (
+            k8s_client.ApiClient() as kube,
+            httpx.AsyncClient(base_url=settings.actions_url, timeout=5, follow_redirects=False) as http,
+        ):
+            principals = WorkloadPrincipalResolver(
+                authentication=k8s_client.AuthenticationV1Api(kube),
+                audience=settings.token_audience,
+                allowed_service_account_namespaces={settings.namespace},
+            )
             app = create_app(Service(Store(engine), Actions(http, settings.actions_token_file), sandboxes), principals)
             await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
     finally:

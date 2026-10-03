@@ -6,6 +6,7 @@ from contextlib import suppress
 
 import grpc
 import httpx
+from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.notification_service.actions import Actions
@@ -42,9 +43,13 @@ class Service:
             sandbox = await self.sandboxes.get(destination.name)
         except SandboxNotFoundError as error:
             raise DestinationRejectedError from error
-        if sandbox.uid != destination.uid or sandbox.service_account != ServiceAccount(namespace=owner.namespace, name=owner.name):
+        if sandbox.uid != destination.uid or sandbox.service_account != ServiceAccount(
+            namespace=owner.namespace, name=owner.name
+        ):
             raise DestinationRejectedError
-        return self.sandboxes.runner(SandboxDestination(sandbox=destination.name, sandbox_uid=destination.uid, owner=sandbox.service_account))
+        return self.sandboxes.runner(
+            SandboxDestination(sandbox=destination.name, sandbox_uid=destination.uid, owner=sandbox.service_account)
+        )
 
     async def subscribe(self, principal: WorkloadPrincipal, body: Subscribe) -> SubscriptionView:
         runner = await self.runner(principal.account, body.destination_ref)
@@ -63,7 +68,9 @@ class Service:
             # catch-up step; large journals make progress across claims, without monopolizing workers.
             copied = notice.runner_cursor
             for _ in range(128):
-                if copied >= attachment.attached.last_cursor and (not notice.runner_cursor or copied > notice.runner_cursor):
+                if copied >= attachment.attached.last_cursor and (
+                    not notice.runner_cursor or copied > notice.runner_cursor
+                ):
                     break
                 if not attachment.attached.last_cursor:
                     break
@@ -85,9 +92,13 @@ class Service:
             if attachment.attached.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
                 return
             if not current.admitted and await self.store.attempt(claim, current):
-                await runner.command(claim.session_id, command_pb2.Command(
-                    command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text),
-                ), after_cursor=copied)
+                await runner.command(
+                    claim.session_id,
+                    command_pb2.Command(
+                        command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text)
+                    ),
+                    after_cursor=copied,
+                )
             # Read through this attachment so the checkpoint remains contiguous, rather than jumping
             # directly to the command RPC's admission cursor and skipping a coalesced confirmation.
             with suppress(TimeoutError, StreamClosedError, ReconnectRequiredError):
@@ -101,7 +112,11 @@ class Service:
         claim = await self.store.claim()
         if claim is None:
             return False
-        error = claim.delivery_error if claim.delivery_error and claim.delivery_error.startswith("invalid history") else None
+        error = (
+            claim.delivery_error
+            if claim.delivery_error and claim.delivery_error.startswith("invalid history")
+            else None
+        )
         try:
             # Leave ten seconds for fenced state recording; a stale worker can do no further commits.
             async with asyncio.timeout(20):
@@ -112,9 +127,16 @@ class Service:
                     try:
                         events = await self.actions.events(owner, source.request_id, source.after_sequence)
                         await self.store.record(claim, source, events)
-                    except (httpx.HTTPError, QuotaError, ConflictError) as failure:
+                    except (httpx.HTTPError, ValidationError, QuotaError, ConflictError) as failure:
                         # No upstream body, bearer, or native content in diagnostics.
-                        await self.store.record(claim, source, [], f"HTTP {failure.response.status_code}" if isinstance(failure, httpx.HTTPStatusError) else type(failure).__name__)
+                        await self.store.record(
+                            claim,
+                            source,
+                            [],
+                            f"HTTP {failure.response.status_code}"
+                            if isinstance(failure, httpx.HTTPStatusError)
+                            else type(failure).__name__,
+                        )
                 notice = await self.store.notice(claim)
                 if notice is not None and error is None:
                     await self.deliver(claim, runner, notice)
@@ -122,7 +144,15 @@ class Service:
             error = f"invalid history: {failure}"
         except ClaimLostError:
             return True
-        except (ConnectionError, TimeoutError, grpc.aio.AioRpcError, RunnerError, StreamClosedError, DestinationRejectedError, QuotaError) as failure:
+        except (
+            ConnectionError,
+            TimeoutError,
+            grpc.aio.AioRpcError,
+            RunnerError,
+            StreamClosedError,
+            DestinationRejectedError,
+            QuotaError,
+        ) as failure:
             error = error or type(failure).__name__
             logger.warning("notification delivery unavailable: inbox=%s cause=%s", claim.id, error)
         finally:

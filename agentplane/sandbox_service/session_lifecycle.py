@@ -35,10 +35,16 @@ def launch_spec(
         "Use these identifiers when addressing this session; they are not credentials."
     )
     if sandbox_namespace is not None:
-        context += "\nYour explicit notification destination is:\n" + json.dumps({
-            "destination_ref": {"namespace": sandbox_namespace, "name": destination.sandbox.sandbox, "uid": destination.sandbox.sandbox_uid},
-            "session_id": destination.session_id,
-        })
+        context += "\nYour explicit notification destination is:\n" + json.dumps(
+            {
+                "destination_ref": {
+                    "namespace": sandbox_namespace,
+                    "name": destination.sandbox.sandbox,
+                    "uid": destination.sandbox.sandbox_uid,
+                },
+                "session_id": destination.session_id,
+            }
+        )
     spec.instructions = combine_instructions(combine_instructions(platform_instructions, context), spec.instructions)
     return spec
 

@@ -375,13 +375,14 @@ def create_app(
     async def service_events(
         request_id: UUID,
         request: Request,
-        owner_namespace: str,
-        owner_name: str,
+        owner_namespace: Annotated[str, Query(min_length=1, max_length=63)],
+        owner_name: Annotated[str, Query(min_length=1, max_length=253)],
         after_sequence: Annotated[int, Query(ge=0)] = 0,
     ) -> list[ActionEventView]:
         # Explicit, read-only service delegation. The delegate must have authenticated the
         # subscribing owner itself. Never admit this identity as an operator or Action caller.
-        delegate = await app.state.workload_authenticator(request)
+        authenticator = _workload_authenticator(request)
+        delegate = await authenticator(request)
         if delegate.account not in event_reader_accounts:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "event reader not allowed")
         owner = callers.admit(ServiceAccountRef(namespace=owner_namespace, name=owner_name))

@@ -234,9 +234,23 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
             ),
             EgressPolicySpecRules(
-                hosts=[notifications.service(namespace).fqdn], cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST, EgressPolicySpecRulesMethods.PUT, EgressPolicySpecRulesMethods.PATCH, EgressPolicySpecRulesMethods.DELETE],
-                paths=["/openapi.json", "/v1/providers", "/v1/subscriptions", "/v1/subscriptions/**", "/v1/inboxes", "/v1/inboxes/**"],
+                hosts=[notifications.service(namespace).fqdn],
+                cluster_internal=True,
+                methods=[
+                    EgressPolicySpecRulesMethods.GET,
+                    EgressPolicySpecRulesMethods.POST,
+                    EgressPolicySpecRulesMethods.PUT,
+                    EgressPolicySpecRulesMethods.PATCH,
+                    EgressPolicySpecRulesMethods.DELETE,
+                ],
+                paths=[
+                    "/openapi.json",
+                    "/v1/providers",
+                    "/v1/subscriptions",
+                    "/v1/subscriptions/**",
+                    "/v1/inboxes",
+                    "/v1/inboxes/**",
+                ],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
             ),
             EgressPolicySpecRules(
