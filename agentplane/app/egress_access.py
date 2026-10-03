@@ -30,4 +30,5 @@ class EgressAccess:
     async def revoke(self, name: str) -> None:
         await self.service.revoke_egress(name)
 
+
 # gazelle:include_dep @pypi//protobuf

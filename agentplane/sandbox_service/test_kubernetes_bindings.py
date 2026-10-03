@@ -60,9 +60,7 @@ async def _sandbox(
             )
         },
         finalizers=[KUBERNETES_BINDINGS_FINALIZER]
-        if any(
-            grant.grant.kind == "ClusterRoleBinding" or grant.grant.namespace != NAMESPACE for grant in selected
-        )
+        if any(grant.grant.kind == "ClusterRoleBinding" or grant.grant.namespace != NAMESPACE for grant in selected)
         else None,
     )
     core.pods[view.name] = pod(view.name, phase="Running", ready=True, ip="10.0.0.1")

@@ -293,4 +293,5 @@ def _running_as(pod_template: dict[str, object], service_account: str) -> dict[s
     spec = {**cast(dict[str, object], pod_template.get("spec", {})), "serviceAccountName": service_account}
     return {**pod_template, "spec": spec}
 
+
 # gazelle:include_dep @pypi//protobuf

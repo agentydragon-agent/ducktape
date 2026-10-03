@@ -555,12 +555,10 @@ async def test_unavailable_destination_does_not_contact_runner(
 
 async def test_successor_pod_same_sandbox_and_account_keeps_destination(resources: Resources, cluster: Cluster) -> None:
     first = await resources.destinations.resolve(DESTINATION)
-    assert first.pod_uid == "test-pod-uid"
     assert first.target == f"127.0.0.1:{resources.destinations.runner_port}"
     cluster.fake.pods[SANDBOX]["metadata"]["uid"] = "test-successor-pod"
     cluster.fake.pods[SANDBOX]["status"]["podIP"] = "::1"
     resolved = await resources.destinations.resolve(DESTINATION)
-    assert resolved.pod_uid == "test-successor-pod"
     assert resolved.target == f"[::1]:{resources.destinations.runner_port}"
 
 

@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
@@ -165,6 +166,45 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
     await api.resume(view.name)
     await api.suspend(view.name)
     await api.delete(view.name)
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        CreateSandboxRequest(template=TEMPLATE),
+        CreateSandboxRequest(slug="Bad_Name", template=TEMPLATE),
+        CreateSandboxRequest(slug="a" * 58, template=TEMPLATE),
+        CreateSandboxRequest(slug="test"),
+        CreateSandboxRequest(slug="test", template=TEMPLATE, bootstrap="x" * 65_537),
+        CreateSandboxRequest(
+            slug="test", template=TEMPLATE, session_defaults=protocol_pb2.SessionDefaults(setup_script="x" * 65_537)
+        ),
+        CreateSandboxRequest(
+            slug="test",
+            template=TEMPLATE,
+            session_defaults=protocol_pb2.SessionDefaults(harness=runner_pb2.HARNESS_UNSPECIFIED),
+        ),
+    ],
+    ids=[
+        "empty-slug",
+        "invalid-slug",
+        "long-slug",
+        "empty-template",
+        "long-bootstrap",
+        "long-setup",
+        "unsupported-harness",
+    ],
+)
+async def test_invalid_protobuf_create_does_not_mutate(
+    api: SandboxServiceClient, case: Case, spec: CreateSandboxRequest
+) -> None:
+    before = dict(case.custom.objects)
+    with pytest.raises(ServiceError) as rejected:
+        await api.create(spec)
+    assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert case.custom.objects == before
+    assert not case.core.service_accounts
+    assert not case.rbac.bindings
 
 
 async def test_partial_create_recovers_from_kubernetes_state_without_app(case: Case) -> None:

@@ -302,4 +302,5 @@ class KubernetesBindings:
                 logger.exception("Kubernetes grants reconciliation failed")
             await asyncio.sleep(interval_seconds)
 
+
 # gazelle:include_dep @pypi//protobuf

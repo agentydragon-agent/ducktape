@@ -161,10 +161,8 @@ py_test(
         "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:models",
-        "@pypi//protobuf",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
-        "@pypi//types_protobuf",
     ],
 )
 

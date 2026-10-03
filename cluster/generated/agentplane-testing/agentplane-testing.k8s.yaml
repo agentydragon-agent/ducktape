@@ -1508,18 +1508,12 @@ metadata:
 data:
   config.yaml: |
     sandbox_namespace: agentplane-testing
-    allowed_service_account_namespaces:
-      - agentplane-testing
-    trusted_accounts:
-      - namespace: agentplane-testing
-        name: agentplane-app
-    manager_accounts:
+    caller_accounts:
       - namespace: agentplane-testing
         name: agentplane-app
     agent_egress_api_url: http://agentplane-egress.agentplane-testing.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
     lifecycle_timeout_s: 300
-    enable_provisioning: true
     default_policies:
       - basic
     kubernetes_grants: {}

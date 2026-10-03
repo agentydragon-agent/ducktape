@@ -1630,18 +1630,12 @@ metadata:
 data:
   config.yaml: |
     sandbox_namespace: agentplane-staging
-    allowed_service_account_namespaces:
-      - agentplane-staging
-    trusted_accounts:
-      - namespace: agentplane-staging
-        name: agentplane-app
-    manager_accounts:
+    caller_accounts:
       - namespace: agentplane-staging
         name: agentplane-app
     agent_egress_api_url: http://agentplane-egress.agentplane-staging.svc.cluster.local
     agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.cluster.local:8080
     lifecycle_timeout_s: 300
-    enable_provisioning: true
     default_policies:
       - basic
     kubernetes_grants:

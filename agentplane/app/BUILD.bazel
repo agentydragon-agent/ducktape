@@ -1308,5 +1308,6 @@ py_library(
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
+        "@pypi//pydantic",
     ],
 )

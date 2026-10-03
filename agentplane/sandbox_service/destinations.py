@@ -18,7 +18,6 @@ class DestinationUnavailableError(Exception):
 @dataclass(frozen=True)
 class RunnerEndpoint:
     target: str
-    pod_uid: str
     binding: SandboxBinding | None
 
 
@@ -75,8 +74,8 @@ class DestinationResolver:
         host = f"[{address}]" if address.version == 6 else str(address)
         return RunnerEndpoint(
             target=f"{host}:{self.runner_port}",
-            pod_uid=metadata.uid,
             binding=view.binding if view.HasField("binding") else None,
         )
+
 
 # gazelle:include_dep @pypi//protobuf

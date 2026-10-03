@@ -43,12 +43,6 @@ def validate_spec(spec: protocol_pb2.SessionSpec) -> None:
         raise ValueError("cwd must be absolute")
 
 
-async def initialize(client: RunnerClient, binding: SandboxBinding | None) -> protocol_pb2.InitializeResult:
-    if binding is None or not binding.bootstrap:
-        raise RunnerError("this Sandbox has no configured bootstrap")
-    return await client.initialize(binding.bootstrap)
-
-
 async def open_session(
     client: RunnerClient,
     destination: SessionDestination,
@@ -59,7 +53,7 @@ async def open_session(
 ) -> protocol_pb2.Attached:
     if binding is not None:
         if binding.bootstrap:
-            result = await initialize(client, binding)
+            result = await client.initialize(binding.bootstrap)
             if result.exit_code != 0:
                 raise RunnerError("Sandbox bootstrap failed; no session was opened")
         if setup_script is None and binding.session_defaults.HasField("setup_script"):
