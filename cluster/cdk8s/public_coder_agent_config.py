@@ -89,6 +89,7 @@ _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gate
 # Also the Matrix channel's `proxy` in config(): the same proxy performs Matrix login-password
 # substitution.
 _EGRESS_PROXY = public_coder_egress.PROXY_URL
+_NO_PROXY = "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
 _KUBECONFIG_CONFIG_MAP_NAME = "kubeconfig"
 # Rendered by the kustomization.yaml's configMapGenerator.
 _SSH_CONFIG_MAP_NAME = "public-coder-agent-ssh"
@@ -453,11 +454,15 @@ def _openclaw_container() -> k8s.Container:
             _env("NODE_USE_ENV_PROXY", "1"),
             _env("HTTP_PROXY", _EGRESS_PROXY),
             _env("HTTPS_PROXY", _EGRESS_PROXY),
+            # curl deliberately ignores uppercase HTTP_PROXY for plain HTTP (e.g. ClickHouse).
+            _env("http_proxy", _EGRESS_PROXY),
+            _env("https_proxy", _EGRESS_PROXY),
             # LiteLLM is in-cluster and must not go through the proxy. Do not bypass every
             # Service DNS name or the cluster Service CIDR: ClickHouse is intentionally sent
             # through Agentplane so its password placeholder cannot reach the ClusterIP service
             # unchanged.
-            _env("NO_PROXY", "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"),
+            _env("NO_PROXY", _NO_PROXY),
+            _env("no_proxy", _NO_PROXY),
             # The proxy terminates TLS, so its root must be trusted. The proxy's trust Bundle is
             # mounted over the system trust store below, which covers every OpenSSL and GnuTLS
             # client at once -- so no per-tool variables are needed.

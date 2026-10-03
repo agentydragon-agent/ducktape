@@ -250,8 +250,11 @@ def test_openclaw_uses_relay_without_receiving_its_token(app_objects: list[dict[
         "MATRIX_PASSWORD": "agentplane-credential-public-coder-matrix",
         "HTTP_PROXY": "http://127.0.0.1:3128",
         "HTTPS_PROXY": "http://127.0.0.1:3128",
+        "http_proxy": "http://127.0.0.1:3128",
+        "https_proxy": "http://127.0.0.1:3128",
     }.items()
     assert public_coder_agent_config.config()["channels"]["matrix"]["proxy"] == env["HTTPS_PROXY"]
+    assert env["no_proxy"] == env["NO_PROXY"]
 
 
 def test_openclaw_cannot_dial_iron_or_clickhouse_directly(app_objects: list[dict[str, Any]]) -> None:
