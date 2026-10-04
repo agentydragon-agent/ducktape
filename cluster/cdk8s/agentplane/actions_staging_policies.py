@@ -437,7 +437,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # runs, though the MCP arguments do not expose a run's originating event for PR-only filtering.
     _policy_set(
         scope,
-        "actionpolicyset-ducktape-pr-failed-jobs",
+        "ducktape-pr-failed-jobs",
         metadata=ApiObjectMetadata(
             name="ducktape-pr-failed-jobs",
             namespace=_NAMESPACE,
