@@ -156,6 +156,7 @@ def matches(transaction: Transaction, condition: NamePrefix | NameContains | Cat
 def matching_rule(transaction: Transaction, rules: list[Rule]) -> Rule | None:
     return next((rule for rule in rules if matches(transaction, rule.condition)), None)
 
+
 def calculate(
     policy: AllowancePolicy, transactions: list[Transaction], *, now: datetime, last_synced_at: datetime | None
 ) -> AllowanceView:
