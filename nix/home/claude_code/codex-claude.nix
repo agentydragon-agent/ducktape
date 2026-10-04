@@ -8,7 +8,8 @@
 { pkgs, config }:
 let
   inherit (pkgs) lib;
-  models = (lib.importJSON ../../../cluster/generated/model-clients/claude-wrappers.json).codex-claude;
+  models =
+    (lib.importJSON ../../../cluster/generated/model-clients/claude-wrappers.json).codex-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "codex-claude" {
   baseUrl = "https://litellm.allegedly.works";

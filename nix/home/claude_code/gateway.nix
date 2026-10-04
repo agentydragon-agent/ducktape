@@ -28,9 +28,9 @@ let
   # Gateway model slugs (e.g. `chatgpt/ant-messages/gpt-5.6-luna`) are not names Claude Code
   # recognizes, so without maxContextTokens it assumes a 200k window and auto-compacts against
   # it — clipping a larger real window or (for Gemini's ~1M) discarding most of it. Set
-  # maxContextTokens to the model's real window so compaction math is correct; the value's SSOT
-  # is cluster/cdk8s/model_rosters.py (CODEX_CONTEXT_WINDOW / GEMINI_CONTEXT_WINDOW) —
-  # keep them in sync. maxOutputTokens caps output below the model's real max.
+  # maxContextTokens explicitly so compaction math uses the selected route's window.
+  # The wrappers consume generated model settings from cluster/generated/model-clients;
+  # explicit client overrides remain distinct from the account's published limits.
   #
   # gatewayDiscovery and the `[1m]` suffix convention (see litellm-claude.nix) don't compose.
   # `[1m]` is stripped from the outbound `model:` field before the request goes out — it

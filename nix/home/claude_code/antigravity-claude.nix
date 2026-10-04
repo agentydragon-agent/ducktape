@@ -20,7 +20,8 @@
 { pkgs, config }:
 let
   inherit (pkgs) lib;
-  models = (lib.importJSON ../../../cluster/generated/model-clients/claude-wrappers.json).antigravity-claude;
+  models =
+    (lib.importJSON ../../../cluster/generated/model-clients/claude-wrappers.json).antigravity-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "antigravity-claude" {
   baseUrl = "https://litellm.allegedly.works";

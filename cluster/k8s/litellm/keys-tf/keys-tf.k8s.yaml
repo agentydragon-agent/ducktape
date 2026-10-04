@@ -150,3 +150,13 @@ spec:
           - tana/ant-messages/claude-sonnet-4-6
           - tana/ant-messages/claude-opus-4-6
           - tana/ant-messages/claude-haiku-4-5
+    - name: model_fallbacks
+      value:
+        antigravity_client_models:
+          - antigravity/ant-messages/gemini-3.5-flash-lite
+        codex_client_models:
+          - chatgpt/ant-messages/gpt-6-luna
+        gemini_client_models:
+          - google/goog-generate/gemini-3.5-flash-lite
+        tana_client_models:
+          - tana/ant-messages/claude-haiku-4-5
