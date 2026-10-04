@@ -28,7 +28,7 @@ from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.app.action_federation import ExchangeFederationSettings
 from cluster.cdk8s import cilium, external_creds, ha_mcp, node_scheduling, public_coder_egress
-from cluster.cdk8s.agentplane import actions, command_sandbox, staging_config
+from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_NAMESPACE, EgressCredentials, credential_external_secret
@@ -46,16 +46,18 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
 
 _NAMESPACE = "agentplane-staging"
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
+_NOTIFICATIONS_HOSTNAME = "agentplane-notifications-staging.allegedly.works"
 _AUTHENTIK = "https://auth.allegedly.works"
 _ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-staging-actions"
 # The push services web-push subscriptions may target: both the Action Service's own
@@ -366,6 +368,23 @@ ENV = Environment(
 
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
+    notification_service = notifications.service(_NAMESPACE)
+    https_route(
+        chart,
+        "notifications-github-webhook-route",
+        metadata=ApiObjectMetadata(name="agentplane-notifications-github-webhook", namespace=_NAMESPACE),
+        hostnames=[_NOTIFICATIONS_HOSTNAME],
+        backend=notification_service,
+        paths=["/v1/webhooks/github"],
+    )
+    # Add to the workload-only policy without opening the testing environment to the Gateway.
+    NetworkPolicy(
+        chart,
+        "notifications-github-webhook-policy",
+        metadata=ApiObjectMetadata(name="agentplane-notifications-github-webhook", namespace=_NAMESPACE),
+        endpoint_selector=notification_service.pods.selector,
+        ingress=[IngressRule.from_gateway(notification_service.pod_port)],
+    )
     command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
     reader = ServiceAccount(
         chart,

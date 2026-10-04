@@ -68,7 +68,7 @@ callback URLs. GitHub Apps support
 [multiple callback URLs](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-user-authorization-callback-url).
 Changing this deployment's `redirect_uri` does not update the registration.
 
-## Staging GitHub App (planned)
+## Staging GitHub App
 
 A new `agentplane-staging` GitHub App will serve the staging environment, initially for
 PR, branch, and commit notifications. It is separate from the existing MCP OAuth App
@@ -81,6 +81,33 @@ The public App ID belongs in the notification service YAML settings, not a Secre
 The operator will supply `github-app.sops.yaml` later, containing only `private-key` and
 `webhook-secret`. Wire these via Secret-backed `AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY`
 and `AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET` environment variables through the chart,
-and configure direct
-notification-service HTTPS ingress. No placeholder Secret is deployed, and existing
+in a follow-up enabling the source. No placeholder Secret is deployed, and existing
 MCP credentials/callbacks are unchanged.
+
+### Webhook ingress
+
+The staging chart routes this exact path directly to the notification service:
+
+```text
+https://agentplane-notifications-staging.allegedly.works/v1/webhooks/github
+```
+
+The shared Gateway uses the existing `*.allegedly.works` DNS record and wildcard TLS
+certificate; no per-host DNS record or certificate is needed. The staging-only Cilium
+policy admits the Gateway identity to the notification service port. The HTTPRoute
+exposes no subscription, inbox, discovery, docs, or health endpoints. Webhooks use
+GitHub signature verification, not operator SSO or workload authentication.
+
+The GitHub source remains disabled (`github: null`) until its App ID and secrets are
+configured. Until then the webhook endpoint returns HTTP 404 (`GitHub provider is disabled`). Keep the App's webhook
+inactive until configuration is deployed, then set the URL above and matching signing
+secret, leave SSL verification enabled, and activate delivery.
+
+After Flux applies the ingress, check the HTTPRoute's `Accepted` and `ResolvedRefs`
+conditions, TLS verification, and a POST returning the disabled-source 404 response. Once enabled, a POST with a
+valid `X-GitHub-Delivery` UUID and `X-GitHub-Event: ping` but no signature must return
+401. Confirm private paths such as `/v1/inboxes` and
+`/v1/subscriptions` return Gateway 404s. Once enabled, test a real signed GitHub delivery
+through durable receipt, inbox entry, runner notice, read, and explicit acknowledgement.
+Track App enablement and end-to-end verification in
+[ducktape#8956](https://github.com/agentydragon/ducktape/issues/8956).
