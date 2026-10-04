@@ -26,12 +26,14 @@ GitHub Free does not provide enforceable main-branch rules on this private repos
 granting a collaborator or App `Contents: write` access to the upstream would also permit
 direct pushes to main. `Pull requests: write` is not create-only and permits closing PRs.
 An HTTP egress path allowlist cannot distinguish Git branch refs inside a push. The
-existing Agentplane GitHub Actions grant for this repo is read-only, not Git push access.
-Do not request broad upstream write access as a shortcut or claim that a private fork
-is safe without independently verifying read-only upstream access. Until an enforceable
-separation is chosen, the owner manages the SOPS-encrypted private config; provide
-read-only analysis and generic tooling here. Consult the private finance-agent project
-notes for current decisions.
+Agentplane GitHub Actions use the owner-linked GitHub credential: reviewed reads for
+`gaffer-private` currently auto-approve, while write Actions require individual operator
+approval. They can provide approved one-off edits, but not normal Git push/pull. Do not
+request broad upstream write access as a shortcut or claim that a private fork is safe
+without independently verifying read-only upstream access. For now the owner manages
+SOPS-encrypted private config; request write Actions only for specific owner-authorized
+work and follow the approval workflow. Consult private finance-agent project notes for
+current decisions.
 
 Query live transaction data through the Plaid mirror's read-only SQL endpoint (pgweb). First
 check the current egress rules for the exact host, permitted paths, and credential placeholder.
