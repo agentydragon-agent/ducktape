@@ -109,8 +109,13 @@ covering queue/runtime arithmetic and CodeQL contention. Package and tests are u
 ## Durable history and test-cost attribution
 
 The maintained `devinfra/ci/debug/` report remains a current-state summary. In
-addition, append **reviewed** reports to the orphan branch `ci-latency-history` on
-`agentydragon-agent/ducktape`. Its root `index.html` links to immutable
+addition, append **reviewed** reports to the orphan branch `ci-latency-history`.
+The branch currently lives on `agentydragon-agent/ducktape` as a staging home;
+**`agentydragon/ducktape` is its intended canonical home** once the upstream
+orphan ref is established through an explicitly authorized repository process.
+Do not create a second root or reset either history during migration: copy the
+existing tip and preserve its ancestry, then switch new runs to the upstream
+history. Its root `index.html` links to immutable
 `runs/YYYYMMDDTHHMMSSZ-<short-source-sha>/` directories. Each entry contains
 `manifest.json` (full inspected **devel** SHA and UTC observation window),
 `report.md`, `evidence.json`, a standalone viewable `index.html`, and optionally
@@ -119,7 +124,8 @@ not a mirror of `devel`. The initial entry is an explicitly labeled *historical*
 copy of the previously maintained report, not a fresh cdk8s comparison. Read it
 as a baseline for **methodology**, not proof of current performance.
 
-For subsequent runs, fetch the history branch from the bot fork, add a detached
+For subsequent runs, fetch the canonical history branch (currently on the bot
+fork; upstream after migration), add a detached
 worktree at its tip and compare earlier manifests, windows, workload mixes and
 coverage. Collect fresh evidence and read the current workflow/path filters and
 BuildBuddy profiles. Pin the actual inspected devel SHA (do not use a merge SHA,
@@ -136,10 +142,13 @@ python3 "$SKILL/publish.py" --source "$DEVEL_SHA" \
 For the first creation only, use `git switch --orphan ci-latency-history` in a
 *separate* temporary worktree, clear its tracked files and add only the new
 artifacts + `README.md` + root `index.html`. Never orphan/reset an existing
-history ref. On subsequent runs fetch `fork` and work from its tip; before push,
-fetch again and require the remote tip to be an ancestor of the new commit. If
-someone appended first, rebuild from the latest tip rather than force-push.
-Commit on the history branch and push **only to the bot fork**, never upstream.
+history ref. On subsequent runs fetch the canonical ref and work from its tip;
+before publication fetch again and require the remote tip to be an ancestor of
+the new commit. If someone appended first, rebuild from the latest tip rather
+than force-push. For now, commit on the history branch and push **only to the bot
+fork**. Once upstream is established, do not push directly to upstream from this
+agent; hand the reviewed fast-forward update to the authorized upstream process.
+Do not quietly continue appending to the fork after the canonical ref has moved.
 Review the report and diff for credentials, identities, raw logs, payloads and
 personal data before publishing. A history-only update does not need a source PR;
 changes to this skill/script do. GitHub does not serve branch HTML as a hosted
@@ -148,8 +157,10 @@ is deployed.
 
 ### Quantifying who triggered work
 
-The name for allocating a shared cost across overlapping causes is the **Shapley
-value**. `scripts/attribution.py` computes the exact Shapley value for a restricted
+Rank directly measured costs and test-specific **avoidable** costs first:
+removing one trigger may save nothing if another trigger still selects the same
+test. The name for one optional allocation of shared costs across overlapping
+causes is the **Shapley value**. `scripts/attribution.py` computes the exact Shapley value for a restricted
 but useful counterfactual: each **measured additive cost unit** is incurred if
 *any* member of its independently verified `triggers` set is present. For that
 OR game, the exact value is `seconds / number of triggers`, without enumerating
