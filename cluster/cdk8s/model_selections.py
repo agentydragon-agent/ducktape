@@ -26,7 +26,11 @@ from cluster.cdk8s.model_rosters import (
 
 # Keys may admit more routes than a picker offers. In particular, Ollama keys admit
 # both wires, but the picker avoids the native adapter's Codex reasoning-option issue.
-EMBEDDING_ROUTES: tuple[Route | RouteAlias, ...] = (GEMINI_EMBEDDING_ALIAS, *GEMINI_EMBEDDING_ROUTES, OLLAMA_EMBEDDING_ROUTE)
+EMBEDDING_ROUTES: tuple[Route | RouteAlias, ...] = (
+    GEMINI_EMBEDDING_ALIAS,
+    *GEMINI_EMBEDDING_ROUTES,
+    OLLAMA_EMBEDDING_ROUTE,
+)
 CHEAP_EXPERIMENTS_ROUTES = (
     *GEMINI_ROUTES,
     *ANTIGRAVITY_FLASH_LITE_ROUTES,
