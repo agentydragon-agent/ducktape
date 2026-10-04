@@ -213,8 +213,8 @@
       "sha256": "lEZv5Cocm/7QVzVEuJyg2VOUxKvkJMZolmB0Q3efDDs="
     },
     "skill-ci_latency": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-30dbe6614580/ci_latency.skill",
-      "sha256": "MNvmYUWA60OzM3U0/GCds6YXPwIx50P+s2arYrR6bss="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-097a04400fb1/ci_latency.skill",
+      "sha256": "CXoEQA+xUdHJ3os1yb0vUDddp0+WaDQdcszlW4bNDZk="
     },
     "skill-seaweed_operator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-6249a6ee9e7e/seaweed_operator.skill",
@@ -229,8 +229,8 @@
       "sha256": "6yC0MaTqNDzJh7BZ+lx5VH49MTUjhKjF/+Mu2Wt2ggc="
     },
     "agentplane-runner": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-aa9f5b877e72/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
-      "sha256": "qp9bh35yMuum7aV95qtW+6y+EMg/7MjGe1hQU+OiQNE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-68b52a9c808a/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
+      "sha256": "aLUqnICKthTfT+0lLjApEbX9KhBHPMy64xhupd6cqvU="
     },
     "skill-cdk8s_builders": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-7a1104aadfb6/cdk8s_builders.skill",
