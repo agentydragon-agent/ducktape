@@ -520,10 +520,7 @@ async def test_native_ci_references_supply_durable_associations(
     binding = (await github.context(source)).binding
     default_sub = await store.subscribe(PRINCIPAL, subscription(source), binding)
     explicit_sub = await store.subscribe(PRINCIPAL, subscription(explicit, key="explicit"), binding)
-    payload: dict[str, JsonValue] = {
-        "installation": {"id": 11},
-        "repository": {"id": 100, "full_name": "owner/repo"},
-    }
+    payload: dict[str, JsonValue] = {"installation": {"id": 11}, "repository": {"id": 100, "full_name": "owner/repo"}}
     match event:
         case EventName.CHECK_RUN | EventName.CHECK_SUITE:
             payload |= {"action": "completed", event: {"head_sha": NEXT, "pull_requests": [{"number": 7}]}}

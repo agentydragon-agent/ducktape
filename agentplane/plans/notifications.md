@@ -51,7 +51,8 @@ implemented behavior. This file tracks only remaining rollout work and deferred 
 - Consider automatic Action following or a submission convenience flag, backed by durable authorized
   intent and reconciliation rather than a best-effort second request.
 - Consider narrower GitHub repository/event grants instead of shared access to every App installation.
-- Bound raw GitHub receipt retention without breaking replay cursors or delivery-ID deduplication.
+- Share PostgreSQL listener lifecycle code with Actions after the GitHub implementation ships.
+- Bound raw GitHub receipt retention without breaking subscription boundaries, association evidence or delivery-ID deduplication.
 - Additional sources/scopes: personal GitHub Notifications API, issue/repository subjects, workflow-specific
   filters, tags/releases and deployment/environment subscriptions. No promise of complete historical replay.
 - Notification-triggered provisioning/resume, offline-delivery guarantees and wake budgets.
