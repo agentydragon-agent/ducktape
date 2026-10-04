@@ -4,8 +4,8 @@ import pytest_bazel
 
 from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
 from cluster.cdk8s.agentplane.staging_config import (
-    FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
     _FINANCE_AGENT_INSTRUCTIONS,
+    FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
     config,
 )
 

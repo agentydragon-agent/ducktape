@@ -48,7 +48,7 @@ def test_public_route_exposes_protocol_paths_only(
 
 
 def test_gaffer_branch_policy_approves_only_create_branch(
-    agentplane_manifests: dict[str, list[dict[str, Any]]]
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     policy = one(
         doc
