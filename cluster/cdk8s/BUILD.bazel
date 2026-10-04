@@ -1903,8 +1903,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":namespace_access",
-        "//cluster/cdk8s/plaid_mcp:spend",
         "//agentplane/sandbox_service:kubernetes_grants",
+        "//cluster/cdk8s/plaid_mcp:spend",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],

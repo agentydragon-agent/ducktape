@@ -132,9 +132,7 @@ def _deployment(chart: Chart) -> None:
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     # A private delivery channel owns both files; the pod cannot start without the Secret.
-                    volumes=[
-                        k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=PRIVATE_CONFIG.name))
-                    ],
+                    volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=PRIVATE_CONFIG.name))],
                     containers=[
                         k8s.Container(
                             name=_NAME,
@@ -185,9 +183,7 @@ def chart(app: App) -> Chart:
         "finance-config-reader",
         metadata=k8s.ObjectMeta(name=FINANCE_CONFIG_READER, namespace=NAMESPACE),
         rules=[
-            k8s.PolicyRule(
-                api_groups=[""], resources=["secrets"], resource_names=[PRIVATE_CONFIG.name], verbs=["get"]
-            )
+            k8s.PolicyRule(api_groups=[""], resources=["secrets"], resource_names=[PRIVATE_CONFIG.name], verbs=["get"])
         ],
     )
     _web_oidc_credentials(chart)
