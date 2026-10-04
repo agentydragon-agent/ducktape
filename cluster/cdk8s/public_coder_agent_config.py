@@ -44,10 +44,8 @@ from cluster.cdk8s.model_rosters import (
     GEMINI_MODELS,
     GPT6_CODEX_MODELS,
     OLLAMA_EMBEDDING_MODEL,
-    AntigravityModel,
     ApiShape,
-    CodexModel,
-    GeminiModel,
+    Model,
     Provider,
     codex_responses_name,
     exposed_name,
@@ -97,22 +95,22 @@ _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
 
 
-def _litellm_model_id(model: CodexModel) -> str:
+def _litellm_model_id(model: Model) -> str:
     return f"litellm/{codex_responses_name(model.id)}"
 
 
-def _codex_model_entry(model: CodexModel) -> dict:
+def _codex_model_entry(model: Model) -> dict:
     return {
         "contextWindow": model.context_window,
         "id": codex_responses_name(model.id),
         "input": ["text", "image"],
-        "maxTokens": model.max_tokens,
+        "maxTokens": model.max_output_tokens,
         "name": f"{model.display_name} (Codex subscription via LiteLLM)",
         "reasoning": True,
     }
 
 
-def _gemini_model_entry(model: GeminiModel) -> dict:
+def _gemini_model_entry(model: Model) -> dict:
     return {
         "contextWindow": GEMINI_CONTEXT_WINDOW,
         "id": exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model.id),
@@ -123,18 +121,18 @@ def _gemini_model_entry(model: GeminiModel) -> dict:
     }
 
 
-# Only the Antigravity models with a known context_window/max_tokens (model_rosters.py
+# Only the Antigravity models with a known context_window/max_output_tokens (model_rosters.py
 # cites the source): gemini-3.1-flash-image and gemini-3.5-flash-lite are left out
 # until that's filled in, rather than guessing.
 _ANTIGRAVITY_OPENCLAW_MODELS = [model for model in ANTIGRAVITY_MODELS if model.context_window is not None]
 
 
-def _antigravity_model_entry(model: AntigravityModel) -> dict:
+def _antigravity_model_entry(model: Model) -> dict:
     return {
         "contextWindow": model.context_window,
         "id": exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model.id),
         "input": ["text", "image"],
-        "maxTokens": model.max_tokens,
+        "maxTokens": model.max_output_tokens,
         "name": f"{model.display_name} (Google Antigravity via LiteLLM)",
         "reasoning": model.reasoning,
     }

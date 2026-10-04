@@ -48,6 +48,7 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.model_selections import TESTING_APP_MODELS
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 
 _NAMESPACE = "agentplane-testing"
@@ -133,6 +134,7 @@ ENV = Environment(
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
     extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
+    model_routes=TESTING_APP_MODELS,
     app_config=testing_config.config(action_federation=_ACTION_FEDERATION),
     db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),

@@ -40,9 +40,8 @@ def _litellm_models() -> dict[str, dict]:
 
 def test_public_coder_agent_catalog_names_only_served_routes() -> None:
     """OpenClaw's bundled LiteLLM provider never queries the proxy's /v1/models, so every
-    catalog id must be a route the proxy serves. Not by construction: the OpenClaw Codex
-    subset and CLIPROXY_MODELS are two rosters, and the catalog derives its names with
-    codex_responses_name() while the proxy derives them through shape_for()."""
+    catalog id must be a route the proxy serves. The OpenClaw projection still uses the
+    transitional roster views; retain this boundary check until it consumes route objects."""
     served = _litellm_models()
     for model in _public_coder_agent_models():
         assert model["id"] in served, f"{model['id']} has no LiteLLM route"
@@ -51,7 +50,8 @@ def test_public_coder_agent_catalog_names_only_served_routes() -> None:
 def test_catalog_limits_leave_room_for_input() -> None:
     # maxTokens is reserved out of the (measured or published) context window.
     for model in OPENCLAW_CODEX_MODELS:
-        assert model.max_tokens < model.context_window, model.id
+        assert model.max_output_tokens is not None and model.context_window is not None
+        assert model.max_output_tokens < model.context_window, model.id
     assert GEMINI_MAX_OUTPUT_TOKENS < GEMINI_CONTEXT_WINDOW
 
 

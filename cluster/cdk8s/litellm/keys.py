@@ -11,127 +11,19 @@ from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.model_rosters import (
-    ANTHROPIC_MODELS,
-    ANTIGRAVITY_MODELS,
-    CLIPROXY_MODELS,
-    GEMINI_EMBEDDING_COMPAT_ALIAS,
-    GEMINI_EMBEDDING_MODELS,
-    GEMINI_MODELS,
-    GPT6_CODEX_MODELS,
-    MISTRAL_MODELS,
-    OLLAMA_CHAT_MODELS,
-    OLLAMA_EMBEDDING_MODEL,
-    TANA_MODELS,
-    ApiShape,
-    Provider,
-    codex_messages_name,
-    codex_responses_name,
-    exposed_name,
-    ollama_chat_variant,
-)
+from cluster.cdk8s.model_rosters import SERVED_ROUTES
+from cluster.cdk8s.model_selections import KEY_MODEL_ROUTES
 from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
-# GPT-6 Codex-subscription models on LiteLLM's Responses and Anthropic Messages surfaces.
-GPT6_OAI_LANE_MODELS = [codex_responses_name(model.id) for model in GPT6_CODEX_MODELS]
-GPT6_CODEX_CLIENT_MODELS = [codex_messages_name(model.id) for model in GPT6_CODEX_MODELS]
-# The same models on the Anthropic Messages surface -- laptop and agent-box Claude Code
-# clients. Codex pod has a separate GPT-6-only key.
-CODEX_CLIENT_MODELS = [codex_messages_name(model) for model in CLIPROXY_MODELS]
-# Claude-subscription models on the Anthropic Messages surface, fronted through
-# CLIProxyAPI's Claude OAuth session -- the laptop litellm-claude wrapper and the
-# agentplane staging session form. A different upstream session on the same pod as the
-# Codex lanes; distinct from the direct-API anthropic-api/ant-messages/* entries.
-CLAUDE_CLIENT_MODELS = [
-    exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
-]
-# Tana-UI models served by the main proxy's in-process Tana provider -- the laptop
-# tana-claude wrapper.
-TANA_CLIENT_MODELS = [exposed_name(Provider.TANA, ApiShape.ANT_MESSAGES, exposed) for exposed, _ in TANA_MODELS]
-# The Gemini chat lineup -- the laptop gemini-claude wrapper and public-coder-agent.
-GEMINI_CLIENT_MODELS = [exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model.id) for model in GEMINI_MODELS]
-# The Antigravity OAuth-session lineup on the Anthropic Messages surface -- the laptop
-# antigravity-claude wrapper, agentplane-staging's Claude harness, and public-coder-agent.
-ANTIGRAVITY_CLIENT_MODELS = [
-    exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model.id) for model in ANTIGRAVITY_MODELS
-]
-# Antigravity's flash-lite tier -- cheap/fast, shared by the cheap-experiments key and
-# agentplane-testing's Claude harness (agentplane/testing_config.py).
-ANTIGRAVITY_CHEAP_CLIENT_MODELS = [
-    exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model)
-    for model in ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite")
-]
-_GEMINI_EMBEDDING_ROUTES = [
-    exposed_name(Provider.GOOGLE, ApiShape.GOOG_EMBED, model) for model in GEMINI_EMBEDDING_MODELS
-]
-# Embeddings for agents whose egress cannot reach api.openai.com: a domain-confined
-# agent has no route to a direct OpenAI Platform key and should not gain one just to
-# embed, so its OpenClaw memory index rides the in-cluster path it already uses for
-# turns.
-EMBEDDING_CLIENT_MODELS = [
-    GEMINI_EMBEDDING_COMPAT_ALIAS,
-    *_GEMINI_EMBEDDING_ROUTES,
-    exposed_name(Provider.OLLAMA, ApiShape.OLM_EMBED, OLLAMA_EMBEDDING_MODEL),
-]
-
-# Both existing LiteLLM chat routes for each local Ollama model, exposed to Agentplane
-# through the environment's own key.
-OLLAMA_CHAT_CLIENT_MODELS = [
-    exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context))
-    for model, _, contexts in OLLAMA_CHAT_MODELS
-    for context in contexts
-    for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
-]
-
-# The one native subscription model per harness the agentplane testing session form
-# offers; the Codex one on both wires, for Claude Code clients on the same key.
-CHEAP_EXPERIMENTS_CLAUDE_MODEL = exposed_name(
-    Provider.ANTHROPIC_API, ApiShape.ANT_MESSAGES, "claude-haiku-4-5-20251001"
-)
-_CHEAP_EXPERIMENTS_CODEX = "gpt-6-luna"
-CHEAP_EXPERIMENTS_CODEX_MODEL = codex_responses_name(_CHEAP_EXPERIMENTS_CODEX)
-# The cheap-experiments key, shared with agents only through an expiring Haku Console
-# Kubernetes grant and standing on the agentplane testing LLM ingress. Intentionally an
-# exact, cheap-model-only set rather than a provider-wide prefix or wildcard: the Gemini
-# chat and embedding lineups, Antigravity's flash-lite tier, the API-key-verified
-# Mistral chat roster, every model/context/protocol variant of the self-hosted Ollama
-# chat models, and the two native subscription models above.
-CHEAP_EXPERIMENTS_MODELS = [
-    *GEMINI_CLIENT_MODELS,
-    *ANTIGRAVITY_CHEAP_CLIENT_MODELS,
-    *_GEMINI_EMBEDDING_ROUTES,
-    *(exposed_name(Provider.MISTRAL, ApiShape.OAI_CHAT, model) for model in MISTRAL_MODELS),
-    *OLLAMA_CHAT_CLIENT_MODELS,
-    CHEAP_EXPERIMENTS_CLAUDE_MODEL,
-    codex_messages_name(_CHEAP_EXPERIMENTS_CODEX),
-    CHEAP_EXPERIMENTS_CODEX_MODEL,
-]
-
-
 def model_allowlists() -> dict[str, list[str]]:
-    """The lanes keyed as main.tf's `var.model_allowlists` reads them."""
-    served = {entry["model_name"] for entry in main_proxy_config()["model_list"]}
-    lanes = {
-        "gpt6_oai_lane_models": GPT6_OAI_LANE_MODELS,
-        "gpt6_codex_client_models": GPT6_CODEX_CLIENT_MODELS,
-        "tana_client_models": TANA_CLIENT_MODELS,
-        "codex_client_models": CODEX_CLIENT_MODELS,
-        "claude_client_models": CLAUDE_CLIENT_MODELS,
-        "embedding_client_models": EMBEDDING_CLIENT_MODELS,
-        "gemini_client_models": GEMINI_CLIENT_MODELS,
-        "antigravity_client_models": ANTIGRAVITY_CLIENT_MODELS,
-        "ollama_chat_client_models": OLLAMA_CHAT_CLIENT_MODELS,
-        "cheap_experiments_models": CHEAP_EXPERIMENTS_MODELS,
-    }
-    for lane, models in lanes.items():
-        unserved = [model for model in models if model not in served]
-        if unserved:
-            raise ValueError(f"{lane=} allowlists models the proxy does not serve: {unserved}")
-    return lanes
+    """Serialize key policy at the Terraform boundary, without rebuilding model IDs."""
+    for lane, routes in KEY_MODEL_ROUTES.items():
+        if unserved := [route.id for route in routes if route not in SERVED_ROUTES]:
+            raise ValueError(f"{lane=} selects unserved routes: {unserved}")
+    return {lane: [route.id for route in routes] for lane, routes in KEY_MODEL_ROUTES.items()}
 
 
 class KeysVars(BaseModel):

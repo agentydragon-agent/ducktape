@@ -8,6 +8,7 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     visibility = [
+        "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/litellm:__pkg__",
         "//cluster/debug/litellm_probe:__pkg__",
     ],
@@ -22,10 +23,10 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
-        ":config",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:terraform",
         "@pypi//cdk8s",
