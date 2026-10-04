@@ -333,9 +333,10 @@ class GitHub:
         return context
 
     async def ingest(self, store: Store, event: str, delivery_id: UUID, signature: str, raw: bytes) -> bool:
-        expected = "sha256=" + hmac.new(
-            self.settings.webhook_secret.get_secret_value().encode(), raw, hashlib.sha256
-        ).hexdigest()
+        expected = (
+            "sha256="
+            + hmac.new(self.settings.webhook_secret.get_secret_value().encode(), raw, hashlib.sha256).hexdigest()
+        )
         if not signature.isascii() or not hmac.compare_digest(expected, signature):
             raise InvalidSignatureError
         if event == "ping":
