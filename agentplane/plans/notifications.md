@@ -57,6 +57,11 @@ Replace the notification source's five-second Action-history polling in a separa
 
 ## Deferred decisions and follow-ups
 
+- Home Assistant entity/event subscriptions:
+  [`HOME_ASSISTANT_NOTIFICATIONS`](task_dag.md#home_assistant_notifications--entity-and-event-subscriptions).
+- Extract genuinely shared source wiring as concrete implementations accumulate, not a speculative
+  framework: [`NOTIFICATION_SOURCE_WIRING`](task_dag.md#notification_source_wiring--extract-shared-wiring-as-sources-accumulate).
+
 - Recurring scheduled/cron notifications with durable scheduling and explicit missed-tick behavior:
   [`CRON_NOTIFICATIONS`](task_dag.md#cron_notifications--scheduled-notifications-for-agents).
 

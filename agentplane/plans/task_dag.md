@@ -72,6 +72,8 @@ flowchart TB
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     NOTIFICATION_DEBOUNCE["In review #8988<br/>configurable runner-notice debounce<br/>then deployed burst acceptance"]:::active
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
+    HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
+    NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
     CRON_NOTIFICATIONS["Unranked future capability<br/>scheduled / cron notifications<br/>durable schedules and missed-tick policy"]:::future
     NOTIFICATION_PRESENTATION["Unranked future capability<br/>structured notification provenance<br/>compact frontend presentation"]:::future
     KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
@@ -889,6 +891,27 @@ Overlap deduplication and a successful first delivery do not prove these cases. 
 webhook visibility and the operator redelivery procedure: GitHub does not automatically retry
 failed requests, and durable recovery starts at receipt commit. Track remaining access/event/fork
 coverage separately in the [notification plan](notifications.md#remaining-live-verification).
+
+### `HOME_ASSISTANT_NOTIFICATIONS` — entity and event subscriptions
+
+**Unranked future source:** let agents follow authorized Home Assistant entity state changes and
+events, using upstream entity IDs/event names and source-owned filters/payloads. Choose the connection,
+credential and subscriber authorization model before implementation; do not expose every entity or
+sensitive attribute merely because the service can read it. Prefer Home Assistant's event stream over
+polling. Define reconnect/current-state reconciliation and missed-event limitations explicitly.
+Acceptance covers a real state/event change through inbox and harness, filtering, reconnect and
+revoked access. Monitoring does not grant control of devices or permission to run automations.
+
+### `NOTIFICATION_SOURCE_WIRING` — extract shared wiring as sources accumulate
+
+**Conditional future refactor, not a prerequisite for new sources:** as Actions, GitHub and further
+sources expose concrete duplication, extract the wiring they genuinely share: source registration
+and schema discovery, lifecycle ownership, stream reconnects, durable scheduling/checkpoints or
+inbox handoff. Keep source-specific webhook verification, authorization, filter semantics, payloads
+and upstream vocabulary with each source. Do not invent a universal filter DSL, unnecessary Protocols
+or a new service before there is demonstrated shared behavior. Preserve meaningful differences
+between webhook, watched-event and scheduled sources; add shared tests only for shared guarantees.
+New sources beyond the candidates below should be driven by concrete agent use cases.
 
 ### `CRON_NOTIFICATIONS` — scheduled notifications for agents
 
