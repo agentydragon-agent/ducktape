@@ -6,8 +6,10 @@ description: Diagnose where recent CI feedback time and compute go across PR typ
 # CI latency analysis
 
 Produce a **recent, representative, evidence-backed CI performance diagnosis**, not a
-single score. Answer: how long does feedback take for different kinds of PRs, where
-does runner time and remote compute go, what blocks the user-visible critical
+single score. Answer: from a new PR commit to **eligible for auto-merge under the current
+rules**, how long does it take for different kinds of PRs? When do each status,
+check result and diagnostic log become available to agents watching PR updates?
+Where do runner time and remote compute go, what blocks the user-visible critical
 path, and what changes offer the best payoff for the least cost/risk? Use the old
 `devinfra/ci/debug/ci_queue_saturation.md` report as a *hypothesis and historical
 example*, not as a conclusion about current CI. Refresh its current-state
@@ -34,7 +36,12 @@ completed/cancelled/superseded state. Sample fast, typical and slow PRs in each
 relevant class rather than choosing only outliers. Record selection criteria and
 sample counts; do not equate all runs with distinct PRs or reruns with new pushes.
 Tie runs, attempts, head SHAs and check results to the *same* PR head when
-estimating feedback latency. If push timestamps or exact head association cannot
+estimating feedback latency. Resolve the *current* upstream ruleset/branch
+requirements and auto-merge eligibility policy; branch/ruleset, required contexts,
+review/code-owner approvals, merge conflicts, draft status, deployment gates and
+synthetic merge/merge-queue behavior may matter. Do not confuse all visible checks
+finishing, required checks succeeding, GitHub reporting mergeability, auto-merge
+being enabled, and the eventual merge itself. If push timestamps or exact head association cannot
 be recovered, say so and present a labeled proxy instead of inventing a precise
 push-to-green percentile. Use a new output directory outside the checkout. `collect.sh` refuses a filtered query
 with 1,000 or more results: split it into smaller windows instead of accepting
@@ -74,6 +81,40 @@ rulesets. An inaccessible endpoint or timeout fails visibly; record the visibili
 limit and retain successful independent evidence. GitHub's legacy branch-protection
 endpoint can return 404 while rulesets still require checks.
 
+## Primary outcome: commit-to-actionable feedback
+
+Measure clocks for **one PR head SHA at a time**, including superseded heads as
+separate/censored observations:
+
+- **Start:** new commit pushed to the PR head, or earliest observed head-change
+  webhook if push timestamp is unavailable (label the proxy). For an existing PR,
+  PR creation time is not a substitute for that head's commit time.
+- **Ready to auto-merge:** earliest *observed* time that all actual policy gates
+  for this SHA are satisfied, including required checks, applicable review and
+  branch/mergeability conditions. If gates are unknown or not met, report
+  pending/blocked/censored with reason, not an invented timestamp. Separate CI
+  gating duration from review/merge-queue/human delay. A merge timestamp alone
+  is not readiness time. Re-read the rulesets and current eligibility behavior,
+  rather than assuming the historical report's required contexts still apply.
+- **Agent-visible signals:** independently record when a run/job starts, the
+  check/status becomes queryable, a terminal result is queryable, the corresponding
+  webhook is accepted/delivered into an agent's subscription inbox, and the agent
+  actually receives or reads it (if observable). Record when the job log and
+  BuildBuddy invocation/target logs become *accessible* to the relevant agent,
+  not merely when a job ends or a log URL is advertised. Measure the observable
+  hop(s) only; webhook creation, delivery, inbox read and harness receipt are
+  distinct clocks. Default PR subscriptions receive `check_run` completions and
+  `status` events, but coverage depends on App installation, subject matching,
+  and delivery health; see `agentplane/notification_service/docs/api.md`. Never
+  infer delivery from GitHub's check timestamp alone.
+
+Show a per-head timeline of these milestones and sample-size/p50/p90 for each
+relevant interval where timestamps exist. Declare polling/sampling resolution,
+clock skew and permission/availability limits. Do not publish raw webhook payloads,
+logs or agent inbox contents into the public history. Use bounded status checks
+when measuring availability; do not generate API request bursts or fabricate an
+agent reception time from an inbox acceptance time.
+
 ## Diagnose end to end (do not stop at a queue chart)
 
 For each representative slow/typical case, construct an annotated timeline from
@@ -108,8 +149,9 @@ where possible; note unknown and overlapping intervals explicitly:
    More concurrency can increase contention elsewhere. State which resource is
    saturated and what independent work was ready but blocked, or say it is unknown.
 
-The report should include (1) a PR-class table with counts, feedback p50/p90,
-unfinished/cancelled counts and definition of the start/stop clock; (2) a
+The report should include (1) a PR-class table with counts, commit-to-auto-merge-
+readiness and agent-feedback p50/p90 (where actually observable), unfinished/
+cancelled counts and definitions of the start/stop clocks; (2) a
 phase-by-phase wall-clock timeline for a few linked cases with unknown intervals;
 (3) runner occupancy and remote action cost in their own units; (4) the longest
 confirmed critical-path contributors, by test/action/step; and (5) a ranked
@@ -166,8 +208,9 @@ items behind actionable fixes unless missing evidence actually blocks the choice
 ## Refresh the artifact
 
 Include the observation window, source commit, sample/coverage limits, PR-class
-feedback distributions, runner and remote-compute breakdowns, representative
-critical-path timelines, current required checks, unknown intervals, and ranked
+feedback and agent-availability distributions, runner and remote-compute
+breakdowns, representative critical-path timelines, current required checks,
+unknown intervals, and ranked
 proposals. Include CodeQL/queued-Bazel overlaps only when current evidence supports
 that diagnosis. Update `ci_latency_evidence.json`
 from `evidence.sh`; review derived evidence before committing. Keep full API payloads,

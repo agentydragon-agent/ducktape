@@ -1,13 +1,9 @@
-import importlib.util
 import unittest
-from pathlib import Path
 
-spec = importlib.util.spec_from_file_location('attribution', Path(__file__).with_name('attribution.py'))
-a = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(a)
-spec2 = importlib.util.spec_from_file_location('publish', Path(__file__).with_name('publish.py'))
-p = importlib.util.module_from_spec(spec2)
-spec2.loader.exec_module(p)
+import pytest_bazel
+
+from devinfra.ci.skills.ci_latency.scripts import attribution as a
+from devinfra.ci.skills.ci_latency.scripts import publish as p
 
 
 class AttributionTests(unittest.TestCase):
@@ -31,4 +27,4 @@ class AttributionTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
+    pytest_bazel.main()

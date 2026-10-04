@@ -1,7 +1,7 @@
 load("@aspect_bazel_lib//lib:jq.bzl", "jq")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
-load("//devinfra/python:defs.bzl", "py_test")
 
 skill_package(
     name = "ci_latency",
@@ -15,7 +15,6 @@ skill_package(
         "scripts/evidence.sh",
         "scripts/inspect.sh",
         "scripts/publish.py",
-        "scripts/test_artifacts.py",
         "scripts/summarize.jq",
     ],
 )
@@ -60,13 +59,20 @@ jq(
     "contention",
 ]]
 
-py_test(
-    name = "test_artifacts",
+py_library(
+    name = "artifact_tools",
     srcs = [
         "scripts/attribution.py",
         "scripts/publish.py",
-        "scripts/test_artifacts.py",
     ],
-    main = "scripts/test_artifacts.py",
-    deps = ["@pypi//pytest_bazel"],
+)
+
+py_test(
+    name = "test_artifacts",
+    srcs = ["test_artifacts.py"],
+    deps = [
+        ":artifact_tools",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
 )
