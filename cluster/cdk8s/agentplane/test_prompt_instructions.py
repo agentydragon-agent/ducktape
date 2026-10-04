@@ -15,7 +15,7 @@ def test_ducktape_pr_instructions_are_shared_once() -> None:
 
 def test_finance_prompt_keeps_private_context_in_checkout() -> None:
     assert "read `README.md` and" in _FINANCE_AGENT_INSTRUCTIONS
-    assert "secrets/coinbase-api-credentials" in _FINANCE_AGENT_INSTRUCTIONS
+    assert "agentplane-staging/coinbase-api-credentials" in _FINANCE_AGENT_INSTRUCTIONS
     assert "api.coinbase.com" in _FINANCE_AGENT_INSTRUCTIONS
 
 
