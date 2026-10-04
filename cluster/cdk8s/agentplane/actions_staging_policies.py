@@ -361,7 +361,7 @@ def add_staging_action_policies(scope: Construct) -> None:
 
     _policy_set(
         scope,
-        "actionpolicyset-github-reads",
+        "github-reads",
         metadata=ApiObjectMetadata(
             name=_GITHUB_READS_SET,
             namespace=_NAMESPACE,
@@ -376,7 +376,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # identity read without widening repository-scoped GitHub sets.
     _policy_set(
         scope,
-        "actionpolicyset-github-identity-reads",
+        "github-identity-reads",
         metadata=ApiObjectMetadata(
             name=GITHUB_IDENTITY_READS_SET,
             namespace=_NAMESPACE,
@@ -392,7 +392,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # can already write.
     _repository_reads(
         scope,
-        "actionpolicyset-public-ducktape-fork-reads",
+        "public-ducktape-fork-reads",
         name=PUBLIC_DUCKTAPE_FORK_READS_SET,
         description="Reviewed GitHub reads scoped to agentydragon-agent/ducktape, the coder Agent's fork.",
         owner="agentydragon-agent",
@@ -400,7 +400,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     )
     _repository_reads(
         scope,
-        "actionpolicyset-public-ducktape-reads",
+        "public-ducktape-reads",
         name=PUBLIC_DUCKTAPE_READS_SET,
         description="Reviewed GitHub reads scoped to agentydragon/ducktape.",
         owner="agentydragon",
@@ -408,7 +408,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     )
     _repository_reads(
         scope,
-        "actionpolicyset-public-gaffer-private-reads",
+        "public-gaffer-private-reads",
         name=PUBLIC_GAFFER_PRIVATE_READS_SET,
         description="Reviewed GitHub reads scoped to the private agentydragon/gaffer-private.",
         owner="agentydragon",
@@ -420,7 +420,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # approving, rather than inferring "public" from the absence of a restriction.
     _policy_set(
         scope,
-        "actionpolicyset-public-github-reads",
+        "public-github-reads",
         metadata=ApiObjectMetadata(
             name=PUBLIC_GITHUB_READS_SET,
             namespace=_NAMESPACE,
@@ -677,7 +677,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # egress and Kubernetes authority, which is why this set is bound per caller and not by default.
     _policy_set(
         scope,
-        "actionpolicyset-sandbox-self",
+        "sandbox-self",
         metadata=ApiObjectMetadata(
             name=_SANDBOX_SET,
             namespace=_NAMESPACE,
@@ -695,7 +695,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # reviewed tool list and exclusions).
     _policy_set(
         scope,
-        "actionpolicyset-home-assistant-reads",
+        "home-assistant-reads",
         metadata=ApiObjectMetadata(
             name=_HOME_ASSISTANT_READS_SET,
             namespace=_NAMESPACE,
@@ -710,7 +710,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # _GOOGLE_CALENDAR_READS_ACTIONS lists above for the reviewed tool lists and exclusions).
     _policy_set(
         scope,
-        "actionpolicyset-gmail-reads",
+        "gmail-reads",
         metadata=ApiObjectMetadata(
             name=_GMAIL_READS_SET,
             namespace=_NAMESPACE,
@@ -722,7 +722,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     )
     _policy_set(
         scope,
-        "actionpolicyset-google-calendar-reads",
+        "google-calendar-reads",
         metadata=ApiObjectMetadata(
             name=_GOOGLE_CALENDAR_READS_SET,
             namespace=_NAMESPACE,
@@ -735,7 +735,7 @@ def add_staging_action_policies(scope: Construct) -> None:
 
     _policy_set(
         scope,
-        "actionpolicyset-tana-reads",
+        "tana-reads",
         metadata=ApiObjectMetadata(
             name=_TANA_READS_SET,
             namespace=_NAMESPACE,
@@ -747,7 +747,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     )
     _policy_set(
         scope,
-        "actionpolicyset-grocy-sf-reads",
+        "grocy-sf-reads",
         metadata=ApiObjectMetadata(
             name=_GROCY_SF_READS_SET,
             namespace=_NAMESPACE,
@@ -764,7 +764,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # on the human path.
     _policy_set(
         scope,
-        "actionpolicyset-ssh-reads",
+        "ssh-reads",
         metadata=ApiObjectMetadata(
             name=SSH_READS_SET,
             namespace=_NAMESPACE,
