@@ -1,4 +1,6 @@
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+load("//haku/console/frontend:vitest.bzl", "haku_vitest_test")
 load("//haku/console/frontend/tool_rendering/screenshot:screenshot_test.bzl", "preview_screenshots")
 
 package(default_visibility = ["//visibility:public"])
@@ -121,11 +123,10 @@ ts_library(
     ],
 )
 
-ts_library(
+haku_vitest_test(
     name = "requests_test",
     srcs = ["requests.test.ts"],
     isolated_typecheck = True,
-    tsconfig = TSCONFIG,
     deps = [
         ":requests",
         "//:node_modules/vitest",
@@ -135,11 +136,10 @@ ts_library(
     ],
 )
 
-ts_library(
+haku_vitest_test(
     name = "responses_test",
     srcs = ["responses.test.ts"],
     isolated_typecheck = True,
-    tsconfig = TSCONFIG,
     deps = [
         ":responses",
         "//:node_modules/vitest",
@@ -157,3 +157,5 @@ preview_screenshots(
         ":preview_harness",
     ],
 )
+
+check_vitest_specs()
