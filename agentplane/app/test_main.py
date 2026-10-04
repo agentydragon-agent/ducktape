@@ -62,6 +62,7 @@ APP_ENVIRONMENT = {
         }
     ),
     "AGENTPLANE_EGRESS_ADMIN_URL": "http://egress.test.invalid:8081",
+    "AGENTPLANE_AGENT_INSTRUCTIONS": "Test platform instructions",
 }
 OIDC_ENVIRONMENT = {
     "AGENTPLANE_OIDC_ISSUER": "https://auth.test.invalid/application/o/test-app/",

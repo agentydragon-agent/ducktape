@@ -105,6 +105,25 @@ def egress_env() -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
     ]
 
 
+def workload_environment(
+    env: Environment,
+    existing: Sequence[SandboxTemplateSpecPodTemplateSpecContainersEnv],
+) -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
+    """Add the deployment's non-secret defaults to one SandboxTemplate workload container."""
+    existing_env_names = {item.name for item in existing}
+    conflicting_env_names = existing_env_names & env.sandbox_workload_env.keys()
+    if conflicting_env_names:
+        names = ", ".join(sorted(conflicting_env_names))
+        raise ValueError(f"sandbox workload environment defaults conflict with container env: {names}")
+    return [
+        *existing,
+        *(
+            SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=value)
+            for name, value in env.sandbox_workload_env.items()
+        ),
+    ]
+
+
 def egress_mounts() -> list[SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts]:
     """Public roots + cluster root + the proxy's interception root, over the image's own bundle at the
     path every client falls back to and as Java's trust store, plus the kubeconfig. A subPath mount
@@ -298,18 +317,6 @@ def pod_spec(
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
     `service_account_name` is the template's own; whoever stamps a Sandbox from it may replace it.
     `workload_volumes` are Pod volumes the workload mounts beyond the egress path's own."""
-    existing_env_names = {item.name for item in workload.env or []}
-    conflicting_env_names = existing_env_names & env.sandbox_workload_env.keys()
-    if conflicting_env_names:
-        names = ", ".join(sorted(conflicting_env_names))
-        raise ValueError(f"sandbox workload environment defaults conflict with container env: {names}")
-    workload.env = [
-        *(workload.env or []),
-        *(
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=value)
-            for name, value in env.sandbox_workload_env.items()
-        ),
-    ]
     return SandboxTemplateSpecPodTemplateSpec(
         # The workload first: with no default-container annotation, the first container is the one
         # `kubectl exec` and the sandbox Actions run a command in.

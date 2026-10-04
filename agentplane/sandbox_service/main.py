@@ -37,9 +37,7 @@ class Settings(BaseSettings):
 
     sandbox_namespace: str = Field(min_length=1)
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
-    agent_instructions: str | None = None
-    agent_egress_api_url: str | None = None
-    agent_actions_service_url: str | None = None
+    agent_instructions: str = Field(min_length=1)
     agent_notifications_service_url: str | None = None
     lifecycle_timeout_s: float = Field(default=300, gt=0)
     default_policies: list[str] = Field(default_factory=list)
@@ -77,8 +75,6 @@ class Settings(BaseSettings):
 async def serve(settings: Settings) -> None:
     platform_instructions = resolved_agent_instructions(
         settings.agent_instructions,
-        egress_api_url=settings.agent_egress_api_url,
-        actions_service_url=settings.agent_actions_service_url,
         notifications_service_url=settings.agent_notifications_service_url,
     )
     configuration = k8s_client.Configuration()

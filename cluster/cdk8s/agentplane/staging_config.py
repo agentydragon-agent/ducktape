@@ -26,6 +26,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     GITHUB_CLONE_POLICY,
     GITHUB_IDENTITY_READS_SET,
     OLLAMA_MODELS,
+    platform_agent_instructions,
     PACKAGES_POLICY,
     PLAID_PGWEB_POLICY,
     SSH_READS_SET,
@@ -67,6 +68,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         harness_claude=[*CLAUDE_CLIENT_MODELS, *ANTIGRAVITY_CLIENT_MODELS, *OLLAMA_MODELS],
         harness_codex=[*GPT6_OAI_LANE_MODELS, *OLLAMA_MODELS],
         thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
+        agent_instructions=platform_agent_instructions(_NAMESPACE),
         action_federation=action_federation,
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         # The "haku" sandbox preset (app_settings.py) exists only here, not in

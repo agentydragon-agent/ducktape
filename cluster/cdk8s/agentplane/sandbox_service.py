@@ -67,8 +67,6 @@ class SandboxService(Construct):
             caller_accounts=frozenset({manager, ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}),
             token_audience=TOKEN_AUDIENCE,
             agent_instructions=env.app_config.agent_instructions,
-            agent_egress_api_url=env.app_config.agent_egress_api_url,
-            agent_actions_service_url=env.app_config.agent_actions_service_url,
             agent_notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
             default_policies=env.app_config.default_policies,
             kubernetes_grants=env.app_config.kubernetes_grants,
