@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import JsonValue
-from sqlalchemy import BigInteger, DateTime, ForeignKey, LargeBinary, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, LargeBinary, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -36,7 +36,10 @@ class Inbox(Base):
 
 class Subscription(Base):
     __tablename__ = "subscription"
-    __table_args__ = (UniqueConstraint("inbox_id", "idempotency_key"),)
+    __table_args__ = (
+        UniqueConstraint("inbox_id", "idempotency_key"),
+        CheckConstraint("creation ? 'source'", name="subscription_creation_source"),
+    )
     id: Mapped[UUID] = mapped_column(primary_key=True)
     inbox_id: Mapped[UUID] = mapped_column(ForeignKey("inbox.id", ondelete="CASCADE"))
     request_id: Mapped[UUID]

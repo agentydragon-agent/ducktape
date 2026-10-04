@@ -4,6 +4,7 @@ exports_files([
     "0001_notifications.py",
     "0002_idempotency_key.py",
     "0003_remove_pause.py",
+    "0004_source_union.py",
 ])
 
 py_library(
@@ -28,4 +29,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0004_source_union",
+    srcs = ["0004_source_union.py"],
+    deps = ["@pypi//alembic"],
 )
