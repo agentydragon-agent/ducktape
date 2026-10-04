@@ -18,6 +18,7 @@ from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import RunnerConfig
+from agentplane.runner.context_window import ContextWindowLookupError
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.initialization import InitializationLog
 from agentplane.runner.journal import Journal
@@ -195,6 +196,15 @@ class Runner:
                 selected = hashlib.sha256(source).hexdigest() if source else None
                 if selected != session.record.setup_script_sha256:
                     raise OpenError(f"session {session_id} exists with a different setup script")
+            if request.HasField("spec") and not session.record.context_window_resolved:
+                try:
+                    session.record.context_window_tokens = await self.config.resolve_context_window(
+                        harness=protocol_pb2.Harness.Value(session.record.harness), model=session.record.model
+                    )
+                except ContextWindowLookupError as error:
+                    raise OpenError(str(error)) from error
+                session.record.context_window_resolved = True
+                self.store.write(session_id, session.record)
         else:
             if not request.HasField("spec"):
                 raise OpenError(f"session {session_id} does not exist and Open carries no spec")
@@ -211,7 +221,15 @@ class Runner:
             source = request.setup_script.encode()
             if len(source) > _MAX_BOOTSTRAP_BYTES:
                 raise OpenError(f"setup_script exceeds {_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
-            record = SessionRecord.from_spec(request.spec, setup_script=request.setup_script)
+            try:
+                context_window_tokens = await self.config.resolve_context_window(
+                    harness=request.spec.harness, model=request.spec.model
+                )
+            except ContextWindowLookupError as error:
+                raise OpenError(str(error)) from error
+            record = SessionRecord.from_spec(
+                request.spec, setup_script=request.setup_script, context_window_tokens=context_window_tokens
+            )
             self.store.write(session_id, record)
             session = await self._load(session_id)
             if record.setup_script_sha256 is not None:

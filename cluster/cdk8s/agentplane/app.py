@@ -77,7 +77,6 @@ from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_bu
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -540,16 +539,6 @@ class RunnerTemplate(Construct):
                         ]
                         if self.buildbuddy_secret
                         else []
-                    ),
-                    # Optional runner-only config. Older runner images ignore this environment
-                    # variable; the updated runner applies it when a model is listed.
-                    SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                        name="AGENTPLANE_MODEL_CONTEXT_WINDOWS",
-                        value=json.dumps(
-                            {route.id: budget for route, budget in RUNNER_CONTEXT_OVERRIDES.items()},
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
                     ),
                     # On the container and not just on the harness children the runner spawns.
                     *sandbox_pod.egress_env(),

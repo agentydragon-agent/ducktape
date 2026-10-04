@@ -123,9 +123,25 @@ py_library(
 )
 
 py_library(
+    name = "context_window",
+    srcs = ["context_window.py"],
+    deps = [
+        "//agentplane/llm_ingress:models",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "config",
     srcs = ["config.py"],
-    deps = [":cgroups"],
+    deps = [
+        ":cgroups",
+        ":context_window",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
 )
 
 py_library(
@@ -202,6 +218,7 @@ py_library(
         ":claude",
         ":codex",
         ":config",
+        ":context_window",
         ":harness_process",
         ":initialization",
         ":journal",
@@ -220,6 +237,7 @@ py_library(
     deps = [
         ":adapter",
         ":config",
+        ":context_window",
         ":harness_process",
         ":journal",
         ":observation",
@@ -458,6 +476,7 @@ py_wheel(
     requires = [
         "aiosqlite",
         "grpcio",
+        "httpx",
         # The generated *_pb2 modules refuse an older runtime than the protoc that wrote them.
         "protobuf>=7.36,<8",
         "pydantic>=2.0",
@@ -491,6 +510,19 @@ py_test(
         "//agentplane/runner/testing:fixtures",
         "@pypi//grpcio",
         "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_context_window",
+    srcs = ["test_context_window.py"],
+    deps = [
+        ":conftest",
+        ":context_window",
+        "//:conftest",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -578,6 +610,7 @@ py_test(
         ":adapter",
         ":config",
         ":conftest",
+        ":context_window",
         ":harness_process",
         ":journal",
         ":session",
@@ -585,6 +618,7 @@ py_test(
         "//:conftest",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -654,12 +688,14 @@ py_test(
         ":client",
         ":config",
         ":conftest",
+        ":context_window",
         ":errors",
         ":service",
         ":store",
         "//:conftest",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

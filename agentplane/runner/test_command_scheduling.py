@@ -8,12 +8,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
+import httpx
 import pytest
 import pytest_bazel
 
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner.adapter import HarnessAdapter
-from agentplane.runner.config import RunnerConfig
+from agentplane.runner.config import CodexLaunch, RunnerConfig
+from agentplane.runner.context_window import HttpContextWindowResolver
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.journal import Journal
 from agentplane.runner.session import Session
@@ -68,6 +70,16 @@ class RunningProcess:
     running = True
 
 
+def context_window_resolver(windows: Mapping[str, int]) -> HttpContextWindowResolver:
+    def respond(request: httpx.Request) -> httpx.Response:
+        model = request.url.params["model"]
+        if window := windows.get(model):
+            return httpx.Response(200, json={"model": model, "context_window_tokens": window})
+        return httpx.Response(404, json={"detail": "no configured context-window override for model"})
+
+    return HttpContextWindowResolver(transport=httpx.MockTransport(respond))
+
+
 @asynccontextmanager
 async def session_with_blocked_adapter(
     tmp_path: Path, *, model_context_windows: Mapping[str, int] | None = None, initial_model: str = "test-model"
@@ -75,8 +87,14 @@ async def session_with_blocked_adapter(
     state_dir = tmp_path / "state"
     store = SessionStore(state_dir / "sessions")
     owner = StateOwner(state_dir)
+    windows = model_context_windows or {}
     record = SessionRecord(
-        harness="HARNESS_CODEX", cwd=str(tmp_path / "workspace"), model=initial_model, reasoning_effort="low"
+        harness="HARNESS_CODEX",
+        cwd=str(tmp_path / "workspace"),
+        model=initial_model,
+        context_window_tokens=windows.get(initial_model),
+        context_window_resolved=True,
+        reasoning_effort="low",
     )
     store.write("scheduling-1", record)
     adapter = BlockingAdapter()
@@ -89,7 +107,11 @@ async def session_with_blocked_adapter(
                 record=record,
                 journal=journal,
                 store=store,
-                config=RunnerConfig(state_dir=state_dir, model_context_windows=model_context_windows or {}),
+                config=RunnerConfig(
+                    state_dir=state_dir,
+                    context_window_resolver=context_window_resolver(windows),
+                    codex=CodexLaunch(binary=Path("/bin/true"), base_url="http://ingress/v1", api_key="test"),
+                ),
                 make_adapter=lambda _session: adapter,
                 state_owner_descriptor=owner.descriptor,
             )

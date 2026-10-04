@@ -34,8 +34,19 @@ The workload bearer is sent only to Kubernetes TokenReview. The LiteLLM virtual 
 the internal LiteLLM hop. Neither credential is logged, placed in errors, returned to callers, or
 mounted into a runner or harness container.
 
+The authenticated `GET /agentplane/model-context-window?model=...` endpoint returns only an explicitly
+configured `context_window_tokens` override. Its route map is generated at deployment time from the
+model roster and mounted as ingress settings; lookups are answered locally and never forwarded to
+LiteLLM. Unknown routes return 404 so runners retain their harness defaults. Context-window changes
+should use a new route ID so retained sessions keep matching their persisted compaction window.
+
 For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
 `AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs each request body and every raw
 response chunk with a per-request ID and chunk number, plus whether the stream completed. This can
 include prompts, reasoning, generated text, and tool arguments; keep it disabled by default and
 restrict access and retention while enabled. Authorization and other request headers are not logged.
+
+Each environment projects selected routes through the explicit runner budget map
+into `LlmIngressProps.model_context_windows`, then `settings.py`'s configuration schema. `models.py` owns the lightweight
+`ModelContextWindow` API contract shared by ingress, runner, and config generation.
+These are configured harness overrides, not a catalog of every known model capacity.

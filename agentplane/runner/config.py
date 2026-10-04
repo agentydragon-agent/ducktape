@@ -6,7 +6,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from agentplane.runner import protocol_pb2
 from agentplane.runner.cgroups import AgentCgroups
+from agentplane.runner.context_window import ContextWindowLookupError, HttpContextWindowResolver
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,10 +42,9 @@ class RunnerConfig:
     # Base environment of every harness child, as --harness-env gave it; native credentials are
     # added per launch. This is not the runner process environment.
     harness_environment: Mapping[str, str] = field(default_factory=dict)
-    # Per-route context windows for harness models with verified non-default limits. These apply to
-    # each harness process selected for that session; model changes across different limits are
-    # refused because neither harness can safely update its compaction window mid-thread.
-    model_context_windows: Mapping[str, int] = field(default_factory=dict)
+    # The deployed LLM ingress owns route context metadata; the runner resolves it on session/model
+    # selection and stores the answer with the retained session record.
+    context_window_resolver: HttpContextWindowResolver = field(default_factory=HttpContextWindowResolver)
     claude: ClaudeLaunch | None = None
     codex: CodexLaunch | None = None
     # VM guests keep app work in a delegated cgroup and run it under a separate unprivileged UID.
@@ -61,3 +62,17 @@ class RunnerConfig:
     # reaches this boundary it appends DebugCheckpoint and waits to be killed by the test; a
     # replacement runner sees that persisted event and proceeds normally.
     test_debug_checkpoint: DebugCheckpoint | None = None
+
+    async def resolve_context_window(self, *, harness: int, model: str) -> int | None:
+        """Resolve a route using the selected harness's proxy endpoint and workload credential."""
+        if harness == protocol_pb2.HARNESS_CLAUDE:
+            if self.claude is None:
+                raise ContextWindowLookupError("Claude is not configured on this runner")
+            base_url, token = self.claude.base_url, self.claude.auth_token
+        elif harness == protocol_pb2.HARNESS_CODEX:
+            if self.codex is None:
+                raise ContextWindowLookupError("Codex is not configured on this runner")
+            base_url, token = self.codex.base_url, self.codex.api_key
+        else:
+            raise ContextWindowLookupError("unsupported harness for model context lookup")
+        return await self.context_window_resolver.resolve(base_url=base_url, token=token, model=model)

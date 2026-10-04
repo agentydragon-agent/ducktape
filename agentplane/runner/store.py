@@ -84,6 +84,9 @@ class SessionRecord(BaseModel):
     harness: str = Field(description="Harness enum name, e.g. HARNESS_CLAUDE")
     cwd: str
     model: str
+    # Resolved from the LLM ingress when this route was selected; None means the harness default.
+    context_window_tokens: int | None = Field(default=None, gt=0)
+    context_window_resolved: bool = False
     reasoning_effort: str
     instructions: str = Field(default="", description="SessionSpec.instructions; empty for a session without any")
     setup_script_sha256: str | None = Field(
@@ -97,11 +100,15 @@ class SessionRecord(BaseModel):
     )
 
     @classmethod
-    def from_spec(cls, spec: protocol_pb2.SessionSpec, *, setup_script: str = "") -> SessionRecord:
+    def from_spec(
+        cls, spec: protocol_pb2.SessionSpec, *, setup_script: str = "", context_window_tokens: int | None = None
+    ) -> SessionRecord:
         return cls(
             harness=protocol_pb2.Harness.Name(spec.harness),
             cwd=spec.cwd,
             model=spec.model,
+            context_window_tokens=context_window_tokens,
+            context_window_resolved=True,
             reasoning_effort=spec.reasoning_effort,
             instructions=spec.instructions,
             setup_script_sha256=hashlib.sha256(setup_script.encode()).hexdigest() if setup_script else None,
