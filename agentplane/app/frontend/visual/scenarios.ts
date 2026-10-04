@@ -74,8 +74,12 @@ export interface Scenario extends ScenarioOptions {
   openMoreMenu?: boolean;
   /** Open the tool-call run once it mounts, then the reasoning step folded inside it. */
   openReasoning?: boolean;
-  /** Open the tool-call run once it mounts, then the tool call's Arguments and Output inside it. */
+  /** Open the folded tool-call run once it mounts, leaving the lines inside it as they are. */
+  openRun?: boolean;
+  /** Open the tool-call run once it mounts, then each tool call's line inside it. */
   openToolPayloads?: boolean;
+  /** Shell tool calls as Claude and Codex record them, with a script and an output past their caps. */
+  shellCalls?: boolean;
   /** Click the Evidence icon of the row at this thread anchor once it mounts: which rows show
    * their evidence is not in the URL. */
   openEvidence?: string;
@@ -744,7 +748,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-reasoning",
     openReasoning: true,
     longReasoningPreview: true,
-    readySelectors: ["details.agentplane-reasoning-details[open] > .agentplane-markdown"],
+    readySelectors: ["details.agentplane-step-details[open] > .agentplane-markdown"],
   },
   session_reasoning_phone: {
     element: "#app",
@@ -753,7 +757,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-reasoning-phone",
     openReasoning: true,
     longReasoningPreview: true,
-    readySelectors: ["details.agentplane-reasoning-details[open] > .agentplane-markdown"],
+    readySelectors: ["details.agentplane-step-details[open] > .agentplane-markdown"],
   },
   // A fenced code block in a registered language, syntax-highlighted in prose the way tool-call
   // Arguments/Output already are -- distinct from session_tool_payloads below, which is the
@@ -775,7 +779,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 700 },
     outputName: "session-standalone-reasoning",
     standaloneReasoning: true,
-    readySelectors: ['[data-thread-anchor="20"] .agentplane-reasoning-preview .agentplane-markdown--single-line'],
+    readySelectors: ['[data-thread-anchor="20"] .agentplane-step-preview .agentplane-markdown--single-line'],
   },
   session_standalone_reasoning_preview: {
     element: "#app",
@@ -784,7 +788,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "session-standalone-reasoning-preview",
     standaloneReasoning: true,
     longReasoningPreview: true,
-    readySelectors: ['[data-thread-anchor="20"] details.agentplane-reasoning-details'],
+    readySelectors: ['[data-thread-anchor="20"] details.agentplane-step-details'],
   },
   // The same standalone reasoning step, opened: now it gets the card chrome (padding, border) the
   // collapsed row above deliberately lacks.
@@ -796,7 +800,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     standaloneReasoning: true,
     longReasoningPreview: true,
     openReasoning: true,
-    readySelectors: ['[data-thread-anchor="20"] details.agentplane-reasoning-details[open] > .agentplane-markdown'],
+    readySelectors: ['[data-thread-anchor="20"] details.agentplane-step-details[open] > .agentplane-markdown'],
   },
   // JSON arguments highlighted, and a non-JSON output in the same code block, uninterpreted. The
   // history follows its bottom, so the viewports are tall enough to keep the tool call, and the
@@ -807,7 +811,10 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1300 },
     outputName: "session-tool-payloads",
     openToolPayloads: true,
-    readySelectors: [".agentplane-code-block .cm-content", "details[open] + details[open] .agentplane-code-block"],
+    readySelectors: [
+      ".agentplane-code-block .cm-content",
+      "details.agentplane-step-details[open] .agentplane-code-block",
+    ],
   },
   session_tool_payloads_phone: {
     element: "#app",
@@ -815,7 +822,58 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { ...PHONE, height: 1500 },
     outputName: "session-tool-payloads-phone",
     openToolPayloads: true,
-    readySelectors: [".agentplane-code-block .cm-content", "details[open] + details[open] .agentplane-code-block"],
+    readySelectors: [
+      ".agentplane-code-block .cm-content",
+      "details.agentplane-step-details[open] .agentplane-code-block",
+    ],
+  },
+  // Shell tool calls as one line each: the model's description for Claude's Bash, the script
+  // without its `bash -lc` wrapper for Codex, and a call still streaming its arguments.
+  session_shell_calls: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 700 },
+    outputName: "session-shell-calls",
+    shellCalls: true,
+    openRun: true,
+    readySelectors: ["details.agentplane-step-details .agentplane-step-preview"],
+    captureViewport: true,
+  },
+  session_shell_calls_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    outputName: "session-shell-calls-phone",
+    shellCalls: true,
+    openRun: true,
+    readySelectors: ["details.agentplane-step-details .agentplane-step-preview"],
+    captureViewport: true,
+  },
+  // The same calls opened: the command as highlighted shell and its output, each capped in height
+  // with its clipped bottom to click for the rest.
+  session_shell_calls_open: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 1700 },
+    outputName: "session-shell-calls-open",
+    shellCalls: true,
+    openToolPayloads: true,
+    readySelectors: [
+      '[data-clamped="true"]',
+      "details.agentplane-step-details[open] .agentplane-code-block .cm-content",
+    ],
+  },
+  session_shell_calls_open_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { ...PHONE, height: 2400 },
+    outputName: "session-shell-calls-open-phone",
+    shellCalls: true,
+    openToolPayloads: true,
+    readySelectors: [
+      '[data-clamped="true"]',
+      "details.agentplane-step-details[open] .agentplane-code-block .cm-content",
+    ],
   },
   // A row's evidence opened from its corner icon: on the user bubble, the one card with no header
   // row to hold the icon, and at phone width in the last reply's header row.
