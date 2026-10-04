@@ -26,10 +26,10 @@ a field a harness adds sends every such call to the JSON view while the tests st
   per-thread menu, not one merged control, even though both would share the dots-icon pattern.
 - **Reasoning disclosure toggle with nothing behind it**: the reasoning branch of `EntityCard`'s body
   (`threads/thread_cards.tsx`) wraps a reasoning item's text in `LazyBody`'s `RetainedDisclosure` -- a
-  `<details>` (`threads/retained_disclosures.tsx`) whose payload isn't fetched until expanded -- whenever `entity.textRef`
-  is non-null. A reasoning item can still resolve to empty text once that payload loads, and by then the toggle
+  `<details>` (`threads/retained_disclosures.tsx`) whose body is shown only once expanded, though the window reads it
+  ahead -- whenever `entity.textRef` is non-null. A reasoning item can still resolve to empty text once that payload loads, and by then the toggle
   has already invited a click for nothing. Unlike the `textRef === null` case just below it (plain dimmed
-  "Reasoning" text, no toggle at all), there's no cheap signal to suppress the toggle before the lazy fetch
+  "Reasoning" text, no toggle at all), there's no cheap signal to suppress the toggle before the fetch
   resolves; worth figuring out one (e.g. from the fold/view layer) rather than always rendering it optimistically.
 - **Collapsing a long expanded block requires scrolling back up to its toggle**: `RetainedDisclosure`
   (`threads/retained_disclosures.tsx`) is a plain `<details>`/`<summary>` -- opening a long one (a tool call or
@@ -67,3 +67,20 @@ results, and fenced Markdown. It keeps the source text intact and distinguishes 
 from quieter formatting markers. Ordinary Action titles and descriptions still render as plain text, and so do a
 thread tool call's one-line summaries other than a shell command's (the model's description, a
 tool's JSON); decide whether they also need inline markers or an approval-card warning.
+
+## Durable local storage for thread windows
+
+`RetainedThreads` (`threads/thread_store.tsx`) keeps the last few left threads' rows, complete bodies and log
+positions in memory, so it covers switching threads but not a reload or a second tab, which still read every
+row and body again. Consider persisting them in IndexedDB, keyed by thread, projection epoch, owner and
+generation, so a reload only catches up from the saved log position. It needs a size budget with eviction,
+invalidation when the epoch changes, and a decision on whether the proxy's per-user authorization allows
+keeping thread content at rest in the browser.
+
+## Bound reading thread bodies ahead by size
+
+A window reads the bodies of every row it holds (`PayloadShape.readAhead` in `threads/thread_store.tsx`), but a
+payload reference carries `chunk_count` and no byte size, so the only bound on a read ahead is 20 bodies per
+read. A large tool output is read, and kept in memory with its thread's retained window, whether or not it is
+ever opened. Consider putting `content_bytes`, which the payload manifest already stores, on the reference so the
+client can leave bodies past a size to be read when shown, and a memory budget across the retained threads.
