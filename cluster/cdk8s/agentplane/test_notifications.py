@@ -58,9 +58,11 @@ def test_github_secrets_are_server_only_and_not_in_yaml(
 ) -> None:
     documents = agentplane_manifests[namespace]
     config = one(
-        doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{notifications.NAME}-settings"
+        doc
+        for doc in documents
+        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{notifications.NAME}-settings"
     )
-    github = yaml.safe_load(config["data"]["settings.yaml"])["github"]
+    github = yaml.safe_load(config["data"]["settings.yaml"]).get("github")
     pod = one(
         doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == notifications.NAME
     )["spec"]["template"]["spec"]
@@ -80,7 +82,10 @@ def test_github_secrets_are_server_only_and_not_in_yaml(
         reference = variables[field]["valueFrom"]["secretKeyRef"]
         assert reference["key"] == key
         assert not reference.get("optional", False)
-    assert variables["PRIVATE_KEY"]["valueFrom"]["secretKeyRef"]["name"] == variables["WEBHOOK_SECRET"]["valueFrom"]["secretKeyRef"]["name"]
+    assert (
+        variables["PRIVATE_KEY"]["valueFrom"]["secretKeyRef"]["name"]
+        == variables["WEBHOOK_SECRET"]["valueFrom"]["secretKeyRef"]["name"]
+    )
 
 
 if __name__ == "__main__":
