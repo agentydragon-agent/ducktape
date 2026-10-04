@@ -83,6 +83,17 @@ def test_carry_windows_and_early_pace():
     assert fast.estimated_exhaustion_at == START + (datetime(2026, 2, 1, tzinfo=UTC) - START) * (3 / 7)
 
 
+def test_trailing_windows_include_exactly_seven_and_thirty_calendar_days():
+    now = datetime(2026, 3, 2, tzinfo=UTC)
+    result = view(
+        [row("2026-02-23", 10), row("2026-02-24", 20), row("2026-01-31", 30), row("2026-02-01", 40)],
+        when=now,
+    )
+    assert result.windows_minor_units is not None
+    assert result.windows_minor_units.trailing_7_days == 2_000
+    assert result.windows_minor_units.trailing_30_days == 6_000
+
+
 def test_pending_posted_transfer_and_unmatched_refund():
     rows = [
         row("2026-01-31", 20, pending=True, transaction_id="pending"),

@@ -211,13 +211,13 @@ def calculate(
         current_credit_cycle=sum(p.minor_units for p in included if p.transaction.date >= cycle_start),
         calendar_month=sum(p.minor_units for p in included if p.transaction.date >= now.date().replace(day=1)),
         year_to_date=sum(p.minor_units for p in included if p.transaction.date >= date(now.year, 1, 1)),
-        trailing_7_days=sum(p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=7)).date()),
+        trailing_7_days=sum(p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=6)).date()),
         trailing_30_days=sum(
-            p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=30)).date()
+            p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=29)).date()
         ),
     )
     trailing_positive = sum(
-        max(0, p.minor_units) for p in included if p.transaction.date >= (now - timedelta(days=7)).date()
+        max(0, p.minor_units) for p in included if p.transaction.date >= (now - timedelta(days=6)).date()
     )
     daily = trailing_positive // max(1, min(7, (now.date() - start.date()).days + 1))
     available = credits * policy.monthly_minor_units - posted - pending
