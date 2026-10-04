@@ -13,16 +13,11 @@ from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
-from cluster.cdk8s.agentplane.model_display_names import display_name
-from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
+from cluster.cdk8s.model_rosters import OLLAMA_OPENAI_ROUTES, Route
+from cluster.cdk8s.model_selections import HarnessRoutes
 
-# Offer one route per local model/context, avoiding the native adapter's
-# incompatible handling of Codex's reasoning options.
-OLLAMA_MODELS = [
-    exposed_name(Provider.OLLAMA, ApiShape.OAI_CHAT, ollama_chat_variant(model, context))
-    for model, _, contexts in OLLAMA_CHAT_MODELS
-    for context in contexts
-]
+# Transitional export for the live acceptance test until the visibility PR lands.
+OLLAMA_MODELS = [route.id for route in OLLAMA_OPENAI_ROUTES]
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 _THREAD_PRESET_HAKU_CLAUDE = "haku-claude"
@@ -63,40 +58,30 @@ _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(
 _HAKU_THREAD_SETUP = Path(__file__).with_name("haku_thread_setup.sh").read_text(encoding="utf-8")
 
 
-def reasoning_efforts(model: str) -> list[str]:
-    """Documented reasoning effort values for the configured direct Anthropic/OpenAI routes."""
-    if model.startswith(("anthropic-max20/ant-messages/", "antigravity/ant-messages/claude-")):
-        return ["low", "medium", "high", "max"]
-    if model.startswith("chatgpt/oai-responses/gpt-"):
-        return ["minimal", "low", "medium", "high", "xhigh"]
-    # Other providers/routes in this roster do not expose these reasoning effort parameters.
-    return []
-
-
 def settings(
     *,
     namespace: str,
-    harness_claude: list[str],
-    harness_codex: list[str],
-    thread_preset_codex_model: str,
+    models: HarnessRoutes,
+    thread_preset_codex_model: Route,
     action_federation: ActionFederationSettings | None = None,
     action_policy_sets: list[str] | None = None,
-    haku_preset_model: str | None = None,
+    haku_preset_model: Route | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
     kubernetes_binding_cleanup_namespaces: list[str] | None = None,
     kubernetes_cluster_binding_cleanup: bool = False,
 ) -> AppSettingsConfig:
-    # A model both harnesses accept (e.g. a local Ollama route) names its display name once,
-    # regardless of how many harness lists reference it. dict.fromkeys dedupes while keeping
-    # each model's first-seen order.
-    all_models = dict.fromkeys((*harness_claude, *harness_codex))
     return AppSettingsConfig(
         models=ModelCatalog(
             models=[
-                ModelOption(model=model, display_name=display_name(model), reasoning_efforts=reasoning_efforts(model))
-                for model in all_models
+                ModelOption(
+                    model=route.id, display_name=route.display_name, reasoning_efforts=list(route.reasoning_efforts)
+                )
+                for route in models.all
             ],
-            harnesses={Harness.CLAUDE: harness_claude, Harness.CODEX: harness_codex},
+            harnesses={
+                Harness.CLAUDE: [route.id for route in models.claude],
+                Harness.CODEX: [route.id for route in models.codex],
+            },
         ),
         kubernetes_grants=kubernetes_grants if kubernetes_grants is not None else {},
         **(
@@ -112,7 +97,7 @@ def settings(
             _THREAD_PRESET_PUBLIC_CODER_CODEX: ThreadPreset(
                 title="Public coder / Codex",
                 harness=Harness.CODEX,
-                model=thread_preset_codex_model,
+                model=thread_preset_codex_model.id,
                 cwd="/state/workspaces/{session_id}",
                 reasoning_effort="medium",
                 instructions=_PUBLIC_CODER_INSTRUCTIONS,
@@ -122,7 +107,7 @@ def settings(
                     _THREAD_PRESET_HAKU_CLAUDE: ThreadPreset(
                         title="Haku",
                         harness=Harness.CLAUDE,
-                        model=haku_preset_model,
+                        model=haku_preset_model.id,
                         cwd="/state/workspaces/{session_id}/haku-state",
                         reasoning_effort="medium",
                         # Keep Haku's identity and run-procedure pointer aligned with its other

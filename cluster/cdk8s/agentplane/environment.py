@@ -15,6 +15,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from agentplane.action_service.main import ActionServiceDeploymentSettings
 from agentplane.app.main import AppSettingsConfig
+from cluster.cdk8s.model_selections import HarnessRoutes
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,8 @@ class Environment:
     replicas: ReplicaProfile
     # The ConfigMap-authored portion of agentplane/app/main.py's `Settings`.
     app_config: AppSettingsConfig
+    # Shared source for app settings and the follow-up ingress metadata projection.
+    model_routes: HarnessRoutes
     db: DbProps
     llm_ingress: LlmIngressProps
     egress: EgressProps

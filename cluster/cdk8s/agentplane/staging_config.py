@@ -25,15 +25,14 @@ from cluster.cdk8s.agentplane.app_settings import (
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
     GITHUB_IDENTITY_READS_SET,
-    OLLAMA_MODELS,
     PACKAGES_POLICY,
     PLAID_PGWEB_POLICY,
     SSH_READS_SET,
     settings,
 )
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
-from cluster.cdk8s.litellm.keys import ANTIGRAVITY_CLIENT_MODELS, CLAUDE_CLIENT_MODELS, GPT6_OAI_LANE_MODELS
-from cluster.cdk8s.model_rosters import ApiShape, Provider, codex_responses_name, exposed_name
+from cluster.cdk8s.model_rosters import GPT6_LUNA_RESPONSES, SONNET_SUBSCRIPTION
+from cluster.cdk8s.model_selections import STAGING_APP_MODELS
 
 _NAMESPACE = "agentplane-staging"
 _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
@@ -64,15 +63,14 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         namespace=_NAMESPACE,
         # The staging key admits GPT-6 subscription routes, the full Antigravity lineup,
         # and local Ollama chat routes.
-        harness_claude=[*CLAUDE_CLIENT_MODELS, *ANTIGRAVITY_CLIENT_MODELS, *OLLAMA_MODELS],
-        harness_codex=[*GPT6_OAI_LANE_MODELS, *OLLAMA_MODELS],
-        thread_preset_codex_model=codex_responses_name("gpt-6-luna"),
+        models=STAGING_APP_MODELS,
+        thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         # The "haku" sandbox preset (app_settings.py) exists only here, not in
         # agentplane-testing. `claude-sonnet-5` matches the model in the parked self-hosted
         # configuration at haku/runtime/x/managed_agent/self_hosted/haku.agent.yaml.
-        haku_preset_model=exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, "claude-sonnet-5"),
+        haku_preset_model=SONNET_SUBSCRIPTION,
         kubernetes_grants={
             "sandbox-tool-config": RoleBindingGrant(
                 kind="RoleBinding",
@@ -96,7 +94,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
     cfg.thread_presets[_THREAD_PRESET_FINANCE_AGENT_CODEX] = ThreadPreset(
         title="Finance agent / Codex",
         harness=Harness.CODEX,
-        model=codex_responses_name("gpt-6-luna"),
+        model=GPT6_LUNA_RESPONSES.id,
         cwd="/state/workspaces/{session_id}/finance-agent",
         reasoning_effort="medium",
         instructions=_FINANCE_AGENT_INSTRUCTIONS,

@@ -65,7 +65,7 @@ from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_bu
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, ApiShape, Provider, exposed_name, ollama_chat_variant
+from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -87,7 +87,6 @@ _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
 # SandboxTemplate's own VolumeClaimTemplate -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
-_QWEN_IQ4XS = "qwen3.8-flash-next-iq4xs"
 
 
 def service(namespace: str) -> ServiceRef:
@@ -103,18 +102,12 @@ def oidc_secret(namespace: str) -> SecretRef:
 
 
 def _runner_model_context_windows() -> dict[str, int]:
-    """Context verified for the Agentplane Qwen IQ4_XS routes, on both client wires.
-
-    Route ids and limits come from the LiteLLM model roster; keep this scoped to the Qwen routes
-    rather than assuming every Ollama model has the same window.
-    """
-    return {
-        exposed_name(Provider.OLLAMA, shape, ollama_chat_variant(model, context)): context
-        for model, _, contexts in OLLAMA_CHAT_MODELS
-        if model == _QWEN_IQ4XS
-        for context in contexts
-        for shape in (ApiShape.OAI_CHAT, ApiShape.OLM_CHAT)
-    }
+    windows = {}
+    for route in RUNNER_CONTEXT_OVERRIDES:
+        if route.model.context_window is None:
+            raise ValueError(f"missing runner context override for {route.id}")
+        windows[route.id] = route.model.context_window
+    return windows
 
 
 class App(Construct):

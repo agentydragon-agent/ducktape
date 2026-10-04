@@ -1,17 +1,13 @@
+from dataclasses import replace
+
+import pytest
 import pytest_bazel
 from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
 from cluster.cdk8s import public_coder_agent_config
 from cluster.cdk8s.litellm.config import main_proxy_config
-from cluster.cdk8s.model_rosters import (
-    ANTHROPIC_MODELS,
-    GEMINI_CONTEXT_WINDOW,
-    GEMINI_MAX_OUTPUT_TOKENS,
-    OPENCLAW_CODEX_MODELS,
-    ApiShape,
-    Provider,
-    exposed_name,
-)
+from cluster.cdk8s.model_rosters import ANTHROPIC_API_ROUTES, ANTHROPIC_SUBSCRIPTION_ROUTES, ANTIGRAVITY_ROUTES, Model
+from cluster.cdk8s.model_selections import PUBLIC_CODER_MODELS
 from cluster.cdk8s.parked import haku_openclaw_spike_config
 
 
@@ -40,31 +36,54 @@ def _litellm_models() -> dict[str, dict]:
 
 def test_public_coder_agent_catalog_names_only_served_routes() -> None:
     """OpenClaw's bundled LiteLLM provider never queries the proxy's /v1/models, so every
-    catalog id must be a route the proxy serves. Not by construction: the OpenClaw Codex
-    subset and CLIPROXY_MODELS are two rosters, and the catalog derives its names with
-    codex_responses_name() while the proxy derives them through shape_for()."""
+    catalog id must be a route the proxy serves."""
     served = _litellm_models()
     for model in _public_coder_agent_models():
         assert model["id"] in served, f"{model['id']} has no LiteLLM route"
 
 
-def test_catalog_limits_leave_room_for_input() -> None:
-    # maxTokens is reserved out of the (measured or published) context window.
-    for model in OPENCLAW_CODEX_MODELS:
-        assert model.max_tokens < model.context_window, model.id
-    assert GEMINI_MAX_OUTPUT_TOKENS < GEMINI_CONTEXT_WINDOW
+def test_public_coder_projects_selected_route_metadata() -> None:
+    entries = _public_coder_agent_models()
+    assert [entry["id"] for entry in entries] == [route.id for route in PUBLIC_CODER_MODELS]
+    for entry, route in zip(entries, PUBLIC_CODER_MODELS, strict=True):
+        assert entry["contextWindow"] == route.model.context_window
+        assert entry["maxTokens"] == route.model.max_output_tokens
+        assert entry["reasoning"] == route.model.reasoning
+        assert entry["name"].startswith(f"{route.display_name} (")
+        assert entry["maxTokens"] < entry["contextWindow"]
+
+
+def test_public_coder_omits_unknown_limits() -> None:
+    unknown = [route for route in ANTIGRAVITY_ROUTES if route.model.context_window is None]
+    assert unknown
+    assert not any(route in PUBLIC_CODER_MODELS for route in unknown)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        replace(PUBLIC_CODER_MODELS[0].model, context_window=None),
+        replace(PUBLIC_CODER_MODELS[0].model, max_output_tokens=None),
+        replace(PUBLIC_CODER_MODELS[0].model, reasoning=None),
+    ],
+    ids=["context_window", "max_output_tokens", "reasoning"],
+)
+def test_public_coder_rejects_incomplete_metadata(model: Model) -> None:
+    incomplete = replace(PUBLIC_CODER_MODELS[0], model=model)
+    with pytest.raises(ValueError, match="missing OpenClaw metadata"):
+        public_coder_agent_config._model_entry(incomplete)
 
 
 def test_current_anthropic_roster_matches_haku_openclaw() -> None:
     config, models = _haku_claude_models()
-    expected_refs = {f"anthropic/{model_id}" for model_id in ANTHROPIC_MODELS}
+    expected_refs = {f"anthropic/{route.model.id}" for route in ANTHROPIC_SUBSCRIPTION_ROUTES}
     defaults = config["agents"]["defaults"]
 
     # The shared roster, selectable policy, and configured catalog must describe
     # the same models; the first roster entry is the intentional default.
     assert set(models) == expected_refs
     assert set(defaults["modelPolicy"]["allow"]) == expected_refs
-    assert defaults["model"]["primary"] == f"anthropic/{ANTHROPIC_MODELS[0]}"
+    assert defaults["model"]["primary"] == f"anthropic/{ANTHROPIC_SUBSCRIPTION_ROUTES[0].model.id}"
 
     # These Anthropic refs are subscription-backed Claude Code invocations, not
     # direct Anthropic API calls. Keep runtime, plugin ownership, and auth aligned.
@@ -77,11 +96,11 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
     assert haku_env["GH_PAT"] == "proxy-github-placeholder"
 
     litellm_models = _litellm_models()
-    for model_id in ANTHROPIC_MODELS:
-        model_name = exposed_name(Provider.ANTHROPIC_API, ApiShape.ANT_MESSAGES, model_id)
+    for route in ANTHROPIC_API_ROUTES:
+        model_name = route.id
         assert litellm_models[model_name] == {
             "model_name": model_name,
-            "litellm_params": {"model": f"anthropic/{model_id}", "api_key": "os.environ/ANTHROPIC_API_KEY"},
+            "litellm_params": {"model": route.upstream_id, "api_key": "os.environ/ANTHROPIC_API_KEY"},
             "model_info": {"mode": "chat", "supports_function_calling": True},
         }
 
