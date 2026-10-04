@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Kind(StrEnum):
@@ -31,42 +31,34 @@ class PaceAlert(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
-class MerchantRule(BaseModel):
+class NamePrefix(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["name_prefix"]
     field: Literal["name", "merchant_name"]
     prefix: str = Field(min_length=2)
-    kind: Kind
 
 
-class CategoryRule(BaseModel):
+class CategoryExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["category_exact"]
     field: Literal["pfc_primary", "pfc_detailed"]
     value: str = Field(min_length=2)
+
+
+class Rule(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    condition: Annotated[NamePrefix | CategoryExact, Field(discriminator="type")]
     kind: Kind
 
 
 class AllowancePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     monthly_minor_units: int = Field(gt=0)
-    activation_at: datetime | None = None
-    spending_account_ids: list[str] = Field(min_length=1)
+    activation_at: date | None = None
+    spending_account_ids: set[str] = Field(min_length=1)
     currency: Literal["USD"] = "USD"
-    rules: list[MerchantRule | CategoryRule] = Field(min_length=1)
+    rules: list[Rule] = Field(min_length=1)
     max_sync_age_hours: int = Field(default=72, ge=1, le=720)
-
-    @model_validator(mode="after")
-    def _validate_policy(self) -> AllowancePolicy:
-        if len(self.spending_account_ids) != len(set(self.spending_account_ids)):
-            raise ValueError("spending account IDs must be unique")
-        return self
-
-    @field_validator("activation_at")
-    @classmethod
-    def _date_only_boundary(cls, value: datetime | None) -> datetime | None:
-        # Plaid purchase timestamps are unavailable; a partial-day boundary would import earlier charges.
-        if value is not None and (value.utcoffset() is None or value.astimezone(UTC).time() != datetime.min.time()):
-            raise ValueError("activation_at must be midnight UTC (Plaid transactions are date-only)")
-        return value
 
 
 class Transaction(BaseModel):
@@ -93,11 +85,11 @@ class Purchase:
 
 
 class Windows(BaseModel):
-    current_credit_cycle: int
-    calendar_month: int
-    year_to_date: int
-    trailing_7_days: int
-    trailing_30_days: int
+    current_credit_cycle_minor_units: int
+    calendar_month_minor_units: int
+    year_to_date_minor_units: int
+    trailing_7_days_minor_units: int
+    trailing_30_days_minor_units: int
 
 
 class AllowanceView(BaseModel):
@@ -105,7 +97,7 @@ class AllowanceView(BaseModel):
     status: Status
     currency: str
     monthly_minor_units: int
-    activation_at: datetime | None
+    activation_at: date | None
     available_minor_units: int | None
     next_credit_at: datetime | None
     posted_minor_units: int
@@ -132,17 +124,16 @@ def month_anniversary(start: datetime, months: int) -> datetime:
     return start.replace(year=year, month=month, day=min(start.day, calendar.monthrange(year, month)[1]))
 
 
-def matching_rule(
-    transaction: Transaction, rules: list[MerchantRule | CategoryRule]
-) -> MerchantRule | CategoryRule | None:
+def matching_rule(transaction: Transaction, rules: list[Rule]) -> Rule | None:
     for rule in rules:
-        if isinstance(rule, MerchantRule):
-            name = transaction.name if rule.field == "name" else transaction.merchant_name
-            if name is not None and name.casefold().startswith(rule.prefix.casefold()):
+        condition = rule.condition
+        if isinstance(condition, NamePrefix):
+            name = transaction.name if condition.field == "name" else transaction.merchant_name
+            if name is not None and name.casefold().startswith(condition.prefix.casefold()):
                 return rule
         else:
-            category = transaction.pfc_primary if rule.field == "pfc_primary" else transaction.pfc_detailed
-            if category == rule.value:
+            category = transaction.pfc_primary if condition.field == "pfc_primary" else transaction.pfc_detailed
+            if category == condition.value:
                 return rule
     return None
 
@@ -153,13 +144,13 @@ def calculate(
     if now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     now = now.astimezone(UTC)
-    start = policy.activation_at.astimezone(UTC) if policy.activation_at else None
+    start = datetime.combine(policy.activation_at, datetime.min.time(), tzinfo=UTC) if policy.activation_at else None
     if start is None or start > now:
         return AllowanceView(
             status=Status.PREVIEW,
             currency=policy.currency,
             monthly_minor_units=policy.monthly_minor_units,
-            activation_at=start,
+            activation_at=policy.activation_at,
             available_minor_units=None,
             next_credit_at=None,
             posted_minor_units=0,
@@ -198,7 +189,7 @@ def calculate(
             continue
         amount = int((transaction.amount * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
         # An inferred category alone cannot associate a refund with an actual discretionary purchase.
-        if amount < 0 and not isinstance(rule, MerchantRule):
+        if amount < 0 and not (rule is not None and isinstance(rule.condition, NamePrefix)):
             unmatched += -amount
             continue
         included.append(Purchase(transaction=transaction, minor_units=amount, needs_review=rule is None))
@@ -208,11 +199,11 @@ def calculate(
     review = sum(p.minor_units for p in included if p.needs_review and p.minor_units > 0)
     cycle_start = month_anniversary(start, credits - 1).date()
     windows = Windows(
-        current_credit_cycle=sum(p.minor_units for p in included if p.transaction.date >= cycle_start),
-        calendar_month=sum(p.minor_units for p in included if p.transaction.date >= now.date().replace(day=1)),
-        year_to_date=sum(p.minor_units for p in included if p.transaction.date >= date(now.year, 1, 1)),
-        trailing_7_days=sum(p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=6)).date()),
-        trailing_30_days=sum(
+        current_credit_cycle_minor_units=sum(p.minor_units for p in included if p.transaction.date >= cycle_start),
+        calendar_month_minor_units=sum(p.minor_units for p in included if p.transaction.date >= now.date().replace(day=1)),
+        year_to_date_minor_units=sum(p.minor_units for p in included if p.transaction.date >= date(now.year, 1, 1)),
+        trailing_7_days_minor_units=sum(p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=6)).date()),
+        trailing_30_days_minor_units=sum(
             p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=29)).date()
         ),
     )
@@ -227,7 +218,7 @@ def calculate(
         status=Status.ACTIVE,
         currency=policy.currency,
         monthly_minor_units=policy.monthly_minor_units,
-        activation_at=start,
+        activation_at=policy.activation_at,
         available_minor_units=available,
         next_credit_at=next_credit,
         posted_minor_units=posted,
@@ -240,6 +231,6 @@ def calculate(
         alert_state=alert,
         last_synced_at=last_synced_at,
         prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units
-        - (posted + pending - windows.current_credit_cycle),
+        - (posted + pending - windows.current_credit_cycle_minor_units),
         projected_cycle_end_minor_units=projected_end,
     )

@@ -261,7 +261,7 @@ class SpendService:
                 """SELECT a.account_id, a.type, l.last_synced_at
                    FROM public.accounts a JOIN public.links l ON l.item_id = a.item_id
                    WHERE a.account_id = ANY($1::text[]) AND l.status = 'active'""",
-                policy.spending_account_ids,
+                list(policy.spending_account_ids),
             )
             synced = [_as_utc(row["last_synced_at"]) for row in accounts]
             last_synced = min((value for value in synced if value is not None), default=None)
@@ -289,7 +289,7 @@ class SpendService:
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
                 )
             rows = []
-            if policy.activation_at is not None and policy.activation_at <= now:
+            if policy.activation_at is not None and policy.activation_at <= now.date():
                 rows = await connection.fetch(
                     """SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
                               t.date, t.amount, t.pending, t.name, t.merchant_name,
@@ -300,8 +300,8 @@ class SpendService:
                        JOIN public.links l ON l.item_id = a.item_id
                        WHERE t.account_id = ANY($1::text[]) AND t.date >= $2 AND t.date <= $3
                          AND t.removed IS FALSE AND l.status = 'active'""",
-                    policy.spending_account_ids,
-                    policy.activation_at.date(),
+                    list(policy.spending_account_ids),
+                    policy.activation_at,
                     now.date(),
                 )
         return calculate(

@@ -12,17 +12,15 @@ from typing import Any, cast
 import asyncpg
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 from finance.plaid.db.link_store import PlaidLinkStorage
-from finance.plaid.spend.allowance import AllowancePolicy, CategoryRule, Kind, Status
+from finance.plaid.spend.allowance import AllowancePolicy, CategoryExact, Kind, Rule, Status
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.models import CardConfig, SpendConfiguration
 from finance.plaid.spend.service import SpendService
-from util.testing.postgres import force_drop_database
+from util.testing.postgres import create_database_async, force_drop_database
 from util.testing.postgres_fixtures import postgres_container  # noqa: F401
 
 
@@ -36,11 +34,7 @@ def postgres_admin_url(postgres_container: PostgresContainer) -> str:  # noqa: F
 @pytest_asyncio.fixture
 async def postgres_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> AsyncGenerator[str]:
     db_name = re.sub(r"[^a-z0-9]", "_", request.node.name.lower())[:45].rstrip("_") or "spend_test"
-    admin_engine = create_async_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    async with admin_engine.connect() as conn:
-        await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    await admin_engine.dispose()
-    db_url = make_url(postgres_admin_url).set(database=db_name).render_as_string(hide_password=False)
+    db_url = await create_database_async(postgres_admin_url, db_name)
     storage = await PlaidLinkStorage.initialize(db_url)
     try:
         yield make_url(db_url).set(drivername="postgresql").render_as_string(hide_password=False)
@@ -187,9 +181,9 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         cards=[],
         allowance=AllowancePolicy(
             monthly_minor_units=10_000,
-            activation_at=midnight,
+            activation_at=midnight.date(),
             spending_account_ids=["card-1", "checking-1"],
-            rules=[CategoryRule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)],
+            rules=[Rule(condition=CategoryExact(type="category_exact", field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
         ),
     )
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")

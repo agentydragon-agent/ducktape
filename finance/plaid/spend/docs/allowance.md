@@ -22,18 +22,17 @@ Generic _synthetic_ example (amounts are integer cents; IDs, categories and pref
     "currency": "USD",
     "max_sync_age_hours": 72,
     "rules": [
-      { "field": "name", "prefix": "EXAMPLE RENT", "kind": "fixed" },
-      { "field": "pfc_detailed", "value": "EXAMPLE_TRANSFER_DETAIL", "kind": "excluded" },
-      { "field": "name", "prefix": "EXAMPLE ONLINE", "kind": "flexible" }
+      { "condition": { "type": "name_prefix", "field": "name", "prefix": "EXAMPLE RENT" }, "kind": "fixed" },
+      { "condition": { "type": "category_exact", "field": "pfc_detailed", "value": "EXAMPLE_TRANSFER_DETAIL" }, "kind": "excluded" },
+      { "condition": { "type": "name_prefix", "field": "name", "prefix": "EXAMPLE ONLINE" }, "kind": "flexible" }
     ]
   }
 }
 ```
 
 `activation_at: null` is **preview**, without a live allowance or historic debt;
-set it to an explicit midnight UTC ISO timestamp to activate. Plaid supplies only
-transaction **dates**, not trustworthy purchase times: activation at other times is
-rejected, and a purchase dated on activation day counts in full. A full monthly
+set it to an explicit ISO calendar date (YYYY-MM-DD) to activate. Plaid supplies only
+transaction **dates**, not trustworthy purchase times: activation uses the full UTC date, and a purchase dated on activation day counts in full. A full monthly
 credit arrives immediately on activation, again on each UTC monthly anniversary
 (clamped to month-end, always measured from the original day). Unspent credit carries
 forward; no monthly reset or second credit at the first calendar-month boundary.
