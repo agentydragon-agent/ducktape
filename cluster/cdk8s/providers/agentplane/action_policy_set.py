@@ -54,9 +54,7 @@ class AutoApproveIf:
     ) -> ActionPolicySetSpecAutoApproveIf:
         """Requires a listed Action's arguments to satisfy `schema`."""
         return ActionPolicySetSpecAutoApproveIf(
-            type=ActionPolicySetSpecAutoApproveIfType.ARGUMENT_UNDERSCORE_SCHEMA,
-            actions=actions,
-            schema=schema,
+            type=ActionPolicySetSpecAutoApproveIfType.ARGUMENT_UNDERSCORE_SCHEMA, actions=actions, schema=schema
         )
 
     @staticmethod
