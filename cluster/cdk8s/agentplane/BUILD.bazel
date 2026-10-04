@@ -184,6 +184,7 @@ py_library(
         ":egress",
         ":environment",
         ":llm_ingress",
+        ":notifications",
         "//agentplane/egress:resources",
         "//agentplane/egress:sidecar",
         "//cluster/cdk8s:config_format",
@@ -581,6 +582,7 @@ py_test(
         ":binding_delegation",
         ":conftest",
         ":egress",
+        ":notifications",
         ":staging",
         ":testing",
         "//:conftest",
@@ -693,6 +695,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
+        ":notifications",
         "//:conftest",
         "//agentplane/action_service/sandbox:binding",
         "@pypi//more_itertools",

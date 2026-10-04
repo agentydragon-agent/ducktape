@@ -50,6 +50,7 @@ def test_notification_workflow_and_examples_augment_configured_prompt(custom: bo
     assert "You may subscribe immediately; you do not need to time out first." in instructions
     assert "end your turn rather than occupying it with" in instructions
     assert "http://notifications.test.invalid:8080/v1/subscriptions" in instructions
+    assert "agentplane-credential-agentplane-notifications-workload" in instructions
     assert "http://notifications.test.invalid:8080/v1/inboxes/INBOX_ID/acknowledgement" in instructions
     assert '"idempotency_key": "follow-REAL_REQUEST_ID"' in instructions
     assert '"client_key"' not in instructions

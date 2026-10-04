@@ -11,7 +11,7 @@ import yaml
 from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import binding_delegation, staging, testing
+from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, testing
 from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AGENTPLANE_TESTING_POLICY,
@@ -113,6 +113,27 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
     app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
     defaults: list[str] = yaml.safe_load(app_config["data"]["config.yaml"])["default_policies"]
     assert BASIC_POLICY in defaults, defaults
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_notifications_use_their_own_projected_audience(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    docs = agentplane_manifests[namespace]
+    policy = _by_name(docs, "EgressPolicy", BASIC_POLICY)
+    notification_rule = one(
+        rule for rule in policy["spec"]["rules"] if notifications.service(namespace).fqdn in rule["hosts"]
+    )
+    assert notification_rule["credentialRef"] == {"name": notifications.WORKLOAD_CREDENTIAL}
+    credential = _by_name(docs, "EgressCredential", notifications.WORKLOAD_CREDENTIAL)
+    assert credential["spec"]["source"]["projectedWorkloadToken"]["audience"] == notifications.TOKEN_AUDIENCE
+    settings = _by_name(docs, "ConfigMap", "agentplane-egress-settings")["data"]["settings.yaml"]
+    proxy_settings = yaml.safe_load(settings)
+    assert notifications.TOKEN_AUDIENCE in proxy_settings["projected_token_audiences"]
+    notification_settings = yaml.safe_load(
+        _by_name(docs, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
+    )
+    assert notification_settings["token_audience"] == notifications.TOKEN_AUDIENCE
 
 
 def test_testing_github_policy_has_its_credential_and_no_real_account_credentials(

@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 # gazelle:include_dep @pypi//pyyaml
 
 CONFIG_FILE_ENV = "AGENTPLANE_NOTIFICATIONS_CONFIG_FILE"
+TOKEN_AUDIENCE = "agentplane-notifications"
 
 
 class ActionsSettings(BaseModel):
@@ -61,12 +62,7 @@ class Settings(BaseSettings):
     actions: ActionsSettings
     sandbox_service: SandboxServiceSettings
     token_audience: str = Field(
-        default="agentplane-egress",
-        description=(
-            "Audience required when TokenReview authenticates callers of this API. "
-            "agentplane-egress is the shared first-party workload compatibility audience, "
-            "not a notification routing setting; changing it requires coordinating caller token issuance."
-        ),
+        default=TOKEN_AUDIENCE, description="Audience required when TokenReview authenticates callers of this API."
     )
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)

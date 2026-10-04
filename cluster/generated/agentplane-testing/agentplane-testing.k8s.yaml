@@ -863,6 +863,7 @@ data:
       - agentplane-testing
     projected_token_audiences:
       - https://localhost:7445
+      - agentplane-notifications
 immutable: false
 ---
 apiVersion: apps/v1
@@ -1195,6 +1196,21 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
+  name: agentplane-notifications-workload
+  namespace: agentplane-testing
+spec:
+  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for the Agentplane Notifications API audience.
+  source:
+    projectedWorkloadToken:
+      audience: agentplane-notifications
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
   name: github-pat
   namespace: agentplane-testing
 spec:
@@ -1282,7 +1298,7 @@ spec:
         - /v1/inboxes/**
       clusterInternal: true
       credentialRef:
-        name: agentplane-workload
+        name: agentplane-notifications-workload
     - hosts:
         - agentplane-actions.agentplane-testing.svc.cluster.local
       methods:
@@ -2693,7 +2709,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -2747,6 +2763,10 @@ spec:
                   audience: https://localhost:7445
                   expirationSeconds: 600
                   path: kubernetes-token
+              - serviceAccountToken:
+                  audience: agentplane-notifications
+                  expirationSeconds: 600
+                  path: notifications-token
   volumeClaimTemplates:
     - metadata:
         name: state
@@ -3451,6 +3471,7 @@ metadata:
 data:
   settings.yaml: |
     namespace: agentplane-testing
+    token_audience: agentplane-notifications
     actions:
       url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
       token_file: /var/run/secrets/notifications/actions

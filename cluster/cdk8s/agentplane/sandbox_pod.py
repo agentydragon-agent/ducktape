@@ -41,7 +41,7 @@ from constructs import Construct
 from agentplane.egress import sidecar
 from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.agentplane import egress, llm_ingress
+from cluster.cdk8s.agentplane import egress, llm_ingress, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import SECRET_NAME
@@ -55,7 +55,10 @@ _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 # to under `_EGRESS_TOKEN_DIR`. The volume and the sidecar's mapping are both rendered from this, so
 # neither can name a file the other does not project. The hop token is deliberately absent: it
 # carries the proxy's own audience, so it is not substitutable anywhere.
-_SUBSTITUTABLE_AUDIENCE_FILES = {egress.KUBERNETES_AUDIENCE: "kubernetes-token"}
+_SUBSTITUTABLE_AUDIENCE_FILES = {
+    egress.KUBERNETES_AUDIENCE: "kubernetes-token",
+    notifications.TOKEN_AUDIENCE: "notifications-token",
+}
 _SIDECAR_LISTEN_PORT = 3128
 # Shared by a workload's egress-ca volumeMount and the pod-level volume -- Kubernetes matches the
 # two by this name.

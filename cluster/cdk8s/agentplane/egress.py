@@ -156,6 +156,21 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     )
     EgressCredential(
         scope,
+        "egresscredential-notifications-workload",
+        metadata=ApiObjectMetadata(name=notifications.WORKLOAD_CREDENTIAL, namespace=namespace),
+        description=(
+            "The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for the "
+            "Agentplane Notifications API audience."
+        ),
+        source=Source.projected_workload_token(audience=notifications.TOKEN_AUDIENCE),
+        targets=[
+            EgressCredentialSpecTargets(
+                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+            )
+        ],
+    )
+    EgressCredential(
+        scope,
         "egresscredential-github-pat",
         metadata=ApiObjectMetadata(name="github-pat", namespace=namespace),
         description=(
@@ -251,7 +266,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     "/v1/inboxes",
                     "/v1/inboxes/**",
                 ],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
+                credential_ref=EgressPolicySpecRulesCredentialRef(name=notifications.WORKLOAD_CREDENTIAL),
             ),
             EgressPolicySpecRules(
                 hosts=[actions.service(namespace).fqdn],
@@ -440,7 +455,7 @@ class Egress(Construct):
             model=Settings,
             content={
                 "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
-                "projected_token_audiences": [KUBERNETES_AUDIENCE],
+                "projected_token_audiences": [KUBERNETES_AUDIENCE, notifications.TOKEN_AUDIENCE],
             },
             # A directory of its own: the CA volumes mount under /etc/agentplane-egress, and nothing
             # can mount inside a read-only ConfigMap volume.

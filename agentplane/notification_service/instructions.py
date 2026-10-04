@@ -5,7 +5,7 @@ def instructions(url: str) -> str:
     return f"""### Waiting efficiently for Actions
 
 Agentplane notifications are at {url} (schema: {url}/openapi.json).
-Use Authorization: Bearer agentplane-credential-agentplane-workload through the configured egress
+Use Authorization: Bearer agentplane-credential-agentplane-notifications-workload through the configured egress
 proxy, after checking its current rules. Use the explicit notification destination_ref and session_id
 supplied below, never an inferred current Thread. Workloads sharing your ServiceAccount share inbox authority.
 
