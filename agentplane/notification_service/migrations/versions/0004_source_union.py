@@ -17,6 +17,10 @@ def upgrade() -> None:
         "'after_sequence', creation -> 'after_sequence'))"
     )
 
+    # Fail stale writers closed rather than persisting snapshots the serving API cannot read.
+    op.create_check_constraint("subscription_creation_source", "subscription", "creation ? 'source'")
+
 
 def downgrade() -> None:
+    op.drop_constraint("subscription_creation_source", "subscription", type_="check")
     op.execute("UPDATE subscription SET creation = (creation - 'source') || (creation -> 'source')")

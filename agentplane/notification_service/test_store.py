@@ -10,6 +10,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text, update
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.models import ActionEventView, ActionState
@@ -107,6 +108,14 @@ async def test_creation_migrations_preserve_populated_inbox(store: Store, engine
         RUNNER.run_for_connection(connection)
         # Reapplying the image-owned chain is harmless and verifies ORM/schema agreement.
         RUNNER.run_for_connection(connection)
+        # A stale replica must not reintroduce an unreadable creation snapshot after migration.
+        with pytest.raises(IntegrityError), connection.begin_nested():
+            connection.execute(
+                text(
+                    "UPDATE subscription SET creation = (creation - 'source') || (creation -> 'source') WHERE id = :id"
+                ),
+                {"id": subscription.id},
+            )
 
     async with engine.begin() as connection:
         await connection.run_sync(round_trip)
@@ -236,9 +245,13 @@ async def test_cancellation_fences_inflight_source_and_claim_loss_fences_worker(
 async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) -> None:
     first = await store.subscribe(PRINCIPAL, BODY)
     second = await store.subscribe(
-        PRINCIPAL, BODY.model_copy(
-            update={"idempotency_key": "another-action", "source": ActionsSource(provider="actions", request_id=uuid4())}
-        )
+        PRINCIPAL,
+        BODY.model_copy(
+            update={
+                "idempotency_key": "another-action",
+                "source": ActionsSource(provider="actions", request_id=uuid4()),
+            }
+        ),
     )
     claim = await store.claim()
     assert claim is not None
