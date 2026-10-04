@@ -26,8 +26,8 @@ from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
 from agentplane.notification_service.instructions import instructions
 from agentplane.notification_service.service import Service
-from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.settings import NoticeDebounceSettings
+from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.store import Store
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
