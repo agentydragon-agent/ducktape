@@ -86,10 +86,11 @@ Flux decryption. The notification server reads these through Secret-backed
 container does not receive them. Existing MCP credentials/callbacks are unchanged.
 Testing has no GitHub configuration or Secret references.
 
-The App is not installed yet. Install it on the intended repositories before testing
-subscriptions. Keep webhook delivery inactive until the enabled service and ingress
-have reconciled, then use the URL below with the matching signing secret and SSL
-verification enabled.
+App **5188971** is enabled and the operator confirmed installation on all their repositories.
+Real CI events and a PR comment from `agentydragon/ducktape` reached an agent inbox and harness on
+2026-10-04; see the [acceptance record](../../../agentplane/notification_service/docs/staging_github_acceptance.md)
+for evidence and remaining checks. The webhook is active at the URL below; keep signing and TLS
+verification enabled. This proof does not audit all installed repositories or event permissions.
 
 To disable the source, set staging's `notifications_github` to `None`; this removes both
 its YAML settings and secret environment variables. Retain the encrypted Secret so

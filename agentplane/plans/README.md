@@ -28,7 +28,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Sandbox Service](sandbox_service.md) — extract independent sandbox lifecycle/session access before
   notification v1; [discovery/access notes](runner_discovery.md) retain network-policy access and the runner-auth TODO
 - [Subscriptions and notifications](notifications.md) — standalone service design: SA-authorized session scope,
-  explicit inbox acknowledgement, Action-only v1, and runner delivery; later automatic following and wake
+  explicit inbox acknowledgement, shipped Actions/GitHub delivery, remaining reliability acceptance,
+  and deferred Kubernetes monitoring, automatic following and wake
 - [Push mechanism](push_mechanism.md) — remaining push/subscription design for
   `NO_MANUAL_REFRESH`'s Settings tabs; the Actions attention drawer shipped in PR #8618
 

@@ -73,7 +73,10 @@ flowchart TB
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
-    ING["Next notification provider<br/>GitHub PR updates and comments<br/>Actions inbox and Sandbox Service shipped"]:::future
+    NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
+    NOTIFICATION_DEBOUNCE["In review #8988<br/>configurable runner-notice debounce<br/>then deployed burst acceptance"]:::active
+    GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
+    KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
     HARNESS_SKILLS["Unranked candidate<br/>project-scoped skills and commands<br/>both native harnesses"]:::future
@@ -119,11 +122,9 @@ flowchart TB
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
     CROSS_IDENTITY_READ_POLICY --> AG
-    CROSS_IDENTITY_READ_POLICY -. future cross-account delivery only .-> ING
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
 
-    INPUT_DELIVERY -. bounds recovery guarantees .-> ING
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_WEB_SEARCH
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_VISUAL_INPUT
@@ -923,24 +924,80 @@ Proper runner-leg authentication/TLS, command-scoped delivery tracking, and noti
 resume remain separate follow-ups. This does not close unrelated native crash/recovery or backup/restore
 acceptance items.
 
-### `ING` — next notification provider: GitHub
+### `ING` — shipped GitHub notification foundation (not a remaining gate)
 
-**Actions foundation shipped; GitHub remains:** the [notification plan](notifications.md) records
-completed work and the proposed next slice. Source implementation, authenticated APIs, agent egress,
-retained payloads, explicit HWM, native notice confirmation, and the live staging read/ack/cleanup proof
-are no longer pending foundations. Richer async agent advice is in
-[#8860](https://github.com/agentydragon/ducktape/pull/8860), not yet claimed deployed.
+GitHub PR/branch/commit source schemas, App webhook verification, durable matching and payloads,
+PostgreSQL-driven inbox delivery and source configuration shipped in
+[#8891](https://github.com/agentydragon/ducktape/pull/8891). Staging ingress/App enablement shipped in
+[#8978](https://github.com/agentydragon/ducktape/pull/8978),
+[#8979](https://github.com/agentydragon/ducktape/pull/8979) and
+[#8982](https://github.com/agentydragon/ducktape/pull/8982).
+The operator installed the App; real CI events and a PR comment reached the inbox and this agent's
+harness on 2026-10-04. Overlapping subscriptions produced one comment entry, reads preserved the
+acknowledgement, and the handled prefix was explicitly acknowledged. See the
+[staging acceptance record](../notification_service/docs/staging_github_acceptance.md).
+Do not redispatch GitHub source implementation, App provisioning or the basic live delivery proof.
 
-Next, support PR lifecycle/comments/reviews and head-aware check/status updates using upstream GitHub
-names. Agree on repository authorization and webhook/App provisioning, minimally generalize the
-Actions-specific source identity without losing data, implement durable verified ingress and matching,
-and prove the full path with a real PR event. No integration-app dependency, new runner access path,
-message broker, personal GitHub Notifications API, or general filter DSL is required.
+Shared PostgreSQL listener lifecycle consolidation and reconnect fencing also shipped in
+[#8958](https://github.com/agentydragon/ducktape/pull/8958) and
+[#8968](https://github.com/agentydragon/ducktape/pull/8968). These are not remaining refactors.
+The [notification plan](notifications.md) retains the unverified cases and deferred designs;
+this burn-down does not close native recovery, all repository/event coverage or narrower grants.
 
-Automatic subscriptions, wake/resume, command-scoped delivery observations, cross-account delivery,
-and runner RPC authentication remain explicitly deferred in the notification plan. Existing
-`INPUT_DELIVERY` evidence still bounds native recovery claims; it does not make the shipped inbox
-an unimplemented service again.
+### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
+
+**Remaining implementation:** replace the notification source's five-second history polling with
+one read-authorized change feed per replica, followed by catch-up from canonical Action events.
+Reuse the existing Action Service committed-event signals; no operator authority or cross-service
+DB access. [Acceptance](notifications.md#next-event-driven-actions-consumption) includes reconnect,
+missed-signal recovery, subscription-creation races and idle-without-polling behavior.
+The shared PostgreSQL listener refactor did not implement this cross-service feed.
+
+### `NOTIFICATION_DEBOUNCE` — configurable runner-notice batching
+
+**In review, not shipped:** [#8988](https://github.com/agentydragon/ducktape/pull/8988) adds a per-inbox
+quiet window and maximum wait, leaving persistence and reads immediate. After merge/rollout, verify
+a real event burst produces fewer harness interruptions, sustained traffic cannot indefinitely
+postpone a notice, and explicit acknowledgement/no-reminder semantics remain intact.
+
+### `GITHUB_DELIVERY_RECOVERY` — remaining live reliability acceptance
+
+**Remaining deployed acceptance:** prove same-delivery-ID redelivery does not append another entry,
+and listener/service restart resumes committed work without missing or duplicating delivery.
+Overlap deduplication and a successful first delivery do not prove these cases. Include failed
+webhook visibility and the operator redelivery procedure: GitHub does not automatically retry
+failed requests, and durable recovery starts at receipt commit. Track remaining access/event/fork
+coverage separately in the [notification plan](notifications.md#remaining-live-verification).
+
+### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
+
+**Unranked future capability; design not selected:** let an Agentplane agent follow an explicitly
+selected Kubernetes workload's rollout while doing other work, then inspect evidence of progress,
+success, failure or stalled rollout. Start with a namespaced Deployment; broader resource kinds,
+Flux reconciliation, Pod warnings and cluster-wide discovery can be evaluated later.
+
+- Choose the read/watch API and its owning backend. A notification-service source is an option,
+  not a prerequisite or a decision to add another service. Reuse existing inbox/notice/acknowledgement
+  machinery if chosen; do not make a backend depend on the integration app or give runners a new
+  notification connection.
+- Define caller-authorized cluster/namespace/resource scope and revocation. A broad worker identity
+  must not silently grant subscribers visibility they lack. Keep monitoring read-only; rollout
+  mutation/remediation stays separately governed through Actions or existing workload authority.
+- Follow Kubernetes list/watch semantics, including resource versions, reconnect and expired-version
+  relist. Pin object UID and rollout generation/revision; distinguish replacement, deletion,
+  supersession and revoked access from successful rollout. Do not promise complete historical replay
+  from ephemeral Kubernetes Events.
+- Derive rollout state from authoritative workload status/conditions (including observed generation
+  and desired/updated/available replicas), not just a convenient Event message or an accepted change.
+  Preserve diagnostic provenance and surface failure/timeout explicitly. Avoid exposing Secrets or
+  unrelated Pod contents; bound retained evidence and coalesce noisy progress updates.
+- Acceptance: an agent starts monitoring, continues other work, receives or retrieves progress and
+  terminal evidence for both a successful and a stalled/failed rollout, and stops monitoring explicitly.
+  Exercise reconnect/relist, duplicate signals, resource replacement and denied/revoked namespace
+  access. If using notifications, prove the inbox-to-harness path and explicit acknowledgement too.
+
+This is independent of the remaining GitHub recovery tests and Action-feed implementation; neither
+is a technical prerequisite for designing Kubernetes monitoring. Prioritization remains open.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 
