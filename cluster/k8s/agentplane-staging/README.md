@@ -70,20 +70,30 @@ Changing this deployment's `redirect_uri` does not update the registration.
 
 ## Staging GitHub App
 
-A new `agentplane-staging` GitHub App will serve the staging environment, initially for
+The `agentplane-staging` GitHub App serves the staging environment, initially for
 PR, branch, and commit notifications. It is separate from the existing MCP OAuth App
 above. All authenticated agents may subscribe to repositories accessible through the
 new App, including private repositories; install it with that sharing policy in mind.
 
 Registration, event permissions, and access-loss semantics are recorded in the
 [notification plan](../../../agentplane/plans/notifications.md#registration-and-credential-preparation).
-The public App ID belongs in the notification service YAML settings, not a Secret.
+The public App ID is configured in the notification service YAML settings, not a Secret.
 The operator-supplied `github-app.sops.yaml` contains the `agentplane-github-app` Secret
 with only `private-key` and `webhook-secret`. The staging Kustomization includes it for
-Flux decryption. Wire these via Secret-backed `AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY`
-and `AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET` environment variables through the chart
-in a follow-up enabling the source once the public App ID is supplied. Existing MCP
-credentials/callbacks are unchanged.
+Flux decryption. The notification server reads these through Secret-backed
+`AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY` and
+`AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET` environment variables; the migration
+container does not receive them. Existing MCP credentials/callbacks are unchanged.
+Testing has no GitHub configuration or Secret references.
+
+The App is not installed yet. Install it on the intended repositories before testing
+subscriptions. Keep webhook delivery inactive until the enabled service and ingress
+have reconciled, then use the URL below with the matching signing secret and SSL
+verification enabled.
+
+To disable the source, set staging's `notifications_github` to `None`; this removes both
+its YAML settings and secret environment variables. Retain the encrypted Secret so
+re-enabling does not require rotating App credentials.
 
 ### Webhook ingress
 
@@ -99,14 +109,11 @@ policy admits the Gateway identity to the notification service port. The HTTPRou
 exposes no subscription, inbox, discovery, docs, or health endpoints. Webhooks use
 GitHub signature verification, not operator SSO or workload authentication.
 
-The GitHub source remains disabled (`github: null`) until its App ID and secrets are
-configured. Until then the webhook endpoint returns HTTP 404 (`GitHub provider is disabled`).
-Keep the App's webhook inactive until configuration is deployed, then set the URL above and matching signing
-secret, leave SSL verification enabled, and activate delivery.
-
-After Flux applies the ingress, check the HTTPRoute's `Accepted` and `ResolvedRefs`
-conditions, TLS verification, and a POST returning the disabled-source 404 response.
-Once enabled, a POST with a valid `X-GitHub-Delivery` UUID and `X-GitHub-Event: ping` but no signature must return 401. Confirm private paths such as `/v1/inboxes` and `/v1/subscriptions` return Gateway 404s. Once enabled, test a real signed GitHub delivery
-through durable receipt, inbox entry, runner notice, read, and explicit acknowledgement.
+After Flux applies the configuration, check notification replica readiness, GitHub
+source discovery, the HTTPRoute's `Accepted` and `ResolvedRefs` conditions, and TLS
+verification. A POST with a valid `X-GitHub-Delivery` UUID and `X-GitHub-Event: ping`
+but no signature must return HTTP 401. Confirm private paths such as `/v1/inboxes` and
+`/v1/subscriptions` return Gateway 404s. Then test a real signed GitHub delivery through
+durable receipt, inbox entry, runner notice, read, and explicit acknowledgement.
 Track App enablement and end-to-end verification in
 [ducktape#8956](https://github.com/agentydragon/ducktape/issues/8956).

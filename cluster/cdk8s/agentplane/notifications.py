@@ -29,6 +29,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
+from util.settings_contract import env_name
 
 NAME = "agentplane-notifications"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
@@ -77,6 +78,10 @@ class Notifications(Construct):
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
             init_containers=[migrate_init_container(f"{_IMAGE}-migrate:unset", env_variables=variables)],
         )
+        github = env.notifications_github
+        supplied: list[tuple[str, ...]] = [("database_url",)]
+        if github is not None:
+            supplied.extend([("github", "private_key"), ("github", "webhook_secret")])
         settings = SettingsFile(
             self,
             "settings",
@@ -93,9 +98,9 @@ class Notifications(Construct):
                     "target": f"{sandboxes.fqdn}:{sandboxes.port.number}",
                     "token_file": "/var/run/secrets/notifications/sandboxes",
                 },
-                "github": None,
+                "github": {"app_id": github.app_id} if github is not None else None,
             },
-            supplied=[("database_url",)],
+            supplied=supplied,
         )
         container = deployment.add_container(
             name="notifications",
@@ -111,6 +116,12 @@ class Notifications(Construct):
             ),
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
+        if github is not None:
+            secret = SecretRef(namespace=env.namespace, name=github.secret_name)
+            for field, key in [("private_key", "private-key"), ("webhook_secret", "webhook-secret")]:
+                container.env.add_variable(
+                    env_name(Settings, "github", field), secret.key(key).env_value(self, f"github-{key}")
+                )
         settings.mount_into(container, env=CONFIG_FILE_ENV)
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(
