@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, 
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
-from agentplane.notification_service.sources.actions import SourceNotOwnedError
 from agentplane.notification_service.models import (
     Acknowledge,
     InboxPage,
@@ -22,6 +21,7 @@ from agentplane.notification_service.models import (
     SubscriptionView,
 )
 from agentplane.notification_service.service import DestinationRejectedError, Service
+from agentplane.notification_service.sources.actions import SourceNotOwnedError
 from agentplane.notification_service.store import ConflictError, NotFoundError, QuotaError
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
