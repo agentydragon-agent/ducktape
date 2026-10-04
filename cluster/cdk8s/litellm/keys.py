@@ -18,6 +18,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
+
 def model_allowlists() -> dict[str, list[str]]:
     """Serialize key policy at the Terraform boundary, without rebuilding model IDs."""
     for lane, routes in KEY_MODEL_ROUTES.items():

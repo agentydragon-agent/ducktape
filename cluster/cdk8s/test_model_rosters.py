@@ -14,6 +14,7 @@ from cluster.cdk8s.model_rosters import (
     CHATGPT_RESPONSES_ROUTES,
     GEMINI_EMBEDDING_ALIAS,
     GEMINI_EMBEDDING_ROUTES,
+    GEMINI_ROUTES,
     HIDDEN_ALIASES,
     OLLAMA_CHAT_ROUTES,
     SERVED_ROUTES,
@@ -27,7 +28,8 @@ from util.bazel.runfiles import get_required_path
 def test_proxy_projection_matches_committed_manifest() -> None:
     manifest = get_required_path("ducktape/cluster/k8s/litellm/app/app.k8s.yaml")
     [config_map] = [
-        item for item in yaml.safe_load_all(manifest.read_text())
+        item
+        for item in yaml.safe_load_all(manifest.read_text())
         if item["kind"] == "ConfigMap" and item["metadata"]["name"] == "config"
     ]
     assert main_proxy_config() == yaml.safe_load(config_map["data"]["config.yaml"])
@@ -74,7 +76,22 @@ def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     assert subscription.model is direct.model
     assert subscription.id != direct.id
     assert subscription.upstream.api_key != direct.upstream.api_key
-    assert subscription.reasoning_efforts and not direct.reasoning_efforts
+    assert subscription.reasoning_efforts
+    assert not direct.reasoning_efforts
+
+
+def test_same_slug_on_different_accounts_keeps_distinct_limits() -> None:
+    shared_slugs = [
+        (google, antigravity)
+        for google in GEMINI_ROUTES
+        for antigravity in ANTIGRAVITY_ROUTES
+        if google.model.id == antigravity.model.id
+    ]
+    assert shared_slugs
+    for google, antigravity in shared_slugs:
+        assert google.model is not antigravity.model
+        assert google.model.context_window is not None
+        assert antigravity.model.context_window is None
 
 
 def test_unknown_limits_are_not_invented_or_published() -> None:

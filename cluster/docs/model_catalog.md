@@ -30,12 +30,12 @@ changing proxy behavior or applying a harness context override.
 
 ## Projections
 
-| Consumer | Input | Output |
-| --- | --- | --- |
-| LiteLLM | `SERVED_ROUTES`, `HIDDEN_ALIASES` | Proxy config and alias settings |
-| Terraform virtual keys | `KEY_MODEL_ROUTES` | Existing `model_allowlists` variables |
-| Agentplane app | `HarnessRoutes` | App-owned `ModelCatalog` records and harness ID lists |
-| Agentplane environment | Same `HarnessRoutes` | Structured source retained for ingress metadata generation |
+| Consumer               | Input                             | Output                                                     |
+| ---------------------- | --------------------------------- | ---------------------------------------------------------- |
+| LiteLLM                | `SERVED_ROUTES`, `HIDDEN_ALIASES` | Proxy config and alias settings                            |
+| Terraform virtual keys | `KEY_MODEL_ROUTES`                | Existing `model_allowlists` variables                      |
+| Agentplane app         | `HarnessRoutes`                   | App-owned `ModelCatalog` records and harness ID lists      |
+| Agentplane environment | Same `HarnessRoutes`              | Structured source retained for ingress metadata generation |
 
 For example, a preset chooses `GPT6_LUNA_RESPONSES`; the app renderer emits its ID,
 display name, and reasoning choices. The key renderer emits only its ID. Neither knows

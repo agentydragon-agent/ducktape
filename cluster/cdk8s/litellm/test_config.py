@@ -3,7 +3,15 @@
 import pytest_bazel
 
 from cluster.cdk8s.litellm.config import main_proxy_config
-from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, SERVED_ROUTES, ApiShape, Provider, Route, exposed_name, ollama_chat_variant
+from cluster.cdk8s.model_rosters import (
+    OLLAMA_CHAT_MODELS,
+    SERVED_ROUTES,
+    ApiShape,
+    Provider,
+    Route,
+    exposed_name,
+    ollama_chat_variant,
+)
 
 
 # The canonical route derives each entry's shape from its upstream adapter
@@ -11,9 +19,7 @@ from cluster.cdk8s.model_rosters import OLLAMA_CHAT_MODELS, SERVED_ROUTES, ApiSh
 # structurally unrepresentable there, not just checked after the fact. What's left to
 # verify here is coverage: that every declared ApiShape actually gets used somewhere.
 def test_every_declared_shape_is_used() -> None:
-    shapes_seen = {
-        (entry if isinstance(entry, Route) else entry.target).upstream.shape for entry in SERVED_ROUTES
-    }
+    shapes_seen = {(entry if isinstance(entry, Route) else entry.target).upstream.shape for entry in SERVED_ROUTES}
     assert shapes_seen == set(ApiShape)
 
 

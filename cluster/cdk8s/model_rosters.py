@@ -104,8 +104,7 @@ def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
 
 
 def codex_responses_name(model: str) -> str:
-    """A Codex-subscription model as served on LiteLLM's Responses surface -- the route
-    Codex CLI clients and OpenClaw call."""
+    """Transitional OpenClaw lookup of a canonical Codex-subscription Responses route."""
     return _CHATGPT_RESPONSES_BY_ID[model].id
 
 
@@ -153,7 +152,6 @@ def shape_for(upstream_prefix: str, protocol: str) -> ApiShape:
     pick a shape whose definer disagrees with the upstream it's actually calling.
     """
     return ApiShape(f"{_UPSTREAM_DEFINER[upstream_prefix]}-{protocol}")
-
 
 
 @dataclass(frozen=True)
@@ -291,8 +289,6 @@ ASTRA_CONTEXT_WINDOW = 872_000
 ASTRA_MAX_TOKENS = 128_000
 
 
-
-
 # The Codex models with known serving-path limits: Astra from Codex's bundled metadata,
 # the 5.6 models measured (CODEX_CONTEXT_WINDOW above), and GPT-6 Sol/Luna using the
 # same conservative bound until their subscription path is probed. The LiteLLM manifest
@@ -301,26 +297,35 @@ ASTRA_MAX_TOKENS = 128_000
 # the proxy's authenticated /v1/models endpoint. gpt-5.4/5.5/5.3-codex-spark were never
 # probed and stay out.
 GPT_6_ASTRA = Model(
-        id="gpt-6-astra", display_name="GPT-6 Astra", context_window=ASTRA_CONTEXT_WINDOW, max_output_tokens=ASTRA_MAX_TOKENS
-    )
+    id="gpt-6-astra",
+    display_name="GPT-6 Astra",
+    context_window=ASTRA_CONTEXT_WINDOW,
+    max_output_tokens=ASTRA_MAX_TOKENS,
+)
 GPT_6_LUNA = Model(
-        id="gpt-6-luna", display_name="GPT-6 Luna", context_window=CODEX_CONTEXT_WINDOW, max_output_tokens=CODEX_MAX_TOKENS
-    )
+    id="gpt-6-luna", display_name="GPT-6 Luna", context_window=CODEX_CONTEXT_WINDOW, max_output_tokens=CODEX_MAX_TOKENS
+)
 GPT_6_SOL = Model(
-        id="gpt-6-sol", display_name="GPT-6 Sol", context_window=CODEX_CONTEXT_WINDOW, max_output_tokens=CODEX_MAX_TOKENS
-    )
+    id="gpt-6-sol", display_name="GPT-6 Sol", context_window=CODEX_CONTEXT_WINDOW, max_output_tokens=CODEX_MAX_TOKENS
+)
 GPT_5_6_LUNA = Model(
-        id="gpt-5.6-luna", display_name="GPT-5.6 Luna", context_window=CODEX_CONTEXT_WINDOW, max_output_tokens=CODEX_MAX_TOKENS
-    )
+    id="gpt-5.6-luna",
+    display_name="GPT-5.6 Luna",
+    context_window=CODEX_CONTEXT_WINDOW,
+    max_output_tokens=CODEX_MAX_TOKENS,
+)
 GPT_5_6_TERRA = Model(
-        id="gpt-5.6-terra",
-        display_name="GPT-5.6 Terra",
-        context_window=CODEX_CONTEXT_WINDOW,
-        max_output_tokens=CODEX_MAX_TOKENS,
-    )
+    id="gpt-5.6-terra",
+    display_name="GPT-5.6 Terra",
+    context_window=CODEX_CONTEXT_WINDOW,
+    max_output_tokens=CODEX_MAX_TOKENS,
+)
 GPT_5_6_SOL = Model(
-        id="gpt-5.6-sol", display_name="GPT-5.6 Sol", context_window=CODEX_CONTEXT_WINDOW, max_output_tokens=CODEX_MAX_TOKENS
-    )
+    id="gpt-5.6-sol",
+    display_name="GPT-5.6 Sol",
+    context_window=CODEX_CONTEXT_WINDOW,
+    max_output_tokens=CODEX_MAX_TOKENS,
+)
 GPT_5_4 = Model("gpt-5.4", "GPT-5.4")
 GPT_5_5 = Model("gpt-5.5", "GPT-5.5")
 _CODEX_MODELS = (GPT_6_ASTRA, GPT_6_SOL, GPT_6_LUNA, GPT_5_4, GPT_5_5, GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
@@ -379,8 +384,8 @@ _ANTHROPIC_MODELS = (
 # here yet.
 #
 # `reasoning` mirrors the slug's own baked-in effort tier (-high/-agent/-medium as
-# True, -low/-lite/plain/-image as False) -- used by public-coder-agent's OpenClaw
-# catalog, the one consumer needing per-model metadata rather than a bare id.
+# True, -low/-lite/plain/-image as False). OpenClaw consumes this capability flag;
+# the Agentplane projection separately uses the route's declared effort choices.
 #
 # `context_window`/`max_output_tokens`: Google's own declared capability for each model as
 # served through Antigravity, not a public-API figure borrowed from Anthropic/OpenAI/a
@@ -405,33 +410,33 @@ _ANTHROPIC_MODELS = (
 
 
 _ANTIGRAVITY_OPUS = Model(
-        id="claude-opus-4-6-thinking",
-        display_name="Claude Opus 4.6 (Thinking)",
-        reasoning=True,
-        context_window=200_000,
-        max_output_tokens=64_000,
-    )
+    id="claude-opus-4-6-thinking",
+    display_name="Claude Opus 4.6 (Thinking)",
+    reasoning=True,
+    context_window=200_000,
+    max_output_tokens=64_000,
+)
 _ANTIGRAVITY_SONNET = Model(
-        id="claude-sonnet-4-6",
-        display_name="Claude Sonnet 4.6 (Thinking)",
-        reasoning=True,
-        context_window=200_000,
-        max_output_tokens=64_000,
-    )
+    id="claude-sonnet-4-6",
+    display_name="Claude Sonnet 4.6 (Thinking)",
+    reasoning=True,
+    context_window=200_000,
+    max_output_tokens=64_000,
+)
 _ANTIGRAVITY_FLASH_LITE_31 = Model(
-        id="gemini-3.1-flash-lite",
-        display_name="Gemini 3.1 Flash Lite",
-        reasoning=False,
-        context_window=1_048_576,
-        max_output_tokens=65_535,
-    )
+    id="gemini-3.1-flash-lite",
+    display_name="Gemini 3.1 Flash Lite",
+    reasoning=False,
+    context_window=1_048_576,
+    max_output_tokens=65_535,
+)
 _ANTIGRAVITY_FLASH_LITE_35 = Model(
-        id="gemini-3.5-flash-lite",
-        display_name="Gemini 3.5 Flash Lite",
-        reasoning=False,
-        context_window=None,
-        max_output_tokens=None,
-    )
+    id="gemini-3.5-flash-lite",
+    display_name="Gemini 3.5 Flash Lite",
+    reasoning=False,
+    context_window=None,
+    max_output_tokens=None,
+)
 
 ANTIGRAVITY_MODELS: tuple[Model, ...] = (
     _ANTIGRAVITY_OPUS,
@@ -458,7 +463,11 @@ ANTIGRAVITY_MODELS: tuple[Model, ...] = (
         max_output_tokens=65_536,
     ),
     Model(
-        id="gemini-3-flash", display_name="Gemini 3 Flash", reasoning=False, context_window=1_048_576, max_output_tokens=65_536
+        id="gemini-3-flash",
+        display_name="Gemini 3 Flash",
+        reasoning=False,
+        context_window=1_048_576,
+        max_output_tokens=65_536,
     ),
     # Not in the fetched registry at all (both fields null) -- an image-output model,
     # not a chat-completion one; look into it later.
@@ -524,8 +533,20 @@ GEMINI_CONTEXT_WINDOW = 1_048_576
 GEMINI_MAX_OUTPUT_TOKENS = 65_536
 
 GEMINI_MODELS: tuple[Model, ...] = (
-    Model(id="gemini-3.7-flash", display_name="Gemini 3.7 Flash", reasoning=True, context_window=GEMINI_CONTEXT_WINDOW, max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS),
-    Model(id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash-Lite", reasoning=False, context_window=GEMINI_CONTEXT_WINDOW, max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS),
+    Model(
+        id="gemini-3.7-flash",
+        display_name="Gemini 3.7 Flash",
+        reasoning=True,
+        context_window=GEMINI_CONTEXT_WINDOW,
+        max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,
+    ),
+    Model(
+        id="gemini-3.5-flash-lite",
+        display_name="Gemini 3.5 Flash-Lite",
+        reasoning=False,
+        context_window=GEMINI_CONTEXT_WINDOW,
+        max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,
+    ),
 )
 
 # Mistral chat models that accepted a minimal completion with the cluster's API
@@ -579,7 +600,6 @@ _GEMINI_EMBEDDING_MODELS = (Model("gemini-embedding-2"), Model("gemini-embedding
 # OpenClaw index public-coder-agent built under this identity is deliberately rebuilt
 # under the prefixed name.
 GEMINI_EMBEDDING_COMPAT_ALIAS = _GEMINI_EMBEDDING_MODELS[0].id
-
 
 
 # Self-hosted Ollama chat models: (exposed model, Ollama model, num_ctx variants).
@@ -659,16 +679,18 @@ _OLLAMA_PROXY_ROUTES = tuple(
     for route in (*(openai for openai, _ in group), *(native for _, native in group))
 )
 OLLAMA_EMBEDDING_ROUTE = Route(
-    _OLLAMA_EMBEDDING,
-    Upstream(Provider.OLLAMA, "ollama", "embed", _OLLAMA_BASE),
-    upstream_model="qwen3-embedding:4b",
+    _OLLAMA_EMBEDDING, Upstream(Provider.OLLAMA, "ollama", "embed", _OLLAMA_BASE), upstream_model="qwen3-embedding:4b"
 )
 TANA_ROUTES = tuple(
     Route(
         model,
         Upstream(
-            Provider.TANA, "tana", "messages", "https://app.tana.inc/functions",
-            "os.environ/TANA_FIREBASE_REFRESH_TOKEN", True,
+            Provider.TANA,
+            "tana",
+            "messages",
+            "https://app.tana.inc/functions",
+            "os.environ/TANA_FIREBASE_REFRESH_TOKEN",
+            True,
         ),
         upstream_model=upstream,
     )
@@ -700,7 +722,11 @@ _ANTHROPIC_SUBSCRIPTION = Upstream(
     Provider.ANTHROPIC_MAX20, "anthropic", "messages", _CLIPROXY_BASE, "os.environ/CLIPROXY_CLIENT_KEY", True
 )
 _ANTHROPIC_API = Upstream(
-    Provider.ANTHROPIC_API, "anthropic", "messages", api_key="os.environ/ANTHROPIC_API_KEY", supports_function_calling=True
+    Provider.ANTHROPIC_API,
+    "anthropic",
+    "messages",
+    api_key="os.environ/ANTHROPIC_API_KEY",
+    supports_function_calling=True,
 )
 ANTHROPIC_SUBSCRIPTION_ROUTES = tuple(
     Route(model, _ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_ANTHROPIC_EFFORTS) for model in _ANTHROPIC_MODELS
@@ -713,7 +739,8 @@ _ANTIGRAVITY = Upstream(
 )
 ANTIGRAVITY_ROUTES = tuple(
     Route(
-        model, _ANTIGRAVITY,
+        model,
+        _ANTIGRAVITY,
         reasoning_efforts=_ANTHROPIC_EFFORTS if model in (_ANTIGRAVITY_OPUS, _ANTIGRAVITY_SONNET) else (),
     )
     for model in ANTIGRAVITY_MODELS
@@ -734,7 +761,9 @@ GEMINI_ROUTES = tuple(Route(model, _GOOGLE_GENERATE) for model in GEMINI_MODELS)
 _GOOGLE_EMBED = Upstream(Provider.GOOGLE, "gemini", "embed", api_key="os.environ/GEMINI_API_KEY")
 GEMINI_EMBEDDING_ROUTES = tuple(Route(model, _GOOGLE_EMBED) for model in _GEMINI_EMBEDDING_MODELS)
 GEMINI_EMBEDDING_ALIAS = RouteAlias(GEMINI_EMBEDDING_COMPAT_ALIAS, GEMINI_EMBEDDING_ROUTES[0])
-_MISTRAL = Upstream(Provider.MISTRAL, "mistral", "chat", api_key="os.environ/MISTRAL_API_KEY", supports_function_calling=True)
+_MISTRAL = Upstream(
+    Provider.MISTRAL, "mistral", "chat", api_key="os.environ/MISTRAL_API_KEY", supports_function_calling=True
+)
 MISTRAL_ROUTES = tuple(Route(model, _MISTRAL) for model in _MISTRAL_MODELS)
 
 # Ordered public catalog. Aliases reference routes rather than repeat their upstream

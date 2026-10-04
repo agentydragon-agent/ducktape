@@ -361,17 +361,15 @@ py_test(
     name = "test_model_catalog",
     srcs = ["test_model_catalog.py"],
     data = [
-        "//cluster:generated/agentplane-staging/agentplane-staging.k8s.yaml",
         "//cluster:generated/agentplane-testing/agentplane-testing.k8s.yaml",
+        "//cluster/k8s:agentplane-staging/agentplane-staging.k8s.yaml",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":environment",
         ":staging",
-        ":staging_config",
         ":testing",
-        ":testing_config",
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest",

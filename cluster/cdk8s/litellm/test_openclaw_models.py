@@ -50,7 +50,8 @@ def test_public_coder_agent_catalog_names_only_served_routes() -> None:
 def test_catalog_limits_leave_room_for_input() -> None:
     # maxTokens is reserved out of the (measured or published) context window.
     for model in OPENCLAW_CODEX_MODELS:
-        assert model.max_output_tokens is not None and model.context_window is not None
+        assert model.max_output_tokens is not None
+        assert model.context_window is not None
         assert model.max_output_tokens < model.context_window, model.id
     assert GEMINI_MAX_OUTPUT_TOKENS < GEMINI_CONTEXT_WINDOW
 

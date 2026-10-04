@@ -112,6 +112,7 @@ class Environment:
     replicas: ReplicaProfile
     # The ConfigMap-authored portion of agentplane/app/main.py's `Settings`.
     app_config: AppSettingsConfig
+    # Shared source for app settings and the follow-up ingress metadata projection.
     model_routes: HarnessRoutes
     db: DbProps
     llm_ingress: LlmIngressProps

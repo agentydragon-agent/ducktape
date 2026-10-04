@@ -73,7 +73,9 @@ def settings(
     return AppSettingsConfig(
         models=ModelCatalog(
             models=[
-                ModelOption(model=route.id, display_name=route.display_name, reasoning_efforts=list(route.reasoning_efforts))
+                ModelOption(
+                    model=route.id, display_name=route.display_name, reasoning_efforts=list(route.reasoning_efforts)
+                )
                 for route in models.all
             ],
             harnesses={
