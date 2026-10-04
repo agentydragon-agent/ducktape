@@ -34,10 +34,7 @@ BODY = Subscribe(
 @pytest.fixture
 async def service(store: Store) -> Service:
     return Service(
-        store,
-        create_autospec(Actions),
-        create_autospec(SandboxServiceClient),
-        notice_debounce=NoticeDebounceSettings(),
+        store, create_autospec(Actions), create_autospec(SandboxServiceClient), notice_debounce=NoticeDebounceSettings()
     )
 
 
