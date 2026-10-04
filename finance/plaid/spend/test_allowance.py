@@ -17,22 +17,19 @@ def policy(**overrides):
 
 
 def row(day, amount, **overrides):
-    return (
-        {
-            "account_id": "card-1",
-            "transaction_id": f"tx-{day}-{amount}",
-            "date": day,
-            "amount": amount,
-            "pending": False,
-            "pending_transaction_id": None,
-            "currency": "USD",
-            "name": "EXAMPLE SHOP",
-            "merchant_name": None,
-            "pfc_primary": "SHOPPING",
-            "pfc_detailed": "SHOPPING_GENERAL_MERCHANDISE",
-        }
-        | overrides
-    )
+    return {
+        "account_id": "card-1",
+        "transaction_id": f"tx-{day}-{amount}",
+        "date": day,
+        "amount": amount,
+        "pending": False,
+        "pending_transaction_id": None,
+        "currency": "USD",
+        "name": "EXAMPLE SHOP",
+        "merchant_name": None,
+        "pfc_primary": "SHOPPING",
+        "pfc_detailed": "SHOPPING_GENERAL_MERCHANDISE",
+    } | overrides
 
 
 def view(rows=(), when=START):
@@ -51,7 +48,7 @@ def test_activation_preview_and_no_double_credit():
 
 def test_carry_windows_and_early_pace():
     now = datetime(2026, 2, 28, tzinfo=UTC)
-    result = view([row("2026-01-31", 20), row("2026-02-26", 30)], when=now)
+    result = view([row("2026-01-31", 20), row("2026-02-28", 30)], when=now)
     assert result.available_minor_units == 15_000
     assert result.prior_carry_minor_units == 8_000
     assert result.windows_minor_units["current_credit_cycle"] == 3_000

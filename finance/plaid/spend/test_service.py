@@ -159,10 +159,12 @@ async def test_allowance_account_coverage_and_freshness_gate() -> None:
     assert result.allowance.available_minor_units == 8_800
     conn.accounts.pop()
     unavailable = (await service.read_view()).allowance
-    assert unavailable is not None and unavailable.status == "unavailable"
+    assert unavailable is not None
+    assert unavailable.status == "unavailable"
     conn.accounts.append({"account_id": "checking-1", "type": "depository", "last_synced_at": now - timedelta(days=4)})
     unavailable = (await service.read_view()).allowance
-    assert unavailable is not None and unavailable.status == "unavailable"
+    assert unavailable is not None
+    assert unavailable.status == "unavailable"
 
 
 class _ConnectedRequest:

@@ -46,8 +46,7 @@ class AllowancePolicy(BaseModel):
             raise ValueError("USD and unique spending account IDs are required")
         # Plaid provides a date, not a reliable purchase timestamp. Avoid partial-day accounting.
         if self.activation_at is not None and (
-            self.activation_at.utcoffset() is None
-            or self.activation_at.astimezone(UTC).time() != datetime.min.time()
+            self.activation_at.utcoffset() is None or self.activation_at.astimezone(UTC).time() != datetime.min.time()
         ):
             raise ValueError("activation_at must be midnight UTC (Plaid transactions are date-only)")
         return self
