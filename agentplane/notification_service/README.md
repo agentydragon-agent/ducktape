@@ -25,8 +25,8 @@ sessions retain their original prompt.
 ## Configuration
 
 Set `AGENTPLANE_NOTIFICATIONS_CONFIG_FILE` to a Pydantic-validated YAML file; explicit missing files and
-unknown keys fail startup. Environment variables override YAML using `__` for nested fields. See
-[settings.example.yaml](settings.example.yaml) and `settings.py` for field descriptions.
+unknown keys fail startup. Environment variables override YAML using `__` for nested fields.
+[settings.py](settings.py) defines the configuration fields and their descriptions.
 Configuration changes require a service restart.
 
 `actions` contains `url` and `token_file`; `sandbox_service` contains `target` and `token_file`.
