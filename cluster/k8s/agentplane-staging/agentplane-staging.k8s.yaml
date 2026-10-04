@@ -3142,6 +3142,7 @@ data:
           - public-gaffer-private-reads
           - github-identity-reads
           - ssh-reads
+          - finance-agent-gaffer-branch-creation
           - ducktape-pr-failed-jobs
         kubernetes_grants:
           - agentplane-staging-metadata
@@ -6421,6 +6422,38 @@ spec:
           - owner
           - repo
           - run_id
+        type: object
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: Auto-approves only GitHub MCP create_branch calls for agentydragon/gaffer-private; existing branches cannot be overwritten, and other writes remain human-approved.
+  name: finance-agent-gaffer-branch-creation
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: argument_schema
+      actions:
+        github:
+          - create_branch
+      schema:
+        additionalProperties: false
+        properties:
+          branch:
+            minLength: 1
+            type: string
+          from_branch:
+            minLength: 1
+            type: string
+          owner:
+            const: agentydragon
+          repo:
+            const: gaffer-private
+        required:
+          - owner
+          - repo
+          - branch
         type: object
 ---
 apiVersion: external-secrets.io/v1

@@ -3,7 +3,11 @@
 import pytest_bazel
 
 from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
-from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS
+from cluster.cdk8s.agentplane.staging_config import (
+    FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
+    _FINANCE_AGENT_INSTRUCTIONS,
+    config,
+)
 
 
 def test_ducktape_pr_instructions_are_shared_once() -> None:
@@ -17,6 +21,13 @@ def test_finance_prompt_keeps_private_context_in_checkout() -> None:
     assert "read `README.md` and" in _FINANCE_AGENT_INSTRUCTIONS
     assert "secrets/coinbase-api-credentials" in _FINANCE_AGENT_INSTRUCTIONS
     assert "api.coinbase.com" in _FINANCE_AGENT_INSTRUCTIONS
+
+
+def test_gaffer_branch_creation_policy_is_finance_agent_only() -> None:
+    cfg = config()
+    assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET in cfg.sandbox_presets["finance-agent"].action_policy_sets
+    for preset in ("public-coder", "haku"):
+        assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET not in cfg.sandbox_presets[preset].action_policy_sets
 
 
 if __name__ == "__main__":

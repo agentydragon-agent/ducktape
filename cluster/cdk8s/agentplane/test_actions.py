@@ -47,6 +47,23 @@ def test_public_route_exposes_protocol_paths_only(
     assert paths >= _MCP_PROTOCOL_PATHS
 
 
+def test_gaffer_branch_policy_approves_only_create_branch(
+    agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    policy = one(
+        doc
+        for doc in agentplane_manifests["agentplane-staging"]
+        if doc["kind"] == "ActionPolicySet" and doc["metadata"]["name"] == "finance-agent-gaffer-branch-creation"
+    )
+    approval = one(policy["spec"]["autoApproveIf"])
+    assert approval["type"] == "argument_schema"
+    assert approval["actions"] == {"github": ["create_branch"]}
+    assert approval["schema"]["properties"]["owner"] == {"const": "agentydragon"}
+    assert approval["schema"]["properties"]["repo"] == {"const": "gaffer-private"}
+    assert approval["schema"]["required"] == ["owner", "repo", "branch"]
+    assert approval["schema"]["additionalProperties"] is False
+
+
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_cross_owner_reader_is_explicit_and_json_encoded(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
