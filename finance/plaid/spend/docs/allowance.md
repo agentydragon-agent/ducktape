@@ -23,7 +23,10 @@ Generic _synthetic_ example (amounts are integer cents; IDs, categories and pref
     "max_sync_age_hours": 72,
     "rules": [
       { "condition": { "type": "name_prefix", "field": "name", "prefix": "EXAMPLE RENT" }, "kind": "fixed" },
-      { "condition": { "type": "category_exact", "field": "pfc_detailed", "value": "EXAMPLE_TRANSFER_DETAIL" }, "kind": "excluded" },
+      {
+        "condition": { "type": "category_exact", "field": "pfc_detailed", "value": "EXAMPLE_TRANSFER_DETAIL" },
+        "kind": "excluded"
+      },
       { "condition": { "type": "name_prefix", "field": "name", "prefix": "EXAMPLE ONLINE" }, "kind": "flexible" }
     ]
   }

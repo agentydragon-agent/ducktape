@@ -200,9 +200,13 @@ def calculate(
     cycle_start = month_anniversary(start, credits - 1).date()
     windows = Windows(
         current_credit_cycle_minor_units=sum(p.minor_units for p in included if p.transaction.date >= cycle_start),
-        calendar_month_minor_units=sum(p.minor_units for p in included if p.transaction.date >= now.date().replace(day=1)),
+        calendar_month_minor_units=sum(
+            p.minor_units for p in included if p.transaction.date >= now.date().replace(day=1)
+        ),
         year_to_date_minor_units=sum(p.minor_units for p in included if p.transaction.date >= date(now.year, 1, 1)),
-        trailing_7_days_minor_units=sum(p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=6)).date()),
+        trailing_7_days_minor_units=sum(
+            p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=6)).date()
+        ),
         trailing_30_days_minor_units=sum(
             p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=29)).date()
         ),

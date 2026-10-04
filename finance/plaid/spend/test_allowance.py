@@ -12,8 +12,8 @@ from finance.plaid.spend.allowance import (
     CategoryExact,
     Kind,
     NamePrefix,
-    Rule,
     PaceAlert,
+    Rule,
     Status,
     Transaction,
     calculate,
@@ -22,6 +22,7 @@ from finance.plaid.spend.allowance import (
 from finance.plaid.spend.models import SpendConfiguration
 
 START = datetime(2026, 1, 31, tzinfo=UTC)
+START_DATE = date(2026, 1, 31)
 
 
 def category_rule(field: Literal["pfc_primary", "pfc_detailed"], value: str, kind: Kind) -> Rule:
@@ -32,12 +33,14 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
     return Rule(condition=NamePrefix(type="name_prefix", field=field, prefix=prefix), kind=kind)
 
 
-def policy(*, activation_at: date | None = START.date(), rules: list[Rule] | None = None) -> AllowancePolicy:
+def policy(*, activation_at: date | None = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
     return AllowancePolicy(
         monthly_minor_units=10_000,
         spending_account_ids=["card-1"],
         activation_at=activation_at,
-        rules=rules if rules is not None else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)],
+        rules=rules
+        if rules is not None
+        else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)],
     )
 
 
@@ -160,17 +163,22 @@ def test_private_rule_and_uncertain_purchases():
         last_synced_at=START,
     )
     assert result.available_minor_units == 10_000
-    assert calculate(
-        policy(rules=[name_rule("name", "EXAMPLE", Kind.FLEXIBLE)]),
-        [row("2026-01-31", -5)],
-        now=START,
-        last_synced_at=START,
-    ).available_minor_units == 10_500
+    assert (
+        calculate(
+            policy(rules=[name_rule("name", "EXAMPLE", Kind.FLEXIBLE)]),
+            [row("2026-01-31", -5)],
+            now=START,
+            last_synced_at=START,
+        ).available_minor_units
+        == 10_500
+    )
     uncertain = view([row("2026-01-31", 12, pfc_primary=None, pfc_detailed=None)])
     assert uncertain.available_minor_units == 8_800
     assert uncertain.review_minor_units == 1_200
     with pytest.raises(ValidationError):
-        Rule.model_validate({"condition": {"type": "name_prefix", "field": "pfc_primary", "prefix": "SHOPPING"}, "kind": "excluded"})
+        Rule.model_validate(
+            {"condition": {"type": "name_prefix", "field": "pfc_primary", "prefix": "SHOPPING"}, "kind": "excluded"}
+        )
     assert policy().spending_account_ids == {"card-1"}
 
 
