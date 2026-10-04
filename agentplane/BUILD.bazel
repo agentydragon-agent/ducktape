@@ -28,3 +28,13 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
 )
+
+py_library(
+    name = "postgres_listener",
+    srcs = ["postgres_listener.py"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+    ],
+)

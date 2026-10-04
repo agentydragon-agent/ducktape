@@ -330,9 +330,8 @@ py_library(
     name = "updates",
     srcs = ["updates.py"],
     deps = [
-        "@pypi//asyncpg",
+        "//agentplane:postgres_listener",
         "@pypi//sqlalchemy",
-        "@pypi//tenacity",
     ],
 )
 
@@ -379,8 +378,6 @@ py_test(
         ":updates",
         "//:conftest",
         "//agentplane/workload_auth:principal",
-        "@pypi//asyncpg",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

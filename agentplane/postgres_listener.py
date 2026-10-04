@@ -15,6 +15,8 @@ CONNECTION_ERRORS = (OSError, TimeoutError, asyncpg.PostgresConnectionError, asy
 
 
 class PostgresListener:
+    """Adapters own payload parsing/fanout; invalidate readers on both connection loss and registration."""
+
     def __init__(
         self,
         url: URL,
