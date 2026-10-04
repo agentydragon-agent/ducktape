@@ -81,3 +81,8 @@ exports_files(
     ["agentplane-staging/agentplane-staging.k8s.yaml"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
 )
+
+exports_files(
+    ["litellm/keys-tf/keys-tf.k8s.yaml"],
+    visibility = ["//cluster/cdk8s/litellm:__pkg__"],
+)

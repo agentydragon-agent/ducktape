@@ -61,7 +61,7 @@ provider "litellm" {
 
 resource "litellm_key" "cheap_experiments" {
   key_alias       = "cheap-experiments"
-  models          = var.model_allowlists.cheap_experiments_models
+  models          = var.model_lanes.cheap_experiments_models.allowed_models
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -88,10 +88,10 @@ resource "litellm_key" "agentplane_staging" {
   key_alias = "agentplane-staging"
   # Staging Codex and key access both use the GPT-6 subscription routes.
   models = concat(
-    var.model_allowlists.gpt6_oai_lane_models,
-    var.model_allowlists.claude_client_models,
-    var.model_allowlists.antigravity_client_models,
-    var.model_allowlists.ollama_chat_client_models,
+    var.model_lanes.gpt6_oai_lane_models.allowed_models,
+    var.model_lanes.claude_client_models.allowed_models,
+    var.model_lanes.antigravity_client_models.allowed_models,
+    var.model_lanes.ollama_chat_client_models.allowed_models,
   )
   metadata = {
     consumer = "agentplane-staging"
@@ -123,7 +123,7 @@ resource "kubernetes_secret" "agentplane_staging" {
 
 resource "litellm_key" "codex_pod" {
   key_alias       = "codex-pod"
-  models          = var.model_allowlists.gpt6_oai_lane_models
+  models          = var.model_lanes.gpt6_oai_lane_models.allowed_models
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -171,7 +171,7 @@ resource "litellm_key" "public_coder_agent" {
   # Gemini reaches Google through LiteLLM's own in-cluster GEMINI_API_KEY, so
   # this key never carries that credential either; Antigravity reaches CLIProxyAPI's
   # OAuth session the same way the Codex lanes do.
-  models = concat(var.model_allowlists.gpt6_codex_client_models, var.model_allowlists.gpt6_oai_lane_models, var.model_allowlists.gemini_client_models, var.model_allowlists.antigravity_client_models, var.model_allowlists.embedding_client_models)
+  models = concat(var.model_lanes.gpt6_codex_client_models.allowed_models, var.model_lanes.gpt6_oai_lane_models.allowed_models, var.model_lanes.gemini_client_models.allowed_models, var.model_lanes.antigravity_client_models.allowed_models, var.model_lanes.embedding_client_models.allowed_models)
   metadata = {
     consumer = "public-coder-agent"
   }
@@ -221,7 +221,7 @@ resource "litellm_team" "tana_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["tana/ant-messages/claude-haiku-4-5"]
+        fallback_models = var.model_lanes.tana_client_models.fallback_models
       }
     ]
   }
@@ -230,7 +230,7 @@ resource "litellm_team" "tana_clients" {
 resource "litellm_key" "tana_clients" {
   key_alias = "tana-clients"
   key       = data.sops_file.tana_clients_key.data["litellm_tana_key"]
-  models    = var.model_allowlists.tana_client_models
+  models    = var.model_lanes.tana_client_models.allowed_models
   team_id   = litellm_team.tana_clients.id
   metadata = {
     consumer = "laptop-tana-claude"
@@ -256,7 +256,7 @@ data "sops_file" "claude_subscription_clients_key" {
 resource "litellm_key" "claude_subscription_clients" {
   key_alias = "claude-subscription-clients"
   key       = data.sops_file.claude_subscription_clients_key.data["litellm_claude_subscription_key"]
-  models    = var.model_allowlists.claude_client_models
+  models    = var.model_lanes.claude_client_models.allowed_models
   metadata = {
     consumer = "laptop-litellm-claude"
   }
@@ -278,7 +278,7 @@ resource "litellm_team" "codex_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["chatgpt/ant-messages/gpt-6-luna"]
+        fallback_models = var.model_lanes.codex_client_models.fallback_models
       }
     ]
   }
@@ -287,7 +287,7 @@ resource "litellm_team" "codex_clients" {
 resource "litellm_key" "codex_clients" {
   key_alias = "codex-clients"
   key       = data.sops_file.codex_clients_key.data["litellm_codex_key"]
-  models    = var.model_allowlists.codex_client_models
+  models    = var.model_lanes.codex_client_models.allowed_models
   team_id   = litellm_team.codex_clients.id
   metadata = {
     consumer = "laptop-codex-claude, agent-box-codex"
@@ -297,7 +297,7 @@ resource "litellm_key" "codex_clients" {
 # Codex pod's Messages-surface key, restricted to the same GPT-6 roster as its Responses key.
 resource "litellm_key" "codex_pod_messages" {
   key_alias = "codex-pod-messages"
-  models    = var.model_allowlists.gpt6_codex_client_models
+  models    = var.model_lanes.gpt6_codex_client_models.allowed_models
   metadata = {
     consumer = "codex-pod codex-claude"
   }
@@ -342,7 +342,7 @@ resource "litellm_team" "gemini_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["google/goog-generate/gemini-3.5-flash-lite"]
+        fallback_models = var.model_lanes.gemini_client_models.fallback_models
       }
     ]
   }
@@ -351,7 +351,7 @@ resource "litellm_team" "gemini_clients" {
 resource "litellm_key" "gemini_clients" {
   key_alias = "gemini-clients"
   key       = data.sops_file.gemini_clients_key.data["litellm_gemini_key"]
-  models    = var.model_allowlists.gemini_client_models
+  models    = var.model_lanes.gemini_client_models.allowed_models
   team_id   = litellm_team.gemini_clients.id
   metadata = {
     consumer = "laptop-gemini-claude"
@@ -380,7 +380,7 @@ resource "litellm_team" "antigravity_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["antigravity/ant-messages/gemini-3.5-flash-lite"]
+        fallback_models = var.model_lanes.antigravity_client_models.fallback_models
       }
     ]
   }
@@ -389,7 +389,7 @@ resource "litellm_team" "antigravity_clients" {
 resource "litellm_key" "antigravity_clients" {
   key_alias = "antigravity-clients"
   key       = data.sops_file.antigravity_clients_key.data["litellm_antigravity_key"]
-  models    = var.model_allowlists.antigravity_client_models
+  models    = var.model_lanes.antigravity_client_models.allowed_models
   team_id   = litellm_team.antigravity_clients.id
   metadata = {
     consumer = "laptop-antigravity-claude"
@@ -402,7 +402,7 @@ resource "litellm_key" "antigravity_clients" {
 # the GPT-6 `chatgpt/oai-responses/*` Codex-account models, same allowlist as codex-pod.
 resource "litellm_key" "agent_workspaces_codex" {
   key_alias = "agent-workspaces-codex"
-  models    = var.model_allowlists.gpt6_oai_lane_models
+  models    = var.model_lanes.gpt6_oai_lane_models.allowed_models
   metadata = {
     consumer = "agent-workspaces codex-lane sandboxes"
   }

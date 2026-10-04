@@ -1,0 +1,47 @@
+# gazelle:exclude generate_nix.py
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "catalog",
+    srcs = ["catalog.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "policies",
+    srcs = ["policies.py"],
+    visibility = ["//visibility:public"],
+    deps = [":catalog"],
+)
+
+py_library(
+    name = "nix",
+    srcs = ["nix.py"],
+    deps = [":policies"],
+)
+
+# keep: the standalone generator source is gazelle-excluded above.
+py_binary(
+    name = "generate_nix",
+    srcs = ["generate_nix.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":nix",
+        "//util/bazel:workspace",
+    ],
+)
+
+py_test(
+    name = "test_nix",
+    srcs = ["test_nix.py"],
+    data = ["claude-wrappers.json"],
+    deps = [
+        ":catalog",
+        ":nix",
+        ":policies",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)

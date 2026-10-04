@@ -11,7 +11,10 @@ py_library(
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/litellm:__pkg__",
     ],
-    deps = ["//cluster/cdk8s:model_rosters"],
+    deps = [
+        ":upstreams",
+        "//model_catalog:catalog",
+    ],
 )
 
 py_library(
@@ -24,10 +27,10 @@ py_library(
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:model_rosters",
-        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:terraform",
+        "//model_catalog:catalog",
+        "//model_catalog:policies",
         "@pypi//cdk8s",
         "@pypi//pydantic",
     ],
@@ -125,7 +128,7 @@ py_test(
     deps = [
         ":config",
         "//:conftest",
-        "//cluster/cdk8s:model_rosters",
+        "//model_catalog:catalog",
         "@pypi//pytest_bazel",
     ],
 )
@@ -138,12 +141,38 @@ py_test(
     deps = [
         ":config",
         "//:conftest",
-        "//cluster/cdk8s:model_rosters",
         "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:public_coder_agent_config",
         "//cluster/cdk8s/parked:haku_openclaw_spike_config",
+        "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "upstreams",
+    srcs = ["upstreams.py"],
+    deps = ["//model_catalog:catalog"],
+)
+
+py_test(
+    name = "test_keys",
+    srcs = ["test_keys.py"],
+    data = [
+        "//cluster/k8s:litellm/keys-tf/keys-tf.k8s.yaml",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":keys",
+        "//:conftest",
+        "//model_catalog:catalog",
+        "//model_catalog:policies",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

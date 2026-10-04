@@ -3,7 +3,7 @@
 import pytest_bazel
 
 from cluster.cdk8s.litellm.config import main_proxy_config
-from cluster.cdk8s.model_rosters import OLLAMA_CHAT_ROUTES, SERVED_ROUTES, ApiShape, Route
+from model_catalog.catalog import OLLAMA_CHAT_ROUTES, SERVED_ROUTES, ApiShape, Route
 
 
 # The canonical route derives each entry's shape from its upstream adapter

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cluster.cdk8s.model_rosters import HIDDEN_ALIASES, SERVED_ROUTES, Provider, Route, RouteAlias, shape_mode
+from cluster.cdk8s.litellm.upstreams import UPSTREAM_BINDINGS
+from model_catalog.catalog import HIDDEN_ALIASES, SERVED_ROUTES, Provider, Route, RouteAlias, shape_mode
 
 
 @dataclass(frozen=True)
@@ -24,11 +25,12 @@ def model_entry(entry: Route | RouteAlias) -> dict:
     """Project a served route into LiteLLM's schema without choosing its identity."""
     route = entry.target if isinstance(entry, RouteAlias) else entry
     upstream = route.upstream
+    binding = UPSTREAM_BINDINGS[upstream]
     params: dict = {"model": route.upstream_id}
-    if upstream.api_base is not None:
-        params["api_base"] = upstream.api_base
-    if upstream.api_key is not None:
-        params["api_key"] = upstream.api_key
+    if binding.api_base is not None:
+        params["api_base"] = binding.api_base
+    if binding.api_key is not None:
+        params["api_key"] = binding.api_key
     if route.num_ctx is not None and route.num_ctx != 128 * 1024:
         params["extra_body"] = {"options": {"num_ctx": route.num_ctx}}
     if upstream.provider == Provider.TANA:

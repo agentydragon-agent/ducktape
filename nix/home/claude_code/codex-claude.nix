@@ -8,15 +8,15 @@
 { pkgs, config }:
 let
   inherit (pkgs) lib;
+  models = (lib.importJSON ../../../model_catalog/claude-wrappers.json).codex-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "codex-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenFile = config.sops.secrets.litellm_codex_key.path;
-  model = "chatgpt/ant-messages/gpt-6-astra";
-  haikuModel = "chatgpt/ant-messages/gpt-6-luna";
+  inherit (models) model;
+  inherit (models) haikuModel;
   gatewayDiscovery = true;
   # Codex 0.153.4 permits Astra's context window up to 872k (SSOT:
-  # model_rosters.py). Claude Code does not discover it, so set it explicitly.
-  maxContextTokens = 872000;
-  maxOutputTokens = 128000;
+  # model_catalog/catalog.py). Claude Code does not discover it, so set it explicitly.
+  inherit (models) maxContextTokens maxOutputTokens;
 }

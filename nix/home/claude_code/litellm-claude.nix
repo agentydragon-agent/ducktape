@@ -21,6 +21,7 @@
 { pkgs, config }:
 let
   inherit (pkgs) lib;
+  models = (lib.importJSON ../../../model_catalog/claude-wrappers.json).litellm-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "litellm-claude" {
   baseUrl = "https://litellm.allegedly.works";
@@ -33,8 +34,8 @@ import ./gateway.nix { inherit pkgs lib; } "litellm-claude" {
   # `anthropic-beta` header. LiteLLM already forwards that header upstream to CLIProxyAPI
   # (general_settings.forward_client_headers_to_llm_api in proxy-config.yaml), so no
   # proxy-side model_name entry is needed -- this suffix alone is enough.
-  model = "anthropic-max20/ant-messages/claude-sonnet-5[1m]";
-  haikuModel = "anthropic-max20/ant-messages/claude-haiku-4-5-20251001";
+  model = "${models.model}[1m]";
+  inherit (models) haikuModel;
   # LiteLLM filters /v1/models by the key's allowlist (`get_complete_model_list` prefers a
   # non-empty key list), so discovery offers exactly the subscription roster.
   gatewayDiscovery = true;

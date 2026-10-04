@@ -9,32 +9,29 @@
 # backend cannot execute. The antigravity-clients team falls back to the flash-lite tier,
 # so a throttled model degrades instead of hard-failing — but only at routing time: a
 # model outside the key's allowlist is refused during auth, before the router sees it, so
-# both names below must be ones the proxy serves and the key admits (ANTIGRAVITY_MODELS
-# in cluster/cdk8s/model_rosters.py, antigravity_client_models in
+# both names below must be ones the proxy serves and the key admits (ANTIGRAVITY_ROUTES
+# in cluster/cdk8s/model_catalog/catalog.py, antigravity_client_models in
 # tf/gitops/litellm-keys/main.tf). See ./gateway.nix for the shared wrapper pattern.
 #
 # gemini-pro-agent is Antigravity's Gemini 3.1 Pro (High) slug -- a tier the direct
 # GEMINI_API_KEY cannot reach at all (gemini-3.1-pro-preview measured RESOURCE_EXHAUSTED,
-# quota 0, per model_rosters.py). That's the main reason to reach for this wrapper over
+# quota 0, per model_catalog/catalog.py). That's the main reason to reach for this wrapper over
 # gemini-claude.
 { pkgs, config }:
 let
   inherit (pkgs) lib;
+  models = (lib.importJSON ../../../model_catalog/claude-wrappers.json).antigravity-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "antigravity-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenFile = config.sops.secrets.litellm_antigravity_key.path;
-  model = "antigravity/ant-messages/gemini-pro-agent";
-  haikuModel = "antigravity/ant-messages/gemini-3.5-flash-lite";
+  inherit (models) model;
+  inherit (models) haikuModel;
   disallowedTools = [
     "WebFetch"
     "WebSearch"
   ];
-  # Gemini's published window/output (SSOT: cluster/cdk8s/model_rosters.py
-  # GEMINI_CONTEXT_WINDOW / GEMINI_MAX_OUTPUT_TOKENS) -- borrowed from the same Gemini
-  # generation the direct API exposes; not independently measured for this
-  # Antigravity-specific slug. Without maxContextTokens Claude Code assumes 200k for
-  # this unrecognized slug and compacts away most of the real window.
-  maxContextTokens = 1048576;
-  maxOutputTokens = 65536;
+  # The generated selection keeps the existing output override (65,536), distinct
+  # from Antigravity's published 65,535. The context comes from this account's route.
+  inherit (models) maxContextTokens maxOutputTokens;
 }
