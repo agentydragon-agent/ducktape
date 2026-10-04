@@ -194,6 +194,7 @@ function ThreadRow({
     current ? "current" : "",
     readonly ? "readonly" : "",
     thread.archived ? "archived" : "",
+    status.kind === "stopped" ? "stopped" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -258,6 +259,7 @@ function ThreadGroupSection({
   onToggleArchived: (thread: ThreadView) => void;
 }): JSX.Element {
   const deleted = group.sandbox === null;
+  const suspended = group.sandbox !== null && sandboxSummary(group.sandbox).kind === "suspended";
   return (
     <div>
       <div className="agentplane-sidebar-group-label">
@@ -272,6 +274,8 @@ function ThreadGroupSection({
         ) : (
           <Link
             className="agentplane-sidebar-group-name agentplane-sidebar-group-link"
+            // A suspended Sandbox's name is the gray of its icon rather than the link blue.
+            style={suspended ? { color: SANDBOX_STATUS_MARKS.suspended.color } : undefined}
             to={`/sandboxes/${encodeURIComponent(group.sandboxName)}`}
             onClick={onNavigate}
           >
