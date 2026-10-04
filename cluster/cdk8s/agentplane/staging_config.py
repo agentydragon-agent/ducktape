@@ -51,6 +51,7 @@ PUBLIC_DUCKTAPE_READS_SET = "public-ducktape-reads"
 PUBLIC_DUCKTAPE_FORK_READS_SET = "public-ducktape-fork-reads"
 PUBLIC_GAFFER_PRIVATE_READS_SET = "public-gaffer-private-reads"
 DUCKTAPE_PR_FAILED_JOBS_SET = "ducktape-pr-failed-jobs"
+FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET = "finance-agent-gaffer-branch-creation"
 PUBLIC_CODER_ACTION_POLICY_SETS = (
     PUBLIC_GITHUB_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
@@ -118,8 +119,14 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
             BUILDBUDDY_POLICY,
         ],
         # Same GitHub read sets as public-coder: finance-agent forks/pushes/PRs ducktape
-        # through the same agentydragon-agent account, for the same generic-tooling role.
-        action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
+        # through the same agentydragon-agent account. Gaffer branch creation is the only
+        # additional auto-approved write for this preset; pushing and PR actions remain gated.
+        action_policy_sets=[
+            *PUBLIC_CODER_ACTION_POLICY_SETS,
+            GITHUB_IDENTITY_READS_SET,
+            SSH_READS_SET,
+            FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
+        ],
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
         kubernetes_grants=list(agent_access_profiles.MANAGED_GRANTS["finance-agent"]),
     )

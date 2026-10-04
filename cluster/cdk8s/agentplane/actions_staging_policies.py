@@ -52,6 +52,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     SSH_READS_SET,
 )
 from cluster.cdk8s.agentplane.staging_config import (
+    FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
     PUBLIC_DUCKTAPE_FORK_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
     PUBLIC_GAFFER_PRIVATE_READS_SET,
@@ -460,6 +461,40 @@ def add_staging_action_policies(scope: Construct) -> None:
                         "run_id": {"type": "integer", "minimum": 1},
                     },
                     "required": ["method", "owner", "repo", "run_id"],
+                },
+            )
+        ],
+    )
+
+    # This grants finance-agent only the additive GitHub create-branch operation in its private
+    # Gaffer repository. GitHub's CreateRef rejects an existing branch name rather than moving
+    # that ref; pushing commits, editing files and creating PRs remain on the human-approval path.
+    _policy_set(
+        scope,
+        "finance-agent-gaffer-branch-creation",
+        metadata=ApiObjectMetadata(
+            name=FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
+            namespace=_NAMESPACE,
+            annotations={
+                "description": (
+                    "Auto-approves only GitHub MCP create_branch calls for agentydragon/gaffer-private; "
+                    "existing branches cannot be overwritten, and other writes remain human-approved."
+                )
+            },
+        ),
+        auto_approve_if=[
+            AutoApproveIf.argument_schema(
+                actions={"github": ["create_branch"]},
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "owner": {"const": "agentydragon"},
+                        "repo": {"const": "gaffer-private"},
+                        "branch": {"type": "string", "minLength": 1},
+                        "from_branch": {"type": "string", "minLength": 1},
+                    },
+                    "required": ["owner", "repo", "branch"],
+                    "additionalProperties": False,
                 },
             )
         ],
