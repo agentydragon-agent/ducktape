@@ -7,6 +7,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView
+
 
 class AlertState(StrEnum):
     NORMAL = "normal"
@@ -33,13 +35,14 @@ class CardConfig(BaseModel):
         return value
 
 
-class CardConfiguration(BaseModel):
+class SpendConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
-    cards: list[CardConfig] = Field(default_factory=list)
+    cards: list[CardConfig]
+    allowance: AllowancePolicy | None = None
 
     @model_validator(mode="after")
-    def _unique_account_ids(self) -> CardConfiguration:
+    def _unique_account_ids(self) -> SpendConfiguration:
         account_ids = [card.account_id for card in self.cards]
         if len(account_ids) != len(set(account_ids)):
             raise ValueError("cards must contain at most one item per account_id")
@@ -72,3 +75,5 @@ class SpendView(BaseModel):
 
     generated_at: datetime
     cards: list[CardView]
+    allowance: AllowanceView | None = None
+    dashboard_url: str | None = None

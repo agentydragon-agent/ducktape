@@ -54,6 +54,18 @@ def create_database_sync(admin_url: str, db_name: str, *, extensions: Sequence[s
     return db_url
 
 
+async def create_database_async(admin_url: str, db_name: str) -> str:
+    """Create an isolated per-test database, returning its async SQLAlchemy URL."""
+    _require_safe_db_name(db_name)
+    engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+    finally:
+        await engine.dispose()
+    return admin_url.rsplit("/", 1)[0] + f"/{db_name}"
+
+
 async def force_drop_database(admin_url: str, db_name: str) -> None:
     """Terminate all connections to db_name and drop it (async).
 

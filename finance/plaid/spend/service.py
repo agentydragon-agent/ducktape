@@ -11,7 +11,8 @@ from decimal import ROUND_HALF_UP, Decimal
 import asyncpg
 from babel.numbers import get_currency_precision
 
-from finance.plaid.spend.models import AlertState, CardConfiguration, CardView, SpendView
+from finance.plaid.spend.allowance import AllowanceView, PaceAlert, Status, Transaction, calculate
+from finance.plaid.spend.models import AlertState, CardView, SpendConfiguration, SpendView
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,10 @@ _CARD_PAYMENT_CATEGORY = "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
 class SpendService:
     """Postgres reader and reconnecting NOTIFY subscriber for one shared card view."""
 
-    def __init__(self, database_url: str, configuration: CardConfiguration) -> None:
+    def __init__(self, database_url: str, configuration: SpendConfiguration, *, dashboard_url: str) -> None:
         self._database_url = database_url
         self._configuration = configuration
+        self._dashboard_url = dashboard_url
         self._pool: asyncpg.Pool | None = None
         self._listener_task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
@@ -68,7 +70,12 @@ class SpendService:
         today = generated_at.date()
         card_configs = {card.account_id: card for card in self._configuration.cards if card.enabled}
         if not card_configs:
-            return SpendView(generated_at=generated_at, cards=[])
+            return SpendView(
+                generated_at=generated_at,
+                cards=[],
+                allowance=await self._read_allowance(generated_at),
+                dashboard_url=self._dashboard_url,
+            )
 
         pool = self._require_pool()
         async with pool.acquire() as connection:
@@ -92,7 +99,12 @@ class SpendService:
                 list(card_configs),
             )
             if not account_rows:
-                return SpendView(generated_at=generated_at, cards=[])
+                return SpendView(
+                    generated_at=generated_at,
+                    cards=[],
+                    allowance=await self._read_allowance(generated_at),
+                    dashboard_url=self._dashboard_url,
+                )
 
             account_ids = [row["account_id"] for row in account_rows]
             liability_rows = await connection.fetch(
@@ -232,7 +244,69 @@ class SpendService:
                     statement_available=True,
                 )
             )
-        return SpendView(generated_at=generated_at, cards=cards)
+        return SpendView(
+            generated_at=generated_at,
+            cards=cards,
+            allowance=await self._read_allowance(generated_at),
+            dashboard_url=self._dashboard_url,
+        )
+
+    async def _read_allowance(self, now: datetime) -> AllowanceView | None:
+        policy = self._configuration.allowance
+        if policy is None:
+            return None
+        # No account IDs or names leave the server in the allowance view.
+        async with self._require_pool().acquire() as connection:
+            accounts = await connection.fetch(
+                """SELECT a.account_id, a.type, l.last_synced_at
+                   FROM public.accounts a JOIN public.links l ON l.item_id = a.item_id
+                   WHERE a.account_id = ANY($1::text[]) AND l.status = 'active'""",
+                list(policy.spending_account_ids),
+            )
+            synced = [_as_utc(row["last_synced_at"]) for row in accounts]
+            last_synced = min((value for value in synced if value is not None), default=None)
+            if (
+                len(accounts) != len(policy.spending_account_ids)
+                or any(row["type"] not in ("credit", "depository") for row in accounts)
+                or any(value is None or now - value > timedelta(hours=policy.max_sync_age_hours) for value in synced)
+            ):
+                return AllowanceView(
+                    status=Status.UNAVAILABLE,
+                    currency=policy.currency,
+                    monthly_minor_units=policy.monthly_minor_units,
+                    activation_at=policy.activation_at,
+                    available_minor_units=None,
+                    next_credit_at=None,
+                    posted_minor_units=0,
+                    pending_minor_units=0,
+                    review_minor_units=0,
+                    unmatched_refunds_minor_units=0,
+                    windows_minor_units=None,
+                    trailing_7_daily_minor_units=None,
+                    estimated_exhaustion_at=None,
+                    alert_state=PaceAlert.UNAVAILABLE,
+                    last_synced_at=last_synced,
+                    note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
+                )
+            rows = []
+            if policy.activation_at is not None and policy.activation_at <= now.date():
+                rows = await connection.fetch(
+                    """SELECT t.account_id, t.transaction_id, t.pending_transaction_id,
+                              t.date, t.amount, t.pending, t.name, t.merchant_name,
+                              t.pfc_primary, t.pfc_detailed,
+                              COALESCE(t.iso_currency_code, t.raw_json->>'unofficial_currency_code') AS currency
+                       FROM public.transactions t
+                       JOIN public.accounts a ON a.account_id = t.account_id AND a.item_id = t.item_id
+                       JOIN public.links l ON l.item_id = a.item_id
+                       WHERE t.account_id = ANY($1::text[]) AND t.date >= $2 AND t.date <= $3
+                         AND t.removed IS FALSE AND l.status = 'active'""",
+                    list(policy.spending_account_ids),
+                    policy.activation_at,
+                    now.date(),
+                )
+        return calculate(
+            policy, [Transaction.model_validate(dict(row)) for row in rows], now=now, last_synced_at=last_synced
+        )
 
     def _require_pool(self) -> asyncpg.Pool:
         if self._pool is None:

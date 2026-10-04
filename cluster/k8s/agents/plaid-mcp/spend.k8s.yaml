@@ -8,7 +8,7 @@ data:
   PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
   PLAID_SPEND_API_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
   PLAID_SPEND_API_OIDC_JWKS_URI: https://auth.allegedly.works/application/o/plaid-spend-desktop/jwks/
-  PLAID_SPEND_CARDS_CONFIG_PATH: /etc/plaid-spend/cards.json
+  PLAID_SPEND_CONFIG_PATH: /etc/plaid-spend/config.json
   PLAID_SPEND_WEB_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-web/
   PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL: https://plaid-spend.allegedly.works
 ---
@@ -117,10 +117,10 @@ spec:
       automountServiceAccountToken: false
       containers:
         - env:
-            - name: PLAID_SPEND_CARDS_CONFIG_PATH
+            - name: PLAID_SPEND_CONFIG_PATH
               valueFrom:
                 configMapKeyRef:
-                  key: PLAID_SPEND_CARDS_CONFIG_PATH
+                  key: PLAID_SPEND_CONFIG_PATH
                   name: plaid-spend-config
             - name: PLAID_SPEND_API_OIDC_ISSUER
               valueFrom:
@@ -208,7 +208,7 @@ spec:
             runAsUser: 1000
           volumeMounts:
             - mountPath: /etc/plaid-spend
-              name: cards
+              name: config
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
@@ -217,9 +217,9 @@ spec:
           type: RuntimeDefault
       serviceAccountName: plaid-spend
       volumes:
-        - name: cards
+        - name: config
           secret:
-            secretName: plaid-spend-cards
+            secretName: plaid-spend-private-config
 ---
 apiVersion: v1
 kind: Service

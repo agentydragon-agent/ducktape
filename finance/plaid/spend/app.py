@@ -9,15 +9,13 @@ import sys
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from importlib import resources
-from pathlib import Path
 from typing import Annotated, cast
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
-from pydantic import ValidationError
 
-from finance.plaid.spend.models import CardConfiguration, SpendView
+from finance.plaid.spend.models import SpendConfiguration, SpendView
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from mcp_infra.oidc_principal import (
@@ -82,15 +80,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
     )
 
 
-def _load_configuration(path: Path) -> CardConfiguration:
-    try:
-        return CardConfiguration.model_validate_json(path.read_text("utf-8"))
-    except OSError, UnicodeError, ValidationError:
-        raise RuntimeError(f"Could not load valid Plaid Spend card configuration from {path}") from None
-
-
-def create_app(settings: SpendSettings, *, service: SpendService | None = None) -> FastAPI:
-    runtime_service = service or SpendService(settings.database_url, _load_configuration(settings.cards_config_path))
+def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
     resolver = AuthentikOidcPrincipalResolver(
         expected_issuer=settings.api_oidc_issuer,
         discovered_issuer=settings.api_oidc_discovered_issuer,
@@ -101,14 +91,14 @@ def create_app(settings: SpendSettings, *, service: SpendService | None = None) 
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        await runtime_service.start()
+        await service.start()
         try:
             yield
         finally:
-            await runtime_service.close()
+            await service.close()
 
     app = FastAPI(title="Plaid Spend", docs_url=None, redoc_url=None, lifespan=lifespan)
-    app.state.spend_service = runtime_service
+    app.state.spend_service = service
     app.state.principal_resolver = resolver
     install_login(app, _web_login_config(settings))
 
@@ -190,7 +180,9 @@ def _sse_view(view: SpendView) -> str:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     settings = SpendSettings()
-    uvicorn.run(create_app(settings), host=settings.host, port=settings.port, log_level="info")
+    configuration = SpendConfiguration.model_validate_json(settings.config_path.read_text("utf-8"))
+    service = SpendService(settings.database_url, configuration, dashboard_url=settings.web_oidc_public_base_url)
+    uvicorn.run(create_app(settings, service=service), host=settings.host, port=settings.port, log_level="info")
 
 
 if __name__ == "__main__":
