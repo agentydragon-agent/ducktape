@@ -8,9 +8,11 @@ import pytest
 from pydantic import ValidationError
 
 from finance.plaid.spend.allowance import (
+    AllOf,
     AllowancePolicy,
     CategoryExact,
     Kind,
+    NameContains,
     NamePrefix,
     PaceAlert,
     Rule,
@@ -18,6 +20,7 @@ from finance.plaid.spend.allowance import (
     Transaction,
     calculate,
     month_anniversary,
+    matching_rule,
 )
 from finance.plaid.spend.models import SpendConfiguration
 
@@ -186,3 +189,26 @@ if __name__ == "__main__":
     import pytest_bazel
 
     pytest_bazel.main()
+
+
+def test_compound_wire_rule_matches_only_named_beneficiary_and_wire_category():
+    rule = Rule(
+        condition=AllOf(
+            type="all_of",
+            conditions=[
+                NameContains(type="name_contains", field="name", substring="EXAMPLE BROKER"),
+                CategoryExact(type="category_exact", field="pfc_detailed", value="TRANSFER_OUT_WIRE"),
+            ],
+        ),
+        kind=Kind.EXCLUDED,
+    )
+    assert Rule.model_validate(rule.model_dump()) == rule
+    wire = row("2026-01-31", 500, pfc_detailed="TRANSFER_OUT_WIRE").model_copy(
+        update={"name": "WIRE BENEFICIARY: Example Broker LLC"}
+    )
+    assert matching_rule(wire, [rule]) == rule
+    assert matching_rule(wire.model_copy(update={"pfc_detailed": "GENERAL_SERVICES_LEGAL"}), [rule]) is None
+    assert matching_rule(wire.model_copy(update={"name": "WIRE BENEFICIARY: OTHER BROKER"}), [rule]) is None
+    assert calculate(policy(rules=[rule]), [wire], now=START, last_synced_at=START).available_minor_units == 10_000
+    with pytest.raises(ValidationError):
+        AllOf(type="all_of", conditions=[NameContains(type="name_contains", field="name", substring="XX")])

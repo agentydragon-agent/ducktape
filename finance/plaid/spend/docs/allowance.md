@@ -47,7 +47,7 @@ Configured account IDs should cover **all accounts used for purchases** (credit 
 checking/debit); otherwise this is not a reliable allowance. If an account is missing,
 inactive, or its sync exceeds `max_sync_age_hours`, the allowance shows _unavailable_
 with no available balance. Ordered private rules match `name`/`merchant_name`
-prefixes or exact `pfc_primary`/`pfc_detailed` values; first match wins.
+prefixes, case-insensitive substrings, exact `pfc_primary`/`pfc_detailed` values, or an `all_of` of two or more of those conditions; first match wins. For a named transfer embedded in a long bank descriptor, combine `name_contains` with an exact transfer category rather than excluding all wires. An `all_of` is not an explicit merchant-name flexible refund match; verify refund handling separately.
 **No spending categories are hard-coded.** A purchase with no matching rule counts
 as flexible and appears in the review tally; configure exclusions for repayments,
 income, transfers, and other non-purchases or they will consume allowance.
