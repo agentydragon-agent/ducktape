@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from agentplane.notification_service.sources.github_models import GitHubEvent, GitHubSource
+
 
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True, hide_input_in_errors=True)
@@ -15,7 +17,7 @@ class SourceView(Model):
     subscription_schema: dict[str, JsonValue] = Field(
         description="Provider-defined JSON Schema for subscription creation."
     )
-    content: str = Field(description="Description of the retained provider payload.")
+    content: str = Field(description="Description of the retained source payload.")
 
 
 class DestinationRef(Model):
@@ -31,7 +33,7 @@ class ActionsSource(Model):
 
 
 # Only implemented providers belong in these tagged unions.
-type Source = Annotated[ActionsSource, Field(discriminator="provider")]
+type Source = Annotated[ActionsSource | GitHubSource, Field(discriminator="provider")]
 
 
 class ActionsEvent(Model):
@@ -40,7 +42,7 @@ class ActionsEvent(Model):
     sequence: int = Field(ge=1)
 
 
-type EventIdentity = Annotated[ActionsEvent, Field(discriminator="provider")]
+type EventIdentity = Annotated[ActionsEvent | GitHubEvent, Field(discriminator="provider")]
 
 
 class Subscribe(Model):

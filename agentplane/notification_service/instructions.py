@@ -67,6 +67,22 @@ Cancelling a subscription does not cancel the Action or erase accepted notificat
 session inbox to clean up one task. If abandoning an Action or choosing an independently authorized
 alternative, follow the Actions cancellation procedure; unsubscribing is not withdrawal.
 
+### GitHub repository updates (when enabled)
+
+Check GET {url}/v1/sources before using GitHub. If github is advertised, subscribe with the same
+common envelope and source={{"provider":"github","repository":"owner/repo",
+"subject":{{"kind":"pull_request","number":123}}}}. Branch subjects use
+{{"kind":"branch","name":"devel"}}; fixed commits use {{"kind":"commit","sha":"FULL_COMMIT_SHA"}}.
+Omit events for subject defaults, or use provider-specific filters such as
+"events":[{{"event":"issue_comment","actions":["created"]}}] for PR comments only.
+Subscribe FIRST, then read current GitHub state: this is live follow, not historical webhook replay.
+Each entry carries event.provider=github, delivery/repository identity and the actual webhook payload.
+PR/branch CI is an activity feed, not proof that the latest head passed required checks; inspect the
+payload SHA and current GitHub state. App installation coverage limits which events can arrive,
+especially on uninstalled forks. Any authenticated workload can follow repositories accessible to
+the App, including private repositories. An access/installation error means monitoring is not reliable.
+Use the same read/contiguous-ack/cancel workflow as Actions; no automatic harness wakeup is available.
+
 ### Limits and recovery
 
 No notification-triggered harness/sandbox startup or wake-up is available. Do not promise continuation

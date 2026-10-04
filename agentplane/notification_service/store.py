@@ -6,15 +6,19 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, update
+from pydantic import JsonValue, TypeAdapter
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.action_service.models import ActionEventView
-from agentplane.notification_service.db import Entry, Inbox, Match, Notice, Subscription
+from agentplane.notification_service.db import Entry, GitHubDelivery, Inbox, Match, Notice, Subscription
+from agentplane.notification_service.sources.github_models import EventName, GitHubBinding, GitHubEvent, GitHubSource
 from agentplane.notification_service.models import (
     ActionsEvent,
+    ActionsSource,
     EntryView,
+    EventIdentity,
     InboxPage,
     InboxView,
     NoticeView,
@@ -22,11 +26,16 @@ from agentplane.notification_service.models import (
     SubscriptionUpdate,
     SubscriptionView,
 )
+from agentplane.notification_service.updates import Wakeups, notify
 from agentplane.protocol import event_log_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
 # gazelle:include_dep @pypi//protobuf
+
+
+_EVENT: TypeAdapter[EventIdentity] = TypeAdapter(EventIdentity)
+GITHUB_INGRESS_LOCK = 0x474854504E
 
 
 class NotFoundError(Exception):
@@ -60,6 +69,7 @@ def subscription_view(row: Subscription) -> SubscriptionView:
 
 class Store:
     def __init__(self, engine: AsyncEngine) -> None:
+        self.wakeups = Wakeups(engine.url)
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
 
     async def owned(
@@ -75,13 +85,17 @@ class Store:
             raise NotFoundError
         return row
 
-    async def subscribe(self, principal: WorkloadPrincipal, body: Subscribe) -> SubscriptionView:
+    async def subscribe(
+        self, principal: WorkloadPrincipal, body: Subscribe, binding: GitHubBinding | None = None
+    ) -> SubscriptionView:
         owner = principal.account
         now = datetime.now(UTC)
         key = hashlib.sha256(
             json.dumps([body.destination_ref.model_dump(), body.session_id], sort_keys=True).encode()
         ).hexdigest()
         async with self.sessions.begin() as session:
+            if isinstance(body.source, GitHubSource):
+                await session.execute(select(func.pg_advisory_xact_lock(GITHUB_INGRESS_LOCK)))
             # Serialize only creation for an owner, to enforce the total destination quota.
             await session.execute(
                 select(func.pg_advisory_xact_lock(func.hashtextextended(f"{owner.namespace}/{owner.name}", 0)))
@@ -116,7 +130,7 @@ class Store:
                     expired_through=0,
                     retired=False,
                     updated_at=now,
-                    next_poll=now,
+                    next_attempt=now,
                     claim_until=now,
                 )
                 .on_conflict_do_nothing()
@@ -139,7 +153,7 @@ class Store:
                 )
             )
             if row is not None:
-                if row.creation != body.model_dump(mode="json"):
+                if Subscribe.model_validate(row.creation) != body:
                     raise ConflictError("idempotency key already names another subscription")
                 return subscription_view(row)
             count = await session.scalar(
@@ -147,21 +161,31 @@ class Store:
             )
             if count is not None and count >= 64:
                 raise QuotaError("64 subscriptions per inbox, including cancelled subscriptions")
+            if isinstance(body.source, ActionsSource):
+                position = body.source.after_sequence
+            else:
+                if binding is None:
+                    raise ConflictError("GitHub repository must be authorized before subscribing")
+                latest = await session.scalar(select(func.coalesce(func.max(GitHubDelivery.position), 0)))
+                assert latest is not None
+                position = latest
             row = Subscription(
                 id=uuid4(),
                 inbox_id=inbox.id,
-                request_id=body.source.request_id,
                 idempotency_key=body.idempotency_key,
                 creation=body.model_dump(mode="json"),
                 creator=asdict(principal),
                 version=1,
-                after_sequence=body.source.after_sequence,
+                position=position,
+                binding=binding.model_dump(mode="json") if binding else None,
                 cancelled=False,
                 expires_at=now + timedelta(days=body.lifetime_days),
-                next_poll=now,
+                next_attempt=now,
             )
             session.add(row)
             inbox.updated_at = now
+            inbox.next_attempt = now
+            await notify(session)
             await session.flush()
             return subscription_view(row)
 
@@ -214,7 +238,10 @@ class Store:
                 if row.version != update.version or row.cancelled:
                     raise ConflictError("subscription version changed or subscription cancelled")
                 row.expires_at = datetime.now(UTC) + timedelta(days=update.lifetime_days)
+                row.next_attempt = datetime.now(UTC)
             row.version += 1
+            inbox.next_attempt = datetime.now(UTC)
+            await notify(session)
             return subscription_view(row)
 
     async def inboxes(self, owner: ServiceAccountRef) -> list[InboxView]:
@@ -248,7 +275,7 @@ class Store:
                 entries.append(
                     EntryView(
                         cursor=row.cursor,
-                        event=ActionsEvent(provider="actions", request_id=row.request_id, sequence=row.source_sequence),
+                        event=_EVENT.validate_python(row.event),
                         payload=row.payload,
                         subscriptions=list(matches),
                     )
@@ -287,8 +314,8 @@ class Store:
         async with self.sessions.begin() as session:
             row = await session.scalar(
                 select(Inbox)
-                .where(~Inbox.retired, Inbox.next_poll <= func.now(), Inbox.claim_until <= func.now())
-                .order_by(Inbox.next_poll)
+                .where(~Inbox.retired, Inbox.next_attempt <= func.now(), Inbox.claim_until <= func.now())
+                .order_by(Inbox.next_attempt)
                 .with_for_update(skip_locked=True)
                 .limit(1)
             )
@@ -296,7 +323,7 @@ class Store:
                 now = (await session.execute(select(func.clock_timestamp()))).scalar_one()
                 row.claim = uuid4()
                 row.claim_until = now + timedelta(seconds=30)
-                row.next_poll = now + timedelta(seconds=5)
+                await notify(session)  # Other replicas must account for this lease's expiry.
             return row
 
     async def fenced(self, session: AsyncSession, claim: Inbox) -> Inbox:
@@ -317,8 +344,33 @@ class Store:
     async def release(self, claim: Inbox, error: str | None) -> None:
         async with self.sessions.begin() as session:
             row = await self.fenced(session, claim)
-            row.claim_until = datetime.now(UTC)
+            now = datetime.now(UTC)
+            row.claim_until = now
             row.delivery_error = error
+            next_source = await session.scalar(
+                select(func.min(Subscription.next_attempt)).where(
+                    Subscription.inbox_id == row.id, ~Subscription.cancelled, Subscription.expires_at > func.now()
+                )
+            )
+            notice = await session.get(Notice, row.id)
+            waiting = notice is not None and not notice.confirmed and notice.error is None
+            unread = row.last_cursor > max(row.covered, row.acknowledged, row.expired_through)
+            deadlines = [next_source] if next_source is not None else []
+            if waiting or unread:
+                deadlines.append(now + timedelta(seconds=5))
+            row.next_attempt = min(deadlines) if deadlines else None
+            if error is not None and row.next_attempt is not None:
+                row.next_attempt = max(row.next_attempt, now + timedelta(seconds=5))
+            await notify(session)
+
+    async def get_next_work_at(self) -> datetime | None:
+        """Next durable retry/source/lease deadline, not an interval for checking the queue."""
+        async with self.sessions() as session:
+            return await session.scalar(
+                select(func.min(func.greatest(Inbox.next_attempt, Inbox.claim_until))).where(
+                    ~Inbox.retired, Inbox.next_attempt.is_not(None)
+                )
+            )
 
     async def source(self, claim: Inbox) -> Subscription | None:
         async with self.sessions() as session:
@@ -328,9 +380,9 @@ class Store:
                     Subscription.inbox_id == claim.id,
                     ~Subscription.cancelled,
                     Subscription.expires_at > func.now(),
-                    Subscription.next_poll <= func.now(),
+                    Subscription.next_attempt <= func.now(),
                 )
-                .order_by(Subscription.next_poll)
+                .order_by(Subscription.next_attempt)
                 .limit(1)
             )
             return row
@@ -345,35 +397,191 @@ class Store:
             if row.cancelled or row.version != source.version or row.expires_at <= datetime.now(UTC):
                 return
             row.error = error
-            row.next_poll = datetime.now(UTC) + timedelta(seconds=30 if error else 5)
+            row.next_attempt = datetime.now(UTC) + timedelta(seconds=30 if error else 5)
+            spec = Subscribe.model_validate(row.creation).source
+            assert isinstance(spec, ActionsSource)
             for event in events:
-                if event.sequence <= row.after_sequence:
+                if event.sequence <= row.position:
                     continue
-                if event.sequence != row.after_sequence + 1:
+                if event.sequence != row.position + 1:
                     raise ConflictError("Action event history has a gap")
-                existing = await session.scalar(
-                    select(Entry).where(
-                        Entry.inbox_id == inbox.id,
-                        Entry.request_id == row.request_id,
-                        Entry.source_sequence == event.sequence,
+                await self.append_event(
+                    session,
+                    inbox,
+                    row,
+                    ActionsEvent(provider="actions", request_id=spec.request_id, sequence=event.sequence),
+                    event.model_dump(mode="json"),
+                )
+                row.position = event.sequence
+            inbox.updated_at = datetime.now(UTC) if events else inbox.updated_at
+
+    async def append_event(
+        self,
+        session: AsyncSession,
+        inbox: Inbox,
+        subscription: Subscription,
+        identity: EventIdentity,
+        payload: dict[str, JsonValue],
+    ) -> None:
+        event = identity.model_dump(mode="json")
+        existing = await session.scalar(select(Entry).where(Entry.inbox_id == inbox.id, Entry.event == event))
+        if existing is None:
+            if inbox.last_cursor >= 10_000:
+                raise QuotaError("inbox has reached its 10000-entry lifetime limit; retire it explicitly")
+            inbox.last_cursor += 1
+            existing = Entry(
+                inbox_id=inbox.id, cursor=inbox.last_cursor, event=event, payload=payload, created_at=datetime.now(UTC)
+            )
+            session.add(existing)
+        if await session.get(Match, (subscription.id, existing.cursor)) is None:
+            session.add(Match(subscription_id=subscription.id, cursor=existing.cursor))
+
+    async def source_failed(self, claim: Inbox, source: Subscription, error: str, retry_seconds: int = 60) -> None:
+        async with self.sessions.begin() as session:
+            await self.fenced(session, claim)
+            row = await session.get(Subscription, source.id)
+            assert row is not None
+            if not row.cancelled and row.version == source.version:
+                row.error = error
+                row.next_attempt = datetime.now(UTC) + timedelta(seconds=retry_seconds)
+
+    async def ingest_github(
+        self,
+        app_id: int,
+        delivery_id: UUID,
+        installation_id: int,
+        repository_id: int | None,
+        event: str,
+        digest: bytes,
+        payload: dict[str, JsonValue],
+    ) -> bool:
+        async with self.sessions.begin() as session:
+            # Allocate identities in committed order, also fencing the subscription start boundary.
+            await session.execute(select(func.pg_advisory_xact_lock(GITHUB_INGRESS_LOCK)))
+            existing = await session.scalar(
+                select(GitHubDelivery).where(GitHubDelivery.app_id == app_id, GitHubDelivery.delivery_id == delivery_id)
+            )
+            if existing is not None:
+                if existing.digest != digest:
+                    raise ConflictError("GitHub delivery ID reused with different content")
+                return False
+            session.add(
+                GitHubDelivery(
+                    app_id=app_id,
+                    delivery_id=delivery_id,
+                    installation_id=installation_id,
+                    repository_id=repository_id,
+                    event=event,
+                    digest=digest,
+                    payload=payload,
+                    received_at=datetime.now(UTC),
+                )
+            )
+            now = datetime.now(UTC)
+            active = (
+                (Subscription.binding["app_id"].astext == str(app_id))
+                & ~Subscription.cancelled
+                & (Subscription.expires_at > func.now())
+            )
+            inboxes = await session.scalars(
+                select(Inbox)
+                .where(~Inbox.retired, Inbox.id.in_(select(Subscription.inbox_id).where(active)))
+                .order_by(Inbox.id)
+                .with_for_update()
+            )
+            for inbox in inboxes:
+                # Conservatively wake all this App's sources, including PRs whose head lives in a fork.
+                await session.execute(
+                    update(Subscription)
+                    .where(active, Subscription.inbox_id == inbox.id)
+                    .values(
+                        generation=Subscription.generation + 1,
+                        next_attempt=func.coalesce(
+                            # Preserve explicit provider-error backoff, otherwise schedule immediately.
+                            case((Subscription.error.is_not(None), Subscription.next_attempt), else_=None),
+                            now,
+                        ),
                     )
                 )
-                if existing is None:
-                    if inbox.last_cursor >= 10_000:
-                        raise QuotaError("inbox has reached its 10000-entry lifetime limit; retire it explicitly")
-                    inbox.last_cursor += 1
-                    existing = Entry(
-                        inbox_id=inbox.id,
-                        cursor=inbox.last_cursor,
-                        request_id=row.request_id,
-                        source_sequence=event.sequence,
-                        payload=event.model_dump(mode="json"),
-                        created_at=datetime.now(UTC),
+                inbox.next_attempt = now
+            await notify(session)
+            return True
+
+    async def github_deliveries(self, app_id: int, repositories: set[int], after: int) -> list[GitHubDelivery]:
+        async with self.sessions() as session:
+            return list(
+                await session.scalars(
+                    select(GitHubDelivery)
+                    .where(
+                        GitHubDelivery.app_id == app_id,
+                        GitHubDelivery.repository_id.in_(repositories),
+                        GitHubDelivery.position > after,
                     )
-                    session.add(existing)
-                session.add(Match(subscription_id=row.id, cursor=existing.cursor))
-                row.after_sequence = event.sequence
-            inbox.updated_at = datetime.now(UTC) if events else inbox.updated_at
+                    .order_by(GitHubDelivery.position)
+                    .limit(128)
+                )
+            )
+
+    async def branch_heads(self, app_id: int, repository_id: int, branch: str) -> set[str]:
+        async with self.sessions() as session:
+            return set(
+                await session.scalars(
+                    select(GitHubDelivery.payload["after"].astext)
+                    .where(
+                        GitHubDelivery.app_id == app_id,
+                        GitHubDelivery.repository_id == repository_id,
+                        GitHubDelivery.event == EventName.PUSH,
+                        GitHubDelivery.payload["ref"].astext == f"refs/heads/{branch}",
+                    )
+                    .order_by(GitHubDelivery.position.desc())
+                    .limit(128)
+                )
+            )
+
+    async def pr_heads(self, app_id: int, repository_id: int, number: int) -> set[str]:
+        async with self.sessions() as session:
+            return set(
+                await session.scalars(
+                    select(GitHubDelivery.payload["pull_request"]["head"]["sha"].astext)
+                    .where(
+                        GitHubDelivery.app_id == app_id,
+                        GitHubDelivery.repository_id == repository_id,
+                        GitHubDelivery.event == EventName.PULL_REQUEST,
+                        GitHubDelivery.payload["pull_request"]["number"].astext == str(number),
+                    )
+                    .order_by(GitHubDelivery.position.desc())
+                    .limit(128)
+                )
+            )
+
+    async def record_github(
+        self,
+        claim: Inbox,
+        source: Subscription,
+        matched: list[tuple[GitHubDelivery, GitHubEvent]],
+        through: int,
+        retry_at: datetime | None,
+    ) -> None:
+        async with self.sessions.begin() as session:
+            inbox = await self.fenced(session, claim)
+            row = await session.get(Subscription, source.id)
+            assert row is not None
+            if (
+                row.cancelled
+                or row.version != source.version
+                or row.position != source.position
+                or row.expires_at <= datetime.now(UTC)
+            ):
+                return
+            assert isinstance(Subscribe.model_validate(row.creation).source, GitHubSource)
+            for delivery, identity in matched:
+                await self.append_event(session, inbox, row, identity, delivery.payload)
+            row.position = max(row.position, through)
+            # An ingress commit during matching must not be overwritten by this worker's idle state.
+            row.next_attempt = retry_at if row.generation == source.generation else datetime.now(UTC)
+            row.error = None
+            if matched:
+                inbox.updated_at = datetime.now(UTC)
 
     async def notice(self, claim: Inbox, *, prepare: bool = True) -> Notice | None:
         async with self.sessions.begin() as session:

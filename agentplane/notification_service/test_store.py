@@ -16,7 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.models import ActionEventView, ActionState
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import Entry, Inbox, Subscription
-from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionUpdate
+from agentplane.notification_service.models import (
+    ActionsEvent,
+    ActionsSource,
+    DestinationRef,
+    Subscribe,
+    SubscriptionUpdate,
+)
 from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, Store
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
@@ -126,7 +132,7 @@ async def test_creation_migrations_preserve_populated_inbox(store: Store, engine
     async with store.sessions() as session:
         row = await session.get(Subscription, subscription.id)
         assert row is not None
-        assert row.after_sequence == 3
+        assert row.position == 3
         assert row.creation == BODY.model_dump(mode="json")
     assert await store.subscription(PRINCIPAL.account, subscription.id) == replayed
     assert await store.subscriptions(PRINCIPAL.account) == [replayed]
@@ -179,7 +185,7 @@ async def test_remove_pause_migration_preserves_inbox_and_stopped_intent(
     assert await store.subscribe(PRINCIPAL, BODY) == expected
     assert await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == inbox_before
     async with store.sessions.begin() as session:
-        await session.execute(update(Subscription).values(next_poll=datetime.now(UTC) - timedelta(seconds=1)))
+        await session.execute(update(Subscription).values(next_attempt=datetime.now(UTC) - timedelta(seconds=1)))
     current = await store.source(claim)
     if paused or cancelled:
         assert current is None
@@ -263,7 +269,12 @@ async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) ->
     await asyncio.gather(store.record(claim, a, events(1)), store.record(claim, b, events(1)))
     page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
     assert [entry.cursor for entry in page.entries] == [1, 2]
-    assert {entry.event.request_id for entry in page.entries} == {first.source.request_id, second.source.request_id}
+    assert isinstance(first.source, ActionsSource)
+    assert isinstance(second.source, ActionsSource)
+    assert {entry.event.request_id for entry in page.entries if isinstance(entry.event, ActionsEvent)} == {
+        first.source.request_id,
+        second.source.request_id,
+    }
     await store.retire(PRINCIPAL.account, first.inbox_id)
     assert (await store.subscription(PRINCIPAL.account, first.id)).cancelled
     with pytest.raises(ClaimLostError):

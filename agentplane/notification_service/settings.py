@@ -1,9 +1,9 @@
-"""YAML deployment configuration with environment overrides and rotating service tokens."""
+"""YAML deployment configuration; GitHub secrets are supplied through Secret-backed environment variables."""
 
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 # gazelle:include_dep @pypi//pyyaml
@@ -16,6 +16,38 @@ class ActionsSettings(BaseModel):
     url: str = Field(description="Base URL of the Actions Service's canonical request/event read API.")
     token_file: Path = Field(
         description="Path to the projected ServiceAccount token for Actions; reread for each request to follow rotation."
+    )
+
+
+class GitHubSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    app_id: int = Field(gt=0, description="Public numeric GitHub App ID; not a secret.")
+    private_key: SecretStr = Field(
+        min_length=1,
+        description="PEM App private key, supplied through a Secret-backed environment variable.",
+    )
+    webhook_secret: SecretStr = Field(
+        min_length=32,
+        description="Webhook HMAC signing secret, supplied through a Secret-backed environment variable.",
+    )
+    max_body_bytes: int = Field(
+        default=1024 * 1024, ge=1024, le=25 * 1024 * 1024, description="Maximum raw webhook request body size in bytes."
+    )
+    webhook_concurrency: int = Field(
+        default=8,
+        ge=1,
+        le=64,
+        description="Maximum concurrent webhook requests per replica, held through durable commit; saturation returns 503.",
+    )
+    reconciliation_seconds: int = Field(
+        default=120,
+        ge=0,
+        le=3600,
+        description=(
+            "Grace period after receipt for CI events not yet correlated to a PR or branch head. "
+            "Reconsider on new webhooks and once at expiry, then advance past unmatched events. "
+            "Not a polling interval or a delay for events that already match; zero disables the grace period."
+        ),
     )
 
 
@@ -50,6 +82,9 @@ class Settings(BaseSettings):
     )
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
+    github: GitHubSettings | None = Field(
+        default=None, description="GitHub source configuration. Omit or set to null to disable it."
+    )
 
     @classmethod
     def settings_customise_sources(

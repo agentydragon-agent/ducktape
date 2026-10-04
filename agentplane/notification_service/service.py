@@ -3,15 +3,17 @@
 import asyncio
 import logging
 from contextlib import suppress
+from datetime import UTC, datetime
 
 import grpc
 import httpx
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.notification_service.db import Inbox, Notice
-from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionView
 from agentplane.notification_service.sources.actions import Actions, SourceNotOwnedError
+from agentplane.notification_service.db import Inbox, Notice
+from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError
+from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
 from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
@@ -33,8 +35,11 @@ class DestinationRejectedError(Exception):
 
 
 class Service:
-    def __init__(self, store: Store, actions: Actions, sandboxes: SandboxServiceClient) -> None:
+    def __init__(
+        self, store: Store, actions: Actions, sandboxes: SandboxServiceClient, github: GitHub | None = None
+    ) -> None:
         self.store, self.actions, self.sandboxes = store, actions, sandboxes
+        self.github = github
 
     async def runner(self, owner: ServiceAccountRef, destination: DestinationRef) -> Runner:
         if destination.namespace != self.sandboxes.namespace:
@@ -56,8 +61,13 @@ class Service:
         if body.session_id not in {session.session_id for session in await runner.list_sessions()}:
             raise DestinationRejectedError
         # Authorize source access before persistence, even when replay starts after the last event.
-        await self.actions.events(principal.account, body.source.request_id, body.source.after_sequence)
-        return await self.store.subscribe(principal, body)
+        if isinstance(body.source, ActionsSource):
+            await self.actions.events(principal.account, body.source.request_id, body.source.after_sequence)
+            return await self.store.subscribe(principal, body)
+        if self.github is None:
+            raise GitHubUnavailableError("GitHub provider is disabled")
+        context = await self.github.context(body.source)
+        return await self.store.subscribe(principal, body, context.binding)
 
     async def deliver(self, claim: Inbox, runner: Runner, notice: Notice) -> None:
         # TODO: Observe command-scoped admission/delivery outcomes through Sandbox Service,
@@ -137,23 +147,35 @@ class Service:
                 source = await self.store.source(claim)
                 if source is not None:
                     try:
-                        events = await self.actions.events(owner, source.request_id, source.after_sequence)
-                        await self.store.record(claim, source, events)
+                        spec = Subscribe.model_validate(source.creation).source
+                        if isinstance(spec, ActionsSource):
+                            events = await self.actions.events(owner, spec.request_id, source.position)
+                            await self.store.record(claim, source, events)
+                        elif self.github is None:
+                            raise GitHubUnavailableError("GitHub provider is disabled")
+                        else:
+                            await self.github.reconcile(self.store, claim, source, spec)
                     except (
                         httpx.HTTPError,
                         ValidationError,
                         SourceNotOwnedError,
                         QuotaError,
                         ConflictError,
+                        GitHubUnavailableError,
+                        GitHubRetryError,
                     ) as failure:
                         # No upstream body, bearer, or native content in diagnostics.
-                        await self.store.record(
+                        await self.store.source_failed(
                             claim,
                             source,
-                            [],
-                            f"HTTP {failure.response.status_code}"
-                            if isinstance(failure, httpx.HTTPStatusError)
-                            else type(failure).__name__,
+                            str(failure)
+                            if isinstance(failure, GitHubUnavailableError)
+                            else (
+                                f"HTTP {failure.response.status_code}"
+                                if isinstance(failure, httpx.HTTPStatusError)
+                                else type(failure).__name__
+                            ),
+                            failure.retry_seconds if isinstance(failure, GitHubRetryError) else 60,
                         )
                 notice = await self.store.notice(claim)
                 if notice is not None and error is None:
@@ -181,14 +203,24 @@ class Service:
     async def run(self) -> None:
         next_cleanup = 0.0
         cleanup_cursor = None
-        while True:
-            try:
-                now = asyncio.get_running_loop().time()
-                if now >= next_cleanup:
-                    cleanup_cursor = await self.store.cleanup(cleanup_cursor)
-                    next_cleanup = now + 60
-                if not await self.step():
-                    await asyncio.sleep(1)
-            except SQLAlchemyError:
-                logger.warning("notification storage unavailable; retrying", exc_info=True)
-                await asyncio.sleep(5)
+        with self.store.wakeups.subscribe() as changed:
+            while True:
+                # Clear before reading: a commit racing with either query remains a wakeup.
+                changed.clear()
+                try:
+                    now = asyncio.get_running_loop().time()
+                    if now >= next_cleanup:
+                        cleanup_cursor = await self.store.cleanup(cleanup_cursor)
+                        next_cleanup = now + 60
+                    if await self.step():
+                        continue
+                    next_work_at = await self.store.get_next_work_at()
+                    timeout = max(0, next_cleanup - asyncio.get_running_loop().time())
+                    if next_work_at is not None:
+                        timeout = min(timeout, max(0, (next_work_at - datetime.now(UTC)).total_seconds()))
+                    with suppress(TimeoutError):
+                        async with asyncio.timeout(timeout):
+                            await changed.wait()
+                except SQLAlchemyError:
+                    logger.warning("notification storage unavailable; retrying", exc_info=True)
+                    await asyncio.sleep(5)

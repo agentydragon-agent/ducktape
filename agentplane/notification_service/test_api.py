@@ -24,6 +24,7 @@ PRINCIPAL = WorkloadPrincipal(
 
 async def test_subscription_patch_renews_without_pause(store: Store) -> None:
     service = create_autospec(Service, instance=True)
+    service.github = None
     service.store = store
     resolver = create_autospec(WorkloadPrincipalResolver, instance=True)
     app = create_app(service, resolver)
@@ -60,6 +61,7 @@ async def test_subscription_patch_renews_without_pause(store: Store) -> None:
 
 async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(store: Store) -> None:
     service = create_autospec(Service, instance=True)
+    service.github = None
     service.store = store
     started = asyncio.Event()
     fail = asyncio.Event()
@@ -101,6 +103,7 @@ async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(s
             assert (await client.get("/readyz")).status_code == 503
             assert (await client.get("/healthz")).status_code == 200
         assert stopped == {0, 1, 2, 3}
+        assert not store.wakeups.connected
         assert (await client.get("/readyz")).status_code == 503
 
 
