@@ -913,38 +913,6 @@ background work, but any such runner surface reuses the Action Service contracts
 second tool-request lifecycle; the settled harness behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
 
-### `SANDBOX_SERVICE` — shipped foundation (not a remaining gate)
-
-The independent Sandbox Service extraction is implemented; Actions notifications use it in the
-verified staging delivery path. The app is a client, not a backend dependency. See the
-[service contract](../sandbox_service/README.md), [extraction record](sandbox_service.md), and
-[dependency rule](../docs/service_boundaries.md). Do not redispatch this extraction or invent a directory
-service as a prerequisite for the next notification provider.
-
-Proper runner-leg authentication/TLS, command-scoped delivery tracking, and notification-triggered
-resume remain separate follow-ups. This does not close unrelated native crash/recovery or backup/restore
-acceptance items.
-
-### `ING` — shipped GitHub notification foundation (not a remaining gate)
-
-GitHub PR/branch/commit source schemas, App webhook verification, durable matching and payloads,
-PostgreSQL-driven inbox delivery and source configuration shipped in
-[#8891](https://github.com/agentydragon/ducktape/pull/8891). Staging ingress/App enablement shipped in
-[#8978](https://github.com/agentydragon/ducktape/pull/8978),
-[#8979](https://github.com/agentydragon/ducktape/pull/8979) and
-[#8982](https://github.com/agentydragon/ducktape/pull/8982).
-The operator installed the App; real CI events and a PR comment reached the inbox and this agent's
-harness on 2026-10-04. Overlapping subscriptions produced one comment entry, reads preserved the
-acknowledgement, and the handled prefix was explicitly acknowledged. See the
-[staging acceptance record](../notification_service/docs/staging_github_acceptance.md).
-Do not redispatch GitHub source implementation, App provisioning or the basic live delivery proof.
-
-Shared PostgreSQL listener lifecycle consolidation and reconnect fencing also shipped in
-[#8958](https://github.com/agentydragon/ducktape/pull/8958) and
-[#8968](https://github.com/agentydragon/ducktape/pull/8968). These are not remaining refactors.
-The [notification plan](notifications.md) retains the unverified cases and deferred designs;
-this burn-down does not close native recovery, all repository/event coverage or narrower grants.
-
 ### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 
 **Remaining implementation:** replace the notification source's five-second history polling with
