@@ -135,8 +135,7 @@ async def test_remove_pause_migration_preserves_inbox_and_stopped_intent(
         config.attributes["connection"] = connection
         command.downgrade(config, "0002_idempotency_key")
         connection.execute(
-            text("UPDATE subscription SET paused = :paused WHERE id = :id"),
-            {"id": subscription.id, "paused": paused},
+            text("UPDATE subscription SET paused = :paused WHERE id = :id"), {"id": subscription.id, "paused": paused}
         )
         RUNNER.run_for_connection(connection)
         RUNNER.run_for_connection(connection)

@@ -105,7 +105,9 @@ async def test_subscription_patch_renews_without_pause(store: Store) -> None:
         ),
     )
     path = f"/v1/subscriptions/{subscription.id}"
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications.test") as client:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://notifications.test"
+    ) as client:
         for paused in [True, False]:
             response = await client.patch(path, json={"version": 1, "paused": paused})
             assert response.status_code == 422
