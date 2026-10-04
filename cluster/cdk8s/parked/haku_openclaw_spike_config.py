@@ -1,4 +1,4 @@
-"""The haku-openclaw-spike app: its namespace, openclaw.json (see model_rosters.py for
+"""The haku-openclaw-spike app: its namespace, openclaw.json (see model_catalog/catalog.py for
 subscription routes), the gateway Deployment and everything around it.
 
 The image tag is the placeholder "unset"; the hand-written `PINS_DIR` Component, which the
@@ -42,7 +42,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import config_map_chart, copy_source_file
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
-from cluster.cdk8s.model_rosters import (
+from model_catalog.catalog import (
     FABLE_SUBSCRIPTION,
     HAIKU_SUBSCRIPTION,
     OPUS_SUBSCRIPTION,

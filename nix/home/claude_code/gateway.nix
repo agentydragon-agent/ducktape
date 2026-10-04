@@ -29,7 +29,7 @@ let
   # recognizes, so without maxContextTokens it assumes a 200k window and auto-compacts against
   # it — clipping a larger real window or (for Gemini's ~1M) discarding most of it. Set
   # maxContextTokens explicitly so compaction math uses the selected route's window.
-  # The wrappers consume generated model settings from cluster/generated/model-clients;
+  # The wrappers consume generated model settings from model_catalog/claude-wrappers.json;
   # explicit client overrides remain distinct from the account's published limits.
   #
   # gatewayDiscovery and the `[1m]` suffix convention (see litellm-claude.nix) don't compose.

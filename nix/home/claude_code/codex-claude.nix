@@ -9,7 +9,7 @@
 let
   inherit (pkgs) lib;
   models =
-    (lib.importJSON ../../../cluster/generated/model-clients/claude-wrappers.json).codex-claude;
+    (lib.importJSON ../../../model_catalog/claude-wrappers.json).codex-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "codex-claude" {
   baseUrl = "https://litellm.allegedly.works";
@@ -18,6 +18,6 @@ import ./gateway.nix { inherit pkgs lib; } "codex-claude" {
   inherit (models) haikuModel;
   gatewayDiscovery = true;
   # Codex 0.153.4 permits Astra's context window up to 872k (SSOT:
-  # model_rosters.py). Claude Code does not discover it, so set it explicitly.
+  # model_catalog/catalog.py). Claude Code does not discover it, so set it explicitly.
   inherit (models) maxContextTokens maxOutputTokens;
 }

@@ -7,7 +7,7 @@
 { pkgs, config }:
 let
   inherit (pkgs) lib;
-  models = (lib.importJSON ../../../cluster/generated/model-clients/claude-wrappers.json).tana-claude;
+  models = (lib.importJSON ../../../model_catalog/claude-wrappers.json).tana-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "tana-claude" {
   baseUrl = "https://litellm.allegedly.works";

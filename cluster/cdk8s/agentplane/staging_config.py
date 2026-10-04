@@ -1,6 +1,6 @@
 """Generates agentplane-staging's `agentplane-app-config` ConfigMap's `config.yaml`
 content -- agentplane/app/main.py's `Settings`, mounted by the Deployment. See
-model_rosters.py for the model-name scheme.
+model_catalog/catalog.py for the model-name scheme.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from cluster.cdk8s.agentplane.app_settings import (
     settings,
 )
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
-from cluster.cdk8s.model_rosters import GPT6_LUNA_RESPONSES, SONNET_SUBSCRIPTION
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, SONNET_SUBSCRIPTION
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS
 
 _NAMESPACE = "agentplane-staging"

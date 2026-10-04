@@ -22,7 +22,7 @@
 let
   inherit (pkgs) lib;
   models =
-    (lib.importJSON ../../../cluster/generated/model-clients/claude-wrappers.json).litellm-claude;
+    (lib.importJSON ../../../model_catalog/claude-wrappers.json).litellm-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "litellm-claude" {
   baseUrl = "https://litellm.allegedly.works";

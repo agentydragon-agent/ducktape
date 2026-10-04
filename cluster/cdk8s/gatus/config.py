@@ -27,7 +27,7 @@ from cluster.cdk8s.grocy import app as grocy_app
 from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.matrix import matrix
-from cluster.cdk8s.model_rosters import OLLAMA_GPT_OSS_20B_128K
+from model_catalog.catalog import OLLAMA_GPT_OSS_20B_128K
 from cluster.cdk8s.monitoring import grafana_instance, loki, mimir
 from cluster.cdk8s.nix_cache import attic
 from cluster.cdk8s.ollama import app as ollama_app

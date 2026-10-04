@@ -3,16 +3,15 @@
 import json
 from pathlib import Path
 
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.model_selections import CLAUDE_WRAPPER_MODELS, KEY_MODEL_ROUTES
+from model_catalog.policies import CLAUDE_WRAPPER_MODELS, KEY_MODEL_LANES
 
-OUTPUT_PATH = f"{GENERATED_ROOT}/model-clients/claude-wrappers.json"
+OUTPUT_PATH = "model_catalog/claude-wrappers.json"
 
 
 def claude_wrapper_models() -> dict[str, dict[str, str | int]]:
     configs: dict[str, dict[str, str | int]] = {}
     for name, selection in CLAUDE_WRAPPER_MODELS.items():
-        allowed = KEY_MODEL_ROUTES[selection.key_lane]
+        allowed = KEY_MODEL_LANES[selection.key_lane].allowed
         if selection.primary not in allowed or selection.haiku not in allowed:
             raise ValueError(f"{name} selects a route outside {selection.key_lane}")
         config: dict[str, str | int] = {"model": selection.primary.id, "haikuModel": selection.haiku.id}

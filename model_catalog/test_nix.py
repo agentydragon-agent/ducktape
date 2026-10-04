@@ -3,12 +3,10 @@
 import json
 
 import pytest_bazel
-import yaml
 
-from cluster.cdk8s.litellm.keys import model_fallbacks
-from cluster.cdk8s.model_client_config import OUTPUT_PATH, claude_wrapper_models
-from cluster.cdk8s.model_rosters import ANTIGRAVITY_PRO, SERVED_ROUTES
-from cluster.cdk8s.model_selections import CLAUDE_WRAPPER_MODELS, KEY_FALLBACK_ROUTES, KEY_MODEL_ROUTES
+from model_catalog.nix import OUTPUT_PATH, claude_wrapper_models
+from model_catalog.catalog import ANTIGRAVITY_PRO, SERVED_ROUTES
+from model_catalog.policies import CLAUDE_WRAPPER_MODELS, KEY_MODEL_LANES
 from util.bazel.runfiles import get_required_path
 
 
@@ -21,8 +19,8 @@ def test_wrappers_select_served_and_authorized_route_objects() -> None:
     configs = claude_wrapper_models()
     for name, selection in CLAUDE_WRAPPER_MODELS.items():
         for route in (selection.primary, selection.haiku):
-            assert served[route.id] is route
-            assert route in KEY_MODEL_ROUTES[selection.key_lane]
+            assert served[route.id] == route
+            assert route in KEY_MODEL_LANES[selection.key_lane].allowed
         assert configs[name]["model"] == selection.primary.id
         assert configs[name]["haikuModel"] == selection.haiku.id
         if selection.publish_limits:
@@ -43,16 +41,6 @@ def test_claude_request_suffix_is_not_a_served_identity() -> None:
     model = claude_wrapper_models()["litellm-claude"]["model"]
     assert isinstance(model, str)
     assert not model.endswith("[1m]")
-
-
-def test_fallbacks_match_committed_terraform_inputs_and_stay_within_keys() -> None:
-    path = get_required_path("ducktape/cluster/k8s/litellm/keys-tf/keys-tf.k8s.yaml")
-    [resource] = yaml.safe_load_all(path.read_text())
-    variables = {entry["name"]: entry["value"] for entry in resource["spec"]["vars"]}
-    assert model_fallbacks() == variables["model_fallbacks"]
-    for lane, routes in KEY_FALLBACK_ROUTES.items():
-        assert all(route in KEY_MODEL_ROUTES[lane] for route in routes)
-        assert model_fallbacks()[lane] == [route.id for route in routes]
 
 
 if __name__ == "__main__":

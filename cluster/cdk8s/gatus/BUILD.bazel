@@ -21,7 +21,7 @@ py_library(
         "//cluster/cdk8s:headlamp",
         "//cluster/cdk8s:hubble_ui",
         "//cluster/cdk8s:kubectl_passthrough_mcp",
-        "//cluster/cdk8s:model_rosters",
+        "//model_catalog:catalog",
         "//cluster/cdk8s:proxmox_proxy",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/atuin:server",

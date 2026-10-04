@@ -1,4 +1,4 @@
-"""The public-coder-agent app: its openclaw.json5 (see model_rosters.py for the model-name
+"""The public-coder-agent app: its openclaw.json5 (see model_catalog/catalog.py for the model-name
 scheme and the Codex/Gemini rosters this pulls from), the OpenClaw Deployment and everything
 around it.
 
@@ -37,7 +37,7 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.model_rosters import (
+from model_catalog.catalog import (
     GPT6_ASTRA_RESPONSES,
     GPT6_LUNA_RESPONSES,
     OLLAMA_EMBEDDING_ROUTE,

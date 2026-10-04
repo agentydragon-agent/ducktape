@@ -10,18 +10,18 @@
 # so a throttled model degrades instead of hard-failing — but only at routing time: a
 # model outside the key's allowlist is refused during auth, before the router sees it, so
 # both names below must be ones the proxy serves and the key admits (ANTIGRAVITY_ROUTES
-# in cluster/cdk8s/model_rosters.py, antigravity_client_models in
+# in cluster/cdk8s/model_catalog/catalog.py, antigravity_client_models in
 # tf/gitops/litellm-keys/main.tf). See ./gateway.nix for the shared wrapper pattern.
 #
 # gemini-pro-agent is Antigravity's Gemini 3.1 Pro (High) slug -- a tier the direct
 # GEMINI_API_KEY cannot reach at all (gemini-3.1-pro-preview measured RESOURCE_EXHAUSTED,
-# quota 0, per model_rosters.py). That's the main reason to reach for this wrapper over
+# quota 0, per model_catalog/catalog.py). That's the main reason to reach for this wrapper over
 # gemini-claude.
 { pkgs, config }:
 let
   inherit (pkgs) lib;
   models =
-    (lib.importJSON ../../../cluster/generated/model-clients/claude-wrappers.json).antigravity-claude;
+    (lib.importJSON ../../../model_catalog/claude-wrappers.json).antigravity-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "antigravity-claude" {
   baseUrl = "https://litellm.allegedly.works";

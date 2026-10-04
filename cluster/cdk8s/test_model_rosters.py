@@ -7,7 +7,7 @@ import pytest_bazel
 import yaml
 
 from cluster.cdk8s.litellm.config import main_proxy_config, model_entry
-from cluster.cdk8s.model_rosters import (
+from model_catalog.catalog import (
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,
     ANTIGRAVITY_ROUTES,
@@ -22,12 +22,12 @@ from cluster.cdk8s.model_rosters import (
     Route,
 )
 from cluster.cdk8s.model_selections import (
-    KEY_MODEL_ROUTES,
     PUBLIC_CODER_MODELS,
     RUNNER_CONTEXT_OVERRIDES,
     STAGING_APP_MODELS,
     TESTING_APP_MODELS,
 )
+from model_catalog.policies import KEY_MODEL_LANES
 from util.bazel.runfiles import get_required_path
 
 
@@ -45,22 +45,22 @@ def test_catalog_has_unique_ids_and_aliases_reference_served_routes() -> None:
     by_id = {route.id: route for route in SERVED_ROUTES}
     assert len(by_id) == len(SERVED_ROUTES)
     for alias in (*HIDDEN_ALIASES, GEMINI_EMBEDDING_ALIAS):
-        assert by_id[alias.target.id] is alias.target
-    assert GEMINI_EMBEDDING_ALIAS.target is GEMINI_EMBEDDING_ROUTES[0]
+        assert by_id[alias.target.id] == alias.target
+    assert GEMINI_EMBEDDING_ALIAS.target == GEMINI_EMBEDDING_ROUTES[0]
     assert GEMINI_EMBEDDING_ALIAS.id not in {route.id for route in GEMINI_EMBEDDING_ROUTES}
 
 
-def test_selections_reference_canonical_objects() -> None:
+def test_selected_routes_are_served() -> None:
     by_id = {route.id: route for route in SERVED_ROUTES}
     for selection in (
-        *KEY_MODEL_ROUTES.values(),
+        *(lane.allowed for lane in KEY_MODEL_LANES.values()),
         STAGING_APP_MODELS.all,
         TESTING_APP_MODELS.all,
         PUBLIC_CODER_MODELS,
         RUNNER_CONTEXT_OVERRIDES,
     ):
         for route in selection:
-            assert by_id[route.id] is route
+            assert by_id[route.id] == route
 
 
 def test_runner_context_override_policy_is_narrower_than_known_metadata() -> None:
@@ -76,16 +76,16 @@ def test_runner_context_override_policy_is_narrower_than_known_metadata() -> Non
 
 
 def test_testing_picker_does_not_widen_its_key() -> None:
-    admitted = KEY_MODEL_ROUTES["cheap_experiments_models"]
+    admitted = KEY_MODEL_LANES["cheap_experiments_models"].allowed
     assert all(route in admitted for route in TESTING_APP_MODELS.all)
 
 
 def test_staging_picker_does_not_widen_its_key() -> None:
     admitted = (
-        *KEY_MODEL_ROUTES["gpt6_oai_lane_models"],
-        *KEY_MODEL_ROUTES["claude_client_models"],
-        *KEY_MODEL_ROUTES["antigravity_client_models"],
-        *KEY_MODEL_ROUTES["ollama_chat_client_models"],
+        *KEY_MODEL_LANES["gpt6_oai_lane_models"].allowed,
+        *KEY_MODEL_LANES["claude_client_models"].allowed,
+        *KEY_MODEL_LANES["antigravity_client_models"].allowed,
+        *KEY_MODEL_LANES["ollama_chat_client_models"].allowed,
     )
     assert all(route in admitted for route in STAGING_APP_MODELS.all)
 
@@ -97,9 +97,9 @@ def test_picker_is_narrower_than_ollama_key() -> None:
 
 def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     subscription, direct = ANTHROPIC_SUBSCRIPTION_ROUTES[0], ANTHROPIC_API_ROUTES[0]
-    assert subscription.model is direct.model
+    assert subscription.model.id == direct.model.id
     assert subscription.id != direct.id
-    assert subscription.upstream.api_key != direct.upstream.api_key
+    assert model_entry(subscription)["litellm_params"]["api_key"] != model_entry(direct)["litellm_params"]["api_key"]
     assert subscription.reasoning_efforts
     assert not direct.reasoning_efforts
 
@@ -113,7 +113,6 @@ def test_same_slug_on_different_accounts_keeps_distinct_limits() -> None:
     ]
     assert shared_slugs
     for google, antigravity in shared_slugs:
-        assert google.model is not antigravity.model
         assert google.model.context_window is not None
         assert antigravity.model.context_window is None
 

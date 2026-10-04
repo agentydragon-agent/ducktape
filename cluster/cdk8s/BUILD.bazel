@@ -74,54 +74,13 @@ py_library(
 )
 
 py_library(
-    name = "model_client_config",
-    srcs = ["model_client_config.py"],
-    deps = [
-        ":manifest_roots",
-        ":model_selections",
-    ],
-)
-
-py_test(
-    name = "test_model_client_config",
-    srcs = ["test_model_client_config.py"],
-    data = [
-        "//cluster:generated/model-clients/claude-wrappers.json",
-        "//cluster/k8s:litellm/keys-tf/keys-tf.k8s.yaml",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":model_client_config",
-        ":model_rosters",
-        ":model_selections",
-        "//:conftest",
-        "//cluster/cdk8s/litellm:keys",
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "model_rosters",
-    srcs = ["model_rosters.py"],
-    visibility = [
-        "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/cdk8s/gatus:__pkg__",
-        "//cluster/cdk8s/litellm:__pkg__",
-        "//cluster/cdk8s/parked:__pkg__",
-    ],
-)
-
-py_library(
     name = "model_selections",
     srcs = ["model_selections.py"],
     visibility = [
         "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/litellm:__pkg__",
     ],
-    deps = [":model_rosters"],
+    deps = ["//model_catalog:catalog"],
 )
 
 py_test(
@@ -129,7 +88,8 @@ py_test(
     srcs = ["test_model_rosters.py"],
     data = ["//cluster/k8s/litellm/app:manifests"],
     deps = [
-        ":model_rosters",
+        "//model_catalog:policies",
+        "//model_catalog:catalog",
         ":model_selections",
         "//:conftest",
         "//cluster/cdk8s/litellm:config",
@@ -417,7 +377,7 @@ py_library(
         ":forgejo_images",
         ":generation",
         ":manifest_roots",
-        ":model_rosters",
+        "//model_catalog:catalog",
         ":model_selections",
         ":namespaces",
         ":openclaw_gateway",
@@ -1657,7 +1617,6 @@ py_library(
         ":mcp_oauth_state",
         ":metrics_server",
         ":mitmproxy",
-        ":model_client_config",
         ":node_feature_discovery",
         ":ntfy",
         ":nvidia_device_plugin",

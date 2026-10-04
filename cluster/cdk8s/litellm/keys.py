@@ -1,37 +1,40 @@
-"""The per-key model allowlists tf/gitops/litellm-keys/main.tf scopes its LiteLLM virtual
-keys to, derived from model_rosters.py and handed to the module as the `model_allowlists`
-variable of its generated Terraform CR (generate_manifests.py). Every name is checked
-against what the main proxy serves before it is written.
+"""Project model authorization and fallback policies into tf/gitops/litellm-keys inputs.
+
+A lane groups allowed routes and optional team routing fallbacks. Terraform attaches
+these policies to virtual keys and teams; this module neither mints model identities
+nor treats a fallback as permission to use a model.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from cdk8s import App, Chart
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.model_rosters import SERVED_ROUTES
-from cluster.cdk8s.model_selections import KEY_FALLBACK_ROUTES, KEY_MODEL_ROUTES
+from model_catalog.catalog import SERVED_ROUTES
+from model_catalog.policies import KEY_MODEL_LANES, ModelLaneRoutes
 from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
 
-def model_allowlists() -> dict[str, list[str]]:
-    """Serialize key policy at the Terraform boundary, without rebuilding model IDs."""
-    for lane, routes in KEY_MODEL_ROUTES.items():
-        if unserved := [route.id for route in routes if route not in SERVED_ROUTES]:
-            raise ValueError(f"{lane=} selects unserved routes: {unserved}")
-    return {lane: [route.id for route in routes] for lane, routes in KEY_MODEL_ROUTES.items()}
+class ModelLane(BaseModel):
+    """One lane's policy, serialized as exposed LiteLLM route IDs for Terraform."""
 
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-def model_fallbacks() -> dict[str, list[str]]:
-    for lane, routes in KEY_FALLBACK_ROUTES.items():
-        if any(route not in KEY_MODEL_ROUTES[lane] for route in routes):
-            raise ValueError(f"{lane=} selects fallback routes outside its allowlist")
-    return {lane: [route.id for route in routes] for lane, routes in KEY_FALLBACK_ROUTES.items()}
+    allowed_models: list[str] = Field(
+        description="Fully qualified LiteLLM route IDs that virtual keys consuming this lane may request. "
+        "This is authorization policy, not a picker or a default model selection."
+    )
+    fallback_models: list[str] = Field(
+        description="Ordered targets for this lane's team-level wildcard fallback rule. Each must already "
+        "belong to allowed_models: fallback routing does not grant access. Empty means no configured fallback."
+    )
 
 
 class KeysVars(BaseModel):
@@ -39,9 +42,23 @@ class KeysVars(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    model_allowlists: dict[str, list[str]]
-    model_fallbacks: dict[str, list[str]]
+    model_lanes: dict[str, ModelLane] = Field(
+        description="Policies keyed by client-lane identifier (for example codex_client_models), not model ID "
+        "or provider. Terraform keys may combine the allowed_models from several lanes."
+    )
 
+
+def model_lanes(lanes: Mapping[str, ModelLaneRoutes]) -> dict[str, ModelLane]:
+    result = {}
+    for name, lane in lanes.items():
+        if unserved := [route.id for route in lane.allowed if route not in SERVED_ROUTES]:
+            raise ValueError(f"{name=} selects unserved routes: {unserved}")
+        if any(route not in lane.allowed for route in lane.fallbacks):
+            raise ValueError(f"{name=} selects fallback routes outside its allowlist")
+        result[name] = ModelLane(
+            allowed_models=[route.id for route in lane.allowed], fallback_models=[route.id for route in lane.fallbacks]
+        )
+    return result
 
 def keys_chart(app: App) -> Chart:
     """Mints the agent and laptop-client LiteLLM virtual keys (tf/gitops/litellm-keys).
@@ -53,7 +70,7 @@ def keys_chart(app: App) -> Chart:
         chart,
         "terraform",
         name="litellm-keys",
-        variables=KeysVars(model_allowlists=model_allowlists(), model_fallbacks=model_fallbacks()),
+        variables=KeysVars(model_lanes=model_lanes(KEY_MODEL_LANES)),
         env=[
             # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml
             # beside this CR) that decrypts the module's pinned client-key files for
