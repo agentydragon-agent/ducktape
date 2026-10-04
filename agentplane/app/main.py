@@ -138,8 +138,7 @@ class AppSettingsConfig(BaseSettings):
         default=False, description="Retain cluster binding cleanup after a cluster grant is removed from the catalog."
     )
     agent_instructions: str = Field(
-        min_length=1,
-        description="Required operational instructions prepended to every Agentplane-launched session.",
+        min_length=1, description="Required operational instructions prepended to every Agentplane-launched session."
     )
     default_policies: list[str] = Field(
         default_factory=list,

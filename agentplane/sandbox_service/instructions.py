@@ -21,11 +21,7 @@ def render_agent_instructions_template(*, egress_api_url: str, actions_service_u
     return str(template.render(egress_api_url=egress_api_url, actions_service_url=actions_service_url))
 
 
-def resolved_agent_instructions(
-    configured: str,
-    *,
-    notifications_service_url: str | None = None,
-) -> str:
+def resolved_agent_instructions(configured: str, *, notifications_service_url: str | None = None) -> str:
     """Augment explicitly configured platform instructions with invariant runtime guidance."""
     if not configured.strip():
         raise ValueError("agent_instructions must be configured")

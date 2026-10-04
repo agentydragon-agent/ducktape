@@ -26,10 +26,10 @@ from cluster.cdk8s.agentplane.app_settings import (
     GITHUB_CLONE_POLICY,
     GITHUB_IDENTITY_READS_SET,
     OLLAMA_MODELS,
-    platform_agent_instructions,
     PACKAGES_POLICY,
     PLAID_PGWEB_POLICY,
     SSH_READS_SET,
+    platform_agent_instructions,
     settings,
 )
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME

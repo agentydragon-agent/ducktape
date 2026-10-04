@@ -52,9 +52,7 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(
 
     runner = next(template for template in templates if template["metadata"]["name"] == "agentplane-runner")
     args = runner["spec"]["podTemplate"]["spec"]["containers"][0]["args"]
-    assert any(
-        args[index : index + 2] == ["--harness-env", "TZ"] for index in range(len(args) - 1)
-    )
+    assert any(args[index : index + 2] == ["--harness-env", "TZ"] for index in range(len(args) - 1))
 
 
 if __name__ == "__main__":

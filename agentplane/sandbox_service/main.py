@@ -74,8 +74,7 @@ class Settings(BaseSettings):
 
 async def serve(settings: Settings) -> None:
     platform_instructions = resolved_agent_instructions(
-        settings.agent_instructions,
-        notifications_service_url=settings.agent_notifications_service_url,
+        settings.agent_instructions, notifications_service_url=settings.agent_notifications_service_url
     )
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:

@@ -106,8 +106,7 @@ def egress_env() -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
 
 
 def workload_environment(
-    env: Environment,
-    existing: Sequence[SandboxTemplateSpecPodTemplateSpecContainersEnv],
+    env: Environment, existing: Sequence[SandboxTemplateSpecPodTemplateSpecContainersEnv]
 ) -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
     """Add the deployment's non-secret defaults to one SandboxTemplate workload container."""
     existing_env_names = {item.name for item in existing}
