@@ -109,6 +109,7 @@ py_library(
     deps = [
         ":db",
         ":models",
+        ":settings",
         ":store",
         "//agentplane:subjects",
         "//agentplane/notification_service/sources:actions",
@@ -165,6 +166,7 @@ py_test(
         ":db",
         ":instructions",
         ":service",
+        ":settings",
         ":store",
         "//:conftest",
         "//agentplane:subjects",
@@ -211,6 +213,31 @@ py_test(
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_service",
+    size = "medium",
+    srcs = ["test_service.py"],
+    deps = [
+        ":conftest",
+        ":db",
+        ":models",
+        ":service",
+        ":settings",
+        ":store",
+        "//:conftest",
+        "//agentplane/action_service:models",
+        "//agentplane/notification_service/sources:actions",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/workload_auth:principal",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

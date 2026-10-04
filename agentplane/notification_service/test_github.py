@@ -30,7 +30,7 @@ from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import GitHubDelivery, Subscription
 from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.service import Service
-from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, Settings
+from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError, Repository
 from agentplane.notification_service.sources.github_models import (
@@ -184,7 +184,13 @@ async def test_signed_http_durable_acceptance_and_disabled_provider(
     store: Store, provider: tuple[GitHub, Upstream]
 ) -> None:
     github, _ = provider
-    service = Service(store, create_autospec(Actions), create_autospec(SandboxServiceClient), github)
+    service = Service(
+        store,
+        create_autospec(Actions),
+        create_autospec(SandboxServiceClient),
+        github,
+        notice_debounce=NoticeDebounceSettings(),
+    )
     app = create_app(service, create_autospec(WorkloadPrincipalResolver))
     app.dependency_overrides[authenticated_caller] = lambda: PRINCIPAL
     raw, headers = signed(comment(), "issue_comment")

@@ -347,7 +347,7 @@ class Store:
             raise ClaimLostError
         return row
 
-    async def release(self, claim: Inbox, error: str | None) -> None:
+    async def release(self, claim: Inbox, error: str | None, *, notice_due_at: datetime | None = None) -> None:
         async with self.sessions.begin() as session:
             row = await self.fenced(session, claim)
             now = datetime.now(UTC)
@@ -362,8 +362,10 @@ class Store:
             waiting = notice is not None and not notice.confirmed and notice.error is None
             unread = row.last_cursor > max(row.covered, row.acknowledged, row.expired_through)
             deadlines = [next_source] if next_source is not None else []
-            if waiting or unread:
+            if waiting:
                 deadlines.append(now + timedelta(seconds=5))
+            elif unread:
+                deadlines.append(notice_due_at if notice_due_at is not None else now + timedelta(seconds=5))
             row.next_attempt = min(deadlines) if deadlines else None
             if error is not None and row.next_attempt is not None:
                 row.next_attempt = max(row.next_attempt, now + timedelta(seconds=5))
@@ -572,6 +574,23 @@ class Store:
             row.error = None
             if matched:
                 inbox.updated_at = datetime.now(UTC)
+
+    async def get_pending_entry_times(self, claim: Inbox) -> tuple[datetime, datetime] | None:
+        """Timestamp bounds of entries not yet covered, acknowledged or expired."""
+        async with self.sessions.begin() as session:
+            inbox = await self.fenced(session, claim)
+            first, last = (
+                await session.execute(
+                    select(func.min(Entry.created_at), func.max(Entry.created_at)).where(
+                        Entry.inbox_id == inbox.id,
+                        Entry.cursor > max(inbox.covered, inbox.acknowledged, inbox.expired_through),
+                    )
+                )
+            ).one()
+            if first is None:
+                return None
+            assert last is not None
+            return first, last
 
     async def notice(self, claim: Inbox, *, prepare: bool = True) -> Notice | None:
         async with self.sessions.begin() as session:

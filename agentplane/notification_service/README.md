@@ -37,6 +37,27 @@ environment variable rather than putting the DSN in the ConfigMap.
 The deployment mounts validated settings from its ConfigMap. Roll the application image and configuration
 together because their structure is versioned with the code.
 
+### Runner notice debounce
+
+```yaml
+notice_debounce:
+  quiet_seconds: 2
+  max_wait_seconds: 10
+```
+
+These are the defaults. Per inbox, wait for the quiet window after the newest unannounced entry,
+subject to the maximum wait from the oldest unannounced entry. Set `quiet_seconds: 0` to disable
+batching delays. Both settings accept fractional seconds; the maximum wait must be positive.
+They apply to all sources, not individual subscriptions. Environment overrides use e.g.
+`AGENTPLANE_NOTIFICATIONS_NOTICE_DEBOUNCE__QUIET_SECONDS`.
+
+Only preparing new runner notices is delayed: payload persistence and inbox reads remain immediate.
+The deadline is derived from durable entry timestamps and scheduled through the existing PostgreSQL
+wakeups/deadlines, so restart or replica failover does not restart the window. An already prepared
+notice keeps its command ID, content and coverage; retries are not debounced. Acknowledged/expired
+entries do not need a new notice, and unacknowledged entries do not cause repeated reminders.
+The maximum bounds the batching delay, not source processing, runner outages or delivery retries.
+
 ## GitHub App setup
 
 GitHub is disabled when `github` is absent from both YAML and environment. To enable it, put the public
