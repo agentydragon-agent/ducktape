@@ -1,14 +1,21 @@
 ---
 name: ci_latency
-description: Diagnose slow PR feedback by separating GitHub Actions runner queues, CodeQL load, workflow dependencies, and BuildBuddy execution. Refresh the maintained CI latency report with reproducible evidence and monitoring proposals.
+description: Diagnose where recent CI feedback time and compute go across PR types, GitHub runners, BuildBuddy provisioning, Bazel analysis/actions/tests and critical paths; prioritize practical improvements with reproducible evidence.
 ---
 
 # CI latency analysis
 
-Update `devinfra/ci/debug/ci_queue_saturation.md` in the Ducktape checkout; replace its
-current-state conclusions and evidence rather than appending another dated report.
-Read that report for hypotheses, then verify them. This skill diagnoses latency;
-`cihealth` covers release/pin currency and failed CI more broadly.
+Produce a **recent, representative, evidence-backed CI performance diagnosis**, not a
+single score. Answer: how long does feedback take for different kinds of PRs, where
+does runner time and remote compute go, what blocks the user-visible critical
+path, and what changes offer the best payoff for the least cost/risk? Use the old
+`devinfra/ci/debug/ci_queue_saturation.md` report as a *hypothesis and historical
+example*, not as a conclusion about current CI. Refresh its current-state
+conclusions and evidence when requested; append reviewed snapshots to the separate
+history branch (below). `cihealth` covers release/pin currency and failed CI more
+broadly. No Mimir metric, Shapley calculation, or dashboard is required for a
+useful report; propose instrumentation only when it closes a decision-relevant
+evidence gap.
 
 ## Collect and reproduce
 
@@ -18,8 +25,18 @@ worktree with the Nix devshell loaded. Dependencies: Bash, GNU coreutils, jq, gh
 network/sandbox rules. These scripts read APIs; they do not rerun/cancel jobs or
 change scanning settings.
 
-Choose an explicit UTC window around the symptom, initially 60–90 minutes. Use a
-new output directory outside the checkout. `collect.sh` refuses a filtered query
+For a specific slowdown choose an explicit UTC window, initially 60–90 minutes.
+For the general question of what *recent PRs* experience, also sample a longer
+period (e.g. several days to a week, split API windows below the search cap).
+Stratify by changed paths/PR change class (including cdk8s vs previous cluster
+configuration), size, fork/trust path, cold/warm cache where observable, and
+completed/cancelled/superseded state. Sample fast, typical and slow PRs in each
+relevant class rather than choosing only outliers. Record selection criteria and
+sample counts; do not equate all runs with distinct PRs or reruns with new pushes.
+Tie runs, attempts, head SHAs and check results to the *same* PR head when
+estimating feedback latency. If push timestamps or exact head association cannot
+be recovered, say so and present a labeled proxy instead of inventing a precise
+push-to-green percentile. Use a new output directory outside the checkout. `collect.sh` refuses a filtered query
 with 1,000 or more results: split it into smaller windows instead of accepting
 GitHub's search cap. It pages runs, jobs (all attempts), open PRs and head checks,
 and includes older unfinished runs separately. Each collection is a sweep, not an
@@ -57,6 +74,66 @@ rulesets. An inaccessible endpoint or timeout fails visibly; record the visibili
 limit and retain successful independent evidence. GitHub's legacy branch-protection
 endpoint can return 404 while rulesets still require checks.
 
+## Diagnose end to end (do not stop at a queue chart)
+
+For each representative slow/typical case, construct an annotated timeline from
+PR head/push (if known) to required checks becoming terminal. Use the workflow
+DAG and job attempts. Break time into **observed** mutually exclusive intervals
+where possible; note unknown and overlapping intervals explicitly:
+
+1. **GitHub orchestration and runners:** workflow pending/concurrency gates,
+   queued job awaiting a runner, runner start/image setup, checkout/tool/Nix setup,
+   dependency waits, retries, and non-Bazel steps. Show both queue-tail percentiles
+   and the age of jobs still queued. Occupied runner-minutes explain capacity
+   demand; critical-path elapsed time explains user feedback. They differ.
+2. **BuildBuddy remote runner:** time from request to allocated remote runner,
+   VM queue versus boot/provisioning versus repo/tool setup, execution and teardown.
+   Use timestamped job and BuildBuddy events if exposed; log gaps are not proof of
+   a particular phase. Look across related invocations for remote VM reuse and
+   reasons for a cold start (pool/instance, isolation, concurrency, image changes,
+   idle expiration), but do not claim reuse failed without evidence that reuse was
+   possible. Avoid confusing a GitHub runner with a BuildBuddy VM or an RBE action.
+3. **Bazel:** inner test/build invocation(s), startup, loading/analysis, execution,
+   downloads/uploads, finalization. Inspect `command.profile.gz`, critical-path
+   tool log, cache scorecard, target and execution records as needed (see the
+   `buildbuddy_api` skill). Distinguish analysis time from executed actions;
+   configured-target count or cache hit rate alone cannot diagnose analysis-cache
+   reuse. Identify expensive actions/tests by label, frequency and *critical-path*
+   contribution; include failures/retries and cache misses when relevant. Separate
+   remote scheduling/queue time from worker provision, process execution and
+   transfer. One slow execution does not necessarily extend the end-to-end path.
+4. **Parallelism and bottlenecks:** draw the dependency/critical-path chain and
+   compare its length with available work and executor saturation. Would more
+   GitHub slots, remote VMs or Bazel parallelism actually shorten that chain?
+   More concurrency can increase contention elsewhere. State which resource is
+   saturated and what independent work was ready but blocked, or say it is unknown.
+
+The report should include (1) a PR-class table with counts, feedback p50/p90,
+unfinished/cancelled counts and definition of the start/stop clock; (2) a
+phase-by-phase wall-clock timeline for a few linked cases with unknown intervals;
+(3) runner occupancy and remote action cost in their own units; (4) the longest
+confirmed critical-path contributors, by test/action/step; and (5) a ranked
+impact/effort/confidence list of interventions with a validation plan. A ranked
+list of total CPU users is *not* a ranked list of feedback bottlenecks.
+Compare distributions (p50/p90 and tails with sample sizes) and resource consumption
+across PR classes; show direct job/invocation links and source SHA for cases. Do not
+sum parallel step durations and call the result latency; label runner-minutes,
+worker-seconds and wall-clock separately. When GitHub/BuildBuddy data cannot resolve
+an interval, leave it unknown and identify the minimal additional trace needed.
+
+## Recommend changes using 80/20 reasoning
+
+Rank *concrete* interventions by likely impact on required-check feedback for common
+PRs, engineering effort, operational/security risk and confidence. Prefer low-risk
+quick wins with directly observed recurring waste; distinguish fixes to the long
+tail from fixes to a typical PR. Estimate possible savings as a range, not a
+fabricated point value; test against matched PR classes and preserve required test
+coverage. Examples to evaluate rather than assume: tighter validation selection,
+shorter runner/VM startup or reuse, avoiding repeated Bazel analysis, test/action
+critical-path improvements, and concurrency changes. Say what evidence would
+falsify each recommendation and how to compare before/after. Put instrument-first
+items behind actionable fixes unless missing evidence actually blocks the choice.
+
 ## Interpret correctly
 
 - Discover CodeQL by `dynamic/github-code-scanning/codeql` or workflow ID, **not**
@@ -88,17 +165,20 @@ endpoint can return 404 while rulesets still require checks.
 
 ## Refresh the artifact
 
-Include the observation window, source commit, sample/coverage limits, workload
-shares, concrete queued-Bazel/occupied-CodeQL overlaps, slow execution evidence,
-current required checks, and ranked proposals. Update `ci_latency_evidence.json`
+Include the observation window, source commit, sample/coverage limits, PR-class
+feedback distributions, runner and remote-compute breakdowns, representative
+critical-path timelines, current required checks, unknown intervals, and ranked
+proposals. Include CodeQL/queued-Bazel overlaps only when current evidence supports
+that diagnosis. Update `ci_latency_evidence.json`
 from `evidence.sh`; review derived evidence before committing. Keep full API payloads,
 logs and profiles local unless a durable, reviewed fixture needs them. Publish
 small relevant excerpts and direct job/invocation URLs in the report.
 
 Re-evaluate recommendations against current YAML and GitHub settings. Already-landed
-changes leave the recommendation list. Propose Mimir metric definitions, bounded
-labels, collection ownership, freshness and alert conditions; distinguish proposals
-from metrics confirmed live. Do not change workflow/scanning policy during an
+changes leave the recommendation list. If ongoing monitoring is warranted, propose only decision-relevant Mimir metrics
+with bounded labels, collection ownership, freshness and alert conditions; distinguish
+proposals from metrics confirmed live. A metric proposal is not a prerequisite for
+the diagnosis. Do not change workflow/scanning policy during an
 analysis-only request. If a mitigation is authorized later, compare matched workload
 windows and verify latest-head PR feedback before calling it effective.
 
@@ -140,7 +220,7 @@ python3 "$SKILL/publish.py" --source "$DEVEL_SHA" \
 ```
 
 For the first creation only, use `git switch --orphan ci-latency-history` in a
-*separate* temporary worktree, clear its tracked files and add only the new
+*separate* temporary worktree, clear any remaining tracked files and add only the new
 artifacts + `README.md` + root `index.html`. Never orphan/reset an existing
 history ref. On subsequent runs fetch the canonical ref and work from its tip;
 before publication fetch again and require the remote tip to be an ancestor of
