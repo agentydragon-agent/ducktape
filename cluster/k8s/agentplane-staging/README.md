@@ -106,8 +106,7 @@ secret, leave SSL verification enabled, and activate delivery.
 
 After Flux applies the ingress, check the HTTPRoute's `Accepted` and `ResolvedRefs`
 conditions, TLS verification, and a POST returning the disabled-source 404 response.
-Once enabled, a POST with a valid `X-GitHub-Delivery` UUID and `X-GitHub-Event: ping` but no signature must return
-401. Confirm private paths such as `/v1/inboxes` and `/v1/subscriptions` return Gateway 404s. Once enabled, test a real signed GitHub delivery
+Once enabled, a POST with a valid `X-GitHub-Delivery` UUID and `X-GitHub-Event: ping` but no signature must return 401. Confirm private paths such as `/v1/inboxes` and `/v1/subscriptions` return Gateway 404s. Once enabled, test a real signed GitHub delivery
 through durable receipt, inbox entry, runner notice, read, and explicit acknowledgement.
 Track App enablement and end-to-end verification in
 [ducktape#8956](https://github.com/agentydragon/ducktape/issues/8956).
