@@ -239,6 +239,54 @@ async def test_listener_loss_fails_wait_but_immediate_read_recovers(waiting: Wai
         assert (await waiting.waiter.get(waiting.request.id, CALLER, WaitOptions())).id == waiting.request.id
 
 
+@pytest.mark.parametrize("held_read", [2, 3], ids=["subscribed-read", "timeout-read"])
+async def test_wait_held_across_reconnection_fails_even_with_a_terminal_receipt(
+    waiting: Waiting, db_url: str, monkeypatch: pytest.MonkeyPatch, held_read: int
+) -> None:
+    updates = ActionUpdates(db_url)
+    waiter = ActionWaiter(waiting.service, updates, max_wait_seconds=30)
+    reading, release, reconnected = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    get = waiting.service.get
+    reads = 0
+
+    async def held_get(request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:
+        nonlocal reads
+        reads += 1
+        if reads == held_read:
+            reading.set()
+            await release.wait()
+        return await get(request_id, principal)
+
+    invalidated = updates.listener._invalidated
+
+    def observe_connection() -> None:
+        invalidated()
+        if updates.listener.connected:
+            reconnected.set()
+
+    monkeypatch.setattr(waiting.service, "get", held_get)
+    monkeypatch.setattr(updates.listener, "_invalidated", observe_connection)
+    async with asyncio.timeout(10), updates.listener.listen():
+        reconnected.clear()
+        task = asyncio.create_task(waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=0.001)))
+        try:
+            await reading.wait()
+            assert updates.listener._connection is not None
+            updates.listener._connection.terminate()
+            await reconnected.wait()
+            # The observer only resumes after the new connection is healthy. Neither a transient
+            # availability flag nor a reconnect delay can preserve this wait's loss contract.
+            await decide(waiting, Verdict.DENY)
+            release.set()
+            with pytest.raises(UpdatesUnavailableError, match="wait_seconds=0"):
+                await task
+            assert not updates._subscribers
+            assert (await waiter.get(waiting.request.id, CALLER, WaitOptions())).state is ActionState.DENIED
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
 async def test_other_caller_cannot_subscribe(waiting: Waiting) -> None:
     with pytest.raises(ActionNotFoundError):
         await waiting.waiter.get(waiting.request.id, OTHER, WaitOptions(wait_seconds=10))
