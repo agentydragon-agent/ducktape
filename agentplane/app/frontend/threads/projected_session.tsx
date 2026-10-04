@@ -72,18 +72,21 @@ function CollapsibleRows({
   threadId,
   entities,
   live,
+  steps,
 }: {
   id: string;
   summary: ReactNode;
   threadId: string;
   entities: ThreadEntity[];
   live: (entity: ThreadEntity) => boolean;
+  /** Whether the rows are one-line steps, packed together, rather than cards. */
+  steps: boolean;
 }): JSX.Element {
   const [open] = useRetainedDisclosure(id);
   return (
     <CollapsibleCard open={open}>
       <RetainedDisclosure id={id} summary={summary}>
-        <Stack gap="xs" mt="xs">
+        <Stack gap={steps ? 2 : "xs"} mt={steps ? 2 : "xs"} className={steps ? "agentplane-run-steps" : undefined}>
           {entities.map((entity) => (
             <EntityCard key={entity.entityId} threadId={threadId} entity={entity} live={live(entity)} />
           ))}
@@ -117,6 +120,7 @@ function RunView({
       threadId={threadId}
       entities={entities}
       live={live}
+      steps
     />
   );
 }
@@ -147,6 +151,7 @@ function LifecycleGroupView({
       threadId={threadId}
       entities={entities}
       live={live}
+      steps={false}
     />
   );
 }
@@ -172,6 +177,7 @@ function SetupView({
       threadId={threadId}
       entities={entities}
       live={live}
+      steps={false}
     />
   );
 }
