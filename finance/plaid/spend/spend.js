@@ -1,3 +1,67 @@
+const allowanceSection = document.querySelector("#allowance-section");
+const allowanceSummary = document.querySelector("#allowance-summary");
+const allowanceDetails = document.querySelector("#allowance-details");
+const purchaseInput = document.querySelector("#purchase-amount");
+const purchaseResult = document.querySelector("#purchase-result");
+let currentAllowance = null;
+
+function renderPurchase() {
+  const a = currentAllowance;
+  if (a?.status !== "active" || a.available_minor_units == null) {
+    purchaseResult.textContent = "Activate the allowance and sync accounts before checking a purchase.";
+    return;
+  }
+  const dollars = Number(purchaseInput.value);
+  if (purchaseInput.value === "" || !Number.isFinite(dollars) || dollars < 0 || !Number.isSafeInteger(Math.round(dollars * 100))) {
+    purchaseResult.textContent = "Enter a positive purchase amount.";
+    return;
+  }
+  const left = a.available_minor_units - Math.round(dollars * 100);
+  purchaseResult.textContent = `${formatMoney(left, a.currency)} after purchase. ` +
+    (left < 0 ? "Over the advisory allowance; make a conscious exception." :
+     a.projected_cycle_end_minor_units - Math.round(dollars * 100) < 0 ? "Current pace projects a shortfall before next credit." :
+     "Within the allowance at current estimated pace.");
+}
+purchaseInput.addEventListener("input", renderPurchase);
+
+function renderAllowance(a) {
+  currentAllowance = a;
+  allowanceSection.hidden = !a;
+  if (!a) return;
+  const money = (v) => formatMoney(v, a.currency);
+  allowanceSummary.replaceChildren();
+  allowanceDetails.replaceChildren();
+  if (a.status !== "active") {
+    allowanceSummary.textContent = `${a.status === "preview" ? "Preview only" : "Unavailable"}: ${a.note || "No active allowance"}`;
+    purchaseInput.disabled = true;
+    renderPurchase();
+    return;
+  }
+  purchaseInput.disabled = false;
+  allowanceSummary.textContent = `${money(a.available_minor_units)} available · ${a.alert_state === "warning" ? "pace warning" : a.alert_state === "exceeded" ? "over allowance" : "on pace"}`;
+  const items = [
+    ["Monthly credit", money(a.monthly_minor_units)], ["Carry from earlier cycles", money(a.prior_carry_minor_units)],
+    ["This credit cycle", money(a.windows_minor_units.current_credit_cycle)],
+    ["Pending (included)", money(a.pending_minor_units)], ["Posted (included)", money(a.posted_minor_units)],
+    ["Needs classification review (included)", money(a.review_minor_units)],
+    ["Unmatched refunds (excluded)", money(a.unmatched_refunds_minor_units)],
+    ["Trailing 7 days", money(a.windows_minor_units.trailing_7_days)],
+    ["Trailing 30 days", money(a.windows_minor_units.trailing_30_days)],
+    ["Calendar month since activation", money(a.windows_minor_units.calendar_month)],
+    ["Year since activation", money(a.windows_minor_units.year_to_date)],
+    ["7-day daily pace", money(a.trailing_7_daily_minor_units)],
+    ["Estimated days until exhausted at that pace", a.estimated_days_to_exhaustion ?? "No recent spend"],
+    ["Estimated balance before next credit", money(a.projected_cycle_end_minor_units)],
+    ["Next credit", formatTimestamp(a.next_credit_at)], ["Oldest account sync", formatTimestamp(a.last_synced_at)],
+  ];
+  for (const [key, value] of items) {
+    const row = document.createElement("p");
+    row.textContent = `${key}: ${value}`;
+    allowanceDetails.append(row);
+  }
+  renderPurchase();
+}
+
 const cardsNode = document.querySelector("#cards");
 const countNode = document.querySelector("#card-count");
 const combinedNode = document.querySelector("#combined-spend");
@@ -121,6 +185,7 @@ function renderCard(card) {
 }
 
 function showView(view) {
+  renderAllowance(view?.allowance);
   const cards = Array.isArray(view?.cards) ? view.cards : [];
   cardsNode.replaceChildren();
   countNode.textContent = `${cards.length} ${cards.length === 1 ? "card" : "cards"}`;

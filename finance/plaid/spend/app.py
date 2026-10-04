@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import ValidationError
 
+from finance.plaid.spend.allowance import AllowancePolicy
 from finance.plaid.spend.models import CardConfiguration, SpendView
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
@@ -90,7 +91,13 @@ def _load_configuration(path: Path) -> CardConfiguration:
 
 
 def create_app(settings: SpendSettings, *, service: SpendService | None = None) -> FastAPI:
-    runtime_service = service or SpendService(settings.database_url, _load_configuration(settings.cards_config_path))
+    allowance = None
+    if service is None and settings.allowance_config_path is not None and settings.allowance_config_path.exists():
+        try:
+            allowance = AllowancePolicy.model_validate_json(settings.allowance_config_path.read_text("utf-8"))
+        except OSError, UnicodeError, ValidationError:
+            raise RuntimeError("Could not load valid Plaid Spend allowance policy") from None
+    runtime_service = service or SpendService(settings.database_url, _load_configuration(settings.cards_config_path), allowance, settings.web_oidc_public_base_url)
     resolver = AuthentikOidcPrincipalResolver(
         expected_issuer=settings.api_oidc_issuer,
         discovered_issuer=settings.api_oidc_discovered_issuer,

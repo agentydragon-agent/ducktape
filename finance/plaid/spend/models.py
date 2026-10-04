@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from enum import StrEnum
 
+from finance.plaid.spend.allowance import AllowanceView
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -72,3 +74,5 @@ class SpendView(BaseModel):
 
     generated_at: datetime
     cards: list[CardView]
+    allowance: AllowanceView | None = None
+    dashboard_url: str | None = None

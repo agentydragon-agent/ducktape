@@ -198,6 +198,10 @@ const PlaidSpendIndicator = GObject.registerClass(
       else if (this._status === "authorizing") label = "Signing in…";
       else if (!this._hasView && this._status === "error") label = "Offline";
       else if (!this._hasView && this._status !== "ready") label = "Connecting…";
+      else if (this._view?.allowance?.status === "active") {
+        const a = this._view.allowance;
+        label = formatMoney(a.available_minor_units, a.currency) + (a.alert_state === "normal" ? "" : " !");
+      }
       else if (cards.length === 0) label = this._status === "error" ? "Offline" : "No cards";
       else label = totalLabel(this._view);
       if (cards.some((card) => card.alert_state === "warning" || card.alert_state === "exceeded")) {
@@ -297,6 +301,20 @@ const PlaidSpendIndicator = GObject.registerClass(
         this.menu.addMenuItem(login);
       }
 
+      const allowance = this._view?.allowance;
+      if (allowance) {
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem("Flexible allowance · advisory"));
+        if (allowance.status === "active") {
+          this._addReadOnly(`${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${allowance.alert_state}`);
+          this._addReadOnly(`Next credit ${formatTimestamp(allowance.next_credit_at)}`);
+          this._addReadOnly(`At current pace: ${allowance.estimated_days_to_exhaustion ?? "—"} days left`);
+        } else this._addReadOnly(allowance.note || allowance.status);
+      }
+      if (this._view?.dashboard_url?.startsWith("https://")) {
+        const link = new PopupMenu.PopupMenuItem("Open spending dashboard / purchase check…");
+        link.connect("activate", () => Gio.AppInfo.launch_default_for_uri(this._view.dashboard_url, null));
+        this.menu.addMenuItem(link);
+      }
       const cards = Array.isArray(this._view?.cards) ? this._view.cards : [];
       if (cards.length === 0) {
         this._addReadOnly(

@@ -36,6 +36,17 @@
         </div>
       </section>
 
+      <section id="allowance-section" hidden aria-label="Flexible allowance">
+        <h2>Flexible allowance · advisory, not a bank limit</h2>
+        <div id="allowance-summary" aria-live="polite"></div>
+        <div id="allowance-details"></div>
+        <label>Considering a flexible purchase ($)
+          <input id="purchase-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Amount" />
+        </label>
+        <p id="purchase-result" aria-live="polite"></p>
+        <p>Estimates use Plaid transaction dates and may lag; review pending and uncategorized charges before spending. No purchase is blocked here.</p>
+      </section>
+
       <section aria-label="Configured cards">
         <div class="section-heading">
           <h2>Your cards</h2>

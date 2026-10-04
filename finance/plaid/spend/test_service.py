@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
+from finance.plaid.spend.allowance import AllowancePolicy
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.models import AlertState, CardConfig, CardConfiguration, CardView, SpendView
 from finance.plaid.spend.service import SpendService
@@ -23,6 +24,12 @@ class _FakeConnection:
             account_ids = arguments[0]
             return [row for row in self.liabilities if row["account_id"] in account_ids]
         if "FROM public.transactions AS t" in query:
+            account_ids = arguments[0]
+            return [row for row in self.transactions if row["account_id"] in account_ids]
+        if "FROM public.accounts a JOIN public.links l" in query:
+            account_ids = arguments[0]
+            return [row for row in self.accounts if row["account_id"] in account_ids]
+        if "FROM public.transactions t" in query:
             account_ids = arguments[0]
             return [row for row in self.transactions if row["account_id"] in account_ids]
         if "FROM public.accounts AS a" in query:
@@ -63,6 +70,9 @@ def _transaction(
 ) -> dict[str, Any]:
     return {
         "account_id": account_id,
+        "name": "EXAMPLE SHOP",
+        "merchant_name": None,
+        "pfc_primary": "SHOPPING",
         "transaction_id": transaction_id,
         "date": transaction_date,
         "amount": amount,
@@ -125,6 +135,30 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions() -> N
     assert late_card.posted_minor_units == 3_134  # 12.34 + refund (-3.00) + posted replacement (22.00)
     assert late_card.pending_minor_units == 750  # The superseded $20 pending row is not double-counted.
     assert late_card.spend_minor_units == 3_884
+
+
+
+async def test_allowance_account_coverage_and_freshness_gate() -> None:
+    now = datetime.now(UTC)
+    midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
+    config = CardConfiguration()
+    policy = AllowancePolicy(monthly_minor_units=10_000, activation_at=midnight,
+                             spending_account_ids=["card-1", "checking-1"])
+    conn = _FakeConnection(
+        accounts=[dict(account_id=aid, type="credit" if aid == "card-1" else "depository",
+                       last_synced_at=now) for aid in ("card-1", "checking-1")],
+        liabilities=[], transactions=[_transaction("card-1", "purchase", now.date(), 12)],
+    )
+    service = SpendService("unused", config, policy)
+    service._pool = cast(Any, _FakePool(conn))
+    result = await service.read_view()
+    assert result.allowance is not None
+    assert result.allowance.available_minor_units == 8_800
+    conn.accounts.pop()
+    assert (await service.read_view()).allowance.status == "unavailable"
+    conn.accounts.append(dict(account_id="checking-1", type="depository",
+                              last_synced_at=now - timedelta(days=4)))
+    assert (await service.read_view()).allowance.status == "unavailable"
 
 
 class _ConnectedRequest:

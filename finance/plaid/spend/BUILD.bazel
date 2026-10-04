@@ -12,6 +12,7 @@ py_library(
         "spend.js",
     ],
     deps = [
+        ":allowance",
         ":models",
         ":service",
         ":settings",
@@ -24,15 +25,22 @@ py_library(
 )
 
 py_library(
+    name = "allowance",
+    srcs = ["allowance.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "models",
     srcs = ["models.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [":allowance", "@pypi//pydantic"],
 )
 
 py_library(
     name = "service",
     srcs = ["service.py"],
     deps = [
+        ":allowance",
         ":models",
         "@pypi//asyncpg",
         "@pypi//babel",
@@ -50,9 +58,16 @@ py_library(
 )
 
 py_test(
+    name = "test_allowance",
+    srcs = ["test_allowance.py"],
+    deps = [":allowance", "//:conftest", "@pypi//pytest", "@pypi//pytest_bazel"],
+)
+
+py_test(
     name = "test_service",
     srcs = ["test_service.py"],
     deps = [
+        ":allowance",
         ":app",
         ":models",
         ":service",

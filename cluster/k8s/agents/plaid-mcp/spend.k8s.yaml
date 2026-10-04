@@ -210,6 +210,9 @@ spec:
             - mountPath: /etc/plaid-spend
               name: cards
               readOnly: true
+            - mountPath: /etc/plaid-spend-allowance
+              name: allowance
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
       securityContext:
@@ -220,6 +223,10 @@ spec:
         - name: cards
           secret:
             secretName: plaid-spend-cards
+        - name: allowance
+          secret:
+            optional: true
+            secretName: plaid-spend-allowance
 ---
 apiVersion: v1
 kind: Service

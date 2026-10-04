@@ -108,3 +108,68 @@ All service settings use the `PLAID_SPEND_` prefix except `DATABASE_URL`:
 The API resolver verifies Authentik RS256 access tokens against pinned issuer/JWKS metadata and
 requires the configured audience and authorized party. The listener subscribes to committed
 `plaid_spend_changed` notifications from the separate Plaid sync service.
+
+## Optional flexible allowance (advisory, not enforcement)
+
+The service can also compute a **single flexible spending allowance**, independently of
+statement-cycle card totals. It is disabled when `/etc/plaid-spend-allowance/policy.json`
+is absent. The deployment mounts an **optional** private Kubernetes Secret named
+`plaid-spend-allowance` in the `plaid-mcp` namespace with the key `policy.json`.
+The Secret must be delivered through a private, authorized channel (not a plaintext or
+SOPS file in this public repository); simply writing a policy in a private repo does
+not deploy it. Invalid JSON or invalid policy fails startup rather than silently
+falling back. Changes to the Secret require a rollout/restart; do not edit it while
+assuming the live service is reading it. A missing policy leaves existing clients
+unchanged. Check the current read-only Plaid account coverage **before** activating.
+
+Generic *synthetic* example (amounts are integer cents; IDs and prefixes illustrative):
+
+```json
+{
+  "monthly_minor_units": 100000,
+  "activation_at": null,
+  "spending_account_ids": ["example-credit-id", "example-checking-id"],
+  "currency": "USD",
+  "max_sync_age_hours": 72,
+  "rules": [
+    {"field": "name", "prefix": "EXAMPLE RENT", "kind": "fixed"},
+    {"field": "name", "prefix": "EXAMPLE REPAYMENT", "kind": "excluded"},
+    {"field": "name", "prefix": "EXAMPLE ONLINE", "kind": "flexible"}
+  ]
+}
+```
+
+`activation_at: null` is **preview**, without a live allowance or historic debt;
+set it to an explicit midnight UTC ISO timestamp to activate. Plaid supplies only
+transaction **dates**, not trustworthy purchase times: activation at other times is
+rejected, and a purchase dated on activation day counts in full. A full monthly
+credit arrives immediately on activation, again on each UTC monthly anniversary
+(clamped to month-end, always measured from the original day). Unspent credit carries
+forward; no monthly reset or second credit at the first calendar-month boundary.
+Do not set activation in the past expecting a clean slate. Only transactions dated
+on or after activation are counted, and the calendar and year views only span the
+activated period.
+
+Configured account IDs should cover **all accounts used for purchases** (credit and
+checking/debit); otherwise this is not a reliable allowance. If an account is missing,
+inactive, or its sync exceeds `max_sync_age_hours`, the allowance shows *unavailable*
+with no available balance. Plaid categories are inferences, not proof: private ordered
+`name` or `merchant_name` prefix overrides take precedence; prefer `name` when
+possible. Transfers, income, and card repayments are excluded; medical, rent and
+utilities default fixed; food, shopping, travel, entertainment, and rides default
+flexible. Other positive charges default **flexible with a review tally**. Refunds
+without a positive explicit flexible rule do not automatically restore room; their
+absolute value is reported as unmatched refunds to review. Review actual merchants,
+especially fixed/excluded misclassifications, before trusting the number. Pending
+transactions are counted, then suppressed if their posted replacement is present;
+removed transactions are ignored. Explicit non-USD charges are omitted, so review
+foreign spending separately before calling the coverage complete.
+
+The authenticated web page shows available credit, current-cycle carry, calendar
+month and year-to-date spend, trailing 7/30-day spend, sync timestamp, and a local
+what-if purchase check (no server-side purchase request). An early warning compares
+7-day daily positive spend pace against remaining days until the next credit; this
+is a noisy *estimate*, not a forecast or transaction authorization. The GNOME panel
+shows the allowance when active, and links to the cookie-authenticated dashboard for
+the purchase check; existing card cycles remain displayed separately. No account
+limit, card choice, bank controls or automatic recharging is configured by this PR.
