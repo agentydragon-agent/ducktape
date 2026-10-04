@@ -3,5 +3,6 @@ kind: Kustomization
 resources:
   - agentplane-staging.k8s.yaml
   - web-push-vapid.sops.yaml
+  - github-app.sops.yaml
 components:
   - image-pins

@@ -20,16 +20,16 @@ implemented behavior. This file tracks only remaining rollout work and deferred 
       `status`, `push`, `create`, and `delete`; include `workflow_run`/`check_suite` if used. Verify
       installation lifecycle delivery and actual fork-PR coverage; an uninstalled fork is not covered
       merely because its base repository is installed.
-- [ ] Supply the private key and webhook signing secret as SOPS-encrypted
-      `cluster/k8s/agentplane-staging/github-app.sops.yaml`. Wire Secret-backed environment variables
-      through the chart as described in the service README. Put the public App ID in YAML settings,
-      not the Secret. Leave existing MCP OAuth credentials and callbacks untouched.
+- [ ] Wire the supplied `cluster/k8s/agentplane-staging/github-app.sops.yaml` through
+      Secret-backed environment variables as described in the service README. Put the public
+      App ID in YAML settings, not the Secret. Leave existing MCP OAuth credentials and callbacks
+      untouched.
 
 ## Rollout and live verification
 
-- [ ] Wire public HTTPS ingress directly to **only `/v1/webhooks/github`**, including hostname,
-      certificate and gateway-to-service network policy. Do not expose the workload API publicly.
-      Configure the App webhook URL and matching signing secret.
+- [ ] Verify the deployed [staging webhook ingress](../../cluster/k8s/agentplane-staging/README.md#webhook-ingress):
+      Gateway acceptance, TLS and direct delivery to **only `/v1/webhooks/github`**, with workload
+      APIs remaining private. Configure the App webhook URL and matching signing secret.
 - [ ] Perform the coordinated schema/service rollout without resetting the staging database. Verify
       existing Action subscriptions, inbox identities, payloads and acknowledgements survive; check
       migration completion, real server/migration image tags and replica readiness.

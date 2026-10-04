@@ -482,6 +482,7 @@ py_library(
         ":egress_staging_credentials",
         ":environment",
         ":generation",
+        ":notifications",
         ":staging_config",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:main",
@@ -492,6 +493,7 @@ py_library(
         "//agentplane/app:action_federation",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
+        "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:ha_mcp",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:model_selections",
@@ -563,6 +565,23 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_notifications",
+    size = "medium",
+    srcs = ["test_notifications.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":notifications",
+        ":staging",
         "//:conftest",
         "@pypi//more_itertools",
         "@pypi//pytest",
