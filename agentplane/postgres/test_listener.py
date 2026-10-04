@@ -137,7 +137,9 @@ async def test_failed_listen_registration_closes_connection(listener: PostgresLi
     add_listener = asyncpg.Connection.add_listener
     connections: list[asyncpg.Connection[Any]] = []
 
-    async def fail(connection: asyncpg.Connection[Any], channel: str, callback: Callable[[object, int, str, object], None]) -> None:
+    async def fail(
+        connection: asyncpg.Connection[Any], channel: str, callback: Callable[[object, int, str, object], None]
+    ) -> None:
         assert not listener.connected
         if channel == "listener_test_second":
             connections.append(connection)

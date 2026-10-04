@@ -113,7 +113,10 @@ async def test_listener_recovers_but_old_subscriptions_stay_unavailable(
         restarted.set()
 
     monkeypatch.setattr(waiting.updates.listener, "_connect", observed_connect)
-    with waiting.updates.subscribe_all() as all_updates, waiting.updates.subscribe(waiting.request.id) as request_updates:
+    with (
+        waiting.updates.subscribe_all() as all_updates,
+        waiting.updates.subscribe(waiting.request.id) as request_updates,
+    ):
         assert waiting.updates.listener._connection is not None
         waiting.updates.listener._connection.terminate()
         async with asyncio.timeout(10):
@@ -301,7 +304,10 @@ async def test_rollback_and_duplicate_invalidations_keep_durable_state_authorita
     async with asyncio.timeout(10):
         # A barrier notification on the same channel establishes delivery order without sleeps.
         barrier = uuid4()
-        with waiting.updates.subscribe(waiting.request.id) as changed, waiting.updates.subscribe(barrier) as delivered:
+        with (
+            waiting.updates.subscribe(waiting.request.id) as request_updates,
+            waiting.updates.subscribe(barrier) as delivered,
+        ):
             async with engine.connect() as connection:
                 transaction = await connection.begin()
                 await connection.execute(select(func.pg_notify(CHANNEL, str(waiting.request.id))))
@@ -309,7 +315,7 @@ async def test_rollback_and_duplicate_invalidations_keep_durable_state_authorita
                 await connection.execute(select(func.pg_notify(CHANNEL, str(barrier))))
                 await connection.commit()
             await delivered.changed.wait()
-            assert not changed.changed.is_set()
+            assert not request_updates.changed.is_set()
         task = asyncio.create_task(waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=10)))
         await subscribed(waiting)
         async with engine.begin() as connection:
