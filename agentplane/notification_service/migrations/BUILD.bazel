@@ -8,6 +8,7 @@ filegroup(
         "//agentplane/notification_service/migrations/versions:0002_idempotency_key.py",
         "//agentplane/notification_service/migrations/versions:0003_remove_pause.py",
         "//agentplane/notification_service/migrations/versions:0004_source_union.py",
+        "//agentplane/notification_service/migrations/versions:0005_github.py",
     ],
     visibility = ["//agentplane/notification_service:__pkg__"],
 )

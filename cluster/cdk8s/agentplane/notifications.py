@@ -93,6 +93,7 @@ class Notifications(Construct):
                     "target": f"{sandboxes.fqdn}:{sandboxes.port.number}",
                     "token_file": "/var/run/secrets/notifications/sandboxes",
                 },
+                "github": None,
             },
             supplied=[("database_url",)],
         )
@@ -156,7 +157,8 @@ class Notifications(Construct):
                 IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-egress"), ports=[8080])
             ],
             egress=[
-                cilium.dns_egress(),
+                cilium.dns_egress(resolves=["*"]),
+                EgressRule.to_fqdns("api.github.com"),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 actions.egress(),
                 sandboxes.egress(),

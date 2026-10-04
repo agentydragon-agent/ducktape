@@ -77,8 +77,10 @@ new App, including private repositories; install it with that sharing policy in 
 
 Registration, event permissions, and access-loss semantics are recorded in the
 [notification plan](../../../agentplane/plans/notifications.md#registration-and-credential-preparation).
-The [credential template](../../../agentplane/plans/github-app-credentials.example.yaml)
-contains only empty placeholders. The operator will supply `github-app.sops.yaml` later;
-the implementation must wire it through the chart/Kustomization and configure direct
+The public App ID belongs in the notification service YAML settings, not a Secret.
+The operator will supply `github-app.sops.yaml` later, containing only `private-key` and
+`webhook-secret`. Wire these via Secret-backed `AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY`
+and `AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET` environment variables through the chart,
+and configure direct
 notification-service HTTPS ingress. No placeholder Secret is deployed, and existing
 MCP credentials/callbacks are unchanged.

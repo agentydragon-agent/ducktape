@@ -19,6 +19,7 @@ py_library(
         ":service",
         ":store",
         "//agentplane/notification_service/sources:actions",
+        "//agentplane/notification_service/sources:github",
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
         "@pypi//fastapi",
@@ -82,6 +83,7 @@ py_library(
         ":settings",
         ":store",
         "//agentplane/notification_service/sources:actions",
+        "//agentplane/notification_service/sources:github",
         "//agentplane/sandbox_service:client",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
@@ -96,6 +98,7 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     deps = [
+        "//agentplane/notification_service/sources:github_models",
         "@pypi//pydantic",
     ],
 )
@@ -109,6 +112,7 @@ py_library(
         ":store",
         "//agentplane:subjects",
         "//agentplane/notification_service/sources:actions",
+        "//agentplane/notification_service/sources:github",
         "//agentplane/protocol:command_pb2",
         "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
@@ -130,11 +134,14 @@ py_library(
     deps = [
         ":db",
         ":models",
+        ":updates",
         "//agentplane:subjects",
         "//agentplane/action_service:models",
+        "//agentplane/notification_service/sources:github_models",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/workload_auth:principal",
         "@pypi//protobuf",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -295,7 +302,10 @@ oci_image(
 py_library(
     name = "settings",
     srcs = ["settings.py"],
-    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    visibility = [
+        "//agentplane/notification_service:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
     deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -313,5 +323,65 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "updates",
+    srcs = ["updates.py"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_github",
+    size = "medium",
+    srcs = ["test_github.py"],
+    deps = [
+        ":api",
+        ":conftest",
+        ":database_migrate",
+        ":db",
+        ":models",
+        ":service",
+        ":settings",
+        ":store",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/notification_service/sources:actions",
+        "//agentplane/notification_service/sources:github",
+        "//agentplane/notification_service/sources:github_models",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/workload_auth:principal",
+        "@pypi//alembic",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_updates",
+    size = "medium",
+    srcs = ["test_updates.py"],
+    deps = [
+        ":conftest",
+        ":db",
+        ":models",
+        ":store",
+        ":updates",
+        "//:conftest",
+        "//agentplane/workload_auth:principal",
+        "@pypi//asyncpg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

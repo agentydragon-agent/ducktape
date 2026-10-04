@@ -4,8 +4,18 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import JsonValue
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, LargeBinary, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Identity,
+    Index,
+    LargeBinary,
+    String,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -28,7 +38,8 @@ class Inbox(Base):
     expired_through: Mapped[int] = mapped_column(BigInteger)
     retired: Mapped[bool]
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    next_poll: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # Earliest inbox work: source reconciliation or notice delivery. None means no timed work.
+    next_attempt: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     claim: Mapped[UUID | None]
     claim_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delivery_error: Mapped[str | None]
@@ -39,28 +50,39 @@ class Subscription(Base):
     __table_args__ = (
         UniqueConstraint("inbox_id", "idempotency_key"),
         CheckConstraint("creation ? 'source'", name="subscription_creation_source"),
+        CheckConstraint(
+            "CASE creation #>> '{source,provider}' "
+            "WHEN 'actions' THEN actions_after_sequence IS NOT NULL AND github_start_position IS NULL "
+            "AND github_binding IS NULL "
+            "WHEN 'github' THEN actions_after_sequence IS NULL AND github_start_position IS NOT NULL "
+            "AND github_binding IS NOT NULL ELSE false END",
+            name="subscription_source_state",
+        ),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True)
     inbox_id: Mapped[UUID] = mapped_column(ForeignKey("inbox.id", ondelete="CASCADE"))
-    request_id: Mapped[UUID]
     idempotency_key: Mapped[str]
     creation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     creator: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     version: Mapped[int]
-    after_sequence: Mapped[int] = mapped_column(BigInteger)
+    actions_after_sequence: Mapped[int | None] = mapped_column(BigInteger)
+    # Immutable lower bound for GitHub receipts eligible for this subscription.
+    github_start_position: Mapped[int | None] = mapped_column(BigInteger)
+    generation: Mapped[int] = mapped_column(BigInteger, default=0)
+    github_binding: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
     cancelled: Mapped[bool]
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    next_poll: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Next source reconciliation, not a runner delivery timestamp; None waits for a new event.
+    next_attempt: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None]
 
 
 class Entry(Base):
     __tablename__ = "entry"
-    __table_args__ = (UniqueConstraint("inbox_id", "request_id", "source_sequence"),)
+    __table_args__ = (UniqueConstraint("inbox_id", "event"),)
     inbox_id: Mapped[UUID] = mapped_column(ForeignKey("inbox.id", ondelete="CASCADE"), primary_key=True)
     cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    request_id: Mapped[UUID]
-    source_sequence: Mapped[int] = mapped_column(BigInteger)
+    event: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     payload: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -83,3 +105,25 @@ class Notice(Base):
     error: Mapped[str | None]
     runner_cursor: Mapped[int] = mapped_column(BigInteger)
     runner_entry: Mapped[bytes | None] = mapped_column(LargeBinary)
+
+
+class GitHubDelivery(Base):
+    __tablename__ = "github_delivery"
+    __table_args__ = (
+        UniqueConstraint("app_id", "delivery_id"),
+        Index("ix_github_delivery_head", "app_id", "repository_id", "head_sha"),
+        Index("ix_github_delivery_subjects", "subjects", postgresql_using="gin"),
+    )
+    position: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    app_id: Mapped[int] = mapped_column(BigInteger)
+    delivery_id: Mapped[UUID]
+    installation_id: Mapped[int] = mapped_column(BigInteger)
+    repository_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    event: Mapped[str]
+    # Indexed matching metadata extracted from the retained, validated payload.
+    action: Mapped[str | None]
+    head_sha: Mapped[str | None]
+    subjects: Mapped[list[str]] = mapped_column(ARRAY(String))
+    digest: Mapped[bytes] = mapped_column(LargeBinary)
+    payload: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

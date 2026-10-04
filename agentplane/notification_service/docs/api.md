@@ -8,15 +8,16 @@ Workload bearer authentication uses the existing TokenReview foundation. Owner a
 verified ServiceAccount, shared by its workloads. Every creation specifies `destination_ref`
 (namespace/name/UID) and `session_id`; inbox and subscription IDs identify subsequent operations.
 
-- `GET /v1/sources`: source schema discovery (Actions only).
-- `POST /v1/subscriptions`: immutable Action request/filter and `idempotency_key`; identical retries return
-  the same subscription, conflicting reuse returns 409. Replay defaults to sequence zero.
+- `GET /v1/sources`: source schema discovery (Actions and enabled GitHub).
+- `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
+  the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;
+  GitHub starts after the latest committed webhook at creation.
 - `GET /v1/subscriptions[?after_id=…]`: ordered pages of 128; continue after the last ID.
 - `GET`, `PATCH`, `DELETE /v1/subscriptions/{id}`: inspect, renew with an expected version,
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
 - `GET /v1/inboxes`: the account's qualified session inboxes.
 - `GET /v1/inboxes/{id}/entries?after_cursor=0&limit=128`: non-destructive, contiguous paging, prefix
-  metadata, and the latest notice's admission/confirmation state. Payloads are stored Action event
+  metadata, and the latest notice's admission/confirmation state. Payloads are stored provider event
   snapshots, not fetched at read time or promoted to operator instructions.
 - `PUT /v1/inboxes/{id}/acknowledgement` with `through_cursor`: monotonically acknowledge the handled
   prefix. Future cursors are refused. Delivery and reads never acknowledge.
@@ -28,7 +29,7 @@ incarnation, and runner session), not across the entire sandbox. The server-gene
 is used for subsequent GET/PATCH/DELETE. Reusing a key with different creation parameters returns 409;
 reusing it after cancellation returns that cancelled subscription rather than creating a replacement.
 
-Subscription creation and views use a provider-discriminated `source`; currently only `actions` is
+Subscription creation and views use a provider-discriminated `source`; `actions` and enabled `github` sources are
 implemented. The common envelope owns destination, session, idempotency, and lifetime. Actions owns
 its request ID and starting sequence:
 
@@ -63,8 +64,7 @@ identity; one event can match multiple subscriptions. Payload content remains pr
 ```
 
 `source.provider` and `event.provider` are required discriminators. Unsupported providers and extra
-fields are rejected. Discovery and OpenAPI describe the implemented variants; no GitHub support is
-advertised yet. Inbox cursors, acknowledgement, and runner notices remain provider-neutral.
+fields are rejected. Discovery advertises GitHub only when enabled; OpenAPI describes both supported variants. Inbox cursors, acknowledgement, and runner notices remain provider-neutral.
 
 Platform prompts recommend a short synchronous wait for immediate Actions, subscriptions for approval
 waits or parallel work, and resuming dependent work only after checking authoritative results. They
@@ -81,6 +81,15 @@ image-coupled Alembic runner and advisory migration lock. The app archive and ru
 A short inbox row lock serializes cursor allocation, payload insertion, overlapping subscription
 matches and source-checkpoint advancement. Provider identities are deduplicated per inbox. Reads
 expose a committed prefix, not a sequence whose transactions can commit out of order.
+
+A dedicated PostgreSQL `LISTEN` connection per replica wakes workers on committed `NOTIFY`
+invalidations. Webhook acceptance schedules matching and delivery in the same transaction; payloads
+never travel in NOTIFY. Workers drain durable work at startup and after reconnect, so missing a wakeup
+does not lose an accepted delivery. Inbox leases and provider generations fence concurrent workers
+and webhooks arriving during matching. Idle GitHub subscriptions have no scheduled polling; timers
+are only for explicit retry/lease deadlines, Actions API reads and retention cleanup.
+Actions still requires timed reads of its separate service's event history; this does not access the
+Actions database or create a cross-service database dependency. Listener loss fails readiness.
 
 Workers claim inboxes for 30 seconds, with a 20-second work budget and fenced commits. Network calls
 are outside transactions. They poll canonical Actions history (bounded pages of 128), including
@@ -107,7 +116,7 @@ identity tombstones to prevent replay duplicates. `expired_through` reports the 
 without advancing acknowledgement. Explicitly retired inboxes are purged after 30 days. After purge,
 a new explicit subscription can establish a fresh inbox epoch; there is no implicit successor routing.
 
-## Authorization and deployment
+## Authorization
 
 Actions allows the notification ServiceAccount to read all requests using the ordinary
 `GET /v1/action-requests`, `GET /v1/action-requests/{id}`, and
@@ -121,4 +130,50 @@ before accepting a subscription and on every source poll. Agent tokens are never
 The worker uses rotating, audience-specific projected service tokens. It is allowlisted at Sandbox
 Service; that service still validates sandbox UID and account binding and owns all runner access.
 Notification Kubernetes RBAC is TokenReview only. Cilium allows egress proxy → notifications, notifications
-→ Actions/Sandbox Service/PostgreSQL/API server, and no notifications → runner path.
+→ Actions/Sandbox Service/PostgreSQL/API server/GitHub API, and no notifications → runner path.
+
+## GitHub webhook ingestion and matching
+
+`POST /v1/webhooks/github` uses the GitHub signature, not workload auth. It bounds streamed bodies and
+concurrent ingress operations through commit, verifies HMAC-SHA256 over exact bytes, validates provider payloads, and commits
+payload/metadata before returning 202. Identical App/delivery-ID retries are deduplicated; conflicting
+reuse returns 409. Ping is verified but does not create an event. Invalid signatures, unsupported/malformed
+events, oversized bodies and busy ingress are rejected. Upstream signatures and installation tokens are
+never returned to agents. Installation lifecycle payloads are retained internally, not delivered as PR activity.
+GitHub does not automatically retry failed webhook requests: failures/timeouts require redelivery.
+Durable recovery starts at the committed receipt, not at the start of the HTTP request.
+
+PostgreSQL is the durable ingress journal, with committed ordering serialized against subscription
+creation. Inbox workers asynchronously replay from each subscription boundary; they recheck current App
+access, stable repository/installation identity, cancellation/version and inbox fencing. Raw GitHub journal payloads are retained without automatic pruning; monitor database growth.
+Inbox payload retention remains as documented above.
+
+PR, exact branch and fixed-commit subjects use native GitHub event/action names. Default CI means completed
+`check_run` and `status`; `check_suite` and `workflow_run` require explicit selection. PR comments/reviews,
+branch push/create/delete, and immutable commit matching are distinct. Branch deletion does not cancel
+following that name. CI matching uses current heads, retained PR/branch-to-SHA associations, explicit
+upstream subject references, and currently accessible installed PR forks. Empty PR arrays are supported
+by SHA correlation. Indexed receipt metadata allows a later association to select an earlier CI receipt,
+even across restarts. The GitHub start boundary is immutable and separate from the advancing Actions sequence.
+Database constraints require the state belonging to each subscription's source. Only selected, accessible, unmatched receipts occupy each bounded page;
+unrelated receipts cannot block delivery. Existing inbox identities and subscription matches suppress
+replay, including after payload expiry. An ingress generation fence preserves wakeups during matching.
+
+Association evidence may predate the subscription, but delivered receipts must follow its creation
+boundary. This is not complete reconstruction of uncaptured heads or events from an uninstalled fork.
+Payload SHA, not inbox order, identifies the revision involved.
+
+Event and action filters are unordered sets. Reordering or repeating identical selectors does not
+change subscription identity; JSON responses and stored creation specifications use canonical ordering.
+An installation-lookup 404 leaves a PR fork uncovered and logs that limitation. Other access failures,
+including authentication errors and suspended installations, surface as subscription errors.
+
+Any authenticated workload may subscribe to repositories accessible through this App, including private
+repositories; normal inbox ownership still applies. Revocation/suspension/identity changes stop new matching
+and expose subscription errors; delivered entries stay available. Transient/rate-limit failures retry with
+backoff. A changed installation/repository identity requires explicit subscription recreation.
+
+Migration `0005_github` retains existing Actions identities, checkpoints, payloads and delivery state while
+making event identity provider-neutral and storing source-specific progress separately. Use a coordinated service/schema cutover; older
+workers cannot use the replaced columns. Downgrade refuses to proceed if GitHub subscriptions or deliveries
+exist, rather than discarding that data.

@@ -5,6 +5,7 @@ exports_files([
     "0002_idempotency_key.py",
     "0003_remove_pause.py",
     "0004_source_union.py",
+    "0005_github.py",
 ])
 
 py_library(
@@ -35,4 +36,13 @@ py_library(
     name = "0004_source_union",
     srcs = ["0004_source_union.py"],
     deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0005_github",
+    srcs = ["0005_github.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )
