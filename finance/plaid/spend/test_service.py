@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
-from finance.plaid.spend.allowance import AllowancePolicy
+from finance.plaid.spend.allowance import AllowancePolicy, CategoryRule, Kind
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.models import AlertState, CardConfig, CardConfiguration, CardView, SpendView
 from finance.plaid.spend.service import SpendService
@@ -142,7 +142,10 @@ async def test_allowance_account_coverage_and_freshness_gate() -> None:
     midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
     config = CardConfiguration()
     policy = AllowancePolicy(
-        monthly_minor_units=10_000, activation_at=midnight, spending_account_ids=["card-1", "checking-1"]
+        monthly_minor_units=10_000,
+        activation_at=midnight,
+        spending_account_ids=["card-1", "checking-1"],
+        rules=[CategoryRule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)],
     )
     conn = _FakeConnection(
         accounts=[

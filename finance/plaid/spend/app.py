@@ -93,10 +93,7 @@ def _load_configuration(path: Path) -> CardConfiguration:
 def create_app(settings: SpendSettings, *, service: SpendService | None = None) -> FastAPI:
     allowance = None
     if service is None and settings.allowance_config_path is not None and settings.allowance_config_path.exists():
-        try:
-            allowance = AllowancePolicy.model_validate_json(settings.allowance_config_path.read_text("utf-8"))
-        except OSError, UnicodeError, ValidationError:
-            raise RuntimeError("Could not load valid Plaid Spend allowance policy") from None
+        allowance = AllowancePolicy.model_validate_json(settings.allowance_config_path.read_text("utf-8"))
     runtime_service = service or SpendService(
         settings.database_url,
         _load_configuration(settings.cards_config_path),

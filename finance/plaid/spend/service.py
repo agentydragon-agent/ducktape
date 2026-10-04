@@ -11,7 +11,7 @@ from decimal import ROUND_HALF_UP, Decimal
 import asyncpg
 from babel.numbers import get_currency_precision
 
-from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, calculate
+from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, Transaction, calculate
 from finance.plaid.spend.models import AlertState, CardConfiguration, CardView, SpendView
 
 logger = logging.getLogger(__name__)
@@ -288,9 +288,9 @@ class SpendService:
                     pending_minor_units=0,
                     review_minor_units=0,
                     unmatched_refunds_minor_units=0,
-                    windows_minor_units={},
+                    windows_minor_units=None,
                     trailing_7_daily_minor_units=None,
-                    estimated_days_to_exhaustion=None,
+                    estimated_exhaustion_at=None,
                     alert_state="unavailable",
                     last_synced_at=last_synced,
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
@@ -311,7 +311,9 @@ class SpendService:
                     policy.activation_at.date(),
                     now.date(),
                 )
-        return calculate(policy, [dict(row) for row in rows], now=now, last_synced_at=last_synced)
+        return calculate(
+            policy, [Transaction.model_validate(dict(row)) for row in rows], now=now, last_synced_at=last_synced
+        )
 
     def _require_pool(self) -> asyncpg.Pool:
         if self._pool is None:
