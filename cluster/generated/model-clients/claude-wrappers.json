@@ -1,0 +1,28 @@
+{
+  "antigravity-claude": {
+    "haikuModel": "antigravity/ant-messages/gemini-3.5-flash-lite",
+    "maxContextTokens": 1048576,
+    "maxOutputTokens": 65536,
+    "model": "antigravity/ant-messages/gemini-pro-agent"
+  },
+  "codex-claude": {
+    "haikuModel": "chatgpt/ant-messages/gpt-6-luna",
+    "maxContextTokens": 872000,
+    "maxOutputTokens": 128000,
+    "model": "chatgpt/ant-messages/gpt-6-astra"
+  },
+  "gemini-claude": {
+    "haikuModel": "google/goog-generate/gemini-3.5-flash-lite",
+    "maxContextTokens": 1048576,
+    "maxOutputTokens": 65536,
+    "model": "google/goog-generate/gemini-3.7-flash"
+  },
+  "litellm-claude": {
+    "haikuModel": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
+    "model": "anthropic-max20/ant-messages/claude-sonnet-5"
+  },
+  "tana-claude": {
+    "haikuModel": "tana/ant-messages/claude-haiku-4-5",
+    "model": "tana/ant-messages/claude-sonnet-4-6"
+  }
+}

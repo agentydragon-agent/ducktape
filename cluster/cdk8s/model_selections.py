@@ -4,23 +4,32 @@ from dataclasses import dataclass
 
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_SUBSCRIPTION_ROUTES,
+    ANTIGRAVITY_FLASH_LITE,
     ANTIGRAVITY_FLASH_LITE_ROUTES,
+    ANTIGRAVITY_PRO,
     ANTIGRAVITY_ROUTES,
     CHATGPT_MESSAGES_ROUTES,
     GEMINI_EMBEDDING_ALIAS,
     GEMINI_EMBEDDING_ROUTES,
+    GEMINI_FLASH,
+    GEMINI_FLASH_LITE,
     GEMINI_ROUTES,
+    GPT6_ASTRA_MESSAGES,
     GPT6_LUNA_MESSAGES,
     GPT6_LUNA_RESPONSES,
     GPT6_MESSAGES_ROUTES,
     GPT6_RESPONSES_ROUTES,
     HAIKU_API,
+    HAIKU_SUBSCRIPTION,
     MISTRAL_ROUTES,
     OLLAMA_CHAT_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
     OLLAMA_OPENAI_ROUTES,
     OLLAMA_QWEN_IQ4XS_ROUTES,
+    SONNET_SUBSCRIPTION,
+    TANA_HAIKU,
     TANA_ROUTES,
+    TANA_SONNET,
     Route,
     RouteAlias,
 )
@@ -92,3 +101,40 @@ PUBLIC_CODER_MODELS = (
 
 # An explicit harness override policy, not all routes with known context metadata.
 RUNNER_CONTEXT_OVERRIDES = OLLAMA_QWEN_IQ4XS_ROUTES
+
+
+# The Terraform lane names also identify each team's fallback policy.
+KEY_FALLBACK_ROUTES = {
+    "tana_client_models": (TANA_HAIKU,),
+    "codex_client_models": (GPT6_LUNA_MESSAGES,),
+    "gemini_client_models": (GEMINI_FLASH_LITE,),
+    "antigravity_client_models": (ANTIGRAVITY_FLASH_LITE,),
+}
+
+
+@dataclass(frozen=True)
+class ClaudeWrapperModels:
+    primary: Route
+    haiku: Route
+    key_lane: str
+    publish_limits: bool = False
+    max_output_override: int | None = None
+
+
+CLAUDE_WRAPPER_MODELS = {
+    "codex-claude": ClaudeWrapperModels(
+        GPT6_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES, "codex_client_models", publish_limits=True
+    ),
+    "litellm-claude": ClaudeWrapperModels(SONNET_SUBSCRIPTION, HAIKU_SUBSCRIPTION, "claude_client_models"),
+    "gemini-claude": ClaudeWrapperModels(GEMINI_FLASH, GEMINI_FLASH_LITE, "gemini_client_models", publish_limits=True),
+    "antigravity-claude": ClaudeWrapperModels(
+        ANTIGRAVITY_PRO,
+        ANTIGRAVITY_FLASH_LITE,
+        "antigravity_client_models",
+        publish_limits=True,
+        # Preserve the wrapper's configured 65,536, distinct from this account's
+        # published 65,535 output limit. Changing that client policy is separate.
+        max_output_override=65_536,
+    ),
+    "tana-claude": ClaudeWrapperModels(TANA_SONNET, TANA_HAIKU, "tana_client_models"),
+}

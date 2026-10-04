@@ -9,7 +9,7 @@
 # backend cannot execute. The antigravity-clients team falls back to the flash-lite tier,
 # so a throttled model degrades instead of hard-failing — but only at routing time: a
 # model outside the key's allowlist is refused during auth, before the router sees it, so
-# both names below must be ones the proxy serves and the key admits (ANTIGRAVITY_MODELS
+# both names below must be ones the proxy serves and the key admits (ANTIGRAVITY_ROUTES
 # in cluster/cdk8s/model_rosters.py, antigravity_client_models in
 # tf/gitops/litellm-keys/main.tf). See ./gateway.nix for the shared wrapper pattern.
 #
@@ -20,21 +20,18 @@
 { pkgs, config }:
 let
   inherit (pkgs) lib;
+  models = (lib.importJSON ../../../cluster/generated/model-clients/claude-wrappers.json).antigravity-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "antigravity-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenFile = config.sops.secrets.litellm_antigravity_key.path;
-  model = "antigravity/ant-messages/gemini-pro-agent";
-  haikuModel = "antigravity/ant-messages/gemini-3.5-flash-lite";
+  inherit (models) model;
+  inherit (models) haikuModel;
   disallowedTools = [
     "WebFetch"
     "WebSearch"
   ];
-  # Gemini's published window/output (SSOT: cluster/cdk8s/model_rosters.py
-  # GEMINI_CONTEXT_WINDOW / GEMINI_MAX_OUTPUT_TOKENS) -- borrowed from the same Gemini
-  # generation the direct API exposes; not independently measured for this
-  # Antigravity-specific slug. Without maxContextTokens Claude Code assumes 200k for
-  # this unrecognized slug and compacts away most of the real window.
-  maxContextTokens = 1048576;
-  maxOutputTokens = 65536;
+  # The generated selection keeps the existing output override (65,536), distinct
+  # from Antigravity's published 65,535. The context comes from this account's route.
+  inherit (models) maxContextTokens maxOutputTokens;
 }

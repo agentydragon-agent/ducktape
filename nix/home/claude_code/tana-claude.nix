@@ -7,11 +7,12 @@
 { pkgs, config }:
 let
   inherit (pkgs) lib;
+  models = (lib.importJSON ../../../cluster/generated/model-clients/claude-wrappers.json).tana-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "tana-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenFile = config.sops.secrets.litellm_tana_key.path;
-  model = "tana/ant-messages/claude-sonnet-4-6";
-  haikuModel = "tana/ant-messages/claude-haiku-4-5";
+  inherit (models) model;
+  inherit (models) haikuModel;
   gatewayDiscovery = true;
 }

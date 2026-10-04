@@ -6,3 +6,8 @@ variable "model_allowlists" {
   description = "Per-key LiteLLM model allowlists, one lane per key, from cluster/cdk8s/litellm/keys.py via the generated Terraform CR"
   type        = map(list(string))
 }
+
+variable "model_fallbacks" {
+  description = "Per-team LiteLLM fallback routes, generated from canonical selections alongside model_allowlists"
+  type        = map(list(string))
+}

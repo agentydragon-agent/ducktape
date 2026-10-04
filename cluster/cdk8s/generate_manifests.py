@@ -53,6 +53,7 @@ from cluster.cdk8s import (
     mcp_oauth_state,
     metrics_server,
     mitmproxy,
+    model_client_config,
     node_feature_discovery,
     ntfy,
     nvidia_device_plugin,
@@ -249,6 +250,7 @@ from util.bazel.workspace import get_build_workspace_directory
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under ``root``."""
     write_generated_readme(root)
+    model_client_config.write_config(root)
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
     devbox_service = public_coder_devbox.write_manifests(root)
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(

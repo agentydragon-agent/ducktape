@@ -441,6 +441,14 @@ _ANTIGRAVITY_FLASH_LITE_35 = Model(
     max_output_tokens=None,
 )
 
+_ANTIGRAVITY_PRO = Model(
+    id="gemini-pro-agent",
+    display_name="Gemini 3.1 Pro (High)",
+    reasoning=True,
+    context_window=1_048_576,
+    max_output_tokens=65_535,
+)
+
 _ANTIGRAVITY_MODELS: tuple[Model, ...] = (
     _ANTIGRAVITY_OPUS,
     _ANTIGRAVITY_SONNET,
@@ -481,13 +489,7 @@ _ANTIGRAVITY_MODELS: tuple[Model, ...] = (
         context_window=None,
         max_output_tokens=None,
     ),
-    Model(
-        id="gemini-pro-agent",
-        display_name="Gemini 3.1 Pro (High)",
-        reasoning=True,
-        context_window=1_048_576,
-        max_output_tokens=65_535,
-    ),
+    _ANTIGRAVITY_PRO,
     Model(
         id="gemini-3.1-pro-low",
         display_name="Gemini 3.1 Pro (Low)",
@@ -710,6 +712,7 @@ TANA_ROUTES = tuple(
     )
     for model, upstream in _TANA_MODELS
 )
+TANA_SONNET, TANA_OPUS, TANA_HAIKU = TANA_ROUTES
 _CHATGPT_MESSAGES = Upstream(
     Provider.CHATGPT, "anthropic", "messages", _CLIPROXY_BASE, "os.environ/CLIPROXY_CLIENT_KEY", True
 )
@@ -725,6 +728,7 @@ CHATGPT_RESPONSES_ROUTES = tuple(
 )
 _CHATGPT_MESSAGES_BY_ID = {route.model.id: route for route in CHATGPT_MESSAGES_ROUTES}
 _CHATGPT_RESPONSES_BY_ID = {route.model.id: route for route in CHATGPT_RESPONSES_ROUTES}
+GPT6_ASTRA_MESSAGES = _CHATGPT_MESSAGES_BY_ID[GPT_6_ASTRA.id]
 GPT6_ASTRA_RESPONSES = _CHATGPT_RESPONSES_BY_ID[GPT_6_ASTRA.id]
 GPT6_LUNA_RESPONSES = _CHATGPT_RESPONSES_BY_ID[GPT_6_LUNA.id]
 GPT6_LUNA_MESSAGES = _CHATGPT_MESSAGES_BY_ID[GPT_6_LUNA.id]
@@ -762,6 +766,8 @@ ANTIGRAVITY_ROUTES = tuple(
 ANTIGRAVITY_FLASH_LITE_ROUTES = tuple(
     route for route in ANTIGRAVITY_ROUTES if route.model in (_ANTIGRAVITY_FLASH_LITE_31, _ANTIGRAVITY_FLASH_LITE_35)
 )
+ANTIGRAVITY_PRO = next(route for route in ANTIGRAVITY_ROUTES if route.model is _ANTIGRAVITY_PRO)
+ANTIGRAVITY_FLASH_LITE = next(route for route in ANTIGRAVITY_ROUTES if route.model is _ANTIGRAVITY_FLASH_LITE_35)
 _GROQ_CHAT = Upstream(Provider.GROQ, "groq", "chat", api_key="os.environ/GROQ_API_KEY", supports_function_calling=True)
 GROQ_CHAT_ROUTES = tuple(Route(Model(id), _GROQ_CHAT) for id in ("llama-3.3-70b-versatile", "llama-3.1-8b-instant"))
 _GROQ_TRANSCRIBE = Upstream(Provider.GROQ, "groq", "transcribe", api_key="os.environ/GROQ_API_KEY")
@@ -772,6 +778,7 @@ _GOOGLE_GENERATE = Upstream(
     Provider.GOOGLE, "gemini", "generate", api_key="os.environ/GEMINI_API_KEY", supports_function_calling=True
 )
 GEMINI_ROUTES = tuple(Route(model, _GOOGLE_GENERATE) for model in _GEMINI_MODELS)
+GEMINI_FLASH, GEMINI_FLASH_LITE = GEMINI_ROUTES
 _GOOGLE_EMBED = Upstream(Provider.GOOGLE, "gemini", "embed", api_key="os.environ/GEMINI_API_KEY")
 GEMINI_EMBEDDING_ROUTES = tuple(Route(model, _GOOGLE_EMBED) for model in _GEMINI_EMBEDDING_MODELS)
 GEMINI_EMBEDDING_ALIAS = RouteAlias(GEMINI_EMBEDDING_COMPAT_ALIAS, GEMINI_EMBEDDING_ROUTES[0])

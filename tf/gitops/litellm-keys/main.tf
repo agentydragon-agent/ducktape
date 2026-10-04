@@ -221,7 +221,7 @@ resource "litellm_team" "tana_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["tana/ant-messages/claude-haiku-4-5"]
+        fallback_models = var.model_fallbacks.tana_client_models
       }
     ]
   }
@@ -278,7 +278,7 @@ resource "litellm_team" "codex_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["chatgpt/ant-messages/gpt-6-luna"]
+        fallback_models = var.model_fallbacks.codex_client_models
       }
     ]
   }
@@ -342,7 +342,7 @@ resource "litellm_team" "gemini_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["google/goog-generate/gemini-3.5-flash-lite"]
+        fallback_models = var.model_fallbacks.gemini_client_models
       }
     ]
   }
@@ -380,7 +380,7 @@ resource "litellm_team" "antigravity_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["antigravity/ant-messages/gemini-3.5-flash-lite"]
+        fallback_models = var.model_fallbacks.antigravity_client_models
       }
     ]
   }

@@ -58,8 +58,17 @@ catalog excludes routes with unknown limits; the renderer rejects missing metada
 The runner's override selection remains limited to Qwen IQ4_XS, even though other
 routes have known or configured context windows.
 
-Nix wrappers and Terraform fallback defaults still need generated data projections.
-The Claude `[1m]` request convention is separate from a served route identity.
+`CLAUDE_WRAPPER_MODELS` projects to
+`cluster/generated/model-clients/claude-wrappers.json`, read by the Nix wrappers as
+gateway options. `KEY_FALLBACK_ROUTES` projects to the Terraform CR's `model_fallbacks`
+input. Both selections are checked against their key allowlists. Regenerate these
+artifacts with `bb run //cluster/cdk8s:generate_manifests`.
+
+Claude's `[1m]` request convention stays in `litellm-claude.nix`, separate from the
+served ID. The Antigravity wrapper explicitly retains its configured 65,536 output
+override, while the account metadata remains 65,535. Changing that policy requires a
+separate behavioral change; do not replace account metadata with a borrowed Google API
+limit.
 
 The ingress follow-up should consume `Environment.model_routes`, not extract IDs from
 `app_config` and look them back up. It must preserve the distinction between metadata
