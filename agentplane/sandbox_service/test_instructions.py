@@ -15,6 +15,7 @@ def test_image_owned_agent_instructions_render_deployment_service_urls() -> None
     assert "http://egress.test.invalid/openapi.json" in instructions
     assert "http://actions.test.invalid:8080/openapi.json" in instructions
     assert "### Waiting efficiently for Actions" not in instructions
+    assert "configured local timezone (from the `TZ` environment variable)" in instructions
 
 
 @pytest.mark.parametrize("configured", [None, "", "Custom deployment instructions"])
@@ -39,6 +40,7 @@ def test_notification_workflow_and_examples_augment_default_or_custom_prompt(con
     assert "Reads and runner delivery receipts never acknowledge." in instructions
     assert "unsubscribing is not withdrawal." in instructions
     assert "No notification-triggered harness/sandbox startup or wake-up is available." in instructions
+    assert "configured local timezone (from the `TZ` environment variable)" in instructions
     if configured:
         assert instructions.startswith(configured)
     elif configured is None:
@@ -47,7 +49,9 @@ def test_notification_workflow_and_examples_augment_default_or_custom_prompt(con
 
 @pytest.mark.parametrize("configured", ["", "Custom deployment instructions"])
 def test_explicit_instructions_do_not_require_service_urls(configured: str) -> None:
-    assert resolved_agent_instructions(configured, egress_api_url=None, actions_service_url=None) == configured
+    instructions = resolved_agent_instructions(configured, egress_api_url=None, actions_service_url=None)
+    assert instructions.startswith(configured)
+    assert "configured local timezone (from the `TZ` environment variable)" in instructions
 
 
 @pytest.mark.parametrize(
