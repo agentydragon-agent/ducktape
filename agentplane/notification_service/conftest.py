@@ -12,7 +12,6 @@ from testcontainers.postgres import PostgresContainer
 from agentplane.action_service.conftest import echo_catalog, echo_executor
 from agentplane.action_service.database_migrate import RUNNER as ACTIONS_MIGRATIONS
 from agentplane.notification_service.database_migrate import RUNNER
-from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.store import Store
 from agentplane.runner.conftest import config, endpoint, harness, model, runner, spec, workspace
 from util.testing.postgres import create_database_sync, force_drop_database_sync
@@ -47,8 +46,7 @@ async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
 
 @pytest.fixture
 async def store(engine: AsyncEngine) -> Store:
-    # Most tests exercise delivery without waiting; debounce behavior has dedicated store coverage.
-    return Store(engine, NoticeDebounceSettings(quiet_seconds=0))
+    return Store(engine)
 
 
 @pytest.fixture

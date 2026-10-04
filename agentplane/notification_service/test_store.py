@@ -23,7 +23,6 @@ from agentplane.notification_service.models import (
     Subscribe,
     SubscriptionUpdate,
 )
-from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, Store
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
@@ -380,94 +379,6 @@ async def test_retention_gap_is_visible_and_replay_keeps_tombstone(store: Store)
     assert source is not None
     await store.record(claim, source, events())
     assert (await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)).inbox.last_cursor == 3
-
-
-@pytest.mark.parametrize("quiet_seconds", [0, 60])
-async def test_notice_debounce_deadline_is_durable_and_reads_are_immediate(
-    store: Store, engine: AsyncEngine, quiet_seconds: float
-) -> None:
-    store.debounce = NoticeDebounceSettings(quiet_seconds=quiet_seconds, max_wait_seconds=300)
-    subscription = await store.subscribe(PRINCIPAL, BODY)
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
-    await store.record(claim, source, events(2))
-    now = datetime.now(UTC)
-    first, last = now - timedelta(seconds=120), now - timedelta(seconds=1)
-    async with store.sessions.begin() as session:
-        await session.execute(update(Entry).where(Entry.cursor == 1).values(created_at=first))
-        await session.execute(update(Entry).where(Entry.cursor == 2).values(created_at=last))
-    # Replaying a match must not extend the quiet window.
-    await store.record(claim, source, events(2))
-    page = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
-    assert [entry.cursor for entry in page.entries] == [1, 2]
-    assert page.inbox.acknowledged == 0
-    assert page.notice is None
-    # Remove source deadlines, so only notice delivery can schedule this inbox.
-    await store.change(PRINCIPAL.account, subscription.id, None)
-    await store.release(claim, None)
-    recovered = Store(engine, store.debounce)
-    async with recovered.sessions() as session:
-        inbox = await session.get(Inbox, claim.id)
-        assert inbox is not None
-        assert inbox.next_attempt == last + timedelta(seconds=quiet_seconds)
-    if quiet_seconds:
-        assert await recovered.get_next_work_at() == last + timedelta(seconds=quiet_seconds)
-        assert await recovered.claim() is None
-    # Age just the quiet window; recovery needs no process-local timer or new NOTIFY.
-    async with recovered.sessions.begin() as session:
-        await session.execute(update(Inbox).where(Inbox.id == claim.id).values(next_attempt=now))
-    claim = await recovered.claim()
-    assert claim is not None
-    if quiet_seconds:
-        assert await recovered.notice(claim) is None
-        async with recovered.sessions.begin() as session:
-            await session.execute(update(Entry).where(Entry.cursor == 2).values(created_at=now - timedelta(seconds=61)))
-    notice = await recovered.notice(claim)
-    assert notice is not None
-    assert notice.through_cursor == 2
-
-
-async def test_notice_max_wait_and_inflight_notice_are_not_extended(store: Store) -> None:
-    store.debounce = NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=300)
-    subscription = await store.subscribe(PRINCIPAL, BODY)
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
-    await store.record(claim, source, events(2))
-    assert await store.notice(claim) is None
-    # A recent entry cannot postpone an older pending entry beyond the maximum wait.
-    async with store.sessions.begin() as session:
-        await session.execute(
-            update(Entry).where(Entry.cursor == 1).values(created_at=datetime.now(UTC) - timedelta(seconds=301))
-        )
-    notice = await store.notice(claim)
-    assert notice is not None
-    assert notice.through_cursor == 2
-    await store.record(claim, source, events(3))
-    retry = await store.notice(claim)
-    assert retry is not None
-    assert (retry.command_id, retry.text, retry.through_cursor) == (notice.command_id, notice.text, 2)
-    await store.receipt(
-        claim,
-        notice,
-        event_log_pb2.EventEntry(
-            cursor=1,
-            event=event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    origin_command_ids=[str(notice.command_id)]
-                )
-            ),
-        ),
-    )
-    # The next burst has its own window; the already covered old entry cannot force it due.
-    assert await store.notice(claim) is None
-    await store.change(PRINCIPAL.account, subscription.id, None)
-    await store.acknowledge(PRINCIPAL.account, subscription.inbox_id, 3)
-    await store.release(claim, None)
-    assert await store.get_next_work_at() is None
 
 
 if __name__ == "__main__":

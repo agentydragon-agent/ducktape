@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import grpc
 import httpx
@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.notification_service.db import Inbox, Notice
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
+from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions, SourceNotOwnedError
 from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
@@ -36,10 +37,17 @@ class DestinationRejectedError(Exception):
 
 class Service:
     def __init__(
-        self, store: Store, actions: Actions, sandboxes: SandboxServiceClient, github: GitHub | None = None
+        self,
+        store: Store,
+        actions: Actions,
+        sandboxes: SandboxServiceClient,
+        github: GitHub | None = None,
+        *,
+        notice_debounce: NoticeDebounceSettings,
     ) -> None:
         self.store, self.actions, self.sandboxes = store, actions, sandboxes
         self.github = github
+        self.notice_debounce = notice_debounce
 
     async def runner(self, owner: ServiceAccountRef, destination: DestinationRef) -> Runner:
         if destination.namespace != self.sandboxes.namespace:
@@ -130,6 +138,25 @@ class Service:
         finally:
             attachment.cancel()
 
+    async def get_notice_due_at(self, claim: Inbox) -> datetime | None:
+        pending = await self.store.get_pending_entry_times(claim)
+        if pending is None:
+            return None
+        first, last = pending
+        # Use durable entry times, not a process-local timer. Overlapping matches do not extend it.
+        return min(
+            last + timedelta(seconds=self.notice_debounce.quiet_seconds),
+            first + timedelta(seconds=self.notice_debounce.max_wait_seconds),
+        )
+
+    async def prepare_notice(self, claim: Inbox) -> Notice | None:
+        due_at = await self.get_notice_due_at(claim)
+        notice = await self.store.notice(claim, prepare=due_at is not None and due_at <= datetime.now(UTC))
+        # Debounce only new notices, never retry/confirmation of an existing command.
+        if notice is not None and not notice.confirmed and notice.error is None:
+            return notice
+        return None
+
     async def step(self) -> bool:
         claim = await self.store.claim()
         if claim is None:
@@ -178,7 +205,7 @@ class Service:
                             ),
                             failure.retry_seconds if isinstance(failure, GitHubRetryError) else 60,
                         )
-                notice = await self.store.notice(claim)
+                notice = await self.prepare_notice(claim)
                 if notice is not None and error is None:
                     await self.deliver(claim, runner, notice)
         except ConflictError as failure:
@@ -198,7 +225,7 @@ class Service:
             logger.warning("notification delivery unavailable: inbox=%s cause=%s", claim.id, error)
         finally:
             with suppress(ClaimLostError):
-                await self.store.release(claim, error)
+                await self.store.release(claim, error, notice_due_at=await self.get_notice_due_at(claim))
         return True
 
     async def run(self) -> None:

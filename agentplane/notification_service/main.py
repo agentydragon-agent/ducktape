@@ -47,10 +47,11 @@ async def serve(settings: Settings) -> None:
                 github.start()
             app = create_app(
                 Service(
-                    Store(engine, settings.notice_debounce),
+                    Store(engine),
                     Actions(http, settings.actions.token_file),
                     sandboxes,
                     github,
+                    notice_debounce=settings.notice_debounce,
                 ),
                 principals,
             )

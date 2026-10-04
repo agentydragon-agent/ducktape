@@ -27,6 +27,7 @@ from agentplane.notification_service.db import Inbox
 from agentplane.notification_service.instructions import instructions
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.sources.actions import Actions
+from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.store import Store
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
@@ -111,7 +112,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 ) as remote,
             ):
                 source = Actions(action_http, token_file)
-                service = Service(store, source, remote)
+                service = Service(store, source, remote, notice_debounce=NoticeDebounceSettings(quiet_seconds=0))
                 api = create_app(service, resolver)
                 async with httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=api),
@@ -276,7 +277,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert SANDBOX_UID in notice_request.system_text
                     await model.reply(notice_request, Text("Notifications received"))
                     # A fresh service object has no in-memory delivery state to lean on.
-                    recovered = Service(Store(engine, store.debounce), source, remote)
+                    recovered = Service(Store(engine), source, remote, notice_debounce=service.notice_debounce)
                     inbox_id = UUID(subscription["inbox_id"])
                     page = None
                     for _ in range(10):
