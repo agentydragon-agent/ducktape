@@ -84,6 +84,7 @@ flowchart TB
     HARNESS_SKILLS["Unranked candidate<br/>project-scoped skills and commands<br/>both native harnesses"]:::future
     HARNESS_WEB_SEARCH["Unranked candidate<br/>routed web search<br/>source evidence in Thread"]:::future
     HARNESS_VISUAL_INPUT["Unranked candidate<br/>image attachments and visual input<br/>composer, protocol, storage, replay"]:::future
+    HARNESS_MANUAL_COMPACTION["Unranked future control<br/>user-triggered harness compaction<br/>from the frontend"]:::future
     HARNESS_INTERACTIVE_CONTROLS["Unranked candidate<br/>questions and permission decisions<br/>durable park, answer, recovery"]:::future
     HARNESS_PROJECT_HOOKS["Unranked candidate<br/>trusted project hooks<br/>bounded execution and control replies"]:::future
     HARNESS_PLUGINS["Unranked candidate<br/>project plugins and skill packages<br/>source trust and capability grants"]:::future
@@ -1204,6 +1205,19 @@ assumed to stay one unpaginated call forever.
 
 **Depends on** the cross-sandbox Thread-listing endpoint (extends it with cursor pagination and,
 eventually, search). Nothing above waits on this.
+
+### `HARNESS_MANUAL_COMPACTION` — user-triggered compaction from the frontend
+
+**Unranked future capability:** let the user request native harness context compaction from the
+Thread UI, through the existing authorized app → Sandbox Service → runner command path. Determine
+Claude and Codex support and busy-turn behavior separately; show unsupported/unavailable states
+rather than pretending a generic summarization prompt is native compaction. Distinguish request
+admission from actual start/completion/failure using runner evidence, including reconnect/replay.
+Preserve Thread/session identity and the durable transcript/Event archive: compacting model context
+is not deleting conversation history. Acceptance covers a real frontend request, native compaction,
+continued conversation and retained shared instructions for each supported harness, plus failure and
+reconnect behavior. Coordinate compaction fixtures with `NOTIFICATION_COMPACT_NOTICES`; those tests
+do not need to wait for the frontend control. Implementation and UI details remain open.
 
 ### `CONTROL_STATE` — dynamic runtime control acceptance
 
