@@ -62,17 +62,21 @@ async def add_link(connection: asyncpg.Connection, item_id: str, *, synced: date
     await connection.execute(
         """INSERT INTO public.links
            (item_id, institution_name, products_requested, products_authorized, products_billed,
-            status, access_token_secret, last_synced_at)
-           VALUES ($1, 'Example Bank', '[]'::json, '[]'::json, '[]'::json, 'active', 'example-secret', $2)""",
-        item_id, synced,
+            status, access_token_secret, last_synced_at, created_at, updated_at)
+           VALUES ($1, 'Example Bank', '[]'::json, '[]'::json, '[]'::json, 'active', 'example-secret', $2, $2, $2)""",
+        item_id,
+        synced,
     )
 
 
 async def add_account(connection: asyncpg.Connection, account_id: str, item_id: str, *, type: str) -> None:
     await connection.execute(
-        """INSERT INTO public.accounts (account_id, item_id, name, mask, type, iso_currency_code, raw_json)
-           VALUES ($1, $2, $3, '1234', $4, 'USD', '{}'::json)""",
-        account_id, item_id, f"Example {account_id}", type,
+        """INSERT INTO public.accounts (account_id, item_id, name, mask, type, iso_currency_code, raw_json, updated_at)
+           VALUES ($1, $2, $3, '1234', $4, 'USD', '{}'::json, NOW())""",
+        account_id,
+        item_id,
+        f"Example {account_id}",
+        type,
     )
 
 
@@ -80,7 +84,10 @@ async def add_liability(connection: asyncpg.Connection, account_id: str, item_id
     await connection.execute(
         """INSERT INTO public.liability_credit_snapshots (account_id, item_id, captured_at, raw_json)
            VALUES ($1, $2, $3, $4::json)""",
-        account_id, item_id, datetime.now(UTC), json.dumps({"last_statement_issue_date": issue.isoformat()}),
+        account_id,
+        item_id,
+        datetime.now(UTC),
+        json.dumps({"last_statement_issue_date": issue.isoformat()}),
     )
 
 
@@ -100,14 +107,22 @@ async def add_transaction(
     await connection.execute(
         """INSERT INTO public.transactions
            (transaction_id, account_id, item_id, date, amount, name, merchant_name, pending,
-            pending_transaction_id, pfc_primary, pfc_detailed, iso_currency_code, removed, raw_json)
-           VALUES ($1, $2, $3, $4, $5, 'EXAMPLE SHOP', NULL, $6, $7, 'SHOPPING', $8, $9, false, '{}'::json)""",
-        transaction_id, account_id, item_id, on_date, amount, pending, pending_transaction_id, category, currency,
+            pending_transaction_id, pfc_primary, pfc_detailed, iso_currency_code, removed, raw_json, updated_at)
+           VALUES ($1, $2, $3, $4, $5, 'EXAMPLE SHOP', NULL, $6, $7, 'SHOPPING', $8, $9, false, '{}'::json, NOW())""",
+        transaction_id,
+        account_id,
+        item_id,
+        on_date,
+        amount,
+        pending,
+        pending_transaction_id,
+        category,
+        currency,
     )
 
 
 async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
-    connection: asyncpg.Connection, postgres_url: str,
+    connection: asyncpg.Connection, postgres_url: str
 ) -> None:
     today = datetime.now(UTC).date()
     early_cycle_start = today - timedelta(days=10)
@@ -129,15 +144,22 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
         ("future", today + timedelta(days=1), 60.0),
     ):
         await add_transaction(
-            connection, "card-late", "item-1", transaction_id, on_date, amount,
+            connection,
+            "card-late",
+            "item-1",
+            transaction_id,
+            on_date,
+            amount,
             pending=transaction_id in ("pending-only", "pending-old"),
             pending_transaction_id="pending-old" if transaction_id == "posted-replacement" else None,
             category="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT" if transaction_id == "card-payment" else None,
             currency="CAD" if transaction_id == "other-currency" else "USD",
         )
     configuration = SpendConfiguration(
-        cards=[CardConfig(account_id=aid, label=aid, limit_minor_units=100_000, enabled=True)
-               for aid in ("card-early", "card-late")]
+        cards=[
+            CardConfig(account_id=aid, label=aid, limit_minor_units=100_000, enabled=True)
+            for aid in ("card-early", "card-late")
+        ]
     )
     service = SpendService(postgres_url, configuration, dashboard_url="https://spend.example.test")
     await service.start()
@@ -154,9 +176,7 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
     assert late_card.spend_minor_units == 3_884
 
 
-async def test_allowance_account_coverage_and_freshness_gate(
-    connection: asyncpg.Connection, postgres_url: str,
-) -> None:
+async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg.Connection, postgres_url: str) -> None:
     now = datetime.now(UTC)
     midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
     for account_id, item_id, type in (("card-1", "item-card", "credit"), ("checking-1", "item-checking", "depository")):
@@ -166,7 +186,8 @@ async def test_allowance_account_coverage_and_freshness_gate(
     config = SpendConfiguration(
         cards=[],
         allowance=AllowancePolicy(
-            monthly_minor_units=10_000, activation_at=midnight,
+            monthly_minor_units=10_000,
+            activation_at=midnight,
             spending_account_ids=["card-1", "checking-1"],
             rules=[CategoryRule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)],
         ),
@@ -198,7 +219,7 @@ class _ConnectedRequest:
 
 
 async def test_event_stream_sends_initial_view_and_notification_update(
-    connection: asyncpg.Connection, postgres_url: str,
+    connection: asyncpg.Connection, postgres_url: str
 ) -> None:
     today = datetime.now(UTC).date()
     await add_link(connection, "item-1", synced=datetime.now(UTC))

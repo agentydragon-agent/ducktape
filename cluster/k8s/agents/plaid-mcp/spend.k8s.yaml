@@ -117,10 +117,10 @@ spec:
       automountServiceAccountToken: false
       containers:
         - env:
-            - name: PLAID_SPEND_CARDS_CONFIG_PATH
+            - name: PLAID_SPEND_CONFIG_PATH
               valueFrom:
                 configMapKeyRef:
-                  key: PLAID_SPEND_CARDS_CONFIG_PATH
+                  key: PLAID_SPEND_CONFIG_PATH
                   name: plaid-spend-config
             - name: PLAID_SPEND_API_OIDC_ISSUER
               valueFrom:

@@ -23,13 +23,7 @@ _CARD_PAYMENT_CATEGORY = "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
 class SpendService:
     """Postgres reader and reconnecting NOTIFY subscriber for one shared card view."""
 
-    def __init__(
-        self,
-        database_url: str,
-        configuration: SpendConfiguration,
-        *,
-        dashboard_url: str,
-    ) -> None:
+    def __init__(self, database_url: str, configuration: SpendConfiguration, *, dashboard_url: str) -> None:
         self._database_url = database_url
         self._configuration = configuration
         self._dashboard_url = dashboard_url

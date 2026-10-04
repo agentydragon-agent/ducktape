@@ -12,14 +12,12 @@ py_library(
         "spend.js",
     ],
     deps = [
-        ":allowance",
         ":models",
         ":service",
         ":settings",
         "//mcp_infra:oidc_principal",
         "//util:oidc_login",
         "@pypi//fastapi",
-        "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
 )
