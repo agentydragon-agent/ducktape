@@ -141,7 +141,7 @@ py_library(
     srcs = ["llm_ingress.py"],
     deps = [
         ":environment",
-        "//agentplane/llm_ingress:main",
+        "//agentplane/llm_ingress:settings",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:node_scheduling",

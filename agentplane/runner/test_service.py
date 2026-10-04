@@ -54,7 +54,7 @@ def config(harness: protocol_pb2.Harness, harness_binary: Path, tmp_path: Path) 
 async def test_failed_session_shutdown_still_closes_its_database(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    runner = Runner(RunnerConfig(state_dir=tmp_path, environment={}))
+    runner = Runner(RunnerConfig(state_dir=tmp_path, harness_environment={}))
     runner.store.write(
         "test-session",
         SessionRecord.from_spec(protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, model="test-model")),
@@ -96,7 +96,7 @@ async def test_a_harness_the_supervisor_cannot_start_names_the_spawn_failure(
 
 
 async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_path: Path) -> None:
-    runner = Runner(RunnerConfig(state_dir=tmp_path, environment={}))
+    runner = Runner(RunnerConfig(state_dir=tmp_path, harness_environment={}))
     runner.store.write(
         "test-session",
         SessionRecord.from_spec(protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, model="test-model")),

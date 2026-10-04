@@ -120,7 +120,7 @@ class Runner:
         process = HarnessProcess(
             ["/bin/sh", "-eu"],
             cwd=self.config.initialization_cwd or self.config.state_dir,
-            environment={**os.environ, **self.config.environment},
+            environment={**os.environ, **self.config.harness_environment},
             state_owner_descriptor=self._state_owner.descriptor,
             process_isolation=self.config.process_isolation,
         )

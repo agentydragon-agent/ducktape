@@ -96,7 +96,7 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
     """Build explicit runner and child configuration from the public seed."""
     llm_base_url = config.llm_base_url
     proxy_url = config.proxy_url
-    environment = {
+    harness_environment = {
         "HOME": str(WORKSPACE_DIR / "home"),
         "USER": "runner",
         "LOGNAME": "runner",
@@ -122,7 +122,7 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
     }
     return RunnerConfig(
         state_dir=RUNNER_STATE_DIR,
-        environment=environment,
+        harness_environment=harness_environment,
         model_context_windows=config.model_context_windows,
         claude=ClaudeLaunch(
             binary=Path("/run/current-system/sw/bin/claude"),

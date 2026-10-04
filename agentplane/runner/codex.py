@@ -76,7 +76,7 @@ class CodexAdapter(HarnessAdapter):
         codex_home = self.session.native_directory / "codex"
         codex_home.mkdir(exist_ok=True)
         return {
-            **self.session.config.environment,
+            **self.session.config.harness_environment,
             **scenarios.environment(
                 endpoint=self.launch.base_url, token=self.launch.api_key, codex_home=str(codex_home)
             ),
