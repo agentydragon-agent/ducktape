@@ -2220,6 +2220,12 @@ data:
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-metadata
+      spend-private-config:
+        kind: RoleBinding
+        namespace: plaid-mcp
+        role_ref:
+          kind: Role
+          name: plaid-spend-finance-config-reader
       coinbase-credentials:
         kind: RoleBinding
         namespace: agentplane-staging
@@ -2811,11 +2817,10 @@ data:
           Work as a public-repository coding agent. You will usually work on the public GitHub repository
           agentydragon/ducktape. Follow the shared ducktape contribution instructions below.
 
-          For BuildBuddy diagnostics, first check the configured Agentplane egress rules. If they grant
-          BuildBuddy, use the exact returned credential placeholder as the `x-buildbuddy-api-key` header
-          through the proxy when reading invocation details or logs from the allowed BuildBuddy API host. The
-          proxy substitutes the cluster-held API key; never read, print, or persist the real key or bypass the
-          proxy. If no applicable rule is present, report the missing access instead of guessing a credential.
+          The public-coder preset grants BuildBuddy diagnostics through Agentplane egress. Use its
+          credential placeholder as the `x-buildbuddy-api-key` header through the proxy when reading
+          invocation details or logs from the allowed BuildBuddy API host. The proxy substitutes the
+          cluster-held API key; never read, print, or persist the real key or bypass the proxy.
 
           When contributing to the public `agentydragon/ducktape` repository, use the dedicated
           `agentydragon-agent` GitHub identity, not the operator's identity. Check the current Agentplane
@@ -2879,19 +2884,18 @@ data:
           `gaffer-private` currently auto-approve, while write Actions require individual operator
           approval. They can provide approved one-off edits, but not normal Git push/pull. Do not
           request broad upstream write access as a shortcut or claim that a private fork is safe
-          without independently verifying read-only upstream access. For now the owner manages
-          SOPS-encrypted private config; request write Actions only for specific owner-authorized
-          work and follow the approval workflow. Consult private finance-agent project notes for
+          without independently verifying read-only upstream access. The agent may construct and encrypt new private configuration using public SOPS
+          recipients; publishing requires owner-approved write Actions for specific authorized
+          work. Follow the approval workflow. Consult private finance-agent project notes for
           current decisions.
 
-          Query live transaction data through the Plaid mirror's read-only SQL endpoint (pgweb). First
-          check the current egress rules for the exact host, permitted paths, and credential placeholder.
+          Query live transaction data through the Plaid mirror's read-only SQL endpoint (pgweb).
+          The finance preset grants pgweb read access through Agentplane egress.
           The pgweb Kubernetes Service listens on the default HTTP port 80 and forwards to the container's
-          unprivileged port 8081. Use the Service hostname and default port after this change is deployed;
+          unprivileged port 8081. Use the Service hostname and default port;
           if a request times out, verify the _live_ Service port (older deployments expose 8081) before
           assuming the database is down or debugging Cilium. Send pgweb's placeholder as the HTTP Basic
-          password for username `plaid`. For example, with the currently granted rule, a read-only
-          connectivity probe is:
+          password for username `plaid`. A read-only connectivity probe is:
 
           ```bash
           curl -sS -u 'plaid:agentplane-credential-plaid-pgweb' \
@@ -2906,10 +2910,20 @@ data:
           This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
           action against a real financial account.
 
-          Coinbase is separate from the Plaid mirror. Its view-only CDP credential is available only where
-          a current named Kubernetes Secret grant allows it: first check
-          `kubectl auth can-i get secrets/coinbase-api-credentials -n agentplane-staging` and the current
-          Agentplane egress rules. The permitted `api.coinbase.com` GET route does not substitute a
+          The finance preset also has a named `get` grant for the **one** spend configuration Secret
+          `plaid-mcp/plaid-spend-private-config`. It may read the deployed Secret; never print
+          its decoded data, access the cluster SOPS private key, or commit plaintext.
+          This permits reading a deployed config, **not** decrypting a pending encrypted private PR.
+          The private repository's SOPS rule publishes age **recipients**: encrypting a freshly
+          constructed Secret needs only these public keys and `sops`, not Rai's private age key.
+          Submit encrypted updates to gaffer-private only via owner-approved GitHub write Actions;
+          never give the shared bot PAT general upstream write access. The first config can be
+          constructed with owner-confirmed policy choices and Plaid IDs after the private scaffold
+          is ready; it cannot be recovered from an absent Kubernetes Secret.
+
+          Coinbase is separate from the Plaid mirror. The finance preset grants `get` on the
+          view-only CDP credential `agentplane-staging/coinbase-api-credentials` and GET egress
+          to `api.coinbase.com`. The permitted `api.coinbase.com` GET route does not substitute a
           credential: CDP requires a fresh, request-bound ES256 JWT signed in memory by the view-only key.
           Use GET `/api/v3/brokerage/accounts` to list balances, paging with `has_next`/`cursor`; public
           GET `/v2/prices/<asset>-USD/spot` quotes are separate from personal holdings. Never log or persist
@@ -3213,6 +3227,7 @@ data:
           - public-coder-node-read
           - public-coder-cluster-metadata-read
           - coinbase-credentials
+          - spend-private-config
         thread_preset: finance-agent-codex
     kubernetes_grants:
       sandbox-tool-config:
@@ -3596,6 +3611,12 @@ data:
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-metadata
+      spend-private-config:
+        kind: RoleBinding
+        namespace: plaid-mcp
+        role_ref:
+          kind: Role
+          name: plaid-spend-finance-config-reader
       coinbase-credentials:
         kind: RoleBinding
         namespace: agentplane-staging

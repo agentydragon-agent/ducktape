@@ -179,9 +179,9 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     catalog = config["kubernetes_grants"]
     selected = config["sandbox_presets"][preset]["kubernetes_grants"]
-    credential_grants = {"coinbase-credentials"} if preset == "finance-agent" else set()
+    credential_grants = {"coinbase-credentials", "spend-private-config"} if preset == "finance-agent" else set()
     # Coinbase egress follows the Secret grant; haku-agent's EgressBinding carries none.
-    assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policies"]) == bool(credential_grants)
+    assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policies"]) == (preset == "finance-agent")
     assert COINBASE_POLICY not in _by_name(docs, "EgressBinding", "haku-agent")["spec"]["policies"]
     assert set(selected) == set(config["sandbox_presets"]["public-coder"]["kubernetes_grants"]) | credential_grants
     assert len(selected) == len(set(selected))
@@ -191,7 +191,9 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         set(haku) - set(selected)
         == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
     )
-    assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"}
+    assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
+        {"spend-private-config"} if preset == "finance-agent" else set()
+    )
     assert {
         "agentplane-staging-metadata",
         "agentplane-staging-logs",
@@ -232,7 +234,11 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         ("public-coder-agent", "public-coder-agent-reader"),
         ("public-coder-agent", "agentplane-testing-login-reader"),
         ("agentplane-testing", "agentplane-testing-operator"),
-    } | ({("agentplane-staging", "claude-ai-coinbase-reader")} if preset == "finance-agent" else set())
+    } | (
+        {("agentplane-staging", "claude-ai-coinbase-reader"), ("plaid-mcp", "plaid-spend-finance-config-reader")}
+        if preset == "finance-agent"
+        else set()
+    )
     testing_config = yaml.safe_load(
         _by_name(agentplane_manifests[testing.ENV.namespace], "ConfigMap", "agentplane-app-config")["data"][
             "config.yaml"

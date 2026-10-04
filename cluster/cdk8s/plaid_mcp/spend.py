@@ -28,7 +28,8 @@ NAMESPACE = db.NAMESPACE
 _NAME = "plaid-spend"
 _HOST = "plaid-spend.allegedly.works"
 _CONFIG_MAP = "plaid-spend-config"
-_PRIVATE_CONFIG = SecretRef(namespace=NAMESPACE, name="plaid-spend-private-config")
+PRIVATE_CONFIG = SecretRef(namespace=NAMESPACE, name="plaid-spend-private-config")
+FINANCE_CONFIG_READER = "plaid-spend-finance-config-reader"
 _WEB_OIDC_CREDENTIALS_NAME = "plaid-spend-web-oidc-config"
 _WEB_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=_WEB_OIDC_CREDENTIALS_NAME)
 _WEB_OIDC_READER = "plaid-spend-web-oidc-reader"
@@ -131,9 +132,7 @@ def _deployment(chart: Chart) -> None:
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     # A private delivery channel owns both files; the pod cannot start without the Secret.
-                    volumes=[
-                        k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=_PRIVATE_CONFIG.name))
-                    ],
+                    volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=PRIVATE_CONFIG.name))],
                     containers=[
                         k8s.Container(
                             name=_NAME,
@@ -179,6 +178,14 @@ def _deployment(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     k8s.KubeConfigMap(chart, "config", metadata=k8s.ObjectMeta(name=_CONFIG_MAP, namespace=NAMESPACE), data=_CONFIG)
+    k8s.KubeRole(
+        chart,
+        "finance-config-reader",
+        metadata=k8s.ObjectMeta(name=FINANCE_CONFIG_READER, namespace=NAMESPACE),
+        rules=[
+            k8s.PolicyRule(api_groups=[""], resources=["secrets"], resource_names=[PRIVATE_CONFIG.name], verbs=["get"])
+        ],
+    )
     _web_oidc_credentials(chart)
     _deployment(chart)
     k8s.KubeService(
