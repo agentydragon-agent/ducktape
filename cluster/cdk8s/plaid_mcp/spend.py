@@ -28,13 +28,12 @@ NAMESPACE = db.NAMESPACE
 _NAME = "plaid-spend"
 _HOST = "plaid-spend.allegedly.works"
 _CONFIG_MAP = "plaid-spend-config"
-_CARD_CONFIG = SecretRef(namespace=NAMESPACE, name="plaid-spend-cards")
+_PRIVATE_CONFIG = SecretRef(namespace=NAMESPACE, name="plaid-spend-private-config")
 _WEB_OIDC_CREDENTIALS_NAME = "plaid-spend-web-oidc-config"
 _WEB_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=_WEB_OIDC_CREDENTIALS_NAME)
 _WEB_OIDC_READER = "plaid-spend-web-oidc-reader"
 _DB = db.SPEND
 _CARD_CONFIG_PATH = SpendSettings.model_fields["cards_config_path"].default
-_ALLOWANCE_PATH = SpendSettings.model_fields["allowance_config_path"].default
 _DESKTOP_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-desktop/"
 _DESKTOP_CLIENT_ID = "plaid-spend-desktop"
 _WEB_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-web/"
@@ -131,14 +130,8 @@ def _deployment(chart: Chart) -> None:
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
-                    volumes=[
-                        k8s.Volume(name="cards", secret=k8s.SecretVolumeSource(secret_name=_CARD_CONFIG.name)),
-                        # Populated outside public GitOps; absent Secret leaves the existing card view intact.
-                        k8s.Volume(
-                            name="allowance",
-                            secret=k8s.SecretVolumeSource(secret_name="plaid-spend-allowance", optional=True),
-                        ),
-                    ],
+                    # A private delivery channel owns both files; the pod cannot start without the Secret.
+                    volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=_PRIVATE_CONFIG.name))],
                     containers=[
                         k8s.Container(
                             name=_NAME,
@@ -168,10 +161,7 @@ def _deployment(chart: Chart) -> None:
                                 _DB.key("DATABASE_URL").env_var("DATABASE_URL"),
                             ],
                             volume_mounts=[
-                                k8s.VolumeMount(name="cards", mount_path=str(_CARD_CONFIG_PATH.parent), read_only=True),
-                                k8s.VolumeMount(
-                                    name="allowance", mount_path=str(_ALLOWANCE_PATH.parent), read_only=True
-                                ),
+                                k8s.VolumeMount(name="config", mount_path=str(_CARD_CONFIG_PATH.parent), read_only=True)
                             ],
                             resources=_resources(),
                             readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),

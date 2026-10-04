@@ -4,9 +4,9 @@ The per-user CLI and daemon live in [`desktop/`](desktop/README.md), and the GNO
 in `gnome/`.
 
 `//finance/plaid/spend:server_image` serves the same backend-computed statement-cycle view to the
-Authentik-protected browser UI and desktop clients. The card selection, labels, limits, and alert
-thresholds live in the SOPS-managed `plaid-spend-cards` Secret at
-`cluster/k8s/agents/plaid-mcp/cards.sops.yaml`.
+Authentik-protected browser UI and desktop clients. Card selection, labels, limits, alert thresholds, and optional flexible allowance policy
+are files in the same privately delivered
+`plaid-spend-private-config` Kubernetes Secret.
 
 The browser at `/` signs in through the confidential Authentik `plaid-spend-web` client. The server
 keeps OIDC tokens out of the browser and authenticates page, stylesheet, script, view, and event
@@ -68,8 +68,8 @@ the Plaid account name and its institution when available.
 
 ## Shared card configuration
 
-Edit the encrypted Secret with `sops cluster/k8s/agents/plaid-mcp/cards.sops.yaml`. Its
-`stringData.cards.json` value has this shape:
+The private Secret `plaid-mcp/plaid-spend-private-config` must contain a `cards.json` key
+with this shape (synthetic example):
 
 ```json
 {
@@ -86,8 +86,9 @@ Edit the encrypted Secret with `sops cluster/k8s/agents/plaid-mcp/cards.sops.yam
 ```
 
 Use `null` for an optional limit or threshold. The service validates this file at startup and reads
-it from `/etc/plaid-spend/cards.json`. A Secret update rolls the Deployment, so the next view and
-SSE event use the new configuration. The spend database role can only read the four Plaid source
+it from `/etc/plaid-spend/cards.json`. Until the private Secret exists, the pod cannot start;
+a missing `cards.json` fails application startup. Restart the Deployment after changing a key;
+the process does not watch for mounted Secret updates. The spend database role can only read the four Plaid source
 tables needed to compute the view; it does not store or write this configuration.
 
 ## Runtime settings
@@ -95,7 +96,8 @@ tables needed to compute the view; it does not store or write this configuration
 All service settings use the `PLAID_SPEND_` prefix except `DATABASE_URL`:
 
 - `DATABASE_URL`
-- `PLAID_SPEND_CARDS_CONFIG_PATH` (default `/etc/plaid-spend/cards.json`)
+- `PLAID_SPEND_CARDS_CONFIG_PATH` (default `/etc/plaid-spend/cards.json`) and optional
+  `PLAID_SPEND_ALLOWANCE_CONFIG_PATH` (default `/etc/plaid-spend/policy.json`)
 - `PLAID_SPEND_API_OIDC_ISSUER`, `PLAID_SPEND_API_OIDC_CLIENT_ID`,
   `PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER`, `PLAID_SPEND_API_OIDC_JWKS_URI`, and optional
   comma-separated `PLAID_SPEND_API_OIDC_SIGNING_ALGORITHMS` (default `RS256`)

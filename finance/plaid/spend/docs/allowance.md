@@ -1,15 +1,14 @@
 # Flexible allowance
 
 The service can also compute a **single flexible spending allowance**, independently of
-statement-cycle card totals. It is disabled when `/etc/plaid-spend-allowance/policy.json`
-is absent. The deployment mounts an **optional** private Kubernetes Secret named
-`plaid-spend-allowance` in the `plaid-mcp` namespace with the key `policy.json`.
-The Secret must be delivered through a private, authorized channel (not a plaintext or
-SOPS file in this public repository); simply writing a policy in a private repo does
-not deploy it. Invalid JSON or invalid policy fails startup rather than silently
-falling back. Changes to the Secret require a rollout/restart; do not edit it while
-assuming the live service is reading it. A missing policy leaves existing clients
-unchanged. Check the current read-only Plaid account coverage **before** activating.
+statement-cycle card totals. It is disabled when `/etc/plaid-spend/policy.json`
+is absent. The Deployment requires one private Secret, `plaid-mcp/plaid-spend-private-config`,
+with a required `cards.json` key and an optional `policy.json` key. Deliver both through
+a private channel, not this public repo; storing config in private git alone does not
+deploy it. Without the Secret the pod will not start. An absent `policy.json` leaves
+the allowance disabled, and invalid JSON or policy fails application startup.
+Restart the Deployment after changing the Secret; the process reads files only at startup.
+Check the current read-only Plaid account coverage **before** activating.
 
 Generic _synthetic_ example (amounts are integer cents; IDs, categories and prefixes illustrative):
 

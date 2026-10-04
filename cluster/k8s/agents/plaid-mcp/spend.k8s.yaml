@@ -208,10 +208,7 @@ spec:
             runAsUser: 1000
           volumeMounts:
             - mountPath: /etc/plaid-spend
-              name: cards
-              readOnly: true
-            - mountPath: /etc/plaid-spend-allowance
-              name: allowance
+              name: config
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
@@ -220,13 +217,9 @@ spec:
           type: RuntimeDefault
       serviceAccountName: plaid-spend
       volumes:
-        - name: cards
+        - name: config
           secret:
-            secretName: plaid-spend-cards
-        - name: allowance
-          secret:
-            optional: true
-            secretName: plaid-spend-allowance
+            secretName: plaid-spend-private-config
 ---
 apiVersion: v1
 kind: Service

@@ -6,7 +6,6 @@ resources:
   - app.k8s.yaml
   - plaid-client-credentials.sops.yaml
   - spend.k8s.yaml
-  - cards.sops.yaml
   - pgweb.k8s.yaml
 configMapGenerator:
   - name: plaid-mcp-db-readonly-sql
