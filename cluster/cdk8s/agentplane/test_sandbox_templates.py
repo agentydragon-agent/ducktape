@@ -6,6 +6,7 @@ without it, so a template renamed, dropped or left undescribed here would take i
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -14,6 +15,7 @@ import yaml
 from more_itertools import one
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
+from cluster.cdk8s.agentplane import notifications
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -53,6 +55,28 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(
     runner = next(template for template in templates if template["metadata"]["name"] == "agentplane-runner")
     args = runner["spec"]["podTemplate"]["spec"]["containers"][0]["args"]
     assert any(args[index : index + 2] == ["--harness-env", "TZ"] for index in range(len(args) - 1))
+
+
+def test_sandbox_sidecars_project_the_notifications_audience(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    for namespace, manifests in agentplane_manifests.items():
+        templates = [doc for doc in manifests if doc["kind"] == "SandboxTemplate"]
+        assert templates, namespace
+        for template in templates:
+            pod = template["spec"]["podTemplate"]["spec"]
+            sidecars = [container for container in pod["containers"] if container["name"] == "egress-sidecar"]
+            assert sidecars, (namespace, template["metadata"]["name"])
+            token_volume = next(volume for volume in pod["volumes"] if volume["name"] == "egress-token")
+            audiences = {source["serviceAccountToken"]["audience"] for source in token_volume["projected"]["sources"]}
+            assert notifications.TOKEN_AUDIENCE in audiences, (namespace, template["metadata"]["name"])
+            token_files = json.loads(
+                next(item["value"] for item in sidecars[0]["env"] if item["name"].endswith("AUDIENCE_TOKEN_FILES"))
+            )
+            assert token_files[notifications.TOKEN_AUDIENCE].endswith("/notifications-token"), (
+                namespace,
+                template["metadata"]["name"],
+            )
 
 
 if __name__ == "__main__":

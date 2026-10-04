@@ -16,7 +16,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.notification_service.settings import CONFIG_FILE_ENV, Settings
+from agentplane.notification_service.settings import CONFIG_FILE_ENV, TOKEN_AUDIENCE, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
@@ -32,6 +32,7 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name
 
 NAME = "agentplane-notifications"
+WORKLOAD_CREDENTIAL = "agentplane-notifications-workload"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
@@ -90,6 +91,7 @@ class Notifications(Construct):
             path="/etc/agentplane-notifications/settings.yaml",
             content={
                 "namespace": env.namespace,
+                "token_audience": TOKEN_AUDIENCE,
                 "actions": {
                     "url": f"http://{actions.fqdn}:{actions.port.number}",
                     "token_file": "/var/run/secrets/notifications/actions",
