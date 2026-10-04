@@ -8,7 +8,7 @@ import httpx
 import pytest_bazel
 
 from agentplane.notification_service.api import authenticated_caller, create_app, notification_service
-from agentplane.notification_service.models import DestinationRef, Subscribe
+from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.store import ConflictError, QuotaError, Store
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
@@ -37,7 +37,7 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
         "destination_ref": {"namespace": "test", "name": "sandbox", "uid": "sandbox-uid"},
         "session_id": "session",
         "idempotency_key": "listen",
-        "request_id": str(uuid4()),
+        "source": {"provider": "actions", "request_id": str(uuid4())},
     }
     async with (
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://notifications.test") as client,
@@ -73,12 +73,36 @@ async def test_dependency_overrides_are_app_local_and_not_wire_parameters() -> N
         # The old name is not accepted alongside the new one either.
         response = await client.post("/v1/subscriptions", json=body | {"client_key": "different"})
         assert response.status_code == 422
+        for invalid in [
+            body | {"provider": "actions"},
+            body | {"request_id": str(uuid4())},
+            body | {"after_sequence": 0},
+            {key: value for key, value in body.items() if key != "source"},
+            body | {"source": {"request_id": str(uuid4())}},
+            body | {"source": {"provider": "github", "repository": "agentydragon/ducktape"}},
+            body | {"source": {"provider": "actions", "request_id": str(uuid4()), "repository": "extra"}},
+        ]:
+            assert (await client.post("/v1/subscriptions", json=invalid)).status_code == 422
+        override.subscribe.assert_awaited_once()
         app.dependency_overrides.clear()
         assert (await client.post("/v1/subscriptions", json=body)).status_code == 401
     schema = app.openapi()
     for model in ["Subscribe", "SubscriptionView"]:
         assert "idempotency_key" in schema["components"]["schemas"][model]["properties"]
         assert "client_key" not in schema["components"]["schemas"][model]["properties"]
+        properties = schema["components"]["schemas"][model]["properties"]
+        assert not {"provider", "request_id", "after_sequence"} & properties.keys()
+        assert properties["source"] == {"$ref": "#/components/schemas/Source"}
+    for name, variant in [("Source", "ActionsSource"), ("EventIdentity", "ActionsEvent")]:
+        union = schema["components"]["schemas"][name]
+        assert union["discriminator"] == {
+            "propertyName": "provider",
+            "mapping": {"actions": f"#/components/schemas/{variant}"},
+        }
+        assert union["oneOf"] == [{"$ref": f"#/components/schemas/{variant}"}]
+    entry = schema["components"]["schemas"]["EntryView"]["properties"]
+    assert entry["event"] == {"$ref": "#/components/schemas/EventIdentity"}
+    assert not {"request_id", "source_sequence"} & entry.keys()
     discovery_operation = schema["paths"]["/v1/providers"]["get"]
     provider_response = discovery_operation["responses"]["200"]["content"]["application/json"]["schema"]
     assert provider_response["additionalProperties"] == {"$ref": "#/components/schemas/ProviderView"}
@@ -101,7 +125,7 @@ async def test_subscription_patch_renews_without_pause(store: Store) -> None:
             destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
             session_id="session",
             idempotency_key="renew",
-            request_id=uuid4(),
+            source=ActionsSource(provider="actions", request_id=uuid4()),
         ),
     )
     path = f"/v1/subscriptions/{subscription.id}"
@@ -115,6 +139,8 @@ async def test_subscription_patch_renews_without_pause(store: Store) -> None:
         assert response.status_code == 200
         assert response.json()["version"] == 2
         assert "paused" not in response.json()
+        assert response.json()["source"] == subscription.source.model_dump(mode="json")
+        assert (await client.get("/v1/subscriptions")).json() == [response.json()]
         assert (await client.get(path)).json() == response.json()
         assert (await client.patch(path, json={"version": 1})).status_code == 409
         assert (await client.delete(path)).json()["cancelled"]

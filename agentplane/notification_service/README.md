@@ -30,6 +30,44 @@ incarnation, and runner session), not across the entire sandbox. The server-gene
 is used for subsequent GET/PATCH/DELETE. Reusing a key with different creation parameters returns 409;
 reusing it after cancellation returns that cancelled subscription rather than creating a replacement.
 
+Subscription creation and views use a provider-discriminated `source`; currently only `actions` is
+implemented. The common envelope owns destination, session, idempotency, and lifetime. Actions owns
+its request ID and starting sequence:
+
+```json
+{
+  "destination_ref": { "namespace": "agentplane-staging", "name": "sandbox-name", "uid": "sandbox-uid" },
+  "session_id": "session-id",
+  "idempotency_key": "follow-action",
+  "source": {
+    "provider": "actions",
+    "request_id": "d49b85b5-849f-4e7d-a644-d4a8b8c16127",
+    "after_sequence": 0
+  }
+}
+```
+
+The returned `source` is the immutable subscription specification, including its original starting
+sequence, not a moving worker checkpoint. Inbox entries use a separate provider-discriminated `event`
+identity; one event can match multiple subscriptions. Payload content remains provider-defined:
+
+```json
+{
+  "cursor": 1,
+  "event": {
+    "provider": "actions",
+    "request_id": "d49b85b5-849f-4e7d-a644-d4a8b8c16127",
+    "sequence": 1
+  },
+  "payload": { "sequence": 1, "state": "decision_pending", "at": "2026-10-04T12:00:00Z", "actor": null },
+  "subscriptions": ["ecf2527e-12cc-4506-b21c-7f82669466ce"]
+}
+```
+
+`source.provider` and `event.provider` are required discriminators. Unsupported providers and extra
+fields are rejected. Discovery and OpenAPI describe the implemented variants; no GitHub support is
+advertised yet. Inbox cursors, acknowledgement, and runner notices remain provider-neutral.
+
 Platform prompts recommend a short synchronous wait for immediate Actions, subscriptions for approval
 waits or parallel work, and resuming dependent work only after checking authoritative results. They
 include worked subscribe/read/ack examples and the explicit destination identifiers. Automated notices

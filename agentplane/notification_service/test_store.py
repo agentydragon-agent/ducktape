@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.models import ActionEventView, ActionState
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import Entry, Inbox, Subscription
-from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionUpdate
+from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionUpdate
 from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, Store
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
@@ -28,7 +28,7 @@ BODY = Subscribe(
     destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
     session_id="session",
     idempotency_key="first",
-    request_id=uuid4(),
+    source=ActionsSource(provider="actions", request_id=uuid4()),
 )
 
 
@@ -54,7 +54,13 @@ async def test_owner_idempotence_cancel_and_version(store: Store) -> None:
     assert other_session.id != first.id
     assert other_session.idempotency_key == first.idempotency_key
     with pytest.raises(ConflictError):
-        await store.subscribe(PRINCIPAL, BODY.model_copy(update={"request_id": uuid4()}))
+        await store.subscribe(
+            PRINCIPAL, BODY.model_copy(update={"source": ActionsSource(provider="actions", request_id=uuid4())})
+        )
+    with pytest.raises(ConflictError):
+        await store.subscribe(
+            PRINCIPAL, BODY.model_copy(update={"source": BODY.source.model_copy(update={"after_sequence": 1})})
+        )
     with pytest.raises(NotFoundError):
         await store.read(ServiceAccountRef(namespace="test", name="other"), first.inbox_id, 0, 128)
     before_renewal = datetime.now(UTC)
@@ -71,7 +77,8 @@ async def test_owner_idempotence_cancel_and_version(store: Store) -> None:
         await store.change(PRINCIPAL.account, first.id, SubscriptionUpdate(version=cancelled.version))
 
 
-async def test_idempotency_key_migration_preserves_populated_inbox(store: Store, engine: AsyncEngine) -> None:
+@pytest.mark.parametrize("revision", ["0001_notifications", "0003_remove_pause"])
+async def test_creation_migrations_preserve_populated_inbox(store: Store, engine: AsyncEngine, revision: str) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
     claim = await store.claim()
     assert claim is not None
@@ -88,14 +95,15 @@ async def test_idempotency_key_migration_preserves_populated_inbox(store: Store,
         config = Config()
         config.set_main_option("script_location", str(RUNNER.migrations_dir))
         config.attributes["connection"] = connection
-        command.downgrade(config, "0001_notifications")
-        legacy = BODY.model_dump(mode="json")
-        legacy["client_key"] = legacy.pop("idempotency_key")
+        command.downgrade(config, revision)
+        legacy = BODY.model_dump(mode="json", exclude={"source"}) | BODY.source.model_dump(mode="json")
+        if revision == "0001_notifications":
+            legacy["client_key"] = legacy.pop("idempotency_key")
         row = connection.execute(
-            text("SELECT client_key, creation FROM subscription WHERE id = :id"), {"id": subscription.id}
+            text("SELECT creation, after_sequence FROM subscription WHERE id = :id"), {"id": subscription.id}
         ).one()
-        assert row[0] == BODY.idempotency_key
-        assert row[1] == legacy
+        assert row[0] == legacy
+        assert row[1] == 3
         RUNNER.run_for_connection(connection)
         # Reapplying the image-owned chain is harmless and verifies ORM/schema agreement.
         RUNNER.run_for_connection(connection)
@@ -105,7 +113,14 @@ async def test_idempotency_key_migration_preserves_populated_inbox(store: Store,
     replayed = await store.subscribe(PRINCIPAL, BODY)
     assert replayed.id == subscription.id
     assert replayed.idempotency_key == BODY.idempotency_key
-    assert replayed.after_sequence == 3
+    assert replayed.source == BODY.source
+    async with store.sessions() as session:
+        row = await session.get(Subscription, subscription.id)
+        assert row is not None
+        assert row.after_sequence == 3
+        assert row.creation == BODY.model_dump(mode="json")
+    assert await store.subscription(PRINCIPAL.account, subscription.id) == replayed
+    assert await store.subscriptions(PRINCIPAL.account) == [replayed]
     assert await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before
 
 
@@ -221,7 +236,9 @@ async def test_cancellation_fences_inflight_source_and_claim_loss_fences_worker(
 async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) -> None:
     first = await store.subscribe(PRINCIPAL, BODY)
     second = await store.subscribe(
-        PRINCIPAL, BODY.model_copy(update={"idempotency_key": "another-action", "request_id": uuid4()})
+        PRINCIPAL, BODY.model_copy(
+            update={"idempotency_key": "another-action", "source": ActionsSource(provider="actions", request_id=uuid4())}
+        )
     )
     claim = await store.claim()
     assert claim is not None
@@ -233,7 +250,7 @@ async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) ->
     await asyncio.gather(store.record(claim, a, events(1)), store.record(claim, b, events(1)))
     page = await store.read(PRINCIPAL.account, first.inbox_id, 0, 128)
     assert [entry.cursor for entry in page.entries] == [1, 2]
-    assert {entry.request_id for entry in page.entries} == {first.request_id, second.request_id}
+    assert {entry.event.request_id for entry in page.entries} == {first.source.request_id, second.source.request_id}
     await store.retire(PRINCIPAL.account, first.inbox_id)
     assert (await store.subscription(PRINCIPAL.account, first.id)).cancelled
     with pytest.raises(ClaimLostError):

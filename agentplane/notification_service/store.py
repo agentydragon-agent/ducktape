@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from agentplane.action_service.models import ActionEventView
 from agentplane.notification_service.db import Entry, Inbox, Match, Notice, Subscription
 from agentplane.notification_service.models import (
+    ActionsEvent,
     EntryView,
     InboxPage,
     InboxView,
@@ -42,6 +43,19 @@ class QuotaError(Exception):
 
 class ClaimLostError(Exception):
     pass
+
+
+def subscription_view(row: Subscription) -> SubscriptionView:
+    return SubscriptionView(
+        id=row.id,
+        inbox_id=row.inbox_id,
+        source=Subscribe.model_validate(row.creation).source,
+        idempotency_key=row.idempotency_key,
+        version=row.version,
+        cancelled=row.cancelled,
+        expires_at=row.expires_at,
+        error=row.error,
+    )
 
 
 class Store:
@@ -127,7 +141,7 @@ class Store:
             if row is not None:
                 if row.creation != body.model_dump(mode="json"):
                     raise ConflictError("idempotency key already names another subscription")
-                return SubscriptionView.model_validate(row)
+                return subscription_view(row)
             count = await session.scalar(
                 select(func.count()).select_from(Subscription).where(Subscription.inbox_id == inbox.id)
             )
@@ -136,12 +150,12 @@ class Store:
             row = Subscription(
                 id=uuid4(),
                 inbox_id=inbox.id,
-                request_id=body.request_id,
+                request_id=body.source.request_id,
                 idempotency_key=body.idempotency_key,
                 creation=body.model_dump(mode="json"),
                 creator=asdict(principal),
                 version=1,
-                after_sequence=body.after_sequence,
+                after_sequence=body.source.after_sequence,
                 cancelled=False,
                 expires_at=now + timedelta(days=body.lifetime_days),
                 next_poll=now,
@@ -149,7 +163,7 @@ class Store:
             session.add(row)
             inbox.updated_at = now
             await session.flush()
-            return SubscriptionView.model_validate(row)
+            return subscription_view(row)
 
     async def subscriptions(self, owner: ServiceAccountRef, after_id: UUID | None = None) -> list[SubscriptionView]:
         async with self.sessions() as session:
@@ -164,7 +178,7 @@ class Store:
                 .order_by(Subscription.id)
                 .limit(128)
             )
-            return [SubscriptionView.model_validate(row) for row in rows]
+            return [subscription_view(row) for row in rows]
 
     async def subscription(self, owner: ServiceAccountRef, subscription_id: UUID) -> SubscriptionView:
         async with self.sessions() as session:
@@ -179,7 +193,7 @@ class Store:
             )
             if row is None:
                 raise NotFoundError
-            return SubscriptionView.model_validate(row)
+            return subscription_view(row)
 
     async def change(
         self, owner: ServiceAccountRef, subscription_id: UUID, update: SubscriptionUpdate | None
@@ -194,14 +208,14 @@ class Store:
             await session.refresh(row)
             if update is None:
                 if row.cancelled:
-                    return SubscriptionView.model_validate(row)
+                    return subscription_view(row)
                 row.cancelled = True
             else:
                 if row.version != update.version or row.cancelled:
                     raise ConflictError("subscription version changed or subscription cancelled")
                 row.expires_at = datetime.now(UTC) + timedelta(days=update.lifetime_days)
             row.version += 1
-            return SubscriptionView.model_validate(row)
+            return subscription_view(row)
 
     async def inboxes(self, owner: ServiceAccountRef) -> list[InboxView]:
         async with self.sessions() as session:
@@ -234,8 +248,7 @@ class Store:
                 entries.append(
                     EntryView(
                         cursor=row.cursor,
-                        request_id=row.request_id,
-                        source_sequence=row.source_sequence,
+                        event=ActionsEvent(provider="actions", request_id=row.request_id, sequence=row.source_sequence),
                         payload=row.payload,
                         subscriptions=list(matches),
                     )
