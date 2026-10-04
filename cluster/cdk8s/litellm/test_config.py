@@ -3,15 +3,7 @@
 import pytest_bazel
 
 from cluster.cdk8s.litellm.config import main_proxy_config
-from cluster.cdk8s.model_rosters import (
-    OLLAMA_CHAT_MODELS,
-    SERVED_ROUTES,
-    ApiShape,
-    Provider,
-    Route,
-    exposed_name,
-    ollama_chat_variant,
-)
+from cluster.cdk8s.model_rosters import OLLAMA_CHAT_ROUTES, SERVED_ROUTES, ApiShape, Route
 
 
 # The canonical route derives each entry's shape from its upstream adapter
@@ -35,11 +27,7 @@ def test_tana_routes_register_the_in_process_provider() -> None:
 def test_ollama_native_chat_routes_keep_names_and_use_chat_adapter() -> None:
     """The public `olm-chat` contract stays stable while LiteLLM dispatches to `/api/chat`."""
     expected = {
-        exposed_name(
-            Provider.OLLAMA, ApiShape.OLM_CHAT, ollama_chat_variant(model, context)
-        ): f"ollama_chat/{ollama_model}"
-        for model, ollama_model, contexts in OLLAMA_CHAT_MODELS
-        for context in contexts
+        route.id: route.upstream_id for route in OLLAMA_CHAT_ROUTES if route.upstream.shape == ApiShape.OLM_CHAT
     }
     native_entries = [
         entry for entry in main_proxy_config()["model_list"] if entry["model_name"].startswith("ollama/olm-chat/")

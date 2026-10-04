@@ -38,18 +38,13 @@ from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_rosters import (
-    ANTIGRAVITY_MODELS,
-    GEMINI_CONTEXT_WINDOW,
-    GEMINI_MAX_OUTPUT_TOKENS,
-    GEMINI_MODELS,
-    GPT6_CODEX_MODELS,
-    OLLAMA_EMBEDDING_MODEL,
-    ApiShape,
-    Model,
+    GPT6_ASTRA_RESPONSES,
+    GPT6_LUNA_RESPONSES,
+    OLLAMA_EMBEDDING_ROUTE,
     Provider,
-    codex_responses_name,
-    exposed_name,
+    Route,
 )
+from cluster.cdk8s.model_selections import PUBLIC_CODER_MODELS
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
@@ -61,9 +56,6 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-_CODEX_BY_ID = {model.id: model for model in GPT6_CODEX_MODELS}
-_DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-6-luna"]
-_TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
 _CONFIG_MAP_NAME = "config"
 _NAME = "public-coder-agent"
 NAMESPACE = public_coder_egress.NAMESPACE
@@ -95,45 +87,21 @@ _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
 
 
-def _litellm_model_id(model: Model) -> str:
-    return f"litellm/{codex_responses_name(model.id)}"
-
-
-def _codex_model_entry(model: Model) -> dict:
+def _model_entry(route: Route) -> dict:
+    model = route.model
+    if model.context_window is None or model.max_output_tokens is None or model.reasoning is None:
+        raise ValueError(f"missing OpenClaw metadata for {route.id}")
+    account_name = {
+        Provider.CHATGPT: "Codex subscription",
+        Provider.GOOGLE: "Google AI",
+        Provider.ANTIGRAVITY: "Google Antigravity",
+    }[route.upstream.provider]
     return {
         "contextWindow": model.context_window,
-        "id": codex_responses_name(model.id),
+        "id": route.id,
         "input": ["text", "image"],
         "maxTokens": model.max_output_tokens,
-        "name": f"{model.display_name} (Codex subscription via LiteLLM)",
-        "reasoning": True,
-    }
-
-
-def _gemini_model_entry(model: Model) -> dict:
-    return {
-        "contextWindow": GEMINI_CONTEXT_WINDOW,
-        "id": exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model.id),
-        "input": ["text", "image"],
-        "maxTokens": GEMINI_MAX_OUTPUT_TOKENS,
-        "name": f"{model.display_name} (Google AI via LiteLLM)",
-        "reasoning": model.reasoning,
-    }
-
-
-# Only the Antigravity models with a known context_window/max_output_tokens (model_rosters.py
-# cites the source): gemini-3.1-flash-image and gemini-3.5-flash-lite are left out
-# until that's filled in, rather than guessing.
-_ANTIGRAVITY_OPENCLAW_MODELS = [model for model in ANTIGRAVITY_MODELS if model.context_window is not None]
-
-
-def _antigravity_model_entry(model: Model) -> dict:
-    return {
-        "contextWindow": model.context_window,
-        "id": exposed_name(Provider.ANTIGRAVITY, ApiShape.ANT_MESSAGES, model.id),
-        "input": ["text", "image"],
-        "maxTokens": model.max_output_tokens,
-        "name": f"{model.display_name} (Google Antigravity via LiteLLM)",
+        "name": f"{route.display_name} ({account_name} via LiteLLM)",
         "reasoning": model.reasoning,
     }
 
@@ -148,7 +116,7 @@ def config() -> dict:
                 "userTimezone": "America/Los_Angeles",
                 # The working path is Codex subscription -> CLIProxyAPI -> LiteLLM's
                 # native Responses endpoint. Keep this on the measured 5.6 roster.
-                "model": {"primary": _litellm_model_id(_DEFAULT_CODEX_MODEL)},
+                "model": {"primary": f"litellm/{GPT6_LUNA_RESPONSES.id}"},
                 "sandbox": {"mode": "off"},
                 "maxConcurrent": 16,
                 "subagents": {"maxConcurrent": 16, "maxChildrenPerAgent": 16},
@@ -159,7 +127,7 @@ def config() -> dict:
                 "coder": {"name": "Coder"},
                 "haku_console_tpm": {
                     "name": "Haku Console TPM",
-                    "model": {"primary": _litellm_model_id(_TPM_CODEX_MODEL)},
+                    "model": {"primary": f"litellm/{GPT6_ASTRA_RESPONSES.id}"},
                 },
             },
         },
@@ -175,7 +143,7 @@ def config() -> dict:
                 "provider": "openai-compatible",
                 # This is a new embedding identity; changing it deliberately requires a
                 # full rebuild of the durable index after the rollout.
-                "model": exposed_name(Provider.OLLAMA, ApiShape.OLM_EMBED, OLLAMA_EMBEDDING_MODEL),
+                "model": OLLAMA_EMBEDDING_ROUTE.id,
                 "remote": {
                     "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
                     "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
@@ -234,11 +202,7 @@ def config() -> dict:
                     "api": "openai-responses",
                     "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
                     "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
-                    "models": [
-                        *(_codex_model_entry(model) for model in GPT6_CODEX_MODELS),
-                        *(_gemini_model_entry(model) for model in GEMINI_MODELS),
-                        *(_antigravity_model_entry(model) for model in _ANTIGRAVITY_OPENCLAW_MODELS),
-                    ],
+                    "models": [_model_entry(route) for route in PUBLIC_CODER_MODELS],
                     "request": {"allowPrivateNetwork": True},
                 }
             }

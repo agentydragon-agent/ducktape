@@ -27,7 +27,7 @@ from cluster.cdk8s.grocy import app as grocy_app
 from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.matrix import matrix
-from cluster.cdk8s.model_rosters import ApiShape, Provider, exposed_name, ollama_chat_variant
+from cluster.cdk8s.model_rosters import OLLAMA_GPT_OSS_20B_128K
 from cluster.cdk8s.monitoring import grafana_instance, loki, mimir
 from cluster.cdk8s.nix_cache import attic
 from cluster.cdk8s.ollama import app as ollama_app
@@ -41,7 +41,7 @@ _OIDC_APPLICATION_SLUG = "gatus"
 _OIDC_CLIENT_ID = "gatus"
 _CLIENT_SECRET_ENV = "GATUS_CLIENT_SECRET"
 _STATUS_OK = "[STATUS] == 200"
-_INFERENCE_MODEL = exposed_name(Provider.OLLAMA, ApiShape.OAI_CHAT, ollama_chat_variant("gpt-oss-20b", 128 * 1024))
+_INFERENCE_MODEL = OLLAMA_GPT_OSS_20B_128K.id
 
 
 class Group(StrEnum):

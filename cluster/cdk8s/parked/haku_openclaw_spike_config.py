@@ -1,5 +1,5 @@
 """The haku-openclaw-spike app: its namespace, openclaw.json (see model_rosters.py for
-ANTHROPIC_MODELS), the gateway Deployment and everything around it.
+subscription routes), the gateway Deployment and everything around it.
 
 The image tag is the placeholder "unset"; the hand-written `PINS_DIR` Component, which the
 directory includes across the roots, overrides it at `kustomize build` time via Flux's
@@ -42,7 +42,13 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import config_map_chart, copy_source_file
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
-from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
+from cluster.cdk8s.model_rosters import (
+    FABLE_SUBSCRIPTION,
+    HAIKU_SUBSCRIPTION,
+    OPUS_SUBSCRIPTION,
+    SONNET_SUBSCRIPTION,
+    Route,
+)
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
@@ -76,19 +82,18 @@ _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 _NO_PROXY = "127.0.0.1,localhost"
 
-# OpenClaw's own native `anthropic/<model>` id, not the `{provider}/{shape}/{model}`
-# LiteLLM scheme -- this agent's `anthropic` plugin calls the Anthropic API directly,
-# not through LiteLLM.
+# OpenClaw command aliases for the subscription-backed Claude Code runtime.
 _MODEL_ALIASES = {
-    "claude-opus-5": "Opus",
-    "claude-sonnet-5": "Sonnet",
-    "claude-fable-5": "Fable",
-    "claude-haiku-4-5-20251001": "Haiku",
+    OPUS_SUBSCRIPTION: "Opus",
+    SONNET_SUBSCRIPTION: "Sonnet",
+    FABLE_SUBSCRIPTION: "Fable",
+    HAIKU_SUBSCRIPTION: "Haiku",
 }
 
 
-def _model_id(model: str) -> str:
-    return f"anthropic/{model}"
+def _model_id(route: Route) -> str:
+    # Claude Code takes the upstream slug, not a LiteLLM route ID.
+    return f"anthropic/{route.model.id}"
 
 
 def config() -> dict:
@@ -97,12 +102,12 @@ def config() -> dict:
         "agents": {
             "defaults": {
                 "userTimezone": "America/Los_Angeles",
-                "model": {"primary": _model_id(ANTHROPIC_MODELS[0])},
+                "model": {"primary": _model_id(OPUS_SUBSCRIPTION)},
                 "models": {
-                    _model_id(model): {"agentRuntime": {"id": "claude-cli"}, "alias": _MODEL_ALIASES[model]}
-                    for model in ANTHROPIC_MODELS
+                    _model_id(route): {"agentRuntime": {"id": "claude-cli"}, "alias": alias}
+                    for route, alias in _MODEL_ALIASES.items()
                 },
-                "modelPolicy": {"allow": [_model_id(model) for model in ANTHROPIC_MODELS]},
+                "modelPolicy": {"allow": [_model_id(route) for route in _MODEL_ALIASES]},
                 "sandbox": {"mode": "off"},
                 "skills": [],
                 "verboseDefault": "full",

@@ -1,4 +1,4 @@
-"""Explicit key and picker policy over canonical routes; no model facts or naming logic."""
+"""Explicit consumer policy over canonical routes; no model facts or naming logic."""
 
 from dataclasses import dataclass
 
@@ -19,6 +19,7 @@ from cluster.cdk8s.model_rosters import (
     OLLAMA_CHAT_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
     OLLAMA_OPENAI_ROUTES,
+    OLLAMA_QWEN_IQ4XS_ROUTES,
     TANA_ROUTES,
     Route,
     RouteAlias,
@@ -77,3 +78,17 @@ TESTING_APP_MODELS = HarnessRoutes(
     claude=(HAIKU_API, *ANTIGRAVITY_FLASH_LITE_ROUTES, *OLLAMA_OPENAI_ROUTES),
     codex=(GPT6_LUNA_RESPONSES, *OLLAMA_OPENAI_ROUTES),
 )
+
+# OpenClaw reserves maxTokens within contextWindow; omit routes without known limits.
+PUBLIC_CODER_MODELS = (
+    *GPT6_RESPONSES_ROUTES,
+    *GEMINI_ROUTES,
+    *(
+        route
+        for route in ANTIGRAVITY_ROUTES
+        if route.model.context_window is not None and route.model.max_output_tokens is not None
+    ),
+)
+
+# An explicit harness override policy, not all routes with known context metadata.
+RUNNER_CONTEXT_OVERRIDES = OLLAMA_QWEN_IQ4XS_ROUTES

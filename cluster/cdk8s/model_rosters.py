@@ -98,14 +98,9 @@ class ApiShape(StrEnum):
     OAI_TRANSCRIBE = "oai-transcribe"
 
 
-def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
+def _exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
     """#4823 scheme name, e.g. `chatgpt/oai-responses/gpt-5.6-luna`."""
     return f"{provider}/{shape}/{model}"
-
-
-def codex_responses_name(model: str) -> str:
-    """Transitional OpenClaw lookup of a canonical Codex-subscription Responses route."""
-    return _CHATGPT_RESPONSES_BY_ID[model].id
 
 
 _SHAPE_MODE: dict[ApiShape, str] = {
@@ -206,7 +201,7 @@ class Route:
     def id(self) -> str:
         if self.bare_name:
             return self.model.id
-        return exposed_name(self.upstream.provider, self.upstream.shape, self.model.id)
+        return _exposed_name(self.upstream.provider, self.upstream.shape, self.model.id)
 
     @property
     def display_name(self) -> str:
@@ -301,41 +296,49 @@ GPT_6_ASTRA = Model(
     display_name="GPT-6 Astra",
     context_window=ASTRA_CONTEXT_WINDOW,
     max_output_tokens=ASTRA_MAX_TOKENS,
+    reasoning=True,
 )
 GPT_6_LUNA = Model(
-    id="gpt-6-luna", display_name="GPT-6 Luna", context_window=CODEX_CONTEXT_WINDOW, max_output_tokens=CODEX_MAX_TOKENS
+    id="gpt-6-luna",
+    display_name="GPT-6 Luna",
+    context_window=CODEX_CONTEXT_WINDOW,
+    max_output_tokens=CODEX_MAX_TOKENS,
+    reasoning=True,
 )
 GPT_6_SOL = Model(
-    id="gpt-6-sol", display_name="GPT-6 Sol", context_window=CODEX_CONTEXT_WINDOW, max_output_tokens=CODEX_MAX_TOKENS
+    id="gpt-6-sol",
+    display_name="GPT-6 Sol",
+    context_window=CODEX_CONTEXT_WINDOW,
+    max_output_tokens=CODEX_MAX_TOKENS,
+    reasoning=True,
 )
 GPT_5_6_LUNA = Model(
     id="gpt-5.6-luna",
     display_name="GPT-5.6 Luna",
     context_window=CODEX_CONTEXT_WINDOW,
     max_output_tokens=CODEX_MAX_TOKENS,
+    reasoning=True,
 )
 GPT_5_6_TERRA = Model(
     id="gpt-5.6-terra",
     display_name="GPT-5.6 Terra",
     context_window=CODEX_CONTEXT_WINDOW,
     max_output_tokens=CODEX_MAX_TOKENS,
+    reasoning=True,
 )
 GPT_5_6_SOL = Model(
     id="gpt-5.6-sol",
     display_name="GPT-5.6 Sol",
     context_window=CODEX_CONTEXT_WINDOW,
     max_output_tokens=CODEX_MAX_TOKENS,
+    reasoning=True,
 )
 GPT_5_4 = Model("gpt-5.4", "GPT-5.4")
 GPT_5_5 = Model("gpt-5.5", "GPT-5.5")
 _CODEX_MODELS = (GPT_6_ASTRA, GPT_6_SOL, GPT_6_LUNA, GPT_5_4, GPT_5_5, GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
-# Transitional OpenClaw view; it does not author any model facts.
-OPENCLAW_CODEX_MODELS = (GPT_6_ASTRA, GPT_6_LUNA, GPT_6_SOL, GPT_5_6_LUNA, GPT_5_6_TERRA, GPT_5_6_SOL)
-
 # GPT-6 subset for cluster consumers whose picker and LiteLLM key are restricted to the
 # current generation. Keep the full roster above for serving-limit metadata on old routes.
-CURRENT_CODEX_MODELS = (GPT_6_ASTRA, GPT_6_LUNA, GPT_6_SOL)
-GPT6_CODEX_MODELS = CURRENT_CODEX_MODELS  # Transitional OpenClaw view.
+_CURRENT_CODEX_MODELS = (GPT_6_ASTRA, GPT_6_LUNA, GPT_6_SOL)
 
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
 # encodes reasoning effort in the
@@ -380,7 +383,7 @@ _ANTHROPIC_MODELS = (
 # slugs that don't match the public API names (reasoning-tier suffixes baked into the
 # slug: -high/-low/-lite/-agent), and the open-weight (Apache-2.0) gpt-oss-120b, which
 # Google can self-host like anyone else. Full catalog exposed as discovered; unlike
-# ANTHROPIC_MODELS/GEMINI_MODELS above, there is no "current generation only" curation
+# the Anthropic and Gemini API rosters, there is no "current generation only" curation
 # here yet.
 #
 # `reasoning` mirrors the slug's own baked-in effort tier (-high/-agent/-medium as
@@ -438,7 +441,7 @@ _ANTIGRAVITY_FLASH_LITE_35 = Model(
     max_output_tokens=None,
 )
 
-ANTIGRAVITY_MODELS: tuple[Model, ...] = (
+_ANTIGRAVITY_MODELS: tuple[Model, ...] = (
     _ANTIGRAVITY_OPUS,
     _ANTIGRAVITY_SONNET,
     Model(
@@ -500,7 +503,7 @@ ANTIGRAVITY_MODELS: tuple[Model, ...] = (
         max_output_tokens=32_768,
     ),
     _ANTIGRAVITY_FLASH_LITE_31,
-    # Same slug as a GEMINI_MODELS entry but a different backend entirely; no collision
+    # Same slug as a _GEMINI_MODELS entry but a different backend entirely; no collision
     # since the two live under different exposed-name providers (antigravity/* vs
     # google/*). Missing from the fetched registry entirely; look into it later.
     _ANTIGRAVITY_FLASH_LITE_35,
@@ -510,7 +513,7 @@ ANTIGRAVITY_MODELS: tuple[Model, ...] = (
 # secret). Current-generation lineup only (Gemini 3.x) -- the 2.5 generation,
 # the shut-down gemini-3-pro-preview, and every non-latest 3.x minor version
 # (gemini-3-flash-preview, 3.5-flash, 3.6-flash, 3.1-flash-lite) are dropped,
-# the same "only the newest group" policy as OPENCLAW_CODEX_MODELS above. The
+# the same "only the newest group" policy as the Codex picker. The
 # gemini-pro-latest/gemini-flash-latest floating aliases are dropped too --
 # redundant with pinning the current models explicitly. Verified against
 # ai.google.dev/gemini-api/docs/models (2026-08-23): Pro is frozen at 3.1
@@ -532,7 +535,7 @@ ANTIGRAVITY_MODELS: tuple[Model, ...] = (
 GEMINI_CONTEXT_WINDOW = 1_048_576
 GEMINI_MAX_OUTPUT_TOKENS = 65_536
 
-GEMINI_MODELS: tuple[Model, ...] = (
+_GEMINI_MODELS: tuple[Model, ...] = (
     Model(
         id="gemini-3.7-flash",
         display_name="Gemini 3.7 Flash",
@@ -604,7 +607,7 @@ GEMINI_EMBEDDING_COMPAT_ALIAS = _GEMINI_EMBEDDING_MODELS[0].id
 
 # Self-hosted Ollama chat models: (exposed model, Ollama model, num_ctx variants).
 # Each variant is served on both the OpenAI-compatible `/v1` and Ollama's native
-# wire; the context rides in the model segment (`ollama_chat_variant`) so the chat
+# wire; the context rides in the model segment (`_ollama_chat_variant`) so the chat
 # entries stay distinct.
 #
 # qwen3.8-flash-next-q4: 125B-total/6B-active MoE, Unsloth Dynamic UD-Q4_K_XL quant
@@ -620,29 +623,32 @@ GEMINI_EMBEDDING_COMPAT_ALIAS = _GEMINI_EMBEDDING_MODELS[0].id
 # page-cache-hot; see agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md for the
 # full investigation.
 _QWEN_IQ4XS = Model("qwen3.8-flash-next-iq4xs", "Qwen3.8 Flash Next IQ4_XS")
+_GPT_OSS_20B = OllamaModel(
+    Model("gpt-oss-20b", "GPT-OSS 20B"), "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)
+)
 _OLLAMA_MODELS = (
     OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs:latest", (128 * 1024,)),
     # Ollama /v1 ignores native options.num_ctx; bake this size into an alias.
     OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs-256k:latest", (256 * 1024,)),
-    OllamaModel(Model("gpt-oss-20b", "GPT-OSS 20B"), "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)),
+    _GPT_OSS_20B,
     OllamaModel(Model("gpt-oss-120b", "GPT-OSS 120B"), "gpt-oss:120b", (128 * 1024,)),
     OllamaModel(Model("gemma4-31b-it-q8_0", "Gemma 4 31B"), "gemma4:31b-it-q8_0", (128 * 1024,)),
 )
 
 
-def ollama_chat_variant(model: str, context: int) -> str:
+def _ollama_chat_variant(model: str, context: int) -> str:
     """The model segment of an Ollama chat entry at this `num_ctx`: `gpt-oss-20b-512k`."""
     return f"{model}-1m" if context == 1024 * 1024 else f"{model}-{context // 1024}k"
 
 
-# The self-hosted Ollama embedding route (litellm/config.py's `_ollama_entries()`),
+# The self-hosted Ollama embedding route,
 # also referenced by public-coder-agent's OpenClaw memory-search config so its
 # embedding backend names the same route it's actually served on.
 _OLLAMA_EMBEDDING = Model("qwen3-embedding-4b")
 
 
 # Canonical served routes. These are the only account/wire/model associations;
-# downstream code receives Route objects, not ingredients for exposed_name().
+# downstream code receives Route objects, not naming ingredients.
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
 _CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
 _OLLAMA_OPENAI = Upstream(Provider.OLLAMA, "openai", "chat", f"{_OLLAMA_BASE}/v1", "ollama", True)
@@ -655,7 +661,7 @@ def _ollama_routes(source: OllamaModel) -> tuple[tuple[Route, Route], ...]:
         suffix = "1M" if context == 1024 * 1024 else f"{context // 1024}K"
         model = replace(
             source.model,
-            id=ollama_chat_variant(source.model.id, context),
+            id=_ollama_chat_variant(source.model.id, context),
             display_name=f"{source.model.display_name} ({suffix})",
             context_window=context,
         )
@@ -668,16 +674,24 @@ def _ollama_routes(source: OllamaModel) -> tuple[tuple[Route, Route], ...]:
     return tuple(pairs)
 
 
-_OLLAMA_ROUTE_GROUPS = tuple(_ollama_routes(source) for source in _OLLAMA_MODELS)
-OLLAMA_OPENAI_ROUTES = tuple(openai for group in _OLLAMA_ROUTE_GROUPS for openai, _ in group)
-OLLAMA_CHAT_ROUTES = tuple(route for group in _OLLAMA_ROUTE_GROUPS for pair in group for route in pair)
+_OLLAMA_ROUTE_GROUPS = {source: _ollama_routes(source) for source in _OLLAMA_MODELS}
+OLLAMA_OPENAI_ROUTES = tuple(openai for group in _OLLAMA_ROUTE_GROUPS.values() for openai, _ in group)
+OLLAMA_CHAT_ROUTES = tuple(route for group in _OLLAMA_ROUTE_GROUPS.values() for pair in group for route in pair)
 # The proxy historically groups wires within each source; keys interleave wires per
 # context. Preserve both output orders while referencing exactly the same objects.
 _OLLAMA_PROXY_ROUTES = tuple(
     route
-    for group in _OLLAMA_ROUTE_GROUPS
+    for group in _OLLAMA_ROUTE_GROUPS.values()
     for route in (*(openai for openai, _ in group), *(native for _, native in group))
 )
+OLLAMA_QWEN_IQ4XS_ROUTES = tuple(
+    route
+    for source, group in _OLLAMA_ROUTE_GROUPS.items()
+    if source.model is _QWEN_IQ4XS
+    for pair in group
+    for route in pair
+)
+OLLAMA_GPT_OSS_20B_128K = _OLLAMA_ROUTE_GROUPS[_GPT_OSS_20B][0][0]
 OLLAMA_EMBEDDING_ROUTE = Route(
     _OLLAMA_EMBEDDING, Upstream(Provider.OLLAMA, "ollama", "embed", _OLLAMA_BASE), upstream_model="qwen3-embedding:4b"
 )
@@ -715,8 +729,8 @@ GPT6_ASTRA_RESPONSES = _CHATGPT_RESPONSES_BY_ID[GPT_6_ASTRA.id]
 GPT6_LUNA_RESPONSES = _CHATGPT_RESPONSES_BY_ID[GPT_6_LUNA.id]
 GPT6_LUNA_MESSAGES = _CHATGPT_MESSAGES_BY_ID[GPT_6_LUNA.id]
 # Retain the pickers' Astra/Luna/Sol order, distinct from proxy serving order.
-GPT6_RESPONSES_ROUTES = tuple(_CHATGPT_RESPONSES_BY_ID[model.id] for model in CURRENT_CODEX_MODELS)
-GPT6_MESSAGES_ROUTES = tuple(_CHATGPT_MESSAGES_BY_ID[model.id] for model in CURRENT_CODEX_MODELS)
+GPT6_RESPONSES_ROUTES = tuple(_CHATGPT_RESPONSES_BY_ID[model.id] for model in _CURRENT_CODEX_MODELS)
+GPT6_MESSAGES_ROUTES = tuple(_CHATGPT_MESSAGES_BY_ID[model.id] for model in _CURRENT_CODEX_MODELS)
 
 _ANTHROPIC_SUBSCRIPTION = Upstream(
     Provider.ANTHROPIC_MAX20, "anthropic", "messages", _CLIPROXY_BASE, "os.environ/CLIPROXY_CLIENT_KEY", True
@@ -743,7 +757,7 @@ ANTIGRAVITY_ROUTES = tuple(
         _ANTIGRAVITY,
         reasoning_efforts=_ANTHROPIC_EFFORTS if model in (_ANTIGRAVITY_OPUS, _ANTIGRAVITY_SONNET) else (),
     )
-    for model in ANTIGRAVITY_MODELS
+    for model in _ANTIGRAVITY_MODELS
 )
 ANTIGRAVITY_FLASH_LITE_ROUTES = tuple(
     route for route in ANTIGRAVITY_ROUTES if route.model in (_ANTIGRAVITY_FLASH_LITE_31, _ANTIGRAVITY_FLASH_LITE_35)
@@ -757,7 +771,7 @@ GROQ_AUDIO_ROUTES = tuple(
 _GOOGLE_GENERATE = Upstream(
     Provider.GOOGLE, "gemini", "generate", api_key="os.environ/GEMINI_API_KEY", supports_function_calling=True
 )
-GEMINI_ROUTES = tuple(Route(model, _GOOGLE_GENERATE) for model in GEMINI_MODELS)
+GEMINI_ROUTES = tuple(Route(model, _GOOGLE_GENERATE) for model in _GEMINI_MODELS)
 _GOOGLE_EMBED = Upstream(Provider.GOOGLE, "gemini", "embed", api_key="os.environ/GEMINI_API_KEY")
 GEMINI_EMBEDDING_ROUTES = tuple(Route(model, _GOOGLE_EMBED) for model in _GEMINI_EMBEDDING_MODELS)
 GEMINI_EMBEDDING_ALIAS = RouteAlias(GEMINI_EMBEDDING_COMPAT_ALIAS, GEMINI_EMBEDDING_ROUTES[0])
@@ -786,9 +800,3 @@ SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
     *MISTRAL_ROUTES,
 )
 HIDDEN_ALIASES = (RouteAlias(GPT6_ASTRA_RESPONSES.model.id, GPT6_ASTRA_RESPONSES),)
-
-# Transitional views for OpenClaw, Gatus, and runner-window generation. They own no
-# facts. Delete each with its follow-up consumer migration; new consumers use routes.
-ANTHROPIC_MODELS = [model.id for model in _ANTHROPIC_MODELS]
-OLLAMA_CHAT_MODELS = [(source.model.id, source.upstream_model, source.contexts) for source in _OLLAMA_MODELS]
-OLLAMA_EMBEDDING_MODEL = OLLAMA_EMBEDDING_ROUTE.model.id
