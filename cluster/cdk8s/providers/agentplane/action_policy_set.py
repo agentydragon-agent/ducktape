@@ -7,6 +7,7 @@ pattern: a class named after the kind, and a named `@staticmethod` factory group
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from agentplane_actionpolicyset_crds.works.allegedly.agentplane import (
     ActionPolicySet as _ActionPolicySet,
@@ -20,11 +21,11 @@ from constructs import Construct
 
 class AutoApproveIf:
     """`ActionPolicySetSpecAutoApproveIf`'s real variant shapes this repo uses: `exact_actions`
-    (an Action name allowlist), `github_repository` (a fixed owner/repository), and
+    (an Action name allowlist), `github_repository` (a fixed owner/repository),
     `github_public_repository` (a live, unauthenticated visibility check in place of a fixed
-    owner/repository). The schema also defines `argument_schema` (also requires the arguments to
-    satisfy a JSON Schema) and `home_assistant_entity_control` (a Home Assistant service call
-    confined to configured entities and services) -- add a factory the day this repo builds one.
+    owner/repository), and `argument_schema` (arguments satisfying a JSON Schema). The schema also
+    defines `home_assistant_entity_control` (a Home Assistant service call confined to configured
+    entities and services) -- add a factory the day this repo builds one.
 
     """
 
@@ -45,6 +46,17 @@ class AutoApproveIf:
             owner=owner,
             repository=repository,
             actions=actions,
+        )
+
+    @staticmethod
+    def argument_schema(
+        *, actions: Mapping[str, Sequence[str]], schema: dict[str, Any]
+    ) -> ActionPolicySetSpecAutoApproveIf:
+        """Requires a listed Action's arguments to satisfy `schema`."""
+        return ActionPolicySetSpecAutoApproveIf(
+            type=ActionPolicySetSpecAutoApproveIfType.ARGUMENT_UNDERSCORE_SCHEMA,
+            actions=actions,
+            schema=schema,
         )
 
     @staticmethod

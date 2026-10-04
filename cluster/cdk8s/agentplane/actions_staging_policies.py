@@ -431,6 +431,40 @@ def add_staging_action_policies(scope: Construct) -> None:
         auto_approve_if=[AutoApproveIf.github_public_repository(actions={"github": _REPOSITORY_SCOPED_ACTIONS})],
     )
 
+    # GitHub MCP combines workflow dispatch, whole-run reruns, failed-job reruns, cancellation,
+    # and log deletion in one Action. Restrict this grant to the failed-job method and the
+    # ducktape repository; the other operations remain on the human path. This also covers PR CI
+    # runs, though the MCP arguments do not expose a run's originating event for PR-only filtering.
+    _policy_set(
+        scope,
+        "actionpolicyset-ducktape-pr-failed-jobs",
+        metadata=ApiObjectMetadata(
+            name="ducktape-pr-failed-jobs",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": (
+                    "Auto-approves only GitHub MCP rerun_failed_jobs calls for agentydragon/ducktape; "
+                    "dispatch, whole-run rerun, cancellation and log deletion remain on the human path."
+                )
+            },
+        ),
+        auto_approve_if=[
+            AutoApproveIf.argument_schema(
+                actions={"github": ["actions_run_trigger"]},
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "method": {"const": "rerun_failed_jobs"},
+                        "owner": {"const": "agentydragon"},
+                        "repo": {"const": "ducktape"},
+                        "run_id": {"type": "integer", "minimum": 1},
+                    },
+                    "required": ["method", "owner", "repo", "run_id"],
+                },
+            )
+        ],
+    )
+
     # Coinbase authenticates each request with a fresh JWT signed over its method, host and path,
     # which the egress proxy's placeholder substitution cannot produce. So a sandbox of claude-ai's
     # holds the key and signs for itself: it may read this one Secret through the API server, and
