@@ -289,7 +289,7 @@ ENV = Environment(
     ),
     output_dir=f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}",
     image_pins=f"{HAND_WRITTEN_ROOT}/{_NAMESPACE}/image-pins",
-    extra_resources=(_WEB_PUSH_SECRET_FILE,),
+    extra_resources=(_WEB_PUSH_SECRET_FILE, "github-app.sops.yaml"),
     replicas=ReplicaProfile(
         count=2,
         strategy=DeploymentStrategy.rolling_update(
