@@ -330,7 +330,7 @@ py_library(
     name = "updates",
     srcs = ["updates.py"],
     deps = [
-        "//agentplane:postgres_listener",
+        "//agentplane/postgres:listener",
         "@pypi//sqlalchemy",
     ],
 )
