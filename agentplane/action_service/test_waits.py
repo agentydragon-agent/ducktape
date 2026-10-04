@@ -76,16 +76,16 @@ async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog)
         vote=None,
     )
     updates = ActionUpdates(db_url)
-    await updates.start()
+    await updates.listener.start()
     try:
         yield Waiting(writer, reader, updates, ActionWaiter(reader, updates, max_wait_seconds=30), request)
     finally:
-        await updates.close()
+        await updates.listener.close()
 
 
 async def test_all_subscribers_receive_cross_replica_commit(waiting: Waiting, db_url: str) -> None:
     second = ActionUpdates(db_url)
-    await second.start()
+    await second.listener.start()
     try:
         with waiting.updates.subscribe_all() as first, second.subscribe_all() as other:
             await decide(waiting, Verdict.DENY)
@@ -94,12 +94,12 @@ async def test_all_subscribers_receive_cross_replica_commit(waiting: Waiting, db
             assert (await waiting.service.get(waiting.request.id, CALLER)).state is ActionState.DENIED
         assert not second._all_subscribers
     finally:
-        await second.close()
+        await second.listener.close()
 
 
 async def test_all_subscribers_wake_on_channel_loss(waiting: Waiting) -> None:
     with waiting.updates.subscribe_all() as changed:
-        await waiting.updates.close()
+        await waiting.updates.listener.close()
         assert changed.is_set()
         with pytest.raises(UpdatesUnavailableError):
             waiting.updates.check_available()
@@ -107,25 +107,24 @@ async def test_all_subscribers_wake_on_channel_loss(waiting: Waiting) -> None:
 
 async def test_listener_recovers_after_connection_loss(waiting: Waiting, monkeypatch: pytest.MonkeyPatch) -> None:
     restarted = asyncio.Event()
-    start = waiting.updates.start
+    start = waiting.updates.listener.start
 
     async def observed_start() -> None:
         await start()
         restarted.set()
 
-    monkeypatch.setattr(waiting.updates, "start", observed_start)
-    recovery = asyncio.create_task(waiting.updates.recover_connections())
-    try:
-        await waiting.updates.close()
+    monkeypatch.setattr(waiting.updates.listener, "start", observed_start)
+    await waiting.updates.listener.close()
+    async with waiting.updates.listener.listen():
+        restarted.clear()
+        assert waiting.updates.listener._connection is not None
+        waiting.updates.listener._connection.terminate()
         async with asyncio.timeout(10):
             await restarted.wait()
         with waiting.updates.subscribe_all() as changed:
             await decide(waiting, Verdict.DENY)
             async with asyncio.timeout(10):
                 await changed.wait()
-    finally:
-        recovery.cancel()
-        await asyncio.gather(recovery, return_exceptions=True)
 
 
 async def subscribed(waiting: Waiting) -> None:
@@ -232,8 +231,8 @@ async def test_listener_loss_fails_wait_but_immediate_read_recovers(waiting: Wai
     async with asyncio.timeout(10):
         task = asyncio.create_task(waiting.waiter.get(waiting.request.id, CALLER, WaitOptions(wait_seconds=10)))
         await subscribed(waiting)
-        assert waiting.updates._connection is not None
-        waiting.updates._connection.terminate()
+        assert waiting.updates.listener._connection is not None
+        waiting.updates.listener._connection.terminate()
         with pytest.raises(UpdatesUnavailableError, match="wait_seconds=0"):
             await task
         assert not waiting.updates._subscribers

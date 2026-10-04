@@ -618,7 +618,7 @@ async def test_webhook_wakes_idle_source_and_fences_concurrent_ingress(
     await github.reconcile(store, claim, row, SOURCE)
     await store.release(claim, None)
     assert await store.get_next_work_at() is None
-    async with store.wakeups.listen():
+    async with store.wakeups.listener.listen():
         with store.wakeups.subscribe() as changed:
             await ingest(github, store, comment())
             async with asyncio.timeout(10):
