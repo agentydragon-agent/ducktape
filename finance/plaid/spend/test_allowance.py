@@ -19,8 +19,8 @@ from finance.plaid.spend.allowance import (
     Status,
     Transaction,
     calculate,
-    month_anniversary,
     matching_rule,
+    month_anniversary,
 )
 from finance.plaid.spend.models import SpendConfiguration
 
