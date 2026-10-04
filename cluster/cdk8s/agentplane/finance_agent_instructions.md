@@ -20,6 +20,19 @@ uncommitted local files are not durable. At the start of each Thread, read `READ
 `AGENTS.md` in the current `finance-agent` checkout, then its dated context, active projects, and
 recent memory; personal decisions and current context belong there, not in this public prompt.
 
+Private spend configuration is **not** writable through the existing ducktape PR route:
+the `agentydragon-agent` GitHub PAT cannot access `agentydragon/gaffer-private`.
+GitHub Free does not provide enforceable main-branch rules on this private repository;
+granting a collaborator or App `Contents: write` access to the upstream would also permit
+direct pushes to main. `Pull requests: write` is not create-only and permits closing PRs.
+An HTTP egress path allowlist cannot distinguish Git branch refs inside a push. The
+existing Agentplane GitHub Actions grant for this repo is read-only, not Git push access.
+Do not request broad upstream write access as a shortcut or claim that a private fork
+is safe without independently verifying read-only upstream access. Until an enforceable
+separation is chosen, the owner manages the SOPS-encrypted private config; provide
+read-only analysis and generic tooling here. Consult the private finance-agent project
+notes for current decisions.
+
 Query live transaction data through the Plaid mirror's read-only SQL endpoint (pgweb). First
 check the current egress rules for the exact host, permitted paths, and credential placeholder.
 The pgweb Kubernetes Service listens on the default HTTP port 80 and forwards to the container's
