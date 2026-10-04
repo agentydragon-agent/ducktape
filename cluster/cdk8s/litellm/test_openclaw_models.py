@@ -6,7 +6,7 @@ from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named 
 
 from cluster.cdk8s import public_coder_agent_config
 from cluster.cdk8s.litellm.config import main_proxy_config
-from cluster.cdk8s.model_rosters import ANTHROPIC_API_ROUTES, ANTHROPIC_SUBSCRIPTION_ROUTES, ANTIGRAVITY_ROUTES
+from cluster.cdk8s.model_rosters import ANTHROPIC_API_ROUTES, ANTHROPIC_SUBSCRIPTION_ROUTES, ANTIGRAVITY_ROUTES, Model
 from cluster.cdk8s.model_selections import PUBLIC_CODER_MODELS
 from cluster.cdk8s.parked import haku_openclaw_spike_config
 
@@ -59,10 +59,17 @@ def test_public_coder_omits_unknown_limits() -> None:
     assert not any(route in PUBLIC_CODER_MODELS for route in unknown)
 
 
-@pytest.mark.parametrize("field", ["context_window", "max_output_tokens", "reasoning"])
-def test_public_coder_rejects_incomplete_metadata(field: str) -> None:
-    route = PUBLIC_CODER_MODELS[0]
-    incomplete = replace(route, model=replace(route.model, **{field: None}))
+@pytest.mark.parametrize(
+    "model",
+    [
+        replace(PUBLIC_CODER_MODELS[0].model, context_window=None),
+        replace(PUBLIC_CODER_MODELS[0].model, max_output_tokens=None),
+        replace(PUBLIC_CODER_MODELS[0].model, reasoning=None),
+    ],
+    ids=["context_window", "max_output_tokens", "reasoning"],
+)
+def test_public_coder_rejects_incomplete_metadata(model: Model) -> None:
+    incomplete = replace(PUBLIC_CODER_MODELS[0], model=model)
     with pytest.raises(ValueError, match="missing OpenClaw metadata"):
         public_coder_agent_config._model_entry(incomplete)
 
