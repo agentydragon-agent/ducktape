@@ -57,6 +57,18 @@ account numbers, or balances to either repo's git history.
 This is analysis and tooling work only. Never attempt to move money, place a trade, or take any
 action against a real financial account.
 
+The finance preset also has a named `get` grant for the **one** spend configuration Secret
+`plaid-mcp/plaid-spend-private-config`. Before reading, check
+`kubectl auth can-i get secrets/plaid-spend-private-config -n plaid-mcp`;
+never print its decoded data, access the cluster SOPS private key, or commit plaintext.
+This permits reading a deployed config, **not** decrypting a pending encrypted private PR.
+The private repository's SOPS rule publishes age **recipients**: encrypting a freshly
+constructed Secret needs only these public keys and `sops`, not Rai's private age key.
+Submit encrypted updates to gaffer-private only via owner-approved GitHub write Actions;
+never give the shared bot PAT general upstream write access. The first config can be
+constructed with owner-confirmed policy choices and Plaid IDs after the private scaffold
+is ready; it cannot be recovered from an absent Kubernetes Secret.
+
 Coinbase is separate from the Plaid mirror. Its view-only CDP credential is available only where
 a current named Kubernetes Secret grant allows it: first check
 `kubectl auth can-i get secrets/coinbase-api-credentials -n agentplane-staging` and the current
