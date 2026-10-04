@@ -75,3 +75,9 @@ filegroup(
     ],
     visibility = ["//cluster/validation:__pkg__"],
 )
+
+# The app catalog test reads the deployment artifact, not a second model inventory.
+exports_files(
+    ["agentplane-staging/agentplane-staging.k8s.yaml"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+)

@@ -1,4 +1,8 @@
-"""Shared model rosters and exposed-name derivations for cdk8s-generated LiteLLM and agent configs.
+"""Authoritative served routes for cdk8s-generated LiteLLM and agent configuration.
+
+Select Route objects and serialize their attributes at the consumer boundary. The
+transitional model-only views at the bottom exist for the remaining OpenClaw, Gatus,
+and runner-window migrations; they do not author a second inventory.
 
 Naming scheme (#4823): an exposed `model_name` is `{provider}/{shape}/{model}` — the
 upstream account/provider, the wire LiteLLM speaks to that provider, then the upstream
@@ -57,13 +61,13 @@ lane: each `litellm_key.models` list in tf/gitops/litellm-keys/main.tf (exported
 litellm/keys.py) enumerates one provider's names explicitly, so the lane is the common
 prefix (and a LiteLLM prefix wildcard would carve the same lane). Deliberately not
 renamed: the raw upstream model slugs inside the exposed names, and the two groq whisper
-entries, whose `audio_transcription` mode no shape slug covers yet. The bare
+entries, whose historical bare IDs are retained even though their outbound shape is known. The bare
 `gemini-embedding-2` alias (GEMINI_EMBEDDING_COMPAT_ALIAS) is exempt too: it predates the
 scheme and public-coder-agent's durable memory index stores that model identity, so it
 stays until the index is deliberately rebuilt.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 
@@ -91,6 +95,7 @@ class ApiShape(StrEnum):
     GOOG_EMBED = "goog-embed"
     OLM_CHAT = "olm-chat"
     OLM_EMBED = "olm-embed"
+    OAI_TRANSCRIBE = "oai-transcribe"
 
 
 def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
@@ -99,15 +104,8 @@ def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
 
 
 def codex_responses_name(model: str) -> str:
-    """A Codex-subscription model as served on LiteLLM's Responses surface -- the route
-    Codex CLI clients and OpenClaw call."""
-    return exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model)
-
-
-def codex_messages_name(model: str) -> str:
-    """A Codex-subscription model as served on the Anthropic Messages surface -- the route
-    Claude Code clients call."""
-    return exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model)
+    """Transitional OpenClaw lookup of a canonical Codex-subscription Responses route."""
+    return _CHATGPT_RESPONSES_BY_ID[model].id
 
 
 _SHAPE_MODE: dict[ApiShape, str] = {
@@ -118,6 +116,7 @@ _SHAPE_MODE: dict[ApiShape, str] = {
     ApiShape.GOOG_EMBED: "embedding",
     ApiShape.OLM_CHAT: "chat",
     ApiShape.OLM_EMBED: "embedding",
+    ApiShape.OAI_TRANSCRIBE: "audio_transcription",
 }
 
 
@@ -155,6 +154,89 @@ def shape_for(upstream_prefix: str, protocol: str) -> ApiShape:
     return ApiShape(f"{_UPSTREAM_DEFINER[upstream_prefix]}-{protocol}")
 
 
+@dataclass(frozen=True)
+class Model:
+    """Metadata for a model as served by its account, not a universal vendor claim.
+
+    Unknown facts stay unset. The comments at each declaration record whether limits
+    are published, measured, or a conservative bound. Sharing this value between wires
+    is deliberate; equal upstream slugs on different accounts do not imply equal limits.
+    """
+
+    id: str
+    display_name: str | None = None
+    context_window: int | None = None
+    max_output_tokens: int | None = None
+    reasoning: bool | None = None
+
+
+@dataclass(frozen=True)
+class Upstream:
+    """One account and outbound adapter; its shape is derived, not separately authored."""
+
+    provider: Provider
+    prefix: str
+    protocol: str
+    api_base: str | None = None
+    api_key: str | None = None
+    supports_function_calling: bool = False
+
+    @property
+    def shape(self) -> ApiShape:
+        return shape_for(self.prefix, self.protocol)
+
+
+@dataclass(frozen=True)
+class Route:
+    """A served identity. Consumers select this object and serialize its attributes."""
+
+    model: Model
+    upstream: Upstream
+    upstream_model: str | None = None
+    reasoning_efforts: tuple[str, ...] = ()
+    # Publishing additional LiteLLM model_info changes behavior. Preserve which routes
+    # currently override LiteLLM's defaults rather than publishing every known limit.
+    publish_limits: bool = False
+    # Native Ollama request configuration, not evidence of attended context capacity.
+    num_ctx: int | None = None
+    # The two historical audio route IDs predate the naming scheme.
+    bare_name: bool = False
+
+    @property
+    def id(self) -> str:
+        if self.bare_name:
+            return self.model.id
+        return exposed_name(self.upstream.provider, self.upstream.shape, self.model.id)
+
+    @property
+    def display_name(self) -> str:
+        if self.model.display_name is None:
+            raise ValueError(f"no display name declared for offered route {self.id}")
+        return self.model.display_name
+
+    @property
+    def upstream_id(self) -> str:
+        return f"{self.upstream.prefix}/{self.upstream_model or self.model.id}"
+
+
+@dataclass(frozen=True)
+class RouteAlias:
+    """An explicit compatibility identity referencing a canonical route."""
+
+    id: str
+    target: Route
+
+
+@dataclass(frozen=True)
+class OllamaModel:
+    model: Model
+    upstream_model: str
+    contexts: tuple[int, ...]
+
+
+_ANTHROPIC_EFFORTS = ("low", "medium", "high", "max")
+_CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
+
 # ChatGPT/Codex-subscription models behind CLIProxyAPI, exposed on both wire surfaces
 # for clients that need them. OpenClaw uses the Responses surface below because it is
 # the working native passthrough to CLIProxyAPI.
@@ -180,16 +262,7 @@ def shape_for(upstream_prefix: str, protocol: str) -> ApiShape:
 # API prices, not measured subscription/CLIProxyAPI costs; GPT-5.6 Sol's promotional
 # rate is documented through at least 2026-11-21. They are kept here as dated
 # accounting reference only.
-CLIPROXY_MODELS: list[str] = [
-    "gpt-6-astra",
-    "gpt-6-sol",
-    "gpt-6-luna",
-    "gpt-5.4",
-    "gpt-5.5",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-]
+
 
 # Context window + max output tokens for the Codex-subscription models. Measured,
 # not published: litellm's model_cost DB (live-fetched from BerriAI) has exact
@@ -216,16 +289,6 @@ ASTRA_CONTEXT_WINDOW = 872_000
 ASTRA_MAX_TOKENS = 128_000
 
 
-@dataclass(frozen=True)
-class CodexModel:
-    """A Codex-subscription model whose serving-path limits are known."""
-
-    id: str
-    display_name: str
-    context_window: int
-    max_tokens: int
-
-
 # The Codex models with known serving-path limits: Astra from Codex's bundled metadata,
 # the 5.6 models measured (CODEX_CONTEXT_WINDOW above), and GPT-6 Sol/Luna using the
 # same conservative bound until their subscription path is probed. The LiteLLM manifest
@@ -233,35 +296,46 @@ class CodexModel:
 # OpenClaw declares the limits itself because its bundled LiteLLM provider does not query
 # the proxy's authenticated /v1/models endpoint. gpt-5.4/5.5/5.3-codex-spark were never
 # probed and stay out.
-OPENCLAW_CODEX_MODELS: tuple[CodexModel, ...] = (
-    CodexModel(
-        id="gpt-6-astra", display_name="GPT-6 Astra", context_window=ASTRA_CONTEXT_WINDOW, max_tokens=ASTRA_MAX_TOKENS
-    ),
-    CodexModel(
-        id="gpt-6-luna", display_name="GPT-6 Luna", context_window=CODEX_CONTEXT_WINDOW, max_tokens=CODEX_MAX_TOKENS
-    ),
-    CodexModel(
-        id="gpt-6-sol", display_name="GPT-6 Sol", context_window=CODEX_CONTEXT_WINDOW, max_tokens=CODEX_MAX_TOKENS
-    ),
-    CodexModel(
-        id="gpt-5.6-luna", display_name="GPT-5.6 Luna", context_window=CODEX_CONTEXT_WINDOW, max_tokens=CODEX_MAX_TOKENS
-    ),
-    CodexModel(
-        id="gpt-5.6-terra",
-        display_name="GPT-5.6 Terra",
-        context_window=CODEX_CONTEXT_WINDOW,
-        max_tokens=CODEX_MAX_TOKENS,
-    ),
-    CodexModel(
-        id="gpt-5.6-sol", display_name="GPT-5.6 Sol", context_window=CODEX_CONTEXT_WINDOW, max_tokens=CODEX_MAX_TOKENS
-    ),
+GPT_6_ASTRA = Model(
+    id="gpt-6-astra",
+    display_name="GPT-6 Astra",
+    context_window=ASTRA_CONTEXT_WINDOW,
+    max_output_tokens=ASTRA_MAX_TOKENS,
 )
+GPT_6_LUNA = Model(
+    id="gpt-6-luna", display_name="GPT-6 Luna", context_window=CODEX_CONTEXT_WINDOW, max_output_tokens=CODEX_MAX_TOKENS
+)
+GPT_6_SOL = Model(
+    id="gpt-6-sol", display_name="GPT-6 Sol", context_window=CODEX_CONTEXT_WINDOW, max_output_tokens=CODEX_MAX_TOKENS
+)
+GPT_5_6_LUNA = Model(
+    id="gpt-5.6-luna",
+    display_name="GPT-5.6 Luna",
+    context_window=CODEX_CONTEXT_WINDOW,
+    max_output_tokens=CODEX_MAX_TOKENS,
+)
+GPT_5_6_TERRA = Model(
+    id="gpt-5.6-terra",
+    display_name="GPT-5.6 Terra",
+    context_window=CODEX_CONTEXT_WINDOW,
+    max_output_tokens=CODEX_MAX_TOKENS,
+)
+GPT_5_6_SOL = Model(
+    id="gpt-5.6-sol",
+    display_name="GPT-5.6 Sol",
+    context_window=CODEX_CONTEXT_WINDOW,
+    max_output_tokens=CODEX_MAX_TOKENS,
+)
+GPT_5_4 = Model("gpt-5.4", "GPT-5.4")
+GPT_5_5 = Model("gpt-5.5", "GPT-5.5")
+_CODEX_MODELS = (GPT_6_ASTRA, GPT_6_SOL, GPT_6_LUNA, GPT_5_4, GPT_5_5, GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
+# Transitional OpenClaw view; it does not author any model facts.
+OPENCLAW_CODEX_MODELS = (GPT_6_ASTRA, GPT_6_LUNA, GPT_6_SOL, GPT_5_6_LUNA, GPT_5_6_TERRA, GPT_5_6_SOL)
 
 # GPT-6 subset for cluster consumers whose picker and LiteLLM key are restricted to the
 # current generation. Keep the full roster above for serving-limit metadata on old routes.
-GPT6_CODEX_MODELS: tuple[CodexModel, ...] = tuple(
-    model for model in OPENCLAW_CODEX_MODELS if model.id.startswith("gpt-6-")
-)
+CURRENT_CODEX_MODELS = (GPT_6_ASTRA, GPT_6_LUNA, GPT_6_SOL)
+GPT6_CODEX_MODELS = CURRENT_CODEX_MODELS  # Transitional OpenClaw view.
 
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
 # encodes reasoning effort in the
@@ -269,11 +343,11 @@ GPT6_CODEX_MODELS: tuple[CodexModel, ...] = tuple(
 # "one model + effort knob" to map onto; we expose one model per family at its default
 # effort. Each entry: (exposed-name base, Tana provider model suffix). The provider
 # adds its dispatch prefix and preserves the suffix's slash for Tana.
-TANA_MODELS: list[tuple[str, str]] = [
-    ("claude-sonnet-4-6", "claude-sonnet-4-6/medium"),
-    ("claude-opus-4-6", "claude-opus-4-6/high"),
-    ("claude-haiku-4-5", "claude-haiku-4-5-20251001"),
-]
+_TANA_MODELS = (
+    (Model("claude-sonnet-4-6", "Claude Sonnet 4.6"), "tana/claude-sonnet-4-6/medium"),
+    (Model("claude-opus-4-6", "Claude Opus 4.6"), "tana/claude-opus-4-6/high"),
+    (Model("claude-haiku-4-5", "Haiku 4.5"), "tana/claude-haiku-4-5-20251001"),
+)
 
 # Current-generation Anthropic roster, verified against the authenticated /v1/models
 # endpoint. Feeds Haku OpenClaw and the Terraform claude lane (litellm/keys.py), and is
@@ -281,7 +355,12 @@ TANA_MODELS: list[tuple[str, str]] = [
 # OAuth session serves older generations too, but we expose only this current group — the
 # subscription and the direct API serve the same current models, and sharing one list
 # keeps them in sync ("newest group only", as with the Gemini roster).
-ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
+_ANTHROPIC_MODELS = (
+    Model("claude-opus-5", "Opus 5"),
+    Model("claude-sonnet-5", "Sonnet 5"),
+    Model("claude-fable-5", "Fable 5"),
+    Model("claude-haiku-4-5-20251001", "Haiku 4.5"),
+)
 
 
 # Google's Antigravity OAuth session in CLIProxyAPI (agentydragon@gmail.com, added
@@ -305,10 +384,10 @@ ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable
 # here yet.
 #
 # `reasoning` mirrors the slug's own baked-in effort tier (-high/-agent/-medium as
-# True, -low/-lite/plain/-image as False) -- used by public-coder-agent's OpenClaw
-# catalog, the one consumer needing per-model metadata rather than a bare id.
+# True, -low/-lite/plain/-image as False). OpenClaw consumes this capability flag;
+# the Agentplane projection separately uses the route's declared effort choices.
 #
-# `context_window`/`max_tokens`: Google's own declared capability for each model as
+# `context_window`/`max_output_tokens`: Google's own declared capability for each model as
 # served through Antigravity, not a public-API figure borrowed from Anthropic/OpenAI/a
 # third-party host -- and deliberately not the result of a live binary-search probe
 # (openai_utils/probe_context_window.py) run against claude-opus-4-6-thinking on
@@ -328,114 +407,104 @@ ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable
 # `antigravity` section (checked 2026-09-26). `None` marks a model missing from that
 # file entirely (gemini-3.5-flash-lite) or present with both fields null
 # (gemini-3.1-flash-image, an image-output model) -- left for a follow-up.
-@dataclass(frozen=True)
-class AntigravityModel:
-    id: str
-    display_name: str
-    reasoning: bool
-    context_window: int | None
-    max_tokens: int | None
 
 
-ANTIGRAVITY_MODELS: tuple[AntigravityModel, ...] = (
-    AntigravityModel(
-        id="claude-opus-4-6-thinking",
-        display_name="Claude Opus 4.6 (Thinking)",
-        reasoning=True,
-        context_window=200_000,
-        max_tokens=64_000,
-    ),
-    AntigravityModel(
-        id="claude-sonnet-4-6",
-        display_name="Claude Sonnet 4.6 (Thinking)",
-        reasoning=True,
-        context_window=200_000,
-        max_tokens=64_000,
-    ),
-    AntigravityModel(
+_ANTIGRAVITY_OPUS = Model(
+    id="claude-opus-4-6-thinking",
+    display_name="Claude Opus 4.6 (Thinking)",
+    reasoning=True,
+    context_window=200_000,
+    max_output_tokens=64_000,
+)
+_ANTIGRAVITY_SONNET = Model(
+    id="claude-sonnet-4-6",
+    display_name="Claude Sonnet 4.6 (Thinking)",
+    reasoning=True,
+    context_window=200_000,
+    max_output_tokens=64_000,
+)
+_ANTIGRAVITY_FLASH_LITE_31 = Model(
+    id="gemini-3.1-flash-lite",
+    display_name="Gemini 3.1 Flash Lite",
+    reasoning=False,
+    context_window=1_048_576,
+    max_output_tokens=65_535,
+)
+_ANTIGRAVITY_FLASH_LITE_35 = Model(
+    id="gemini-3.5-flash-lite",
+    display_name="Gemini 3.5 Flash Lite",
+    reasoning=False,
+    context_window=None,
+    max_output_tokens=None,
+)
+
+ANTIGRAVITY_MODELS: tuple[Model, ...] = (
+    _ANTIGRAVITY_OPUS,
+    _ANTIGRAVITY_SONNET,
+    Model(
         id="gemini-3.6-flash-high",
         display_name="Gemini 3.6 Flash",
         reasoning=True,
         context_window=1_048_576,
-        max_tokens=65_536,
+        max_output_tokens=65_536,
     ),
-    AntigravityModel(
+    Model(
         id="gemini-3.7-flash-high",
         display_name="Gemini 3.7 Flash",
         reasoning=True,
         context_window=1_048_576,
-        max_tokens=65_536,
+        max_output_tokens=65_536,
     ),
-    AntigravityModel(
+    Model(
         id="gemini-3.8-flash-high",
         display_name="Gemini 3.8 Flash",
         reasoning=True,
         context_window=1_048_576,
-        max_tokens=65_536,
+        max_output_tokens=65_536,
     ),
-    AntigravityModel(
-        id="gemini-3-flash", display_name="Gemini 3 Flash", reasoning=False, context_window=1_048_576, max_tokens=65_536
+    Model(
+        id="gemini-3-flash",
+        display_name="Gemini 3 Flash",
+        reasoning=False,
+        context_window=1_048_576,
+        max_output_tokens=65_536,
     ),
     # Not in the fetched registry at all (both fields null) -- an image-output model,
     # not a chat-completion one; look into it later.
-    AntigravityModel(
+    Model(
         id="gemini-3.1-flash-image",
         display_name="Gemini 3.1 Flash Image",
         reasoning=False,
         context_window=None,
-        max_tokens=None,
+        max_output_tokens=None,
     ),
-    AntigravityModel(
+    Model(
         id="gemini-pro-agent",
         display_name="Gemini 3.1 Pro (High)",
         reasoning=True,
         context_window=1_048_576,
-        max_tokens=65_535,
+        max_output_tokens=65_535,
     ),
-    AntigravityModel(
+    Model(
         id="gemini-3.1-pro-low",
         display_name="Gemini 3.1 Pro (Low)",
         reasoning=False,
         context_window=1_048_576,
-        max_tokens=65_535,
+        max_output_tokens=65_535,
     ),
-    AntigravityModel(
+    Model(
         id="gpt-oss-120b-medium",
         display_name="GPT-OSS 120B (Medium)",
         reasoning=True,
         context_window=114_000,
-        max_tokens=32_768,
+        max_output_tokens=32_768,
     ),
-    AntigravityModel(
-        id="gemini-3.1-flash-lite",
-        display_name="Gemini 3.1 Flash Lite",
-        reasoning=False,
-        context_window=1_048_576,
-        max_tokens=65_535,
-    ),
+    _ANTIGRAVITY_FLASH_LITE_31,
     # Same slug as a GEMINI_MODELS entry but a different backend entirely; no collision
     # since the two live under different exposed-name providers (antigravity/* vs
     # google/*). Missing from the fetched registry entirely; look into it later.
-    AntigravityModel(
-        id="gemini-3.5-flash-lite",
-        display_name="Gemini 3.5 Flash Lite",
-        reasoning=False,
-        context_window=None,
-        max_tokens=None,
-    ),
+    _ANTIGRAVITY_FLASH_LITE_35,
 )
-
-
-@dataclass(frozen=True)
-class GeminiModel:
-    id: str
-    display_name: str
-    # Capability/product positioning, not the literal default toggle: the "-lite" tier
-    # is the deliberately cheap/fast one, while plain Flash is positioned around its
-    # reasoning ("thinking") capability -- Google's gemini-3.7-flash page notes thinking
-    # is supported but not automatic-by-default.
-    reasoning: bool
-
 
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
 # secret). Current-generation lineup only (Gemini 3.x) -- the 2.5 generation,
@@ -454,41 +523,62 @@ class GeminiModel:
 # RESOURCE_EXHAUSTED with a quota of 0. It may simply have no quota, but keep it
 # out of the roster until that is verified. Feeds the gemini-clients Terraform
 # key (litellm/keys.py) and public-coder-agent's OpenClaw catalog.
-GEMINI_MODELS: tuple[GeminiModel, ...] = (
-    GeminiModel(id="gemini-3.7-flash", display_name="Gemini 3.7 Flash", reasoning=True),
-    GeminiModel(id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash-Lite", reasoning=False),
+# Published input/output token limits shared across the current Gemini chat
+# generation: ai.google.dev/gemini-api/docs/models/gemini-3.7-flash and
+# .../gemini-3.5-flash-lite (2026-08-23). Unlike
+# Codex's CODEX_CONTEXT_WINDOW above, there is no live serving-path probe for
+# a third-party hosted API, so this is Google's published figure rather than
+# a measured one. Used by public-coder-agent's OpenClaw catalog.
+GEMINI_CONTEXT_WINDOW = 1_048_576
+GEMINI_MAX_OUTPUT_TOKENS = 65_536
+
+GEMINI_MODELS: tuple[Model, ...] = (
+    Model(
+        id="gemini-3.7-flash",
+        display_name="Gemini 3.7 Flash",
+        reasoning=True,
+        context_window=GEMINI_CONTEXT_WINDOW,
+        max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,
+    ),
+    Model(
+        id="gemini-3.5-flash-lite",
+        display_name="Gemini 3.5 Flash-Lite",
+        reasoning=False,
+        context_window=GEMINI_CONTEXT_WINDOW,
+        max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,
+    ),
 )
 
 # Mistral chat models that accepted a minimal completion with the cluster's API
 # key on 2026-08-31. Catalog entries that returned 403 are intentionally
 # excluded; account-specific fine-tuned models are excluded as well.
-MISTRAL_MODELS: list[str] = [
-    "codestral-2508",
-    "codestral-latest",
-    "magistral-medium-latest",
-    "magistral-small-latest",
-    "ministral-14b-latest",
-    "ministral-14b-2512",
-    "ministral-8b-latest",
-    "ministral-8b-2512",
-    "ministral-3b-latest",
-    "ministral-3b-2512",
-    "mistral-code-fim-latest",
-    "mistral-code-latest",
-    "mistral-medium",
-    "mistral-medium-2604",
-    "mistral-medium-3",
-    "mistral-medium-3-5",
-    "mistral-medium-3.5",
-    "mistral-medium-latest",
-    "mistral-small-2603",
-    "mistral-small-latest",
-    "mistral-vibe-cli-fast",
-    "mistral-vibe-cli-latest",
-    "mistral-vibe-cli-with-tools",
-    "voxtral-small-2507",
-    "voxtral-small-latest",
-]
+_MISTRAL_MODELS = (
+    Model("codestral-2508"),
+    Model("codestral-latest"),
+    Model("magistral-medium-latest"),
+    Model("magistral-small-latest"),
+    Model("ministral-14b-latest"),
+    Model("ministral-14b-2512"),
+    Model("ministral-8b-latest"),
+    Model("ministral-8b-2512"),
+    Model("ministral-3b-latest"),
+    Model("ministral-3b-2512"),
+    Model("mistral-code-fim-latest"),
+    Model("mistral-code-latest"),
+    Model("mistral-medium"),
+    Model("mistral-medium-2604"),
+    Model("mistral-medium-3"),
+    Model("mistral-medium-3-5"),
+    Model("mistral-medium-3.5"),
+    Model("mistral-medium-latest"),
+    Model("mistral-small-2603"),
+    Model("mistral-small-latest"),
+    Model("mistral-vibe-cli-fast"),
+    Model("mistral-vibe-cli-latest"),
+    Model("mistral-vibe-cli-with-tools"),
+    Model("voxtral-small-2507"),
+    Model("voxtral-small-latest"),
+)
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
 # whose index needs an embedding backend and had none — see
@@ -504,21 +594,13 @@ MISTRAL_MODELS: list[str] = [
 # is the longer-established route through LiteLLM. Both expose flexible output
 # dimensionality (128-3072, recommended 768/1536/3072), selected per request rather
 # than per deployment, so neither entry pins a size.
-GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-001"]
+_GEMINI_EMBEDDING_MODELS = (Model("gemini-embedding-2"), Model("gemini-embedding-001"))
 
 # Bare, pre-scheme alias of GEMINI_EMBEDDING_MODELS[0], served until the durable
 # OpenClaw index public-coder-agent built under this identity is deliberately rebuilt
 # under the prefixed name.
-GEMINI_EMBEDDING_COMPAT_ALIAS = "gemini-embedding-2"
+GEMINI_EMBEDDING_COMPAT_ALIAS = _GEMINI_EMBEDDING_MODELS[0].id
 
-# Published input/output token limits shared across the current Gemini chat
-# generation: ai.google.dev/gemini-api/docs/models/gemini-3.7-flash and
-# .../gemini-3.5-flash-lite (2026-08-23). Unlike
-# Codex's CODEX_CONTEXT_WINDOW above, there is no live serving-path probe for
-# a third-party hosted API, so this is Google's published figure rather than
-# a measured one. Used by public-coder-agent's OpenClaw catalog.
-GEMINI_CONTEXT_WINDOW = 1_048_576
-GEMINI_MAX_OUTPUT_TOKENS = 65_536
 
 # Self-hosted Ollama chat models: (exposed model, Ollama model, num_ctx variants).
 # Each variant is served on both the OpenAI-compatible `/v1` and Ollama's native
@@ -537,15 +619,15 @@ GEMINI_MAX_OUTPUT_TOKENS = 65_536
 # once served from SSD-backed storage or with the full CPU-resident working set reliably
 # page-cache-hot; see agentplane/debug/agentplane_ollama_live_smoke_2026_09_24.md for the
 # full investigation.
-OLLAMA_CHAT_MODELS: list[tuple[str, str, tuple[int, ...]]] = [
-    ("qwen3.8-flash-next-iq4xs", "qwen3.8-flash-next-iq4xs:latest", (128 * 1024,)),
+_QWEN_IQ4XS = Model("qwen3.8-flash-next-iq4xs", "Qwen3.8 Flash Next IQ4_XS")
+_OLLAMA_MODELS = (
+    OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs:latest", (128 * 1024,)),
     # Ollama /v1 ignores native options.num_ctx; bake this size into an alias.
-    ("qwen3.8-flash-next-iq4xs", "qwen3.8-flash-next-iq4xs-256k:latest", (256 * 1024,)),
-    ("gpt-oss-20b", "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)),
-    ("gpt-oss-120b", "gpt-oss:120b", (128 * 1024,)),
-    ("gemma4-31b-it-q8_0", "gemma4:31b-it-q8_0", (128 * 1024,)),
-    # ("qwen3.8-flash-next-q4", "metalspork/qwen3.8-flash-next-ud:UD-Q4_K_XL", (128 * 1024,)),
-]
+    OllamaModel(_QWEN_IQ4XS, "qwen3.8-flash-next-iq4xs-256k:latest", (256 * 1024,)),
+    OllamaModel(Model("gpt-oss-20b", "GPT-OSS 20B"), "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)),
+    OllamaModel(Model("gpt-oss-120b", "GPT-OSS 120B"), "gpt-oss:120b", (128 * 1024,)),
+    OllamaModel(Model("gemma4-31b-it-q8_0", "Gemma 4 31B"), "gemma4:31b-it-q8_0", (128 * 1024,)),
+)
 
 
 def ollama_chat_variant(model: str, context: int) -> str:
@@ -556,4 +638,157 @@ def ollama_chat_variant(model: str, context: int) -> str:
 # The self-hosted Ollama embedding route (litellm/config.py's `_ollama_entries()`),
 # also referenced by public-coder-agent's OpenClaw memory-search config so its
 # embedding backend names the same route it's actually served on.
-OLLAMA_EMBEDDING_MODEL = "qwen3-embedding-4b"
+_OLLAMA_EMBEDDING = Model("qwen3-embedding-4b")
+
+
+# Canonical served routes. These are the only account/wire/model associations;
+# downstream code receives Route objects, not ingredients for exposed_name().
+_OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
+_CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
+_OLLAMA_OPENAI = Upstream(Provider.OLLAMA, "openai", "chat", f"{_OLLAMA_BASE}/v1", "ollama", True)
+_OLLAMA_NATIVE = Upstream(Provider.OLLAMA, "ollama_chat", "chat", _OLLAMA_BASE, supports_function_calling=True)
+
+
+def _ollama_routes(source: OllamaModel) -> tuple[tuple[Route, Route], ...]:
+    pairs = []
+    for context in source.contexts:
+        suffix = "1M" if context == 1024 * 1024 else f"{context // 1024}K"
+        model = replace(
+            source.model,
+            id=ollama_chat_variant(source.model.id, context),
+            display_name=f"{source.model.display_name} ({suffix})",
+            context_window=context,
+        )
+        pairs.append(
+            (
+                Route(model, _OLLAMA_OPENAI, upstream_model=source.upstream_model, num_ctx=context),
+                Route(model, _OLLAMA_NATIVE, upstream_model=source.upstream_model, num_ctx=context),
+            )
+        )
+    return tuple(pairs)
+
+
+_OLLAMA_ROUTE_GROUPS = tuple(_ollama_routes(source) for source in _OLLAMA_MODELS)
+OLLAMA_OPENAI_ROUTES = tuple(openai for group in _OLLAMA_ROUTE_GROUPS for openai, _ in group)
+OLLAMA_CHAT_ROUTES = tuple(route for group in _OLLAMA_ROUTE_GROUPS for pair in group for route in pair)
+# The proxy historically groups wires within each source; keys interleave wires per
+# context. Preserve both output orders while referencing exactly the same objects.
+_OLLAMA_PROXY_ROUTES = tuple(
+    route
+    for group in _OLLAMA_ROUTE_GROUPS
+    for route in (*(openai for openai, _ in group), *(native for _, native in group))
+)
+OLLAMA_EMBEDDING_ROUTE = Route(
+    _OLLAMA_EMBEDDING, Upstream(Provider.OLLAMA, "ollama", "embed", _OLLAMA_BASE), upstream_model="qwen3-embedding:4b"
+)
+TANA_ROUTES = tuple(
+    Route(
+        model,
+        Upstream(
+            Provider.TANA,
+            "tana",
+            "messages",
+            "https://app.tana.inc/functions",
+            "os.environ/TANA_FIREBASE_REFRESH_TOKEN",
+            True,
+        ),
+        upstream_model=upstream,
+    )
+    for model, upstream in _TANA_MODELS
+)
+_CHATGPT_MESSAGES = Upstream(
+    Provider.CHATGPT, "anthropic", "messages", _CLIPROXY_BASE, "os.environ/CLIPROXY_CLIENT_KEY", True
+)
+_CHATGPT_RESPONSES = Upstream(
+    Provider.CHATGPT, "openai", "responses", f"{_CLIPROXY_BASE}/v1", "os.environ/CLIPROXY_CLIENT_KEY", True
+)
+CHATGPT_MESSAGES_ROUTES = tuple(
+    Route(model, _CHATGPT_MESSAGES, publish_limits=model.context_window is not None) for model in _CODEX_MODELS
+)
+CHATGPT_RESPONSES_ROUTES = tuple(
+    Route(model, _CHATGPT_RESPONSES, reasoning_efforts=_CODEX_EFFORTS, publish_limits=model.context_window is not None)
+    for model in _CODEX_MODELS
+)
+_CHATGPT_MESSAGES_BY_ID = {route.model.id: route for route in CHATGPT_MESSAGES_ROUTES}
+_CHATGPT_RESPONSES_BY_ID = {route.model.id: route for route in CHATGPT_RESPONSES_ROUTES}
+GPT6_ASTRA_RESPONSES = _CHATGPT_RESPONSES_BY_ID[GPT_6_ASTRA.id]
+GPT6_LUNA_RESPONSES = _CHATGPT_RESPONSES_BY_ID[GPT_6_LUNA.id]
+GPT6_LUNA_MESSAGES = _CHATGPT_MESSAGES_BY_ID[GPT_6_LUNA.id]
+# Retain the pickers' Astra/Luna/Sol order, distinct from proxy serving order.
+GPT6_RESPONSES_ROUTES = tuple(_CHATGPT_RESPONSES_BY_ID[model.id] for model in CURRENT_CODEX_MODELS)
+GPT6_MESSAGES_ROUTES = tuple(_CHATGPT_MESSAGES_BY_ID[model.id] for model in CURRENT_CODEX_MODELS)
+
+_ANTHROPIC_SUBSCRIPTION = Upstream(
+    Provider.ANTHROPIC_MAX20, "anthropic", "messages", _CLIPROXY_BASE, "os.environ/CLIPROXY_CLIENT_KEY", True
+)
+_ANTHROPIC_API = Upstream(
+    Provider.ANTHROPIC_API,
+    "anthropic",
+    "messages",
+    api_key="os.environ/ANTHROPIC_API_KEY",
+    supports_function_calling=True,
+)
+ANTHROPIC_SUBSCRIPTION_ROUTES = tuple(
+    Route(model, _ANTHROPIC_SUBSCRIPTION, reasoning_efforts=_ANTHROPIC_EFFORTS) for model in _ANTHROPIC_MODELS
+)
+ANTHROPIC_API_ROUTES = tuple(Route(model, _ANTHROPIC_API) for model in _ANTHROPIC_MODELS)
+OPUS_SUBSCRIPTION, SONNET_SUBSCRIPTION, FABLE_SUBSCRIPTION, HAIKU_SUBSCRIPTION = ANTHROPIC_SUBSCRIPTION_ROUTES
+OPUS_API, SONNET_API, FABLE_API, HAIKU_API = ANTHROPIC_API_ROUTES
+_ANTIGRAVITY = Upstream(
+    Provider.ANTIGRAVITY, "anthropic", "messages", _CLIPROXY_BASE, "os.environ/CLIPROXY_CLIENT_KEY", True
+)
+ANTIGRAVITY_ROUTES = tuple(
+    Route(
+        model,
+        _ANTIGRAVITY,
+        reasoning_efforts=_ANTHROPIC_EFFORTS if model in (_ANTIGRAVITY_OPUS, _ANTIGRAVITY_SONNET) else (),
+    )
+    for model in ANTIGRAVITY_MODELS
+)
+ANTIGRAVITY_FLASH_LITE_ROUTES = tuple(
+    route for route in ANTIGRAVITY_ROUTES if route.model in (_ANTIGRAVITY_FLASH_LITE_31, _ANTIGRAVITY_FLASH_LITE_35)
+)
+_GROQ_CHAT = Upstream(Provider.GROQ, "groq", "chat", api_key="os.environ/GROQ_API_KEY", supports_function_calling=True)
+GROQ_CHAT_ROUTES = tuple(Route(Model(id), _GROQ_CHAT) for id in ("llama-3.3-70b-versatile", "llama-3.1-8b-instant"))
+_GROQ_TRANSCRIBE = Upstream(Provider.GROQ, "groq", "transcribe", api_key="os.environ/GROQ_API_KEY")
+GROQ_AUDIO_ROUTES = tuple(
+    Route(Model(id), _GROQ_TRANSCRIBE, bare_name=True) for id in ("whisper-large-v3", "whisper-large-v3-turbo")
+)
+_GOOGLE_GENERATE = Upstream(
+    Provider.GOOGLE, "gemini", "generate", api_key="os.environ/GEMINI_API_KEY", supports_function_calling=True
+)
+GEMINI_ROUTES = tuple(Route(model, _GOOGLE_GENERATE) for model in GEMINI_MODELS)
+_GOOGLE_EMBED = Upstream(Provider.GOOGLE, "gemini", "embed", api_key="os.environ/GEMINI_API_KEY")
+GEMINI_EMBEDDING_ROUTES = tuple(Route(model, _GOOGLE_EMBED) for model in _GEMINI_EMBEDDING_MODELS)
+GEMINI_EMBEDDING_ALIAS = RouteAlias(GEMINI_EMBEDDING_COMPAT_ALIAS, GEMINI_EMBEDDING_ROUTES[0])
+_MISTRAL = Upstream(
+    Provider.MISTRAL, "mistral", "chat", api_key="os.environ/MISTRAL_API_KEY", supports_function_calling=True
+)
+MISTRAL_ROUTES = tuple(Route(model, _MISTRAL) for model in _MISTRAL_MODELS)
+
+# Ordered public catalog. Aliases reference routes rather than repeat their upstream
+# or metadata. Hidden harness-compatibility aliases are not advertised as model entries.
+SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
+    *_OLLAMA_PROXY_ROUTES,
+    OLLAMA_EMBEDDING_ROUTE,
+    *TANA_ROUTES,
+    *CHATGPT_MESSAGES_ROUTES,
+    *CHATGPT_RESPONSES_ROUTES,
+    *ANTHROPIC_SUBSCRIPTION_ROUTES,
+    *ANTHROPIC_API_ROUTES,
+    *ANTIGRAVITY_ROUTES,
+    *GROQ_CHAT_ROUTES,
+    *GROQ_AUDIO_ROUTES,
+    *GEMINI_ROUTES,
+    GEMINI_EMBEDDING_ROUTES[0],
+    GEMINI_EMBEDDING_ALIAS,
+    GEMINI_EMBEDDING_ROUTES[1],
+    *MISTRAL_ROUTES,
+)
+HIDDEN_ALIASES = (RouteAlias(GPT6_ASTRA_RESPONSES.model.id, GPT6_ASTRA_RESPONSES),)
+
+# Transitional views for OpenClaw, Gatus, and runner-window generation. They own no
+# facts. Delete each with its follow-up consumer migration; new consumers use routes.
+ANTHROPIC_MODELS = [model.id for model in _ANTHROPIC_MODELS]
+OLLAMA_CHAT_MODELS = [(source.model.id, source.upstream_model, source.contexts) for source in _OLLAMA_MODELS]
+OLLAMA_EMBEDDING_MODEL = OLLAMA_EMBEDDING_ROUTE.model.id

@@ -346,7 +346,6 @@ py_library(
         "//cluster/cdk8s:__pkg__",
     ],
     deps = [
-        ":model_display_names",
         "//agentplane/app:action_federation",
         "//agentplane/app:api",
         "//agentplane/app:main",
@@ -354,27 +353,28 @@ py_library(
         "//agentplane/runner:harness",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s:model_selections",
     ],
 )
 
-py_library(
-    name = "model_display_names",
-    srcs = ["model_display_names.py"],
-    deps = ["//cluster/cdk8s:model_rosters"],
-)
-
 py_test(
-    name = "test_model_display_names",
-    srcs = ["test_model_display_names.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
+    name = "test_model_catalog",
+    srcs = ["test_model_catalog.py"],
+    data = [
+        "//cluster:generated/agentplane-testing/agentplane-testing.k8s.yaml",
+        "//cluster/k8s:agentplane-staging/agentplane-staging.k8s.yaml",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":app_settings",
-        ":model_display_names",
+        ":environment",
+        ":staging",
+        ":testing",
         "//:conftest",
-        "//cluster/cdk8s/litellm:keys",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -398,7 +398,8 @@ py_library(
         ":app_settings",
         "//agentplane/app:action_federation",
         "//agentplane/app:main",
-        "//cluster/cdk8s/litellm:keys",
+        "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s:model_selections",
     ],
 )
 
@@ -424,7 +425,7 @@ py_library(
         "//agentplane/sandbox_service:kubernetes_grants",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:model_rosters",
-        "//cluster/cdk8s/litellm:keys",
+        "//cluster/cdk8s:model_selections",
     ],
 )
 
@@ -434,6 +435,7 @@ py_library(
     deps = [
         "//agentplane/action_service:main",
         "//agentplane/app:main",
+        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -501,6 +503,7 @@ py_library(
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:ha_mcp",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:public_coder_egress",
         "//cluster/cdk8s/external_secrets:minted_secret",
@@ -541,6 +544,7 @@ py_library(
         "//agentplane/app:action_federation",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
