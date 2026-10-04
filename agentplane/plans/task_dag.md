@@ -70,7 +70,9 @@ flowchart TB
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
-    NOTIFICATION_DEBOUNCE["In review #8988<br/>configurable runner-notice debounce<br/>then deployed burst acceptance"]:::active
+    NOTIFICATION_DEBOUNCE["Remaining deployed acceptance<br/>configurable runner-notice debounce<br/>real burst behavior"]:::active
+    NOTIFICATION_TURN_GATING["Deferred design<br/>avoid notices piling up<br/>before the agent processes them"]:::future
+    NOTIFICATION_COMPACT_NOTICES["Deferred design<br/>brief notices and shared instructions<br/>Claude/Codex compaction evidence"]:::future
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
     HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
     NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
@@ -878,10 +880,36 @@ The shared PostgreSQL listener refactor did not implement this cross-service fee
 
 ### `NOTIFICATION_DEBOUNCE` — configurable runner-notice batching
 
-**In review, not shipped:** [#8988](https://github.com/agentydragon/ducktape/pull/8988) adds a per-inbox
-quiet window and maximum wait, leaving persistence and reads immediate. After merge/rollout, verify
+**Remaining deployed acceptance:** [#8988](https://github.com/agentydragon/ducktape/pull/8988) is merged.
+After rollout, verify
 a real event burst produces fewer harness interruptions, sustained traffic cannot indefinitely
 postpone a notice, and explicit acknowledgement/no-reminder semantics remain intact.
+
+### `NOTIFICATION_TURN_GATING` — avoid notices piling up before processing
+
+**Deferred design; rule TBD:** be more conservative than time-based debounce when the agent has not
+yet begun processing an earlier notice. One candidate is "do not send another notice until a turn
+has started since the previous notice"; this is a proposal, not the selected algorithm. Decide what
+causal runner evidence counts, including an already-active turn, queued/coalesced inputs and restart.
+Admission, harness receipt and turn start are not acknowledgement or proof that entries were handled.
+Keep new entries immediately readable and their latest cursor durable while suppressing notices;
+define how pending work becomes eligible again without starvation or repeated reminders. Test both
+harnesses, slow/not-running agents, bursts and recovery before choosing the gating semantics.
+
+### `NOTIFICATION_COMPACT_NOTICES` — shared instructions and brief cursor hints
+
+**Deferred design; wire format TBD:** put retrieval/explicit-acknowledgement instructions in shared
+agent instructions once, then consider brief notices such as
+`<agentplane-notification>{"inbox":"<uuid>","new_cursor":47}</agentplane-notification>`.
+This example is not a protocol commitment or a provenance/authentication mechanism.
+
+Before removing self-contained guidance, prove that agents retain or regain the shared instructions
+through context compaction and session resume. Use mock-LLM tests exercising compaction with **both
+Claude and Codex**: after compaction, a compact notice must still lead to correct inbox retrieval and
+explicit acknowledgement of only the handled contiguous prefix. Inspect the actual model context,
+not just initial prompt construction. Define reinjection/fallback if guidance can be lost; retain
+self-contained notices until that evidence exists. Coordinate with `NOTIFICATION_PRESENTATION`,
+without treating a textual tag as trusted origin metadata or making frontend work a prerequisite.
 
 ### `GITHUB_DELIVERY_RECOVERY` — remaining live reliability acceptance
 
