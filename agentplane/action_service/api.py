@@ -250,15 +250,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await updates.start()
-        recovery = asyncio.create_task(updates.recover_connections(), name="action-listener-recovery")
-        try:
-            async with mcp_app.lifespan(mcp_app):
-                yield
-        finally:
-            recovery.cancel()
-            await asyncio.gather(recovery, return_exceptions=True)
-            await updates.close()
+        async with updates.listener.listen(), mcp_app.lifespan(mcp_app):
+            yield
 
     app = FastAPI(title="Agentplane Action Service", version="v1", lifespan=lifespan)
     app.state.action_service = service

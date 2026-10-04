@@ -54,7 +54,7 @@ router = APIRouter()
 @router.get("/readyz")
 async def ready(request: Request, service: Notifications) -> dict[str, str]:
     workers = cast(list[asyncio.Task[None]], request.app.state.notification_workers)
-    if not workers or any(worker.done() for worker in workers) or not service.store.wakeups.connected:
+    if not workers or any(worker.done() for worker in workers) or not service.store.wakeups.listener.connected:
         raise HTTPException(503, "notification workers unavailable")
     async with service.store.sessions() as session:
         await session.execute(select(1))
@@ -196,7 +196,7 @@ async def unavailable(request: Request, error: Exception) -> JSONResponse:
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     service = cast(Service, app.state.notification_service)
-    async with service.store.wakeups.listen():
+    async with service.store.wakeups.listener.listen():
         workers = [asyncio.create_task(service.run(), name=f"notifications-{i}") for i in range(4)]
         app.state.notification_workers = workers
         try:

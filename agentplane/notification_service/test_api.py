@@ -103,7 +103,7 @@ async def test_lifespan_owns_workers_and_readiness_tracks_failure_and_shutdown(s
             assert (await client.get("/readyz")).status_code == 503
             assert (await client.get("/healthz")).status_code == 200
         assert stopped == {0, 1, 2, 3}
-        assert not store.wakeups.connected
+        assert not store.wakeups.listener.connected
         assert (await client.get("/readyz")).status_code == 503
 
 

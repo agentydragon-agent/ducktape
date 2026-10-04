@@ -173,7 +173,7 @@ class ActionPushNotifier:
         while True:
             updates = ActionUpdates(self._database_url)
             try:
-                await updates.start()
+                await updates.listener.start()
                 with updates.subscribe_all() as changed:
                     while True:
                         changed.clear()
@@ -188,7 +188,7 @@ class ActionPushNotifier:
             except Exception:
                 logger.warning("push reconciliation unavailable; retrying without logging payloads")
             finally:
-                await updates.close()
+                await updates.listener.close()
             await asyncio.sleep(5)
 
     async def reconcile(self) -> bool:
