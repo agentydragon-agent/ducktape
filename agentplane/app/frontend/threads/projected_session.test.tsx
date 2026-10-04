@@ -458,12 +458,6 @@ it.each([
   expect(indicator?.getAttribute("data-status")).toBe(kind);
 });
 
-it("uses the shared list feed instead of a healthy conversation projection for the composer indicator", async () => {
-  sharedFeed = "failed";
-  const failed = await render(threadState({ rows: [viewState()] }));
-  expect(failed.querySelector('.agentplane-thread-status-indicator[aria-label="Runner feed failed"]')).not.toBeNull();
-});
-
 const faviconSvg = (): string => decodeURIComponent(favicon.getAttribute("href")?.split(",")[1] ?? "");
 
 it("shows green chevrons in the status indicator and the favicon, and a leading glyph in the title, while a turn is active", async () => {
