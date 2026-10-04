@@ -28,4 +28,4 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
     newTag: devel-20261004025227-7be8bd1 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
-    newTag: devel-20261004025204-7be8bd1 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
+    newTag: devel-20261004033641-46bd40b # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
