@@ -21,6 +21,21 @@ on:
         required: false
         type: boolean
         default: false
+      source_commit:
+        description: Exact commit to check out and build (defaults to the triggering commit)
+        required: false
+        type: string
+        default: ""
+      allow_unsafe_pr_checkout:
+        description: Allow a fork checkout after the caller establishes trust
+        required: false
+        type: boolean
+        default: false
+      environment:
+        description: Protected GitHub Environment to gate the build (optional)
+        required: false
+        type: string
+        default: ""
     secrets:
       SOPS_AGE_KEY:
         required: true
@@ -33,6 +48,7 @@ permissions:
 jobs:
   build-push:
     name: Build & push ${{ inputs.image_name }}
+    environment: ${{ inputs.environment || null }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -42,6 +58,9 @@ jobs:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_commit || github.sha }}
+          allow-unsafe-pr-checkout: ${{ inputs.allow_unsafe_pr_checkout }}
 
       - uses: ./.github/actions/setup-nix-attic
         with:
@@ -74,7 +93,7 @@ jobs:
             BUILD_INVOCATION_ID=${{ steps.invocation.outputs.id }}
           linkage_roles: build
           bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
-          run_from_commit: ${{ github.sha }}
+          run_from_commit: ${{ inputs.source_commit || github.sha }}
 
       - name: Download runner wheel from BuildBuddy
         if: inputs.build_runner_wheel
@@ -117,7 +136,7 @@ jobs:
           echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare non-deployable prototype image artifact
-        if: inputs.build_runner_wheel && github.ref_name != 'devel'
+        if: inputs.build_runner_wheel && (github.event_name == 'pull_request_target' || github.ref_name != 'devel')
         shell: bash
         run: |
           set -euo pipefail
@@ -131,10 +150,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload non-deployable prototype image artifact
-        if: inputs.build_runner_wheel && github.ref_name != 'devel'
+        if: inputs.build_runner_wheel && (github.event_name == 'pull_request_target' || github.ref_name != 'devel')
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.image_name }}-${{ github.sha }}
+          name: ${{ inputs.image_name }}-${{ inputs.source_commit || github.sha }}
           path: |
             ${{ runner.temp }}/${{ inputs.image_name }}.tar
             ${{ runner.temp }}/${{ inputs.image_name }}.tar.sha256
@@ -145,7 +164,7 @@ jobs:
       # consider deployable. workflow_dispatch on devel remains useful for a
       # retry after a transient registry failure.
       - name: Push to Forgejo registry
-        if: github.ref_name == 'devel'
+        if: github.event_name != 'pull_request_target' && github.ref_name == 'devel'
         env:
           PIN_TAG: ${{ steps.meta.outputs.pin_tag }}
         run: |
