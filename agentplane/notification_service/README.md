@@ -14,7 +14,7 @@ verified ServiceAccount, shared by its workloads. Every creation specifies `dest
 - `POST /v1/subscriptions`: immutable Action request/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Replay defaults to sequence zero.
 - `GET /v1/subscriptions[?after_id=…]`: ordered pages of 128; continue after the last ID.
-- `GET`, `PATCH`, `DELETE /v1/subscriptions/{id}`: inspect, pause/resume/renew with an expected version,
+- `GET`, `PATCH`, `DELETE /v1/subscriptions/{id}`: inspect, renew with an expected version,
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
 - `GET /v1/inboxes`: the account's qualified session inboxes.
 - `GET /v1/inboxes/{id}/entries?after_cursor=0&limit=128`: non-destructive, contiguous paging, prefix

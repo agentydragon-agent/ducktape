@@ -45,7 +45,6 @@ class Subscription(Base):
     creator: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     version: Mapped[int]
     after_sequence: Mapped[int] = mapped_column(BigInteger)
-    paused: Mapped[bool]
     cancelled: Mapped[bool]
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     next_poll: Mapped[datetime] = mapped_column(DateTime(timezone=True))
