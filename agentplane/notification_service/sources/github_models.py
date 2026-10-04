@@ -8,6 +8,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 
+type RepositoryName = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", max_length=200)]
+
+
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
@@ -77,7 +80,7 @@ class EventFilter(Model):
 
 class GitHubSource(Model):
     provider: Literal["github"]
-    repository: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", max_length=200)
+    repository: RepositoryName
     subject: Subject
     events: Set[EventFilter] | None = Field(default=None, min_length=1, max_length=32)
 

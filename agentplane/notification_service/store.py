@@ -161,14 +161,17 @@ class Store:
             )
             if count is not None and count >= 64:
                 raise QuotaError("64 subscriptions per inbox, including cancelled subscriptions")
+            actions_after_sequence: int | None
+            github_start_position: int | None
             if isinstance(body.source, ActionsSource):
-                position = body.source.after_sequence
+                actions_after_sequence = body.source.after_sequence
+                github_start_position = None
             else:
                 if binding is None:
                     raise ConflictError("GitHub repository must be authorized before subscribing")
-                latest = await session.scalar(select(func.coalesce(func.max(GitHubDelivery.position), 0)))
-                assert latest is not None
-                position = latest
+                actions_after_sequence = None
+                github_start_position = await session.scalar(select(func.coalesce(func.max(GitHubDelivery.position), 0)))
+                assert github_start_position is not None
             row = Subscription(
                 id=uuid4(),
                 inbox_id=inbox.id,
@@ -176,8 +179,9 @@ class Store:
                 creation=body.model_dump(mode="json"),
                 creator=asdict(principal),
                 version=1,
-                position=position,
-                binding=binding.model_dump(mode="json") if binding else None,
+                actions_after_sequence=actions_after_sequence,
+                github_start_position=github_start_position,
+                github_binding=binding.model_dump(mode="json") if binding else None,
                 cancelled=False,
                 expires_at=now + timedelta(days=body.lifetime_days),
                 next_attempt=now,
@@ -401,10 +405,11 @@ class Store:
             row.next_attempt = datetime.now(UTC) + timedelta(seconds=30 if error else 5)
             spec = Subscribe.model_validate(row.creation).source
             assert isinstance(spec, ActionsSource)
+            assert row.actions_after_sequence is not None
             for event in events:
-                if event.sequence <= row.position:
+                if event.sequence <= row.actions_after_sequence:
                     continue
-                if event.sequence != row.position + 1:
+                if event.sequence != row.actions_after_sequence + 1:
                     raise ConflictError("Action event history has a gap")
                 await self.append_event(
                     session,
@@ -413,7 +418,7 @@ class Store:
                     ActionsEvent(provider="actions", request_id=spec.request_id, sequence=event.sequence),
                     event.model_dump(mode="json"),
                 )
-                row.position = event.sequence
+                row.actions_after_sequence = event.sequence
             inbox.updated_at = datetime.now(UTC) if events else inbox.updated_at
 
     async def append_event(
@@ -487,7 +492,7 @@ class Store:
             )
             now = datetime.now(UTC)
             active = (
-                (Subscription.binding["app_id"].astext == str(app_id))
+                (Subscription.github_binding["app_id"].astext == str(app_id))
                 & ~Subscription.cancelled
                 & (Subscription.expires_at > func.now())
             )
@@ -516,6 +521,7 @@ class Store:
             return True
 
     async def github_deliveries(self, source: Subscription, predicate: ColumnElement[bool]) -> list[GitHubDelivery]:
+        assert source.github_start_position is not None
         # Compare the complete identity so the inbox/event unique index serves replay exclusion.
         identity = func.jsonb_build_object(
             "provider",
@@ -541,7 +547,7 @@ class Store:
             return list(
                 await session.scalars(
                     select(GitHubDelivery)
-                    .where(predicate, GitHubDelivery.position > source.position, ~delivered)
+                    .where(predicate, GitHubDelivery.position > source.github_start_position, ~delivered)
                     .order_by(GitHubDelivery.position)
                     .limit(128)
                 )
@@ -554,12 +560,7 @@ class Store:
             inbox = await self.fenced(session, claim)
             row = await session.get(Subscription, source.id)
             assert row is not None
-            if (
-                row.cancelled
-                or row.version != source.version
-                or row.position != source.position
-                or row.expires_at <= datetime.now(UTC)
-            ):
+            if row.cancelled or row.version != source.version or row.expires_at <= datetime.now(UTC):
                 return
             assert isinstance(Subscribe.model_validate(row.creation).source, GitHubSource)
             for delivery, identity in matched:

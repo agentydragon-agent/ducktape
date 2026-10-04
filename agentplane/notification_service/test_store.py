@@ -84,6 +84,14 @@ async def test_owner_idempotence_cancel_and_version(store: Store) -> None:
         await store.change(PRINCIPAL.account, first.id, SubscriptionUpdate(version=cancelled.version))
 
 
+@pytest.mark.parametrize("values", [{"actions_after_sequence": None}, {"github_start_position": 0}])
+async def test_actions_subscription_state_is_source_specific(store: Store, values: dict[str, int | None]) -> None:
+    subscription = await store.subscribe(PRINCIPAL, BODY)
+    with pytest.raises(IntegrityError, match="subscription_source_state"):
+        async with store.sessions.begin() as session:
+            await session.execute(update(Subscription).where(Subscription.id == subscription.id).values(**values))
+
+
 @pytest.mark.parametrize("revision", ["0001_notifications", "0003_remove_pause"])
 async def test_creation_migrations_preserve_populated_inbox(store: Store, engine: AsyncEngine, revision: str) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
@@ -132,7 +140,9 @@ async def test_creation_migrations_preserve_populated_inbox(store: Store, engine
     async with store.sessions() as session:
         row = await session.get(Subscription, subscription.id)
         assert row is not None
-        assert row.position == 3
+        assert row.actions_after_sequence == 3
+        assert row.github_start_position is None
+        assert row.github_binding is None
         assert row.creation == BODY.model_dump(mode="json")
     assert await store.subscription(PRINCIPAL.account, subscription.id) == replayed
     assert await store.subscriptions(PRINCIPAL.account) == [replayed]

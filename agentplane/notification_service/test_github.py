@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import JsonValue, SecretStr, ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.notification_service.api import authenticated_caller, create_app
@@ -31,7 +32,7 @@ from agentplane.notification_service.models import DestinationRef, Subscribe, Su
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
-from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError
+from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError, Repository
 from agentplane.notification_service.sources.github_models import (
     BranchSubject,
     CommitSubject,
@@ -102,6 +103,8 @@ class Upstream:
     responses: dict[str, httpx.Response] = field(default_factory=dict)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
+        assert request.headers["Accept"] == "application/vnd.github+json"
+        assert request.headers["X-GitHub-Api-Version"] == "2022-11-28"
         path = request.url.path
         self.requests.append(path)
         if path.endswith(("/installation", "/access_tokens")):
@@ -214,6 +217,12 @@ async def test_signed_http_durable_acceptance_and_disabled_provider(
         assert (
             await client.post("/v1/webhooks/github", content=malformed, headers=malformed_headers)
         ).status_code == 400
+        for event in ["check_suite", "unknown_event"]:
+            # Event selection comes from the header; a check_run body must not select its own model.
+            mismatched, mismatched_headers = signed(check(), event)
+            assert (
+                await client.post("/v1/webhooks/github", content=mismatched, headers=mismatched_headers)
+            ).status_code == 400
         service.github = None
         assert "github" not in (await client.get("/v1/sources")).json()
         assert (await client.post("/v1/webhooks/github", content=raw, headers=headers)).status_code == 404
@@ -222,6 +231,33 @@ async def test_signed_http_durable_acceptance_and_disabled_provider(
         delivery = await session.scalar(select(GitHubDelivery))
         assert delivery is not None
         assert delivery.payload == comment()
+
+
+@pytest.mark.parametrize(
+    "values", [{"actions_after_sequence": 0}, {"github_start_position": None}, {"github_binding": None}]
+)
+async def test_github_subscription_state_is_source_specific(
+    store: Store, provider: tuple[GitHub, Upstream], values: dict[str, int | None]
+) -> None:
+    github, _ = provider
+    sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    with pytest.raises(IntegrityError, match="subscription_source_state"):
+        async with store.sessions.begin() as session:
+            await session.execute(update(Subscription).where(Subscription.id == sub.id).values(**values))
+
+
+@pytest.mark.parametrize("name", ["owner/repo", "o/" + "r" * 198])
+def test_repository_names_accept_valid_names(name: str) -> None:
+    assert Repository(id=1, full_name=name).full_name == name
+    assert GitHubSource(provider="github", repository=name, subject=SOURCE.subject).repository == name
+
+
+@pytest.mark.parametrize("name", ["repo", "owner/repo/extra", "owner/repo name", "o/" + "r" * 199])
+def test_repository_names_reject_invalid_names(name: str) -> None:
+    with pytest.raises(ValidationError):
+        Repository(id=1, full_name=name)
+    with pytest.raises(ValidationError):
+        GitHubSource(provider="github", repository=name, subject=SOURCE.subject)
 
 
 async def test_replay_boundary_overlapping_matches_and_revocation(
@@ -377,7 +413,7 @@ async def test_late_correlation_survives_restart_and_does_not_block_other_events
     assert claim is not None
     row = await store.source(claim)
     assert row is not None
-    boundary = row.position
+    boundary = row.github_start_position
     await github.reconcile(store, claim, row, source)
     page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
     assert [entry.payload for entry in page.entries] == ([check(HEAD)] if ci_first else [association, check(HEAD)])
@@ -406,7 +442,7 @@ async def test_late_correlation_survives_restart_and_does_not_block_other_events
     async with recovered.sessions() as session:
         row = await session.get(Subscription, sub.id)
     assert row is not None
-    assert row.position == boundary
+    assert row.github_start_position == boundary
     assert row.next_attempt is None
     await restarted.reconcile(recovered, claim, row, source)
     assert (await recovered.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries == page.entries

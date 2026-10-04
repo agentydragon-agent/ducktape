@@ -154,8 +154,8 @@ branch push/create/delete, and immutable commit matching are distinct. Branch de
 following that name. CI matching uses current heads, retained PR/branch-to-SHA associations, explicit
 upstream subject references, and currently accessible installed PR forks. Empty PR arrays are supported
 by SHA correlation. Indexed receipt metadata allows a later association to select an earlier CI receipt,
-even across restarts. There is no grace timeout or moving GitHub scan cursor: the subscription position
-is its immutable start boundary. Only selected, accessible, unmatched receipts occupy each bounded page;
+even across restarts. The GitHub start boundary is immutable and separate from the advancing Actions sequence.
+Database constraints require the state belonging to each subscription's source. Only selected, accessible, unmatched receipts occupy each bounded page;
 unrelated receipts cannot block delivery. Existing inbox identities and subscription matches suppress
 replay, including after payload expiry. An ingress generation fence preserves wakeups during matching.
 
@@ -174,6 +174,6 @@ and expose subscription errors; delivered entries stay available. Transient/rate
 backoff. A changed installation/repository identity requires explicit subscription recreation.
 
 Migration `0005_github` retains existing Actions identities, checkpoints, payloads and delivery state while
-making event identity and source position provider-neutral. Use a coordinated service/schema cutover; older
+making event identity provider-neutral and storing source-specific progress separately. Use a coordinated service/schema cutover; older
 workers cannot use the replaced columns. Downgrade refuses to proceed if GitHub subscriptions or deliveries
 exist, rather than discarding that data.

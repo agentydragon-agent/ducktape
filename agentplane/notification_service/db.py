@@ -50,6 +50,14 @@ class Subscription(Base):
     __table_args__ = (
         UniqueConstraint("inbox_id", "idempotency_key"),
         CheckConstraint("creation ? 'source'", name="subscription_creation_source"),
+        CheckConstraint(
+            "CASE creation #>> '{source,provider}' "
+            "WHEN 'actions' THEN actions_after_sequence IS NOT NULL AND github_start_position IS NULL "
+            "AND github_binding IS NULL "
+            "WHEN 'github' THEN actions_after_sequence IS NULL AND github_start_position IS NOT NULL "
+            "AND github_binding IS NOT NULL ELSE false END",
+            name="subscription_source_state",
+        ),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True)
     inbox_id: Mapped[UUID] = mapped_column(ForeignKey("inbox.id", ondelete="CASCADE"))
@@ -57,10 +65,11 @@ class Subscription(Base):
     creation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     creator: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     version: Mapped[int]
-    # Actions: consumed sequence. GitHub: immutable subscription-start boundary.
-    position: Mapped[int] = mapped_column(BigInteger)
+    actions_after_sequence: Mapped[int | None] = mapped_column(BigInteger)
+    # Immutable lower bound for GitHub receipts eligible for this subscription.
+    github_start_position: Mapped[int | None] = mapped_column(BigInteger)
     generation: Mapped[int] = mapped_column(BigInteger, default=0)
-    binding: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
+    github_binding: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
     cancelled: Mapped[bool]
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # Next source reconciliation, not a runner delivery timestamp; None waits for a new event.

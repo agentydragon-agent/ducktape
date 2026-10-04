@@ -149,7 +149,8 @@ class Service:
                     try:
                         spec = Subscribe.model_validate(source.creation).source
                         if isinstance(spec, ActionsSource):
-                            events = await self.actions.events(owner, spec.request_id, source.position)
+                            assert source.actions_after_sequence is not None
+                            events = await self.actions.events(owner, spec.request_id, source.actions_after_sequence)
                             await self.store.record(claim, source, events)
                         elif self.github is None:
                             raise GitHubUnavailableError("GitHub provider is disabled")

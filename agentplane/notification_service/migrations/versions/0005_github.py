@@ -16,8 +16,18 @@ def upgrade() -> None:
     op.execute("ALTER INDEX ix_inbox_next_poll RENAME TO ix_inbox_next_attempt")
     op.add_column("subscription", sa.Column("generation", sa.BigInteger(), nullable=False, server_default="0"))
     op.alter_column("subscription", "generation", server_default=None)
-    op.alter_column("subscription", "after_sequence", new_column_name="position")
-    op.add_column("subscription", sa.Column("binding", postgresql.JSONB(), nullable=True))
+    op.alter_column("subscription", "after_sequence", new_column_name="actions_after_sequence", nullable=True)
+    op.add_column("subscription", sa.Column("github_start_position", sa.BigInteger(), nullable=True))
+    op.add_column("subscription", sa.Column("github_binding", postgresql.JSONB(), nullable=True))
+    op.create_check_constraint(
+        "subscription_source_state",
+        "subscription",
+        "CASE creation #>> '{source,provider}' "
+        "WHEN 'actions' THEN actions_after_sequence IS NOT NULL AND github_start_position IS NULL "
+        "AND github_binding IS NULL "
+        "WHEN 'github' THEN actions_after_sequence IS NULL AND github_start_position IS NOT NULL "
+        "AND github_binding IS NOT NULL ELSE false END",
+    )
     op.drop_column("subscription", "request_id")
     op.add_column("entry", sa.Column("event", postgresql.JSONB(), nullable=True))
     op.execute(
@@ -83,5 +93,7 @@ def downgrade() -> None:
     op.add_column("subscription", sa.Column("request_id", sa.Uuid(), nullable=True))
     op.execute("UPDATE subscription SET request_id = (creation #>> '{source,request_id}')::uuid")
     op.alter_column("subscription", "request_id", nullable=False)
-    op.drop_column("subscription", "binding")
-    op.alter_column("subscription", "position", new_column_name="after_sequence")
+    op.drop_constraint("subscription_source_state", "subscription", type_="check")
+    op.drop_column("subscription", "github_binding")
+    op.drop_column("subscription", "github_start_position")
+    op.alter_column("subscription", "actions_after_sequence", new_column_name="after_sequence", nullable=False)

@@ -30,6 +30,7 @@ from agentplane.notification_service.sources.github_models import (
     GitHubEvent,
     GitHubSource,
     PullRequestSubject,
+    RepositoryName,
 )
 from agentplane.notification_service.store import Store
 
@@ -39,7 +40,6 @@ from agentplane.notification_service.store import Store
 logger = logging.getLogger(__name__)
 
 _PAYLOAD = TypeAdapter(dict[str, JsonValue])
-LIFECYCLE_EVENTS = {"installation", "installation_repositories"}
 SUPPORTED_EVENTS = CI_EVENTS | PR_EVENTS | REF_EVENTS
 
 
@@ -72,7 +72,7 @@ class Installation(Upstream):
 
 class Repository(Upstream):
     id: int = Field(gt=0)
-    full_name: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", max_length=200)
+    full_name: RepositoryName
 
 
 class Envelope(Upstream):
@@ -168,26 +168,30 @@ class Context:
     heads: set[str]
 
 
-def validate_payload(event: str, payload: dict[str, JsonValue]) -> Envelope:
-    match event:
-        case EventName.PULL_REQUEST | EventName.PULL_REQUEST_REVIEW | EventName.PULL_REQUEST_REVIEW_COMMENT:
-            return PullRequestPayload.model_validate(payload)
-        case EventName.ISSUE_COMMENT:
-            return IssuePayload.model_validate(payload)
-        case EventName.CHECK_RUN:
-            return CheckRunPayload.model_validate(payload)
-        case EventName.CHECK_SUITE:
-            return CheckSuitePayload.model_validate(payload)
-        case EventName.WORKFLOW_RUN:
-            return WorkflowPayload.model_validate(payload)
-        case EventName.STATUS:
-            return StatusPayload.model_validate(payload)
-        case EventName.PUSH:
-            return PushPayload.model_validate(payload)
-        case EventName.CREATE | EventName.DELETE:
-            return RefPayload.model_validate(payload)
-        case _:
-            return Envelope.model_validate(payload)
+# GitHub supplies the discriminator in a header, not in the JSON body.
+PAYLOAD_MODELS: dict[str, type[Envelope]] = {
+    EventName.PULL_REQUEST: PullRequestPayload,
+    EventName.PULL_REQUEST_REVIEW: PullRequestPayload,
+    EventName.PULL_REQUEST_REVIEW_COMMENT: PullRequestPayload,
+    EventName.ISSUE_COMMENT: IssuePayload,
+    EventName.CHECK_RUN: CheckRunPayload,
+    EventName.CHECK_SUITE: CheckSuitePayload,
+    EventName.WORKFLOW_RUN: WorkflowPayload,
+    EventName.STATUS: StatusPayload,
+    EventName.PUSH: PushPayload,
+    EventName.CREATE: RefPayload,
+    EventName.DELETE: RefPayload,
+    "installation": Envelope,
+    "installation_repositories": Envelope,
+}
+
+
+def api_headers(bearer: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {bearer}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
 
 
 def correlation(payload: Envelope) -> tuple[str | None, list[str]]:
@@ -227,11 +231,7 @@ class GitHub:
         bearer = jwt.encode(
             {"iat": now - 30, "exp": now + 540, "iss": str(self.settings.app_id)}, private_key, algorithm="RS256"
         )
-        return {
-            "Authorization": f"Bearer {bearer}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
+        return api_headers(bearer)
 
     def start(self) -> None:
         # Enabled-but-incomplete configuration must fail before HTTP readiness.
@@ -284,11 +284,7 @@ class GitHub:
                 )
                 token = Token.model_validate_json(response.content)
                 self.tokens[installation_id] = token
-        return {
-            "Authorization": f"Bearer {token.token.get_secret_value()}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
+        return api_headers(token.token.get_secret_value())
 
     async def repository(self, name: str) -> tuple[GitHubBinding, dict[str, str]]:
         response = await self.request("GET", f"/repos/{name}/installation", self.app_headers(), allow_missing=True)
@@ -347,10 +343,10 @@ class GitHub:
             raise InvalidSignatureError
         if event == "ping":
             return True
-        if event not in SUPPORTED_EVENTS | LIFECYCLE_EVENTS:
+        if event not in PAYLOAD_MODELS:
             raise ValueError("unsupported GitHub webhook event")
         payload = _PAYLOAD.validate_json(raw)
-        envelope = validate_payload(event, payload)
+        envelope = PAYLOAD_MODELS[event].model_validate(payload)
         if event in SUPPORTED_EVENTS and envelope.repository is None:
             raise ValueError("repository event requires a repository")
         sha, subjects = correlation(envelope)
@@ -369,7 +365,7 @@ class GitHub:
 
     async def reconcile(self, store: Store, claim: Inbox, subscription: Subscription, source: GitHubSource) -> None:
         context = await self.context(source)
-        if context.binding != GitHubBinding.model_validate(subscription.binding):
+        if context.binding != GitHubBinding.model_validate(subscription.github_binding):
             raise GitHubUnavailableError("GitHub source installation/repository changed; recreate the subscription")
         delivery = GitHubDelivery
         direct: ColumnElement[bool] = false()
