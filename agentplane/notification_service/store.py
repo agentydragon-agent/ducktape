@@ -170,7 +170,9 @@ class Store:
                 if binding is None:
                     raise ConflictError("GitHub repository must be authorized before subscribing")
                 actions_after_sequence = None
-                github_start_position = await session.scalar(select(func.coalesce(func.max(GitHubDelivery.position), 0)))
+                github_start_position = await session.scalar(
+                    select(func.coalesce(func.max(GitHubDelivery.position), 0))
+                )
                 assert github_start_position is not None
             row = Subscription(
                 id=uuid4(),
