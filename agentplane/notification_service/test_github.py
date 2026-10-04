@@ -48,7 +48,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrinci
 
 HEAD = "a" * 40
 NEXT = "b" * 40
-SECRET = b"fixture-signing-secret-not-a-real-secret"
+SECRET = b"test-webhook-secret!"  # 20 characters: accepted on startup and used by the signed-delivery tests.
 PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner", "pod", "uid")
 SOURCE = GitHubSource(
     provider="github", repository="owner/repo", subject=PullRequestSubject(kind="pull_request", number=7)
@@ -694,7 +694,7 @@ github: null
     with pytest.raises(ValidationError, match="Field required"):
         Settings(database_url="postgresql://unused", _cli_parse_args=False)
     private = "fixture-private-key\nmultiline"
-    secret = "fixture-webhook-secret-that-is-long-enough"
+    secret = "test-signing-key"  # 16-character minimum.
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY", private)
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET", secret)
     settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
@@ -708,10 +708,10 @@ github: null
     config.write_text(config.read_text().replace("github:\n  app_id: 42\n", "github: null\n"))
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__APP_ID", "42")
     assert Settings(database_url="postgresql://unused", _cli_parse_args=False).github is not None
-    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET", "too-short-secret")
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET", "test-signing-ke")
     with pytest.raises(ValidationError) as failure:
         Settings(database_url="postgresql://unused", _cli_parse_args=False)
-    assert "too-short-secret" not in str(failure.value)
+    assert "test-signing-ke" not in str(failure.value)
     config.unlink()
     with pytest.raises(ValueError, match="regular file"):
         Settings(database_url="postgresql://unused", _cli_parse_args=False)

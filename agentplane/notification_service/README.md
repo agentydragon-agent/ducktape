@@ -43,7 +43,7 @@ GitHub is disabled when `github` is absent from both YAML and environment. To en
 `github.app_id` in YAML and supply these Secret-backed environment variables:
 
 - `AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY`: PEM App private key.
-- `AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET`: random webhook signing secret, at least 32 bytes.
+- `AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET`: random webhook signing secret, at least 16 characters.
 
 The secrets are `SecretStr` fields and are validated before HTTP startup. Nested environment settings
 contribute configuration even if YAML has `github: null`; remove both to disable the source. No fixed

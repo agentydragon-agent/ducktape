@@ -234,15 +234,8 @@ class GitHub:
         return api_headers(bearer)
 
     def start(self) -> None:
-        # Enabled-but-incomplete configuration must fail before HTTP readiness.
+        # Validate the App private key before HTTP readiness; Settings validates the signing secret.
         self.app_headers()
-        self.signing_secret()
-
-    def signing_secret(self) -> bytes:
-        secret = self.settings.webhook_secret.get_secret_value().encode()
-        if len(secret) < 32:
-            raise ValueError("GitHub signing secret must have at least 32 bytes")
-        return secret
 
     async def request(
         self,
@@ -340,7 +333,9 @@ class GitHub:
         return context
 
     async def ingest(self, store: Store, event: str, delivery_id: UUID, signature: str, raw: bytes) -> bool:
-        expected = "sha256=" + hmac.new(self.signing_secret(), raw, hashlib.sha256).hexdigest()
+        expected = "sha256=" + hmac.new(
+            self.settings.webhook_secret.get_secret_value().encode(), raw, hashlib.sha256
+        ).hexdigest()
         if not signature.isascii() or not hmac.compare_digest(expected, signature):
             raise InvalidSignatureError
         if event == "ping":
