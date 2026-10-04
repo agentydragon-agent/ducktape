@@ -7,7 +7,7 @@ import pytest_bazel
 import yaml
 
 from cluster.cdk8s.litellm.keys import model_lanes
-from model_catalog.catalog import GPT6_ASTRA_MESSAGES, TANA_HAIKU
+from model_catalog.catalog import GPT6_ASTRA_MESSAGES, TANA_HAIKU, TANA_SONNET
 from model_catalog.policies import KEY_MODEL_LANES, ModelLaneRoutes
 from util.bazel.runfiles import get_required_path
 
@@ -17,6 +17,20 @@ def test_lanes_match_committed_terraform_inputs() -> None:
     [resource] = yaml.safe_load_all(path.read_text())
     variables = {entry["name"]: entry["value"] for entry in resource["spec"]["vars"]}
     assert {name: lane.model_dump() for name, lane in model_lanes(KEY_MODEL_LANES).items()} == variables["model_lanes"]
+
+
+def test_lane_preserves_authorization_and_fallback_order() -> None:
+    lanes = model_lanes(
+        {
+            "with-fallbacks": ModelLaneRoutes(allowed=(TANA_SONNET, TANA_HAIKU), fallbacks=(TANA_HAIKU, TANA_SONNET)),
+            "without-fallbacks": ModelLaneRoutes(allowed=(TANA_SONNET,)),
+        }
+    )
+    assert lanes["with-fallbacks"].model_dump() == {
+        "allowed_models": [TANA_SONNET.id, TANA_HAIKU.id],
+        "fallback_models": [TANA_HAIKU.id, TANA_SONNET.id],
+    }
+    assert lanes["without-fallbacks"].fallback_models == []
 
 
 def test_lane_cannot_authorize_an_unserved_route() -> None:

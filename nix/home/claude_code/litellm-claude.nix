@@ -21,8 +21,7 @@
 { pkgs, config }:
 let
   inherit (pkgs) lib;
-  models =
-    (lib.importJSON ../../../model_catalog/claude-wrappers.json).litellm-claude;
+  models = (lib.importJSON ../../../model_catalog/claude-wrappers.json).litellm-claude;
 in
 import ./gateway.nix { inherit pkgs lib; } "litellm-claude" {
   baseUrl = "https://litellm.allegedly.works";

@@ -31,16 +31,16 @@ changing proxy behavior or applying a harness context override.
 
 ## Projections
 
-| Consumer               | Input                                            | Output                                                     |
-| ---------------------- | ------------------------------------------------ | ---------------------------------------------------------- |
-| LiteLLM                | `SERVED_ROUTES`, `HIDDEN_ALIASES`, deployment bindings                | Proxy config and alias settings                            |
-| Terraform virtual keys | `KEY_MODEL_LANES`                               | `model_lanes`: allowed IDs and ordered fallback IDs                      |
-| Agentplane app         | `HarnessRoutes`                                  | App-owned `ModelCatalog` records and harness ID lists      |
-| Agentplane environment | Same `HarnessRoutes`                             | Structured source retained for ingress metadata generation |
-| OpenClaw public coder  | `PUBLIC_CODER_MODELS`                            | OpenClaw IDs, names, limits, and reasoning flags           |
-| Parked Haku OpenClaw   | Selected subscription routes and command aliases | Native Claude Code model slugs                             |
-| Gatus                  | Selected Ollama route                            | Probe request model ID                                     |
-| Runner configuration   | `RUNNER_CONTEXT_OVERRIDES`                       | Existing context-window override map                       |
+| Consumer               | Input                                                  | Output                                                     |
+| ---------------------- | ------------------------------------------------------ | ---------------------------------------------------------- |
+| LiteLLM                | `SERVED_ROUTES`, `HIDDEN_ALIASES`, deployment bindings | Proxy config and alias settings                            |
+| Terraform virtual keys | `KEY_MODEL_LANES`                                      | `model_lanes`: allowed IDs and ordered fallback IDs        |
+| Agentplane app         | `HarnessRoutes`                                        | App-owned `ModelCatalog` records and harness ID lists      |
+| Agentplane environment | Same `HarnessRoutes`                                   | Structured source retained for ingress metadata generation |
+| OpenClaw public coder  | `PUBLIC_CODER_MODELS`                                  | OpenClaw IDs, names, limits, and reasoning flags           |
+| Parked Haku OpenClaw   | Selected subscription routes and command aliases       | Native Claude Code model slugs                             |
+| Gatus                  | Selected Ollama route                                  | Probe request model ID                                     |
+| Runner configuration   | `RUNNER_CONTEXT_OVERRIDES`                             | Existing context-window override map                       |
 
 For example, a preset chooses `GPT6_LUNA_RESPONSES`; the app renderer emits its ID,
 display name, and reasoning choices. The key renderer emits only its ID. Neither knows

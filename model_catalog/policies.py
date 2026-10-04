@@ -49,6 +49,8 @@ CHEAP_EXPERIMENTS_ROUTES = (
     GPT6_LUNA_MESSAGES,
     GPT6_LUNA_RESPONSES,
 )
+
+
 @dataclass(frozen=True)
 class ModelLaneRoutes:
     """Authorization and routing policy for a named group of LiteLLM clients.
@@ -75,6 +77,7 @@ KEY_MODEL_LANES = {
     "ollama_chat_client_models": ModelLaneRoutes(allowed=OLLAMA_CHAT_ROUTES),
     "cheap_experiments_models": ModelLaneRoutes(allowed=CHEAP_EXPERIMENTS_ROUTES),
 }
+
 
 @dataclass(frozen=True)
 class ClaudeWrapperModels:

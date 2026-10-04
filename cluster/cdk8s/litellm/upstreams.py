@@ -42,7 +42,9 @@ UPSTREAM_BINDINGS: dict[Upstream, UpstreamBinding] = {
     GOOGLE_EMBED: UpstreamBinding(api_base=None, api_key="os.environ/GEMINI_API_KEY"),
     MISTRAL_CHAT: UpstreamBinding(api_base=None, api_key="os.environ/MISTRAL_API_KEY"),
     OLLAMA_EMBED: UpstreamBinding(api_base=_OLLAMA_BASE, api_key=None),
-    TANA_MESSAGES: UpstreamBinding(api_base="https://app.tana.inc/functions", api_key="os.environ/TANA_FIREBASE_REFRESH_TOKEN"),
+    TANA_MESSAGES: UpstreamBinding(
+        api_base="https://app.tana.inc/functions", api_key="os.environ/TANA_FIREBASE_REFRESH_TOKEN"
+    ),
     OLLAMA_NATIVE: UpstreamBinding(api_base=_OLLAMA_BASE, api_key=None),
     OLLAMA_OPENAI: UpstreamBinding(api_base=f"{_OLLAMA_BASE}/v1", api_key="ollama"),
 }

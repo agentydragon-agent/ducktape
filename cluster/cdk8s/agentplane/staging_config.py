@@ -31,8 +31,8 @@ from cluster.cdk8s.agentplane.app_settings import (
     settings,
 )
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, SONNET_SUBSCRIPTION
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, SONNET_SUBSCRIPTION
 
 _NAMESPACE = "agentplane-staging"
 _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"

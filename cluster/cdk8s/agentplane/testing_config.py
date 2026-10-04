@@ -8,8 +8,8 @@ from __future__ import annotations
 from agentplane.app.action_federation import ActionFederationSettings
 from agentplane.app.main import AppSettingsConfig
 from cluster.cdk8s.agentplane.app_settings import settings
-from model_catalog.catalog import GPT6_LUNA_RESPONSES
 from cluster.cdk8s.model_selections import TESTING_APP_MODELS
+from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
 _NAMESPACE = "agentplane-testing"
 

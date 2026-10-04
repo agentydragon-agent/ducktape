@@ -37,13 +37,6 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from model_catalog.catalog import (
-    GPT6_ASTRA_RESPONSES,
-    GPT6_LUNA_RESPONSES,
-    OLLAMA_EMBEDDING_ROUTE,
-    Provider,
-    Route,
-)
 from cluster.cdk8s.model_selections import PUBLIC_CODER_MODELS
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import (
@@ -55,6 +48,7 @@ from cluster.cdk8s.openclaw_gateway import (
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from model_catalog.catalog import GPT6_ASTRA_RESPONSES, GPT6_LUNA_RESPONSES, OLLAMA_EMBEDDING_ROUTE, Provider, Route
 
 _CONFIG_MAP_NAME = "config"
 _NAME = "public-coder-agent"

@@ -27,12 +27,12 @@ from cluster.cdk8s.grocy import app as grocy_app
 from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.matrix import matrix
-from model_catalog.catalog import OLLAMA_GPT_OSS_20B_128K
 from cluster.cdk8s.monitoring import grafana_instance, loki, mimir
 from cluster.cdk8s.nix_cache import attic
 from cluster.cdk8s.ollama import app as ollama_app
 from cluster.cdk8s.service_ref import ServiceRef
 from cluster.cdk8s.website import website
+from model_catalog.catalog import OLLAMA_GPT_OSS_20B_128K
 
 DB_URI_ENV = "GATUS_DB_URI"
 LITELLM_API_KEY_ENV = "LITELLM_API_KEY"

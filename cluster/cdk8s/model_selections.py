@@ -15,6 +15,7 @@ from model_catalog.catalog import (
     Route,
 )
 
+
 @dataclass(frozen=True)
 class HarnessRoutes:
     """Generation-time selections retained until app and ingress settings are emitted."""

@@ -15,9 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.secret_ref import SecretRef
 from model_catalog.catalog import SERVED_ROUTES
 from model_catalog.policies import KEY_MODEL_LANES, ModelLaneRoutes
-from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
 
@@ -59,6 +59,7 @@ def model_lanes(lanes: Mapping[str, ModelLaneRoutes]) -> dict[str, ModelLane]:
             allowed_models=[route.id for route in lane.allowed], fallback_models=[route.id for route in lane.fallbacks]
         )
     return result
+
 
 def keys_chart(app: App) -> Chart:
     """Mints the agent and laptop-client LiteLLM virtual keys (tf/gitops/litellm-keys).

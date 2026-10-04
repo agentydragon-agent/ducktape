@@ -84,5 +84,5 @@ exports_files(
 
 exports_files(
     ["litellm/keys-tf/keys-tf.k8s.yaml"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = ["//cluster/cdk8s/litellm:__pkg__"],
 )

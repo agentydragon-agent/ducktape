@@ -13,8 +13,8 @@ from agentplane.app.main import AppSettingsConfig
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
-from model_catalog.catalog import Route
 from cluster.cdk8s.model_selections import HarnessRoutes
+from model_catalog.catalog import Route
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 _THREAD_PRESET_HAKU_CLAUDE = "haku-claude"

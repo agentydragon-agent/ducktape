@@ -4,8 +4,8 @@ import json
 
 import pytest_bazel
 
-from model_catalog.nix import OUTPUT_PATH, claude_wrapper_models
 from model_catalog.catalog import ANTIGRAVITY_PRO, SERVED_ROUTES
+from model_catalog.nix import OUTPUT_PATH, claude_wrapper_models
 from model_catalog.policies import CLAUDE_WRAPPER_MODELS, KEY_MODEL_LANES
 from util.bazel.runfiles import get_required_path
 

@@ -349,8 +349,8 @@ py_library(
         "//agentplane/app:presets",
         "//agentplane/runner:harness",
         "//agentplane/sandbox_service:kubernetes_grants",
-        "//model_catalog:catalog",
         "//cluster/cdk8s:model_selections",
+        "//model_catalog:catalog",
     ],
 )
 
@@ -395,8 +395,8 @@ py_library(
         ":app_settings",
         "//agentplane/app:action_federation",
         "//agentplane/app:main",
-        "//model_catalog:catalog",
         "//cluster/cdk8s:model_selections",
+        "//model_catalog:catalog",
     ],
 )
 
@@ -418,8 +418,8 @@ py_library(
         "//agentplane/runner:harness",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//cluster/cdk8s:agent_access_profiles",
-        "//model_catalog:catalog",
         "//cluster/cdk8s:model_selections",
+        "//model_catalog:catalog",
     ],
 )
 

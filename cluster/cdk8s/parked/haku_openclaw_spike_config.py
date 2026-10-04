@@ -42,13 +42,6 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.forgejo_images import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import config_map_chart, copy_source_file
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
-from model_catalog.catalog import (
-    FABLE_SUBSCRIPTION,
-    HAIKU_SUBSCRIPTION,
-    OPUS_SUBSCRIPTION,
-    SONNET_SUBSCRIPTION,
-    Route,
-)
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import (
     disabled_commands,
@@ -61,6 +54,7 @@ from cluster.cdk8s.providers.seaweedfs.bucket import Bucket, BucketAccess
 from cluster.cdk8s.providers.seaweedfs.s3_credentials import S3Credentials
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from model_catalog.catalog import FABLE_SUBSCRIPTION, HAIKU_SUBSCRIPTION, OPUS_SUBSCRIPTION, SONNET_SUBSCRIPTION, Route
 
 _NAMESPACE = "haku-openclaw-spike"
 _NAME = "haku-openclaw-spike"

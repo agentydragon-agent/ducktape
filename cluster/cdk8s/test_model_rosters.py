@@ -7,6 +7,12 @@ import pytest_bazel
 import yaml
 
 from cluster.cdk8s.litellm.config import main_proxy_config, model_entry
+from cluster.cdk8s.model_selections import (
+    PUBLIC_CODER_MODELS,
+    RUNNER_CONTEXT_OVERRIDES,
+    STAGING_APP_MODELS,
+    TESTING_APP_MODELS,
+)
 from model_catalog.catalog import (
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,
@@ -20,12 +26,6 @@ from model_catalog.catalog import (
     SERVED_ROUTES,
     Model,
     Route,
-)
-from cluster.cdk8s.model_selections import (
-    PUBLIC_CODER_MODELS,
-    RUNNER_CONTEXT_OVERRIDES,
-    STAGING_APP_MODELS,
-    TESTING_APP_MODELS,
 )
 from model_catalog.policies import KEY_MODEL_LANES
 from util.bazel.runfiles import get_required_path
