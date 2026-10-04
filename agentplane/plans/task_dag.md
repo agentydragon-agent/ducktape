@@ -1,8 +1,9 @@
 # Agentplane task DAG
 
-This is the authoritative map of remaining Agentplane work. Edges are technical dependencies;
-operator priority is separate. Completed implementation belongs in the component contracts, not
-this backlog. See the [Action Service specification](../action_service/SPEC.md),
+This is the authoritative map of **unfinished** Agentplane tasks. Edges are technical dependencies;
+operator priority is separate. Remove a task when completed; do not retain done nodes, shipped-foundation
+sections or acceptance-history recaps here. Completed work and evidence belong in component contracts,
+not this backlog. See the [Action Service specification](../action_service/SPEC.md),
 [service integration details](../action_service/README.md),
 [workload authentication](../docs/workload_authentication.md),
 [operator federation](../docs/operator_federation.md),
@@ -41,12 +42,6 @@ Proposed execution order for the Thread correctness/UI track:
   provisional; compare them with the full roadmap when scheduling. `HARNESS_CONFIG_ISOLATION` is
   the shared technical prerequisite.
 
-Haku Console's deployed config disables its agent-facing `/mcp` endpoint and MCP OAuth discovery
-routes ([#8621](https://github.com/agentydragon/ducktape/pull/8621)), so migrating its tools and
-auto-approval policies into Action Service is no longer planned. Console's browser approval queue,
-APIs, catalog and audit ledger remain deployed and Haku-owned. The queue is a likely next Haku
-retirement; disabling `/mcp` has not completed it, and no audit-ledger deletion is implied. This
-cleanup is outside the Agentplane DAG.
 Transcript search/lookup (`T3`) remains deferred. Priority is not a dependency between these tracks.
 
 ## DAG
@@ -71,9 +66,17 @@ flowchart TB
     PC_EGRESS_CREDENTIALS["Planned configuration<br/>public-coder's iron-proxy substitutions as EgressCredentials<br/>plus its dedicated ServiceAccount"]:::future
     PC_EGRESS["Capstone<br/>public-coder-agent egress migration<br/>proven equivalent, cut over, old proxy retired"]:::milestone
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
+    PUBLIC_MCP_ROUTE_ISOLATION["Remaining deployed security check<br/>operator REST and enrollment APIs<br/>unreachable through public MCP route"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
-    ING["Next notification provider<br/>GitHub PR updates and comments<br/>Actions inbox and Sandbox Service shipped"]:::future
+    NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
+    NOTIFICATION_DEBOUNCE["In review #8988<br/>configurable runner-notice debounce<br/>then deployed burst acceptance"]:::active
+    GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
+    HOME_ASSISTANT_NOTIFICATIONS["Unranked future source<br/>Home Assistant events and state changes"]:::future
+    NOTIFICATION_SOURCE_WIRING["Conditional future refactor<br/>extract shared source wiring<br/>from concrete implementations"]:::future
+    CRON_NOTIFICATIONS["Unranked future capability<br/>scheduled / cron notifications<br/>durable schedules and missed-tick policy"]:::future
+    NOTIFICATION_PRESENTATION["Unranked future capability<br/>structured notification provenance<br/>compact frontend presentation"]:::future
+    KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
     HARNESS_SKILLS["Unranked candidate<br/>project-scoped skills and commands<br/>both native harnesses"]:::future
@@ -119,11 +122,9 @@ flowchart TB
     THREAD_OUTLIVES_SANDBOX --> AG
     HOSTED_THREAD_SURFACES --> AG
     CROSS_IDENTITY_READ_POLICY --> AG
-    CROSS_IDENTITY_READ_POLICY -. future cross-account delivery only .-> ING
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     PC_EGRESS_CREDENTIALS --> PC_EGRESS
 
-    INPUT_DELIVERY -. bounds recovery guarantees .-> ING
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_SKILLS
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_WEB_SEARCH
     HARNESS_CONFIG_ISOLATION -. prerequisite .-> HARNESS_VISUAL_INPUT
@@ -149,42 +150,6 @@ flowchart TB
     MANAGED_SA_RBAC -. third grant kind to render .-> CALLER_GRANT_VIEW
     CLAUDE_AI_SA -. one account by hand, then the kind .-> MANAGED_SA_RBAC
 ```
-
-Completed work is off this board: the credentialless MCP vertical, whose deployed Claude/Codex
-proof is the [acceptance suite](../acceptance/README.md), credentialed provider acceptance, and the
-first external client, operator approval, and Web Push proofs below. Input delivery and proxy
-survivability proceed independently of the external-client track.
-
-### Tested on staging
-
-On 2026-09-12 the deployed MCP facade accepted a Claude.ai OAuth Connection from Claude Code, an
-external harness rather than an Agentplane-hosted one, bound to a labeled ServiceAccount; policy
-bindings auto-approved GitHub reads that executed through the operator-linked GitHub upstream; a
-repeated idempotency key was refused and recovered by key; a pending Action was approved by the
-operator through Authentik federation and executed; and a browser push arrived and was decided
-from its buttons. Not tested: that operator REST and enrollment-management routes are unreachable
-through the public MCP route; and, left to bug reports, the Deny control, grant retention across
-refresh and restart, negative isolation and revocation for an external client, duplicate Decision or
-Execution under retries or reconnect, push subscription revocation, unavailable-push and SSE
-fallbacks, and Web Push reconciliation after reconnect.
-
-Credentialed provider acceptance -- upstream token refresh and refresh failure, rotation without
-rebuilding the executor, and the Kubernetes provider -- closed on 2026-09-28 on the operator's call
-rather than a recorded run, so what breaks there arrives as a bug report. The implemented contract is
-the [service README](../action_service/README.md); bringing the node back means restoring its edge
-to `PROD`, not inventing one.
-
-The external-client track is complete and single-operator: Identity (configured authority),
-Connection (runtime named client enrollment), and Thread (execution/conversation state), with no
-multi-operator management or per-operator ownership model. A Connection binds to a ServiceAccount,
-the principal policies bind to; backend credentials are the ActionGroup executor's auth modes
-([MCP executor transports](../action_service/README.md#mcp-executor-transports)), shared by every
-caller of the group, and no linked token, static bearer, or kubeconfig reaches the MCP
-client, Sandbox, transcript, or Action prompt. Generic tool discovery stays compact; a client that
-needs more opts into a schema or description per Action.
-The deny lists of the landed [action policies](../docs/action_policies.md) are `DENY_LISTS`.
-Processes that must outlive an SSH connection to the `ssh-mcp` server
-(<../../x/ssh_mcp_server/README.md>) are `SSHDURABLE`.
 
 The Thread correctness/UI track is independent of Action Service milestones.
 Its authority and failure contracts are in
@@ -212,6 +177,12 @@ and walk away.” A browser-owned provisioning chain is not a correct intermedia
 version of that promise. Manual Sandbox creation and explicit open/resume remain
 available while combined start is deferred.
 
+### `PUBLIC_MCP_ROUTE_ISOLATION` — deployed route isolation
+
+**Remaining deployed acceptance:** verify operator REST and enrollment-management endpoints are
+unreachable through the public MCP route. Successful external-client execution does not establish
+this negative boundary. Keep the probe read-only and retain redacted route/status evidence.
+
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
 **Deferred design:** define how an agent can request an expansion or change to its egress rules.
@@ -237,24 +208,9 @@ reconnect; and does it require re-running eligibility checks (the ServiceAccount
 No dependency on anything else; nothing waits on this. Once it exists, the settings table's
 ServiceAccount column becomes a real dropdown instead of static text.
 
-### `SANDBOX_RBAC` — manage Sandbox Kubernetes access, optionally through presets
+### `SANDBOX_RBAC` — verify deployed Sandbox Kubernetes grants
 
-[#8596](https://github.com/agentydragon/ducktape/issues/8596) selected a distinct
-ServiceAccount per managed Sandbox, a Flux-owned named grant catalog, and app-owned
-RoleBindings/ClusterRoleBindings. Presets only prefill launch names; the operator may
-replace them or choose none. The API validates names and stores resolved binding
-templates, while shared Role definitions hold ongoing permissions. The egress sidecar
-substitutes the Sandbox SA's projected Kubernetes token. External OAuth Haku uses its
-existing static caller through an MCP-created sandbox, not a new Kubernetes gateway.
-
-The implementation binds only the created SA and reconciles the persisted selection.
-Same-namespace RoleBindings use an owner reference; external binding scopes use a
-finalizer and orphan sweep. Grant status prevents session start while provisioning is
-incomplete. Current `ELEVATE` grants Action policy bindings only; runtime Kubernetes
-grant editing would need its own authorization and revocation contract.
-`MANAGED_SA_RBAC` carries the same grant for an account with no Sandbox to own it.
-
-**Remaining acceptance:** after the stacked PRs deploy, exercise two managed Haku
+**Remaining acceptance:** exercise two managed Haku
 Sandboxes and an unrelated one through real `kubectl`/sidecar requests; verify Role
 rule edits affect both existing bindings, external OAuth Haku's MCP sandbox reports its
 actual static SA, and only intended runners can read the Coinbase Secret. Verify
@@ -911,36 +867,119 @@ background work, but any such runner surface reuses the Action Service contracts
 second tool-request lifecycle; the settled harness behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
 
-### `SANDBOX_SERVICE` — shipped foundation (not a remaining gate)
+### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 
-The independent Sandbox Service extraction is implemented; Actions notifications use it in the
-verified staging delivery path. The app is a client, not a backend dependency. See the
-[service contract](../sandbox_service/README.md), [extraction record](sandbox_service.md), and
-[dependency rule](../docs/service_boundaries.md). Do not redispatch this extraction or invent a directory
-service as a prerequisite for the next notification provider.
+**Remaining implementation:** replace the notification source's five-second history polling with
+one read-authorized change feed per replica, followed by catch-up from canonical Action events.
+Reuse the existing Action Service committed-event signals; no operator authority or cross-service
+DB access. [Acceptance](notifications.md#next-event-driven-actions-consumption) includes reconnect,
+missed-signal recovery, subscription-creation races and idle-without-polling behavior.
+The shared PostgreSQL listener refactor did not implement this cross-service feed.
 
-Proper runner-leg authentication/TLS, command-scoped delivery tracking, and notification-triggered
-resume remain separate follow-ups. This does not close unrelated native crash/recovery or backup/restore
-acceptance items.
+### `NOTIFICATION_DEBOUNCE` — configurable runner-notice batching
 
-### `ING` — next notification provider: GitHub
+**In review, not shipped:** [#8988](https://github.com/agentydragon/ducktape/pull/8988) adds a per-inbox
+quiet window and maximum wait, leaving persistence and reads immediate. After merge/rollout, verify
+a real event burst produces fewer harness interruptions, sustained traffic cannot indefinitely
+postpone a notice, and explicit acknowledgement/no-reminder semantics remain intact.
 
-**Actions foundation shipped; GitHub remains:** the [notification plan](notifications.md) records
-completed work and the proposed next slice. Source implementation, authenticated APIs, agent egress,
-retained payloads, explicit HWM, native notice confirmation, and the live staging read/ack/cleanup proof
-are no longer pending foundations. Richer async agent advice is in
-[#8860](https://github.com/agentydragon/ducktape/pull/8860), not yet claimed deployed.
+### `GITHUB_DELIVERY_RECOVERY` — remaining live reliability acceptance
 
-Next, support PR lifecycle/comments/reviews and head-aware check/status updates using upstream GitHub
-names. Agree on repository authorization and webhook/App provisioning, minimally generalize the
-Actions-specific source identity without losing data, implement durable verified ingress and matching,
-and prove the full path with a real PR event. No integration-app dependency, new runner access path,
-message broker, personal GitHub Notifications API, or general filter DSL is required.
+**Remaining deployed acceptance:** prove same-delivery-ID redelivery does not append another entry,
+and listener/service restart resumes committed work without missing or duplicating delivery.
+Overlap deduplication and a successful first delivery do not prove these cases. Include failed
+webhook visibility and the operator redelivery procedure: GitHub does not automatically retry
+failed requests, and durable recovery starts at receipt commit. Track remaining access/event/fork
+coverage separately in the [notification plan](notifications.md#remaining-live-verification).
 
-Automatic subscriptions, wake/resume, command-scoped delivery observations, cross-account delivery,
-and runner RPC authentication remain explicitly deferred in the notification plan. Existing
-`INPUT_DELIVERY` evidence still bounds native recovery claims; it does not make the shipped inbox
-an unimplemented service again.
+### `HOME_ASSISTANT_NOTIFICATIONS` — entity and event subscriptions
+
+**Unranked future source:** let agents follow authorized Home Assistant entity state changes and
+events, using upstream entity IDs/event names and source-owned filters/payloads. Choose the connection,
+credential and subscriber authorization model before implementation; do not expose every entity or
+sensitive attribute merely because the service can read it. Prefer Home Assistant's event stream over
+polling. Define reconnect/current-state reconciliation and missed-event limitations explicitly.
+Acceptance covers a real state/event change through inbox and harness, filtering, reconnect and
+revoked access. Monitoring does not grant control of devices or permission to run automations.
+
+### `NOTIFICATION_SOURCE_WIRING` — extract shared wiring as sources accumulate
+
+**Conditional future refactor, not a prerequisite for new sources:** as Actions, GitHub and further
+sources expose concrete duplication, extract the wiring they genuinely share: source registration
+and schema discovery, lifecycle ownership, stream reconnects, durable scheduling/checkpoints or
+inbox handoff. Keep source-specific webhook verification, authorization, filter semantics, payloads
+and upstream vocabulary with each source. Do not invent a universal filter DSL, unnecessary Protocols
+or a new service before there is demonstrated shared behavior. Preserve meaningful differences
+between webhook, watched-event and scheduled sources; add shared tests only for shared guarantees.
+New sources beyond the candidates below should be driven by concrete agent use cases.
+
+### `CRON_NOTIFICATIONS` — scheduled notifications for agents
+
+**Unranked future capability:** let agents subscribe to recurring cron-style notifications through
+the existing inbox/delivery machinery. Define schedule/timezone semantics (including DST), payloads,
+ownership and cancellation in the source contract rather than adding a general-purpose job executor.
+
+Use durable next-fire state and per-occurrence identity so restart or multiple replicas cannot lose
+or duplicate scheduled entries. Choose missed-tick behavior explicitly (skip, bounded catch-up or
+coalesce); bound frequency/backlog and avoid a burst after downtime. Reuse explicit acknowledgement
+and existing destination-lifetime rules; waking suspended harnesses remains a separate decision.
+Acceptance covers firing, cancellation, restart, replica races, missed ticks and DST transitions.
+A scheduled notification must not itself grant authority to perform an Action or bypass approval.
+
+### `NOTIFICATION_PRESENTATION` — structured metadata and compact notification rendering
+
+**Unranked future capability:** attach Agentplane notification metadata to generated runner input,
+then preserve it through the runner journal, Sandbox Service event transport and app projection so
+the frontend knows "this is a notification about this thing." The agent still receives the useful
+retrieval instructions; the human-facing UI should default to a compact summary rather than the
+whole machine-oriented message, with expansion/raw evidence available.
+
+- Define versioned provenance and identity fields: notification origin, inbox/notice identity,
+  covered cursor and safe subject/summary data as appropriate. Decide how a batched notice refers
+  to multiple entries/sources without copying full provider payloads into runner metadata.
+- Preserve metadata through retries, replay, archival and coalesced inputs. Explicitly represent
+  mixed human/notification origins rather than relabeling an entire combined message. Reuse the
+  existing command/Event authority; no parallel frontend notification log or app-owned ingress.
+- Use explicit trusted origin metadata, never a text-prefix heuristic. Ordinary user text that
+  resembles "Agentplane automated notification" must not be hidden or acquire system provenance.
+  Missing/unknown metadata falls back to normal text rendering, and provider content remains untrusted.
+- Acceptance: a real notification renders compactly by default and expands to full retained text;
+  the agent sees unchanged actionable content. Verify older messages, replay/reconnect, mixed-origin
+  coalescing and notification-looking human messages. Rendering must not acknowledge the inbox,
+  hide human input or discard the authoritative message/evidence.
+
+The owning backend/protocol carries metadata without depending on the integration app; the app is
+its presentation client. This is independent of notice debounce and of Kubernetes source selection.
+
+### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
+
+**Unranked future capability; design not selected:** let an Agentplane agent follow an explicitly
+selected Kubernetes workload's rollout while doing other work, then inspect evidence of progress,
+success, failure or stalled rollout. Start with a namespaced Deployment; broader resource kinds,
+Flux reconciliation, Pod warnings and cluster-wide discovery can be evaluated later.
+
+- Choose the read/watch API and its owning backend. A notification-service source is an option,
+  not a prerequisite or a decision to add another service. Reuse existing inbox/notice/acknowledgement
+  machinery if chosen; do not make a backend depend on the integration app or give runners a new
+  notification connection.
+- Define caller-authorized cluster/namespace/resource scope and revocation. A broad worker identity
+  must not silently grant subscribers visibility they lack. Keep monitoring read-only; rollout
+  mutation/remediation stays separately governed through Actions or existing workload authority.
+- Follow Kubernetes list/watch semantics, including resource versions, reconnect and expired-version
+  relist. Pin object UID and rollout generation/revision; distinguish replacement, deletion,
+  supersession and revoked access from successful rollout. Do not promise complete historical replay
+  from ephemeral Kubernetes Events.
+- Derive rollout state from authoritative workload status/conditions (including observed generation
+  and desired/updated/available replicas), not just a convenient Event message or an accepted change.
+  Preserve diagnostic provenance and surface failure/timeout explicitly. Avoid exposing Secrets or
+  unrelated Pod contents; bound retained evidence and coalesce noisy progress updates.
+- Acceptance: an agent starts monitoring, continues other work, receives or retrieves progress and
+  terminal evidence for both a successful and a stalled/failed rollout, and stops monitoring explicitly.
+  Exercise reconnect/relist, duplicate signals, resource replacement and denied/revoked namespace
+  access. If using notifications, prove the inbox-to-harness path and explicit acknowledgement too.
+
+This is independent of the remaining GitHub recovery tests and Action-feed implementation; neither
+is a technical prerequisite for designing Kubernetes monitoring. Prioritization remains open.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 

@@ -9,6 +9,7 @@ payloads when notified. Reads are non-destructive; acknowledgement explicitly ad
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
 
 - [API, authorization, persistence and delivery semantics](docs/api.md)
+- [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.
 - [Plans and deferred work](../plans/notifications.md)
 - `/openapi.json` and authenticated `GET /v1/sources`: schemas and available sources.
 
@@ -70,9 +71,9 @@ The secrets are `SecretStr` fields and are validated before HTTP startup. Nested
 contribute configuration even if YAML has `github: null`; remove both to disable the source. No fixed
 installation ID or OAuth client secret is needed.
 
-The chart leaves GitHub disabled. Register the **agentplane-staging** App following the
-[App checklist](../plans/notifications.md#registration-and-credential-preparation), supply an encrypted
-`cluster/k8s/agentplane-staging/github-app.sops.yaml`, and wire its two keys through `secretKeyRef`.
-No blank credential Secret is deployed. Expose only `/v1/webhooks/github` through HTTPS ingress with
-the matching gateway network rule, hostname and certificate; never expose the workload API publicly.
-Real App delivery through inbox and harness remains a rollout verification step.
+Staging is enabled and the operator has installed the App; see the
+[live acceptance record](docs/staging_github_acceptance.md). Testing remains disabled.
+For another environment, register a separate App, supply its credentials through encrypted deployment
+configuration and `secretKeyRef`, and expose only `/v1/webhooks/github` through HTTPS ingress with
+matching network policy and TLS. Never expose the workload API publicly. Verify real App delivery
+through inbox and harness rather than relying solely on configuration or a successful ingress response.

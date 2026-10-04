@@ -24,11 +24,10 @@ Standing under it:
 - The standalone Action Service landed in PR
   [#5700](https://github.com/agentydragon/ducktape/pull/5700): one invariant ActionRequest, a separate
   human Decision, automatic at-most-one Execution, caller-own/operator-all reads, and no blind retry.
-- Submission is non-blocking, and a caller polls the durable Action event sequence from pending
-  to a terminal state ([Action Service specification](../action_service/SPEC.md)); the open work is
-  making those Decision/result events available in an SA-authorized runner-session inbox and delivering a later
-  machine notice through the [standalone subscriptions service](notifications.md) (`ING` in
-  [the DAG](task_dag.md)).
+- Submission is non-blocking. Agents can follow Decision/result events through an SA-authorized
+  runner-session inbox and machine notices from the [notification service](../notification_service/README.md).
+  Replacing the source's idle Action-history polling remains
+  [`NOTIFICATION_ACTION_FEED`](task_dag.md#notification_action_feed--remove-idle-action-history-polling).
 - [`external_access.md`](external_access.md): delegated identity where the target's RBAC can
   express the boundary, brokered credential where it cannot, agent-requested grants, and the
   revocation gate (placeholder token, substitution only while the ledger and the apiserver agree).
@@ -181,8 +180,8 @@ paragraph that led to it. One agent writes the interaction surface it is then dr
 
 Standing under it:
 
-- The [notification service design](notifications.md) (`ING` in [the DAG](task_dag.md)): a UI event
-  can later be another provider-owned source. Events go to a runner-session inbox; a batched automated
+- The [notification service](../notification_service/README.md): a UI event
+  can later be another source-owned subscription. Events go to a runner-session inbox; a batched automated
   user-message notice tells the agent to retrieve them. UI providers and automatic wake are not v1.
 - Haku already owns a deployed UI: it authors the `haku/ui` repository on Forgejo, the image is
   published from it, and Flux applies the workload under the constrained `haku-state` reconciler

@@ -1,43 +1,41 @@
 # Notification Service: remaining work
 
-Actions subscriptions are shipped and verified in staging ([live proof #8853](https://github.com/agentydragon/ducktape/pull/8853)).
-GitHub PR/branch/commit subscriptions, durable webhook intake, PostgreSQL-driven delivery, settings and
-fixture-based tests are implemented in [#8891](https://github.com/agentydragon/ducktape/pull/8891).
-Staging GitHub configuration and webhook ingress are prepared; installation and live verification
-remain. Implementation is not proof of rollout.
+Actions and GitHub sources are shipped. Staging App **5188971** is enabled and the operator has
+installed it on all their repositories. Real branch CI events and a PR comment were verified through
+inbox and harness on 2026-10-04; see the [acceptance record](../notification_service/docs/staging_github_acceptance.md)
+for evidence and limits. Basic implementation, provisioning and live delivery are no longer pending.
 
 The [service README](../notification_service/README.md), HTTP OpenAPI and source discovery document
-implemented behavior. This file tracks only remaining rollout work and deferred decisions.
+implemented behavior. The [task DAG](task_dag.md) owns work status and dependencies; this file tracks
+remaining acceptance and deferred decisions.
 
 ## Registration and credential preparation
 
-- [ ] Install the registered environment-wide **agentplane-staging** GitHub App on the intended
-      repositories, distinct from the existing MCP OAuth App. Any authenticated
-      agent can subscribe to App-accessible repositories, including private ones; choose installations
-      with that sharing policy in mind. Broader App permissions for other Agentplane uses are allowed.
-- [ ] Configure notification-required repository read permissions: Metadata, Contents, Pull requests,
-      Issues, Checks, Commit statuses, and Actions for workflow-run subscriptions. Subscribe to
-      `pull_request`, `issue_comment`, `pull_request_review`, `pull_request_review_comment`, `check_run`,
-      `status`, `push`, `create`, and `delete`; include `workflow_run`/`check_suite` if used. Verify
-      installation lifecycle delivery and actual fork-PR coverage; an uninstalled fork is not covered
-      merely because its base repository is installed.
+Registration, credentials, staging ingress and installation are complete. The environment-wide
+**agentplane-staging** App is distinct from the MCP OAuth App. Any authenticated agent can currently
+subscribe to App-accessible repositories, including private ones; this shared access policy remains
+intentional. Operator confirmation of installation on all repositories is not a per-repository audit.
+See [App setup](../notification_service/README.md#github-app-setup) for configuration.
 
-## Rollout and live verification
+## Remaining live verification
 
-- [ ] Verify the deployed [staging webhook ingress](../../cluster/k8s/agentplane-staging/README.md#webhook-ingress):
-      Gateway acceptance, TLS and direct delivery to **only `/v1/webhooks/github`**, with workload
-      APIs remaining private. Configure the App webhook URL and matching signing secret.
-- [ ] Perform the coordinated schema/service rollout without resetting the staging database. Verify
-      existing Action subscriptions, inbox identities, payloads and acknowledgements survive; check
-      migration completion, real server/migration image tags and replica readiness.
-- [ ] Verify the GitHub-enabled rollout: replica readiness, source discovery, signed intake,
-      installed-repository authorization and current installation access using the real App.
-- [ ] Prove a real PR comment and check/status update through committed receipt, matching, inbox entry,
-      harness notice, non-destructive read and explicit acknowledgement, with no integration-app
-      dependency. Verify listener/process restart recovery and delivery-ID deduplication. A synthetic
-      signed payload or successful ingress response alone is not the live acceptance proof.
+- [ ] Verify listener/service restart recovery and same-delivery-ID redelivery deduplication.
+      Overlapping-subscription deduplication was proved live; it is not a webhook-redelivery test.
 - [ ] Verify failed-delivery visibility and the operator/API redelivery procedure. GitHub does not
       automatically retry failed webhook requests; durable recovery starts only after receipt commit.
+- [ ] Audit remaining event/permission coverage, including PR lifecycle/reviews, pushes/ref changes,
+      installation lifecycle, revoked access and fork-head correlation. An uninstalled fork is not
+      covered merely because its base repository is installed. Successful ducktape subscriptions do
+      not prove access to every installed repository or all supported event kinds.
+- [ ] Complete live negative ingress checks (unsigned request rejected; private workload API paths
+      not publicly routed). HTTPRoute acceptance, exact-path configuration and successful signed
+      delivery are verified, not a substitute for these negative probes.
+
+## In review: runner-notice debounce
+
+[#8988](https://github.com/agentydragon/ducktape/pull/8988) proposes configurable quiet/max-wait windows.
+This is not yet deployed evidence: verify real burst batching after rollout without delaying inbox
+reads, changing acknowledgements or reintroducing reminders. See `NOTIFICATION_DEBOUNCE` in the DAG.
 
 ## Next: event-driven Actions consumption
 
@@ -58,6 +56,25 @@ Replace the notification source's five-second Action-history polling in a separa
   and that idle subscriptions neither poll history nor prevent unrelated inbox delivery.
 
 ## Deferred decisions and follow-ups
+
+- Home Assistant entity/event subscriptions:
+  [`HOME_ASSISTANT_NOTIFICATIONS`](task_dag.md#home_assistant_notifications--entity-and-event-subscriptions).
+- Extract genuinely shared source wiring as concrete implementations accumulate, not a speculative
+  framework: [`NOTIFICATION_SOURCE_WIRING`](task_dag.md#notification_source_wiring--extract-shared-wiring-as-sources-accumulate).
+
+- Recurring scheduled/cron notifications with durable scheduling and explicit missed-tick behavior:
+  [`CRON_NOTIFICATIONS`](task_dag.md#cron_notifications--scheduled-notifications-for-agents).
+
+- Structured notification-message provenance for eventual compact frontend rendering:
+  [`NOTIFICATION_PRESENTATION`](task_dag.md#notification_presentation--structured-metadata-and-compact-notification-rendering).
+  Preserve full agent-facing text and raw evidence; never identify notices by text prefix alone.
+
+- Agent-visible Kubernetes rollout monitoring, potentially as a notification source:
+  [`KUBERNETES_MONITORING`](task_dag.md#kubernetes_monitoring--agents-observe-rollout-progress-and-outcomes).
+  Backend ownership, authorization and the watch API remain design choices.
+- Authenticated discovery of App-accessible repositories and source capabilities:
+  [#8981](https://github.com/agentydragon/ducktape/issues/8981). Distinguish accessible repositories,
+  active subscriptions and healthy delivery without exposing other agents' subscriptions.
 
 - Bootstrap GitHub head/fork associations, then maintain them from durable webhooks instead of
   refetching current heads on every matching pass. Keep authorization/revocation checks separate;
