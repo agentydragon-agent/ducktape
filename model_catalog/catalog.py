@@ -1,6 +1,7 @@
 """Account-specific model facts and canonical routes shared by configuration consumers.
 
-Select Route objects and serialize their attributes at the consumer boundary. Deployment endpoints and credentials belong to the consuming deployment, not this catalogue.
+Select Route objects and serialize their attributes at the consumer boundary.
+Deployment endpoints and credentials belong to the consuming deployment, not this catalogue.
 
 Naming scheme (#4823): an exposed `model_name` is `{provider}/{shape}/{model}` — the
 upstream account/provider, the wire LiteLLM speaks to that provider, then the upstream
@@ -606,10 +607,7 @@ OLLAMA_QWEN_IQ4XS_ROUTES = (_QWEN_128K.openai, _QWEN_128K.native, _QWEN_256K.ope
 _OLLAMA_ROUTE_GROUPS = (
     (_QWEN_128K,),
     (_QWEN_256K,),
-    (
-        _GPT_OSS_20B_128K,
-        *(_ollama_routes(_GPT_OSS_20B, context * 1024) for context in (256, 512, 1024)),
-    ),
+    (_GPT_OSS_20B_128K, *(_ollama_routes(_GPT_OSS_20B, context * 1024) for context in (256, 512, 1024))),
     (_ollama_routes(OllamaModel(Model("gpt-oss-120b", "GPT-OSS 120B"), "gpt-oss:120b"), 128 * 1024),),
     (_ollama_routes(OllamaModel(Model("gemma4-31b-it-q8_0", "Gemma 4 31B"), "gemma4:31b-it-q8_0"), 128 * 1024),),
 )

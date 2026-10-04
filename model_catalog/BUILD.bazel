@@ -21,6 +21,7 @@ py_library(
     deps = [":policies"],
 )
 
+# keep: the standalone generator source is gazelle-excluded above.
 py_binary(
     name = "generate_nix",
     srcs = ["generate_nix.py"],
