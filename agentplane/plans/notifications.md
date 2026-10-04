@@ -3,15 +3,16 @@
 Actions subscriptions are shipped and verified in staging ([live proof #8853](https://github.com/agentydragon/ducktape/pull/8853)).
 GitHub PR/branch/commit subscriptions, durable webhook intake, PostgreSQL-driven delivery, settings and
 fixture-based tests are implemented in [#8891](https://github.com/agentydragon/ducktape/pull/8891).
-GitHub remains disabled pending provisioning and live verification; implementation is not proof of rollout.
+Staging GitHub configuration and webhook ingress are prepared; installation and live verification
+remain. Implementation is not proof of rollout.
 
 The [service README](../notification_service/README.md), HTTP OpenAPI and source discovery document
 implemented behavior. This file tracks only remaining rollout work and deferred decisions.
 
 ## Registration and credential preparation
 
-- [ ] Register the environment-wide **agentplane-staging** GitHub App (subject to name availability),
-      distinct from the existing MCP OAuth App. Install it on the intended repositories. Any authenticated
+- [ ] Install the registered environment-wide **agentplane-staging** GitHub App on the intended
+      repositories, distinct from the existing MCP OAuth App. Any authenticated
       agent can subscribe to App-accessible repositories, including private ones; choose installations
       with that sharing policy in mind. Broader App permissions for other Agentplane uses are allowed.
 - [ ] Configure notification-required repository read permissions: Metadata, Contents, Pull requests,
@@ -20,10 +21,6 @@ implemented behavior. This file tracks only remaining rollout work and deferred 
       `status`, `push`, `create`, and `delete`; include `workflow_run`/`check_suite` if used. Verify
       installation lifecycle delivery and actual fork-PR coverage; an uninstalled fork is not covered
       merely because its base repository is installed.
-- [ ] Wire the supplied `cluster/k8s/agentplane-staging/github-app.sops.yaml` through
-      Secret-backed environment variables as described in the service README. Put the public
-      App ID in YAML settings, not the Secret. Leave existing MCP OAuth credentials and callbacks
-      untouched.
 
 ## Rollout and live verification
 
@@ -33,7 +30,7 @@ implemented behavior. This file tracks only remaining rollout work and deferred 
 - [ ] Perform the coordinated schema/service rollout without resetting the staging database. Verify
       existing Action subscriptions, inbox identities, payloads and acknowledgements survive; check
       migration completion, real server/migration image tags and replica readiness.
-- [ ] Enable GitHub in YAML settings and restart the service. Verify source discovery, signed intake,
+- [ ] Verify the GitHub-enabled rollout: replica readiness, source discovery, signed intake,
       installed-repository authorization and current installation access using the real App.
 - [ ] Prove a real PR comment and check/status update through committed receipt, matching, inbox entry,
       harness notice, non-destructive read and explicit acknowledgement, with no integration-app

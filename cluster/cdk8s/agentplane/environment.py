@@ -98,6 +98,12 @@ class ActionsProps:
 
 
 @dataclass(frozen=True)
+class GitHubAppProps:
+    app_id: int
+    secret_name: str
+
+
+@dataclass(frozen=True)
 class Environment:
     namespace: str
     # The Namespace's `description` annotation and the Flux Kustomization's.
@@ -119,6 +125,7 @@ class Environment:
     egress: EgressProps
     app: AppProps
     actions: ActionsProps
+    notifications_github: GitHubAppProps | None = None
     # Non-secret environment defaults shared by every SandboxTemplate workload container;
     # the common pod builder applies them, and the runner explicitly forwards these names to harnesses.
     sandbox_workload_env: Mapping[str, str] = field(default_factory=lambda: {"TZ": "America/Los_Angeles"})

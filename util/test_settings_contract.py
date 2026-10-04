@@ -28,7 +28,7 @@ class _Settings(BaseSettings):
 
 class _Bearer(BaseModel):
     kind: Literal["bearer"] = "bearer"
-    token: SecretStr
+    token: SecretStr = Field(min_length=32)
 
 
 class _Anonymous(BaseModel):

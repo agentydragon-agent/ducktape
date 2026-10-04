@@ -19,7 +19,8 @@ from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings
 
 # Stands in for a leaf another source supplies when the whole file validates as its model.
-_SUPPLIED = "supplied-by-another-source"
+# At least 32 characters, so externally supplied signing secrets pass their minimum-length check.
+_SUPPLIED = "supplied-by-another-settings-source"
 
 
 def _resolve(annotation: Any) -> tuple[Any, str | None]:
