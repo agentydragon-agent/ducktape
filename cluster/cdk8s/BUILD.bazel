@@ -390,6 +390,7 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":model_rosters",
+        ":model_selections",
         ":namespaces",
         ":openclaw_gateway",
         ":public_coder_egress",

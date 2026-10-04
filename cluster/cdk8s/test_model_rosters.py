@@ -21,7 +21,13 @@ from cluster.cdk8s.model_rosters import (
     Model,
     Route,
 )
-from cluster.cdk8s.model_selections import KEY_MODEL_ROUTES, STAGING_APP_MODELS, TESTING_APP_MODELS
+from cluster.cdk8s.model_selections import (
+    KEY_MODEL_ROUTES,
+    PUBLIC_CODER_MODELS,
+    RUNNER_CONTEXT_OVERRIDES,
+    STAGING_APP_MODELS,
+    TESTING_APP_MODELS,
+)
 from util.bazel.runfiles import get_required_path
 
 
@@ -46,9 +52,27 @@ def test_catalog_has_unique_ids_and_aliases_reference_served_routes() -> None:
 
 def test_selections_reference_canonical_objects() -> None:
     by_id = {route.id: route for route in SERVED_ROUTES}
-    for selection in (*KEY_MODEL_ROUTES.values(), STAGING_APP_MODELS.all, TESTING_APP_MODELS.all):
+    for selection in (
+        *KEY_MODEL_ROUTES.values(),
+        STAGING_APP_MODELS.all,
+        TESTING_APP_MODELS.all,
+        PUBLIC_CODER_MODELS,
+        RUNNER_CONTEXT_OVERRIDES,
+    ):
         for route in selection:
             assert by_id[route.id] is route
+
+
+def test_runner_context_override_policy_is_narrower_than_known_metadata() -> None:
+    assert {route.id: route.model.context_window for route in RUNNER_CONTEXT_OVERRIDES} == {
+        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k": 128 * 1024,
+        "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k": 128 * 1024,
+        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": 256 * 1024,
+        "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k": 256 * 1024,
+    }
+    assert any(
+        route.model.context_window is not None and route not in RUNNER_CONTEXT_OVERRIDES for route in OLLAMA_CHAT_ROUTES
+    )
 
 
 def test_testing_picker_does_not_widen_its_key() -> None:

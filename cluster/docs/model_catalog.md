@@ -1,7 +1,7 @@
 # Served-model catalog
 
 `cluster/cdk8s/model_rosters.py` owns the model metadata and served routes.
-`cluster/cdk8s/model_selections.py` owns key and Agentplane picker selections.
+`cluster/cdk8s/model_selections.py` owns key, picker, and harness-override selections.
 These are generation-only Python modules, not runtime application dependencies.
 
 ## Ownership
@@ -36,6 +36,10 @@ changing proxy behavior or applying a harness context override.
 | Terraform virtual keys | `KEY_MODEL_ROUTES`                | Existing `model_allowlists` variables                      |
 | Agentplane app         | `HarnessRoutes`                   | App-owned `ModelCatalog` records and harness ID lists      |
 | Agentplane environment | Same `HarnessRoutes`              | Structured source retained for ingress metadata generation |
+| OpenClaw public coder | `PUBLIC_CODER_MODELS` | OpenClaw IDs, names, limits, and reasoning flags |
+| Parked Haku OpenClaw | Selected subscription routes and command aliases | Native Claude Code model slugs |
+| Gatus | Selected Ollama route | Probe request model ID |
+| Runner configuration | `RUNNER_CONTEXT_OVERRIDES` | Existing context-window override map |
 
 For example, a preset chooses `GPT6_LUNA_RESPONSES`; the app renderer emits its ID,
 display name, and reasoning choices. The key renderer emits only its ID. Neither knows
@@ -48,10 +52,14 @@ remain explicit consumer choices referencing existing routes.
 
 ## Remaining migrations
 
-OpenClaw, Gatus, and runner context-window generation still use transitional model-only
-views and naming helpers. Those views are derived from the catalog and must not gain
-new declarations. The Codex naming helper now resolves the canonical route, rather
-than deriving its identity independently.
+Python consumers select route objects. OpenClaw's account labels and parked Haku's
+command aliases remain presentation specific to those consumers. The public-coder
+catalog excludes routes with unknown limits; the renderer rejects missing metadata.
+The runner's override selection remains limited to Qwen IQ4_XS, even though other
+routes have known or configured context windows.
+
+Nix wrappers and Terraform fallback defaults still need generated data projections.
+The Claude `[1m]` request convention is separate from a served route identity.
 
 The ingress follow-up should consume `Environment.model_routes`, not extract IDs from
 `app_config` and look them back up. It must preserve the distinction between metadata
