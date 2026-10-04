@@ -57,6 +57,9 @@ Replace the notification source's five-second Action-history polling in a separa
 
 ## Deferred decisions and follow-ups
 
+- Recurring scheduled/cron notifications with durable scheduling and explicit missed-tick behavior:
+  [`CRON_NOTIFICATIONS`](task_dag.md#cron_notifications--scheduled-notifications-for-agents).
+
 - Structured notification-message provenance for eventual compact frontend rendering:
   [`NOTIFICATION_PRESENTATION`](task_dag.md#notification_presentation--structured-metadata-and-compact-notification-rendering).
   Preserve full agent-facing text and raw evidence; never identify notices by text prefix alone.

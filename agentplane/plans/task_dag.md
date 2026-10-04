@@ -72,6 +72,7 @@ flowchart TB
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     NOTIFICATION_DEBOUNCE["In review #8988<br/>configurable runner-notice debounce<br/>then deployed burst acceptance"]:::active
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
+    CRON_NOTIFICATIONS["Unranked future capability<br/>scheduled / cron notifications<br/>durable schedules and missed-tick policy"]:::future
     NOTIFICATION_PRESENTATION["Unranked future capability<br/>structured notification provenance<br/>compact frontend presentation"]:::future
     KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
@@ -888,6 +889,19 @@ Overlap deduplication and a successful first delivery do not prove these cases. 
 webhook visibility and the operator redelivery procedure: GitHub does not automatically retry
 failed requests, and durable recovery starts at receipt commit. Track remaining access/event/fork
 coverage separately in the [notification plan](notifications.md#remaining-live-verification).
+
+### `CRON_NOTIFICATIONS` — scheduled notifications for agents
+
+**Unranked future capability:** let agents subscribe to recurring cron-style notifications through
+the existing inbox/delivery machinery. Define schedule/timezone semantics (including DST), payloads,
+ownership and cancellation in the source contract rather than adding a general-purpose job executor.
+
+Use durable next-fire state and per-occurrence identity so restart or multiple replicas cannot lose
+or duplicate scheduled entries. Choose missed-tick behavior explicitly (skip, bounded catch-up or
+coalesce); bound frequency/backlog and avoid a burst after downtime. Reuse explicit acknowledgement
+and existing destination-lifetime rules; waking suspended harnesses remains a separate decision.
+Acceptance covers firing, cancellation, restart, replica races, missed ticks and DST transitions.
+A scheduled notification must not itself grant authority to perform an Action or bypass approval.
 
 ### `NOTIFICATION_PRESENTATION` — structured metadata and compact notification rendering
 
