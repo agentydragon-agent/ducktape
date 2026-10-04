@@ -276,7 +276,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert SANDBOX_UID in notice_request.system_text
                     await model.reply(notice_request, Text("Notifications received"))
                     # A fresh service object has no in-memory delivery state to lean on.
-                    recovered = Service(Store(engine), source, remote)
+                    recovered = Service(Store(engine, store.debounce), source, remote)
                     inbox_id = UUID(subscription["inbox_id"])
                     page = None
                     for _ in range(10):

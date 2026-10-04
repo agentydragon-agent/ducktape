@@ -47,6 +47,18 @@ class SandboxServiceSettings(BaseModel):
     )
 
 
+class NoticeDebounceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    quiet_seconds: float = Field(
+        default=2, ge=0, le=3600,
+        description="Wait this long after the newest unannounced inbox entry before preparing a runner notice. Zero disables debounce; persistence and inbox reads are never delayed.",
+    )
+    max_wait_seconds: float = Field(
+        default=10, gt=0, le=3600,
+        description="Cap the debounce wait from the oldest unannounced inbox entry, even during continuous traffic. Does not bound runner outages or delivery retries.",
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="AGENTPLANE_NOTIFICATIONS_",
@@ -68,6 +80,7 @@ class Settings(BaseSettings):
             "not a notification routing setting; changing it requires coordinating caller token issuance."
         ),
     )
+    notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     github: GitHubSettings | None = Field(

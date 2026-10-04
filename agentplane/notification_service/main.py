@@ -46,7 +46,7 @@ async def serve(settings: Settings) -> None:
             if github is not None:
                 github.start()
             app = create_app(
-                Service(Store(engine), Actions(http, settings.actions.token_file), sandboxes, github), principals
+                Service(Store(engine, settings.notice_debounce), Actions(http, settings.actions.token_file), sandboxes, github), principals
             )
             await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
     finally:

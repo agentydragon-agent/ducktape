@@ -273,7 +273,7 @@ async def test_replay_boundary_overlapping_matches_and_revocation(
     claim = await store.claim()
     assert claim is not None
     # A fresh provider/Store can finish fanout after HTTP acceptance; no in-memory queue is needed.
-    recovered = Store(engine)
+    recovered = Store(engine, store.debounce)
     for identity in [first.id, second.id]:
         async with recovered.sessions() as session:
             row = await session.get(Subscription, identity)
@@ -423,7 +423,7 @@ async def test_late_correlation_survives_restart_and_does_not_block_other_events
     # The next association/receipt arrives long after the former grace window, with fresh objects.
     async with store.sessions.begin() as session:
         await session.execute(update(GitHubDelivery).values(received_at=datetime.now(UTC) - timedelta(days=2)))
-    recovered = Store(engine)
+    recovered = Store(engine, store.debounce)
     restarted = GitHub(github.http, github.settings)
     if ci_first:
         await ingest(restarted, recovered, association, event)

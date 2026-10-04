@@ -25,6 +25,7 @@ from agentplane.notification_service.models import (
     SubscriptionUpdate,
     SubscriptionView,
 )
+from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.github_models import GitHubBinding, GitHubEvent, GitHubSource
 from agentplane.notification_service.updates import Wakeups, notify
 from agentplane.protocol import event_log_pb2
@@ -68,7 +69,8 @@ def subscription_view(row: Subscription) -> SubscriptionView:
 
 
 class Store:
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, debounce: NoticeDebounceSettings) -> None:
+        self.debounce = debounce
         self.wakeups = Wakeups(engine.url)
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -362,8 +364,10 @@ class Store:
             waiting = notice is not None and not notice.confirmed and notice.error is None
             unread = row.last_cursor > max(row.covered, row.acknowledged, row.expired_through)
             deadlines = [next_source] if next_source is not None else []
-            if waiting or unread:
+            if waiting:
                 deadlines.append(now + timedelta(seconds=5))
+            elif unread:
+                deadlines.append(await self.get_notice_due_at(session, row))
             row.next_attempt = min(deadlines) if deadlines else None
             if error is not None and row.next_attempt is not None:
                 row.next_attempt = max(row.next_attempt, now + timedelta(seconds=5))
@@ -573,6 +577,23 @@ class Store:
             if matched:
                 inbox.updated_at = datetime.now(UTC)
 
+    async def get_notice_due_at(self, session: AsyncSession, inbox: Inbox) -> datetime:
+        # Entry timestamps are already durable. Deriving the window avoids another clock/checkpoint
+        # to migrate or recover, and overlapping matches do not extend it. Call under the inbox lock.
+        first, last = (
+            await session.execute(
+                select(func.min(Entry.created_at), func.max(Entry.created_at)).where(
+                    Entry.inbox_id == inbox.id,
+                    Entry.cursor > max(inbox.covered, inbox.acknowledged, inbox.expired_through),
+                )
+            )
+        ).one()
+        assert first is not None and last is not None
+        return min(
+            last + timedelta(seconds=self.debounce.quiet_seconds),
+            first + timedelta(seconds=self.debounce.max_wait_seconds),
+        )
+
     async def notice(self, claim: Inbox, *, prepare: bool = True) -> Notice | None:
         async with self.sessions.begin() as session:
             inbox = await self.fenced(session, claim)
@@ -581,6 +602,8 @@ class Store:
                 return row
             start = max(inbox.covered, inbox.acknowledged, inbox.expired_through)
             if start >= inbox.last_cursor:
+                return None
+            if await self.get_notice_due_at(session, inbox) > datetime.now(UTC):
                 return None
             # Retain the latest terminal receipt; older notice coverage remains in `covered`.
             if row is not None:
