@@ -57,6 +57,10 @@ Replace the notification source's five-second Action-history polling in a separa
 
 ## Deferred decisions and follow-ups
 
+- Structured notification-message provenance for eventual compact frontend rendering:
+  [`NOTIFICATION_PRESENTATION`](task_dag.md#notification_presentation--structured-metadata-and-compact-notification-rendering).
+  Preserve full agent-facing text and raw evidence; never identify notices by text prefix alone.
+
 - Agent-visible Kubernetes rollout monitoring, potentially as a notification source:
   [`KUBERNETES_MONITORING`](task_dag.md#kubernetes_monitoring--agents-observe-rollout-progress-and-outcomes).
   Backend ownership, authorization and the watch API remain design choices.

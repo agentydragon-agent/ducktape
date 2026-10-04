@@ -76,6 +76,7 @@ flowchart TB
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
     NOTIFICATION_DEBOUNCE["In review #8988<br/>configurable runner-notice debounce<br/>then deployed burst acceptance"]:::active
     GITHUB_DELIVERY_RECOVERY["Remaining GitHub acceptance<br/>redelivery deduplication and restart recovery"]:::future
+    NOTIFICATION_PRESENTATION["Unranked future capability<br/>structured notification provenance<br/>compact frontend presentation"]:::future
     KUBERNETES_MONITORING["Unranked future capability<br/>agent-visible Kubernetes rollout monitoring<br/>notifications are an option"]:::future
     DT["P2 deferred<br/>Action-backed driver tools and background control"]:::future
     HARNESS_CONFIG_ISOLATION["Unranked prerequisite<br/>separate hosted feature config from capture scenarios<br/>keep project and host settings isolated"]:::future
@@ -968,6 +969,31 @@ Overlap deduplication and a successful first delivery do not prove these cases. 
 webhook visibility and the operator redelivery procedure: GitHub does not automatically retry
 failed requests, and durable recovery starts at receipt commit. Track remaining access/event/fork
 coverage separately in the [notification plan](notifications.md#remaining-live-verification).
+
+### `NOTIFICATION_PRESENTATION` — structured metadata and compact notification rendering
+
+**Unranked future capability:** attach Agentplane notification metadata to generated runner input,
+then preserve it through the runner journal, Sandbox Service event transport and app projection so
+the frontend knows "this is a notification about this thing." The agent still receives the useful
+retrieval instructions; the human-facing UI should default to a compact summary rather than the
+whole machine-oriented message, with expansion/raw evidence available.
+
+- Define versioned provenance and identity fields: notification origin, inbox/notice identity,
+  covered cursor and safe subject/summary data as appropriate. Decide how a batched notice refers
+  to multiple entries/sources without copying full provider payloads into runner metadata.
+- Preserve metadata through retries, replay, archival and coalesced inputs. Explicitly represent
+  mixed human/notification origins rather than relabeling an entire combined message. Reuse the
+  existing command/Event authority; no parallel frontend notification log or app-owned ingress.
+- Use explicit trusted origin metadata, never a text-prefix heuristic. Ordinary user text that
+  resembles "Agentplane automated notification" must not be hidden or acquire system provenance.
+  Missing/unknown metadata falls back to normal text rendering, and provider content remains untrusted.
+- Acceptance: a real notification renders compactly by default and expands to full retained text;
+  the agent sees unchanged actionable content. Verify older messages, replay/reconnect, mixed-origin
+  coalescing and notification-looking human messages. Rendering must not acknowledge the inbox,
+  hide human input or discard the authoritative message/evidence.
+
+The owning backend/protocol carries metadata without depending on the integration app; the app is
+its presentation client. This is independent of notice debounce and of Kubernetes source selection.
 
 ### `KUBERNETES_MONITORING` — agents observe rollout progress and outcomes
 
