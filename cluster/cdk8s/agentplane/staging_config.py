@@ -50,6 +50,7 @@ PUBLIC_GITHUB_READS_SET = "public-github-reads"
 PUBLIC_DUCKTAPE_READS_SET = "public-ducktape-reads"
 PUBLIC_DUCKTAPE_FORK_READS_SET = "public-ducktape-fork-reads"
 PUBLIC_GAFFER_PRIVATE_READS_SET = "public-gaffer-private-reads"
+DUCKTAPE_PR_FAILED_JOBS_SET = "ducktape-pr-failed-jobs"
 PUBLIC_CODER_ACTION_POLICY_SETS = (
     PUBLIC_GITHUB_READS_SET,
     PUBLIC_DUCKTAPE_READS_SET,
@@ -123,5 +124,6 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         kubernetes_grants=list(agent_access_profiles.MANAGED_GRANTS["finance-agent"]),
     )
     for preset in ("public-coder", "finance-agent", "haku"):
+        cfg.sandbox_presets[preset].action_policy_sets.append(DUCKTAPE_PR_FAILED_JOBS_SET)
         cfg.sandbox_presets[preset].policies.append(AGENTPLANE_TESTING_POLICY)
     return cfg
