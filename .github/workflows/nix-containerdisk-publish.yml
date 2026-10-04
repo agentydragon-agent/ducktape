@@ -25,7 +25,7 @@ on:
         description: Exact commit to check out and build (defaults to the triggering commit)
         required: false
         type: string
-        default: ''
+        default: ""
       allow_unsafe_pr_checkout:
         description: Allow a fork checkout after the caller establishes trust
         required: false
@@ -35,7 +35,7 @@ on:
         description: Protected GitHub Environment to gate the build (optional)
         required: false
         type: string
-        default: ''
+        default: ""
     secrets:
       SOPS_AGE_KEY:
         required: true
