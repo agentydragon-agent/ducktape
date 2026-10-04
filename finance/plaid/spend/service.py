@@ -11,8 +11,8 @@ from decimal import ROUND_HALF_UP, Decimal
 import asyncpg
 from babel.numbers import get_currency_precision
 
-from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, PaceAlert, Status, Transaction, calculate
-from finance.plaid.spend.models import AlertState, CardConfiguration, CardView, SpendView
+from finance.plaid.spend.allowance import AllowanceView, PaceAlert, Status, Transaction, calculate
+from finance.plaid.spend.models import AlertState, CardView, SpendConfiguration, SpendView
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +26,12 @@ class SpendService:
     def __init__(
         self,
         database_url: str,
-        configuration: CardConfiguration,
-        allowance: AllowancePolicy | None = None,
-        dashboard_url: str | None = None,
+        configuration: SpendConfiguration,
+        *,
+        dashboard_url: str,
     ) -> None:
         self._database_url = database_url
         self._configuration = configuration
-        self._allowance = allowance
         self._dashboard_url = dashboard_url
         self._pool: asyncpg.Pool | None = None
         self._listener_task: asyncio.Task[None] | None = None
@@ -259,7 +258,7 @@ class SpendService:
         )
 
     async def _read_allowance(self, now: datetime) -> AllowanceView | None:
-        policy = self._allowance
+        policy = self._configuration.allowance
         if policy is None:
             return None
         # No account IDs or names leave the server in the allowance view.

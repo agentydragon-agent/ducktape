@@ -1,29 +1,32 @@
 # Flexible allowance
 
 The service can also compute a **single flexible spending allowance**, independently of
-statement-cycle card totals. It is disabled when `/etc/plaid-spend/policy.json`
-is absent. The Deployment requires one private Secret, `plaid-mcp/plaid-spend-private-config`,
-with a required `cards.json` key and an optional `policy.json` key. Deliver both through
-a private channel, not this public repo; storing config in private git alone does not
-deploy it. Without the Secret the pod will not start. An absent `policy.json` leaves
-the allowance disabled, and invalid JSON or policy fails application startup.
-Restart the Deployment after changing the Secret; the process reads files only at startup.
+statement-cycle card totals. The Deployment requires one privately delivered Secret,
+`plaid-mcp/plaid-spend-private-config`, with one `config.json` key. The JSON contains
+required `cards` and optional `allowance`; omitting `allowance` disables the allowance.
+Do not commit this configuration to the public repo; storing it in private git alone
+does not deploy it. Without the Secret the pod will not start. Invalid JSON or policy
+fails application startup. Restart the Deployment after changing the Secret; the
+process reads the file only at startup.
 Check the current read-only Plaid account coverage **before** activating.
 
 Generic _synthetic_ example (amounts are integer cents; IDs, categories and prefixes illustrative):
 
 ```json
 {
-  "monthly_minor_units": 100000,
-  "activation_at": null,
-  "spending_account_ids": ["example-credit-id", "example-checking-id"],
-  "currency": "USD",
-  "max_sync_age_hours": 72,
-  "rules": [
-    { "field": "name", "prefix": "EXAMPLE RENT", "kind": "fixed" },
-    { "field": "pfc_detailed", "value": "EXAMPLE_TRANSFER_DETAIL", "kind": "excluded" },
-    { "field": "name", "prefix": "EXAMPLE ONLINE", "kind": "flexible" }
-  ]
+  "cards": [],
+  "allowance": {
+    "monthly_minor_units": 100000,
+    "activation_at": null,
+    "spending_account_ids": ["example-credit-id", "example-checking-id"],
+    "currency": "USD",
+    "max_sync_age_hours": 72,
+    "rules": [
+      { "field": "name", "prefix": "EXAMPLE RENT", "kind": "fixed" },
+      { "field": "pfc_detailed", "value": "EXAMPLE_TRANSFER_DETAIL", "kind": "excluded" },
+      { "field": "name", "prefix": "EXAMPLE ONLINE", "kind": "flexible" }
+    ]
+  }
 }
 ```
 

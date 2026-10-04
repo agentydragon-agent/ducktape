@@ -65,6 +65,7 @@ py_test(
     srcs = ["test_allowance.py"],
     deps = [
         ":allowance",
+        ":models",
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -74,14 +75,24 @@ py_test(
 
 py_test(
     name = "test_service",
+    size = "medium",
     srcs = ["test_service.py"],
+    requires_docker = True,
     deps = [
         ":allowance",
         ":app",
         ":models",
         ":service",
         "//:conftest",
+        "//finance/plaid/db:link_store",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//asyncpg",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
     ],
 )
 

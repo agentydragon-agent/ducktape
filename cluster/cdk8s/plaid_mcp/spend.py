@@ -33,7 +33,7 @@ _WEB_OIDC_CREDENTIALS_NAME = "plaid-spend-web-oidc-config"
 _WEB_OIDC_CREDENTIALS = SecretRef(namespace=NAMESPACE, name=_WEB_OIDC_CREDENTIALS_NAME)
 _WEB_OIDC_READER = "plaid-spend-web-oidc-reader"
 _DB = db.SPEND
-_CARD_CONFIG_PATH = SpendSettings.model_fields["cards_config_path"].default
+_CONFIG_PATH = SpendSettings.model_fields["config_path"].default
 _DESKTOP_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-desktop/"
 _DESKTOP_CLIENT_ID = "plaid-spend-desktop"
 _WEB_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-web/"
@@ -44,7 +44,7 @@ _WEB = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
 _CONFIG = {
-    env_name(SpendSettings, "cards_config_path"): str(_CARD_CONFIG_PATH),
+    env_name(SpendSettings, "config_path"): str(_CONFIG_PATH),
     "PLAID_SPEND_API_OIDC_ISSUER": _DESKTOP_OIDC_ISSUER,
     "PLAID_SPEND_API_OIDC_CLIENT_ID": _DESKTOP_CLIENT_ID,
     "PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER": _DESKTOP_OIDC_ISSUER,
@@ -163,7 +163,7 @@ def _deployment(chart: Chart) -> None:
                                 _DB.key("DATABASE_URL").env_var("DATABASE_URL"),
                             ],
                             volume_mounts=[
-                                k8s.VolumeMount(name="config", mount_path=str(_CARD_CONFIG_PATH.parent), read_only=True)
+                                k8s.VolumeMount(name="config", mount_path=str(_CONFIG_PATH.parent), read_only=True)
                             ],
                             resources=_resources(),
                             readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),

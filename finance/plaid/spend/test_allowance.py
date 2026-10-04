@@ -17,6 +17,7 @@ from finance.plaid.spend.allowance import (
     calculate,
     month_anniversary,
 )
+from finance.plaid.spend.models import SpendConfiguration
 
 START = datetime(2026, 1, 31, tzinfo=UTC)
 
@@ -57,6 +58,18 @@ def row(
 
 def view(rows=(), when=START):
     return calculate(policy(), list(rows), now=when, last_synced_at=when)
+
+
+def test_single_config_parses_cards_and_optional_allowance():
+    assert SpendConfiguration.model_validate_json('{"cards":[]}').allowance is None
+    config = SpendConfiguration.model_validate_json(
+        '{"cards":[],"allowance":{"monthly_minor_units":10000,"spending_account_ids":["example-card"],'
+        '"rules":[{"field":"name","prefix":"EXAMPLE","kind":"flexible"}]}}'
+    )
+    assert config.allowance is not None
+    assert config.allowance.monthly_minor_units == 10_000
+    with pytest.raises(ValidationError):
+        SpendConfiguration.model_validate_json('{"cards":[],"allowance":{"monthly_minor_units":10000}}')
 
 
 def test_activation_preview_and_no_double_credit():

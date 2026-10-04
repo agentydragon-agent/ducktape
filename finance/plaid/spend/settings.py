@@ -14,8 +14,7 @@ class SpendSettings(BaseSettings):
     database_url: str = Field(validation_alias="DATABASE_URL")
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
-    cards_config_path: Path = Path("/etc/plaid-spend/cards.json")
-    allowance_config_path: Path | None = Path("/etc/plaid-spend/policy.json")
+    config_path: Path = Path("/etc/plaid-spend/config.json")
 
     api_oidc_issuer: str
     api_oidc_client_id: str

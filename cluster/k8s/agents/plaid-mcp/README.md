@@ -53,10 +53,9 @@ and read-only in-cluster PostgreSQL access; it is not exposed over MCP.
   process uses the confidential `plaid-spend-web` OIDC client and a signed session
   cookie; desktop API authentication remains on the separate public client.
 - The `plaid-spend-private-config` Secret must be delivered separately from this public repo.
-  Its required `cards.json` key contains the shared card selection, limits and thresholds;
-  its optional `policy.json` key contains flexible allowance policy. The service mounts
-  both under `/etc/plaid-spend/` and needs a restart after updates. Without this Secret
-  the spend Deployment cannot start; create it after merging the config migration. Each device
+  Its sole `config.json` key contains a `cards` list and optional `allowance` policy.
+  The service mounts it at `/etc/plaid-spend/config.json` and needs a restart after updates.
+  Without this Secret the spend Deployment cannot start; create it after merging. Each device
   receives the same server-computed view. The desktop uses the public
   `plaid-spend-desktop` provider with PKCE and a strict loopback callback.
 - Plaid access tokens are stored one Secret per linked Item and are not written to Postgres.

@@ -8,7 +8,7 @@ data:
   PLAID_SPEND_API_OIDC_DISCOVERED_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
   PLAID_SPEND_API_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-desktop/
   PLAID_SPEND_API_OIDC_JWKS_URI: https://auth.allegedly.works/application/o/plaid-spend-desktop/jwks/
-  PLAID_SPEND_CARDS_CONFIG_PATH: /etc/plaid-spend/cards.json
+  PLAID_SPEND_CONFIG_PATH: /etc/plaid-spend/config.json
   PLAID_SPEND_WEB_OIDC_ISSUER: https://auth.allegedly.works/application/o/plaid-spend-web/
   PLAID_SPEND_WEB_OIDC_PUBLIC_BASE_URL: https://plaid-spend.allegedly.works
 ---
