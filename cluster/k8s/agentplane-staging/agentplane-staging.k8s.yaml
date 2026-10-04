@@ -2920,6 +2920,7 @@ data:
           - public-gaffer-private-reads
           - github-identity-reads
           - ssh-reads
+          - ducktape-pr-failed-jobs
         kubernetes_grants:
           - agentplane-staging-metadata
           - agentplane-staging-logs
@@ -3017,6 +3018,7 @@ data:
         action_policy_sets:
           - github-identity-reads
           - ssh-reads
+          - ducktape-pr-failed-jobs
         kubernetes_grants:
           - agentplane-staging-metadata
           - agentplane-staging-logs
@@ -3109,6 +3111,7 @@ data:
           - public-gaffer-private-reads
           - github-identity-reads
           - ssh-reads
+          - ducktape-pr-failed-jobs
         kubernetes_grants:
           - agentplane-staging-metadata
           - agentplane-staging-logs
@@ -6344,6 +6347,37 @@ spec:
           - search_code
           - search_issues
           - search_pull_requests
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  annotations:
+    description: Auto-approves only GitHub MCP rerun_failed_jobs calls for agentydragon/ducktape; dispatch, whole-run rerun, cancellation and log deletion remain on the human path.
+  name: ducktape-pr-failed-jobs
+  namespace: agentplane-staging
+spec:
+  autoApproveIf:
+    - type: argument_schema
+      actions:
+        github:
+          - actions_run_trigger
+      schema:
+        properties:
+          method:
+            const: rerun_failed_jobs
+          owner:
+            const: agentydragon
+          repo:
+            const: ducktape
+          run_id:
+            minimum: 1
+            type: integer
+        required:
+          - method
+          - owner
+          - repo
+          - run_id
+        type: object
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

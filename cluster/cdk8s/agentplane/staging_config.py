@@ -67,12 +67,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         models=STAGING_APP_MODELS,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
-        action_policy_sets=[
-            *PUBLIC_CODER_ACTION_POLICY_SETS,
-            DUCKTAPE_PR_FAILED_JOBS_SET,
-            GITHUB_IDENTITY_READS_SET,
-            SSH_READS_SET,
-        ],
+        action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         # The "haku" sandbox preset (app_settings.py) exists only here, not in
         # agentplane-testing. `claude-sonnet-5` matches the model in the parked self-hosted
         # configuration at haku/runtime/x/managed_agent/self_hosted/haku.agent.yaml.
