@@ -1,0 +1,1 @@
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])

@@ -10,7 +10,7 @@ Workload bearer authentication uses the existing TokenReview foundation. Owner a
 verified ServiceAccount, shared by its workloads. Every creation specifies `destination_ref`
 (namespace/name/UID) and `session_id`; inbox and subscription IDs identify subsequent operations.
 
-- `GET /v1/providers`: provider schema discovery (Actions only).
+- `GET /v1/sources`: source schema discovery (Actions only).
 - `POST /v1/subscriptions`: immutable Action request/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Replay defaults to sequence zero.
 - `GET /v1/subscriptions[?after_id=…]`: ordered pages of 128; continue after the last ID.
