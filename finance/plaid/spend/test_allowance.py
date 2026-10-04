@@ -36,7 +36,7 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
 def policy(*, activation_at: date | None = START_DATE, rules: list[Rule] | None = None) -> AllowancePolicy:
     return AllowancePolicy(
         monthly_minor_units=10_000,
-        spending_account_ids=["card-1"],
+        spending_account_ids={"card-1"},
         activation_at=activation_at,
         rules=rules
         if rules is not None

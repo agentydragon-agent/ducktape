@@ -182,7 +182,7 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         allowance=AllowancePolicy(
             monthly_minor_units=10_000,
             activation_at=midnight.date(),
-            spending_account_ids=["card-1", "checking-1"],
+            spending_account_ids={"card-1", "checking-1"},
             rules=[
                 Rule(
                     condition=CategoryExact(type="category_exact", field="pfc_primary", value="SHOPPING"),
