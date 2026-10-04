@@ -142,7 +142,6 @@ class Store:
                 creator=asdict(principal),
                 version=1,
                 after_sequence=body.after_sequence,
-                paused=False,
                 cancelled=False,
                 expires_at=now + timedelta(days=body.lifetime_days),
                 next_poll=now,
@@ -200,7 +199,6 @@ class Store:
             else:
                 if row.version != update.version or row.cancelled:
                     raise ConflictError("subscription version changed or subscription cancelled")
-                row.paused = update.paused
                 row.expires_at = datetime.now(UTC) + timedelta(days=update.lifetime_days)
             row.version += 1
             return SubscriptionView.model_validate(row)
@@ -316,7 +314,6 @@ class Store:
                 .where(
                     Subscription.inbox_id == claim.id,
                     ~Subscription.cancelled,
-                    ~Subscription.paused,
                     Subscription.expires_at > func.now(),
                     Subscription.next_poll <= func.now(),
                 )
@@ -332,7 +329,7 @@ class Store:
             inbox = await self.fenced(session, claim)
             row = await session.get(Subscription, source.id)
             assert row is not None
-            if row.cancelled or row.paused or row.version != source.version or row.expires_at <= datetime.now(UTC):
+            if row.cancelled or row.version != source.version or row.expires_at <= datetime.now(UTC):
                 return
             row.error = error
             row.next_poll = datetime.now(UTC) + timedelta(seconds=30 if error else 5)

@@ -40,7 +40,6 @@ class Subscribe(Model):
 
 class SubscriptionUpdate(Model):
     version: int = Field(ge=1)
-    paused: bool
     lifetime_days: int = Field(default=7, ge=1, le=30)
 
 
@@ -51,7 +50,6 @@ class SubscriptionView(Model):
     idempotency_key: str
     version: int
     after_sequence: int
-    paused: bool
     cancelled: bool
     expires_at: datetime
     error: str | None
