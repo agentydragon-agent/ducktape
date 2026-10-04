@@ -504,6 +504,52 @@ async def test_branch_activity_and_fixed_commit(store: Store, provider: tuple[Gi
             assert await session.scalar(select(Subscription.next_attempt).where(Subscription.id == sub.id)) is None
 
 
+@pytest.mark.parametrize(
+    "event", [EventName.CHECK_RUN, EventName.CHECK_SUITE, EventName.STATUS, EventName.WORKFLOW_RUN]
+)
+async def test_native_ci_references_supply_durable_associations(
+    store: Store, provider: tuple[GitHub, Upstream], event: EventName
+) -> None:
+    github, _ = provider
+    source = (
+        SOURCE
+        if event in {EventName.CHECK_RUN, EventName.CHECK_SUITE}
+        else SOURCE.model_copy(update={"subject": BranchSubject(kind="branch", name="devel")})
+    )
+    explicit = source.model_copy(update={"events": {EventFilter(event=event)}})
+    binding = (await github.context(source)).binding
+    default_sub = await store.subscribe(PRINCIPAL, subscription(source), binding)
+    explicit_sub = await store.subscribe(PRINCIPAL, subscription(explicit, key="explicit"), binding)
+    payload: dict[str, JsonValue] = {
+        "installation": {"id": 11},
+        "repository": {"id": 100, "full_name": "owner/repo"},
+    }
+    match event:
+        case EventName.CHECK_RUN | EventName.CHECK_SUITE:
+            payload |= {"action": "completed", event: {"head_sha": NEXT, "pull_requests": [{"number": 7}]}}
+        case EventName.STATUS:
+            payload |= {"sha": NEXT, "branches": [{"name": "devel"}]}
+        case EventName.WORKFLOW_RUN:
+            payload |= {"action": "completed", "workflow_run": {"head_sha": NEXT, "head_branch": "devel"}}
+    # The empty-reference check arrives before its association, and upstream still reports HEAD.
+    await ingest(github, store, check(NEXT), "check_run")
+    await ingest(github, store, payload, event)
+    claim = await store.claim()
+    assert claim is not None
+    for sub, spec in [(default_sub, source), (explicit_sub, explicit)]:
+        async with store.sessions() as session:
+            row = await session.get(Subscription, sub.id)
+        assert row is not None
+        await github.reconcile(store, claim, row, spec)
+    page = await store.read(PRINCIPAL.account, default_sub.inbox_id, 0, 128)
+    assert len(page.entries) == 2
+    first, second = page.entries
+    assert first.payload == check(NEXT)
+    assert second.payload == payload
+    assert (default_sub.id in second.subscriptions) == (event in {EventName.CHECK_RUN, EventName.STATUS})
+    assert explicit_sub.id in second.subscriptions
+
+
 async def test_cancellation_fences_accepted_github_work(store: Store, provider: tuple[GitHub, Upstream]) -> None:
     github, _ = provider
     sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)

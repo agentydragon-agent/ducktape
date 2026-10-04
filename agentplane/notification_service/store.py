@@ -366,11 +366,12 @@ class Store:
     async def get_next_work_at(self) -> datetime | None:
         """Next durable retry/source/lease deadline, not an interval for checking the queue."""
         async with self.sessions() as session:
-            return await session.scalar(
+            deadline: datetime | None = await session.scalar(
                 select(func.min(func.greatest(Inbox.next_attempt, Inbox.claim_until))).where(
                     ~Inbox.retired, Inbox.next_attempt.is_not(None)
                 )
             )
+            return deadline
 
     async def source(self, claim: Inbox) -> Subscription | None:
         async with self.sessions() as session:

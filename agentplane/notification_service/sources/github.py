@@ -374,6 +374,7 @@ class GitHub:
         delivery = GitHubDelivery
         direct: ColumnElement[bool] = false()
         heads: ColumnElement[bool] = delivery.head_sha.in_(context.heads)
+        subject: str | None
         match source.subject:
             case PullRequestSubject(number=number):
                 subject = f"pull_request:{number}"
