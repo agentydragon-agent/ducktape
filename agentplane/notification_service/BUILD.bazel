@@ -338,6 +338,7 @@ py_library(
 
 py_test(
     name = "test_github",
+    size = "medium",
     srcs = ["test_github.py"],
     deps = [
         ":api",
@@ -368,6 +369,7 @@ py_test(
 
 py_test(
     name = "test_updates",
+    size = "medium",
     srcs = ["test_updates.py"],
     deps = [
         ":conftest",
