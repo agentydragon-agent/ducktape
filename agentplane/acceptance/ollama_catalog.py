@@ -8,6 +8,8 @@ from agentplane.app.api import ModelCatalog
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 
+# gazelle:include_dep @pypi//protobuf
+
 
 def ollama_cases(manifest: Path) -> list[tuple[protocol_pb2.Harness, str]]:
     [config_map] = [

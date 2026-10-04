@@ -366,6 +366,7 @@ py_library(
         "//agentplane/app:api",
         "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
         "@pypi//pyyaml",
     ],
 )
@@ -380,6 +381,7 @@ py_test(
         "//:conftest",
         "//agentplane/runner:protocol_pb2",
         "//util/bazel:runfiles",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

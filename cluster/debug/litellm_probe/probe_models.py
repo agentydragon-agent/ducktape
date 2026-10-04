@@ -273,7 +273,10 @@ def _parse_args() -> argparse.Namespace:
         "--api-key-env", default="LITELLM_API_KEY", help="Environment variable containing the LiteLLM API key."
     )
     parser.add_argument(
-        "--config", type=Path, default=None, help="LiteLLM proxy config YAML. Defaults to the committed proxy ConfigMap."
+        "--config",
+        type=Path,
+        default=None,
+        help="LiteLLM proxy config YAML. Defaults to the committed proxy ConfigMap.",
     )
     parser.add_argument(
         "--backend",

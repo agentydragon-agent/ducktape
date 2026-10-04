@@ -10,6 +10,8 @@ from agentplane.acceptance.ollama_catalog import ollama_cases
 from agentplane.runner import protocol_pb2
 from util.bazel.runfiles import get_required_path
 
+# gazelle:include_dep @pypi//protobuf
+
 
 def _manifest(tmp_path: Path, harnesses: dict[str, list[str]]) -> Path:
     routes = list(dict.fromkeys(route for offered in harnesses.values() for route in offered))
@@ -38,10 +40,7 @@ def _manifest(tmp_path: Path, harnesses: dict[str, list[str]]) -> Path:
 def test_cases_use_offered_harnesses_and_prioritize_128k(tmp_path: Path) -> None:
     large = "ollama/oai-chat/example-256k"
     small = "ollama/oai-chat/example-128k"
-    path = _manifest(
-        tmp_path,
-        {"HARNESS_CLAUDE": [large, small, "other/messages/example"], "HARNESS_CODEX": [small]},
-    )
+    path = _manifest(tmp_path, {"HARNESS_CLAUDE": [large, small, "other/messages/example"], "HARNESS_CODEX": [small]})
     assert ollama_cases(path) == [
         (protocol_pb2.HARNESS_CLAUDE, small),
         (protocol_pb2.HARNESS_CODEX, small),
