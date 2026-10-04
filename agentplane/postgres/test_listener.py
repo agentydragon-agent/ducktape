@@ -129,7 +129,7 @@ async def test_failed_listen_registration_closes_connection(listener: PostgresLi
         raise error
 
     connections: list[asyncpg.Connection[Any]] = []
-    with patch.object(asyncpg.Connection[Any], "add_listener", new=fail), pytest.raises(type(error)):
+    with patch.object(asyncpg.Connection, "add_listener", new=fail), pytest.raises(type(error)):
         async with listener.listen():
             pytest.fail("failed registration entered the scope")
     assert len(connections) == 1
