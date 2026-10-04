@@ -26,7 +26,7 @@ class GitHubSettings(BaseModel):
         min_length=1, description="PEM App private key, supplied through a Secret-backed environment variable."
     )
     webhook_secret: SecretStr = Field(
-        min_length=32, description="Webhook HMAC signing secret, supplied through a Secret-backed environment variable."
+        min_length=16, description="Webhook HMAC signing secret, supplied through a Secret-backed environment variable."
     )
     max_body_bytes: int = Field(
         default=1024 * 1024, ge=1024, le=25 * 1024 * 1024, description="Maximum raw webhook request body size in bytes."
