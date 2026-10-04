@@ -121,12 +121,12 @@ class Store:
                 raise ConflictError("inbox is retired")
             row = await session.scalar(
                 select(Subscription).where(
-                    Subscription.inbox_id == inbox.id, Subscription.client_key == body.client_key
+                    Subscription.inbox_id == inbox.id, Subscription.idempotency_key == body.idempotency_key
                 )
             )
             if row is not None:
                 if row.creation != body.model_dump(mode="json"):
-                    raise ConflictError("creation key already names another subscription")
+                    raise ConflictError("idempotency key already names another subscription")
                 return SubscriptionView.model_validate(row)
             count = await session.scalar(
                 select(func.count()).select_from(Subscription).where(Subscription.inbox_id == inbox.id)
@@ -137,7 +137,7 @@ class Store:
                 id=uuid4(),
                 inbox_id=inbox.id,
                 request_id=body.request_id,
-                client_key=body.client_key,
+                idempotency_key=body.idempotency_key,
                 creation=body.model_dump(mode="json"),
                 creator=asdict(principal),
                 version=1,
