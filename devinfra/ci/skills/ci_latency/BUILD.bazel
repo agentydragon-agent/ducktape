@@ -9,10 +9,10 @@ skill_package(
         "SKILL.md",
         "scripts/attribution.py",
         "scripts/checks.jq",
-        "scripts/index.py",
         "scripts/collect.sh",
         "scripts/contention.jq",
         "scripts/evidence.sh",
+        "scripts/index.py",
         "scripts/inspect.sh",
         "scripts/publish.py",
         "scripts/summarize.jq",
@@ -73,6 +73,7 @@ py_test(
     deps = [
         ":artifact_tools",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -6,6 +6,7 @@ seconds, triggers: [..], kind}]}]. A unit is incurred iff any of its triggers
 is present; Shapley of that OR game assigns seconds / number of triggers to each.
 Only independent, non-overlapping units of the SAME resource can be added.
 """
+
 import argparse
 import json
 import math
@@ -14,9 +15,9 @@ from pathlib import Path
 
 
 def calculate(data):
-    totals = defaultdict(float)
-    by_kind = defaultdict(lambda: defaultdict(float))
-    coverage = defaultdict(float)
+    totals: defaultdict[str, float] = defaultdict(float)
+    by_kind: defaultdict[str, defaultdict[str, float]] = defaultdict(lambda: defaultdict(float))
+    coverage: defaultdict[str, float] = defaultdict(float)
     runs = data["runs"]
     if not runs:
         raise ValueError("no runs")
@@ -40,10 +41,16 @@ def calculate(data):
             for trigger in triggers:
                 totals[trigger] += cost / len(triggers)
                 by_kind[trigger][kind] += cost / len(triggers)
-    result = {"resource": resource, "run_count": len(runs), "measured_seconds": sum(coverage.values()),
-              "measured_by_kind_seconds": dict(sorted(coverage.items())),
-              "attribution": [{"trigger": k, "seconds": v, "by_kind_seconds": dict(sorted(by_kind[k].items()))}
-                              for k, v in sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))]}
+    result = {
+        "resource": resource,
+        "run_count": len(runs),
+        "measured_seconds": sum(coverage.values()),
+        "measured_by_kind_seconds": dict(sorted(coverage.items())),
+        "attribution": [
+            {"trigger": k, "seconds": v, "by_kind_seconds": dict(sorted(by_kind[k].items()))}
+            for k, v in sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
+        ],
+    }
     if not math.isclose(sum(totals.values()), result["measured_seconds"], rel_tol=1e-12, abs_tol=1e-7):
         raise ValueError("attribution does not reconcile")
     return result

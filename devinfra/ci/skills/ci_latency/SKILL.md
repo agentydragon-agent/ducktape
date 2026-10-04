@@ -11,8 +11,8 @@ rules**, how long does it take for different kinds of PRs? When do each status,
 check result and diagnostic log become available to agents watching PR updates?
 Where do runner time and remote compute go, what blocks the user-visible critical
 path, and what changes offer the best payoff for the least cost/risk? Use the old
-`devinfra/ci/debug/ci_queue_saturation.md` report as a *hypothesis and historical
-example*, not as a conclusion about current CI. Refresh its current-state
+`devinfra/ci/debug/ci_queue_saturation.md` report as a _hypothesis and historical
+example_, not as a conclusion about current CI. Refresh its current-state
 conclusions and evidence when requested; append reviewed snapshots to the separate
 history branch (below). `cihealth` covers release/pin currency and failed CI more
 broadly. No Mimir metric, Shapley calculation, or dashboard is required for a
@@ -48,15 +48,15 @@ network/sandbox rules. These scripts read APIs; they do not rerun/cancel jobs or
 change scanning settings.
 
 For a specific slowdown choose an explicit UTC window, initially 60–90 minutes.
-For the general question of what *recent PRs* experience, also sample a longer
+For the general question of what _recent PRs_ experience, also sample a longer
 period (e.g. several days to a week, split API windows below the search cap).
 Stratify by changed paths/PR change class (including cdk8s vs previous cluster
 configuration), size, fork/trust path, cold/warm cache where observable, and
 completed/cancelled/superseded state. Sample fast, typical and slow PRs in each
 relevant class rather than choosing only outliers. Record selection criteria and
 sample counts; do not equate all runs with distinct PRs or reruns with new pushes.
-Tie runs, attempts, head SHAs and check results to the *same* PR head when
-estimating feedback latency. Resolve the *current* upstream ruleset/branch
+Tie runs, attempts, head SHAs and check results to the _same_ PR head when
+estimating feedback latency. Resolve the _current_ upstream ruleset/branch
 requirements and auto-merge eligibility policy; branch/ruleset, required contexts,
 review/code-owner approvals, merge conflicts, draft status, deployment gates and
 synthetic merge/merge-queue behavior may matter. Do not confuse all visible checks
@@ -109,7 +109,7 @@ separate/censored observations:
 - **Start:** new commit pushed to the PR head, or earliest observed head-change
   webhook if push timestamp is unavailable (label the proxy). For an existing PR,
   PR creation time is not a substitute for that head's commit time.
-- **Ready to auto-merge:** earliest *observed* time that all actual policy gates
+- **Ready to auto-merge:** earliest _observed_ time that all actual policy gates
   for this SHA are satisfied, including required checks, applicable review and
   branch/mergeability conditions. If gates are unknown or not met, report
   pending/blocked/censored with reason, not an invented timestamp. Separate CI
@@ -120,7 +120,7 @@ separate/censored observations:
   check/status becomes queryable, a terminal result is queryable, the corresponding
   webhook is accepted/delivered into an agent's subscription inbox, and the agent
   actually receives or reads it (if observable). Record when the job log and
-  BuildBuddy invocation/target logs become *accessible* to the relevant agent,
+  BuildBuddy invocation/target logs become _accessible_ to the relevant agent,
   not merely when a job ends or a log URL is advertised. Measure the observable
   hop(s) only; webhook creation, delivery, inbox read and harness receipt are
   distinct clocks. Default PR subscriptions receive `check_run` completions and
@@ -159,7 +159,7 @@ where possible; note unknown and overlapping intervals explicitly:
    tool log, cache scorecard, target and execution records as needed (see the
    `buildbuddy_api` skill). Distinguish analysis time from executed actions;
    configured-target count or cache hit rate alone cannot diagnose analysis-cache
-   reuse. Identify expensive actions/tests by label, frequency and *critical-path*
+   reuse. Identify expensive actions/tests by label, frequency and _critical-path_
    contribution; include failures/retries and cache misses when relevant. Separate
    remote scheduling/queue time from worker provision, process execution and
    transfer. One slow execution does not necessarily extend the end-to-end path.
@@ -176,7 +176,7 @@ phase-by-phase wall-clock timeline for a few linked cases with unknown intervals
 (3) runner occupancy and remote action cost in their own units; (4) the longest
 confirmed critical-path contributors, by test/action/step; and (5) a ranked
 impact/effort/confidence list of interventions with a validation plan. A ranked
-list of total CPU users is *not* a ranked list of feedback bottlenecks.
+list of total CPU users is _not_ a ranked list of feedback bottlenecks.
 Compare distributions (p50/p90 and tails with sample sizes) and resource consumption
 across PR classes; show direct job/invocation links and source SHA for cases. Do not
 sum parallel step durations and call the result latency; label runner-minutes,
@@ -185,7 +185,7 @@ an interval, leave it unknown and identify the minimal additional trace needed.
 
 ## Recommend changes using 80/20 reasoning
 
-Rank *concrete* interventions by likely impact on required-check feedback for common
+Rank _concrete_ interventions by likely impact on required-check feedback for common
 PRs, engineering effort, operational/security risk and confidence. Prefer low-risk
 quick wins with directly observed recurring waste; distinguish fixes to the long
 tail from fixes to a typical PR. Estimate possible savings as a range, not a
@@ -263,7 +263,7 @@ history. Its root `index.html` links to immutable
 `manifest.json` (full inspected **devel** SHA and UTC observation window),
 `report.md`, `evidence.json`, a standalone viewable `index.html`, and optionally
 `attribution.json`. Earlier entries must never be rewritten; history is linear,
-not a mirror of `devel`. The initial entry is an explicitly labeled *historical*
+not a mirror of `devel`. The initial entry is an explicitly labeled _historical_
 copy of the previously maintained report, not a fresh cdk8s comparison. Read it
 as a baseline for **methodology**, not proof of current performance.
 
@@ -289,7 +289,7 @@ presentation) before publishing. Do not mistake successful script execution for
 completion of the skill.
 
 For the first creation only, use `git switch --orphan ci-latency-history` in a
-*separate* temporary worktree, clear any remaining tracked files and add only the new
+_separate_ temporary worktree, clear any remaining tracked files and add only the new
 artifacts + `README.md` + root `index.html`. Never orphan/reset an existing
 history ref. On subsequent runs fetch the canonical ref and work from its tip;
 before publication fetch again and require the remote tip to be an ancestor of
@@ -311,7 +311,7 @@ removing one trigger may save nothing if another trigger still selects the same
 test. The name for one optional allocation of shared costs across overlapping
 causes is the **Shapley value**. `scripts/attribution.py` computes the exact Shapley value for a restricted
 but useful counterfactual: each **measured additive cost unit** is incurred if
-*any* member of its independently verified `triggers` set is present. For that
+_any_ member of its independently verified `triggers` set is present. For that
 OR game, the exact value is `seconds / number of triggers`, without enumerating
 coalitions. A provisioning unit triggered by two tests splits its measured setup
 cost equally; a test unit triggered by two changed-path groups splits its measured
@@ -319,13 +319,25 @@ execution cost equally. **Keep the player definition consistent** (either test
 labels or disjoint changed-path groups) across all units in one calculation.
 Never infer triggers solely from glob names; resolve actual changed paths against
 filters, Bazel test selection and invocation evidence. When overlapping globs
-match the *same* path group, deduplicate it. If provisioning is triggered by
+match the _same_ path group, deduplicate it. If provisioning is triggered by
 non-test build work, include that cause as a player rather than charging tests.
 
 Reviewed JSON input example (one resource at a time):
 
 ```json
-{"resource":"runner-seconds","runs":[{"id":"github-job-id/attempt","source_commit":"example-source-sha","units":[{"name":"setup","kind":"provision","seconds":90,"triggers":["test-a","test-b"]},{"name":"test-a","kind":"test","seconds":30,"triggers":["test-a"]}]}]}
+{
+  "resource": "runner-seconds",
+  "runs": [
+    {
+      "id": "github-job-id/attempt",
+      "source_commit": "example-source-sha",
+      "units": [
+        { "name": "setup", "kind": "provision", "seconds": 90, "triggers": ["test-a", "test-b"] },
+        { "name": "test-a", "kind": "test", "seconds": 30, "triggers": ["test-a"] }
+      ]
+    }
+  ]
+}
 ```
 
 Use actual full SHA in place of the illustrative source field. Run
