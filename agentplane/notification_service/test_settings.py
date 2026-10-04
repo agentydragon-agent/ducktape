@@ -47,10 +47,17 @@ sandbox_service:
         Settings(_cli_parse_args=False)
 
 
-@pytest.mark.parametrize("values", [
-    {"quiet_seconds": -1}, {"quiet_seconds": float("nan")}, {"quiet_seconds": float("inf")},
-    {"max_wait_seconds": 0}, {"max_wait_seconds": -1}, {"max_wait_seconds": float("inf")},
-])
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"quiet_seconds": -1},
+        {"quiet_seconds": float("nan")},
+        {"quiet_seconds": float("inf")},
+        {"max_wait_seconds": 0},
+        {"max_wait_seconds": -1},
+        {"max_wait_seconds": float("inf")},
+    ],
+)
 def test_invalid_notice_debounce(values: dict[str, float]) -> None:
     with pytest.raises(ValidationError):
         NoticeDebounceSettings(**values)

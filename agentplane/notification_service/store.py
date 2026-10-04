@@ -588,7 +588,8 @@ class Store:
                 )
             )
         ).one()
-        assert first is not None and last is not None
+        assert first is not None
+        assert last is not None
         return min(
             last + timedelta(seconds=self.debounce.quiet_seconds),
             first + timedelta(seconds=self.debounce.max_wait_seconds),

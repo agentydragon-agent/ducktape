@@ -440,7 +440,9 @@ async def test_notice_max_wait_and_inflight_notice_are_not_extended(store: Store
     assert await store.notice(claim) is None
     # A recent entry cannot postpone an older pending entry beyond the maximum wait.
     async with store.sessions.begin() as session:
-        await session.execute(update(Entry).where(Entry.cursor == 1).values(created_at=datetime.now(UTC) - timedelta(seconds=301)))
+        await session.execute(
+            update(Entry).where(Entry.cursor == 1).values(created_at=datetime.now(UTC) - timedelta(seconds=301))
+        )
     notice = await store.notice(claim)
     assert notice is not None
     assert notice.through_cursor == 2
@@ -449,10 +451,16 @@ async def test_notice_max_wait_and_inflight_notice_are_not_extended(store: Store
     assert retry is not None
     assert (retry.command_id, retry.text, retry.through_cursor) == (notice.command_id, notice.text, 2)
     await store.receipt(
-        claim, notice,
-        event_log_pb2.EventEntry(cursor=1, event=event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(origin_command_ids=[str(notice.command_id)])
-        )),
+        claim,
+        notice,
+        event_log_pb2.EventEntry(
+            cursor=1,
+            event=event_pb2.Event(
+                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                    origin_command_ids=[str(notice.command_id)]
+                )
+            ),
+        ),
     )
     # The next burst has its own window; the already covered old entry cannot force it due.
     assert await store.notice(claim) is None
