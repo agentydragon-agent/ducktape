@@ -41,17 +41,18 @@ def calculate(data):
             for trigger in triggers:
                 totals[trigger] += cost / len(triggers)
                 by_kind[trigger][kind] += cost / len(triggers)
+    measured_seconds = sum(coverage.values())
     result = {
         "resource": resource,
         "run_count": len(runs),
-        "measured_seconds": sum(coverage.values()),
+        "measured_seconds": measured_seconds,
         "measured_by_kind_seconds": dict(sorted(coverage.items())),
         "attribution": [
             {"trigger": k, "seconds": v, "by_kind_seconds": dict(sorted(by_kind[k].items()))}
             for k, v in sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
         ],
     }
-    if not math.isclose(sum(totals.values()), result["measured_seconds"], rel_tol=1e-12, abs_tol=1e-7):
+    if not math.isclose(sum(totals.values()), measured_seconds, rel_tol=1e-12, abs_tol=1e-7):
         raise ValueError("attribution does not reconcile")
     return result
 
