@@ -28,9 +28,7 @@ def test_platform_instructions_render_all_deployment_guidance_together() -> None
     assert "http://actions.test.invalid:8080/openapi.json" in instructions
     assert "configured local timezone (from the `TZ` environment variable)" in instructions
     assert instructions.count("### Waiting efficiently for Actions") == 1
-    assert instructions.index("configured local timezone") < instructions.index(
-        "### Waiting efficiently for Actions"
-    )
+    assert instructions.index("configured local timezone") < instructions.index("### Waiting efficiently for Actions")
     assert "Choose how to wait:" in instructions
     assert instructions.index("Choose how to wait:") < instructions.index("### Subscribe")
     assert "You may subscribe immediately; you do not need to time out first." in instructions
