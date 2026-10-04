@@ -213,8 +213,8 @@
       "sha256": "lEZv5Cocm/7QVzVEuJyg2VOUxKvkJMZolmB0Q3efDDs="
     },
     "skill-ci_latency": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-ce26d1bf34db/ci_latency.skill",
-      "sha256": "zibRvzTbRUZ0hhXNOu5pC5TcnnZIvzkFFxCYVCpIHQo="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-d8f7ec310e18/ci_latency.skill",
+      "sha256": "2PfsMQ4Ye5bh4QgzIT1DZxI4GCxlY7KiWkhgHFp9DNs="
     },
     "skill-seaweed_operator": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-seaweed_operator-6249a6ee9e7e/seaweed_operator.skill",
@@ -237,12 +237,12 @@
       "sha256": "ehEEqt+2TQPSBsA/KugNUtehlLVNeWkdFlugUmDWZOk="
     },
     "plaid-spend-desktop": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-0e56737fd5eb/plaid_spend_desktop-0.1.0-py3-none-any.whl",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-4afdbddda4d3/plaid_spend_desktop-0.1.0-py3-none-any.whl",
       "sha256": "UXA9rh4jV9h54tKOAJic+TOWLHlDb0SKYEdD/LXffQQ="
     },
     "plaid-spend-desktop-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-0e56737fd5eb/plaid-spend-desktop.zip",
-      "sha256": "LYWDT7LDaQfN9xiawI61h0jTqU3uOEDBdCUr2pFg+oc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/plaid-spend-desktop-4afdbddda4d3/plaid-spend-desktop.zip",
+      "sha256": "/DkqG5CIlaiVNVLz13ijGhuGs79+hSkuX1tf2bcc3gc="
     }
   }
 }
