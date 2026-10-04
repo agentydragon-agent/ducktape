@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: agentplane-github-app
+    namespace: agentplane-staging
+type: Opaque
+stringData:
+    private-key: ENC[AES256_GCM,data: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,iv:OsvkjsPO2vix/A53jAenDmdNRUWXWc48jsBcTO+0NCo=,tag:qrBWIsAxLPbI4eAradVkbw==,type:str]
+    webhook-secret: ENC[AES256_GCM,data:3BL2zdbsK6LpflSTrqvlorPLMmU=,iv:VFWNaIyH8WNfPSfCfOLu4U8MCStWSq0G/g8sKgU85t4=,tag:2Q9Dl0doqC1L2FbCo9jONw==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBneWszZ3ZIS3ZtWHRWc0Jk
+            bUVxQk5mdTd3d291UDltQ0tHOUVNSER5c0JRCjRiTUZ0cjJZSGRnZHlpSmx1QjUx
+            Q3pIbU1ucEU0dmttZ05qR01OejNDQWMKLS0tIGxST3RWbnN5RG9Uaks1a1d0SUYv
+            emxJTWl2RHZWT3J4bWZrQ1QxNkFKanMKoClqtMtiQbbXFI9gWn7vQGcYRLiIu6Dq
+            FelQNbFOGW/P/yY18yLbWbhryIXo6HA0A2reofNyRPmEAVh4N7xE2g==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2anU4TVNvWkFwNUtWRXlD
+            YkhRZlUyL211b05rTm9GVTVPcW1ZV0h4ZkZRCi9UclBmeHdjU3lZNi9YUTVscitl
+            Y1dBeUo3R3ZkYndvY0M5L2pWcG51bkkKLS0tIDAvWG1BTFhFc2VqN2M4TjNtVDdz
+            bGY3eVhuU1JkV3JhaVVqajNsaFlUaHMKnikCswtNwcuqvT6gAe6JgwOYs/aPFPaA
+            vGZk0pXw2K/aGG/aeDhwo+gyxVsQ0Sk2B9aBTM0+uzxmGGcE6z9u2Q==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-10-04T19:03:19Z"
+    mac: ENC[AES256_GCM,data:ZbyMNQMtJRya71xN5zocY5PnFSdagp9qb3vQ8pr4HymA81z4M8HcvMlD7AAGrCG+oPS1GkhGuc8Dq4oA7OU6iOY6CLQKL4a3lr/B+Z2LpFxJf15BQphTbOLrSOCbqnKA6oGzcYVNQGOQZc5d0x63IEJR6b1USrm2zTyMZKotl5o=,iv:4G2Me/K0hWfTOLFdv64yTtJXF4bR9CxiUP/mkVSExo8=,tag:0Nsy3i5bQVGuXLkqhJandA==,type:str]
+    version: 3.13.3
