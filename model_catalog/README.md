@@ -6,10 +6,10 @@ cdk8s. Consumers select named routes and serialize them at their own boundary.
 - `catalog.py`: account-specific model facts, account/wire identities, named routes,
   compatibility aliases, and ordered rosters. Define named routes **before** rosters;
   a tuple's position or a lookup by slug must not define a named selection.
-- `policies.py`: shared client lanes and Claude wrapper choices. Each lane has its
+- `policies.py`: shared client lanes. Each lane has its
   allowed routes and ordered fallback targets together. Authorization, offering a
   model in a picker, and choosing defaults are different decisions.
-- `nix.py`: the model-only JSON projection used by the Nix Claude Code wrappers.
+- `nix.py`: wrapper choices and their model-only JSON projection for Nix Claude Code wrappers.
   Regenerate `claude-wrappers.json` with `bb run //model_catalog:generate_nix`.
 
 Account means whose credentials/account serve a model, not its manufacturer. Shape

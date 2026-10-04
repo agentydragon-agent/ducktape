@@ -7,34 +7,16 @@ nor treats a fallback as permission to use a model.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from cdk8s import App, Chart
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
-from model_catalog.catalog import SERVED_ROUTES
 from model_catalog.policies import KEY_MODEL_LANES, ModelLaneRoutes
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
-
-
-class ModelLane(BaseModel):
-    """One lane's policy, serialized as exposed LiteLLM route IDs for Terraform."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    allowed_models: list[str] = Field(
-        description="Fully qualified LiteLLM route IDs that virtual keys consuming this lane may request. "
-        "This is authorization policy, not a picker or a default model selection."
-    )
-    fallback_models: list[str] = Field(
-        description="Ordered targets for this lane's team-level wildcard fallback rule. Each must already "
-        "belong to allowed_models: fallback routing does not grant access. Empty means no configured fallback."
-    )
 
 
 class KeysVars(BaseModel):
@@ -42,23 +24,20 @@ class KeysVars(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    model_lanes: dict[str, ModelLane] = Field(
+    model_lanes: dict[str, ModelLaneRoutes] = Field(
         description="Policies keyed by client-lane identifier (for example codex_client_models), not model ID "
         "or provider. Terraform keys may combine the allowed_models from several lanes."
     )
 
-
-def model_lanes(lanes: Mapping[str, ModelLaneRoutes]) -> dict[str, ModelLane]:
-    result = {}
-    for name, lane in lanes.items():
-        if unserved := [route.id for route in lane.allowed if route not in SERVED_ROUTES]:
-            raise ValueError(f"{name=} selects unserved routes: {unserved}")
-        if any(route not in lane.allowed for route in lane.fallbacks):
-            raise ValueError(f"{name=} selects fallback routes outside its allowlist")
-        result[name] = ModelLane(
-            allowed_models=[route.id for route in lane.allowed], fallback_models=[route.id for route in lane.fallbacks]
-        )
-    return result
+    @field_serializer("model_lanes")
+    def serialize_model_lanes(self, lanes: dict[str, ModelLaneRoutes]) -> dict[str, dict[str, list[str]]]:
+        return {
+            name: {
+                "allowed_models": [route.id for route in lane.allowed],
+                "fallback_models": [route.id for route in lane.fallbacks],
+            }
+            for name, lane in lanes.items()
+        }
 
 
 def keys_chart(app: App) -> Chart:
@@ -71,7 +50,7 @@ def keys_chart(app: App) -> Chart:
         chart,
         "terraform",
         name="litellm-keys",
-        variables=KeysVars(model_lanes=model_lanes(KEY_MODEL_LANES)),
+        variables=KeysVars(model_lanes=KEY_MODEL_LANES),
         env=[
             # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml
             # beside this CR) that decrypts the module's pinned client-key files for

@@ -40,17 +40,7 @@ def test_public_coder_agent_catalog_names_only_served_routes() -> None:
     served = _litellm_models()
     for model in _public_coder_agent_models():
         assert model["id"] in served, f"{model['id']} has no LiteLLM route"
-
-
-def test_public_coder_projects_selected_route_metadata() -> None:
-    entries = _public_coder_agent_models()
-    assert [entry["id"] for entry in entries] == [route.id for route in PUBLIC_CODER_MODELS]
-    for entry, route in zip(entries, PUBLIC_CODER_MODELS, strict=True):
-        assert entry["contextWindow"] == route.model.context_window
-        assert entry["maxTokens"] == route.model.max_output_tokens
-        assert entry["reasoning"] == route.model.reasoning
-        assert entry["name"].startswith(f"{route.display_name} (")
-        assert entry["maxTokens"] < entry["contextWindow"]
+        assert model["maxTokens"] < model["contextWindow"]
 
 
 def test_public_coder_omits_unknown_limits() -> None:

@@ -97,11 +97,6 @@ class ApiShape(StrEnum):
     OAI_TRANSCRIBE = "oai-transcribe"
 
 
-def _exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
-    """#4823 scheme name, e.g. `chatgpt/oai-responses/gpt-5.6-luna`."""
-    return f"{provider}/{shape}/{model}"
-
-
 _SHAPE_MODE: dict[ApiShape, str] = {
     ApiShape.ANT_MESSAGES: "chat",
     ApiShape.OAI_CHAT: "chat",
@@ -138,16 +133,6 @@ _UPSTREAM_DEFINER: dict[str, str] = {
 }
 
 
-def shape_for(upstream_prefix: str, protocol: str) -> ApiShape:
-    """The wire shape for this upstream account and protocol.
-
-    Deriving the shape this way -- rather than a call site naming `shape` and
-    `upstream_prefix` as two independent values -- makes it structurally impossible to
-    pick a shape whose definer disagrees with the upstream it's actually calling.
-    """
-    return ApiShape(f"{_UPSTREAM_DEFINER[upstream_prefix]}-{protocol}")
-
-
 @dataclass(frozen=True)
 class Model:
     """Metadata for a model as served by its account, not a universal vendor claim.
@@ -175,7 +160,7 @@ class Upstream:
 
     @property
     def shape(self) -> ApiShape:
-        return shape_for(self.prefix, self.protocol)
+        return ApiShape(f"{_UPSTREAM_DEFINER[self.prefix]}-{self.protocol}")
 
 
 @dataclass(frozen=True)
@@ -198,7 +183,7 @@ class Route:
     def id(self) -> str:
         if self.bare_name:
             return self.model.id
-        return _exposed_name(self.upstream.provider, self.upstream.shape, self.model.id)
+        return f"{self.upstream.provider}/{self.upstream.shape}/{self.model.id}"
 
     @property
     def display_name(self) -> str:

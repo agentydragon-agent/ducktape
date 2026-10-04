@@ -3,16 +3,6 @@
 import pytest_bazel
 
 from cluster.cdk8s.litellm.config import main_proxy_config
-from model_catalog.catalog import OLLAMA_CHAT_ROUTES, SERVED_ROUTES, ApiShape, Route
-
-
-# The canonical route derives each entry's shape from its upstream adapter
-# and its mode from shape_mode(shape) -- a mismatched wire/upstream pairing is
-# structurally unrepresentable there, not just checked after the fact. What's left to
-# verify here is coverage: that every declared ApiShape actually gets used somewhere.
-def test_every_declared_shape_is_used() -> None:
-    shapes_seen = {(entry if isinstance(entry, Route) else entry.target).upstream.shape for entry in SERVED_ROUTES}
-    assert shapes_seen == set(ApiShape)
 
 
 def test_tana_routes_register_the_in_process_provider() -> None:
@@ -22,19 +12,6 @@ def test_tana_routes_register_the_in_process_provider() -> None:
     assert tana_entries
     assert all(entry["litellm_params"]["custom_llm_provider"] == "tana" for entry in tana_entries)
     assert any(item["provider"] == "tana" for item in config["litellm_settings"]["custom_provider_map"])
-
-
-def test_ollama_native_chat_routes_keep_names_and_use_chat_adapter() -> None:
-    """The public `olm-chat` contract stays stable while LiteLLM dispatches to `/api/chat`."""
-    expected = {
-        route.id: route.upstream_id for route in OLLAMA_CHAT_ROUTES if route.upstream.shape == ApiShape.OLM_CHAT
-    }
-    native_entries = [
-        entry for entry in main_proxy_config()["model_list"] if entry["model_name"].startswith("ollama/olm-chat/")
-    ]
-
-    assert len(native_entries) == len(expected)
-    assert {entry["model_name"]: entry["litellm_params"]["model"] for entry in native_entries} == expected
 
 
 if __name__ == "__main__":

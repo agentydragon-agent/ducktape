@@ -6,28 +6,23 @@ from model_catalog.catalog import (
     ANTHROPIC_SUBSCRIPTION_ROUTES,
     ANTIGRAVITY_FLASH_LITE,
     ANTIGRAVITY_FLASH_LITE_ROUTES,
-    ANTIGRAVITY_PRO,
     ANTIGRAVITY_ROUTES,
     CHATGPT_MESSAGES_ROUTES,
     GEMINI_EMBEDDING_ALIAS,
     GEMINI_EMBEDDING_ROUTES,
-    GEMINI_FLASH,
     GEMINI_FLASH_LITE,
     GEMINI_ROUTES,
-    GPT6_ASTRA_MESSAGES,
     GPT6_LUNA_MESSAGES,
     GPT6_LUNA_RESPONSES,
     GPT6_MESSAGES_ROUTES,
     GPT6_RESPONSES_ROUTES,
     HAIKU_API,
-    HAIKU_SUBSCRIPTION,
     MISTRAL_ROUTES,
     OLLAMA_CHAT_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
-    SONNET_SUBSCRIPTION,
+    SERVED_ROUTES,
     TANA_HAIKU,
     TANA_ROUTES,
-    TANA_SONNET,
     Route,
     RouteAlias,
 )
@@ -63,6 +58,12 @@ class ModelLaneRoutes:
     allowed: tuple[Route | RouteAlias, ...]
     fallbacks: tuple[Route, ...] = ()
 
+    def __post_init__(self) -> None:
+        if unserved := [route.id for route in self.allowed if route not in SERVED_ROUTES]:
+            raise ValueError(f"lane selects unserved routes: {unserved}")
+        if any(route not in self.allowed for route in self.fallbacks):
+            raise ValueError("lane selects fallback routes outside its allowlist")
+
 
 # Lane identifiers bind these policies to Terraform keys/teams; a key may combine lanes.
 KEY_MODEL_LANES = {
@@ -76,32 +77,4 @@ KEY_MODEL_LANES = {
     "antigravity_client_models": ModelLaneRoutes(allowed=ANTIGRAVITY_ROUTES, fallbacks=(ANTIGRAVITY_FLASH_LITE,)),
     "ollama_chat_client_models": ModelLaneRoutes(allowed=OLLAMA_CHAT_ROUTES),
     "cheap_experiments_models": ModelLaneRoutes(allowed=CHEAP_EXPERIMENTS_ROUTES),
-}
-
-
-@dataclass(frozen=True)
-class ClaudeWrapperModels:
-    primary: Route
-    haiku: Route
-    key_lane: str
-    publish_limits: bool = False
-    max_output_override: int | None = None
-
-
-CLAUDE_WRAPPER_MODELS = {
-    "codex-claude": ClaudeWrapperModels(
-        GPT6_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES, "codex_client_models", publish_limits=True
-    ),
-    "litellm-claude": ClaudeWrapperModels(SONNET_SUBSCRIPTION, HAIKU_SUBSCRIPTION, "claude_client_models"),
-    "gemini-claude": ClaudeWrapperModels(GEMINI_FLASH, GEMINI_FLASH_LITE, "gemini_client_models", publish_limits=True),
-    "antigravity-claude": ClaudeWrapperModels(
-        ANTIGRAVITY_PRO,
-        ANTIGRAVITY_FLASH_LITE,
-        "antigravity_client_models",
-        publish_limits=True,
-        # Preserve the wrapper's configured 65,536, distinct from this account's
-        # published 65,535 output limit. Changing that client policy is separate.
-        max_output_override=65_536,
-    ),
-    "tana-claude": ClaudeWrapperModels(TANA_SONNET, TANA_HAIKU, "tana_client_models"),
 }
