@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.postgres_listener import PostgresListener
+from agentplane.postgres.listener import PostgresListener
 
 CHANNEL = "agentplane_notification_work"
 

@@ -15,7 +15,7 @@ from uuid import UUID
 
 from sqlalchemy.engine import make_url
 
-from agentplane.postgres_listener import PostgresListener
+from agentplane.postgres.listener import PostgresListener
 
 CHANNEL = "agentplane_action_updates"
 logger = logging.getLogger(__name__)

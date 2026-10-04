@@ -11,7 +11,7 @@ import pytest_bazel
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
 
-from agentplane.postgres_listener import PostgresListener
+from agentplane.postgres.listener import PostgresListener
 
 
 @pytest.fixture
