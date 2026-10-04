@@ -91,3 +91,22 @@ py_library(
         "@pypi//httpx",
     ],
 )
+
+py_library(
+    name = "history_probe",
+    srcs = ["history_probe.py"],
+    data = ["history_probe.js"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//playwright",
+    ],
+)
+
+py_library(
+    name = "history_trace",
+    srcs = ["history_trace.py"],
+    deps = [
+        "@pypi//playwright",
+        "@pypi//pydantic",
+    ],
+)

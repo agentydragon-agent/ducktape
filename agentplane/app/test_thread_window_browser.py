@@ -18,6 +18,7 @@ from agentplane.app.test_thread_browser import (
     frames,
     wheel_and_capture_anchor_at_scrollend,
 )
+from agentplane.app.testing import history_trace
 from agentplane.protocol import event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -256,11 +257,6 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
     several scroll-to-top cycles deep into that unevenness, each one fully settled before the
     next, to isolate accumulated estimate error from any gesture-timing race."""
     page = thread_browser.page
-    console: list[str] = []
-    page.on("console", lambda msg: console.append(msg.text))
-    # Surfaces VirtualizedHistory's own scroll-anchor trace (projected_session.tsx's scrollDebug)
-    # in the dump below on failure, since this test's whole point is diagnosing exactly that path.
-    await page.add_init_script("localStorage.setItem('agentplane:debugScroll', '1')")
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
     # Generously larger than 6 cycles' worth of pages: loadOlderAtTop keeps fetching older pages
@@ -271,14 +267,13 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     await page.reload()
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
-    console.clear()
 
     history = page.get_by_role("region", name="Thread history", exact=True)
     loading = history.get_by_role("status").filter(has_text="Loading earlier…")
     await history.hover()
 
     for cycle in range(6):
-        console.clear()
+        cycle_began = await page.evaluate("performance.now()")
         anchor = await wheel_and_capture_anchor_at_scrollend(page, history, -20_000)
         await expect(loading).to_have_count(0, timeout=30_000)
         await frames(page)
@@ -286,8 +281,11 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
         try:
             await expect_reading_anchor(page, anchor)
         except PlaywrightTimeoutError:
-            raise AssertionError(f"cycle {cycle} anchor={anchor}\n" + "\n".join(console)) from None
+            trace = history_trace.as_json_lines(await history_trace.events(page, since=cycle_began))
+            raise AssertionError(f"cycle {cycle} anchor={anchor}\n{trace}") from None
         await page.screenshot(path=undeclared_outputs_dir() / f"thread-window-uneven-cycle-{cycle}.png")
+    # A passing run still parses all it recorded, so an event the typed trace lacks fails here, not only in a dump.
+    await history_trace.events(page)
 
 
 async def test_a_thread_shorter_than_the_eager_load_shows_in_full_without_a_scroll(

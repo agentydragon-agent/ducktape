@@ -32,6 +32,7 @@ from playwright.async_api import (
 from sqlalchemy import select, update
 
 from agentplane.app.database import connect
+from agentplane.app.testing import history_probe, history_trace
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
@@ -77,14 +78,22 @@ async def page(
         )
         try:
             async with await browser.new_context(viewport={"width": 1280, "height": 900}) as context:
+                await context.add_init_script(path=history_probe.script_path())
                 await context.tracing.start(screenshots=True, snapshots=True, sources=True)
                 opened = await context.new_page()
+                await history_probe.throttle_cpu(context, opened)
                 errors: list[str] = []
                 opened.on("pageerror", lambda error: errors.append(str(error)))
                 try:
                     yield opened
                     assert not errors, errors
                 finally:
+                    await history_probe.write_results(
+                        opened, undeclared_outputs_dir() / f"{request.node.name}-history-probe.json"
+                    )
+                    await history_trace.write(
+                        opened, undeclared_outputs_dir() / f"{request.node.name}-history-trace.jsonl"
+                    )
                     await context.tracing.stop(path=undeclared_outputs_dir() / f"{request.node.name}-trace.zip")
         finally:
             await browser.close()
@@ -287,6 +296,35 @@ async def test_switching_threads_starts_at_each_threads_tail(
             )
             await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible()
         await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
+
+
+async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
+    page: Page,
+    db_url: str,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    electric: ElectricService,
+    certificate: BrowserCertificate,
+) -> None:
+    """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
+    it read. Rows read on a thread's first visit are laid out at those heights on the return."""
+    threads, _ = await _seed_navigation_threads(event_logs, ingestion, store)
+    directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
+    async with (
+        app_process(
+            db_url, runner_port=0, frontend_directory=directory, sandbox_present=False, electric_url=electric.url
+        ) as app,
+        http2_proxy(app.url, certificate) as ingress,
+    ):
+        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible(timeout=30_000)
+        for number in (1, 0):
+            await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
+            await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible(timeout=30_000)
+        remembered = [entry.error for entry in await history_trace.estimate_errors(page) if entry.remembered]
+        assert remembered, "no row on the return was laid out from what the first visit read"
+        assert max(abs(error) for error in remembered) <= 2, remembered
 
 
 def _older_page_bound(request: Request) -> int | None:
@@ -1146,6 +1184,10 @@ async def append_run_among_rows(thread_browser: ThreadBrowser, *, below: int) ->
     if below:
         latest = append_items(thread_browser, "below", range(below))
     await expect_projected_cursor(thread_browser.page, latest.cursor)
+    # The rows are in before their text is, and each grows when its text arrives.
+    await expect(thread_browser.page.get_by_role("region", name="Thread history", exact=True)).to_have_attribute(
+        "data-layout-settled", "true", timeout=30_000
+    )
 
 
 @asynccontextmanager
@@ -1231,25 +1273,39 @@ async def read_at(page: Page, target: Locator, fraction: float) -> None:
 
 
 @asynccontextmanager
-async def holding_still(page: Page, line: Locator) -> AsyncIterator[None]:
+async def holding_still(page: Page, line: Locator, *, rest_first: bool = True) -> AsyncIterator[None]:
     """Fails unless `line` stays where it is on screen, in every frame painted from here until the
     block's layout has settled: the reader's place is what they just clicked, and the history's
-    scrolling may not carry it away."""
-    watch = await line.evaluate_handle(
-        """element => {
-            const start = element.getBoundingClientRect().top;
-            const state = { start, drift: 0, detached: false, stopped: false };
-            const sample = () => {
-                if (state.stopped) return;
-                if (element.isConnected) {
-                    state.drift = Math.max(state.drift, Math.abs(element.getBoundingClientRect().top - start));
-                } else state.detached = true;
-                requestAnimationFrame(sample);
-            };
-            requestAnimationFrame(sample);
-            return state;
-        }"""
-    )
+    scrolling may not carry it away. "Where it is" is where it is once the history says its layout
+    has come to rest (`data-layout-settled`): it keeps measuring rows, and moving the ones it has
+    laid out, for a while after it loads, and that shift is not the click's. `rest_first=False` for
+    a layout that keeps changing by design, such as output streaming in below the line."""
+    try:
+        async with asyncio.timeout(30):
+            watch = await line.evaluate_handle(
+                """(element, restFirst) => new Promise(resolve => {
+                    const area = document.querySelector('[aria-label="Thread history"]');
+                    const state = { drift: 0, detached: false, stopped: false };
+                    const sample = start => {
+                        if (state.stopped) return;
+                        if (element.isConnected) {
+                            state.drift = Math.max(state.drift, Math.abs(element.getBoundingClientRect().top - start));
+                        } else state.detached = true;
+                        requestAnimationFrame(() => sample(start));
+                    };
+                    const begin = () => requestAnimationFrame(() => {
+                        if (restFirst && area.dataset.layoutSettled !== "true") return begin();
+                        sample(element.getBoundingClientRect().top);
+                        resolve(state);
+                    });
+                    begin();
+                })""",
+                rest_first,
+            )
+    except TimeoutError:
+        raise AssertionError(
+            f"{line} never came to rest; the history's last events:\n{await history_trace.recent(page, 40)}"
+        ) from None
     try:
         yield
         await frames(page)
@@ -1258,8 +1314,13 @@ async def holding_still(page: Page, line: Locator) -> AsyncIterator[None]:
         )
     finally:
         await watch.dispose()
-    assert not outcome["detached"], f"{line} left the page"
-    assert outcome["drift"] <= 2, f"{line} moved {outcome['drift']}px from where it was clicked"
+    assert not outcome["detached"], (
+        f"{line} left the page; the history's last events:\n{await history_trace.recent(page, 60)}"
+    )
+    assert outcome["drift"] <= 2, (
+        f"{line} moved {outcome['drift']}px from where it was clicked; the history's last events:\n"
+        f"{await history_trace.recent(page, 60)}"
+    )
 
 
 def tool_call_in(run: Locator, name: str) -> tuple[Locator, Locator]:
@@ -1268,6 +1329,35 @@ def tool_call_in(run: Locator, name: str) -> tuple[Locator, Locator]:
     call = run.locator(selector, has_text=f"Run tool {name}")
     card = run.locator(".mantine-Paper-root").filter(has=run.page.locator(selector, has_text=f"Run tool {name}")).last
     return call, card
+
+
+async def test_the_history_is_not_settled_while_a_row_is_still_loading_its_text(thread_browser: ThreadBrowser) -> None:
+    """A row is in before its text and grows when the text arrives, so a history that said it had
+    settled in between would move its rows after saying they were at rest."""
+    page = thread_browser.page
+    await page.set_viewport_size({"width": 412, "height": 915})
+    release = asyncio.Event()
+
+    async def hold_text(route: Route) -> None:
+        await release.wait()
+        await route.continue_()
+
+    await page.route("**/sync/chunks/**", hold_text)
+    try:
+        thread_browser.opened.replay.set()
+        history = page.get_by_role("region", name="Thread history", exact=True)
+        loading = history.get_by_text("Loading complete revision…")
+        await expect(loading.first).to_be_visible(timeout=30_000)
+        # Many times the frames a layout that waits for nothing needs to settle.
+        for _ in range(15):
+            await frames(page)
+        await expect(history).to_have_attribute("data-layout-settled", "false")
+        release.set()
+        await expect(history).to_have_attribute("data-layout-settled", "true", timeout=30_000)
+        await expect(loading).to_have_count(0)
+    finally:
+        release.set()
+        await page.unroute("**/sync/chunks/**", hold_text)
 
 
 @pytest.mark.parametrize("following", [False, True], ids=["mid-thread", "following"])
@@ -1321,14 +1411,14 @@ async def test_opening_a_call_while_output_streams_in_leaves_the_clicked_line_wh
     call, card = tool_call_in(run, "a")
     show_all = call.get_by_role("button", name="Show all 60 lines")
     async with output_streaming_in(thread_browser) as delivered:
-        async with holding_still(page, run):
+        async with holding_still(page, run, rest_first=False):
             await run.locator("summary").first.click()
             await expect(call).to_be_visible()
-        async with holding_still(page, card):
+        async with holding_still(page, card, rest_first=False):
             await call.locator("summary").first.click()
             await expect(show_all).to_be_visible()
         await read_at(page, show_all, 0.3)
-        async with holding_still(page, call.get_by_text("Output", exact=True)):
+        async with holding_still(page, call.get_by_text("Output", exact=True), rest_first=False):
             await show_all.click()
             await expect(call.get_by_role("button", name="Show less")).to_be_visible()
     assert len(delivered) >= 3, "the tail's output was not arriving while the call was opened"
@@ -1477,12 +1567,17 @@ async def expect_archived_events(
 
 
 async def expect_history_bottom(page: Page) -> None:
-    await page.wait_for_function(
-        """() => {
-            const area = document.querySelector('[aria-label="Thread history"]');
-            return area.scrollHeight - area.clientHeight - area.scrollTop <= 2;
-        }"""
-    )
+    try:
+        await page.wait_for_function(
+            """() => {
+                const area = document.querySelector('[aria-label="Thread history"]');
+                return area.scrollHeight - area.clientHeight - area.scrollTop <= 2;
+            }"""
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the history never reached its bottom; its last events:\n{await history_trace.recent(page, 60)}"
+        ) from None
 
 
 @pytest.mark.parametrize("raw", [False, True], ids=["desktop-normal", "phone-raw"])
