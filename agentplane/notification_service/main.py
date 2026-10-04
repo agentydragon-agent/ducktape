@@ -11,9 +11,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.notification_service.actions import Actions
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.service import Service
+from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.store import Store
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver

@@ -1275,7 +1275,7 @@ spec:
         - DELETE
       paths:
         - /openapi.json
-        - /v1/providers
+        - /v1/sources
         - /v1/subscriptions
         - /v1/subscriptions/**
         - /v1/inboxes
