@@ -12,3 +12,25 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "github",
+    srcs = ["github.py"],
+    deps = [
+        ":github_models",
+        "//agentplane/notification_service:db",
+        "//agentplane/notification_service:settings",
+        "//agentplane/notification_service:store",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "github_models",
+    srcs = ["github_models.py"],
+    deps = ["@pypi//pydantic"],
+)

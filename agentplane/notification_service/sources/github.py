@@ -14,10 +14,11 @@ from uuid import UUID
 import httpx
 import jwt
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, TypeAdapter
-from sqlalchemy import false, or_, select, true
+from sqlalchemy import ColumnElement, false, or_, select, true
 from sqlalchemy.orm import aliased
 
 from agentplane.notification_service.db import GitHubDelivery, Inbox, Subscription
+from agentplane.notification_service.settings import GitHubSettings
 from agentplane.notification_service.sources.github_models import (
     CI_EVENTS,
     PR_EVENTS,
@@ -30,7 +31,6 @@ from agentplane.notification_service.sources.github_models import (
     GitHubSource,
     PullRequestSubject,
 )
-from agentplane.notification_service.settings import GitHubSettings
 from agentplane.notification_service.store import Store
 
 # RS256 is loaded dynamically by PyJWT.
@@ -372,8 +372,8 @@ class GitHub:
         if context.binding != GitHubBinding.model_validate(subscription.binding):
             raise GitHubUnavailableError("GitHub source installation/repository changed; recreate the subscription")
         delivery = GitHubDelivery
-        direct = false()
-        heads = delivery.head_sha.in_(context.heads)
+        direct: ColumnElement[bool] = false()
+        heads: ColumnElement[bool] = delivery.head_sha.in_(context.heads)
         match source.subject:
             case PullRequestSubject(number=number):
                 subject = f"pull_request:{number}"
@@ -394,15 +394,19 @@ class GitHub:
                 association.head_sha.is_not(None),
             )
             heads |= delivery.head_sha.in_(known_heads)
-        selected = or_(*(
-            (delivery.event == selector.event)
-            & (delivery.action.in_(selector.actions) if selector.actions is not None else true())
-            for selector in source.filters
-        ))
-        accessible = or_(*(
-            (delivery.repository_id == repository) & (delivery.installation_id == installation)
-            for repository, installation in context.installations.items()
-        ))
+        selected = or_(
+            *(
+                (delivery.event == selector.event)
+                & (delivery.action.in_(selector.actions) if selector.actions is not None else true())
+                for selector in source.filters
+            )
+        )
+        accessible = or_(
+            *(
+                (delivery.repository_id == repository) & (delivery.installation_id == installation)
+                for repository, installation in context.installations.items()
+            )
+        )
         deliveries = await store.github_deliveries(
             subscription,
             (delivery.app_id == context.binding.app_id)
@@ -413,13 +417,18 @@ class GitHub:
         matched = []
         for receipt in deliveries:
             assert receipt.repository_id is not None
-            matched.append((receipt, GitHubEvent(
-                provider="github",
-                app_id=receipt.app_id,
-                delivery_id=receipt.delivery_id,
-                repository_id=receipt.repository_id,
-                event=EventName(receipt.event),
-                action=receipt.action,
-            )))
+            matched.append(
+                (
+                    receipt,
+                    GitHubEvent(
+                        provider="github",
+                        app_id=receipt.app_id,
+                        delivery_id=receipt.delivery_id,
+                        repository_id=receipt.repository_id,
+                        event=EventName(receipt.event),
+                        action=receipt.action,
+                    ),
+                )
+            )
         # Only matching, previously undelivered receipts occupy the bounded page.
         await store.record_github(claim, subscription, matched, more=len(deliveries) == 128)

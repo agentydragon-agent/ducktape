@@ -24,10 +24,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import GitHubDelivery, Subscription
+from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionUpdate
+from agentplane.notification_service.service import Service
+from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, Settings
+from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.sources.github import GitHub, GitHubRetryError, GitHubUnavailableError
 from agentplane.notification_service.sources.github_models import (
     BranchSubject,
@@ -37,9 +40,6 @@ from agentplane.notification_service.sources.github_models import (
     GitHubSource,
     PullRequestSubject,
 )
-from agentplane.notification_service.models import DestinationRef, Subscribe, SubscriptionUpdate
-from agentplane.notification_service.service import Service
-from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, Settings
 from agentplane.notification_service.store import ConflictError, NotFoundError, Store
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.subjects import ServiceAccountRef
@@ -163,9 +163,7 @@ async def provider() -> AsyncIterator[tuple[GitHub, Upstream]]:
     upstream = Upstream(
         key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
     )
-    settings = GitHubSettings(
-        app_id=42, private_key=SecretStr(private), webhook_secret=SecretStr(SECRET.decode())
-    )
+    settings = GitHubSettings(app_id=42, private_key=SecretStr(private), webhook_secret=SecretStr(SECRET.decode()))
     async with httpx.AsyncClient(
         base_url="https://api.github.test", transport=httpx.MockTransport(upstream.handle)
     ) as http:
@@ -352,13 +350,16 @@ async def test_late_correlation_survives_restart_and_does_not_block_other_events
     store: Store, engine: AsyncEngine, provider: tuple[GitHub, Upstream], kind: str, ci_first: bool
 ) -> None:
     github, upstream = provider
-    source = SOURCE if kind == "pull_request" else SOURCE.model_copy(
-        update={"subject": BranchSubject(kind="branch", name="devel")}
+    source = (
+        SOURCE
+        if kind == "pull_request"
+        else SOURCE.model_copy(update={"subject": BranchSubject(kind="branch", name="devel")})
     )
     base: dict[str, JsonValue] = {"installation": {"id": 11}, "repository": {"id": 100, "full_name": "owner/repo"}}
     association = (
         base | {"action": "synchronize", "pull_request": {"number": 7, "head": {"sha": NEXT}}}
-        if kind == "pull_request" else base | {"ref": "refs/heads/devel", "after": NEXT}
+        if kind == "pull_request"
+        else base | {"ref": "refs/heads/devel", "after": NEXT}
     )
     event = "pull_request" if kind == "pull_request" else "push"
     # A later association must not pull receipts from before subscription creation into the inbox.
@@ -418,10 +419,17 @@ async def test_matching_pages_and_old_head_associations_are_not_capped(
     source = SOURCE.model_copy(update={"events": {EventFilter(event=EventName.CHECK_RUN, actions={"completed"})}})
     # Association history predates this subscription and is longer than a delivery page.
     for index in range(130):
-        await ingest(github, store, {
-            "installation": {"id": 11}, "repository": {"id": 100, "full_name": "owner/repo"},
-            "action": "synchronize", "pull_request": {"number": 7, "head": {"sha": f"{index:040x}"}},
-        }, "pull_request")
+        await ingest(
+            github,
+            store,
+            {
+                "installation": {"id": 11},
+                "repository": {"id": 100, "full_name": "owner/repo"},
+                "action": "synchronize",
+                "pull_request": {"number": 7, "head": {"sha": f"{index:040x}"}},
+            },
+            "pull_request",
+        )
     sub = await store.subscribe(PRINCIPAL, subscription(source), (await github.context(source)).binding)
     await ingest(github, store, check(f"{1:040x}") | {"action": "created"}, "check_run")
     for _ in range(130):

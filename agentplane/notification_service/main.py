@@ -8,11 +8,11 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.api import create_app
-from agentplane.notification_service.sources.github import GitHub
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import Settings
+from agentplane.notification_service.sources.actions import Actions
+from agentplane.notification_service.sources.github import GitHub
 from agentplane.notification_service.store import Store
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver

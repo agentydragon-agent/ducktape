@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.action_service.models import ActionEventView
 from agentplane.notification_service.db import Entry, GitHubDelivery, Inbox, Match, Notice, Subscription
-from agentplane.notification_service.sources.github_models import GitHubBinding, GitHubEvent, GitHubSource
 from agentplane.notification_service.models import (
     ActionsEvent,
     ActionsSource,
@@ -26,6 +25,7 @@ from agentplane.notification_service.models import (
     SubscriptionUpdate,
     SubscriptionView,
 )
+from agentplane.notification_service.sources.github_models import GitHubBinding, GitHubEvent, GitHubSource
 from agentplane.notification_service.updates import Wakeups, notify
 from agentplane.protocol import event_log_pb2
 from agentplane.subjects import ServiceAccountRef
@@ -514,33 +514,40 @@ class Store:
             await notify(session)
             return True
 
-    async def github_deliveries(
-        self, source: Subscription, predicate: ColumnElement[bool]
-    ) -> list[GitHubDelivery]:
+    async def github_deliveries(self, source: Subscription, predicate: ColumnElement[bool]) -> list[GitHubDelivery]:
         # Compare the complete identity so the inbox/event unique index serves replay exclusion.
         identity = func.jsonb_build_object(
-            "provider", "github", "app_id", GitHubDelivery.app_id,
-            "delivery_id", GitHubDelivery.delivery_id, "repository_id", GitHubDelivery.repository_id,
-            "event", GitHubDelivery.event, "action", GitHubDelivery.action,
+            "provider",
+            "github",
+            "app_id",
+            GitHubDelivery.app_id,
+            "delivery_id",
+            GitHubDelivery.delivery_id,
+            "repository_id",
+            GitHubDelivery.repository_id,
+            "event",
+            GitHubDelivery.event,
+            "action",
+            GitHubDelivery.action,
         )
-        delivered = select(Match.subscription_id).join(
-            Entry, (Entry.inbox_id == source.inbox_id) & (Entry.cursor == Match.cursor)
-        ).where(Match.subscription_id == source.id, Entry.event == identity).exists()
+        delivered = (
+            select(Match.subscription_id)
+            .join(Entry, (Entry.inbox_id == source.inbox_id) & (Entry.cursor == Match.cursor))
+            .where(Match.subscription_id == source.id, Entry.event == identity)
+            .exists()
+        )
         async with self.sessions() as session:
-            return list(await session.scalars(
-                select(GitHubDelivery)
-                .where(predicate, GitHubDelivery.position > source.position, ~delivered)
-                .order_by(GitHubDelivery.position)
-                .limit(128)
-            ))
+            return list(
+                await session.scalars(
+                    select(GitHubDelivery)
+                    .where(predicate, GitHubDelivery.position > source.position, ~delivered)
+                    .order_by(GitHubDelivery.position)
+                    .limit(128)
+                )
+            )
 
     async def record_github(
-        self,
-        claim: Inbox,
-        source: Subscription,
-        matched: list[tuple[GitHubDelivery, GitHubEvent]],
-        *,
-        more: bool,
+        self, claim: Inbox, source: Subscription, matched: list[tuple[GitHubDelivery, GitHubEvent]], *, more: bool
     ) -> None:
         async with self.sessions.begin() as session:
             inbox = await self.fenced(session, claim)

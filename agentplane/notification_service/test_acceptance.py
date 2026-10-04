@@ -282,7 +282,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     for _ in range(10):
                         async with store.sessions.begin() as session:
                             await session.execute(
-                                update(Inbox).where(Inbox.id == inbox_id).values(next_poll=datetime.now(UTC))
+                                update(Inbox).where(Inbox.id == inbox_id).values(next_attempt=datetime.now(UTC))
                             )
                         await recovered.step()
                         response = await agent.get(f"/v1/inboxes/{inbox_id}/entries")
