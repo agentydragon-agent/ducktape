@@ -38,6 +38,13 @@ class NamePrefix(BaseModel):
     prefix: str = Field(min_length=2)
 
 
+class NameContains(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["name_contains"]
+    field: Literal["name", "merchant_name"]
+    substring: str = Field(min_length=2)
+
+
 class CategoryExact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     type: Literal["category_exact"]
@@ -45,9 +52,17 @@ class CategoryExact(BaseModel):
     value: str = Field(min_length=2)
 
 
+class AllOf(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["all_of"]
+    conditions: list[Annotated[NamePrefix | NameContains | CategoryExact, Field(discriminator="type")]] = Field(
+        min_length=2
+    )
+
+
 class Rule(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    condition: Annotated[NamePrefix | CategoryExact, Field(discriminator="type")]
+    condition: Annotated[NamePrefix | NameContains | CategoryExact | AllOf, Field(discriminator="type")]
     kind: Kind
 
 
@@ -124,18 +139,22 @@ def month_anniversary(start: datetime, months: int) -> datetime:
     return start.replace(year=year, month=month, day=min(start.day, calendar.monthrange(year, month)[1]))
 
 
+def matches(transaction: Transaction, condition: NamePrefix | NameContains | CategoryExact | AllOf) -> bool:
+    if isinstance(condition, AllOf):
+        return all(matches(transaction, part) for part in condition.conditions)
+    if isinstance(condition, CategoryExact):
+        category = transaction.pfc_primary if condition.field == "pfc_primary" else transaction.pfc_detailed
+        return category == condition.value
+    name = transaction.name if condition.field == "name" else transaction.merchant_name
+    if name is None:
+        return False
+    if isinstance(condition, NamePrefix):
+        return name.casefold().startswith(condition.prefix.casefold())
+    return condition.substring.casefold() in name.casefold()
+
+
 def matching_rule(transaction: Transaction, rules: list[Rule]) -> Rule | None:
-    for rule in rules:
-        condition = rule.condition
-        if isinstance(condition, NamePrefix):
-            name = transaction.name if condition.field == "name" else transaction.merchant_name
-            if name is not None and name.casefold().startswith(condition.prefix.casefold()):
-                return rule
-        else:
-            category = transaction.pfc_primary if condition.field == "pfc_primary" else transaction.pfc_detailed
-            if category == condition.value:
-                return rule
-    return None
+    return next((rule for rule in rules if matches(transaction, rule.condition)), None)
 
 
 def calculate(
