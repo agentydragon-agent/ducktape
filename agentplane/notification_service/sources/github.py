@@ -300,6 +300,8 @@ class GitHub:
         ), headers
 
     async def context(self, source: GitHubSource) -> Context:
+        # TODO: Bootstrap head/fork associations once, then maintain them from durable webhooks.
+        # Keep access revalidation separate, with an explicit repair path for missed deliveries.
         binding, headers = await self.repository(source.repository)
         context = Context(binding, {binding.repository_id: binding.installation_id}, set())
         match source.subject:

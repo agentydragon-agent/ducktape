@@ -42,7 +42,29 @@ implemented behavior. This file tracks only remaining rollout work and deferred 
 - [ ] Verify failed-delivery visibility and the operator/API redelivery procedure. GitHub does not
       automatically retry failed webhook requests; durable recovery starts only after receipt commit.
 
+## Next: event-driven Actions consumption
+
+Replace the notification source's five-second Action-history polling in a separate implementation PR:
+
+- Add a read-authorized SSE change feed backed by the Action Service's existing committed-event
+  notifications. Its current SSE endpoint is operator-only; notifications must not gain operator
+  authority to consume updates. No cross-service database access.
+- Use one shared feed per notification-service replica, rather than one waiting connection per
+  subscription. Treat feed messages as invalidations, not as another authoritative event log.
+- On startup, reconnect, subscription creation and invalidation, drain the canonical Action event API
+  from each subscription's persisted `actions_after_sequence`. Commit progress with inbox entries.
+- Register the stream before catch-up reads and fence invalidations racing with processing. Waiting
+  for source changes must not occupy an inbox delivery worker or hold its lease.
+- Reconnect with refreshed projected credentials and bounded error backoff. Keep delivery retries and
+  retention scheduling, but remove periodic Action-history reads while idle.
+- Test reconnect/missed-signal recovery, concurrent events and subscription creation, ownership checks,
+  and that idle subscriptions neither poll history nor prevent unrelated inbox delivery.
+
 ## Deferred decisions and follow-ups
+
+- Bootstrap GitHub head/fork associations, then maintain them from durable webhooks instead of
+  refetching current heads on every matching pass. Keep authorization/revocation checks separate;
+  define recovery for missed deliveries and out-of-order head changes before removing API refreshes.
 
 - Consider removing `lifetime_days`. Prefer no automatic expiry; if retained, make it opt-in with
   agent warning/expiry-notification semantics.
