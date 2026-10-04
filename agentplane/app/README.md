@@ -424,11 +424,10 @@ linked to.
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the
 persistent state volume; a failure refuses the session open. The existing full `SessionSpec` API is
-available when no preset is selected. Every launch prepends the image's `agent_instructions.j2` to
-the task or preset instructions, including direct `SessionSpec` API launches. The app renders its
-service URLs from `agent_egress_api_url` and `agent_actions_service_url` in deployment
-configuration. A configured `agent_instructions` key replaces that image default, including an
-explicitly empty value. The shared block teaches agents the platform's egress and Actions Service
+available when no preset is selected. Every launch prepends the required, explicitly configured `agent_instructions` to the task or
+preset instructions, including direct `SessionSpec` API launches. Deployments may render the shared
+platform instruction template with their service URLs, but the Sandbox Service has no implicit
+instruction fallback. The shared block teaches agents the platform's egress and Actions Service
 protocol and how to query their effective Kubernetes permissions; a preset and the per-turn task
 remain the place for workload-specific constraints and the requested outcome.
 

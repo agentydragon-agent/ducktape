@@ -122,14 +122,6 @@ class AppSettingsConfig(BaseSettings):
         '{"models": [{"model": "...", "display_name": "...", "reasoning_efforts": [...]}], '
         '"harnesses": {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}}.'
     )
-    agent_egress_api_url: str | None = Field(
-        default=None,
-        description="Root of the egress proxy's agent-facing API, rendered into the image-owned agent-instruction template.",
-    )
-    agent_actions_service_url: str | None = Field(
-        default=None,
-        description="Root of the Actions Service, rendered into the image-owned agent-instruction template.",
-    )
     thread_presets: dict[str, ThreadPreset] = Field(
         default_factory=dict, description="App-owned ThreadPreset definitions keyed by stable name."
     )
@@ -145,9 +137,8 @@ class AppSettingsConfig(BaseSettings):
     kubernetes_cluster_binding_cleanup: bool = Field(
         default=False, description="Retain cluster binding cleanup after a cluster grant is removed from the catalog."
     )
-    agent_instructions: str | None = Field(
-        default=None,
-        description="Operational instructions prepended to every Agentplane-launched session; omitted uses the image default.",
+    agent_instructions: str = Field(
+        min_length=1, description="Required operational instructions prepended to every Agentplane-launched session."
     )
     default_policies: list[str] = Field(
         default_factory=list,

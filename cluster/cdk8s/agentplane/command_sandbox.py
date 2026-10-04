@@ -91,7 +91,7 @@ class CommandSandbox(Construct):
                 "(configured as the caller's ServiceAccount) and python3 (install packages into a "
                 "`python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
             ),
-            workload=_workload(_IMAGE, _COMMAND_RESOURCES),
+            workload=_workload(_IMAGE, _COMMAND_RESOURCES, env),
             volumes=[],
         )
         _template(
@@ -107,6 +107,7 @@ class CommandSandbox(Construct):
             workload=_workload(
                 _BUILD_IMAGE,
                 _BUILD_RESOURCES,
+                env,
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(name=_BUILD_HOME.name, mount_path=HOME),
             ),
             volumes=[_BUILD_HOME],
@@ -151,6 +152,7 @@ def _template(
 def _workload(
     image: str,
     resources: SandboxTemplateSpecPodTemplateSpecContainersResources,
+    env: Environment,
     *mounts: SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
 ) -> SandboxTemplateSpecPodTemplateSpecContainers:
     return SandboxTemplateSpecPodTemplateSpecContainers(
@@ -161,7 +163,7 @@ def _workload(
         # dispose, and the quota the box holds, for the whole termination grace period.
         command=["bash", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
         security_context=sandbox_pod.workload_security_context(),
-        env=sandbox_pod.egress_env(),
+        env=sandbox_pod.workload_environment(env, sandbox_pod.egress_env()),
         resources=resources,
         volume_mounts=[*sandbox_pod.egress_mounts(), sandbox_pod.bazelrc_mount(), *mounts],
     )

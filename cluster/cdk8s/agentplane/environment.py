@@ -6,7 +6,7 @@ written once.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from cdk8s import Duration
@@ -116,3 +116,6 @@ class Environment:
     egress: EgressProps
     app: AppProps
     actions: ActionsProps
+    # Non-secret environment defaults shared by every SandboxTemplate workload container;
+    # the common pod builder applies them, and the runner explicitly forwards these names to harnesses.
+    sandbox_workload_env: Mapping[str, str] = field(default_factory=lambda: {"TZ": "America/Los_Angeles"})

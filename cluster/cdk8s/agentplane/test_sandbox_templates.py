@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 import pytest_bazel
 import yaml
 from more_itertools import one
@@ -36,6 +37,22 @@ def test_every_offered_template_exists_and_describes_itself(
                 checked += 1
     # Keeps this from passing vacuously should no namespace offer a template.
     assert checked
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_all_sandbox_workloads_use_shared_environment_defaults(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    templates = [doc for doc in agentplane_manifests[namespace] if doc["kind"] == "SandboxTemplate"]
+    assert templates
+    for template in templates:
+        workload = template["spec"]["podTemplate"]["spec"]["containers"][0]
+        timezone = next(item for item in workload["env"] if item["name"] == "TZ")
+        assert timezone["value"] == "America/Los_Angeles"
+
+    runner = next(template for template in templates if template["metadata"]["name"] == "agentplane-runner")
+    args = runner["spec"]["podTemplate"]["spec"]["containers"][0]["args"]
+    assert any(args[index : index + 2] == ["--harness-env", "TZ"] for index in range(len(args) - 1))
 
 
 if __name__ == "__main__":

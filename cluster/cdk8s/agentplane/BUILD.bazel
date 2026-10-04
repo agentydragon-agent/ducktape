@@ -352,6 +352,7 @@ py_library(
         "//agentplane/app:main",
         "//agentplane/app:presets",
         "//agentplane/runner:harness",
+        "//agentplane/sandbox_service:instructions",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//cluster/cdk8s:model_rosters",
     ],

@@ -426,7 +426,13 @@ class App(Construct):
         # value, NAME=value sets one. The routing vars are named rather than set, so the
         # container env below is where they are written once and everything in the Pod
         # agrees -- a harness child by this passthrough, anything else by inheritance.
-        harness_env = ["HOME", "PATH", *(var.name for var in sandbox_pod.egress_env())]
+        # Deployment-wide workload defaults share the same allowlist and are added by
+        # sandbox_pod.workload_environment when the container is built.
+        harness_env = list(
+            dict.fromkeys(
+                ["HOME", "PATH", *self.env.sandbox_workload_env, *(var.name for var in sandbox_pod.egress_env())]
+            )
+        )
         args = [
             "--state-dir",
             _STATE_DIR,
@@ -453,28 +459,31 @@ class App(Construct):
             working_dir=_STATE_DIR,
             ports=[SandboxTemplateSpecPodTemplateSpecContainersPorts(name="runner", container_port=_RUNNER_PORT)],
             security_context=sandbox_pod.workload_security_context(),
-            env=[
-                SandboxTemplateSpecPodTemplateSpecContainersEnv(name="LITELLM_URL", value=litellm_url),
-                # Optional runner-only config. Older runner images ignore this environment
-                # variable; the updated runner applies it when a model is listed.
-                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name="AGENTPLANE_MODEL_CONTEXT_WINDOWS",
-                    value=json.dumps(_runner_model_context_windows(), sort_keys=True, separators=(",", ":")),
-                ),
-                # On the container and not just on the harness children the runner spawns.
-                *sandbox_pod.egress_env(),
-                # Neither a workload token nor a LiteLLM key: the placeholder the
-                # agentplane-workload EgressCredential derives from its name. Central
-                # substitutes the sidecar-only projected token; the ingress replaces
-                # that with its server-held LiteLLM virtual key after live
-                # WorkloadPrincipal resolution.
-                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name="ANTHROPIC_AUTH_TOKEN", value="agentplane-credential-agentplane-workload"
-                ),
-                SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name="OPENAI_API_KEY", value="agentplane-credential-agentplane-workload"
-                ),
-            ],
+            env=sandbox_pod.workload_environment(
+                self.env,
+                [
+                    SandboxTemplateSpecPodTemplateSpecContainersEnv(name="LITELLM_URL", value=litellm_url),
+                    # Optional runner-only config. Older runner images ignore this environment
+                    # variable; the updated runner applies it when a model is listed.
+                    SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                        name="AGENTPLANE_MODEL_CONTEXT_WINDOWS",
+                        value=json.dumps(_runner_model_context_windows(), sort_keys=True, separators=(",", ":")),
+                    ),
+                    # On the container and not just on the harness children the runner spawns.
+                    *sandbox_pod.egress_env(),
+                    # Neither a workload token nor a LiteLLM key: the placeholder the
+                    # agentplane-workload EgressCredential derives from its name. Central
+                    # substitutes the sidecar-only projected token; the ingress replaces
+                    # that with its server-held LiteLLM virtual key after live
+                    # WorkloadPrincipal resolution.
+                    SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                        name="ANTHROPIC_AUTH_TOKEN", value="agentplane-credential-agentplane-workload"
+                    ),
+                    SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                        name="OPENAI_API_KEY", value="agentplane-credential-agentplane-workload"
+                    ),
+                ],
+            ),
             resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
                 requests={
                     "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("500m"),
