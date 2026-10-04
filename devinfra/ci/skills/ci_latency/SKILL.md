@@ -19,6 +19,26 @@ broadly. No Mimir metric, Shapley calculation, or dashboard is required for a
 useful report; propose instrumentation only when it closes a decision-relevant
 evidence gap.
 
+## Investigate, don't just run a recipe
+
+Treat the scripts and old reports as **starting points**, not a report generator
+or a fixed set of hypotheses. Decide what the operator actually needs to know;
+follow surprising evidence across GitHub, BuildBuddy, Bazel and agent-visible
+notifications. Inspect the live workflow/ruleset and representative invocations;
+seek counterexamples and distinguish observation, inference and speculation. A
+script may compute a correct aggregate but still omit the bottleneck or the
+relevant PR class. Extend or bypass cookbook steps when needed, explaining data
+coverage and why a different approach better answers the question.
+
+Write the report yourself: name the main bottleneck(s), show why they matter to
+auto-merge readiness or agent feedback, quantify what is known, identify what
+remains unknown, and prioritize actionable changes. Compare with earlier entries
+to explain what has improved or regressed, without blindly copying conclusions.
+A generated JSON file, rendered HTML page or fresh commit **by itself is not a
+completed analysis**. Do not publish a new history entry unless it contains a
+substantive reviewed narrative and supporting evidence; when access is missing,
+report the limitation rather than create a plausible-looking report.
+
 ## Collect and reproduce
 
 Scripts are relative to this skill directory. Run from a named-branch Ducktape
@@ -41,10 +61,10 @@ requirements and auto-merge eligibility policy; branch/ruleset, required context
 review/code-owner approvals, merge conflicts, draft status, deployment gates and
 synthetic merge/merge-queue behavior may matter. Do not confuse all visible checks
 finishing, required checks succeeding, GitHub reporting mergeability, auto-merge
-being enabled, and the eventual merge itself. If push timestamps or exact head association cannot
-be recovered, say so and present a labeled proxy instead of inventing a precise
-push-to-green percentile. Use a new output directory outside the checkout. `collect.sh` refuses a filtered query
-with 1,000 or more results: split it into smaller windows instead of accepting
+being enabled, and the eventual merge itself. If push timestamps or exact head
+association cannot be recovered, say so and present a labeled proxy instead of
+inventing a precise push-to-green percentile. Use a new output directory outside
+the checkout. `collect.sh` refuses a filtered query with 1,000 or more results: split it into smaller windows instead of accepting
 GitHub's search cap. It pages runs, jobs (all attempts), open PRs and head checks,
 and includes older unfinished runs separately. Each collection is a sweep, not an
 atomic snapshot; preserve its start/end timestamps.
@@ -210,19 +230,19 @@ items behind actionable fixes unless missing evidence actually blocks the choice
 Include the observation window, source commit, sample/coverage limits, PR-class
 feedback and agent-availability distributions, runner and remote-compute
 breakdowns, representative critical-path timelines, current required checks,
-unknown intervals, and ranked
-proposals. Include CodeQL/queued-Bazel overlaps only when current evidence supports
-that diagnosis. Update `ci_latency_evidence.json`
-from `evidence.sh`; review derived evidence before committing. Keep full API payloads,
+unknown intervals, and ranked proposals. Include CodeQL/queued-Bazel overlaps
+only when current evidence supports that diagnosis. Update
+`ci_latency_evidence.json` from `evidence.sh` as **supporting data**; review
+derived evidence and explain its significance before committing. Keep full API payloads,
 logs and profiles local unless a durable, reviewed fixture needs them. Publish
 small relevant excerpts and direct job/invocation URLs in the report.
 
 Re-evaluate recommendations against current YAML and GitHub settings. Already-landed
-changes leave the recommendation list. If ongoing monitoring is warranted, propose only decision-relevant Mimir metrics
-with bounded labels, collection ownership, freshness and alert conditions; distinguish
-proposals from metrics confirmed live. A metric proposal is not a prerequisite for
-the diagnosis. Do not change workflow/scanning policy during an
-analysis-only request. If a mitigation is authorized later, compare matched workload
+changes leave the recommendation list. If ongoing monitoring is warranted,
+propose only decision-relevant Mimir metrics with bounded labels, collection
+ownership, freshness and alert conditions; distinguish proposals from metrics
+confirmed live. A metric proposal is not a prerequisite for the diagnosis. Do
+not change workflow/scanning policy during an analysis-only request. If a mitigation is authorized later, compare matched workload
 windows and verify latest-head PR feedback before calling it effective.
 
 The package's Bazel tests execute these jq recipes against captured Actions metadata,
@@ -261,6 +281,12 @@ python3 "$SKILL/publish.py" --source "$DEVEL_SHA" \
   --report "$REPORT" --evidence "$EVIDENCE" --out "$HISTORY/runs/$ENTRY"
 (cd "$HISTORY" && python3 "$SOURCE_CHECKOUT/$SKILL/index.py")
 ```
+
+`publish.py` only packages an **already written and reviewed** report and a safe
+HTML rendering of its text; it does not investigate CI, rank fixes, or validate
+conclusions. Edit and review the narrative (and, if useful, improve the HTML
+presentation) before publishing. Do not mistake successful script execution for
+completion of the skill.
 
 For the first creation only, use `git switch --orphan ci-latency-history` in a
 *separate* temporary worktree, clear any remaining tracked files and add only the new
