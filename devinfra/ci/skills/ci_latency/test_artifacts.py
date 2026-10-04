@@ -24,9 +24,9 @@ def test_shared_setup_and_overlapping_triggers():
     assert {x["trigger"]: x["seconds"] for x in result["attribution"]} == {"a": 45, "b": 60, "c": 15}
 
 
-@pytest.mark.parametrize("triggers,seconds", [([], 3), (["a", "a"], 3), (["a"], -1), (["a"], float("nan"))])
+@pytest.mark.parametrize(("triggers", "seconds"), [([], 3), (["a", "a"], 3), (["a"], -1), (["a"], float("nan"))])
 def test_bad_values(triggers, seconds):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unit seconds|unit needs|duplicate trigger"):
         attribution.calculate(
             {
                 "resource": "worker-seconds",
