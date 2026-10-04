@@ -59,7 +59,7 @@ catalog excludes routes with unknown limits; the renderer rejects missing metada
 The runner's override selection remains limited to Qwen IQ4_XS, even though other
 routes have known or configured context windows.
 
-`CLAUDE_WRAPPER_MODELS` projects to `model_catalog/claude-wrappers.json`, read by
+`model_catalog/nix.py` projects to `model_catalog/claude-wrappers.json`, read by
 Nix wrappers as gateway options. Regenerate it independently of Kubernetes with
 `bb run //model_catalog:generate_nix`.
 
@@ -87,10 +87,9 @@ consume generated configuration or deployed APIs.
 
 ## Checks
 
-The focused tests compare the LiteLLM and Agentplane projections to committed
-ConfigMaps, and check route uniqueness, alias targets, served selections,
-key/picker boundaries, and unknown-metadata behavior. The whole-tree manifest parity
-test also covers the Terraform key inputs and the remaining consumers. A separate
-shared-package parity test covers the Nix JSON; negative lane tests reject unserved
-allowances and unauthorized fallbacks. Do not replace
-these checks with a second handwritten model inventory.
+Whole-tree manifest parity covers the Kubernetes consumer projections and Terraform
+inputs. Focused tests check route uniqueness, alias targets, key/picker boundaries, and
+unknown-metadata behavior. Nix JSON has its own artifact parity test because its generator is independent of Kubernetes. Negative
+lane tests reject unserved allowances and unauthorized fallbacks. Do not duplicate
+these checks with a second handwritten inventory or tests that repeat renderer field
+assignments.

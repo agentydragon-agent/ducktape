@@ -4,15 +4,9 @@ from dataclasses import replace
 
 import pytest
 import pytest_bazel
-import yaml
 
-from cluster.cdk8s.litellm.config import main_proxy_config, model_entry
-from cluster.cdk8s.model_selections import (
-    PUBLIC_CODER_MODELS,
-    RUNNER_CONTEXT_OVERRIDES,
-    STAGING_APP_MODELS,
-    TESTING_APP_MODELS,
-)
+from cluster.cdk8s.litellm.config import model_entry
+from cluster.cdk8s.model_selections import STAGING_APP_MODELS, TESTING_APP_MODELS
 from model_catalog.catalog import (
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,
@@ -28,17 +22,6 @@ from model_catalog.catalog import (
     Route,
 )
 from model_catalog.policies import KEY_MODEL_LANES
-from util.bazel.runfiles import get_required_path
-
-
-def test_proxy_projection_matches_committed_manifest() -> None:
-    manifest = get_required_path("ducktape/cluster/k8s/litellm/app/app.k8s.yaml")
-    [config_map] = [
-        item
-        for item in yaml.safe_load_all(manifest.read_text())
-        if item["kind"] == "ConfigMap" and item["metadata"]["name"] == "config"
-    ]
-    assert main_proxy_config() == yaml.safe_load(config_map["data"]["config.yaml"])
 
 
 def test_catalog_has_unique_ids_and_aliases_reference_served_routes() -> None:
@@ -48,31 +31,6 @@ def test_catalog_has_unique_ids_and_aliases_reference_served_routes() -> None:
         assert by_id[alias.target.id] == alias.target
     assert GEMINI_EMBEDDING_ALIAS.target == GEMINI_EMBEDDING_ROUTES[0]
     assert GEMINI_EMBEDDING_ALIAS.id not in {route.id for route in GEMINI_EMBEDDING_ROUTES}
-
-
-def test_selected_routes_are_served() -> None:
-    by_id = {route.id: route for route in SERVED_ROUTES}
-    for selection in (
-        *(lane.allowed for lane in KEY_MODEL_LANES.values()),
-        STAGING_APP_MODELS.all,
-        TESTING_APP_MODELS.all,
-        PUBLIC_CODER_MODELS,
-        RUNNER_CONTEXT_OVERRIDES,
-    ):
-        for route in selection:
-            assert by_id[route.id] == route
-
-
-def test_runner_context_override_policy_is_narrower_than_known_metadata() -> None:
-    assert {route.id: route.model.context_window for route in RUNNER_CONTEXT_OVERRIDES} == {
-        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k": 128 * 1024,
-        "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k": 128 * 1024,
-        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": 256 * 1024,
-        "ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k": 256 * 1024,
-    }
-    assert any(
-        route.model.context_window is not None and route not in RUNNER_CONTEXT_OVERRIDES for route in OLLAMA_CHAT_ROUTES
-    )
 
 
 def test_testing_picker_does_not_widen_its_key() -> None:
