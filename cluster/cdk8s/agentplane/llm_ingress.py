@@ -19,7 +19,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.llm_ingress.main import CONFIG_FILE_ENV, Settings
+from agentplane.llm_ingress.settings import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref

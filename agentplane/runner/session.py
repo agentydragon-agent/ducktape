@@ -136,7 +136,7 @@ class Session:
             process = HarnessProcess(
                 ["/bin/sh", "-eu"],
                 cwd=cwd,
-                environment={**os.environ, **self.config.environment},
+                environment={**os.environ, **self.config.harness_environment},
                 state_owner_descriptor=self.state_owner_descriptor,
                 process_isolation=self.config.process_isolation,
             )

@@ -112,7 +112,7 @@ def main(
         raise typer.BadParameter("both test debug checkpoint options must be set together")
     config = RunnerConfig(
         state_dir=state_dir,
-        environment=harness_environment(os.environ, declared=harness_env or []),
+        harness_environment=harness_environment(os.environ, declared=harness_env or []),
         model_context_windows=parse_model_context_windows(os.environ.get(MODEL_CONTEXT_WINDOWS_ENV)),
         claude=claude,
         codex=codex,

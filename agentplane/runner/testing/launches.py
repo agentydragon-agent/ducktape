@@ -44,7 +44,7 @@ def environment(home: Path) -> dict[str, str]:
 def config(harness: protocol_pb2.Harness, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
     return RunnerConfig(
         state_dir=state_dir,
-        environment=environment(home),
+        harness_environment=environment(home),
         claude=claude_launch(endpoint) if harness == protocol_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == protocol_pb2.HARNESS_CODEX else None,
     )

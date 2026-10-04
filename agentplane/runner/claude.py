@@ -83,7 +83,7 @@ class ClaudeAdapter(HarnessAdapter):
         config_dir = self.session.native_directory / "claude"
         config_dir.mkdir(exist_ok=True)
         environment = {
-            **self.session.config.environment,
+            **self.session.config.harness_environment,
             **scenarios.environment(
                 endpoint=self.launch.base_url, token=self.launch.auth_token, config_dir=str(config_dir)
             ),

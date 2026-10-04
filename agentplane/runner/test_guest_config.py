@@ -36,10 +36,10 @@ def test_guest_config_builds_explicit_proxy_and_persistent_paths() -> None:
     assert runner.codex.base_url.endswith(":8080/v1")
     assert runner.claude.auth_token == "agentplane-credential-agentplane-workload"
     assert runner.codex.api_key == runner.claude.auth_token
-    assert runner.environment["HTTP_PROXY"] == "http://10.0.2.2:3128"
-    assert runner.environment["HTTPS_PROXY"] == runner.environment["HTTP_PROXY"]
-    assert runner.environment["KUBECONFIG"] == "/run/agentplane/kubeconfig"
-    assert runner.environment["SSL_CERT_FILE"] == "/run/agentplane/ca-certificates.crt"
+    assert runner.harness_environment["HTTP_PROXY"] == "http://10.0.2.2:3128"
+    assert runner.harness_environment["HTTPS_PROXY"] == runner.harness_environment["HTTP_PROXY"]
+    assert runner.harness_environment["KUBECONFIG"] == "/run/agentplane/kubeconfig"
+    assert runner.harness_environment["SSL_CERT_FILE"] == "/run/agentplane/ca-certificates.crt"
     assert runner.model_context_windows == {"test-model": 128000}
 
 
