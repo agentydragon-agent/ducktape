@@ -5145,6 +5145,16 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-notifications
+            - name: AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: private-key
+                  name: agentplane-github-app
+            - name: AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: webhook-secret
+                  name: agentplane-github-app
             - name: AGENTPLANE_NOTIFICATIONS_CONFIG_FILE
               value: /etc/agentplane-notifications/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-notification-service:unset
@@ -5264,6 +5274,8 @@ data:
     sandbox_service:
       target: agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
       token_file: /var/run/secrets/notifications/sandboxes
+    github:
+      app_id: 5188971
 immutable: false
 ---
 apiVersion: v1

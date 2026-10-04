@@ -40,6 +40,7 @@ from cluster.cdk8s.agentplane.environment import (
     DbProps,
     EgressProps,
     Environment,
+    GitHubAppProps,
     LlmIngressProps,
     ReplicaProfile,
 )
@@ -300,6 +301,7 @@ ENV = Environment(
     ),
     model_routes=STAGING_APP_MODELS,
     app_config=staging_config.config(action_federation=_ACTION_FEDERATION),
+    notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     db=DbProps(instances=2),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, log_llm_requests=True),
     egress=EgressProps(
