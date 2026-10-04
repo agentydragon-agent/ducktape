@@ -42,5 +42,5 @@ class Wakeups:
         for changed in self._waiters:
             changed.set()
 
-    def _notified(self, _payload: str) -> None:
+    def _notified(self, _payload: object) -> None:
         self._wake()

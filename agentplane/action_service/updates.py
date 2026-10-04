@@ -68,11 +68,11 @@ class ActionUpdates:
         finally:
             self._all_subscribers.discard(changed)
 
-    def _notified(self, payload: str) -> None:
+    def _notified(self, payload: object) -> None:
         for changed in self._all_subscribers:
             changed.set()
         try:
-            request_id = UUID(payload)
+            request_id = UUID(str(payload))
         except ValueError:
             # An unreadable invalidation could name any waiter. Re-read them all rather than
             # silently losing an update or trusting notification text as durable state.

@@ -23,7 +23,7 @@ class PostgresListener:
         *,
         channel: str,
         application_name: str,
-        notified: Callable[[str], None],
+        notified: Callable[[object], None],
         invalidated: Callable[[], None],
     ) -> None:
         self._dsn = url.set(drivername="postgresql").render_as_string(hide_password=False)
@@ -86,7 +86,7 @@ class PostgresListener:
             finally:
                 self._listening = False
 
-    def _receive(self, _connection: object, _pid: int, _channel: str, payload: str) -> None:
+    def _receive(self, _connection: object, _pid: int, _channel: str, payload: object) -> None:
         self._notified(payload)
 
     def _terminated(self, connection: object) -> None:
