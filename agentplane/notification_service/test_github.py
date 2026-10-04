@@ -20,7 +20,7 @@ from alembic.config import Config
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import JsonValue, SecretStr, ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -346,37 +346,126 @@ async def test_filter_order_and_duplicates_do_not_change_subscription_identity(
         await store.subscribe(PRINCIPAL, Subscribe.model_validate(wire), binding)
 
 
-async def test_empty_pr_lists_out_of_order_heads_and_installed_forks(
+@pytest.mark.parametrize("kind", ["pull_request", "branch"])
+@pytest.mark.parametrize("ci_first", [True, False])
+async def test_late_correlation_survives_restart_and_does_not_block_other_events(
+    store: Store, engine: AsyncEngine, provider: tuple[GitHub, Upstream], kind: str, ci_first: bool
+) -> None:
+    github, upstream = provider
+    source = SOURCE if kind == "pull_request" else SOURCE.model_copy(
+        update={"subject": BranchSubject(kind="branch", name="devel")}
+    )
+    base: dict[str, JsonValue] = {"installation": {"id": 11}, "repository": {"id": 100, "full_name": "owner/repo"}}
+    association = (
+        base | {"action": "synchronize", "pull_request": {"number": 7, "head": {"sha": NEXT}}}
+        if kind == "pull_request" else base | {"ref": "refs/heads/devel", "after": NEXT}
+    )
+    event = "pull_request" if kind == "pull_request" else "push"
+    # A later association must not pull receipts from before subscription creation into the inbox.
+    await ingest(github, store, check(NEXT), "check_run")
+    sub = await store.subscribe(PRINCIPAL, subscription(source), (await github.context(source)).binding)
+    if ci_first:
+        await ingest(github, store, check(NEXT), "check_run")
+    else:
+        await ingest(github, store, association, event)
+    # No prefix cap: unrelated receipts must not hide a definite match farther into the journal.
+    for _ in range(130):
+        await ingest(github, store, check("c" * 40), "check_run")
+    await ingest(github, store, check(HEAD), "check_run")
+    claim = await store.claim()
+    assert claim is not None
+    row = await store.source(claim)
+    assert row is not None
+    boundary = row.position
+    await github.reconcile(store, claim, row, source)
+    page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
+    assert [entry.payload for entry in page.entries] == ([check(HEAD)] if ci_first else [association, check(HEAD)])
+    async with store.sessions() as session:
+        assert await session.scalar(select(Subscription.next_attempt).where(Subscription.id == sub.id)) is None
+    await store.release(claim, None)
+    # The next association/receipt arrives long after the former grace window, with fresh objects.
+    async with store.sessions.begin() as session:
+        await session.execute(update(GitHubDelivery).values(received_at=datetime.now(UTC) - timedelta(days=2)))
+    recovered = Store(engine)
+    restarted = GitHub(github.http, github.settings)
+    if ci_first:
+        await ingest(restarted, recovered, association, event)
+    else:
+        await ingest(restarted, recovered, check(NEXT), "check_run")
+    # Upstream has already moved on: only durable webhook evidence can associate NEXT.
+    upstream.head = "d" * 40
+    claim = await recovered.claim()
+    assert claim is not None
+    row = await recovered.source(claim)
+    assert row is not None
+    await restarted.reconcile(recovered, claim, row, source)
+    page = await recovered.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
+    assert len(page.entries) == 3
+    assert sum(entry.payload == check(NEXT) for entry in page.entries) == 1
+    async with recovered.sessions() as session:
+        row = await session.get(Subscription, sub.id)
+    assert row is not None
+    assert row.position == boundary
+    assert row.next_attempt is None
+    await restarted.reconcile(recovered, claim, row, source)
+    assert (await recovered.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries == page.entries
+
+
+async def test_matching_pages_and_old_head_associations_are_not_capped(
+    store: Store, provider: tuple[GitHub, Upstream]
+) -> None:
+    github, _ = provider
+    source = SOURCE.model_copy(update={"events": {EventFilter(event=EventName.CHECK_RUN, actions={"completed"})}})
+    # Association history predates this subscription and is longer than a delivery page.
+    for index in range(130):
+        await ingest(github, store, {
+            "installation": {"id": 11}, "repository": {"id": 100, "full_name": "owner/repo"},
+            "action": "synchronize", "pull_request": {"number": 7, "head": {"sha": f"{index:040x}"}},
+        }, "pull_request")
+    sub = await store.subscribe(PRINCIPAL, subscription(source), (await github.context(source)).binding)
+    await ingest(github, store, check(f"{1:040x}") | {"action": "created"}, "check_run")
+    for _ in range(130):
+        await ingest(github, store, check(f"{1:040x}"), "check_run")
+    claim = await store.claim()
+    assert claim is not None
+    row = await store.source(claim)
+    assert row is not None
+    await github.reconcile(store, claim, row, source)
+    assert (await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).inbox.last_cursor == 128
+    row = await store.source(claim)
+    assert row is not None  # Full matching page schedules immediate continuation.
+    await github.reconcile(store, claim, row, source)
+    page = await store.read(PRINCIPAL.account, sub.inbox_id, 128, 128)
+    assert len(page.entries) == 2
+    assert page.inbox.last_cursor == 130
+    assert await store.source(claim) is None
+
+
+async def test_retained_fork_receipt_requires_current_installation_access(
     store: Store, provider: tuple[GitHub, Upstream]
 ) -> None:
     github, upstream = provider
     upstream.fork = True
-    binding = (await github.context(SOURCE)).binding
-    sub = await store.subscribe(PRINCIPAL, subscription(), binding)
-    payload = check(NEXT)
-    payload["repository"] = {"id": 200, "full_name": "fork/repo"}
-    payload["installation"] = {"id": 22}
+    sub = await store.subscribe(PRINCIPAL, subscription(), (await github.context(SOURCE)).binding)
+    payload = check(NEXT) | {"repository": {"id": 200, "full_name": "fork/repo"}, "installation": {"id": 22}}
     await ingest(github, store, payload, "check_run")
-    await ingest(github, store, comment())
+    # Same SHA in an unrelated installation must never be admitted.
+    await ingest(github, store, payload | {"installation": {"id": 33}}, "check_run")
+    upstream.head = NEXT
+    upstream.responses["/repos/fork/repo/installation"] = httpx.Response(404)
     claim = await store.claim()
     assert claim is not None
-    async with store.sessions() as session:
-        row = await session.get(Subscription, sub.id)
+    row = await store.source(claim)
+    assert row is not None
+    await github.reconcile(store, claim, row, SOURCE)
+    assert not (await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries
+    del upstream.responses["/repos/fork/repo/installation"]
+    await ingest(github, store, comment())
+    row = await store.source(claim)
     assert row is not None
     await github.reconcile(store, claim, row, SOURCE)
     page = await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)
-    assert len(page.entries) == 1
-    upstream.head = NEXT
-    async with store.sessions() as session:
-        row = await session.get(Subscription, sub.id)
-    assert row is not None
-    await github.reconcile(store, claim, row, SOURCE)
-    assert len((await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries) == 2
-    async with store.sessions() as session:
-        row = await session.get(Subscription, sub.id)
-    assert row is not None
-    await github.reconcile(store, claim, row, SOURCE)
-    assert len((await store.read(PRINCIPAL.account, sub.inbox_id, 0, 128)).entries) == 2
+    assert [entry.payload for entry in page.entries] == [payload, comment()]
 
 
 @pytest.mark.parametrize("kind", ["branch", "commit"])
@@ -453,7 +542,7 @@ async def test_webhook_wakes_idle_source_and_fences_concurrent_ingress(
         assert source is not None
         # Simulate another receipt committed after the worker took its source snapshot.
         await ingest(github, store, comment())
-        await store.record_github(claim, source, [], source.position, None)
+        await store.record_github(claim, source, [], more=False)
         await store.release(claim, None)
         claim = await store.claim()
         assert claim is not None
@@ -528,6 +617,10 @@ github: null
     assert settings.github.webhook_secret.get_secret_value() == secret
     assert private not in repr(settings)
     assert secret not in settings.model_dump_json()
+    # Nested environment fields contribute presence even when YAML says null.
+    config.write_text(config.read_text().replace("github:\n  app_id: 42\n", "github: null\n"))
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__APP_ID", "42")
+    assert Settings(database_url="postgresql://unused", _cli_parse_args=False).github is not None
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET", "too-short-secret")
     with pytest.raises(ValidationError) as failure:
         Settings(database_url="postgresql://unused", _cli_parse_args=False)

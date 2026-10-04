@@ -4,8 +4,8 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import JsonValue
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Identity, LargeBinary, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Identity, Index, LargeBinary, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -47,6 +47,7 @@ class Subscription(Base):
     creation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     creator: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     version: Mapped[int]
+    # Actions: consumed sequence. GitHub: immutable subscription-start boundary.
     position: Mapped[int] = mapped_column(BigInteger)
     generation: Mapped[int] = mapped_column(BigInteger, default=0)
     binding: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
@@ -89,13 +90,21 @@ class Notice(Base):
 
 class GitHubDelivery(Base):
     __tablename__ = "github_delivery"
-    __table_args__ = (UniqueConstraint("app_id", "delivery_id"),)
+    __table_args__ = (
+        UniqueConstraint("app_id", "delivery_id"),
+        Index("ix_github_delivery_head", "app_id", "repository_id", "head_sha"),
+        Index("ix_github_delivery_subjects", "subjects", postgresql_using="gin"),
+    )
     position: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     app_id: Mapped[int] = mapped_column(BigInteger)
     delivery_id: Mapped[UUID]
     installation_id: Mapped[int] = mapped_column(BigInteger)
     repository_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
     event: Mapped[str]
+    # Indexed matching metadata extracted from the retained, validated payload.
+    action: Mapped[str | None]
+    head_sha: Mapped[str | None]
+    subjects: Mapped[list[str]] = mapped_column(ARRAY(String))
     digest: Mapped[bytes] = mapped_column(LargeBinary)
     payload: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

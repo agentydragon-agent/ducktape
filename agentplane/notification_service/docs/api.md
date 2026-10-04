@@ -87,7 +87,7 @@ invalidations. Webhook acceptance schedules matching and delivery in the same tr
 never travel in NOTIFY. Workers drain durable work at startup and after reconnect, so missing a wakeup
 does not lose an accepted delivery. Inbox leases and provider generations fence concurrent workers
 and webhooks arriving during matching. Idle GitHub subscriptions have no scheduled polling; timers
-are only for explicit retry/reconciliation/lease deadlines, Actions API reads and retention cleanup.
+are only for explicit retry/lease deadlines, Actions API reads and retention cleanup.
 Actions still requires timed reads of its separate service's event history; this does not access the
 Actions database or create a cross-service database dependency. Listener loss fails readiness.
 
@@ -151,11 +151,17 @@ Inbox payload retention remains as documented above.
 PR, exact branch and fixed-commit subjects use native GitHub event/action names. Default CI means completed
 `check_run` and `status`; `check_suite` and `workflow_run` require explicit selection. PR comments/reviews,
 branch push/create/delete, and immutable commit matching are distinct. Branch deletion does not cancel
-following that name. CI matching uses current heads, the last 128 recorded branch/PR heads, PR associations,
-and currently accessible installed PR forks. Empty PR arrays are supported by SHA correlation. An ambiguous
-CI event is reconsidered for `reconciliation_seconds`; later definite matches may be delivered meanwhile,
-without duplicates. This is bounded live correlation, not complete reconstruction of uncaptured historical
-heads or events from an uninstalled fork. Payload SHA, not inbox order, identifies the revision involved.
+following that name. CI matching uses current heads, retained PR/branch-to-SHA associations, explicit
+upstream subject references, and currently accessible installed PR forks. Empty PR arrays are supported
+by SHA correlation. Indexed receipt metadata allows a later association to select an earlier CI receipt,
+even across restarts. There is no grace timeout or moving GitHub scan cursor: the subscription position
+is its immutable start boundary. Only selected, accessible, unmatched receipts occupy each bounded page;
+unrelated receipts cannot block delivery. Existing inbox identities and subscription matches suppress
+replay, including after payload expiry. An ingress generation fence preserves wakeups during matching.
+
+Association evidence may predate the subscription, but delivered receipts must follow its creation
+boundary. This is not complete reconstruction of uncaptured heads or events from an uninstalled fork.
+Payload SHA, not inbox order, identifies the revision involved.
 
 Event and action filters are unordered sets. Reordering or repeating identical selectors does not
 change subscription identity; JSON responses and stored creation specifications use canonical ordering.

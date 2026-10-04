@@ -96,14 +96,16 @@ class GitHubSource(Model):
             raise ValueError("event is not supported for this GitHub subject")
         return self
 
-    def selects(self, event: str, action: str | None) -> bool:
+    @property
+    def filters(self) -> Set[EventFilter]:
         if self.events is not None:
-            return any(f.event == event and (f.actions is None or action in f.actions) for f in self.events)
-        if event == EventName.STATUS or (event == EventName.CHECK_RUN and action == "completed"):
-            return True
+            return self.events
+        events = {EventFilter(event=EventName.STATUS), EventFilter(event=EventName.CHECK_RUN, actions={"completed"})}
         if isinstance(self.subject, PullRequestSubject):
-            return event in PR_EVENTS
-        return isinstance(self.subject, BranchSubject) and event in REF_EVENTS
+            events |= {EventFilter(event=event) for event in PR_EVENTS}
+        elif isinstance(self.subject, BranchSubject):
+            events |= {EventFilter(event=event) for event in REF_EVENTS}
+        return events
 
 
 class GitHubEvent(Model):

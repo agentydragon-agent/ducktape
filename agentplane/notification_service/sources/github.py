@@ -14,6 +14,8 @@ from uuid import UUID
 import httpx
 import jwt
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, TypeAdapter
+from sqlalchemy import false, or_, select, true
+from sqlalchemy.orm import aliased
 
 from agentplane.notification_service.db import GitHubDelivery, Inbox, Subscription
 from agentplane.notification_service.sources.github_models import (
@@ -188,6 +190,30 @@ def validate_payload(event: str, payload: dict[str, JsonValue]) -> Envelope:
             return Envelope.model_validate(payload)
 
 
+def correlation(payload: Envelope) -> tuple[str | None, list[str]]:
+    """Index upstream subject references without imposing a universal filter vocabulary."""
+    match payload:
+        case PullRequestPayload(pull_request=pr):
+            return pr.head.sha, [f"pull_request:{pr.number}"]
+        case IssuePayload(issue=issue) if issue.pull_request is not None:
+            return None, [f"pull_request:{issue.number}"]
+        case PushPayload(ref=ref, after=sha) if ref.startswith("refs/heads/"):
+            return (None if sha == "0" * 40 else sha), [f"branch:{ref.removeprefix('refs/heads/')}"]
+        case RefPayload(ref=ref, ref_type="branch"):
+            return None, [f"branch:{ref}"]
+        case CheckRunPayload(check_run=check) | CheckSuitePayload(check_suite=check):
+            return check.head_sha, [f"pull_request:{pr.number}" for pr in check.pull_requests]
+        case WorkflowPayload(workflow_run=workflow):
+            subjects = [f"pull_request:{pr.number}" for pr in workflow.pull_requests]
+            if workflow.head_branch is not None:
+                subjects.append(f"branch:{workflow.head_branch}")
+            return workflow.head_sha, subjects
+        case StatusPayload(sha=sha, branches=branches):
+            return sha, [f"branch:{branch.name}" for branch in branches]
+        case _:
+            return None, []
+
+
 class GitHub:
     def __init__(self, http: httpx.AsyncClient, settings: GitHubSettings) -> None:
         self.http, self.settings = http, settings
@@ -327,6 +353,7 @@ class GitHub:
         envelope = validate_payload(event, payload)
         if event in SUPPORTED_EVENTS and envelope.repository is None:
             raise ValueError("repository event requires a repository")
+        sha, subjects = correlation(envelope)
         return await store.ingest_github(
             self.settings.app_id,
             delivery_id,
@@ -335,99 +362,64 @@ class GitHub:
             event,
             hashlib.sha256(event.encode() + b"\0" + raw).digest(),
             payload,
-        )
-
-    def matches(self, source: GitHubSource, context: Context, delivery: GitHubDelivery, payload: Envelope) -> bool:
-        if not source.selects(delivery.event, payload.action):
-            return False
-        subject = source.subject
-        base = delivery.repository_id == context.binding.repository_id
-        if isinstance(payload, PullRequestPayload):
-            return base and isinstance(subject, PullRequestSubject) and payload.pull_request.number == subject.number
-        if isinstance(payload, IssuePayload):
-            return (
-                base
-                and isinstance(subject, PullRequestSubject)
-                and payload.issue.pull_request is not None
-                and payload.issue.number == subject.number
-            )
-        if isinstance(payload, PushPayload):
-            return base and isinstance(subject, BranchSubject) and payload.ref == f"refs/heads/{subject.name}"
-        if isinstance(payload, RefPayload):
-            return (
-                base
-                and isinstance(subject, BranchSubject)
-                and payload.ref_type == "branch"
-                and payload.ref == subject.name
-            )
-        match payload:
-            case CheckRunPayload(check_run=check) | CheckSuitePayload(check_suite=check):
-                sha, prs = check.head_sha, check.pull_requests
-            case WorkflowPayload(workflow_run=workflow):
-                sha, prs = workflow.head_sha, workflow.pull_requests
-                if base and isinstance(subject, BranchSubject) and workflow.head_branch == subject.name:
-                    return True
-            case StatusPayload(sha=sha, branches=branches):
-                prs = []
-                if base and isinstance(subject, BranchSubject) and any(b.name == subject.name for b in branches):
-                    return True
-            case _:
-                return False
-        return sha in context.heads or (
-            base and isinstance(subject, PullRequestSubject) and any(pr.number == subject.number for pr in prs)
+            action=envelope.action,
+            head_sha=sha,
+            subjects=subjects,
         )
 
     async def reconcile(self, store: Store, claim: Inbox, subscription: Subscription, source: GitHubSource) -> None:
         context = await self.context(source)
         if context.binding != GitHubBinding.model_validate(subscription.binding):
             raise GitHubUnavailableError("GitHub source installation/repository changed; recreate the subscription")
-        if isinstance(source.subject, PullRequestSubject):
-            context.heads |= await store.pr_heads(
-                context.binding.app_id, context.binding.repository_id, source.subject.number
+        delivery = GitHubDelivery
+        direct = false()
+        heads = delivery.head_sha.in_(context.heads)
+        match source.subject:
+            case PullRequestSubject(number=number):
+                subject = f"pull_request:{number}"
+            case BranchSubject(name=name):
+                subject = f"branch:{name}"
+            case CommitSubject():
+                subject = None
+        if subject is not None:
+            direct = (delivery.repository_id == context.binding.repository_id) & delivery.subjects.contains([subject])
+            association = aliased(GitHubDelivery)
+            # Association lookup is independent of subscription/processing position. A late PR/push
+            # can explain an earlier receipt, even after a restart or many unrelated deliveries.
+            known_heads = select(association.head_sha).where(
+                association.app_id == context.binding.app_id,
+                association.repository_id == context.binding.repository_id,
+                association.installation_id == context.binding.installation_id,
+                association.subjects.contains([subject]),
+                association.head_sha.is_not(None),
             )
-        if isinstance(source.subject, BranchSubject):
-            context.heads |= await store.branch_heads(
-                context.binding.app_id, context.binding.repository_id, source.subject.name
-            )
+            heads |= delivery.head_sha.in_(known_heads)
+        selected = or_(*(
+            (delivery.event == selector.event)
+            & (delivery.action.in_(selector.actions) if selector.actions is not None else true())
+            for selector in source.filters
+        ))
+        accessible = or_(*(
+            (delivery.repository_id == repository) & (delivery.installation_id == installation)
+            for repository, installation in context.installations.items()
+        ))
         deliveries = await store.github_deliveries(
-            context.binding.app_id, set(context.installations), subscription.position
+            subscription,
+            (delivery.app_id == context.binding.app_id)
+            & accessible
+            & selected
+            & (direct | (delivery.event.in_(CI_EVENTS) & heads)),
         )
         matched = []
-        through = subscription.position
-        retry_at: datetime | None = None
-        for delivery in deliveries:
-            # Check current access for every repository considered, including an installed PR fork.
-            if context.installations.get(delivery.repository_id or 0) != delivery.installation_id:
-                if retry_at is None:
-                    through = delivery.position
-                continue
-            payload = validate_payload(delivery.event, delivery.payload)
-            if self.matches(source, context, delivery, payload):
-                assert delivery.repository_id is not None
-                matched.append(
-                    (
-                        delivery,
-                        GitHubEvent(
-                            provider="github",
-                            app_id=delivery.app_id,
-                            delivery_id=delivery.delivery_id,
-                            repository_id=delivery.repository_id,
-                            event=EventName(delivery.event),
-                            action=payload.action,
-                        ),
-                    )
-                )
-            elif (
-                delivery.event in CI_EVENTS
-                and not isinstance(source.subject, CommitSubject)
-                and source.selects(delivery.event, payload.action)
-                and delivery.received_at + timedelta(seconds=self.settings.reconciliation_seconds) > datetime.now(UTC)
-            ):
-                # Revisit ambiguous/out-of-order CI after refreshing the authoritative head.
-                expires = delivery.received_at + timedelta(seconds=self.settings.reconciliation_seconds)
-                retry_at = min(retry_at, expires) if retry_at is not None else expires
-            if retry_at is None:
-                through = delivery.position
-        if retry_at is None and len(deliveries) == 128:
-            retry_at = datetime.now(UTC)  # Drain the next bounded page without waiting for another webhook.
-        await store.record_github(claim, subscription, matched, through, retry_at)
+        for receipt in deliveries:
+            assert receipt.repository_id is not None
+            matched.append((receipt, GitHubEvent(
+                provider="github",
+                app_id=receipt.app_id,
+                delivery_id=receipt.delivery_id,
+                repository_id=receipt.repository_id,
+                event=EventName(receipt.event),
+                action=receipt.action,
+            )))
+        # Only matching, previously undelivered receipts occupy the bounded page.
+        await store.record_github(claim, subscription, matched, more=len(deliveries) == 128)

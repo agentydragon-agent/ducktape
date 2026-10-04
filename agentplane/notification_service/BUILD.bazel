@@ -295,7 +295,7 @@ oci_image(
 py_library(
     name = "settings",
     srcs = ["settings.py"],
-    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__", "//agentplane/notification_service:__subpackages__"],
     deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",

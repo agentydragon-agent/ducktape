@@ -39,16 +39,6 @@ class GitHubSettings(BaseModel):
         le=64,
         description="Maximum concurrent webhook requests per replica, held through durable commit; saturation returns 503.",
     )
-    reconciliation_seconds: int = Field(
-        default=120,
-        ge=0,
-        le=3600,
-        description=(
-            "Grace period after receipt for CI events not yet correlated to a PR or branch head. "
-            "Reconsider on new webhooks and once at expiry, then advance past unmatched events. "
-            "Not a polling interval or a delay for events that already match; zero disables the grace period."
-        ),
-    )
 
 
 class SandboxServiceSettings(BaseModel):
@@ -83,7 +73,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     github: GitHubSettings | None = Field(
-        default=None, description="GitHub source configuration. Omit or set to null to disable it."
+        default=None, description="GitHub source configuration. Disabled when absent from both YAML and environment."
     )
 
     @classmethod

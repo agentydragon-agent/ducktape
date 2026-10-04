@@ -37,12 +37,17 @@ def upgrade() -> None:
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
         sa.Column("repository_id", sa.BigInteger(), nullable=True),
         sa.Column("event", sa.String(), nullable=False),
+        sa.Column("action", sa.String(), nullable=True),
+        sa.Column("head_sha", sa.String(), nullable=True),
+        sa.Column("subjects", postgresql.ARRAY(sa.String()), nullable=False),
         sa.Column("digest", sa.LargeBinary(), nullable=False),
         sa.Column("payload", postgresql.JSONB(), nullable=False),
         sa.Column("received_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("app_id", "delivery_id"),
     )
     op.create_index("ix_github_delivery_repository_id", "github_delivery", ["repository_id"])
+    op.create_index("ix_github_delivery_head", "github_delivery", ["app_id", "repository_id", "head_sha"])
+    op.create_index("ix_github_delivery_subjects", "github_delivery", ["subjects"], postgresql_using="gin")
 
 
 def downgrade() -> None:
