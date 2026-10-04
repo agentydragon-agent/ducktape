@@ -224,6 +224,13 @@ signed payload or a successful ingress HTTP response.
 
 ## Still deferred
 
+- TODO: consider removing subscription pause and `lifetime_days`, rather than carrying them forward
+  as requirements of the provider abstraction. Delete/recreate can replace pause/resume (with a fresh
+  idempotency key under the current cancellation semantics). Mandatory finite lifetimes can silently
+  stop notifications an agent is relying on. Prefer no automatic expiry; if expiry remains, make it
+  optional and explicitly requested, and define how the agent is warned/notified when it expires.
+  Review the combined pause/renew PATCH contract as part of this simplification. This TODO does not
+  change current API behavior or stored subscriptions.
 - Command-scoped admission/confirmation/failure tracking through Sandbox Service, resumable by command
   ID and backed by the runner's existing journal. Notifications does not need conversation content;
   today's tail checkpoint is the bounded fix, not the eventual interface.
