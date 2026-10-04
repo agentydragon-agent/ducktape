@@ -8,7 +8,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
     newTag: devel-20261003021619-6dd974e # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261004020144-e866ff0 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261004021341-397f089 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
     newTag: devel-20261003010342-8b8965c # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner
@@ -18,14 +18,14 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
     newTag: devel-20261004021333-397f089 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate
-    newTag: devel-20261003071008-28224c5 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
+    newTag: devel-20261004021328-397f089 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture
     newTag: devel-20260924010350-5ce04fd # {"$imagepolicy": "flux-system:agentplane-oauth-fixture:tag"}
   # Bootstrap only: keep rollout suspended until CI publishes and automation pins a real tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-service
-    newTag: devel-20261004010038-fbd93dd # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
+    newTag: devel-20261004021332-397f089 # {"$imagepolicy": "flux-system:agentplane-sandbox-service:tag"}
   # Bootstrap only: CI publishes the first images after merge; Flux must select real tags before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261004005216-69f9589 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261004021409-397f089 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service-migrate
     newTag: devel-20261004005216-69f9589 # {"$imagepolicy": "flux-system:agentplane-notification-service-migrate:tag"}
