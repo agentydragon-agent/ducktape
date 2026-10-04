@@ -79,6 +79,7 @@ py_library(
     deps = [
         ":api",
         ":service",
+        ":settings",
         ":store",
         "//agentplane/notification_service/sources:actions",
         "//agentplane/sandbox_service:client",
@@ -86,8 +87,6 @@ py_library(
         "@pypi//asyncpg",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
         "@pypi//uvicorn",
     ],
@@ -291,4 +290,28 @@ oci_image(
     tars = [":migration_layers"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
