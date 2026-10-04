@@ -131,7 +131,9 @@ def _deployment(chart: Chart) -> None:
                     image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     # A private delivery channel owns both files; the pod cannot start without the Secret.
-                    volumes=[k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=_PRIVATE_CONFIG.name))],
+                    volumes=[
+                        k8s.Volume(name="config", secret=k8s.SecretVolumeSource(secret_name=_PRIVATE_CONFIG.name))
+                    ],
                     containers=[
                         k8s.Container(
                             name=_NAME,
