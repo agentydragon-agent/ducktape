@@ -11,7 +11,7 @@ from decimal import ROUND_HALF_UP, Decimal
 import asyncpg
 from babel.numbers import get_currency_precision
 
-from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, Transaction, calculate
+from finance.plaid.spend.allowance import AllowancePolicy, AllowanceView, PaceAlert, Status, Transaction, calculate
 from finance.plaid.spend.models import AlertState, CardConfiguration, CardView, SpendView
 
 logger = logging.getLogger(__name__)
@@ -278,7 +278,7 @@ class SpendService:
                 or any(value is None or now - value > timedelta(hours=policy.max_sync_age_hours) for value in synced)
             ):
                 return AllowanceView(
-                    status="unavailable",
+                    status=Status.UNAVAILABLE,
                     currency=policy.currency,
                     monthly_minor_units=policy.monthly_minor_units,
                     activation_at=policy.activation_at,
@@ -291,7 +291,7 @@ class SpendService:
                     windows_minor_units=None,
                     trailing_7_daily_minor_units=None,
                     estimated_exhaustion_at=None,
-                    alert_state="unavailable",
+                    alert_state=PaceAlert.UNAVAILABLE,
                     last_synced_at=last_synced,
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
                 )

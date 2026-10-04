@@ -87,13 +87,25 @@ def test_pending_posted_transfer_and_unmatched_refund():
     rows = [
         row("2026-01-31", 20, pending=True, transaction_id="pending"),
         row("2026-01-31", 20, transaction_id="posted", pending_transaction_id="pending"),
-        row("2026-01-31", 45, transaction_id="payment", pfc_primary="TRANSFER_OUT", pfc_detailed="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"),
+        row(
+            "2026-01-31",
+            45,
+            transaction_id="payment",
+            pfc_primary="TRANSFER_OUT",
+            pfc_detailed="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
+        ),
         row("2026-01-31", -8, transaction_id="mystery-refund", pfc_primary=None, pfc_detailed=None),
     ]
     result = calculate(
-        policy(rules=[CategoryRule(field="pfc_detailed", value="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", kind=Kind.EXCLUDED),
-                      CategoryRule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)]),
-        rows, now=START, last_synced_at=START,
+        policy(
+            rules=[
+                CategoryRule(field="pfc_detailed", value="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", kind=Kind.EXCLUDED),
+                CategoryRule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE),
+            ]
+        ),
+        rows,
+        now=START,
+        last_synced_at=START,
     )
     assert result.posted_minor_units == 2_000
     assert result.pending_minor_units == 0
@@ -107,14 +119,16 @@ def test_pending_posted_transfer_and_unmatched_refund():
 def test_private_rule_and_uncertain_purchases():
     result = calculate(
         policy(rules=[MerchantRule(field="name", prefix="EXAMPLE", kind=Kind.FIXED)]),
-        [row("2026-01-31", 42)], now=START, last_synced_at=START,
+        [row("2026-01-31", 42)],
+        now=START,
+        last_synced_at=START,
     )
     assert result.available_minor_units == 10_000
     uncertain = view([row("2026-01-31", 12, pfc_primary=None, pfc_detailed=None)])
     assert uncertain.available_minor_units == 8_800
     assert uncertain.review_minor_units == 1_200
     with pytest.raises(ValidationError):
-        MerchantRule(field="pfc_primary", prefix="SHOPPING", kind=Kind.EXCLUDED)
+        MerchantRule.model_validate({"field": "pfc_primary", "prefix": "SHOPPING", "kind": "excluded"})
 
 
 if __name__ == "__main__":

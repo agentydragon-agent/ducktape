@@ -112,7 +112,9 @@ class AllowanceView(BaseModel):
     pending_minor_units: int
     review_minor_units: int
     unmatched_refunds_minor_units: int
-    windows_minor_units: Windows | None = Field(description="Spend after activation in each reporting window; null until active.")
+    windows_minor_units: Windows | None = Field(
+        description="Spend after activation in each reporting window; null until active."
+    )
     trailing_7_daily_minor_units: int | None
     estimated_exhaustion_at: datetime | None = Field(
         description="Projected at trailing seven-day positive purchase pace, ignoring future credits; null if no recent spend."
@@ -130,7 +132,9 @@ def month_anniversary(start: datetime, months: int) -> datetime:
     return start.replace(year=year, month=month, day=min(start.day, calendar.monthrange(year, month)[1]))
 
 
-def matching_rule(transaction: Transaction, rules: list[MerchantRule | CategoryRule]) -> MerchantRule | CategoryRule | None:
+def matching_rule(
+    transaction: Transaction, rules: list[MerchantRule | CategoryRule]
+) -> MerchantRule | CategoryRule | None:
     for rule in rules:
         if isinstance(rule, MerchantRule):
             name = transaction.name if rule.field == "name" else transaction.merchant_name
@@ -208,7 +212,9 @@ def calculate(
         calendar_month=sum(p.minor_units for p in included if p.transaction.date >= now.date().replace(day=1)),
         year_to_date=sum(p.minor_units for p in included if p.transaction.date >= date(now.year, 1, 1)),
         trailing_7_days=sum(p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=7)).date()),
-        trailing_30_days=sum(p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=30)).date()),
+        trailing_30_days=sum(
+            p.minor_units for p in included if p.transaction.date >= (now - timedelta(days=30)).date()
+        ),
     )
     trailing_positive = sum(
         max(0, p.minor_units) for p in included if p.transaction.date >= (now - timedelta(days=7)).date()
@@ -233,6 +239,7 @@ def calculate(
         estimated_exhaustion_at=now + timedelta(days=max(0, available) / daily) if daily else None,
         alert_state=alert,
         last_synced_at=last_synced_at,
-        prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units - (posted + pending - windows.current_credit_cycle),
+        prior_carry_minor_units=(credits - 1) * policy.monthly_minor_units
+        - (posted + pending - windows.current_credit_cycle),
         projected_cycle_end_minor_units=projected_end,
     )

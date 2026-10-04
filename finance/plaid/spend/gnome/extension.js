@@ -308,7 +308,9 @@ const PlaidSpendIndicator = GObject.registerClass(
             `${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${allowance.alert_state}`
           );
           this._addReadOnly(`Next credit ${formatTimestamp(allowance.next_credit_at)}`);
-          this._addReadOnly(`Projected exhaustion (no future credits): ${formatTimestamp(allowance.estimated_exhaustion_at)}`);
+          this._addReadOnly(
+            `Projected exhaustion (no future credits): ${formatTimestamp(allowance.estimated_exhaustion_at)}`
+          );
         } else this._addReadOnly(allowance.note || allowance.status);
       }
       if (this._view?.dashboard_url?.startsWith("https://")) {

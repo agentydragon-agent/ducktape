@@ -60,7 +60,10 @@ function renderAllowance(a) {
     ["Calendar month since activation", money(a.windows_minor_units.calendar_month)],
     ["Year since activation", money(a.windows_minor_units.year_to_date)],
     ["7-day daily pace", money(a.trailing_7_daily_minor_units)],
-    ["Projected exhaustion at that pace, ignoring future credits", a.estimated_exhaustion_at ? formatTimestamp(a.estimated_exhaustion_at) : "No recent spend"],
+    [
+      "Projected exhaustion at that pace, ignoring future credits",
+      a.estimated_exhaustion_at ? formatTimestamp(a.estimated_exhaustion_at) : "No recent spend",
+    ],
     ["Estimated balance before next credit", money(a.projected_cycle_end_minor_units)],
     ["Next credit", formatTimestamp(a.next_credit_at)],
     ["Oldest account sync", formatTimestamp(a.last_synced_at)],
