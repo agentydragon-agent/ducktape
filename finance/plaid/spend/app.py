@@ -97,7 +97,12 @@ def create_app(settings: SpendSettings, *, service: SpendService | None = None) 
             allowance = AllowancePolicy.model_validate_json(settings.allowance_config_path.read_text("utf-8"))
         except OSError, UnicodeError, ValidationError:
             raise RuntimeError("Could not load valid Plaid Spend allowance policy") from None
-    runtime_service = service or SpendService(settings.database_url, _load_configuration(settings.cards_config_path), allowance, settings.web_oidc_public_base_url)
+    runtime_service = service or SpendService(
+        settings.database_url,
+        _load_configuration(settings.cards_config_path),
+        allowance,
+        settings.web_oidc_public_base_url,
+    )
     resolver = AuthentikOidcPrincipalResolver(
         expected_issuer=settings.api_oidc_issuer,
         discovered_issuer=settings.api_oidc_discovered_issuer,

@@ -201,8 +201,7 @@ const PlaidSpendIndicator = GObject.registerClass(
       else if (this._view?.allowance?.status === "active") {
         const a = this._view.allowance;
         label = formatMoney(a.available_minor_units, a.currency) + (a.alert_state === "normal" ? "" : " !");
-      }
-      else if (cards.length === 0) label = this._status === "error" ? "Offline" : "No cards";
+      } else if (cards.length === 0) label = this._status === "error" ? "Offline" : "No cards";
       else label = totalLabel(this._view);
       if (cards.some((card) => card.alert_state === "warning" || card.alert_state === "exceeded")) {
         label = `${label} !`;
@@ -305,7 +304,9 @@ const PlaidSpendIndicator = GObject.registerClass(
       if (allowance) {
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem("Flexible allowance · advisory"));
         if (allowance.status === "active") {
-          this._addReadOnly(`${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${allowance.alert_state}`);
+          this._addReadOnly(
+            `${formatMoney(allowance.available_minor_units, allowance.currency)} available · ${allowance.alert_state}`
+          );
           this._addReadOnly(`Next credit ${formatTimestamp(allowance.next_credit_at)}`);
           this._addReadOnly(`At current pace: ${allowance.estimated_days_to_exhaustion ?? "—"} days left`);
         } else this._addReadOnly(allowance.note || allowance.status);

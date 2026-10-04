@@ -11,13 +11,28 @@ START = datetime(2026, 1, 31, tzinfo=UTC)
 
 
 def policy(**overrides):
-    return AllowancePolicy.model_validate(dict(monthly_minor_units=10_000, spending_account_ids=["card-1"], activation_at=START) | overrides)
+    return AllowancePolicy.model_validate(
+        {"monthly_minor_units": 10_000, "spending_account_ids": ["card-1"], "activation_at": START} | overrides
+    )
 
 
 def row(day, amount, **overrides):
-    return dict(account_id="card-1", transaction_id=f"tx-{day}-{amount}", date=day, amount=amount,
-                pending=False, pending_transaction_id=None, currency="USD", name="EXAMPLE SHOP",
-                merchant_name=None, pfc_primary="SHOPPING", pfc_detailed="SHOPPING_GENERAL_MERCHANDISE") | overrides
+    return (
+        {
+            "account_id": "card-1",
+            "transaction_id": f"tx-{day}-{amount}",
+            "date": day,
+            "amount": amount,
+            "pending": False,
+            "pending_transaction_id": None,
+            "currency": "USD",
+            "name": "EXAMPLE SHOP",
+            "merchant_name": None,
+            "pfc_primary": "SHOPPING",
+            "pfc_detailed": "SHOPPING_GENERAL_MERCHANDISE",
+        }
+        | overrides
+    )
 
 
 def view(rows=(), when=START):
@@ -48,10 +63,12 @@ def test_carry_windows_and_early_pace():
 
 
 def test_pending_posted_transfer_and_unmatched_refund():
-    rows = [row("2026-01-31", 20, pending=True, transaction_id="pending"),
-            row("2026-01-31", 20, transaction_id="posted", pending_transaction_id="pending"),
-            row("2026-01-31", 45, transaction_id="payment", pfc_detailed="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"),
-            row("2026-01-31", -8, transaction_id="mystery-refund", pfc_primary=None, pfc_detailed=None)]
+    rows = [
+        row("2026-01-31", 20, pending=True, transaction_id="pending"),
+        row("2026-01-31", 20, transaction_id="posted", pending_transaction_id="pending"),
+        row("2026-01-31", 45, transaction_id="payment", pfc_detailed="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"),
+        row("2026-01-31", -8, transaction_id="mystery-refund", pfc_primary=None, pfc_detailed=None),
+    ]
     result = view(rows)
     assert result.posted_minor_units == 2_000
     assert result.pending_minor_units == 0
@@ -63,8 +80,12 @@ def test_pending_posted_transfer_and_unmatched_refund():
 
 
 def test_private_rule_and_uncertain_purchases():
-    result = calculate(policy(rules=[MerchantRule(field="name", prefix="EXAMPLE", kind=Kind.FIXED)]),
-                       [row("2026-01-31", 42)], now=START, last_synced_at=START)
+    result = calculate(
+        policy(rules=[MerchantRule(field="name", prefix="EXAMPLE", kind=Kind.FIXED)]),
+        [row("2026-01-31", 42)],
+        now=START,
+        last_synced_at=START,
+    )
     assert result.available_minor_units == 10_000
     uncertain = view([row("2026-01-31", 12, pfc_primary=None, pfc_detailed=None)])
     assert uncertain.available_minor_units == 8_800

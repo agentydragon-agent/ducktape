@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import calendar
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -44,10 +44,12 @@ class AllowancePolicy(BaseModel):
     def _validate_policy(self) -> AllowancePolicy:
         if self.currency != "USD" or len(self.spending_account_ids) != len(set(self.spending_account_ids)):
             raise ValueError("USD and unique spending account IDs are required")
-        if self.activation_at is not None:
-            # Plaid provides a date, not a reliable purchase timestamp. Avoid partial-day accounting.
-            if self.activation_at.utcoffset() is None or self.activation_at.astimezone(UTC).time() != datetime.min.time():
-                raise ValueError("activation_at must be midnight UTC (Plaid transactions are date-only)")
+        # Plaid provides a date, not a reliable purchase timestamp. Avoid partial-day accounting.
+        if self.activation_at is not None and (
+            self.activation_at.utcoffset() is None
+            or self.activation_at.astimezone(UTC).time() != datetime.min.time()
+        ):
+            raise ValueError("activation_at must be midnight UTC (Plaid transactions are date-only)")
         return self
 
 
@@ -76,7 +78,6 @@ class AllowanceView(BaseModel):
     projected_cycle_end_minor_units: int | None = None
 
 
-
 def month_anniversary(start: datetime, months: int) -> datetime:
     year, month = divmod(start.year * 12 + start.month - 1 + months, 12)
     month += 1
@@ -98,7 +99,8 @@ def classify(row: dict[str, Any], rules: list[MerchantRule]) -> tuple[Kind, bool
     if primary in ("MEDICAL", "RENT_AND_UTILITIES", "GOVERNMENT_AND_NON_PROFIT"):
         return Kind.FIXED, False
     if primary in ("FOOD_AND_DRINK", "ENTERTAINMENT", "TRAVEL", "SHOPPING") or detail in (
-        "TRANSPORTATION_TAXIS_AND_RIDE_SHARES", "GENERAL_SERVICES_STORAGE"
+        "TRANSPORTATION_TAXIS_AND_RIDE_SHARES",
+        "GENERAL_SERVICES_STORAGE",
     ):
         return Kind.FLEXIBLE, False
     # An unrecognized positive purchase reduces room provisionally rather than vanishing.
@@ -116,27 +118,38 @@ def calculate(
         raise ValueError("now must be timezone-aware")
     now = now.astimezone(UTC)
     start = policy.activation_at.astimezone(UTC) if policy.activation_at else None
-    base = dict(
-        status="preview", currency=policy.currency, monthly_minor_units=policy.monthly_minor_units,
-        activation_at=start, available_minor_units=None, next_credit_at=None,
-        posted_minor_units=0, pending_minor_units=0, review_minor_units=0,
-        unmatched_refunds_minor_units=0, windows_minor_units={}, trailing_7_daily_minor_units=None,
-        estimated_days_to_exhaustion=None, alert_state="unavailable", last_synced_at=last_synced_at,
-    )
+    base = {
+        "status": "preview",
+        "currency": policy.currency,
+        "monthly_minor_units": policy.monthly_minor_units,
+        "activation_at": start,
+        "available_minor_units": None,
+        "next_credit_at": None,
+        "posted_minor_units": 0,
+        "pending_minor_units": 0,
+        "review_minor_units": 0,
+        "unmatched_refunds_minor_units": 0,
+        "windows_minor_units": {},
+        "trailing_7_daily_minor_units": None,
+        "estimated_days_to_exhaustion": None,
+        "alert_state": "unavailable",
+        "last_synced_at": last_synced_at,
+    }
     if start is None or start > now:
-        return AllowanceView(**base, note="Not activated; no pre-launch debt or credit is imported")
+        return AllowanceView.model_validate(base | {"note": "Not activated; no pre-launch debt or credit is imported"})
     credits = 0
     while month_anniversary(start, credits) <= now:
         credits += 1
     next_credit = month_anniversary(start, credits)
     pending_replaced = {
         (r["account_id"], r["pending_transaction_id"])
-        for r in rows if not r["pending"] and r.get("pending_transaction_id")
+        for r in rows
+        if not r["pending"] and r.get("pending_transaction_id")
     }
     posted = pending = review = unmatched = 0
-    windows: dict[str, int] = {
-        k: 0 for k in ("current_credit_cycle", "calendar_month", "year_to_date", "trailing_7_days", "trailing_30_days")
-    }
+    windows: dict[str, int] = dict.fromkeys(
+        ("current_credit_cycle", "calendar_month", "year_to_date", "trailing_7_days", "trailing_30_days"), 0
+    )
     trailing7 = 0
     cycle_start = month_anniversary(start, credits - 1).date()
     for r in rows:
@@ -189,13 +202,25 @@ def calculate(
     else:
         alert = "normal"
     runway = max(0, available // daily) if daily > 0 else None
-    return AllowanceView(
-        **(base | dict(status="active", available_minor_units=available, next_credit_at=next_credit,
-                      posted_minor_units=posted, pending_minor_units=pending,
-                      review_minor_units=review, unmatched_refunds_minor_units=unmatched,
-                      windows_minor_units=dict(windows), trailing_7_daily_minor_units=daily,
-                      estimated_days_to_exhaustion=runway, alert_state=alert, note=None,
-                      credited_minor_units=credits * policy.monthly_minor_units,
-                      cycle_credited_minor_units=policy.monthly_minor_units, prior_carry_minor_units=prior_carry,
-                      days_until_next_credit=days_left, projected_cycle_end_minor_units=available - projected_burn))
+    return AllowanceView.model_validate(
+        base
+        | {
+            "status": "active",
+            "available_minor_units": available,
+            "next_credit_at": next_credit,
+            "posted_minor_units": posted,
+            "pending_minor_units": pending,
+            "review_minor_units": review,
+            "unmatched_refunds_minor_units": unmatched,
+            "windows_minor_units": windows,
+            "trailing_7_daily_minor_units": daily,
+            "estimated_days_to_exhaustion": runway,
+            "alert_state": alert,
+            "note": None,
+            "credited_minor_units": credits * policy.monthly_minor_units,
+            "cycle_credited_minor_units": policy.monthly_minor_units,
+            "prior_carry_minor_units": prior_carry,
+            "days_until_next_credit": days_left,
+            "projected_cycle_end_minor_units": available - projected_burn,
+        }
     )

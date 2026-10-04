@@ -12,15 +12,23 @@ function renderPurchase() {
     return;
   }
   const dollars = Number(purchaseInput.value);
-  if (purchaseInput.value === "" || !Number.isFinite(dollars) || dollars < 0 || !Number.isSafeInteger(Math.round(dollars * 100))) {
+  if (
+    purchaseInput.value === "" ||
+    !Number.isFinite(dollars) ||
+    dollars < 0 ||
+    !Number.isSafeInteger(Math.round(dollars * 100))
+  ) {
     purchaseResult.textContent = "Enter a positive purchase amount.";
     return;
   }
   const left = a.available_minor_units - Math.round(dollars * 100);
-  purchaseResult.textContent = `${formatMoney(left, a.currency)} after purchase. ` +
-    (left < 0 ? "Over the advisory allowance; make a conscious exception." :
-     a.projected_cycle_end_minor_units - Math.round(dollars * 100) < 0 ? "Current pace projects a shortfall before next credit." :
-     "Within the allowance at current estimated pace.");
+  purchaseResult.textContent =
+    `${formatMoney(left, a.currency)} after purchase. ` +
+    (left < 0
+      ? "Over the advisory allowance; make a conscious exception."
+      : a.projected_cycle_end_minor_units - Math.round(dollars * 100) < 0
+        ? "Current pace projects a shortfall before next credit."
+        : "Within the allowance at current estimated pace.");
 }
 purchaseInput.addEventListener("input", renderPurchase);
 
@@ -40,9 +48,11 @@ function renderAllowance(a) {
   purchaseInput.disabled = false;
   allowanceSummary.textContent = `${money(a.available_minor_units)} available · ${a.alert_state === "warning" ? "pace warning" : a.alert_state === "exceeded" ? "over allowance" : "on pace"}`;
   const items = [
-    ["Monthly credit", money(a.monthly_minor_units)], ["Carry from earlier cycles", money(a.prior_carry_minor_units)],
+    ["Monthly credit", money(a.monthly_minor_units)],
+    ["Carry from earlier cycles", money(a.prior_carry_minor_units)],
     ["This credit cycle", money(a.windows_minor_units.current_credit_cycle)],
-    ["Pending (included)", money(a.pending_minor_units)], ["Posted (included)", money(a.posted_minor_units)],
+    ["Pending (included)", money(a.pending_minor_units)],
+    ["Posted (included)", money(a.posted_minor_units)],
     ["Needs classification review (included)", money(a.review_minor_units)],
     ["Unmatched refunds (excluded)", money(a.unmatched_refunds_minor_units)],
     ["Trailing 7 days", money(a.windows_minor_units.trailing_7_days)],
@@ -52,7 +62,8 @@ function renderAllowance(a) {
     ["7-day daily pace", money(a.trailing_7_daily_minor_units)],
     ["Estimated days until exhausted at that pace", a.estimated_days_to_exhaustion ?? "No recent spend"],
     ["Estimated balance before next credit", money(a.projected_cycle_end_minor_units)],
-    ["Next credit", formatTimestamp(a.next_credit_at)], ["Oldest account sync", formatTimestamp(a.last_synced_at)],
+    ["Next credit", formatTimestamp(a.next_credit_at)],
+    ["Oldest account sync", formatTimestamp(a.last_synced_at)],
   ];
   for (const [key, value] of items) {
     const row = document.createElement("p");

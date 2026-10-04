@@ -134,9 +134,10 @@ def _deployment(chart: Chart) -> None:
                     volumes=[
                         k8s.Volume(name="cards", secret=k8s.SecretVolumeSource(secret_name=_CARD_CONFIG.name)),
                         # Populated outside public GitOps; absent Secret leaves the existing card view intact.
-                        k8s.Volume(name="allowance", secret=k8s.SecretVolumeSource(
-                            secret_name="plaid-spend-allowance", optional=True,
-                        )),
+                        k8s.Volume(
+                            name="allowance",
+                            secret=k8s.SecretVolumeSource(secret_name="plaid-spend-allowance", optional=True),
+                        ),
                     ],
                     containers=[
                         k8s.Container(
@@ -168,7 +169,9 @@ def _deployment(chart: Chart) -> None:
                             ],
                             volume_mounts=[
                                 k8s.VolumeMount(name="cards", mount_path=str(_CARD_CONFIG_PATH.parent), read_only=True),
-                                k8s.VolumeMount(name="allowance", mount_path=str(_ALLOWANCE_PATH.parent), read_only=True),
+                                k8s.VolumeMount(
+                                    name="allowance", mount_path=str(_ALLOWANCE_PATH.parent), read_only=True
+                                ),
                             ],
                             resources=_resources(),
                             readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),

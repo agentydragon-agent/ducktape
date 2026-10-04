@@ -137,17 +137,20 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions() -> N
     assert late_card.spend_minor_units == 3_884
 
 
-
 async def test_allowance_account_coverage_and_freshness_gate() -> None:
     now = datetime.now(UTC)
     midnight = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
     config = CardConfiguration()
-    policy = AllowancePolicy(monthly_minor_units=10_000, activation_at=midnight,
-                             spending_account_ids=["card-1", "checking-1"])
+    policy = AllowancePolicy(
+        monthly_minor_units=10_000, activation_at=midnight, spending_account_ids=["card-1", "checking-1"]
+    )
     conn = _FakeConnection(
-        accounts=[dict(account_id=aid, type="credit" if aid == "card-1" else "depository",
-                       last_synced_at=now) for aid in ("card-1", "checking-1")],
-        liabilities=[], transactions=[_transaction("card-1", "purchase", now.date(), 12)],
+        accounts=[
+            {"account_id": aid, "type": "credit" if aid == "card-1" else "depository", "last_synced_at": now}
+            for aid in ("card-1", "checking-1")
+        ],
+        liabilities=[],
+        transactions=[_transaction("card-1", "purchase", now.date(), 12)],
     )
     service = SpendService("unused", config, policy)
     service._pool = cast(Any, _FakePool(conn))
@@ -155,10 +158,11 @@ async def test_allowance_account_coverage_and_freshness_gate() -> None:
     assert result.allowance is not None
     assert result.allowance.available_minor_units == 8_800
     conn.accounts.pop()
-    assert (await service.read_view()).allowance.status == "unavailable"
-    conn.accounts.append(dict(account_id="checking-1", type="depository",
-                              last_synced_at=now - timedelta(days=4)))
-    assert (await service.read_view()).allowance.status == "unavailable"
+    unavailable = (await service.read_view()).allowance
+    assert unavailable is not None and unavailable.status == "unavailable"
+    conn.accounts.append({"account_id": "checking-1", "type": "depository", "last_synced_at": now - timedelta(days=4)})
+    unavailable = (await service.read_view()).allowance
+    assert unavailable is not None and unavailable.status == "unavailable"
 
 
 class _ConnectedRequest:

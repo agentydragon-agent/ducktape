@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import date, datetime
 from enum import StrEnum
 
-from finance.plaid.spend.allowance import AllowanceView
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from finance.plaid.spend.allowance import AllowanceView
 
 
 class AlertState(StrEnum):

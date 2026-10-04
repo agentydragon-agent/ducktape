@@ -23,7 +23,13 @@ _CARD_PAYMENT_CATEGORY = "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
 class SpendService:
     """Postgres reader and reconnecting NOTIFY subscriber for one shared card view."""
 
-    def __init__(self, database_url: str, configuration: CardConfiguration, allowance: AllowancePolicy | None = None, dashboard_url: str | None = None) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        configuration: CardConfiguration,
+        allowance: AllowancePolicy | None = None,
+        dashboard_url: str | None = None,
+    ) -> None:
         self._database_url = database_url
         self._configuration = configuration
         self._allowance = allowance
@@ -71,7 +77,12 @@ class SpendService:
         today = generated_at.date()
         card_configs = {card.account_id: card for card in self._configuration.cards if card.enabled}
         if not card_configs:
-            return SpendView(generated_at=generated_at, cards=[], allowance=await self._read_allowance(generated_at), dashboard_url=self._dashboard_url)
+            return SpendView(
+                generated_at=generated_at,
+                cards=[],
+                allowance=await self._read_allowance(generated_at),
+                dashboard_url=self._dashboard_url,
+            )
 
         pool = self._require_pool()
         async with pool.acquire() as connection:
@@ -95,7 +106,12 @@ class SpendService:
                 list(card_configs),
             )
             if not account_rows:
-                return SpendView(generated_at=generated_at, cards=[], allowance=await self._read_allowance(generated_at), dashboard_url=self._dashboard_url)
+                return SpendView(
+                    generated_at=generated_at,
+                    cards=[],
+                    allowance=await self._read_allowance(generated_at),
+                    dashboard_url=self._dashboard_url,
+                )
 
             account_ids = [row["account_id"] for row in account_rows]
             liability_rows = await connection.fetch(
@@ -235,7 +251,12 @@ class SpendService:
                     statement_available=True,
                 )
             )
-        return SpendView(generated_at=generated_at, cards=cards, allowance=await self._read_allowance(generated_at), dashboard_url=self._dashboard_url)
+        return SpendView(
+            generated_at=generated_at,
+            cards=cards,
+            allowance=await self._read_allowance(generated_at),
+            dashboard_url=self._dashboard_url,
+        )
 
     async def _read_allowance(self, now: datetime) -> AllowanceView | None:
         policy = self._allowance
@@ -251,15 +272,27 @@ class SpendService:
             )
             synced = [_as_utc(row["last_synced_at"]) for row in accounts]
             last_synced = min((value for value in synced if value is not None), default=None)
-            if (len(accounts) != len(policy.spending_account_ids)
+            if (
+                len(accounts) != len(policy.spending_account_ids)
                 or any(row["type"] not in ("credit", "depository") for row in accounts)
-                or any(value is None or now - value > timedelta(hours=policy.max_sync_age_hours) for value in synced)):
+                or any(value is None or now - value > timedelta(hours=policy.max_sync_age_hours) for value in synced)
+            ):
                 return AllowanceView(
-                    status="unavailable", currency=policy.currency, monthly_minor_units=policy.monthly_minor_units,
-                    activation_at=policy.activation_at, available_minor_units=None, next_credit_at=None,
-                    posted_minor_units=0, pending_minor_units=0, review_minor_units=0,
-                    unmatched_refunds_minor_units=0, windows_minor_units={}, trailing_7_daily_minor_units=None,
-                    estimated_days_to_exhaustion=None, alert_state="unavailable", last_synced_at=last_synced,
+                    status="unavailable",
+                    currency=policy.currency,
+                    monthly_minor_units=policy.monthly_minor_units,
+                    activation_at=policy.activation_at,
+                    available_minor_units=None,
+                    next_credit_at=None,
+                    posted_minor_units=0,
+                    pending_minor_units=0,
+                    review_minor_units=0,
+                    unmatched_refunds_minor_units=0,
+                    windows_minor_units={},
+                    trailing_7_daily_minor_units=None,
+                    estimated_days_to_exhaustion=None,
+                    alert_state="unavailable",
+                    last_synced_at=last_synced,
                     note="Account coverage or sync freshness unavailable; do not rely on the allowance.",
                 )
             rows = []
@@ -274,7 +307,9 @@ class SpendService:
                        JOIN public.links l ON l.item_id = a.item_id
                        WHERE t.account_id = ANY($1::text[]) AND t.date >= $2 AND t.date <= $3
                          AND t.removed IS FALSE AND l.status = 'active'""",
-                    policy.spending_account_ids, policy.activation_at.date(), now.date(),
+                    policy.spending_account_ids,
+                    policy.activation_at.date(),
+                    now.date(),
                 )
         return calculate(policy, [dict(row) for row in rows], now=now, last_synced_at=last_synced)
 
