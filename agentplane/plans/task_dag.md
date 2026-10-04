@@ -1,8 +1,9 @@
 # Agentplane task DAG
 
-This is the authoritative map of remaining Agentplane work. Edges are technical dependencies;
-operator priority is separate. Completed implementation belongs in the component contracts, not
-this backlog. See the [Action Service specification](../action_service/SPEC.md),
+This is the authoritative map of **unfinished** Agentplane tasks. Edges are technical dependencies;
+operator priority is separate. Remove a task when completed; do not retain done nodes, shipped-foundation
+sections or acceptance-history recaps here. Completed work and evidence belong in component contracts,
+not this backlog. See the [Action Service specification](../action_service/SPEC.md),
 [service integration details](../action_service/README.md),
 [workload authentication](../docs/workload_authentication.md),
 [operator federation](../docs/operator_federation.md),
@@ -41,12 +42,6 @@ Proposed execution order for the Thread correctness/UI track:
   provisional; compare them with the full roadmap when scheduling. `HARNESS_CONFIG_ISOLATION` is
   the shared technical prerequisite.
 
-Haku Console's deployed config disables its agent-facing `/mcp` endpoint and MCP OAuth discovery
-routes ([#8621](https://github.com/agentydragon/ducktape/pull/8621)), so migrating its tools and
-auto-approval policies into Action Service is no longer planned. Console's browser approval queue,
-APIs, catalog and audit ledger remain deployed and Haku-owned. The queue is a likely next Haku
-retirement; disabling `/mcp` has not completed it, and no audit-ledger deletion is implied. This
-cleanup is outside the Agentplane DAG.
 Transcript search/lookup (`T3`) remains deferred. Priority is not a dependency between these tracks.
 
 ## DAG
@@ -71,6 +66,7 @@ flowchart TB
     PC_EGRESS_CREDENTIALS["Planned configuration<br/>public-coder's iron-proxy substitutions as EgressCredentials<br/>plus its dedicated ServiceAccount"]:::future
     PC_EGRESS["Capstone<br/>public-coder-agent egress migration<br/>proven equivalent, cut over, old proxy retired"]:::milestone
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
+    PUBLIC_MCP_ROUTE_ISOLATION["Remaining deployed security check<br/>operator REST and enrollment APIs<br/>unreachable through public MCP route"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
     NOTIFICATION_ACTION_FEED["Notification source follow-up<br/>event-driven Action consumption<br/>replace idle history polling"]:::future
@@ -152,42 +148,6 @@ flowchart TB
     CLAUDE_AI_SA -. one account by hand, then the kind .-> MANAGED_SA_RBAC
 ```
 
-Completed work is off this board: the credentialless MCP vertical, whose deployed Claude/Codex
-proof is the [acceptance suite](../acceptance/README.md), credentialed provider acceptance, and the
-first external client, operator approval, and Web Push proofs below. Input delivery and proxy
-survivability proceed independently of the external-client track.
-
-### Tested on staging
-
-On 2026-09-12 the deployed MCP facade accepted a Claude.ai OAuth Connection from Claude Code, an
-external harness rather than an Agentplane-hosted one, bound to a labeled ServiceAccount; policy
-bindings auto-approved GitHub reads that executed through the operator-linked GitHub upstream; a
-repeated idempotency key was refused and recovered by key; a pending Action was approved by the
-operator through Authentik federation and executed; and a browser push arrived and was decided
-from its buttons. Not tested: that operator REST and enrollment-management routes are unreachable
-through the public MCP route; and, left to bug reports, the Deny control, grant retention across
-refresh and restart, negative isolation and revocation for an external client, duplicate Decision or
-Execution under retries or reconnect, push subscription revocation, unavailable-push and SSE
-fallbacks, and Web Push reconciliation after reconnect.
-
-Credentialed provider acceptance -- upstream token refresh and refresh failure, rotation without
-rebuilding the executor, and the Kubernetes provider -- closed on 2026-09-28 on the operator's call
-rather than a recorded run, so what breaks there arrives as a bug report. The implemented contract is
-the [service README](../action_service/README.md); bringing the node back means restoring its edge
-to `PROD`, not inventing one.
-
-The external-client track is complete and single-operator: Identity (configured authority),
-Connection (runtime named client enrollment), and Thread (execution/conversation state), with no
-multi-operator management or per-operator ownership model. A Connection binds to a ServiceAccount,
-the principal policies bind to; backend credentials are the ActionGroup executor's auth modes
-([MCP executor transports](../action_service/README.md#mcp-executor-transports)), shared by every
-caller of the group, and no linked token, static bearer, or kubeconfig reaches the MCP
-client, Sandbox, transcript, or Action prompt. Generic tool discovery stays compact; a client that
-needs more opts into a schema or description per Action.
-The deny lists of the landed [action policies](../docs/action_policies.md) are `DENY_LISTS`.
-Processes that must outlive an SSH connection to the `ssh-mcp` server
-(<../../x/ssh_mcp_server/README.md>) are `SSHDURABLE`.
-
 The Thread correctness/UI track is independent of Action Service milestones.
 Its authority and failure contracts are in
 [Thread, runner, and harness layering](../docs/thread_layering.md).
@@ -214,6 +174,12 @@ and walk away.” A browser-owned provisioning chain is not a correct intermedia
 version of that promise. Manual Sandbox creation and explicit open/resume remain
 available while combined start is deferred.
 
+### `PUBLIC_MCP_ROUTE_ISOLATION` — deployed route isolation
+
+**Remaining deployed acceptance:** verify operator REST and enrollment-management endpoints are
+unreachable through the public MCP route. Successful external-client execution does not establish
+this negative boundary. Keep the probe read-only and retain redacted route/status evidence.
+
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
 **Deferred design:** define how an agent can request an expansion or change to its egress rules.
@@ -239,24 +205,9 @@ reconnect; and does it require re-running eligibility checks (the ServiceAccount
 No dependency on anything else; nothing waits on this. Once it exists, the settings table's
 ServiceAccount column becomes a real dropdown instead of static text.
 
-### `SANDBOX_RBAC` — manage Sandbox Kubernetes access, optionally through presets
+### `SANDBOX_RBAC` — verify deployed Sandbox Kubernetes grants
 
-[#8596](https://github.com/agentydragon/ducktape/issues/8596) selected a distinct
-ServiceAccount per managed Sandbox, a Flux-owned named grant catalog, and app-owned
-RoleBindings/ClusterRoleBindings. Presets only prefill launch names; the operator may
-replace them or choose none. The API validates names and stores resolved binding
-templates, while shared Role definitions hold ongoing permissions. The egress sidecar
-substitutes the Sandbox SA's projected Kubernetes token. External OAuth Haku uses its
-existing static caller through an MCP-created sandbox, not a new Kubernetes gateway.
-
-The implementation binds only the created SA and reconciles the persisted selection.
-Same-namespace RoleBindings use an owner reference; external binding scopes use a
-finalizer and orphan sweep. Grant status prevents session start while provisioning is
-incomplete. Current `ELEVATE` grants Action policy bindings only; runtime Kubernetes
-grant editing would need its own authorization and revocation contract.
-`MANAGED_SA_RBAC` carries the same grant for an account with no Sandbox to own it.
-
-**Remaining acceptance:** after the stacked PRs deploy, exercise two managed Haku
+**Remaining acceptance:** exercise two managed Haku
 Sandboxes and an unrelated one through real `kubectl`/sidecar requests; verify Role
 rule edits affect both existing bindings, external OAuth Haku's MCP sandbox reports its
 actual static SA, and only intended runners can read the Coinbase Secret. Verify
