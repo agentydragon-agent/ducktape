@@ -1063,6 +1063,20 @@ haku_vitest_test(
 )
 
 haku_vitest_test(
+    name = "async_resource_test",
+    srcs = ["async_resource.test.ts"],
+    isolated_typecheck = True,
+    deps = [
+        ":async_resource",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+haku_vitest_test(
     name = "time_test",
     srcs = ["time.test.ts"],
     isolated_typecheck = True,
@@ -1169,6 +1183,16 @@ haku_vitest_test(
 )
 
 haku_vitest_test(
+    name = "mcp_result_test",
+    srcs = ["mcp_result.test.ts"],
+    isolated_typecheck = True,
+    deps = [
+        ":mcp_result",
+        "//:node_modules/vitest",
+    ],
+)
+
+haku_vitest_test(
     name = "mcp_tool_result_schema_test",
     srcs = ["mcp_tool_result_schema.test.ts"],
     isolated_typecheck = True,
@@ -1229,29 +1253,13 @@ haku_vitest_test(
 )
 
 haku_vitest_test(
-    name = "sample_data_test",
-    srcs = ["screenshots/sample_data.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":screenshot_harness_lib",
-        "//:node_modules/vitest",
-        "//haku/console/frontend/tool_rendering",
-    ],
-)
-
-haku_vitest_test(
     name = "settings_panel_test",
     srcs = ["settings_panel.test.ts"],
     isolated_typecheck = True,
     deps = [
-        ":async_resource",
         ":client",
         ":mcp_status_client",
         ":settings_panel",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
     ],
 )
