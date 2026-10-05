@@ -436,10 +436,10 @@ Approved pause scope as of 2026-10-05. A merge is not proof of machine activatio
 rollout. The [tracking issue](https://github.com/agentydragon/ducktape/issues/9121)
 maintains deployment status, the full parked inventory, and restoration requirements.
 
-| Integration                      | Approved scope                                                                                                 | Retained for restoration                                                                                                                        |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Five Nix Claude gateway wrappers | #9112: remove workstation activation/advertising; direct local clients unchanged                                      | Nix renderers, JSON generator, credential declarations; machine activation not verified here                                                    |
-| Public Coder OpenClaw            | #9116: stop OpenClaw/proxies and halt devbox                                                                          | Workload definitions, namespace, PVCs and backups; live pause not reverified in this audit                                                      |
+| Integration                      | Approved scope                                                                                   | Retained for restoration                                                                                                                        |
+| -------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Five Nix Claude gateway wrappers | #9112: remove workstation activation/advertising; direct local clients unchanged                 | Nix renderers, JSON generator, credential declarations; machine activation not verified here                                                    |
+| Public Coder OpenClaw            | #9116: stop OpenClaw/proxies and halt devbox                                                     | Workload definitions, namespace, PVCs and backups; live pause not reverified in this audit                                                      |
 | Agentplane Claude                | #9127: empty staging/testing Claude offerings, disabled picker options, omit Haku Claude presets | Native adapter, existing sessions/resume/history, explicit low-level launches, credentials and shared ingress/routes; not a runtime prohibition |
 
 These are consumer pauses, **not permission to remove shared GPT-through-Messages or
