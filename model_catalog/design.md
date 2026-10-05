@@ -811,7 +811,7 @@ records **1048576 / 65535** for Antigravity `gemini-3.1-flash-lite`,
 120B Medium. This is a pinned upstream snapshot, not a fresh authenticated fetch.
 The fetcher's renaming alone does not define input versus combined capacity.
 
-Existing online material supplies the missing interpretation:
+Existing online material helps interpret these fields:
 
 - Google's [Model API reference](https://ai.google.dev/api/models#Model) defines
   `inputTokenLimit` as maximum input tokens and `outputTokenLimit` as maximum
@@ -834,18 +834,18 @@ Lite routes, not its Claude or GPT-OSS routes. Bounded live requests through
 `/v1/chat/completions` used only
 `antigravity/ant-messages/gemini-3.1-flash-lite`:
 
-| Observation | Result |
-| --- | --- |
-| Small output-cap control, request `max_tokens=1` | 13 output tokens, normal stop |
-| 10000 filler units, five checkpoints | 10105 input / 36 output; all five recovered |
-| 1020000 filler units, five checkpoints | 1020106 input / 38 output; all five recovered |
+| Observation                                           | Result                                                                                              |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Small output-cap control, request `max_tokens=1`      | 13 output tokens, normal stop                                                                       |
+| 10000 filler units, five checkpoints                  | 10105 input / 36 output; all five recovered                                                         |
+| 1020000 filler units, five checkpoints                | 1020106 input / 38 output; all five recovered                                                       |
 | 1048000 filler units, checkpoints plus integers 1–200 | **1048133 input / 727 output / 1048860 total**; all checkpoints and integers recovered, normal stop |
-| 1048450 and 1049000 filler units | Both HTTP 400: **“The input token count exceeds the maximum number of tokens allowed 1048576.”** |
+| 1048450 and 1049000 filler units                      | Both HTTP 400: **“The input token count exceeds the maximum number of tokens allowed 1048576.”**    |
 
 Each filler unit was ` a`. Five independently random eight-hex-digit checkpoints
-were placed before, between and after four equal filler blocks; the final
+were placed before, between and after four near-equal filler blocks; the final
 instruction requested them in order. The last successful request additionally
-asked for integers 1–200 to cross the candidate *combined* boundary with bounded
+asked for integers 1–200 to cross the candidate _combined_ boundary with bounded
 requested output, not a 64K-output stress test. Usage reported no cached input.
 Rejected requests supplied no actual input counts: do not derive an exact
 client-visible token ceiling from filler counts or assume no framing overhead.
@@ -856,7 +856,8 @@ explicitly calls the limit an input-token limit. Checkpoint recovery is evidence
 against simple prefix/tail truncation, not proof of arbitrary-task fidelity over
 all tokens. The 65535 output value remains an upstream declaration, not a measured
 output maximum; these results do not establish Claude/GPT-OSS semantics or a
-universal combined capacity. There is no basis for blanket deletion as “bad numbers.”
+universal combined capacity. Preserve the distinction between sourced metadata,
+client policy and measured behavior.
 
 The output-cap control agrees with the pinned
 [executor](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/internal/runtime/executor/antigravity_executor_request.go#L61-L96):
