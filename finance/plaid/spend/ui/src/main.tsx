@@ -110,7 +110,10 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
         ["Calendar month since activation", m(allowance.windows_minor_units?.calendar_month_minor_units)],
         ["Year since activation", m(allowance.windows_minor_units?.year_to_date_minor_units)],
         ["7-day daily pace", m(allowance.trailing_7_daily_minor_units)],
-        ["Projected exhaustion at that pace, ignoring future credits", allowance.estimated_exhaustion_at ? time(allowance.estimated_exhaustion_at) : "No recent spend"],
+        [
+          "Projected exhaustion at that pace, ignoring future credits",
+          allowance.estimated_exhaustion_at ? time(allowance.estimated_exhaustion_at) : "No recent spend",
+        ],
         ["Estimated balance before next credit", m(allowance.projected_cycle_end_minor_units)],
         ["Next credit", time(allowance.next_credit_at)],
         ["Oldest account sync", time(allowance.last_synced_at)],
@@ -119,11 +122,12 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
   const cents = typeof purchase === "number" ? Math.round(purchase * 100) : NaN;
   const valid = purchase !== "" && typeof purchase === "number" && purchase >= 0 && Number.isSafeInteger(cents);
   const left = (allowance.available_minor_units ?? 0) - cents;
-  const result = !active || allowance.available_minor_units == null
-    ? "Activate the allowance and sync accounts before checking a purchase."
-    : !valid
-      ? "Enter a positive purchase amount."
-      : `${m(left)} after purchase. ${left < 0 ? "Over the advisory allowance; make a conscious exception." : (allowance.projected_cycle_end_minor_units ?? 0) - cents < 0 ? "Current pace projects a shortfall before next credit." : "Within the allowance at current estimated pace."}`;
+  const result =
+    !active || allowance.available_minor_units == null
+      ? "Activate the allowance and sync accounts before checking a purchase."
+      : !valid
+        ? "Enter a positive purchase amount."
+        : `${m(left)} after purchase. ${left < 0 ? "Over the advisory allowance; make a conscious exception." : (allowance.projected_cycle_end_minor_units ?? 0) - cents < 0 ? "Current pace projects a shortfall before next credit." : "Within the allowance at current estimated pace."}`;
 
   return (
     <Card withBorder radius="md" padding="lg" component="section" aria-label="Flexible allowance">
@@ -131,18 +135,65 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
         <Group justify="space-between" align="flex-start">
           <div>
             <Title order={2}>Flexible allowance</Title>
-            <Text size="sm" c="dimmed">Advisory, not a bank limit</Text>
+            <Text size="sm" c="dimmed">
+              Advisory, not a bank limit
+            </Text>
           </div>
-          <Badge color={!active ? "gray" : allowance.alert_state === "exceeded" ? "red" : allowance.alert_state === "warning" ? "yellow" : "green"} size="lg">
-            {!active ? allowance.status : allowance.alert_state === "warning" ? "Pace warning" : allowance.alert_state === "exceeded" ? "Over allowance" : "On pace"}
+          <Badge
+            color={
+              !active
+                ? "gray"
+                : allowance.alert_state === "exceeded"
+                  ? "red"
+                  : allowance.alert_state === "warning"
+                    ? "yellow"
+                    : "green"
+            }
+            size="lg"
+          >
+            {!active
+              ? allowance.status
+              : allowance.alert_state === "warning"
+                ? "Pace warning"
+                : allowance.alert_state === "exceeded"
+                  ? "Over allowance"
+                  : "On pace"}
           </Badge>
         </Group>
-        {active ? <Text size="xl" fw={700} aria-live="polite">{m(allowance.available_minor_units)} available</Text> : <Alert color="yellow">Unavailable: {allowance.note || "Allowance data unavailable"}</Alert>}
-        {active && <Table striped withTableBorder><Table.Tbody>{rows.map(([label, value]) => <Table.Tr key={label}><Table.Th scope="row">{label}</Table.Th><Table.Td>{value}</Table.Td></Table.Tr>)}</Table.Tbody></Table>}
+        {active ? (
+          <Text size="xl" fw={700} aria-live="polite">
+            {m(allowance.available_minor_units)} available
+          </Text>
+        ) : (
+          <Alert color="yellow">Unavailable: {allowance.note || "Allowance data unavailable"}</Alert>
+        )}
+        {active && (
+          <Table striped withTableBorder>
+            <Table.Tbody>
+              {rows.map(([label, value]) => (
+                <Table.Tr key={label}>
+                  <Table.Th scope="row">{label}</Table.Th>
+                  <Table.Td>{value}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
         <Divider />
-        <NumberInput label="Considering a flexible purchase ($)" min={0} decimalScale={2} placeholder="Amount" value={purchase} onChange={setPurchase} disabled={!active} />
+        <NumberInput
+          label="Considering a flexible purchase ($)"
+          min={0}
+          decimalScale={2}
+          placeholder="Amount"
+          value={purchase}
+          onChange={setPurchase}
+          disabled={!active}
+        />
         <Text aria-live="polite">{result}</Text>
-        <Text size="sm" c="dimmed">Estimates use Plaid transaction dates and may lag; review pending and uncategorized charges before spending. No purchase is blocked here.</Text>
+        <Text size="sm" c="dimmed">
+          Estimates use Plaid transaction dates and may lag; review pending and uncategorized charges before spending.
+          No purchase is blocked here.
+        </Text>
       </Stack>
     </Card>
   );
@@ -150,21 +201,56 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
 
 function SpendCard({ card }: { card: CardView }) {
   const alertColor = card.alert_state === "exceeded" ? "red" : card.alert_state === "warning" ? "yellow" : "gray";
-  const alertLabel = card.alert_state === "exceeded" ? "Limit exceeded" : card.alert_state === "warning" ? `Warning${card.alert_threshold_percent == null ? "" : ` · ${card.alert_threshold_percent}% threshold reached`}` : card.alert_state === "unavailable" ? "Alert state unavailable" : "No alert";
-  return <Card withBorder radius="md" padding="lg" component="article">
-    <Stack>
-      <Group justify="space-between" align="flex-start">
-        <div><Title order={3}>{cardTitle(card)}</Title><Text c="dimmed" size="sm">{card.institution_name}</Text></div>
-        <Badge color={alertColor}>{alertLabel}</Badge>
-      </Group>
-      <div><Text c="dimmed" size="sm">Spend this cycle</Text><Text size="xl" fw={700}>{money(card.spend_minor_units, card.currency)} <Text span size="sm" fw={400}>/ {card.limit_minor_units == null ? "No limit set" : money(card.limit_minor_units, card.currency)}</Text></Text></div>
-      {card.limit_minor_units != null && card.spend_percent != null && <Progress value={Math.max(0, Math.min(100, card.spend_percent))} color={alertColor} aria-label={`${cardTitle(card)} limit used`} />}
-      {card.spend_percent != null && <Text size="sm">{card.spend_percent.toFixed(1)}% used</Text>}
-      <Group gap="xl"><Text size="sm">Posted: {money(card.posted_minor_units, card.currency)}</Text><Text size="sm">Pending: {money(card.pending_minor_units, card.currency)}</Text></Group>
-      <Text size="sm">Statement cycle: {card.cycle_start ? `Starts ${card.cycle_start}` : "Unavailable"}</Text>
-      <Text size="xs" c="dimmed">Last synced {time(card.last_synced_at)}</Text>
-    </Stack>
-  </Card>;
+  const alertLabel =
+    card.alert_state === "exceeded"
+      ? "Limit exceeded"
+      : card.alert_state === "warning"
+        ? `Warning${card.alert_threshold_percent == null ? "" : ` · ${card.alert_threshold_percent}% threshold reached`}`
+        : card.alert_state === "unavailable"
+          ? "Alert state unavailable"
+          : "No alert";
+  return (
+    <Card withBorder radius="md" padding="lg" component="article">
+      <Stack>
+        <Group justify="space-between" align="flex-start">
+          <div>
+            <Title order={3}>{cardTitle(card)}</Title>
+            <Text c="dimmed" size="sm">
+              {card.institution_name}
+            </Text>
+          </div>
+          <Badge color={alertColor}>{alertLabel}</Badge>
+        </Group>
+        <div>
+          <Text c="dimmed" size="sm">
+            Spend this cycle
+          </Text>
+          <Text size="xl" fw={700}>
+            {money(card.spend_minor_units, card.currency)}{" "}
+            <Text span size="sm" fw={400}>
+              / {card.limit_minor_units == null ? "No limit set" : money(card.limit_minor_units, card.currency)}
+            </Text>
+          </Text>
+        </div>
+        {card.limit_minor_units != null && card.spend_percent != null && (
+          <Progress
+            value={Math.max(0, Math.min(100, card.spend_percent))}
+            color={alertColor}
+            aria-label={`${cardTitle(card)} limit used`}
+          />
+        )}
+        {card.spend_percent != null && <Text size="sm">{card.spend_percent.toFixed(1)}% used</Text>}
+        <Group gap="xl">
+          <Text size="sm">Posted: {money(card.posted_minor_units, card.currency)}</Text>
+          <Text size="sm">Pending: {money(card.pending_minor_units, card.currency)}</Text>
+        </Group>
+        <Text size="sm">Statement cycle: {card.cycle_start ? `Starts ${card.cycle_start}` : "Unavailable"}</Text>
+        <Text size="xs" c="dimmed">
+          Last synced {time(card.last_synced_at)}
+        </Text>
+      </Stack>
+    </Card>
+  );
 }
 
 function App() {
@@ -175,30 +261,100 @@ function App() {
     const load = async () => {
       try {
         const response = await fetch("/api/v1/web/view", { cache: "no-store", credentials: "same-origin" });
-        if (response.status === 401) { window.location.assign("/auth/login"); return; }
+        if (response.status === 401) {
+          window.location.assign("/auth/login");
+          return;
+        }
         if (!response.ok) throw new Error(`View request returned ${response.status}`);
         if (mounted) setView(await response.json());
-      } catch { if (mounted) setState("Waiting for card data"); }
+      } catch {
+        if (mounted) setState("Waiting for card data");
+      }
     };
     void load();
     const events = new EventSource("/api/v1/web/events");
     events.addEventListener("view", (event) => {
-      try { if (mounted) { setView(JSON.parse(event.data)); setState("Live updates on"); } }
-      catch { if (mounted) setState("Could not read update"); }
+      try {
+        if (mounted) {
+          setView(JSON.parse(event.data));
+          setState("Live updates on");
+        }
+      } catch {
+        if (mounted) setState("Could not read update");
+      }
     });
-    events.onerror = () => { if (mounted) { setState("Reconnecting"); void load(); } };
-    return () => { mounted = false; events.close(); };
+    events.onerror = () => {
+      if (mounted) {
+        setState("Reconnecting");
+        void load();
+      }
+    };
+    return () => {
+      mounted = false;
+      events.close();
+    };
   }, []);
   const cards = view?.cards || [];
-  return <AppShell header={{ height: 64 }} padding="md">
-    <AppShell.Header><Group h="100%" px="md" justify="space-between"><Text fw={700} component="a" href="/" c="inherit" style={{ textDecoration: "none" }}>↗ Plaid Spend</Text><form action="/auth/logout" method="post"><Button type="submit" variant="subtle">Sign out</Button></form></Group></AppShell.Header>
-    <AppShell.Main><Container size="lg"><Stack gap="xl" py="lg">
-      <Group justify="space-between" align="flex-end"><div><Text size="sm" c="dimmed">Your shared card view</Text><Title order={1}>Statement-cycle spend</Title><Text c="dimmed">Posted and pending purchases across your configured cards.</Text></div><div><Text size="sm">Combined spend</Text><Title order={2}>{combinedSpend(cards)}</Title><Badge color={state === "Live updates on" ? "green" : "gray"}>{state}</Badge></div></Group>
-      {view?.allowance && <AllowancePanel allowance={view.allowance} />}
-      <section aria-label="Configured cards"><Group justify="space-between"><Title order={2}>Your cards</Title><Badge>{cards.length} {cards.length === 1 ? "card" : "cards"}</Badge></Group><SimpleGrid cols={{ base: 1, md: 2 }} mt="md">{cards.map((card, index) => <SpendCard card={card} key={`${card.account_name}-${index}`} />)}</SimpleGrid>{cards.length === 0 && <Text mt="md">{view ? "No card data is configured yet." : "Loading your card view…"}</Text>}</section>
-      <Text size="sm" c="dimmed">Updates arrive from Plaid sync notifications. View updated {time(view?.generated_at)}</Text>
-    </Stack></Container></AppShell.Main>
-  </AppShell>;
+  return (
+    <AppShell header={{ height: 64 }} padding="md">
+      <AppShell.Header>
+        <Group h="100%" px="md" justify="space-between">
+          <Text fw={700} component="a" href="/" c="inherit" style={{ textDecoration: "none" }}>
+            ↗ Plaid Spend
+          </Text>
+          <form action="/auth/logout" method="post">
+            <Button type="submit" variant="subtle">
+              Sign out
+            </Button>
+          </form>
+        </Group>
+      </AppShell.Header>
+      <AppShell.Main>
+        <Container size="lg">
+          <Stack gap="xl" py="lg">
+            <Group justify="space-between" align="flex-end">
+              <div>
+                <Text size="sm" c="dimmed">
+                  Your shared card view
+                </Text>
+                <Title order={1}>Statement-cycle spend</Title>
+                <Text c="dimmed">Posted and pending purchases across your configured cards.</Text>
+              </div>
+              <div>
+                <Text size="sm">Combined spend</Text>
+                <Title order={2}>{combinedSpend(cards)}</Title>
+                <Badge color={state === "Live updates on" ? "green" : "gray"}>{state}</Badge>
+              </div>
+            </Group>
+            {view?.allowance && <AllowancePanel allowance={view.allowance} />}
+            <section aria-label="Configured cards">
+              <Group justify="space-between">
+                <Title order={2}>Your cards</Title>
+                <Badge>
+                  {cards.length} {cards.length === 1 ? "card" : "cards"}
+                </Badge>
+              </Group>
+              <SimpleGrid cols={{ base: 1, md: 2 }} mt="md">
+                {cards.map((card, index) => (
+                  <SpendCard card={card} key={`${card.account_name}-${index}`} />
+                ))}
+              </SimpleGrid>
+              {cards.length === 0 && (
+                <Text mt="md">{view ? "No card data is configured yet." : "Loading your card view…"}</Text>
+              )}
+            </section>
+            <Text size="sm" c="dimmed">
+              Updates arrive from Plaid sync notifications. View updated {time(view?.generated_at)}
+            </Text>
+          </Stack>
+        </Container>
+      </AppShell.Main>
+    </AppShell>
+  );
 }
 
-createRoot(document.getElementById("root")!).render(<MantineProvider defaultColorScheme="auto"><App /></MantineProvider>);
+createRoot(document.getElementById("root")!).render(
+  <MantineProvider defaultColorScheme="auto">
+    <App />
+  </MantineProvider>
+);

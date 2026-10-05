@@ -29,6 +29,7 @@ from util.oidc_login import LoginConfig, install_login
 
 _UI_DIR = Path(__file__).resolve().parent / "ui" / "dist"
 
+
 async def _require_api_principal(request: Request) -> VerifiedOidcPrincipal:
     resolver: AuthentikOidcPrincipalResolver = request.app.state.principal_resolver
     authorization = request.headers.get("authorization", "").split()
