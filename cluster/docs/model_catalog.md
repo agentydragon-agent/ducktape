@@ -2,8 +2,8 @@
 
 > This guide describes landed source wiring, not verification of live rollout.
 > The [model-roster and consumer-configuration design](../../model_catalog/design.md)
-> proposes changes that are not enabled by merging documentation. Its
-> [documentation consolidation options](../../model_catalog/design.md#6-documentation-consolidation)
+> proposes changes that are not enabled by merging documentation. The
+> [documentation consolidation options](../../model_catalog/migration_inventory.md#documentation-consolidation)
 > discuss a smaller cluster wiring/operations guide; the exact fate is not yet decided.
 
 [`model_catalog`](../../model_catalog/README.md) owns shared model facts, named routes,

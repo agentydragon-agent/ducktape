@@ -366,6 +366,14 @@ _HAIKU = Model("claude-haiku-4-5-20251001", "Haiku 4.5")
 # True, -low/-lite/plain/-image as False). OpenClaw consumes this capability flag;
 # the Agentplane projection separately uses the route's declared effort choices.
 #
+# Source mapping: Google's maxTokens -> legacy Model.context_window;
+# maxOutputTokens -> Model.max_output_tokens. For gemini-3.1-flash-lite, maxTokens
+# is an INPUT allowance, not input+output: the live check crossed that combined
+# total. Do not subtract the output allowance from it. Claude/GPT-OSS were not
+# covered by that check; source/probe evidence is in model_catalog/antigravity_limits.md.
+# The pinned snapshot below is historical; that document also records fresh Google
+# metadata from 2026-10-05. Refreshing provider metadata must not change client budgets.
+#
 # `context_window`/`max_output_tokens`: Google's own declared capability for each model as
 # served through Antigravity, not a public-API figure borrowed from Anthropic/OpenAI/a
 # third-party host -- and deliberately not the result of a live binary-search probe
