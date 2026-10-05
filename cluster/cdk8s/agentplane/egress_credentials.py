@@ -15,9 +15,9 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
+from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.ollama.app import DIRECT_TOKEN
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 

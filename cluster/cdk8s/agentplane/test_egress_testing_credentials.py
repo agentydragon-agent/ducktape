@@ -23,7 +23,8 @@ def test_egress_credentials_are_copied_and_their_reader_exists() -> None:
     # cluster/cdk8s/external_secrets/config.py's external-creds store authenticates as
     # `external-creds-reader` in the consuming namespace; without it ESO cannot read the source secrets.
     assert all(
-        secret["spec"]["secretStoreRef"]["name"] == "kubernetes-external-creds-secret-store" for secret in secrets
+        secret["spec"]["secretStoreRef"]["name"] == "kubernetes-external-creds-secret-store"
+        for secret in secrets
         if secret["metadata"]["name"] in {GITHUB_PAT_SECRET, BUILDBUDDY_API_KEY_SECRET}
     )
     assert [

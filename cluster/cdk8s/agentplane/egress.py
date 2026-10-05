@@ -70,10 +70,10 @@ from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
-from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
 from cluster.cdk8s.ollama import app as ollama
+from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
@@ -336,8 +336,17 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 hosts=[ollama.AUTH_PROXY.fqdn],
                 cluster_internal=True,
                 methods=[EgressPolicySpecRulesMethods.POST],
-                paths=["/api/show", "/api/chat", "/api/generate", "/api/embed", "/api/embeddings",
-                       "/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/embeddings"],
+                paths=[
+                    "/api/show",
+                    "/api/chat",
+                    "/api/generate",
+                    "/api/embed",
+                    "/api/embeddings",
+                    "/v1/chat/completions",
+                    "/v1/completions",
+                    "/v1/responses",
+                    "/v1/embeddings",
+                ],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="ollama"),
             ),
             EgressPolicySpecRules(
@@ -351,8 +360,15 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                 hosts=[litellm_service.fqdn],
                 cluster_internal=True,
                 methods=[EgressPolicySpecRulesMethods.POST],
-                paths=["/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages",
-                       "/v1/messages/count_tokens", "/v1/embeddings", "/v1/audio/transcriptions"],
+                paths=[
+                    "/v1/chat/completions",
+                    "/v1/completions",
+                    "/v1/responses",
+                    "/v1/messages",
+                    "/v1/messages/count_tokens",
+                    "/v1/embeddings",
+                    "/v1/audio/transcriptions",
+                ],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="litellm-cheap-experiments"),
             ),
             # The API server, inside `basic` rather than behind a policy a launch opts into: every
