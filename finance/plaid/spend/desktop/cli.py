@@ -7,7 +7,7 @@ import asyncio
 import json
 import sys
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from babel.numbers import format_currency, get_currency_precision
@@ -81,9 +81,12 @@ def _format_money(minor_units: int | None, currency: str | None) -> str:
     code = currency.upper()
     precision = get_currency_precision(code)
     amount = Decimal(minor_units).scaleb(-precision)
-    fraction = f".{'0' * precision}" if precision else ""
-    currency_format = f"¤¤ #,##0{fraction}"
-    return format_currency(amount, code, currency_format, locale="en_US", currency_digits=False)
+    currency_format = "¤¤ #,##0"
+    if amount and abs(amount) < Decimal("0.5"):
+        whole = format_currency(1, code, currency_format, locale="en_US", currency_digits=False)
+        return f"{'−' if amount < 0 else ''}<{whole}"
+    rounded = amount.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    return format_currency(rounded, code, currency_format, locale="en_US", currency_digits=False)
 
 
 def _card_title(card: CardView) -> str:

@@ -281,12 +281,12 @@ def _crop_combined(full: Image.Image, menu_geometry: tuple[int, int, int, int]) 
 @pytest.mark.parametrize(
     ("fixture_name", "expected_label"),
     [
-        ("ready_two_cards", "$149.45 !"),
+        ("ready_two_cards", "$149 !"),
         ("authentication_required", "Sign in"),
         ("offline", "Offline"),
-        ("allowance_paced", "Flex $200.00 !"),
-        ("allowance_warming", "Flex $700.00"),
-        ("allowance_exhausted", "Flex -$15.00 !!"),
+        ("allowance_paced", "Flex $200 !"),
+        ("allowance_warming", "Flex $700"),
+        ("allowance_exhausted", "Flex −<$1 !!"),
     ],
 )
 def test_render(
@@ -309,10 +309,10 @@ def test_render(
         assert "Synthetic card" not in menu_text
         assert "Check a purchase / dashboard" in menu_text
         if fixture_name == "allowance_paced":
-            assert "7d $28.00/day" in menu_text
-            assert "30d $18.00/day" in menu_text
-            assert "Leash ~$23.00/day" in menu_text
-            assert "7d unmatched 3 ($12.00)" in menu_text
+            assert "7d $28/day" in menu_text
+            assert "30d $18/day" in menu_text
+            assert "Leash ~$23/day" in menu_text
+            assert "7d unmatched 3 ($12)" in menu_text
             assert "Sync " in menu_text
             assert "View updated" not in menu_text
             assert "sustainability target" not in menu_text

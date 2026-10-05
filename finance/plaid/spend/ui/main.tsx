@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Accordion,
@@ -69,15 +70,30 @@ type CardView = {
 };
 type View = { cards: CardView[]; allowance: Allowance | null; generated_at: string | null };
 
-function money(value: number | null | undefined, currency: string | null = "USD"): string {
+function money(value: number | null | undefined, currency: string | null, exact = false): string {
   if (value == null || !Number.isFinite(value)) return "Unavailable";
   const code = currency?.length === 3 ? currency.toUpperCase() : "USD";
   try {
-    const formatter = new Intl.NumberFormat(undefined, { style: "currency", currency: code });
-    return formatter.format(value / 10 ** (formatter.resolvedOptions().maximumFractionDigits ?? 2));
+    const formatter = new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: exact ? undefined : 0,
+      minimumFractionDigits: exact ? undefined : 0,
+    });
+    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code })
+      .resolvedOptions().maximumFractionDigits;
+    const amount = value / 10 ** precision;
+    if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "−" : ""}<${formatter.format(1)}`;
+    return formatter.format(amount);
   } catch {
-    return `${code} ${(value / 100).toFixed(2)}`;
+    const amount = value / 100;
+    if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "−" : ""}<${code} 1`;
+    return `${code} ${amount.toFixed(exact ? 2 : 0)}`;
   }
+}
+
+function Money({ value, currency }: { value: number | null | undefined; currency: string | null }): ReactNode {
+  return <span title={money(value, currency, true)}>{money(value, currency)}</span>;
 }
 function time(value: string | null | undefined): string {
   if (!value || Number.isNaN(new Date(value).getTime())) return "Unknown";
@@ -100,7 +116,7 @@ function SignalLabel({ signal }: { signal: Signal }) {
   );
 }
 
-function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+function Metric({ label, value, detail }: { label: string; value: ReactNode; detail?: string }) {
   return (
     <Stack gap={2}>
       <Text size="xs" c="dimmed" fw={600}>
@@ -136,7 +152,7 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
             ? signalFor(after, projectedAfter)
             : null
       : null;
-  const m = (value: number | null) => money(value, allowance.currency);
+  const m = (value: number | null) => <Money value={value} currency={allowance.currency} />;
 
   return (
     <Card component="section" aria-labelledby="purchase-title" withBorder radius="lg" padding="xl">
@@ -180,7 +196,12 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
               <Text size="sm">
                 {projectedAfter == null
                   ? "Pace estimate warming up; use the available balance rather than the forecast."
-                  : `At the estimated pace, ${projectedAfter < 0 ? `${m(-projectedAfter)} short before` : `${m(projectedAfter)} left before`} the next credit.`}
+                  : (
+                      <>
+                      At the estimated pace, {projectedAfter < 0 ? m(-projectedAfter) : m(projectedAfter)}{" "}
+                      {projectedAfter < 0 ? "short" : "left"} before the next credit.
+                      </>
+                    )}
               </Text>
               {signal && signal !== "normal" && (
                 <Text size="sm" fw={600}>
@@ -212,7 +233,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
       </Alert>
     );
   }
-  const m = (value: number | null | undefined) => money(value, allowance.currency);
+  const m = (value: number | null | undefined) => <Money value={value} currency={allowance.currency} />;
   const available = allowance.available_minor_units;
   const projected = allowance.projected_cycle_end_minor_units;
   const signal = ["normal", "warning", "exceeded"].includes(allowance.spending_signal)
@@ -286,7 +307,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               <Text size="sm" fw={700}>
                 {allowance.trailing_7_observed_daily_minor_units == null
                   ? "Warming up"
-                  : `${m(allowance.trailing_7_observed_daily_minor_units)} / day`}
+                  : <>{m(allowance.trailing_7_observed_daily_minor_units)} / day</>}
               </Text>
             </Group>
             <Group justify="space-between" gap="sm">
@@ -294,7 +315,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               <Text size="sm" fw={700}>
                 {allowance.trailing_30_observed_daily_minor_units == null
                   ? "Warming up"
-                  : `${m(allowance.trailing_30_observed_daily_minor_units)} / day`}
+                  : <>{m(allowance.trailing_30_observed_daily_minor_units)} / day</>}
               </Text>
             </Group>
             <Text size="sm" c="dimmed">
@@ -317,7 +338,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
               <Text size="sm" fw={700}>
                 {allowance.trailing_7_daily_minor_units == null
                   ? "Warming up"
-                  : `${m(allowance.trailing_7_daily_minor_units)} / day`}
+                  : <>{m(allowance.trailing_7_daily_minor_units)} / day</>}
               </Text>
             </Group>
             <Text size="xs" c="dimmed">
@@ -375,7 +396,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             {allowance.review_transaction_count > 0 && (
               <Alert
                 color="yellow"
-                title={`${allowance.review_transaction_count} ${allowance.review_transaction_count === 1 ? "charge" : "charges"} (${m(allowance.review_minor_units)}) need review`}
+                title={<>{allowance.review_transaction_count} {allowance.review_transaction_count === 1 ? "charge" : "charges"} ({m(allowance.review_minor_units)}) need review</>}
                 variant="light"
               >
                 Counted as flexible until classified; the cushion could change.
@@ -452,17 +473,17 @@ function SpendCard({ card }: { card: CardView }) {
           </Badge>
         </Group>
         <Text size="xl" fw={700} mt="sm">
-          {money(card.spend_minor_units, card.currency)}
+          <Money value={card.spend_minor_units} currency={card.currency} />
         </Text>
         <Text size="sm" c="dimmed">
           {card.statement_available
-            ? `This statement${card.limit_minor_units == null ? "" : ` · ${money(card.limit_minor_units, card.currency)} card limit`}`
+            ? <>This statement{card.limit_minor_units != null && <> · <Money value={card.limit_minor_units} currency={card.currency} /> card limit</>}</>
             : card.cycle_start
               ? `Provisional card total since ${card.cycle_start}; statement date not yet reported. Includes purchases outside the allowance.`
               : "Statement data unavailable"}
         </Text>
         <Text size="xs" c="dimmed">
-          Pending {money(card.pending_minor_units, card.currency)} · Last synced {time(card.last_synced_at)}
+          Pending <Money value={card.pending_minor_units} currency={card.currency} /> · Last synced {time(card.last_synced_at)}
         </Text>
       </Stack>
     </Card>

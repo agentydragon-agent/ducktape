@@ -20,7 +20,7 @@
       "currency": "USD",
       "monthly_minor_units": 70000,
       "activation_at": "2026-10-01",
-      "available_minor_units": -1500,
+      "available_minor_units": -1,
       "alert_state": "exceeded",
       "trailing_7_observed_daily_minor_units": 4500,
       "trailing_30_observed_daily_minor_units": 3000,

@@ -157,26 +157,31 @@ async def test_spending_decision_render(
     normal = tmp_path / f"dashboard-{width}.png"
     await page.screenshot(path=str(normal), full_page=True, animations="disabled")
     retain_review_asset(normal, title="Spend decisions", label=f"{width}px available", name=normal.name)
-    await page.get_by_text("$200.00", exact=True).wait_for()
+    await page.get_by_text("$200", exact=True).wait_for()
     assert await page.get_by_role("heading", name="Flexible spending", level=1).count() == 1
-    assert await page.get_by_role("alert").get_by_text("2 charges ($15.00) need review").count() == 1
+    assert await page.get_by_role("alert").get_by_text("2 charges ($15) need review").count() == 1
     assert await page.get_by_role("heading", name="Can I afford this?").count() == 1
     assert await page.get_by_text("7 days", exact=True).count() == 1
+    assert await page.locator('span[title="$12.50"]').count() >= 1
+    assert await page.locator('span[title="$200.00"]').count() >= 1
     assert await page.get_by_text("30 days", exact=True).count() == 1
-    assert await page.get_by_text("$12.50 / day", exact=True).count() == 2
-    assert await page.get_by_text("$10.00 / day", exact=True).count() == 1
+    assert await page.get_by_text("$13 / day", exact=True).count() == 2
+    assert await page.get_by_text("$10 / day", exact=True).count() == 1
     assert await page.get_by_text("Below provisional leash", exact=True).count() == 1
-    assert await page.get_by_text("7d unmatched 2 ($3.00)", exact=False).count() == 1
-    assert await page.get_by_text("$75.00", exact=True).count() == 1
+    assert await page.get_by_text("7d unmatched 2 ($3)", exact=False).count() == 1
+    assert await page.get_by_text("$75", exact=True).count() == 1
     assert await page.get_by_text("Provisional card total since", exact=False).count() == 1
     assert await page.get_by_text("Includes purchases outside the allowance", exact=False).count() == 1
     assert not errors
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
     await page.get_by_text("Over allowance", exact=True).last.wait_for()
-    assert await page.get_by_text("-$50.00", exact=True).count() == 1
-    assert await page.get_by_text("$175.00 short before", exact=False).count() == 1
+    assert await page.get_by_text("-$50", exact=True).count() == 1
+    assert await page.get_by_text("$175 short before", exact=False).count() == 1
     assert not errors
+    await page.get_by_label("Hypothetical flexible purchase").fill("200.01")
+    assert await page.get_by_text("−<$1", exact=True).count() == 1
+    assert await page.locator('span[title="-$0.01"]').count() == 1
     exceeded = tmp_path / f"dashboard-{width}-purchase.png"
     await page.screenshot(path=str(exceeded), full_page=True, animations="disabled")
     retain_review_asset(exceeded, title="Spend decisions", label=f"{width}px hypothetical purchase", name=exceeded.name)

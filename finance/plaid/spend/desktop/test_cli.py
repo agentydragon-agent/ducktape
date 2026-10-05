@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 
 from finance.plaid.spend.allowance import AllowanceView, PaceAlert, Status, Windows
-from finance.plaid.spend.desktop.cli import _print_view
+from finance.plaid.spend.desktop.cli import _format_money, _print_view
 from finance.plaid.spend.models import AlertState, CardView, SpendView
 
 NOW = datetime(2026, 1, 31, 16, tzinfo=UTC)
@@ -73,17 +73,17 @@ def sample_allowance(status: Status = Status.ACTIVE) -> AllowanceView:
 def test_prints_active_allowance_and_cards(capsys: pytest.CaptureFixture[str]) -> None:
     _print_view(SpendView(generated_at=NOW, cards=[sample_card()], allowance=sample_allowance()), "ready", "")
     output = capsys.readouterr().out
-    assert "Available: USD 88.00" in output
-    assert "Monthly credit: USD 100.00" in output
-    assert "Spent this credit cycle: USD 12.00" in output
-    assert "Pending (included): USD 3.00" in output
+    assert "Available: USD 88" in output
+    assert "Monthly credit: USD 100" in output
+    assert "Spent this credit cycle: USD 12" in output
+    assert "Pending (included): USD 3" in output
     assert "Provisional leash signal: warning" in output
-    assert "7-day recorded flexible pace: USD 12.00/day" in output
-    assert "30-day recorded flexible pace: USD 10.00/day" in output
+    assert "7-day recorded flexible pace: USD 12/day" in output
+    assert "30-day recorded flexible pace: USD 10/day" in output
     assert "Provisional leash rate:" in output
-    assert "7d unmatched: 2 (USD 3.00)" in output
+    assert "7d unmatched: 2 (USD 3)" in output
     assert "Estimated balance before next credit:" in output
-    assert "2.00" in output
+    assert "USD 2" in output
     assert "2026-02-28T00:00:00Z" in output
     assert "Sample card" in output
 
@@ -101,8 +101,25 @@ def test_without_allowance_keeps_existing_card_output(capsys: pytest.CaptureFixt
     _print_view(SpendView(generated_at=NOW, cards=[sample_card()]), "ready", "")
     output = capsys.readouterr().out
     assert "Sample card" in output
-    assert "Spend: USD 12.00" in output
+    assert "Spend: USD 12" in output
     assert "Flexible allowance" not in output
+
+
+@pytest.mark.parametrize(
+    ("minor_units", "expected"),
+    [
+        (0, "USD 0"),
+        (1, "<USD 1"),
+        (-1, "−<USD 1"),
+        (49, "<USD 1"),
+        (50, "USD 1"),
+        (1250, "USD 13"),
+        (1299, "USD 13"),
+        (-1299, "-USD 13"),
+    ],
+)
+def test_compact_money_preserves_nonzero_sign(minor_units: int, expected: str) -> None:
+    assert _format_money(minor_units, "USD") == expected
 
 
 if __name__ == "__main__":
