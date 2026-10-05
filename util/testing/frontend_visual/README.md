@@ -1,10 +1,10 @@
 # frontend_visual
 
 Shared Puppeteer/Playwright infrastructure for visual render-health tests (see
-`visual-test-lib.mjs` for the JS/Puppeteer path used by `agentplane/app/frontend`, and
+`visual-test-lib.mjs` for the JS/Puppeteer path, which no lane runs any more, and
 `frontend_visual.py` for the Python/Playwright path used by `study_casino`,
 `study_casino/frontend`, `finance/augur`, `airlock/frontend`, `aiquota/frontend`,
-`props/frontend` and `devinfra/claude/session_export/frontend`).
+`props/frontend`, `devinfra/claude/session_export/frontend` and `agentplane/app/frontend`).
 Browser tests are moving to the Python path, lane by lane — see [The Python sweep](#the-python-sweep).
 `capture.mjs` holds the lower-level page-prep/capture
 primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) that
@@ -36,7 +36,7 @@ where it wants its scenario list to live.
   The list lives only in the table; BUILD carries a shard count, which needs no edit when the
   table grows. One browser serves every scenario in a shard, and a failure is recorded and the
   sweep continues, so a run enumerates every broken scene rather than stopping at the first.
-  `agentplane/app/frontend` works this way.
+  No lane runs it any more.
 
 Under `runScenarios`, `--test_filter=<scenario>` (Bazel's `TESTBRIDGE_TEST_ONLY`) addresses a
 single scenario — the substitute for a per-scenario target name. Filtering happens before
@@ -59,6 +59,7 @@ py_visual_test(
     scenarios = "harness/scenarios.json",
     title = "Airlock",
     # fonts = ":app_fonts", font_family = "Outfit",  # an app-owned named font, asserted rendered
+    # devtools_viewport = True,  # see below
 )
 ```
 
@@ -89,6 +90,11 @@ selectors, the request fence, the fetch ledger, zero uncaught page errors — wi
 - **An element is captured to the nearest pixel**, as Puppeteer does, not outward as Playwright's own
   element screenshot would (a `#app` 1630.4px tall publishes 1630 rows, not 1631), so a migrated lane's
   images keep their sizes. An element taller than the viewport is captured whole.
+- **`devtools_viewport = True` emulates and captures the viewport the way Puppeteer did**
+  (`DevtoolsViewport` in `page_capture.py`: `Emulation.setDeviceMetricsOverride`, and an unclipped
+  `Page.captureScreenshot` for a `captureViewport` scenario). Playwright's own viewport rasterizes a few
+  pixels differently at some device scale factors (identical at 1 and 2; 1.5, 2.625 and 3 differ), so a
+  lane with such a scale that must stay byte-identical to its Puppeteer sweep turns it on. Off by default.
 - **Selectors are Playwright's.** Puppeteer's `::-p-text(...)` does not exist; `readySelectors` wait for
   presence, as before.
 - **The target is not `visual` if the harness lives in a `visual/` directory.** A `py_test`'s
