@@ -221,8 +221,8 @@
       "sha256": "Ykmm7p5+JP8DndK2z6O5AYGTRHBWmjybF5awL9ZqeHc="
     },
     "skill-grafana": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-243611d854fb/grafana.skill",
-      "sha256": "JDYR2FT7lXU5BU5gAx55SWE4hR8AZr4srWvntzQW6y8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-9140e0a56344/grafana.skill",
+      "sha256": "kUDgpWNE9qVJMDWl7Mdc44N9f4KNvgWLWZ5gRi8/1lc="
     },
     "ducktape-claude-api": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-eb20b431a4ea/ducktape_claude_api-0.1.0-py3-none-any.whl",
