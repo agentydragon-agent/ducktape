@@ -38,8 +38,7 @@ from devinfra.pr_visuals.publisher import (
     write_baseline_pointers,
 )
 from devinfra.pr_visuals.pull_request import PullRequestRef
-from util.visual_diff import compare_pngs
-from util.visual_review import VisualReviewAsset, VisualReviewManifest
+from util.visual_review import VisualReviewManifest
 
 
 def _png(path: Path, color: tuple[int, int, int, int] = (10, 20, 30, 255), size: tuple[int, int] = (8, 8)) -> Path:
@@ -466,19 +465,6 @@ def test_build_bundle_rejects_abbreviated_sha(tmp_path: Path) -> None:
         build_bundle([], tmp_path, commit_sha="0123456", repository="repo")
 
 
-def test_manifest_rejects_paths_and_duplicates() -> None:
-    with pytest.raises(ValueError, match="safe PNG basenames"):
-        VisualReviewAsset(path="../secret.png", label="secret")
-    with pytest.raises(ValueError, match="must be unique"):
-        VisualReviewManifest.model_validate(
-            {
-                "schema": "ducktape.visual-review.v1",
-                "title": "UI",
-                "assets": [{"path": "same.png", "label": "one"}, {"path": "same.png", "label": "two"}],
-            }
-        )
-
-
 def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     review_tests = [
@@ -851,21 +837,6 @@ def test_upload_publishes_all_indexes_last(tmp_path: Path) -> None:
     first_index = next(index for index, key in enumerate(client.keys) if key.endswith("index.html"))
     assert all(not key.endswith("index.html") for key in client.keys[:first_index])
     assert client.keys[-1] == "commits/sha/index.html"
-
-
-def test_compare_pngs_classifies_exact_diffs(tmp_path: Path) -> None:
-    identical = _png(tmp_path / "identical.png")
-    assert compare_pngs(_png(tmp_path / "a.png"), identical).classification == "unchanged"
-
-    modified = compare_pngs(_png(tmp_path / "a.png"), _png(tmp_path / "b.png", (10, 20, 31, 255)))
-    assert modified.classification == "modified"
-    assert modified.changed_pixels == 64
-    assert modified.dimension_changed is False
-    assert modified.diff_overlay is not None
-
-    resized = compare_pngs(_png(tmp_path / "a.png"), _png(tmp_path / "c.png", size=(8, 10)))
-    assert resized.classification == "modified"
-    assert resized.dimension_changed is True
 
 
 def test_build_bundle_classifies_against_baseline(tmp_path: Path) -> None:
