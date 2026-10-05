@@ -1859,7 +1859,7 @@ data:
         name: agentplane-app
       - namespace: agentplane-staging
         name: agentplane-notifications
-    agent_instructions: |-
+    platform_instructions: |-
       You are running in a Kubernetes sandbox managed by Agentplane. Agentplane governs outbound network
       access and sensitive operations. Instead of real service tokens you receive credential placeholders:
       literal strings of the form agentplane-credential-<name> that the rules endpoint below returns.
