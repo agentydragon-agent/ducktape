@@ -93,12 +93,17 @@ def test_single_config_parses_cards_and_optional_allowance():
             '{"cards":[],"allowance":{"monthly_minor_units":10000,"spending_account_ids":["example-card"],'
             '"rules":[{"condition":{"type":"name_prefix","field":"name","prefix":"EXAMPLE"},"kind":"flexible"}]}}'
         )
+    with pytest.raises(ValidationError):
+        AllowancePolicy.model_validate({
+            "monthly_minor_units": 10_000,
+            "activation_at": None,
+            "spending_account_ids": ["example-card"],
+            "rules": [{"condition": {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"}, "kind": "flexible"}],
+        })
 
 
 def test_configured_allowance_is_active_and_no_double_credit():
     assert view().status == Status.ACTIVE
-    with pytest.raises(ValidationError):
-        policy(activation_at=None)
     with pytest.raises(ValueError, match="future"):
         view(when=START.replace(year=2025))
     assert view([row("2026-01-30", 90)]).available_minor_units == 10_000
