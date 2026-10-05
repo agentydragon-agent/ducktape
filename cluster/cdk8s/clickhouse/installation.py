@@ -620,7 +620,10 @@ CHARTS = (agent_diagnostics_rbac_chart, keeper_chart, clickhouse_chart, service_
 
 
 def clickhouse(
-    chart: Chart, directory: RenderedDirectory, clickhouse_operator: Kustomization, external_secrets_operator: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    clickhouse_operator: Kustomization,
+    external_secrets_operator: Kustomization,
 ) -> Kustomization:
     name = "clickhouse"
     return flux_kustomization(
