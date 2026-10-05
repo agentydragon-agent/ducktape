@@ -491,7 +491,7 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
                 methods=[EgressPolicySpecRulesMethods.GET],
                 paths=["/v1/quotas", "/v1/providers/*/raw"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="aiquota-read"),
-            )
+            ),
         ],
     )
 
@@ -521,21 +521,23 @@ def _finance_aiquota_history(
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
         description="Finance-only typed AIQuota ClickHouse reader; HTTP Basic password for finance_agent_aiquota.",
         source=Source.secret_ref(name=name, key=clickhouse.PASSWORD_KEY),
-        targets=[EgressCredentialSpecTargets(
-            header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
-        )],
+        targets=[
+            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
+        ],
     )
     EgressPolicy(
         scope,
         "egresspolicy-finance-aiquota-history",
         metadata=ApiObjectMetadata(name=FINANCE_AIQUOTA_HISTORY_POLICY, namespace=namespace),
-        rules=[EgressPolicySpecRules(
-            hosts=[clickhouse.HTTP.fqdn],
-            cluster_internal=True,
-            methods=[EgressPolicySpecRulesMethods.GET],
-            paths=["/"],
-            credential_ref=EgressPolicySpecRulesCredentialRef(name=name),
-        )],
+        rules=[
+            EgressPolicySpecRules(
+                hosts=[clickhouse.HTTP.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.GET],
+                paths=["/"],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name=name),
+            )
+        ],
     )
     NetworkPolicy(
         scope,

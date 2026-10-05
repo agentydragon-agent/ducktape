@@ -1,13 +1,13 @@
 """The finance reader's generated credential and database grants stay separate."""
 
 import pytest_bazel
-from cdk8s import Testing
+from cdk8s import Testing as CdkTesting
 
 from cluster.cdk8s.clickhouse import client, installation
 
 
 def test_finance_reader_is_minted_and_scoped_to_typed_quota_history() -> None:
-    docs = Testing.synth(installation.clickhouse_chart(Testing.app()))
+    docs = CdkTesting.synth(installation.clickhouse_chart(CdkTesting.app()))
     user = client.FINANCE_AGENT_USER
     chi = next(doc for doc in docs if doc["kind"] == "ClickHouseInstallation")
     users = chi["spec"]["configuration"]["users"]

@@ -16,9 +16,9 @@ from cluster.cdk8s.agentplane.app_settings import (
     ACTIVITYWATCH_READ_POLICY,
     AGENTPLANE_TESTING_POLICY,
     AIQUOTA_READ_POLICY,
-    FINANCE_AIQUOTA_HISTORY_POLICY,
     BASIC_POLICY,
     COINBASE_POLICY,
+    FINANCE_AIQUOTA_HISTORY_POLICY,
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -171,7 +171,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             ACTIVITYWATCH_READ_POLICY,
             AGENTPLANE_TESTING_POLICY,
             AIQUOTA_READ_POLICY,
-    FINANCE_AIQUOTA_HISTORY_POLICY,
+            FINANCE_AIQUOTA_HISTORY_POLICY,
             HAKU_MAILBOX_POLICY,
             PLAID_PGWEB_POLICY,
         }
@@ -363,7 +363,9 @@ def test_finance_aiquota_history_is_read_only_and_finance_only(
     assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "basicPassword"}]
     quota = _by_name(docs, "EgressPolicy", AIQUOTA_READ_POLICY)
     assert any(
-        rule.get("clusterInternal") and rule.get("hosts") == ["aiquota-api.cli-proxy-api.svc.cluster.local"]
-        and rule["methods"] == ["GET"] and rule["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
+        rule.get("clusterInternal")
+        and rule.get("hosts") == ["aiquota-api.cli-proxy-api.svc.cluster.local"]
+        and rule["methods"] == ["GET"]
+        and rule["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
         for rule in quota["spec"]["rules"]
     )

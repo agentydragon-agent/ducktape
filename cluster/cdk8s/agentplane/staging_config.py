@@ -111,7 +111,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
             FINANCE_AIQUOTA_HISTORY_POLICY,
             COINBASE_POLICY,
             FINANCE_AIQUOTA_HISTORY_POLICY,
-    FORGEJO_FINANCE_AGENT_POLICY,
+            FORGEJO_FINANCE_AGENT_POLICY,
             PLAID_PGWEB_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
             GITHUB_CLONE_POLICY,
