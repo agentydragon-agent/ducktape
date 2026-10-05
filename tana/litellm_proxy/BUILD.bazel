@@ -10,6 +10,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 # lock (the lock() below), not the repo-wide @pypi hub.
 # gazelle:resolve py litellm @pypi_tana_litellm_proxy//litellm
 # gazelle:resolve py httpx @pypi_tana_litellm_proxy//httpx
+# gazelle:resolve py yaml @pypi_tana_litellm_proxy//pyyaml
 
 exports_files([
     "requirements.in",
@@ -152,13 +153,20 @@ py_test(
 py_test(
     name = "test_proxy_runtime",
     srcs = ["test_proxy_runtime.py"],
-    data = [":server_bin"],
+    data = [
+        ":server_bin",
+        "//cluster/k8s/litellm/app:proxy_manifest",
+    ],
+    env = {"LITELLM_LOCAL_MODEL_COST_MAP": "True"},
     deps = [
         ":provider",
         "//:conftest",
         "//util/bazel:runfiles",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi_tana_litellm_proxy//httpx",
         "@pypi_tana_litellm_proxy//litellm",
+        "@pypi_tana_litellm_proxy//pyyaml",
     ],
 )
 

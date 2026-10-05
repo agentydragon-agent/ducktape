@@ -382,26 +382,35 @@ existing small separation rather than adding a meta-configuration layer:
    own budget vocabulary. Claude wrapper settings stay with wrappers, OpenClaw
    settings with OpenClaw, Codex launch policy with its runner adapter/configuration.
    Values can deliberately differ; sharing a number is not a reason to share semantics.
-4. **LiteLLM publication:** implement one narrow, tested policy at the proxy boundary,
-   only after selecting the supported paths. For generative models, publish our
-   established input/output pair together or neither; do not publish the legacy
-   `max_tokens` or custom `context_window` as independent competing capacity facts.
-   Explicitly separate embedding/transcription metadata rather than inventing an
-   output ceiling to satisfy a generation-only pair rule.
+4. **LiteLLM publication:** current and legacy token metadata may coexist, provided
+   their values come from one coherent authority. When Ducktape supplies a generative
+   input/output pair, project the complete set of relevant fields from it, including
+   LiteLLM's legacy output alias `max_tokens`; do not leave that alias to an unrelated
+   catalogue default. **Every served route must ultimately publish Ducktape-owned
+   token metadata.** Catalogue values may be copied into source declarations with
+   revision/entry provenance, not left as an implicit runtime authority. Keep aliases
+   out of the neutral schema and remove the transitional `publish_limits` gate as
+   route declarations are completed. Keep embedding/
+   transcription metadata separate rather than inventing a generation output ceiling.
+   Do not reintroduce our unused custom `context_window` field.
 5. **Native client behavior:** configure and verify the actual harness. A clean
    `/model/info` response cannot fix Codex/Claude's independent recognition tables.
 
-Item 4 is the desired contract, **not a solved implementation**. The [pinned-runtime experiment](litellm_metadata.md#isolated-configapi-experiment-2026-10-05) rules out omission, null and zero as the publication
-policy: omission/null allow catalogue fallback, and zero declares a numeric limit.
-Next compare a small upstream suppression mechanism or targeted response projection
-against leaving LiteLLM's endpoint explicitly non-authoritative. The latter does
-**not** satisfy the requested public pair-or-none contract and requires an explicit
-decision, not silent acceptance. Avoid global
-model-cost mutation or a broad wrapper service as a premature solution.
+The requirement is **source consistency, not legacy-field suppression**. Ordinary
+`model_info` overrides supply all three token fields for currently opted-in routes;
+see [publication ownership](litellm_metadata.md#publication-ownership). No downstream
+LiteLLM patch, response filter or extra proxy is needed for this slice. The earlier
+omission/null experiment remains useful evidence about fallback, not justification
+for stripping legacy keys. Existing configured numbers still need semantic cleanup;
+consistent publication does not validate them as provider limits.
 
-Internal catalogue use also needs an explicit decision: suppressing fields in an
-HTTP response does not suppress LiteLLM's request-side limit heuristics. Determine
-which checks execute on the retained path before changing them; preserve accounting.
+The ownership policy is settled; the remaining work is to populate and review each
+route's applicable metadata. Omitting overrides still permits catalogue fallback during
+this migration and is **not the intended end state**. Missing values need a specific
+source or retention/pause decision, not invented limits or blanket raw-API assumptions.
+A new live probe is not required for every model: reviewed catalogue snapshots are valid
+sources. Do not change pricing/capabilities or internal request heuristics incidentally. Legacy metadata is also read internally; keeping it aligned
+with the already-configured output limit is intentional, not response-only filtering.
 
 ### Rollout and useful validation
 
@@ -411,10 +420,11 @@ which checks execute on the retained path before changing them; preserve account
    path, direct clients, and retained state; verify activation separately from merge status.
 2. The [active-session audit](client_budgets.md#active-codex-path-audit-2026-10-05) records the real slug, binary and resolved budget.
    Recheck this evidence when changing harness versions or recognition strategy.
-3. Use the completed [config/API experiment](litellm_metadata.md#isolated-configapi-experiment-2026-10-05) to choose the narrow publication
-   mechanism; do not repeat catalogue research or ship omit/null as a fix. Validate
-   the chosen mechanism through load/reload and supported endpoint shapes, including
-   DB-backed paths if retained, without changing pricing or request behavior.
+3. Validate complete ordinary token overrides through load/reload and supported
+   metadata schemas. Complete Ducktape-owned declarations for the remaining routes,
+   with catalogue provenance where adopted; decide individual unsupported routes'
+   fates rather than retaining implicit fallback. Cover DB-backed paths if retained,
+   and preserve pricing, capabilities and request settings.
 4. Verify retained harness startup arguments/environment and reported window with
    a bounded request. Test model switching where budgets differ. Test Ollama alias
    effectiveness only for variants we decide to keep. No silent live deployment.
@@ -477,7 +487,7 @@ simultaneously. Record any combined constraint in the evidence; do not invent
 If an active path needs a combined constraint enforced, design that explicitly.
 
 `model_info.max_tokens` is legacy **metadata**. Request-body `max_tokens` is a
-**generation setting**. Removing the former must not remove the latter.
+**generation setting**. Projecting the former must not set or remove the latter.
 
 ## Ollama serving configuration
 

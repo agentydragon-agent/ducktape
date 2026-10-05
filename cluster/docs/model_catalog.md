@@ -37,7 +37,14 @@ Do not join metadata using a route's trailing string segment.
 Missing names fail when a route is offered in the app, rather than being synthesized
 from slugs. Missing limits remain unknown. `publish_limits` preserves which routes
 currently override LiteLLM's metadata; knowing a limit does not automatically authorize
-changing proxy behavior or applying a harness context override.
+changing proxy behavior or applying a harness context override. Where we do publish
+limits, the LiteLLM projection emits `max_input_tokens` plus both `max_output_tokens`
+and legacy `max_tokens`, with the latter two derived from one output declaration.
+This uses ordinary config, not a LiteLLM patch; see [publication ownership](../../model_catalog/litellm_metadata.md#publication-ownership).
+Routes without overrides still have catalogue/adapter fallback **during migration**;
+the target is explicit Ducktape-owned token metadata for every served route, optionally
+copied from a reviewed catalogue entry with provenance. Client budgets and embedding/audio
+metadata remain unchanged in this first slice.
 
 ## Projections
 
