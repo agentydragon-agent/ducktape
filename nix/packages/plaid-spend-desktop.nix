@@ -18,6 +18,7 @@ python314Packages.buildPythonApplication {
     babel
     dbus-next
     httpx
+    pydantic
   ];
   pythonImportsCheck = [
     "spend.desktop.cli"
@@ -47,7 +48,7 @@ python314Packages.buildPythonApplication {
   passthru.extensionUuid = extensionUuid;
 
   meta = {
-    description = "CLI and GNOME clients for server-computed Plaid statement-cycle spend";
+    description = "CLI and GNOME clients for server-computed Plaid spend and allowance";
     homepage = "https://github.com/agentydragon/ducktape";
     license = lib.licenses.agpl3Only;
     mainProgram = "plaid-spend";
