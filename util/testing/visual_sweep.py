@@ -1,7 +1,6 @@
 """Capture every scenario of a harness page with Playwright: one `test_scenario` per scenario.
 
-The Python counterpart of `runScenarios` in `frontend_visual/visual-test-lib.mjs`, run by the
-`py_visual_test` macro (`frontend_visual/py_visual_test.bzl`), which names this module its
+Run by the `py_visual_test` macro (`frontend_visual/py_visual_test.bzl`), which names this module its
 `main_module` and sets the environment `SweepConfig` reads. The scenarios are the rows of a
 `scenarios.json` (`visual_scenarios`); each is rendered, gated, and published as
 `<outputName>-actual.png` (the suffix is the lane's choice) plus an entry in `visual-review.json`, for PR visual review
@@ -210,9 +209,10 @@ async def capture_scenario(
         await fence.install(page)
 
         await _load_harness(page, scenario_name, scenario, config=config, timeout_ms=timeout_ms)
-        await page.wait_for_selector("#app > *", state="attached", timeout=timeout_ms)
-        for selector in scenario.ready_selectors:
-            await page.wait_for_selector(selector, state="attached", timeout=timeout_ms)
+        for selector in ("#app > *", *scenario.ready_selectors):
+            await page_errors.wait_for(
+                page.wait_for_selector(selector, state="attached", timeout=timeout_ms), context=output_name
+            )
         # Last, so fonts, images and paint settle around whatever the scene's own conditions let in.
         await wait_for_stable(page)
         # Only assert a named font when the app declares one. Generic family resolution is owned by the
