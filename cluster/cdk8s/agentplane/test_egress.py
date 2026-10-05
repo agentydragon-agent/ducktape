@@ -177,7 +177,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_claude_pause_removes_offerings_and_presets_not_runner_support(
+def test_claude_pause_omits_launch_offerings_but_keeps_ingress(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[namespace]

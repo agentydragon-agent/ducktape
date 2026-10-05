@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import { TEST_REASONING_EFFORTS } from "./test_model_catalog";
+import { TEST_REASONING_EFFORTS, testModelCatalog } from "./test_model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
@@ -71,16 +71,10 @@ async function render(
   vi.spyOn(api, "GET").mockImplementation(async (path) => {
     const data =
       path === "/models"
-        ? {
-            models: [
-              { model: "test-claude", display_name: "Test Claude", reasoning_efforts: TEST_REASONING_EFFORTS },
-              ...codexModels,
-            ],
-            harnesses: {
-              HARNESS_CLAUDE: ["test-claude"],
-              HARNESS_CODEX: codexModels.map((option) => option.model),
-            },
-          }
+        ? testModelCatalog(
+            [{ model: "test-claude", display_name: "Test Claude", reasoning_efforts: TEST_REASONING_EFFORTS }],
+            codexModels
+          )
         : path === "/presets"
           ? [preset]
           : path === "/sandboxes/templates"
@@ -234,7 +228,7 @@ it("replaces an unavailable preset harness and disables its option", async () =>
   expect(input(container, "Model").value).toBe("Test Claude");
   await act(async () => input(container, "Harness").click());
   const codex = options(container, "Harness").find((option) => option.textContent === "Codex (no models offered)");
-  expect(codex?.getAttribute("aria-disabled")).toBe("true");
+  expect(codex?.hasAttribute("data-combobox-disabled")).toBe(true);
   await act(async () => codex!.click());
   expect(input(container, "Harness").value).toBe("Claude");
 });

@@ -80,9 +80,9 @@ CODEX_ONLY = ModelCatalog(
 )
 
 
-@pytest.fixture
+@pytest.fixture(params=[TEST_MODELS])
 def model_catalog(request: pytest.FixtureRequest) -> ModelCatalog:
-    return getattr(request, "param", TEST_MODELS)
+    return request.param
 
 
 @pytest.mark.parametrize("upstream_status", [None, 403])

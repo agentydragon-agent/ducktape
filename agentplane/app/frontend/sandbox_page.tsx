@@ -268,7 +268,7 @@ export function SandboxPage({
   const [cwdTemplate, setCwdTemplate] = useState("/state/workspaces/{session_id}");
   const [setupScript, setSetupScript] = useState("");
   const [defaultsLabel, setDefaultsLabel] = useState<string | null>(null);
-  // The app's catalog of what this sandbox's Harness may run; the thread carries the choice.
+  // Launch-form offerings; existing threads retain their harness and model.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
   const models = useMemo(() => (modelCatalog ? modelsForHarness(modelCatalog, harness) : []), [modelCatalog, harness]);

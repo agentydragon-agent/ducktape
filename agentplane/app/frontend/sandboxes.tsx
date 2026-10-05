@@ -166,7 +166,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       const harness = available.find((option) => option.value === current.harness)?.value ?? available[0]?.value;
       if (!harness) return current;
       const offered = modelsForHarness(modelCatalog, harness);
-      if (harness === current.harness && current.model && offered.some((option) => option.model === current.model)) return current;
+      if (harness === current.harness && current.model && offered.some((option) => option.model === current.model))
+        return current;
       return { ...current, harness, model: offered[0]?.model ?? null, reasoning_effort: undefined };
     });
   }, [modelCatalog, thread.harness, thread.model]);

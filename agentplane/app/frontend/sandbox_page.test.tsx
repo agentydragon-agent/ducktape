@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import { TEST_REASONING_EFFORTS } from "./test_model_catalog";
+import { TEST_REASONING_EFFORTS, testModelCatalog } from "./test_model_catalog";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
@@ -105,15 +105,8 @@ async function render(
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
-      return Promise.resolve(
-        Response.json({
-          models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
-          harnesses: {
-            HARNESS_CLAUDE: claudePaused ? [] : ["test-model"],
-            HARNESS_CODEX: claudePaused ? ["test-model"] : [],
-          },
-        })
-      );
+      const models = [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }];
+      return Promise.resolve(Response.json(testModelCatalog(claudePaused ? [] : models, claudePaused ? models : [])));
     }
     if (path === "/egress/policies" || path === "/sandboxes/startup-test/egress/decisions") {
       return Promise.resolve(Response.json([]));
@@ -378,11 +371,10 @@ it("defaults new sessions to an offered harness while retaining existing Claude 
   const claude = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
     (option) => option.textContent === "Claude (no models offered)"
   );
-  expect(claude?.getAttribute("aria-disabled")).toBe("true");
+  expect(claude?.hasAttribute("data-combobox-disabled")).toBe(true);
   await act(async () => claude!.click());
   expect(harness.value).toBe("Codex");
   await act(async () => harness.click());
   await act(async () => newSession().click());
-  const request = sessions.mock.calls.map(([request]) => request).find((request) => request.method === "POST")!;
-  expect((await request.json()).spec.harness).toBe("HARNESS_CODEX");
+  expect((await postedBody(sessions)).spec.harness).toBe("HARNESS_CODEX");
 });
