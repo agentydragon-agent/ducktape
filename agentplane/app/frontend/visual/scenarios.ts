@@ -351,7 +351,13 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[role="alert"]'],
   },
 
-  sandboxes_claude_paused: { element: "#app", route: "/sandboxes?preset=public-coder", viewport: { width: 1200, height: 900 }, claudePaused: true },
+  sandboxes_claude_paused: {
+    element: "#app",
+    route: "/sandboxes?preset=public-coder",
+    viewport: { width: 1200, height: 900 },
+    claudePaused: true,
+    readySelectors: ['[role="option"][aria-disabled="true"]'],
+  },
   sandboxes: { element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 900 } },
   sandboxes_phone: { element: "#app", route: "/sandboxes", viewport: PHONE, outputName: "sandboxes-phone" },
   sandboxes_stale: {
@@ -555,7 +561,13 @@ export const SCENARIOS: Record<string, Scenario> = {
     preselectReconnect: true,
   },
 
-  sandbox_claude_paused: { element: "#app", route: SANDBOX_ROUTE, viewport: { width: 1200, height: 900 }, claudePaused: true },
+  sandbox_claude_paused: {
+    element: "#app",
+    route: SANDBOX_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    claudePaused: true,
+    readySelectors: ['[role="option"][aria-disabled="true"]'],
+  },
   sandbox: { element: "#app", route: SANDBOX_ROUTE, viewport: { width: 1200, height: 900 } },
   sandbox_phone: { element: "#app", route: SANDBOX_ROUTE, viewport: PHONE, outputName: "sandbox-phone" },
   sandbox_status: {

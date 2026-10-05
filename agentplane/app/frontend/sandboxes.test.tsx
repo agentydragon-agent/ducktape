@@ -228,16 +228,15 @@ it("lets an operator replace the preset template before creating the sandbox", a
   );
 });
 
-it("clears an unavailable preset model and hides a harness with no offered models", async () => {
+it("replaces an unavailable preset harness and disables its option", async () => {
   const { container } = await render([]);
-  expect(input(container, "Model").value).toBe("");
-  expect(input(container, "Model").disabled).toBe(true);
-  expect(input(container, "Model").placeholder).toBe("No models available");
-  await act(async () => input(container, "Harness").click());
-  expect(options(container, "Harness").map((option) => option.textContent)).toEqual(["Claude"]);
-  await act(async () => options(container, "Harness")[0].click());
-  expect(input(container, "Model").disabled).toBe(false);
+  expect(input(container, "Harness").value).toBe("Claude");
   expect(input(container, "Model").value).toBe("Test Claude");
+  await act(async () => input(container, "Harness").click());
+  const codex = options(container, "Harness").find((option) => option.textContent === "Codex (no models offered)");
+  expect(codex?.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => codex!.click());
+  expect(input(container, "Harness").value).toBe("Claude");
 });
 
 it("keeps the creation form and reports rejection without navigating", async () => {

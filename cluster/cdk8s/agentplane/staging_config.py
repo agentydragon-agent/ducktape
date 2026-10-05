@@ -128,7 +128,7 @@ def config(action_federation: ActionFederationSettings | None = None) -> AppSett
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
         kubernetes_grants=list(agent_access_profiles.MANAGED_GRANTS["finance-agent"]),
     )
-    for preset in ("public-coder", "finance-agent", "haku"):
+    for preset in ("public-coder", "finance-agent"):
         cfg.sandbox_presets[preset].action_policy_sets.append(DUCKTAPE_PR_FAILED_JOBS_SET)
         cfg.sandbox_presets[preset].policies.append(AGENTPLANE_TESTING_POLICY)
     return cfg

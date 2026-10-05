@@ -27,14 +27,8 @@ class HarnessRoutes:
 
 # Claude offerings are temporarily paused (#9121). Keep runner support, credentials,
 # and served routes for existing sessions; re-enable these selections after validation.
-STAGING_APP_MODELS = HarnessRoutes(
-    claude=(),
-    codex=(*GPT6_RESPONSES_ROUTES, *OLLAMA_OPENAI_ROUTES),
-)
-TESTING_APP_MODELS = HarnessRoutes(
-    claude=(),
-    codex=(GPT6_LUNA_RESPONSES, *OLLAMA_OPENAI_ROUTES),
-)
+STAGING_APP_MODELS = HarnessRoutes(claude=(), codex=(*GPT6_RESPONSES_ROUTES, *OLLAMA_OPENAI_ROUTES))
+TESTING_APP_MODELS = HarnessRoutes(claude=(), codex=(GPT6_LUNA_RESPONSES, *OLLAMA_OPENAI_ROUTES))
 
 # OpenClaw reserves maxTokens within contextWindow; omit routes without known limits.
 PUBLIC_CODER_MODELS = (

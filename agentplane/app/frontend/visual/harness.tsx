@@ -2475,3 +2475,14 @@ createRoot(container).render(
     <App />
   </ThemeProvider>
 );
+
+if (scenario.claudePaused) {
+  const openHarness = new MutationObserver(() => {
+    const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Harness");
+    const control = label?.control;
+    if (!(control instanceof HTMLInputElement) || control.value !== "Codex") return;
+    openHarness.disconnect();
+    control.click();
+  });
+  openHarness.observe(document, { childList: true, subtree: true, attributes: true });
+}

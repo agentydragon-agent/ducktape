@@ -27,7 +27,7 @@ import {
   findThread,
   listSessions,
   modelsForHarness,
-  offeredHarnesses,
+  harnessOptions,
   openSession,
   RunnerUnavailableError,
   type Harness,
@@ -271,7 +271,7 @@ export function SandboxPage({
   // The app's catalog of what this sandbox's Harness may run; the thread carries the choice.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
-  const models = useMemo(() => modelCatalog ? modelsForHarness(modelCatalog, harness) : [], [modelCatalog, harness]);
+  const models = useMemo(() => (modelCatalog ? modelsForHarness(modelCatalog, harness) : []), [modelCatalog, harness]);
   const [model, setModel] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -344,7 +344,7 @@ export function SandboxPage({
   }, []);
 
   useEffect(() => {
-    const offered = offeredHarnesses(modelCatalog);
+    const offered = harnessOptions(modelCatalog).filter((option) => !option.disabled);
     if (offered.length && !offered.some((option) => option.value === harness)) {
       setHarness(offered[0].value);
     }
@@ -542,7 +542,7 @@ export function SandboxPage({
             <Group align="flex-end">
               <Select
                 label="Harness"
-                data={offeredHarnesses(modelCatalog)}
+                data={harnessOptions(modelCatalog)}
                 value={harness}
                 onChange={(value) => value && setHarness(value as Harness)}
               />

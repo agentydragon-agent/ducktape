@@ -108,7 +108,10 @@ async function render(
       return Promise.resolve(
         Response.json({
           models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
-          harnesses: { HARNESS_CLAUDE: claudePaused ? [] : ["test-model"], HARNESS_CODEX: claudePaused ? ["test-model"] : [] },
+          harnesses: {
+            HARNESS_CLAUDE: claudePaused ? [] : ["test-model"],
+            HARNESS_CODEX: claudePaused ? ["test-model"] : [],
+          },
         })
       );
     }
@@ -372,7 +375,12 @@ it("defaults new sessions to an offered harness while retaining existing Claude 
   const harness = labeledInput("Harness");
   expect(harness.value).toBe("Codex");
   await act(async () => harness.click());
-  expect([...document.querySelectorAll('[role="option"]')].map((option) => option.textContent)).toEqual(["Codex"]);
+  const claude = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (option) => option.textContent === "Claude (no models offered)"
+  );
+  expect(claude?.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => claude!.click());
+  expect(harness.value).toBe("Codex");
   await act(async () => harness.click());
   await act(async () => newSession().click());
   const request = sessions.mock.calls.map(([request]) => request).find((request) => request.method === "POST")!;

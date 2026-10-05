@@ -25,7 +25,7 @@ import {
   displayableError,
   models,
   modelsForHarness,
-  offeredHarnesses,
+  harnessOptions,
   type KubernetesGrantView,
   type ModelCatalog,
   type NewSandbox,
@@ -162,9 +162,12 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     if (!modelCatalog) return;
     setThread((current) => {
       if (!current.harness) return current;
-      const offered = modelsForHarness(modelCatalog, current.harness);
-      if (current.model && offered.some((option) => option.model === current.model)) return current;
-      return { ...current, model: offered[0]?.model ?? null, reasoning_effort: undefined };
+      const available = harnessOptions(modelCatalog).filter((option) => !option.disabled);
+      const harness = available.find((option) => option.value === current.harness)?.value ?? available[0]?.value;
+      if (!harness) return current;
+      const offered = modelsForHarness(modelCatalog, harness);
+      if (harness === current.harness && current.model && offered.some((option) => option.model === current.model)) return current;
+      return { ...current, harness, model: offered[0]?.model ?? null, reasoning_effort: undefined };
     });
   }, [modelCatalog, thread.harness, thread.model]);
 
@@ -317,7 +320,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           <Select
             label="Harness"
             allowDeselect={false}
-            data={offeredHarnesses(modelCatalog)}
+            data={harnessOptions(modelCatalog)}
             value={thread.harness ?? null}
             onChange={(harness) =>
               setThread({ ...thread, harness: (harness ?? undefined) as SessionDefaults["harness"] })

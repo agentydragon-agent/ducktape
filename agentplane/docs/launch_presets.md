@@ -153,7 +153,8 @@ instructions, and verify that:
 
 During the [model-roster audit](https://github.com/agentydragon/ducktape/issues/9121),
 Agentplane staging and testing offer only Codex in new-session launch forms. An empty
-Claude list in the app model catalogue hides that harness from those forms. Staging
+Claude list in the app model catalogue disables that harness in those forms; a new
+session defaults to an available harness. Staging
 also omits the Haku Claude thread/sandbox presets; their renderer and setup script remain.
 
 This is an offering pause, not a runtime prohibition: existing Claude sessions can
