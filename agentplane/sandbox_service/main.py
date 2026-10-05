@@ -71,6 +71,7 @@ class Settings(BaseSettings):
 
 
 async def serve(settings: Settings) -> None:
+    # TODO: Rename Settings.agent_instructions to make its platform-wide scope explicit.
     platform_instructions = settings.agent_instructions
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:
