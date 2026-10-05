@@ -53,7 +53,6 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         info.update(
             max_input_tokens=model.context_window,
             max_output_tokens=model.max_output_tokens,
-            max_tokens=model.max_output_tokens,
         )
     return {"model_name": entry.id, "litellm_params": params, "model_info": info}
 
