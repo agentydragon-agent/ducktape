@@ -152,7 +152,8 @@ async def test_spending_decision_render(
     assert await page.get_by_role("alert").get_by_text("2 charges ($15.00) need review").count() == 1
     assert await page.get_by_role("heading", name="Can I afford this?").count() == 1
     assert await page.get_by_text("$75.00", exact=True).count() == 1
-    assert await page.get_by_text("since first recorded transaction", exact=False).count() == 1
+    assert await page.get_by_text("Provisional card total since", exact=False).count() == 1
+    assert await page.get_by_text("Includes purchases outside the allowance", exact=False).count() == 1
     assert not errors
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await page.get_by_label("Hypothetical flexible purchase").fill("250")
