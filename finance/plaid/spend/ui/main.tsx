@@ -97,9 +97,17 @@ function SignalLabel({ signal }: { signal: Signal }) {
 function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <Stack gap={2}>
-      <Text size="xs" c="dimmed" fw={600}>{label}</Text>
-      <Text size="xl" fw={700}>{value}</Text>
-      {detail && <Text size="xs" c="dimmed">{detail}</Text>}
+      <Text size="xs" c="dimmed" fw={600}>
+        {label}
+      </Text>
+      <Text size="xl" fw={700}>
+        {value}
+      </Text>
+      {detail && (
+        <Text size="xs" c="dimmed">
+          {detail}
+        </Text>
+      )}
     </Stack>
   );
 }
@@ -119,8 +127,12 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
     <Card component="section" aria-labelledby="purchase-title" withBorder radius="lg" padding="xl">
       <Stack gap="lg">
         <div>
-          <Title id="purchase-title" order={2} size="h3">Can I afford this?</Title>
-          <Text c="dimmed" size="sm" mt="xs">Try a meal, a subscription, or another flexible purchase before buying.</Text>
+          <Title id="purchase-title" order={2} size="h3">
+            Can I afford this?
+          </Title>
+          <Text c="dimmed" size="sm" mt="xs">
+            Try a meal, a subscription, or another flexible purchase before buying.
+          </Text>
         </div>
         <NumberInput
           label="Hypothetical flexible purchase"
@@ -133,28 +145,45 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
           inputMode="decimal"
           hideControls
         />
-        <Paper bg={signal === "exceeded" ? "red.0" : signal === "warning" ? "yellow.0" : "gray.0"} p="md" radius="md" aria-live="polite">
+        <Paper
+          bg={signal === "exceeded" ? "red.0" : signal === "warning" ? "yellow.0" : "gray.0"}
+          p="md"
+          radius="md"
+          aria-live="polite"
+        >
           {signal && after != null && projectedAfter != null ? (
             <Stack gap="sm">
               <Group justify="space-between" align="flex-start" gap="sm">
                 <div>
                   <Text size="sm">You would have</Text>
-                  <Text size="xl" fw={700}>{m(after)}</Text>
+                  <Text size="xl" fw={700}>
+                    {m(after)}
+                  </Text>
                 </div>
                 <SignalLabel signal={signal} />
               </Group>
               <Text size="sm">
-                At your recent pace, {projectedAfter < 0 ? `${m(-projectedAfter)} short before` : `${m(projectedAfter)} left before`} the next credit.
+                At your recent pace,{" "}
+                {projectedAfter < 0 ? `${m(-projectedAfter)} short before` : `${m(projectedAfter)} left before`} the
+                next credit.
               </Text>
-              {signal !== "normal" && <Text size="sm" fw={600}>This is a signal to pause, not a declined transaction.</Text>}
+              {signal !== "normal" && (
+                <Text size="sm" fw={600}>
+                  This is a signal to pause, not a declined transaction.
+                </Text>
+              )}
             </Stack>
           ) : (
             <Text size="sm" c="dimmed">
-              {purchase === "" ? "See what a purchase would do to your cushion and pace." : "Enter a non-negative amount in dollars and cents."}
+              {purchase === ""
+                ? "See what a purchase would do to your cushion and pace."
+                : "Enter a non-negative amount in dollars and cents."}
             </Text>
           )}
         </Paper>
-        <Text size="xs" c="dimmed">Advisory only. No bank transaction is blocked by this dashboard.</Text>
+        <Text size="xs" c="dimmed">
+          Advisory only. No bank transaction is blocked by this dashboard.
+        </Text>
       </Stack>
     </Card>
   );
@@ -179,38 +208,66 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
   return (
     <Stack gap="lg">
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
-        <Paper component="section" aria-labelledby="allowance-title" bg={signal === "exceeded" ? "red.9" : signal === "warning" ? "yellow.9" : "teal.9"} c="white" radius="lg" p="xl">
+        <Paper
+          component="section"
+          aria-labelledby="allowance-title"
+          bg={signal === "exceeded" ? "red.9" : signal === "warning" ? "yellow.9" : "teal.9"}
+          c="white"
+          radius="lg"
+          p="xl"
+        >
           <Stack gap="md">
             <Group justify="space-between" align="flex-start" gap="md">
-              <Text id="allowance-title" size="sm" fw={700}>Flexible spending available</Text>
+              <Text id="allowance-title" size="sm" fw={700}>
+                Flexible spending available
+              </Text>
               {signal && <SignalLabel signal={signal} />}
             </Group>
-            <Text fz={{ base: 36, sm: 44 }} fw={700} lh={1.1} style={{ overflowWrap: "anywhere" }}>{m(available)}</Text>
+            <Text fz={{ base: 36, sm: 44 }} fw={700} lh={1.1} style={{ overflowWrap: "anywhere" }}>
+              {m(available)}
+            </Text>
             <Text size="sm" c="teal.0">
-              {available <= 0 ? "You're past your available allowance." : "Available across flexible purchases."} Posted and pending charges are included.
+              {available <= 0 ? "You're past your available allowance." : "Available across flexible purchases."} Posted
+              and pending charges are included.
             </Text>
             <Divider color="teal.6" />
             <Text size="sm">Next credit: {time(allowance.next_credit_at)}</Text>
-            <Text size="xs" c="teal.0">Adds {m(allowance.monthly_minor_units)}; unused allowance carries forward.</Text>
+            <Text size="xs" c="teal.0">
+              Adds {m(allowance.monthly_minor_units)}; unused allowance carries forward.
+            </Text>
           </Stack>
         </Paper>
         <Paper component="section" aria-label="Spending pace" withBorder radius="lg" p="xl">
           <Stack gap="md">
-            <Text size="sm" fw={700} c="dimmed">If you keep spending at this pace</Text>
+            <Text size="sm" fw={700} c="dimmed">
+              If you keep spending at this pace
+            </Text>
             <Text fz={{ base: 32, sm: 38 }} fw={700} lh={1.1} style={{ overflowWrap: "anywhere" }}>
               {projected == null ? "Unavailable" : m(projected)}
             </Text>
             <Text size="sm" c="dimmed">
-              {projected == null ? "Forecast needs account data." : projected < 0 ? "Projected shortfall before your next credit" : "Projected balance before your next credit"}
+              {projected == null
+                ? "Forecast needs account data."
+                : projected < 0
+                  ? "Projected shortfall before your next credit"
+                  : "Projected balance before your next credit"}
             </Text>
             <Divider />
             <Group justify="space-between" gap="sm">
               <Text size="sm">Recent daily spend</Text>
-              <Text size="sm" fw={700}>{m(allowance.trailing_7_daily_minor_units)} / day</Text>
+              <Text size="sm" fw={700}>
+                {m(allowance.trailing_7_daily_minor_units)} / day
+              </Text>
             </Group>
-            <Text size="xs" c="dimmed">Based on positive purchases over the last 7 days, projected forward without another credit. An estimate, not a prediction.</Text>
+            <Text size="xs" c="dimmed">
+              Based on positive purchases over the last 7 days, projected forward without another credit. An estimate,
+              not a prediction.
+            </Text>
             {allowance.estimated_exhaustion_at && (
-              <Text size="sm">Without future credits, this pace would use up the cushion around <strong>{time(allowance.estimated_exhaustion_at)}</strong>.</Text>
+              <Text size="sm">
+                Without future credits, this pace would use up the cushion around{" "}
+                <strong>{time(allowance.estimated_exhaustion_at)}</strong>.
+              </Text>
             )}
           </Stack>
         </Paper>
@@ -220,20 +277,45 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
         <Card component="section" aria-labelledby="cycle-title" withBorder radius="lg" padding="xl">
           <Stack gap="lg">
             <div>
-              <Title id="cycle-title" order={2} size="h3">Where you stand</Title>
-              <Text c="dimmed" size="sm" mt="xs">Your allowance rolls forward; it doesn't reset at month-end.</Text>
+              <Title id="cycle-title" order={2} size="h3">
+                Where you stand
+              </Title>
+              <Text c="dimmed" size="sm" mt="xs">
+                Your allowance rolls forward; it doesn't reset at month-end.
+              </Text>
             </div>
             <Paper bg="gray.0" p="md" radius="md">
               <Stack gap="sm">
-                <Group justify="space-between" gap="sm"><Text size="sm">Monthly credit</Text><Text size="sm" fw={700}>{m(allowance.monthly_minor_units)}</Text></Group>
-                <Group justify="space-between" gap="sm"><Text size="sm">Carried from earlier</Text><Text size="sm" fw={700}>{m(allowance.prior_carry_minor_units)}</Text></Group>
+                <Group justify="space-between" gap="sm">
+                  <Text size="sm">Monthly credit</Text>
+                  <Text size="sm" fw={700}>
+                    {m(allowance.monthly_minor_units)}
+                  </Text>
+                </Group>
+                <Group justify="space-between" gap="sm">
+                  <Text size="sm">Carried from earlier</Text>
+                  <Text size="sm" fw={700}>
+                    {m(allowance.prior_carry_minor_units)}
+                  </Text>
+                </Group>
                 <Divider />
-                <Group justify="space-between" gap="sm"><Text size="sm">Spent this cycle</Text><Text size="sm" fw={700}>− {m(windows?.current_credit_cycle_minor_units)}</Text></Group>
+                <Group justify="space-between" gap="sm">
+                  <Text size="sm">Spent this cycle</Text>
+                  <Text size="sm" fw={700}>
+                    − {m(windows?.current_credit_cycle_minor_units)}
+                  </Text>
+                </Group>
               </Stack>
             </Paper>
-            <Text size="sm" c="dimmed">{m(allowance.pending_minor_units)} pending is included in the balance.</Text>
+            <Text size="sm" c="dimmed">
+              {m(allowance.pending_minor_units)} pending is included in the balance.
+            </Text>
             {allowance.review_transaction_count > 0 && (
-              <Alert color="yellow" title={`${allowance.review_transaction_count} ${allowance.review_transaction_count === 1 ? "charge" : "charges"} (${m(allowance.review_minor_units)}) need review`} variant="light">
+              <Alert
+                color="yellow"
+                title={`${allowance.review_transaction_count} ${allowance.review_transaction_count === 1 ? "charge" : "charges"} (${m(allowance.review_minor_units)}) need review`}
+                variant="light"
+              >
                 Counted as flexible until classified; the cushion could change.
               </Alert>
             )}
@@ -245,14 +327,24 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
           <Accordion.Control>Explore spending history &amp; calculation details</Accordion.Control>
           <Accordion.Panel>
             <Stack gap="lg">
-              <Text size="sm" c="dimmed">These are overlapping views of the same purchases, not separate budgets. Your available balance includes all credits since activation, less posted and pending flexible spending.</Text>
+              <Text size="sm" c="dimmed">
+                These are overlapping views of the same purchases, not separate budgets. Your available balance includes
+                all credits since activation, less posted and pending flexible spending.
+              </Text>
               <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="lg">
                 <Metric label="LAST 7 DAYS" value={m(windows?.trailing_7_days_minor_units)} />
                 <Metric label="LAST 30 DAYS" value={m(windows?.trailing_30_days_minor_units)} />
-                <Metric label="CALENDAR MONTH" value={m(windows?.calendar_month_minor_units)} detail="Since activation" />
+                <Metric
+                  label="CALENDAR MONTH"
+                  value={m(windows?.calendar_month_minor_units)}
+                  detail="Since activation"
+                />
                 <Metric label="THIS YEAR" value={m(windows?.year_to_date_minor_units)} detail="Since activation" />
               </SimpleGrid>
-              <Text size="sm" c="dimmed">{m(allowance.unmatched_refunds_minor_units)} of unlinked refunds are excluded from the balance. Oldest account sync: {time(allowance.last_synced_at)}. Plaid data can lag or be misclassified.</Text>
+              <Text size="sm" c="dimmed">
+                {m(allowance.unmatched_refunds_minor_units)} of unlinked refunds are excluded from the balance. Oldest
+                account sync: {time(allowance.last_synced_at)}. Plaid data can lag or be misclassified.
+              </Text>
             </Stack>
           </Accordion.Panel>
         </Accordion.Item>
@@ -262,15 +354,36 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
 }
 
 function SpendCard({ card }: { card: CardView }) {
-  const alert = card.alert_state === "exceeded" ? "Limit exceeded" : card.alert_state === "warning" ? "Near limit" : !card.statement_available && card.cycle_start ? "First statement pending" : card.alert_state === "unavailable" ? "Unavailable" : "Within limit";
+  const alert =
+    card.alert_state === "exceeded"
+      ? "Limit exceeded"
+      : card.alert_state === "warning"
+        ? "Near limit"
+        : !card.statement_available && card.cycle_start
+          ? "First statement pending"
+          : card.alert_state === "unavailable"
+            ? "Unavailable"
+            : "Within limit";
   return (
     <Card component="article" withBorder radius="md" padding="lg">
       <Stack gap="sm">
         <Group justify="space-between" align="flex-start" gap="sm">
-          <div><Text fw={650}>{cardTitle(card)}</Text><Text c="dimmed" size="sm">{card.institution_name}</Text></div>
-          <Badge color={card.alert_state === "exceeded" ? "red" : card.alert_state === "warning" ? "yellow" : "gray"} variant="light">{alert}</Badge>
+          <div>
+            <Text fw={650}>{cardTitle(card)}</Text>
+            <Text c="dimmed" size="sm">
+              {card.institution_name}
+            </Text>
+          </div>
+          <Badge
+            color={card.alert_state === "exceeded" ? "red" : card.alert_state === "warning" ? "yellow" : "gray"}
+            variant="light"
+          >
+            {alert}
+          </Badge>
         </Group>
-        <Text size="xl" fw={700} mt="sm">{money(card.spend_minor_units, card.currency)}</Text>
+        <Text size="xl" fw={700} mt="sm">
+          {money(card.spend_minor_units, card.currency)}
+        </Text>
         <Text size="sm" c="dimmed">
           {card.statement_available
             ? `This statement${card.limit_minor_units == null ? "" : ` · ${money(card.limit_minor_units, card.currency)} card limit`}`
@@ -278,7 +391,9 @@ function SpendCard({ card }: { card: CardView }) {
               ? `Since first recorded transaction (${card.cycle_start}); statement date not yet reported`
               : "Statement data unavailable"}
         </Text>
-        <Text size="xs" c="dimmed">Pending {money(card.pending_minor_units, card.currency)} · Last synced {time(card.last_synced_at)}</Text>
+        <Text size="xs" c="dimmed">
+          Pending {money(card.pending_minor_units, card.currency)} · Last synced {time(card.last_synced_at)}
+        </Text>
       </Stack>
     </Card>
   );
@@ -340,40 +455,72 @@ function App() {
       <Paper component="header" radius={0} withBorder>
         <Container size="lg" py="sm">
           <Group justify="space-between">
-            <Anchor href="/" size="lg" fw={700} c="teal.9" underline="never">Spend</Anchor>
-            <form action="/auth/logout" method="post"><Button type="submit" variant="subtle" color="gray" size="sm">Sign out</Button></form>
+            <Anchor href="/" size="lg" fw={700} c="teal.9" underline="never">
+              Spend
+            </Anchor>
+            <form action="/auth/logout" method="post">
+              <Button type="submit" variant="subtle" color="gray" size="sm">
+                Sign out
+              </Button>
+            </form>
           </Group>
         </Container>
       </Paper>
       <Container component="main" size="lg" py="xl">
         <Stack gap="xl">
           <Group justify="space-between" gap="md">
-            <Title order={1} size="h3">Flexible spending</Title>
-            <Badge color={state === "Live updates" ? "teal" : "gray"} variant="dot" aria-live="polite">{state}</Badge>
+            <Title order={1} size="h3">
+              Flexible spending
+            </Title>
+            <Badge color={state === "Live updates" ? "teal" : "gray"} variant="dot" aria-live="polite">
+              {state}
+            </Badge>
           </Group>
-          {error && <Alert color="red" title="Couldn't refresh your view">{error}. Showing the most recent data we have.</Alert>}
+          {error && (
+            <Alert color="red" title="Couldn't refresh your view">
+              {error}. Showing the most recent data we have.
+            </Alert>
+          )}
           {view?.allowance ? (
             <AllowancePanel allowance={view.allowance} />
           ) : (
             <Alert color="yellow" title="No flexible allowance yet">
-              {view ? "No allowance is configured. Card totals below are not a flexible-spend budget." : "Loading your spending picture…"}
+              {view
+                ? "No allowance is configured. Card totals below are not a flexible-spend budget."
+                : "Loading your spending picture…"}
             </Alert>
           )}
           <section aria-labelledby="cards-title">
             <Group justify="space-between" align="baseline">
-              <Title order={2} id="cards-title" size="h3">Card statements</Title>
-              <Text size="sm" c="dimmed">{cards.length} {cards.length === 1 ? "card" : "cards"}</Text>
+              <Title order={2} id="cards-title" size="h3">
+                Card statements
+              </Title>
+              <Text size="sm" c="dimmed">
+                {cards.length} {cards.length === 1 ? "card" : "cards"}
+              </Text>
             </Group>
-            <Text size="sm" c="dimmed" mt="xs" mb="md">Statement cycles and card limits are not a flexible spending budget.</Text>
+            <Text size="sm" c="dimmed" mt="xs" mb="md">
+              Statement cycles and card limits are not a flexible spending budget.
+            </Text>
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-              {cards.map((card, index) => <SpendCard card={card} key={`${card.account_name}-${index}`} />)}
+              {cards.map((card, index) => (
+                <SpendCard card={card} key={`${card.account_name}-${index}`} />
+              ))}
             </SimpleGrid>
-            {view && !cards.length && <Text size="sm" c="dimmed">No cards configured.</Text>}
+            {view && !cards.length && (
+              <Text size="sm" c="dimmed">
+                No cards configured.
+              </Text>
+            )}
           </section>
           <Divider />
           <Group justify="space-between" gap="sm">
-            <Text size="xs" c="dimmed">Advisory estimates, not bank controls. Review your accounts for decisions that matter.</Text>
-            <Text size="xs" c="dimmed">View updated {time(view?.generated_at)}</Text>
+            <Text size="xs" c="dimmed">
+              Advisory estimates, not bank controls. Review your accounts for decisions that matter.
+            </Text>
+            <Text size="xs" c="dimmed">
+              View updated {time(view?.generated_at)}
+            </Text>
           </Group>
         </Stack>
       </Container>

@@ -1,6 +1,6 @@
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/python:defs.bzl", "py_test")
 
 ts_config(
