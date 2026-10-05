@@ -126,12 +126,12 @@ is not required. This does not reopen consumer-budget ownership or authorize rou
 
 Source inventory at #9273's base (`3822ce017a`): **90 public entries, 12 with explicit
 input/output overrides**. The first no-patch slice completes those 12 overrides with the
-legacy output alias. The remaining migration is deliberately not claimed complete:
+legacy output alias. GPT-5.4/5.5 on both wires are now retired by operator request,
+leaving 86 public entries. The remaining migration is not complete:
 
 | Routes                                              | Source / next decision                                                                                                                                                                                                                                |
 | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ChatGPT GPT-6 and GPT-5.6, both wires (12 entries)  | Existing configured numbers remain; complete schema aliases now. Their mixed historical/client provenance still needs the shared-limit semantic cleanup.                                                                                              |
-| ChatGPT GPT-5.4 / GPT-5.5, both wires               | Need subscription-path declarations; do not silently adopt raw OpenAI API capacity. Decide values or whether to retain these routes.                                                                                                                  |
 | Direct Anthropic, direct Gemini, Mistral, Groq chat | Existing provider declarations or reviewed LiteLLM catalogue entries can supply values; record exact source and reconcile ambiguous input/output terminology. Direct Gemini already has a pair but does not yet publish it.                           |
 | Anthropic subscription; Tana Claude                 | Account/gateway paths need an explicit source choice. Same vendor slug alone does not establish equivalence to direct-API metadata.                                                                                                                   |
 | Antigravity                                         | Adopt the already-recorded fresh Google response deliberately, retaining family-specific semantics. Flash Lite 3.5 now has a pair; image output has no pair in that response. No extra probes are needed just to rediscover this.                     |

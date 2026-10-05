@@ -267,8 +267,6 @@ GPT_6_SOL = Model(id="gpt-6-sol", display_name="GPT-6 Sol", limits=_CHATGPT_LIMI
 GPT_5_6_LUNA = Model(id="gpt-5.6-luna", display_name="GPT-5.6 Luna", limits=_CHATGPT_LIMITS, reasoning=True)
 GPT_5_6_TERRA = Model(id="gpt-5.6-terra", display_name="GPT-5.6 Terra", limits=_CHATGPT_LIMITS, reasoning=True)
 GPT_5_6_SOL = Model(id="gpt-5.6-sol", display_name="GPT-5.6 Sol", limits=_CHATGPT_LIMITS, reasoning=True)
-GPT_5_4 = Model("gpt-5.4", "GPT-5.4")
-GPT_5_5 = Model("gpt-5.5", "GPT-5.5")
 
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
 # encodes reasoning effort in the
@@ -532,7 +530,7 @@ CHATGPT_MESSAGES_ROUTES = (
     GPT6_LUNA_MESSAGES,
     *(
         Route(model, CHATGPT_MESSAGES, publish_limits=model.limits is not None)
-        for model in (GPT_5_4, GPT_5_5, GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
+        for model in (GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
     ),
 )
 GPT6_ASTRA_RESPONSES = Route(GPT_6_ASTRA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
@@ -545,7 +543,7 @@ CHATGPT_RESPONSES_ROUTES = (
     GPT6_LUNA_RESPONSES,
     *(
         Route(model, CHATGPT_RESPONSES, publish_limits=model.limits is not None, reasoning_efforts=_CODEX_EFFORTS)
-        for model in (GPT_5_4, GPT_5_5, GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
+        for model in (GPT_5_6_SOL, GPT_5_6_TERRA, GPT_5_6_LUNA)
     ),
 )
 ANTHROPIC_SUBSCRIPTION = Upstream(Provider.ANTHROPIC_MAX20, "anthropic", "messages", supports_function_calling=True)
