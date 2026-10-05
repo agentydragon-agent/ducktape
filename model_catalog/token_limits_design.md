@@ -1,7 +1,11 @@
 # Model limits, serving configuration, and client budgets
 
-Status: design proposal and investigation record, 2026-10-05. No route retirement
-is approved by this document. Implementation and validation are incomplete.
+Status: design proposal and investigation record, updated 2026-10-05. Consumer
+pauses are approved and recorded in §9; no shared route retirement is implied.
+The active Codex path has been audited below. The limits-publication implementation
+and its end-to-end validation remain incomplete.
+
+Tracking and revival inventory: [#9121](https://github.com/agentydragon/ducktape/issues/9121).
 
 This document separates what we know, what we configure, and what clients infer.
 It is the decision record for the roster/limits work, not another runtime source
@@ -15,10 +19,11 @@ constraints, provenance, and unresolved choices.
 - [Ownership and data flow](#3-ownership-and-data-flow)
 - [LiteLLM catalogue and publication](#4-litellm-catalogue-overrides-and-publication)
 - [Client-specific values](#5-client-specific-values-and-semantics)
+  - [Active Codex audit](#active-codex-path-audit-2026-10-05)
 - [Ollama serving configuration](#6-ollama-serving-configuration)
 - [Other projections](#7-additional-projections-and-side-effects-to-inventory)
 - [Proposed shape and rollout](#8-proposed-shape-after-reducing-scope)
-- [Operator decisions](#9-decisions-requested-from-the-operator)
+- [Approved pauses and remaining decisions](#9-approved-pauses-and-remaining-decisions)
 
 ## 1. Scope and priorities
 
@@ -69,7 +74,7 @@ is the runner context-size endpoint.
 | Provider output ceiling | Output ceiling on that path; treatment of reasoning tokens is provider-specific | How much output remains after a particular prompt |
 | Combined context capacity | Tokens jointly retained/attended, with backend-specific accounting | An independent maximum input and maximum output pair |
 | Client context budget | Client assumption used for accounting, reserves, and compaction | Backend capacity or successful long-context quality |
-| Request output budget | Generation limit sent with one request | Model capability metadata |
+| Request output budget | Requested generation limit, if the serving path supports it | Model capability metadata or guaranteed enforcement |
 | Ollama `num_ctx` | Requested runtime context allocation | Proven attended capacity or an output ceiling |
 | Ollama `num_predict` | Generation-length option | Context allocation |
 | Reported harness window | Harness's resolved view of its context budget | Measurement of what the backend actually attended |
@@ -281,8 +286,8 @@ The public-coder projection currently preserves:
 
 The 65535/65536 difference is preserved history, not an established distinction in
 provider capacity. The 114000 value is an OpenClaw budget, **not** both a provider
-input ceiling and a combined context window. Whether to keep this integration at
-all should be decided before validating its entire matrix.
+input ceiling and a combined context window. Public Coder is now paused (§9); do not validate its entire matrix as a prerequisite
+for fixing the active Codex path.
 
 ### Codex and Agentplane
 
@@ -304,21 +309,106 @@ The current cluster override selection is only Qwen IQ4_XS 128K/256K, both wires
   report `modelUsage[*].contextWindow`. Acceptance probes record these as harness
   observations, not backend capacity measurements.
 
-The existing [harness metadata audit](../agentplane/docs/model_metadata.md) documents
-another dependency: Codex model-name recognition can enable tool modes, transport
-preferences, and prompt behavior in addition to a window. Its inspected 0.152.0
-version recognized only certain namespace shapes. Our hidden Astra alias exists
-for recognition compatibility; deleting or renaming it is not just UI cleanup.
-That historical audit also found fallback context/max-context of 272000, a 95%
-effective-window factor, and a real Luna max-context of 872000. Its config override
-was clamped by the recognized entry's maximum. These are version-scoped observations,
-not new roster facts or promises that setting a larger number will take effect.
-Verify the actual active Agentplane slug/alias and launched Codex version before
-changing that path. The archive used by a test is not proof of the deployed binary.
+### Active Codex path audit, 2026-10-05
 
-Long-term, runner budgets must be harness-specific at the configuration boundary
-if both harnesses need overrides. Do not add a universal budget record now to keep
-an unused Claude-through-LiteLLM matrix alive. First decide which paths survive.
+This is a deployment observation, not a new neutral-roster contract. Read-only checks
+at approximately 05:34–05:40 UTC examined this audit's **running Agentplane session**,
+its native state/usage, deployed LiteLLM configuration, and ready proxy Pods. This
+proves one active session, not every agent's version or model selection.
+
+```text
+Agentplane runner → Codex app-server 0.157.0
+  → central egress → Agentplane LLM ingress /v1/responses
+  → shared LiteLLM → CLIProxyAPI /v1/responses → Codex subscription backend
+```
+
+The ingress authenticates/replaces credentials and streams the request body unchanged;
+it does not translate route names or inject context budgets. Neither it nor the runner
+reads LiteLLM `/model/info` to configure Codex.
+
+| Layer | Observed configuration / behavior | What that means |
+| --- | --- | --- |
+| Native process and thread | Codex **0.157.0**, provider `agentplane`, model `chatgpt/oai-responses/gpt-6-astra` | A real launched binary/thread, not the native-test archive |
+| Launch configuration | Responses wire to `http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080/v1`; no context/auto-compaction override | GPT budgets are not wired from the roster to this client |
+| Recognition | Native log explicitly warns that the full Astra route uses fallback metadata | The hidden bare `gpt-6-astra` alias exists in LiteLLM but this session does **not** select it |
+| Native telemetry | Latest sampled `token_count.info.model_context_window`: **258400**; normal tool turns work | Resolved client accounting, not a measured backend limit |
+| Deployed proxy config | Astra: **872000 input / 128000 output**; Sol/Luna: **372000 / 128000** | Current explicit metadata overrides, with the mixed provenance described above |
+| Live Luna `/model/info` | Both wires: **372000 / 128000**; legacy `max_tokens`: Responses **128000**, Messages **null**; custom `context_window` absent | Removing our legacy/custom assignments did not eliminate adapter-dependent fallback |
+
+Live metadata was read with the substituted **cheap-experiments** key; its view includes
+Luna, not Astra/Sol. The latter numbers above are from the deployed ConfigMap, not an
+assertion about their `/model/info` responses. Ready LiteLLM Pods ran
+`tana-litellm-proxy:devel-20261005030920-bde5d31` (that build pins **1.100.1**).
+The deployment does not set `LITELLM_LOCAL_MODEL_COST_MAP`, so its package pin still
+does not pin the downloaded catalogue. The ready CLIProxyAPI Pod ran
+`cli-proxy-api:devel-20260924021629-ce93c9e`, whose source pin is `7fac6b15bcfe`.
+
+#### What Codex 0.157.0 does with these values
+
+The [matching source](https://github.com/openai/codex/tree/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs)
+corroborates the live fallback warning and telemetry:
+
+- `models-manager/src/manager.rs` strips **one** namespace segment for recognition;
+  `chatgpt/oai-responses/gpt-6-astra` has two and does not match the bundled Astra entry.
+- `model-provider/src/models_endpoint.rs` does not enable API-key catalogue discovery
+  for this custom provider without `model_catalog_url`. We do not configure one.
+  LiteLLM's metadata fields therefore cannot repair this recognition failure.
+- `models-manager/src/model_info.rs` gives fallback models context and override maximum
+  **272000**, with **95%** usable: **258400**. `model_context_window` is clamped to the
+  recognized entry's maximum; setting 872000 on the unrecognized route would not work.
+- `protocol/src/openai_models.rs` derives the default automatic-compaction threshold
+  from **90% of the resolved window**: **244800** here, not 90% of 258400. This is a
+  source-derived default, not a newly measured compaction boundary or an output reserve
+  of 128000. The usable-window headroom covers prompts, tools, and output together.
+- Bundled Astra, Sol and Luna entries all default to **272000**, with override maximum
+  **872000**. Merely switching to a recognized alias would **not** raise the default
+  window. The maximum is a client override bound, not a subscription capacity fact.
+- Recognition also changes prompt/reasoning defaults, freeform `apply_patch`,
+  `tool_mode=code_mode_only`, and `use_responses_lite`. The tool mode has precedence over
+  feature flags when code mode is available. Do not treat an alias as a context-only fix.
+- **Version correction to the older audit:** 0.157.0 gates WebSockets on the provider's
+  `supports_websockets` (default false), which our provider does not enable. Its JSON
+  catalogue still contains `prefer_websockets`, but `ModelInfo` no longer consumes that
+  field. Recognition alone does not enable WebSockets in this version.
+
+See `core/src/tools/mod.rs`, `core/src/client.rs`, and
+`model-provider-info/src/lib.rs` for those non-context effects. The older
+[harness audit](../agentplane/docs/model_metadata.md) remains historical evidence,
+not a substitute for inspecting the launched version.
+
+#### Output limits are not enforced by these metadata fields
+
+The current native `ResponsesApiRequest` (`codex-api/src/common.rs`) has no
+`max_output_tokens` member. Our runner does not copy the roster's 128000 output value
+into requests. Shell-tool `max_output_tokens` controls tool-output truncation, not
+model generation length.
+
+More importantly, the deployed gateway's pinned
+[Responses translator](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe/internal/translator/codex/openai/responses/codex_openai-responses_request.go)
+**deletes `max_output_tokens` and `max_completion_tokens`**, documenting that the
+subscription backend rejects those request fields. Its executor defaults to
+`https://chatgpt.com/backend-api/codex/responses`. This is source evidence for the
+pinned gateway, not a capture of upstream request bodies or private configuration.
+
+One tiny live Luna Responses request asking for `OK` succeeded: **307 input / 5 output
+tokens**, status `completed`, response `max_output_tokens: null`. The request supplied
+256, but this path must **not** be treated as enforcing that cap. The probe establishes
+connectivity only, not input/output ceilings, long-context quality, or arbitrary-client
+compatibility. No capacity stress test, alias launch, or live setting change was made.
+
+#### Consequence for the next change
+
+Keep the working Codex launch behavior unchanged while fixing publication. The active
+client's 258400 telemetry and LiteLLM's 872000/372000 metadata are separate outputs;
+changing one does not update the other. Do not promote either, or the historical
+128000 output value, into a justified subscription input/output pair.
+
+Next, run the narrow pinned-LiteLLM unknown/known-pair publication experiment in §8,
+including internal request-side consumers. If changing Codex recognition is later
+necessary, test the exact alias/catalogue strategy with native tools, reasoning,
+Responses-lite and compaction before enabling it. Do not build a general harness
+metadata service to preserve paused consumers. Separate Claude/Codex configuration
+vocabularies only when both actually need supported overrides.
 
 ## 6. Ollama serving configuration
 
@@ -401,10 +491,10 @@ which checks execute on the retained path before changing them; preserve account
 
 ### Rollout and useful validation
 
-1. Agree which integrations can pause; keep the active subscription/Responses path
-   and direct clients working. Remove unused projections and generated wiring first.
-2. Record the active route, alias, harness version, actual model recognition, and
-   resolved budget. Separate historical assumptions from evidence.
+1. Approved consumer pauses are recorded in §9. Preserve the active subscription/Responses
+   path, direct clients, and retained state; verify activation separately from merge status.
+2. The active-session audit in §5 records the real slug, binary and resolved budget.
+   Recheck this evidence when changing harness versions or recognition strategy.
 3. Finish the narrow LiteLLM publication experiment using the proxy-local pin, both
    bundled and controlled remote catalogue fixtures. Check load/reload and both
    metadata endpoint shapes, with a known pair, unknown limits, and legacy fallback.
@@ -417,28 +507,30 @@ Do not build a test matrix for every retired combination. A real config-loader/A
 contract test pays rent; assertions that merely repeat every roster constant do not.
 Keep the overall refactor net-negative in code/plumbing where possible.
 
-## 9. Decisions requested from the operator
+## 9. Approved pauses and remaining decisions
 
-No removals below are authorized yet. Proposed order, by simplification benefit:
+Source status checked 2026-10-05. A merge is not proof of machine activation or Flux
+rollout. The [tracking issue](https://github.com/agentydragon/ducktape/issues/9121)
+maintains deployment status, the full parked inventory, and restoration requirements.
 
-1. **Pause Nix Claude gateway wrappers:** `codex-claude`, `gemini-claude`,
-   `antigravity-claude`, `tana-claude`, and `litellm-claude`? Keep ordinary direct
-   Claude/Codex installations. This removes wrapper-specific budgets, suffix tricks,
-   and model JSON generation from the immediate compatibility requirement.
-2. **Pause OpenClaw public-coder and leave Haku OpenClaw parked?** Preserve durable
-   state and embedding identities. This removes the second major client-budget
-   vocabulary from the immediate rollout, without claiming it will never return.
-3. **Retain only Agentplane Codex → subscription Responses as the supported gateway
-   path for now?** In particular, may Agentplane Claude → LiteLLM and GPT-through-
-   Anthropic-Messages be disabled? Keep Claude Code Web and direct local use intact.
-4. **Which experimental backends must remain usable now?** Options to confirm:
-   Ollama Qwen 128K/256K; other Ollama families/variants; direct Google; Antigravity;
-   Tana; Mistral; Groq. An authorized experiment key does not mean every route must
-   stay offered or actively maintained. Identify monitoring and embedding dependents
-   before withdrawing any service.
+| Integration | Approved scope and source status | Retained for restoration |
+| --- | --- | --- |
+| Five Nix Claude gateway wrappers | **#9112 merged**: remove workstation activation/advertising; direct local clients unchanged | Nix renderers, JSON generator, credential declarations; machine activation not verified here |
+| Public Coder OpenClaw | **#9116 merged**: stop OpenClaw/proxies and halt devbox | Workload definitions, namespace, PVCs and backups; live pause not reverified in this audit |
+| Agentplane Claude | **#9127 merged**, exact-head CI green: empty staging/testing Claude offerings, disabled picker options, omit Haku Claude presets | Native adapter, existing sessions/resume/history, explicit low-level launches, credentials and shared ingress/routes; not a runtime prohibition |
 
-For a paused integration, prefer removing active imports, selections, generated
-outputs, and obsolete tests, relying on Git history for restoration. Use `x/` only
-when keeping a runnable experiment is useful; do not copy the whole plumbing there
-and continue generating it. Retire a route only after checking other consumers,
-key/fallback references, aliases, and persistent identities.
+These are consumer pauses, **not permission to remove shared GPT-through-Messages or
+other served routes**. Haku OpenClaw remains parked. Do not treat its historical
+intentionally deleted PVCs as permission to delete Public Coder or Agentplane state.
+Keep the paused Nix rendering code in place as requested, rather than deleting it
+just because Git could restore it.
+
+The remaining simplification question is **which experimental backends must remain
+actively usable now**: Ollama Qwen 128K/256K, other Ollama variants, direct Google,
+Antigravity, Tana, Mistral and Groq. No blanket removal is approved. Identify key lanes,
+fallbacks, aliases, monitoring and embedding dependents before proposing withdrawal.
+An experiment-key grant is not a maintenance commitment for every route it admits.
+
+Publication policy and any Codex recognition/budget change remain separate decisions.
+The approved pauses reduce the immediate compatibility matrix; they do not resolve
+LiteLLM's fallback metadata or establish new provider limits.
