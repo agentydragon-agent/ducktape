@@ -21,6 +21,7 @@ constraints, provenance, and unresolved choices.
 - [Client-specific values](#5-client-specific-values-and-semantics)
   - [Active Codex audit](#active-codex-path-audit-2026-10-05)
   - [Subscription-path public evidence](#subscription-path-public-evidence-2026-10-05)
+  - [Opt-in long-context experiment and costs](#opt-in-long-context-experiment-and-costs)
 - [Ollama serving configuration](#6-ollama-serving-configuration)
 - [Other projections](#7-additional-projections-and-side-effects-to-inventory)
 - [Proposed shape and rollout](#8-proposed-shape-after-reducing-scope)
@@ -493,6 +494,88 @@ does not grant upstream account credentials. Any backend boundary probes require
 separate quota/cost budget and authorization: the deployed gateway strips output caps,
 so requesting a tiny output is not a reliable cost bound. No near-limit inference,
 credential-file inspection, or header-spoofing experiment was performed for this research.
+
+### Opt-in long-context experiment and costs
+
+The operator prefers a **separate experimental Agentplane model option**, then a real
+working session allowed to accumulate context, over a synthetic near-limit probe suite.
+Keep the ordinary option/default intact. This is a client launch preset for the same
+backend model, not a new provider model or evidence for different neutral-roster limits.
+Reuse the existing offering/configuration machinery where possible; do not build another
+registry or add a LiteLLM route unless the actual selection/recognition wiring requires it.
+This section records the plan, not an enabled option.
+
+- Give the option an honest label such as “Astra — long context (experimental)”, not
+  “1M guaranteed”. Start a fresh native thread; do not mutate an existing thread's budget.
+- Resolve model recognition explicitly, including the tool/prompt behavior described
+  above. Merely requesting 1000000 on our current unrecognized route stays clamped.
+  The inspected recognized-model maximum is **872000 configured / 828400 usable**;
+  Tibo's 1000000 recommendation concerns a different model/version context and does not
+  override that clamp. Recheck the exact launch version before choosing the preset.
+- Record the effective budget and compaction threshold at startup. With the inspected
+  default 90% policy, an 872000 window starts automatic compaction at **784800**.
+  Normal use may therefore encounter compaction before a backend limit; that is useful
+  operational evidence, but not a maximum-capacity test. Raising/disabling compaction
+  would be a separate deliberate experiment, not an incidental preset change.
+- During ordinary work, record input/cached-input/output and reasoning usage when
+  available, latency, quota before/after, compaction events, and errors. Distinguish a
+  native-client clamp, context rejection, quota exhaustion, proxy timeout, and degraded
+  recall. Stop on trouble rather than repeatedly retrying a large failing request.
+
+#### How expensive is a long-context probe?
+
+There are **three different ledgers**: upstream included subscription allowance or
+purchased credits, hypothetical direct-API spend, and LiteLLM's local spend accounting.
+None is automatically a conversion formula for the others. These examples use the
+public rates retrieved **2026-10-05**, Standard speed, text-only, and one inference
+request. A user-visible agent turn can contain many requests; retry and compaction
+requests also contribute usage. Increasing the configured window alone sends no tokens.
+
+**On our subscription path**, included usage is not billed as an equivalent raw-API
+request. The [Codex pricing page](https://learn.chatgpt.com/docs/pricing#token-rates)
+explicitly says neither API prices nor credit prices determine included allowance
+consumption. It depends on context, reasoning, tools, caching and other factors. We
+cannot honestly predict “this probe consumes X% of your plan” from prompt size alone.
+Purchased-credit rates do allow a conditional estimate:
+
+| Model | Credits / 1M uncached input | Credits / 1M cached input | Credits / 1M output | 800K uncached input + 1K output |
+| --- | ---: | ---: | ---: | ---: |
+| GPT-6 Astra | 250 | 25 | 1250 | 201.25 credits |
+| GPT-6 Sol | 50 | 5 | 250 | 40.25 credits |
+| GPT-6 Luna | 2.5 | 0.25 | 12.5 | 2.0125 credits |
+
+These are the published Standard credit rates, not a claim that our account is using
+purchased credits. The page has no separate cache-write charge for Codex credits and
+warns about legacy Enterprise rate cards. Do not import the raw API's long-context
+multiplier into this credit calculation. Credit purchase prices depend on the plan or
+agreement; actual included-quota impact needs before/after observations on the account
+that served the request, accounting for concurrent activity.
+
+**As a paid-API comparison only**, the model pages linked above apply 2× input/cache
+rates and 1.5× output rates to the **whole request** above 272K input tokens:
+
+| Model | 300K cold input | 800K cold input | 872K cold input | 800K fully cache-hit input | Additional 1K output |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| GPT-6 Astra | $6.00 | $16.00 | $17.44 | $1.60 | $0.075 |
+| GPT-6 Sol | $1.20 | $3.20 | $3.488 | $0.32 | $0.015 |
+| GPT-6 Luna | $0.06 | $0.16 | $0.1744 | $0.016 | $0.00075 |
+
+Cold-input examples use ordinary uncached-input prices, excluding any separately
+charged cache writes, tools, images, regional/speed premiums or tax. Fully cache-hit
+figures are an idealized comparison, not a promise of cache eligibility or retention.
+Billable output includes applicable reasoning tokens, not just visible response text.
+For example, 800K cold input plus 1K output is **$16.075 Astra / $3.215 Sol /
+$0.16075 Luna** on that API rate card. A successful Luna test would not prove Astra's
+capacity. Ten independent cold 800K Astra requests cost **$160 input alone**; one cold
+plus nine fully cache-hit requests would instead cost **$30.40 input**, before any
+other charges. One probe and a multi-step session are very different budgets.
+
+Our gateway strips request output caps (§5), so “reply OK” is an instruction, not a
+hard cost bound. At the API comparison rates, 128K output would add $9.60/$1.92/$0.096
+respectively; this arithmetic does not verify a subscription output ceiling. The
+practical concern is shared subscription quota and repeated long turns, not that every
+single probe must be prohibitively expensive. No long-context request was sent for
+these estimates, and no experimental option has yet been enabled.
 
 ## 6. Ollama serving configuration
 
