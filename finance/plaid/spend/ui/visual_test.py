@@ -180,7 +180,7 @@ async def test_spending_decision_render(
     assert await page.get_by_text("$175 short before", exact=False).count() == 1
     assert not errors
     await page.get_by_label("Hypothetical flexible purchase").fill("200.01")
-    assert await page.get_by_text("−<$1", exact=True).count() == 1
+    assert await page.get_by_text("-<$1", exact=True).count() == 1
     assert await page.locator('span[title="-$0.01"]').count() == 1
     exceeded = tmp_path / f"dashboard-{width}-purchase.png"
     await page.screenshot(path=str(exceeded), full_page=True, animations="disabled")

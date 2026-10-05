@@ -84,7 +84,7 @@ def _format_money(minor_units: int | None, currency: str | None) -> str:
     currency_format = "¤¤ #,##0"
     if amount and abs(amount) < Decimal("0.5"):
         whole = format_currency(1, code, currency_format, locale="en_US", currency_digits=False)
-        return f"{'−' if amount < 0 else ''}<{whole}"
+        return f"{'-' if amount < 0 else ''}<{whole}"
     rounded = amount.quantize(Decimal(1), rounding=ROUND_HALF_UP)
     return format_currency(rounded, code, currency_format, locale="en_US", currency_digits=False)
 

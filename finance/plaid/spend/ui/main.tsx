@@ -80,14 +80,14 @@ function money(value: number | null | undefined, currency: string | null, exact 
       maximumFractionDigits: exact ? undefined : 0,
       minimumFractionDigits: exact ? undefined : 0,
     });
-    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code })
-      .resolvedOptions().maximumFractionDigits;
+    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+      .maximumFractionDigits;
     const amount = value / 10 ** precision;
-    if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "−" : ""}<${formatter.format(1)}`;
+    if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${formatter.format(1)}`;
     return formatter.format(amount);
   } catch {
     const amount = value / 100;
-    if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "−" : ""}<${code} 1`;
+    if (!exact && amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${code} 1`;
     return `${code} ${amount.toFixed(exact ? 2 : 0)}`;
   }
 }
@@ -194,14 +194,14 @@ function PurchaseCheck({ allowance }: { allowance: Allowance }) {
                 {signal && <SignalLabel signal={signal} />}
               </Group>
               <Text size="sm">
-                {projectedAfter == null
-                  ? "Pace estimate warming up; use the available balance rather than the forecast."
-                  : (
-                      <>
-                      At the estimated pace, {projectedAfter < 0 ? m(-projectedAfter) : m(projectedAfter)}{" "}
-                      {projectedAfter < 0 ? "short" : "left"} before the next credit.
-                      </>
-                    )}
+                {projectedAfter == null ? (
+                  "Pace estimate warming up; use the available balance rather than the forecast."
+                ) : (
+                  <>
+                    At the estimated pace, {projectedAfter < 0 ? m(-projectedAfter) : m(projectedAfter)}{" "}
+                    {projectedAfter < 0 ? "short" : "left"} before the next credit.
+                  </>
+                )}
               </Text>
               {signal && signal !== "normal" && (
                 <Text size="sm" fw={600}>
@@ -305,17 +305,21 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             <Group justify="space-between" gap="sm">
               <Text size="sm">7 days</Text>
               <Text size="sm" fw={700}>
-                {allowance.trailing_7_observed_daily_minor_units == null
-                  ? "Warming up"
-                  : <>{m(allowance.trailing_7_observed_daily_minor_units)} / day</>}
+                {allowance.trailing_7_observed_daily_minor_units == null ? (
+                  "Warming up"
+                ) : (
+                  <>{m(allowance.trailing_7_observed_daily_minor_units)} / day</>
+                )}
               </Text>
             </Group>
             <Group justify="space-between" gap="sm">
               <Text size="sm">30 days</Text>
               <Text size="sm" fw={700}>
-                {allowance.trailing_30_observed_daily_minor_units == null
-                  ? "Warming up"
-                  : <>{m(allowance.trailing_30_observed_daily_minor_units)} / day</>}
+                {allowance.trailing_30_observed_daily_minor_units == null ? (
+                  "Warming up"
+                ) : (
+                  <>{m(allowance.trailing_30_observed_daily_minor_units)} / day</>
+                )}
               </Text>
             </Group>
             <Text size="sm" c="dimmed">
@@ -336,9 +340,11 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             <Group justify="space-between" gap="sm">
               <Text size="sm">Pace used for estimate</Text>
               <Text size="sm" fw={700}>
-                {allowance.trailing_7_daily_minor_units == null
-                  ? "Warming up"
-                  : <>{m(allowance.trailing_7_daily_minor_units)} / day</>}
+                {allowance.trailing_7_daily_minor_units == null ? (
+                  "Warming up"
+                ) : (
+                  <>{m(allowance.trailing_7_daily_minor_units)} / day</>
+                )}
               </Text>
             </Group>
             <Text size="xs" c="dimmed">
@@ -385,7 +391,7 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
                 <Group justify="space-between" gap="sm">
                   <Text size="sm">Spent this cycle</Text>
                   <Text size="sm" fw={700}>
-                    − {m(windows?.current_credit_cycle_minor_units)}
+                    - {m(windows?.current_credit_cycle_minor_units)}
                   </Text>
                 </Group>
               </Stack>
@@ -396,7 +402,13 @@ function AllowancePanel({ allowance }: { allowance: Allowance }) {
             {allowance.review_transaction_count > 0 && (
               <Alert
                 color="yellow"
-                title={<>{allowance.review_transaction_count} {allowance.review_transaction_count === 1 ? "charge" : "charges"} ({m(allowance.review_minor_units)}) need review</>}
+                title={
+                  <>
+                    {allowance.review_transaction_count}{" "}
+                    {allowance.review_transaction_count === 1 ? "charge" : "charges"} ({m(allowance.review_minor_units)}
+                    ) need review
+                  </>
+                }
                 variant="light"
               >
                 Counted as flexible until classified; the cushion could change.
@@ -476,14 +488,25 @@ function SpendCard({ card }: { card: CardView }) {
           <Money value={card.spend_minor_units} currency={card.currency} />
         </Text>
         <Text size="sm" c="dimmed">
-          {card.statement_available
-            ? <>This statement{card.limit_minor_units != null && <> · <Money value={card.limit_minor_units} currency={card.currency} /> card limit</>}</>
-            : card.cycle_start
-              ? `Provisional card total since ${card.cycle_start}; statement date not yet reported. Includes purchases outside the allowance.`
-              : "Statement data unavailable"}
+          {card.statement_available ? (
+            <>
+              This statement
+              {card.limit_minor_units != null && (
+                <>
+                  {" "}
+                  · <Money value={card.limit_minor_units} currency={card.currency} /> card limit
+                </>
+              )}
+            </>
+          ) : card.cycle_start ? (
+            `Provisional card total since ${card.cycle_start}; statement date not yet reported. Includes purchases outside the allowance.`
+          ) : (
+            "Statement data unavailable"
+          )}
         </Text>
         <Text size="xs" c="dimmed">
-          Pending <Money value={card.pending_minor_units} currency={card.currency} /> · Last synced {time(card.last_synced_at)}
+          Pending <Money value={card.pending_minor_units} currency={card.currency} /> · Last synced{" "}
+          {time(card.last_synced_at)}
         </Text>
       </Stack>
     </Card>

@@ -286,7 +286,7 @@ def _crop_combined(full: Image.Image, menu_geometry: tuple[int, int, int, int]) 
         ("offline", "Offline"),
         ("allowance_paced", "Flex $200 !"),
         ("allowance_warming", "Flex $700"),
-        ("allowance_exhausted", "Flex −<$1 !!"),
+        ("allowance_exhausted", "Flex -<$1 !!"),
     ],
 )
 def test_render(

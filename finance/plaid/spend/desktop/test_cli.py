@@ -110,7 +110,7 @@ def test_without_allowance_keeps_existing_card_output(capsys: pytest.CaptureFixt
     [
         (0, "USD 0"),
         (1, "<USD 1"),
-        (-1, "−<USD 1"),
+        (-1, "-<USD 1"),
         (49, "<USD 1"),
         (50, "USD 1"),
         (1250, "USD 13"),

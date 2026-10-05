@@ -39,17 +39,20 @@ function formatMoney(minorUnits, currency) {
   const code = typeof currency === "string" && currency.length === 3 ? currency.toUpperCase() : "USD";
   const value = Number(minorUnits);
   try {
-    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code })
-      .resolvedOptions().maximumFractionDigits;
+    const precision = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
+      .maximumFractionDigits;
     const formatter = new Intl.NumberFormat(undefined, {
-      style: "currency", currency: code, maximumFractionDigits: 0, minimumFractionDigits: 0,
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 0,
+      minimumFractionDigits: 0,
     });
     const amount = value / 10 ** precision;
-    if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "−" : ""}<${formatter.format(1)}`;
+    if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${formatter.format(1)}`;
     return formatter.format(amount);
   } catch (_error) {
     const amount = value / 100;
-    if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "−" : ""}<${code} 1`;
+    if (amount !== 0 && Math.abs(amount) < 0.5) return `${amount < 0 ? "-" : ""}<${code} 1`;
     return `${code} ${amount.toFixed(0)}`;
   }
 }
@@ -251,13 +254,16 @@ const PlaidSpendIndicator = GObject.registerClass(
         this._label.add_style_class_name(`plaid-spend-${signal.level}`);
       }
 
-      const level = this._view?.allowance && this._status === "ready"
-        ? allowanceSignal(this._view.allowance).level
-        : "unknown";
+      const level =
+        this._view?.allowance && this._status === "ready" ? allowanceSignal(this._view.allowance).level : "unknown";
       // Keep the card glyph in ordinary operation; an alert glyph makes a high pace
       // or exhausted cushion recognizable before reading the compact number.
-      this._icon.icon_name = level === "danger" ? "dialog-error-symbolic"
-        : level === "caution" ? "dialog-warning-symbolic" : "credit-card-symbolic";
+      this._icon.icon_name =
+        level === "danger"
+          ? "dialog-error-symbolic"
+          : level === "caution"
+            ? "dialog-warning-symbolic"
+            : "credit-card-symbolic";
       for (const state of ["good", "caution", "danger", "unknown"])
         this._icon.remove_style_class_name(`plaid-spend-${state}`);
       this._icon.add_style_class_name(`plaid-spend-${level}`);
