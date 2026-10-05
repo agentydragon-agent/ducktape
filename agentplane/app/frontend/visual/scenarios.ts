@@ -12,6 +12,8 @@ import type { ScenarioOptions, Viewport } from "../../../../util/testing/fronten
  * fails to compile instead of silently doing nothing; `element` stays required from there.
  */
 export interface Scenario extends ScenarioOptions {
+  /** Offer Codex only while retaining existing Claude threads. */
+  claudePaused?: boolean;
   /** The app's hash route. The harness sets it before mounting, so App's router picks the view. */
   route: string;
   /** Required here, unlike the library's default, because every row states the size it needs. */
@@ -349,6 +351,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ['[role="alert"]'],
   },
 
+  sandboxes_claude_paused: { element: "#app", route: "/sandboxes?preset=public-coder", viewport: { width: 1200, height: 900 }, claudePaused: true },
   sandboxes: { element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 900 } },
   sandboxes_phone: { element: "#app", route: "/sandboxes", viewport: PHONE, outputName: "sandboxes-phone" },
   sandboxes_stale: {
@@ -552,6 +555,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     preselectReconnect: true,
   },
 
+  sandbox_claude_paused: { element: "#app", route: SANDBOX_ROUTE, viewport: { width: 1200, height: 900 }, claudePaused: true },
   sandbox: { element: "#app", route: SANDBOX_ROUTE, viewport: { width: 1200, height: 900 } },
   sandbox_phone: { element: "#app", route: SANDBOX_ROUTE, viewport: PHONE, outputName: "sandbox-phone" },
   sandbox_status: {

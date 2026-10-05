@@ -25,6 +25,7 @@ import {
   displayableError,
   models,
   modelsForHarness,
+  offeredHarnesses,
   type KubernetesGrantView,
   type ModelCatalog,
   type NewSandbox,
@@ -316,10 +317,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           <Select
             label="Harness"
             allowDeselect={false}
-            data={[
-              { value: "HARNESS_CLAUDE", label: "Claude" },
-              { value: "HARNESS_CODEX", label: "Codex" },
-            ]}
+            data={offeredHarnesses(modelCatalog)}
             value={thread.harness ?? null}
             onChange={(harness) =>
               setThread({ ...thread, harness: (harness ?? undefined) as SessionDefaults["harness"] })

@@ -228,12 +228,14 @@ it("lets an operator replace the preset template before creating the sandbox", a
   );
 });
 
-it("clears an unavailable preset model and disables a harness with no offered models", async () => {
+it("clears an unavailable preset model and hides a harness with no offered models", async () => {
   const { container } = await render([]);
   expect(input(container, "Model").value).toBe("");
   expect(input(container, "Model").disabled).toBe(true);
   expect(input(container, "Model").placeholder).toBe("No models available");
-  await choose(container, "Harness", "Claude");
+  await act(async () => input(container, "Harness").click());
+  expect(options(container, "Harness").map((option) => option.textContent)).toEqual(["Claude"]);
+  await act(async () => options(container, "Harness")[0].click());
   expect(input(container, "Model").disabled).toBe(false);
   expect(input(container, "Model").value).toBe("Test Claude");
 });

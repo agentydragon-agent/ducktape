@@ -1730,7 +1730,7 @@ routes.push(
         },
       ],
       harnesses: {
-        HARNESS_CLAUDE: ["harness-claude-model", "next-model"],
+        HARNESS_CLAUDE: scenario.claudePaused ? [] : ["harness-claude-model", "next-model"],
         HARNESS_CODEX: ["harness-codex-model"],
       },
     }),

@@ -54,6 +54,15 @@ export type Harness = components["schemas"]["Harness"];
 export type ModelOption = components["schemas"]["ModelOption"];
 export type ModelCatalog = components["schemas"]["ModelCatalog"];
 
+/** Harnesses with at least one launch-form offering. */
+export function offeredHarnesses(catalog: ModelCatalog | null): { value: Harness; label: string }[] {
+  const harnesses: { value: Harness; label: string }[] = [
+    { value: "HARNESS_CLAUDE", label: "Claude" },
+    { value: "HARNESS_CODEX", label: "Codex" },
+  ];
+  return harnesses.filter(({ value }) => (catalog?.harnesses[value]?.length ?? 0) > 0);
+}
+
 /** The models offered for one harness, resolved from the catalog's deduplicated `models`
  * list via its `harnesses` id references. */
 export function modelsForHarness(catalog: ModelCatalog, harness: Harness): ModelOption[] {

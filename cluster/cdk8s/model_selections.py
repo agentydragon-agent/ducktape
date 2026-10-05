@@ -3,13 +3,10 @@
 from dataclasses import dataclass
 
 from model_catalog.catalog import (
-    ANTHROPIC_SUBSCRIPTION_ROUTES,
-    ANTIGRAVITY_FLASH_LITE_ROUTES,
     ANTIGRAVITY_ROUTES,
     GEMINI_ROUTES,
     GPT6_LUNA_RESPONSES,
     GPT6_RESPONSES_ROUTES,
-    HAIKU_API,
     OLLAMA_OPENAI_ROUTES,
     OLLAMA_QWEN_IQ4XS_ROUTES,
     Route,
@@ -28,12 +25,14 @@ class HarnessRoutes:
         return tuple(dict.fromkeys((*self.claude, *self.codex)))
 
 
+# Claude offerings are temporarily paused (#9121). Keep runner support, credentials,
+# and served routes for existing sessions; re-enable these selections after validation.
 STAGING_APP_MODELS = HarnessRoutes(
-    claude=(*ANTHROPIC_SUBSCRIPTION_ROUTES, *ANTIGRAVITY_ROUTES, *OLLAMA_OPENAI_ROUTES),
+    claude=(),
     codex=(*GPT6_RESPONSES_ROUTES, *OLLAMA_OPENAI_ROUTES),
 )
 TESTING_APP_MODELS = HarnessRoutes(
-    claude=(HAIKU_API, *ANTIGRAVITY_FLASH_LITE_ROUTES, *OLLAMA_OPENAI_ROUTES),
+    claude=(),
     codex=(GPT6_LUNA_RESPONSES, *OLLAMA_OPENAI_ROUTES),
 )
 

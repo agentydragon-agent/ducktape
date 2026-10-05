@@ -99,7 +99,8 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sessio
 
 async function render(
   sessions: (request: Request) => Promise<Response>,
-  threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 })
+  threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 }),
+  claudePaused = false
 ): Promise<ReturnType<typeof vi.fn>> {
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
@@ -107,7 +108,7 @@ async function render(
       return Promise.resolve(
         Response.json({
           models: [{ model: "test-model", display_name: "Test Model", reasoning_efforts: TEST_REASONING_EFFORTS }],
-          harnesses: { HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] },
+          harnesses: { HARNESS_CLAUDE: claudePaused ? [] : ["test-model"], HARNESS_CODEX: claudePaused ? ["test-model"] : [] },
         })
       );
     }
@@ -357,4 +358,23 @@ it("disables archiving a thread while its harness is running", async () => {
   expect(
     fetchMock.mock.calls.some(([request]) => new URL((request as Request).url).pathname.endsWith("/archive"))
   ).toBe(false);
+});
+
+it("defaults new sessions to an offered harness while retaining existing Claude threads", async () => {
+  live.snapshot.threads = [thread({ id: "old-claude", session_id: "old-session", name: "Existing Claude" })];
+  const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) =>
+    request.method === "GET"
+      ? Response.json([{ sessionId: "old-session", spec: { harness: "HARNESS_CLAUDE" } }])
+      : Response.json({ detail: "Launch recorded" }, { status: 503 })
+  );
+  await render(sessions, undefined, true);
+  expect(container.textContent).toContain("Existing Claude");
+  const harness = labeledInput("Harness");
+  expect(harness.value).toBe("Codex");
+  await act(async () => harness.click());
+  expect([...document.querySelectorAll('[role="option"]')].map((option) => option.textContent)).toEqual(["Codex"]);
+  await act(async () => harness.click());
+  await act(async () => newSession().click());
+  const request = sessions.mock.calls.map(([request]) => request).find((request) => request.method === "POST")!;
+  expect((await request.json()).spec.harness).toBe("HARNESS_CODEX");
 });
