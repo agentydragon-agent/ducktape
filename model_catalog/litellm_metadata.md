@@ -69,21 +69,13 @@ Current input/output numbers and which routes publish them are unchanged. Consis
 is not evidence that those numbers are correct provider limits. Prices and capability
 metadata retain their existing ownership; this change concerns token-limit metadata.
 
-The config-loader/ASGI regression reads every currently published route from the
-committed generated ConfigMap, plus deliberately conflicting synthetic catalogue
-controls. It exercises OpenAI- and Anthropic-shaped upstreams, list/single `/model/info`, `/v1/model/info`, `/model_group/info` and `/v1/models`, across
-catalogue installation/replay and config reload. It uses synthetic admin auth and local
-catalogue fixtures, not DB-backed v2, inference, end-to-end spending, or live deployment.
-It also checks that selected pricing and request-policy switches remain unchanged.
-
 **Incomplete migration, not an unresolved ownership policy:** routes without overrides
 still use LiteLLM's catalogue/adapter fallback today. That is not an accepted end state.
 The [remaining-route inventory](migration_inventory.md#token-metadata-ownership-migration)
 records the outstanding source/semantics decisions. Complete the declarations, then
 remove `publish_limits` as a choice of authority. Unsupported routes need an explicit
 value or pause/retirement decision; this PR makes none of those pauses automatically.
-Do not create fake output limits for embedding/audio models. The no-override regression
-control demonstrates the current fallback; it does not bless that behavior permanently.
+Do not create fake output limits for embedding/audio models.
 
 Unlike response filtering, ordinary overrides also register these values in LiteLLM's
 internal cost map. Aligning legacy `max_tokens` with the existing output override is
@@ -145,8 +137,8 @@ Scope limits: auth was replaced with a synthetic admin; no ASGI lifespan, databa
 paid requests or production changes were involved. `/v2/model/info` returned 500
 because no database was connected, so its publication behavior remains untested.
 Reload exercised `refetch_model_cost_map()` plus `_swap_in_model_cost_map()`, not
-the admin endpoint's authorization or cross-pod signaling. The current ordinary-override regression is described under [publication ownership](#publication-ownership);
-DB-backed behavior remains outside that test's scope.
+the admin endpoint's authorization or cross-pod signaling. The ordinary-override policy
+is described under [publication ownership](#publication-ownership).
 
 ## Token KVPs in the remote catalogue
 
