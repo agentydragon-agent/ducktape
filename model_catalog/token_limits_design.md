@@ -325,8 +325,10 @@ Agentplane runner → Codex app-server 0.157.0
 ```
 
 The ingress authenticates/replaces credentials and streams the request body unchanged;
-it does not translate route names or inject context budgets. Neither it nor the runner
-reads LiteLLM `/model/info` to configure Codex.
+it does not currently translate route names or inject context budgets. This pass-through
+is an observation, not a required architecture: the operator explicitly permits model
+translation at this boundary when useful for native harness behavior. Neither it nor
+the runner reads LiteLLM `/model/info` to configure Codex.
 
 | Layer | Observed configuration / behavior | What that means |
 | --- | --- | --- |
@@ -407,7 +409,7 @@ changing one does not update the other. Do not promote either, or the historical
 
 Next, run the narrow pinned-LiteLLM unknown/known-pair publication experiment in §8,
 including internal request-side consumers. If changing Codex recognition is later
-necessary, test the exact alias/catalogue strategy with native tools, reasoning,
+necessary, test the exact ingress-translation, alias or catalogue strategy with native tools, reasoning,
 Responses-lite and compaction before enabling it. Do not build a general harness
 metadata service to preserve paused consumers. Separate Claude/Codex configuration
 vocabularies only when both actually need supported overrides.
@@ -504,6 +506,29 @@ backend model, not a new provider model or evidence for different neutral-roster
 Reuse the existing offering/configuration machinery where possible; do not build another
 registry or add a LiteLLM route unless the actual selection/recognition wiring requires it.
 This section records the plan, not an enabled option.
+
+**Model identity need not pass through unchanged.** Agentplane's selected offering,
+the harness-facing native model ID, and the LiteLLM routing ID serve different purposes.
+The operator explicitly permits changing ingress translation rather than contorting
+LiteLLM aliases or requiring native clients to recognize our routing namespace. One
+candidate, subject to a native-client smoke test, is:
+
+```text
+Agentplane option: Astra / Astra — long context (experimental)
+  → Codex model: gpt-6-astra, with the option's client budget
+  → Agentplane ingress translates the model to: chatgpt/oai-responses/gpt-6-astra
+  → existing LiteLLM route and subscription backend
+```
+
+Both options can share that native identity and backend route; only their launch
+budget differs. Keep this mapping with the existing Agentplane offering/launch
+configuration, not in a new registry or a provider-capacity declaration. Route selection
+must remain authorized and unambiguous if multiple offerings use the same native slug;
+a caller-supplied native name must not bypass the selected route's access controls.
+Check response model identifiers, model switching, resume and telemetry as well as
+request rewriting. Native recognition still has the prompt/tool side effects noted
+above; translation is not automatically a context-only change. The same boundary is
+available for future Claude support, without implementing that paused path now.
 
 - Give the option an honest label such as “Astra — long context (experimental)”, not
   “1M guaranteed”. Start a fresh native thread; do not mutate an existing thread's budget.
