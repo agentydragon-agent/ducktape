@@ -151,14 +151,12 @@ py_test(
 
 py_test(
     name = "test_proxy_runtime",
-    size = "medium",
     srcs = ["test_proxy_runtime.py"],
     data = [":server_bin"],
     deps = [
         ":provider",
         "//:conftest",
         "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
         "@pypi//pytest_bazel",
         "@pypi_tana_litellm_proxy//litellm",
     ],
